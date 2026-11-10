@@ -23,11 +23,11 @@ Sibling documents: [README](README.md) · [facts](eng-92710-call-web-service-ele
 [estimate](eng-92710-call-web-service-element-estimate.md).
 
 **Basis.** Creatio Academy and community pages read 2026-11-02; the PackageStore corpus (CrtProcessDesigner 7.8.0
-branch rule, below) scanned 2026-11-02; core TSBpm trunk and `<core>` `468c4c71b` (8.3.3.1722) for
+branch rule, below) scanned 2026-11-02; core platform trunk at `468c4c71b` (8.3.3.1722) for
 traces; crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131) for what describe returns today;
 a read-only inventory of stand `Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken
 2026-11-02. Research notes r6 (corpus), r7 (Academy), r9 (stand), g2-g5 (gap notes) in
-`<research notes, local>/` (local), cited as rN/gN §section. Where the adversarial fact-check
+the local research notes, cited as rN/gN §section. Where the adversarial fact-check
 (`_workflow-result.json`, "verdicts") corrected a note, the correction is used here and the claim id is cited
 (e.g. r6-C5).
 
@@ -126,7 +126,7 @@ same fallbacks in product code (section 2.4): composite outputs read in C# scrip
 Branch rule: one branch per package, `branches/7.8.0` when present, else the highest branch or trunk; test split by
 `is_test()` copied from `spec/sub-process-decomposition/corpus-scan/analyze.py:8-13` (regex
 `test|demo|sandbox|sample|example|^DevPkg$` plus `EXTRA_TEST`, `KEEP={'RealtyDevelopers'}`). Scan scripts and raw
-output: `<research notes, local>/scripts/` (`scan_ws.py`, `product.txt`, `test.txt`, `agg.txt`,
+output: the local research scripts (`scan_ws.py`, `product.txt`, `test.txt`, `agg.txt`,
 `crosscheck.txt`) (r6 §0) [measured: corpus].
 
 | | Product | Test | Total |
@@ -197,7 +197,7 @@ settings, not in the process (r6 §4.1) [measured: corpus].
 |---|---|---|---|
 | **Token bindings.** Every product value but two constants is a `[#..#]` token or formula (`GS1=3`) - the dialect other elements already use | all product elements | 43/69 bound params | Reuse the existing mapping surface (Q2) |
 | **Raw JSON `RequestBody` via `string.Format`.** `string.Format("{{\"contents\":[{{\"parts\":[{{\"text\":\"{0}\"}}]}}],\"tools\":[{{\"google_search\":{{}}}}]}}", [#SearchQuery#])` (argument abridged: the stored one is the full parameter token wrapped in `.Replace(...)`); the method declares only two headers, no Body param | both Gemini processes | the only 2 bound `RequestBody` in the corpus (14 present, 12 empty) | Escape hatch for bodies the service does not model (Q5) |
-| **Item-level composite binding.** Container `L8 {}`, a leaf bound to a scalar process param; the run time builds a ONE-item list | IdentitySync `roles_In` (ObjectList), ExecuteUpgradeBsf `PropertiesProperty_In` (CompositeObjectList) | the only 2 product composite request bodies | Works through the mapping engine as written (g3 §2) [traced; EM6] |
+| **Item-level composite binding.** Container `L8 {}`, a leaf bound to a scalar process param; the run time builds a ONE-item list | IdentitySync `roles_In` (ObjectList), ExecuteUpgradeBsf `PropertiesProperty_In` (CompositeObjectList) | the only 2 product composite request bodies | Works through the mapping engine as written (g3 §2); the one-item list measured at run time by EM6-B's trace (M-39) |
 | **Collection-to-collection request** (container bound to another element's collection, items evaluated per row) | test only (21 top-level In collections: 18 <- another WS, 3 <- Read data) | 0 product | Covered by P1 parent binding (g3 §3); guidance must say "map the parent explicitly when items are formulas" |
 | **Composite responses fetched, rarely used.** 12/25 product elements have a composite Out param; 1 maps it whole into a process Collection with item mappings, 3 read it in C# scripts, none maps a nested item into another element | Gemini, Bing, StudioFreeUpdate | nesting up to 4 element levels | The generator emits the full tree even when nothing reads it, always (Q3: no feature gate); v1 reads it into declared Collections (Q6) |
 | **Designer "parameter from element outputs" grouping.** A CompositeObject process param `WebService1Results1` (Tag `SourceElement:WebService1`) with scalar copies of nested outputs. Measured 2026-11-03 (EM3 designer half, decisions Q6): "Create from element" on Gemini `Candidates` makes the wrapper with a Collection `WebService1Candidates_Out` whose items are only the first-level scalars; nested lists are not offered | both CrtCustomer360AI processes | 2 | Not reproducible (CompositeObject not declarable; P1 refuses it) - out of v1, ENG-92730 (Q6) |
@@ -259,7 +259,8 @@ OFF, `EncodeWebServiceElementQueryParameters` OFF [measured: stand].
 
 3 `ServiceSchemaManager` schemas, all shipped, none user-created; `VwWebServiceV2` returns the same 3 with `MetaData`
 as JSON (r9 §2) [measured: stand]. The 32 service schemas / 63 methods of section 2.1 are the PackageStore corpus,
-not this stand. Since 2026-11-03 the stand also holds the test service `UsrWscEchoService` (3.5).
+not this stand. Since 2026-11-03 the stand also holds the test service `UsrWscEchoService` (3.5), and since
+2026-11-05 the SOAP 1.1 test service `UsrWscSoapService` (entered by hand, never called; measurements EM2 S2-S4).
 
 | Service (package) | Method | Request | Response |
 |---|---|---|---|
@@ -325,7 +326,7 @@ Each row is a consequence of the evidence above; the decision it feeds was agree
 | Evidence | Consequence for the builder | What agents must be told | Q / EM |
 |---|---|---|---|
 | The element is `ProcessSchemaWebService`; the legacy `WebServiceUserTask` is used by 0 processes but is still reachable through the generic userTask route | Build the core element; refuse `userTask=WebServiceUserTask` with a pointer to the `webService` block | "Call web service" = the `webService` block, never a user task | Q1 |
-| The element only references a registered service, as the designer does (no "new service" entry, measured 2026-11-03); services are few (3 on the stand, all REST; 32 in the PackageStore corpus, at most 7 methods each) | No discovery tool; resolve by UId, code, caption, case-insensitively, and list codes with captions in the refusal; a separate refusal for an environment with no registered service | Services are registered in Studio > Web services (base URI, methods, authentication), not by the builder; when none fits, stop and say what registration needs | Q9, Q10 |
+| The element only references a registered service, as the designer does (no "new service" entry, measured 2026-11-03); services are few (3 on the stand, all REST; 32 in the PackageStore corpus, at most 7 methods each) | No discovery tool; resolve by UId, code, caption, case-insensitively, and list codes with captions in the refusal (in the claimed cut also each service's methods, bounded, so one refusal finds service and method; K-1, M-47, M-48); a separate refusal for an environment with no registered service | Services are registered in Studio > Web services (base URI, methods, authentication), not by the builder; when none fits, stop and say what registration needs | Q9, Q10 |
 | Platform lookups are ordinal and an unknown or wrong-case method silently yields no params; measured 2026-11-03: a case-only slip saves green, the next load prunes every tagged param, the run fails | Canonicalise the spelling before writing `IX2` | Spell-insensitive input is accepted, the stored name is the canonical one | Q9, EM11 |
 | Product values are tokens and formulas; 24/69 params rely on the service default | Values go through the existing mapping surface, addressed by the stored names; unbound = default | Leave header/key params unbound to use the service default; do not copy keys into the process | Q2, Q16 |
 | Raw JSON in `RequestBody` is the AI-action pattern; the service may declare no Body param | Accept `RequestBody` as constant or formula | `RequestBody` replaces the whole generated body; escape quotes in `string.Format` | Q5 |
@@ -336,8 +337,8 @@ Each row is a consequence of the evidence above; the decision it feeds was agree
 | The designer edits seconds, `IX3` stores ms, timeouts are rare | `timeoutSeconds` optional, x1000 | Absent = the method's own timeout; the limit includes retries | Q8 |
 | Service defaults carry literal bearer tokens and basic-auth passwords in the corpus; a designer element stores no default (measured 2026-11-03: the default stays in the service) | Never echo defaults, auth info or base-URI credentials | Describe will not show defaults; that is deliberate; fill a key or token parameter from a system setting or a process parameter, never a constant | Q14, Q16, Q10 |
 | Methods vanish and services gain params after the first save; describe and every modify re-sync; measured 2026-11-03: an unrelated modify deletes an unresolved element's params, and a service change in the designer regenerates every param with new UIds | Report drift in describe; notice before a modify persists a prune (not refused); replace semantics on method or service change, guarded like sub-process retarget | A modify of any element can drop the params of a web-service element whose method no longer exists; describe's `issues[]` says so | Q11, Q12, EM4, EM8 |
-| One product process calls a service in another package (CrtCustomer360AI -> CrtGeminiApiIntegraion); the designer save adds the dependency (measured 2026-11-03), the builder adds none (traced) | Notice, no dependency added | Export the service's package too | Q9, EM10 |
-| 0 SOAP calls, 0 multi-instance WS elements; no SOAP service on the stand | Refuse multi-instance; refuse SOAP with a notice unless an owner-requested capture shows the same shape | SOAP and multi-instance web-service calls are not built | Q20 |
+| One product process calls a service in another package (CrtCustomer360AI -> CrtGeminiApiIntegraion); the designer save adds the dependency (measured 2026-11-03), the builder adds none (measured 2026-11-09, M-42) | Notice, no dependency added | Export the service's package too | Q9, EM10 |
+| 0 SOAP calls, 0 multi-instance WS elements | Refuse multi-instance; build SOAP like REST with notice N10 (the SOAP capture showed the same shape, M-33) | multi-instance web-service calls are not built; SOAP ones are, by the REST rules | Q20 D |
 | "Call a web service" collides with the backend guides for writing C# configuration services | Route line in `routing` plus a new `process-web-service` article; catalog flips `webService` to buildable | A process calling a registered service is `process-web-service`; writing a service is `configuration-webservice` | Q15 |
 | The stand has no Body-param service and no reachable echo endpoint of its own | Test REST services `UsrWsc*` with the stand root as base URI (EP option E4, no echo; `UsrWscEchoService` exists); parameter codes carry the `Usr` prefix Studio requires; the request bytes (EM6) and EM12 are not measurable on the stand | (none; owner-gated stand writes) | Q17, EM1-EM3, EM6 |
 | Version copies and internal tooling inflate the product count | Parity fixtures from the 21 distinct product elements, weighted to the 12 customer-facing ones | (none) | test plan |

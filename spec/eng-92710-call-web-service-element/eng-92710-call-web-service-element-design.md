@@ -9,20 +9,24 @@ reused: [reuse](eng-92710-call-web-service-element-reuse.md); work order: [plan]
 (task ids P-*, CL-*, KB-* there map to the components C*, K*, KB-* here).
 
 Basis: crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history), clio `origin/master`
-`6be5dde28`, clio-knowledge `origin/master` `5f14ceb`, CrtProcessDesigner 7.8.0 + PackageStore corpus, core TSBpm trunk
-and `<core>` `468c4c71b` (8.3.3.1722), Creatio Academy, read-only inventory of stand `Creatio`
-(10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken 2026-11-02, and the stand measurements of 2026-11-03
-(measurements M-01..M-31, decisions "Measured" blocks: the Q4 BK15 probe, EM0, EM1 with the three test services
+`6be5dde28`, clio-knowledge `origin/master` `5f14ceb`, CrtProcessDesigner 7.8.0 + PackageStore corpus, core platform trunk
+at `468c4c71b` (8.3.3.1722), Creatio Academy, read-only inventory of stand `Creatio`
+(10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken 2026-11-02, and the stand measurements of 2026-11-03 and 2026-11-05
+(measurements M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, decisions "Measured" blocks: the Q4 BK15 probe, EM0, EM1 with the three test services
 `UsrWscEchoService`, `UsrWscDriftService` and `UsrWscDeadService`, EM2 S1, EM3 routes (a) and (b), EM4 S1-S3, the
 designer halves of EM7, EM10 and EM11, EM8's current-builder, service-save and designer halves) and EM9 (local
 compile). Open: EM5, EM6, every builder half (EM8's is the claimed-cut half, the N7 notice), EM2's read-back on the
-final cut; EM12's run half is not measurable under E4. Research notes `r1`..`r10`, gap notes
-`g1`..`g5`, verdicts in `_workflow-result.json` (`<research notes, local>/`); a verdict correction
+final cut; EM12's run half is not measurable under E4. Status 2026-11-10: these ran in the final-cut campaign on
+2026-11-09 (measurements section 0, M-36..M-46; EM5 steps 4 and 5 not run), and the plan's late-measurement gate is
+met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator); the
+unknown-service refusal, AR-1 and EM8 step 8 were re-measured on the claimed cut: EM8 step 8 is refused by the
+platform's validation and the refusal carries N7 (M-51, M-52, section 3.3). Research notes `r1`..`r10`, gap notes
+`g1`..`g5`, verdicts in `_workflow-result.json` (local research notes); a verdict correction
 overrides a note, a `g` note supersedes an `r` note.
 
-Paths: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/`, `PBT/` = `tests/UnitTests/CrtProcessBuilder.Tests/`,
-`CORE/` = `<core>/TSBpm/Src/Lib/`, `NUI/` = `CORE/Terrasoft.Nui/Resources/Terrasoft/manager/process-flow-element-schema-manager/`,
-`PD/` = `CrtProcessDesigner/branches/7.8.0/Schemas/`, `CLIO/`, `KB/` = repository roots.
+Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other
+shipped packages, the core platform) are cited by schema, class, file or view name only, never by repository path;
+`CLIO/`, `KB/` = the clio and clio-knowledge repository roots.
 Tags: **traced** = read in source, a hypothesis about run time until the named EM settles it; **measured** = corpus,
 binary, git or stand inventory. EM ids: [measurements](eng-92710-call-web-service-element-measurements.md).
 
@@ -89,7 +93,7 @@ Presence rules:
   (no `method`) = refused with the new service's method list, nothing written (TC-U-108). Both equal to the stored
   (canonical) pair = no parameter change (Q11 A). `timeoutSeconds: 0` clears IX3; `ignoreErrors: false` clears IX4.
   A `setElement` that names `webService` but sets no member is refused by the existing "no field set" refusal
-  (`PB/Operations/ElementOperations.cs:302-303`, which gains the block name).
+  (`ElementOperations`, which gains the block name).
 - Not in the block: request values (2.3), any service parameter value, a base URI, auth settings, a `resync` flag
   (section 8). No alias names for parameters (Q2 A).
 
@@ -113,7 +117,7 @@ Order: request params in request order, response params in response order, then 
 ### 2.3 Request values through the mapping surface (Q2, Q5, Q10)
 
 Request values use the existing `mappings[]` entries (create) and the `addMapping` operation (modify; there is no
-separate set-mapping operation, `PB/ProcessDesignConstants.cs` `Operations`), `ProcessMappingDescriptor` members `elementName`, `elementParameter`, and one source of `value`, `expression`,
+separate set-mapping operation, `ProcessDesignConstants` `Operations`), `ProcessMappingDescriptor` members `elementName`, `elementParameter`, and one source of `value`, `expression`,
 `processParameter`, `sourceElement` + `sourceElementParameter`, `sourceColumn`:
 
 ```json
@@ -131,7 +135,7 @@ separate set-mapping operation, `PB/ProcessDesignConstants.cs` `Operations`), `P
 What the mapping engine does with each shape is already decided by `CollectionBindingRules` and needs no change for the
 three corpus composite shapes (g3, traced; EM6 runs them):
 
-| Shape | Plan the engine applies today | Run time (traced, EM6) |
+| Shape | Plan the engine applies today | Run time (traced; the one-item list measured by EM6-B's trace, M-39) |
 |---|---|---|
 | leaf of an IN collection <- scalar process parameter / constant / formula, container unbound (the 2 product composite bodies) | no P1 (source is not an item, or no structured source); written as given; container keeps `L8 {}` | the run time builds a ONE-item list from the leaf sources (`GetIsSourceValueDefined` counts nested sources) |
 | item <- item of a Read data or WS collection output (single reference) | P1 binds the container to the source collection (innermost first), COL<->COL passes the exact-UId type rule | one row per source row |
@@ -141,7 +145,7 @@ three corpus composite shapes (g3, traced; EM6 runs them):
 
 `RequestBody` is the escape hatch (Q5): a constant or formula (`expression`, for example a `string.Format(...)`
 building JSON, the Gemini pattern, r7 A5 verdict) on `RequestBody`; when non-null it REPLACES the generated body
-entirely (traced, `CORE/Terrasoft.Services/WebServiceUserTaskImplementation.cs:22-28`). No new process-parameter type
+entirely (traced, `WebServiceUserTaskImplementation`). No new process-parameter type
 is added, and v1 neither checks a constant `RequestBody` as JSON nor warns when it and Body parameters are both bound
 (Q5, 2026-11-03); the guide says when to use it (KB-1 item 6).
 
@@ -208,7 +212,7 @@ The element gets `buildType: "webservice"` (the lowercase build token, free once
 | `service`, `method`, `timeoutSeconds`, `ignoreErrors` | write members read back in their write shape | `service` is the service name, the string the write side takes, and null when `IX1` resolves to no service; `timeoutSeconds` = `ms / 1000` reported as a fraction, not rounded (Q8; e.g. 1500 ms -> 1.5; none in the corpus), absent when IX3 is 0; `ignoreErrors` read from IX4 directly (Q7), absent when false |
 | `serviceUId` | read-back | the raw `IX1`, also when the service is gone (the issue then names it) |
 | `serviceResolved`, `methodResolved` | read-back | `ServiceSchemaManager.FindItemByUId(IX1) != null`; method found ORDINALLY (the run time's lookup, g4 §5); both survive the load sync, so they are reliable on every load path |
-| `parameters` | read-back | the element's own tree after load, every parameter including unbound inputs (the generic `parameters[]` filter drops them, `PB/Describe/ProcessDescriber.cs:226`), recursive `items`; per node `name`, `tag`, `direction`, `type` (DataValueType name), `required` (true only), `bound` (inputs: own or nested source defined), `result` (true only, for the four untagged params). Never `caption` values beyond what the generic projection already returns, never a value, never a service parameter default (Q16). A bound input's value (a constant, a formula, `RequestBody` text) is one of the element's stored bindings (process data the caller can already read through describe, M-31), not service data: it comes back through the generic `parameters[]` as today, which the round-trip tests need |
+| `parameters` | read-back | the element's own tree after load, every parameter including unbound inputs (the generic `parameters[]` filter drops them, `ProcessDescriber`), recursive `items`; per node `name`, `tag`, `direction`, `type` (DataValueType name), `required` (true only), `bound` (inputs: own or nested source defined), `result` (true only, for the four untagged params). Never `caption` values beyond what the generic projection already returns, never a value, never a service parameter default (Q16). A bound input's value (a constant, a formula, `RequestBody` text) is one of the element's stored bindings (process data the caller can already read through describe, M-31), not service data: it comes back through the generic `parameters[]` as today, which the round-trip tests need |
 | `issues` | read-back | sentences, only when a stored shape fails or surprises at run time (5.3) |
 
 Rules:
@@ -232,7 +236,7 @@ Rules:
 ### 2.6 Result additions on create / modify (Q10)
 
 No new response member. The existing `warnings` list of `BuildProcess`, `ModifyProcess` and the version responses
-(`PB/Contracts/BuildContracts.cs:124`, `ModifyContracts.cs:608`, `VersionContracts.cs:153,244`) carries, per
+(`BuildContracts`, `ModifyContracts.cs:608`, `VersionContracts.cs:153,244`) carries, per
 web-service element generated or regenerated in the request, one info notice listing the generated names compactly
 (N1, 5.2), plus any notices of 5.2. The authoritative tree is describe's.
 
@@ -245,14 +249,15 @@ web-service element generated or regenerated in the request, one info notice lis
 | `addElement` with the block, or create | Create | generated fresh (C3), BK15 rows written (C8) |
 | `setElement`, service and method resolve to the stored pair (after canonicalisation) | Settings | untouched; only IX3 / IX4 change if sent |
 | `setElement`, the method or the service differs | Update (retarget) | replaced (3.2) |
-| `setElement` with `webService` on a designer-built multi-instance WS element (`MultiInstanceOptions != null`, stored as BP6) or onto a SOAP service | refused (C11, Q20; TC-U-48); describe reports the multi-instance element with an issue (TC-U-79) | untouched |
+| `setElement` with `webService` on a designer-built multi-instance WS element (`MultiInstanceOptions != null`, stored as BP6) | refused (C11, Q20; TC-U-48); describe reports the multi-instance element with an issue (TC-U-79) | untouched |
+| any row above with a SOAP 1.1 / 1.2 service (the new one, or the stored one) | as for REST (Q20 D, M-33..M-35); N10 on Create and on a retarget onto SOAP | as for REST |
 | any modify of the process, the WS element not named in the request | none | the platform's load sync applies (3.3) |
 
 ### 3.2 Retarget (Q11 A3)
 
 1. Resolve the new service and method (C2) and shape the new tree (C3) before any write; every refusal fires here.
 2. Use the dependency snapshot the edit pipeline has already captured once at the start of the request
-   (`IProcessEditPipeline.Apply`; `PB/Graph/IProcessDependencySnapshot.cs`). The applier calls only
+   (`IProcessEditPipeline.Apply`; `IProcessDependencySnapshot`). The applier calls only
    `FindDependents(...)` and never `Capture`: a mid-batch capture would drop the pre-batch half, the defect class of
    ENG-100041 "Sub-process retarget guard scans the live schema instead of the request dependency snapshot".
 3. Ask `IProcessDependencySnapshot.FindDependents(element, survivingParameterUIds: {Success, Response, StatusCode
@@ -264,7 +269,7 @@ web-service element generated or regenerated in the request, one info notice lis
    blocks the change; decisions Q11 A3, stated exactly at gate 1). Any dependent -> refuse, naming the dependent and
    the parameter it reads (ENG-100041
    "Sub-process retarget guard scans the live schema instead of the request dependency snapshot" /
-   `SubProcessApplier.EnsureNoLiveDependents` pattern, `PB/Elements/SubProcessApplier.cs:753-800`). A same-named
+   `SubProcessApplier.EnsureNoLiveDependents` pattern, `SubProcessApplier`). A same-named
    output of the new method does not keep its readers
    (fresh UId, TC-U-38). `Success`, `Response` and `StatusCode` are NOT checked: they exist on every method with a
    fixed type, and step 5 keeps their UIds, so their readers stay valid (Q11 A3, agreed 2026-11-03 after EM4). The
@@ -297,25 +302,43 @@ FormulaTask references stay dangling), missing ones are appended flat at the end
 load, matched ones are re-typed / re-captioned to the provider's view; an empty IX1 clears everything including the
 result params. A modify of ANY element saves that state. The package does not try to prevent it in v1:
 
-- At the end of every `ModifyProcess` / `ModifyProcessAsNewVersion`, each WS element NOT configured in this request
-  whose `serviceResolved` or `methodResolved` is false gets notice N7 naming the element, the service or method and
+- At the end of every `ModifyProcess` / `ModifyProcessAsNewVersion`, each WS element whose `serviceResolved` or
+  `methodResolved` is false, configured in this request or not (owner, 2026-11-05), gets notice N7 naming the element, the service or method and
   the consequence. The removed parameters themselves cannot be listed without a raw stored read (g4 §6 Q1); the
   notice says so. EM8 (current-builder half, measured 2026-11-03): one unrelated `addParameter` through current clio
   deleted all 8 tagged params of an element with a wrong-case `IX2` from the database, with no warning, and left
   `IX2` unchanged. Q12 A is agreed (notice, no refusal); B (a refusal with a confirm flag) is a follow-up option.
+- When something reads a parameter the load pruned, the platform's validation, run by the package's `EnsureValidForSave`
+  (`ProcessSchemaValidator`), refuses the modify, nothing is written, and the request never reaches the end-of-request notices (EM8 step 8,
+  M-41). The refusal therefore carries N7 itself, after the platform's text (F-2, measured M-51, M-52): first the
+  drifted elements a refused message names, under a lead (`ReferencedLead`) that says Creatio removed the element's
+  service parameters from the loaded copy, that adding a parameter or re-pointing the element does not repair the
+  reference (both create parameters with new identities), and gives the repair order (a renamed or removed
+  method is restored in Studio > Web services and the request repeated, unless the process was saved in the Process
+  Designer since; a service that is no longer registered is restored by installing the package that carries it, not by
+  registering it again in Studio, which would give it another UId and leave the element unresolved, as the
+  unregistered-service refusal form says (TC-U-124); otherwise first
+  remove or replace every read of those parameters in a request of its own, then re-point the element and bind the
+  reads to its new parameters, those two in one request); each such element's notice in its refusal form, which gives
+  the cause without the re-select advice (F-5). Then the other drifted elements under "Another web service element
+  that no longer resolves:" / "Other web service elements that no longer resolve:", with the ordinary N7. When no
+  refused message names a drifted element, the lead is "This process also has a web service element that no longer
+  resolves." (or the plural) and the notices are the ordinary ones. At most 3 notices (`MaxWebServiceDriftNotices`),
+  named elements first; the rest are counted. Texts in 5.2 (N7).
 - The builder writes every top-level parameter so the provider's view of it equals what the package wrote (names,
   Tag, types, IsRequired, `IsValueSerializable = true`, g4 §5), so the load sync is a no-op on a builder-made element
   EXCEPT for a caption that carries the designer's " - Input" / " - Output" suffix: the provider clones the bare caption
   and `SynchronizeParameter` overwrites `Caption.Value` on a match (traced, g4 §1 step 4; r2 §5 measured one drifted
-  display value). EM5 measures it; the parity rule names it.
+  display value). Measured 2026-11-04 (EM5, experimental cut): a server load drops the suffix and a designer save puts
+  it back, so the stored caption follows the last writer; the parity rule names it (AD1).
 - UIds of flat-appended params are unstable until a save (g4 §4); no notice, guard or mapping keys on such a UId.
 
 ### 3.4 Other operations
 
 - `removeElement`: already deletes every BK15 row whose target path holds the element UId
-  (`PB/Graph/ProcessGraphBuilder.cs:1915-1922`, g1 (c)); no change.
+  (`ProcessGraphBuilder`, g1 (c)); no change.
 - `modify-business-process-as-new-version`: the clone serializes the (synced) source instance and replaces the source
-  schema UId as text (g4 §3; `PB/Design/ProcessVersionCloneFactory.cs:61-72,106-119`), so `A3`/`A4`/`GS5` on all levels
+  schema UId as text (g4 §3; `ProcessVersionCloneFactory`), so `A3`/`A4`/`GS5` on all levels
   and the BK15 `A3`/`A4` follow. No code expected; a clone round-trip test pins it (plan P-D4).
 - Raw mapping operations onto the element's params: allowed, they are the request-value surface (2.3). No guard like
   Send email's slot guard is needed: the element owns no parameter that only a block may write.
@@ -326,26 +349,26 @@ result params. A modify of ANY element saves that state. The package does not tr
 
 | # | Component | Kind | Files (expected) | Plan |
 |---|---|---|---|---|
-| C1 | Contracts: `WebServiceDescriptor`; `ProcessElementDescriptor.WebService`, `ProcessElementUpdateDescriptor.WebService`; `DescribeWebServiceInfo`, `DescribeWebServiceParameter`, `DescribeProcessElement.WebService` | contracts | `PB/Contracts/ProcessDescriptorContracts.cs`, `ModifyContracts.cs`, `DescribeContracts.cs` | P-B1 |
-| C2 | Service catalog / resolver | new | `PB/WebService/IWebServiceCatalog.cs`, `WebServiceCatalog.cs`, `WebServiceResolution.cs` | P-A1 |
-| C3 | Parameter shaper (pure) + parameter writer | new | `PB/WebService/IWebServiceParameterShaper.cs`, `WebServiceParameterShaper.cs`, `WebServiceParameterPlan.cs`, `IWebServiceParameterWriter.cs`, `WebServiceParameterWriter.cs` | P-A2 |
-| C4 | Platform-sync seam | new | `PB/WebService/IWebServicePlatformSync.cs`, `WebServicePlatformSync.cs` | P-A3 |
-| C5 | Generalized element snapshot / diff / drift report | refactor | `PB/Elements/SubProcessApplier.cs` (private `Snapshot`/`Diff`) -> `PB/Elements/ElementParameterSnapshot.cs`, `ElementParameterDiff.cs`; `SubProcessSyncReport.cs` reused | P-A4 |
-| C6 | Element handler, identity, token, factory gate, DI | new + change | `PB/Elements/WebServiceElementHandler.cs`, `PB/WebService/WebServiceElementIdentity.cs`, `PB/ProcessDesignConstants.cs` (`ElementTypes.WebService = "webservice"`), `PB/Elements/ProcessElementFactory.cs`, `../CrtProcessBuilderApp.cs` | P-B2 |
-| C7 | Applier: Create / Settings / Update modes, retarget guard | new | `PB/WebService/IWebServiceApplier.cs`, `WebServiceApplier.cs`, `WebServiceApplyMode.cs` | P-B3, P-D1, P-D2 |
-| C8 | BK15 result-mapping writer | new | `PB/WebService/IWebServiceResultMappingWriter.cs`, `WebServiceResultMappingWriter.cs` | P-B4 |
-| C9 | Build hook and modify wiring | change | `PB/Design/ProcessBuildHandler.cs` (`SelectReferencedSources`), `PB/Operations/ElementOperations.cs` (`addElement`, `setElement`, the "no field set" list) | P-B5 |
-| C10 | Describer | new | `PB/WebService/IWebServiceDescriber.cs`, `WebServiceDescriber.cs`; called from the handler's `Describe` | P-C1, P-D3 |
-| C11 | Guards | new + change | `PB/WebService/WebServiceGuards.cs` (multi-instance and SOAP refusals, `timeoutSeconds` sign, the N3 gate); `PB/Elements/UserTaskElementHandler.cs` (generic-route refusal) | P-C2 (refusals, generic-route and SOAP/multi-instance guards) |
-| C12 | Notices and end-of-request rules | new + change | `PB/WebService/WebServiceNotices.cs`, `WebServiceConfigurationRule.cs`; `PB/Elements/ElementConfigurationLedger.cs` registration | P-C3, P-D3 |
-| C13 | Mirror refusals for WS outputs | change | `PB/Parameters/ProcessParameterService.cs` (`CloneItemProperties` message, ObjectList mirror source refused) | P-C6 (Q6 v1; ~0.5 agent h, inside estimate WP C) |
+| C1 | Contracts: `WebServiceDescriptor`; `ProcessElementDescriptor.WebService`, `ProcessElementUpdateDescriptor.WebService`; `DescribeWebServiceInfo`, `DescribeWebServiceParameter`, `DescribeProcessElement.WebService` | contracts | `ProcessDescriptorContracts`, `ModifyContracts.cs`, `DescribeContracts.cs` | P-B1 |
+| C2 | Service catalog / resolver | new | `IWebServiceCatalog`, `WebServiceCatalog.cs`, `WebServiceResolution.cs` | P-A1 |
+| C3 | Parameter shaper (pure) + parameter writer | new | `IWebServiceParameterShaper`, `WebServiceParameterShaper.cs`, `WebServiceParameterPlan.cs`, `IWebServiceParameterWriter.cs`, `WebServiceParameterWriter.cs` | P-A2 |
+| C4 | Platform-sync seam | new | `IWebServicePlatformSync`, `WebServicePlatformSync.cs` | P-A3 |
+| C5 | Generalized element snapshot / diff / drift report | refactor | `SubProcessApplier` (private `Snapshot`/`Diff`) -> `ElementParameterSnapshot`, `ElementParameterDiff.cs`; `SubProcessSyncReport.cs` reused | P-A4 |
+| C6 | Element handler, identity, token, factory gate, DI | new + change | `WebServiceElementHandler`, `WebServiceElementIdentity`, `ProcessDesignConstants` (`ElementTypes.WebService = "webservice"`), `ProcessElementFactory`, `../CrtProcessBuilderApp.cs` | P-B2 |
+| C7 | Applier: Create / Settings / Update modes, retarget guard | new | `IWebServiceApplier`, `WebServiceApplier.cs`, `WebServiceApplyMode.cs` | P-B3, P-D1, P-D2 |
+| C8 | BK15 result-mapping writer | new | `IWebServiceResultMappingWriter`, `WebServiceResultMappingWriter.cs` | P-B4 |
+| C9 | Build hook and modify wiring | change | `ProcessBuildHandler` (`SelectReferencedSources`), `ElementOperations` (`addElement`, `setElement`, the "no field set" list) | P-B5 |
+| C10 | Describer | new | `IWebServiceDescriber`, `WebServiceDescriber.cs`; called from the handler's `Describe` | P-C1, P-D3 |
+| C11 | Guards | new + change | `WebServiceGuards` (multi-instance refusal, `timeoutSeconds` sign, the N3 gate); `UserTaskElementHandler` (generic-route refusal) | P-C2 (refusals, generic-route and multi-instance guards) |
+| C12 | Notices and end-of-request rules | new + change | `WebServiceNotices`, `WebServiceConfigurationRule.cs`; `ElementConfigurationLedger` registration; `IWebServiceDriftNotices`, `WebServiceDriftNotices.cs` (the N7 notices with their element and refusal form); `ProcessSchemaValidator` (appends N7 to a refused save, F-2, measurements section 0) | P-C3, P-D3 |
+| C13 | Mirror refusals for WS outputs | change | `ProcessParameterService` (`CloneItemProperties` message, ObjectList mirror source refused) | P-C6 (Q6 v1; ~0.5 agent h, inside estimate WP C) |
 | C14 | Package docs | docs | `docs/web-service-element-capture.md`; `docs/process-builder-architecture.md` section 3.5 handler list | P-C5 |
 
-A new folder `PB/WebService/` follows the `Email/` and `FileProcessing/` precedent; the handler stays in `Elements/`
-with the others. Note: `PB/WebService/` is a sibling of `PB/EntryPoints/WebService/`, the package's own WCF entry
+A new folder `WebService` follows the `Email/` and `FileProcessing/` precedent; the handler stays in `Elements/`
+with the others. Note: `WebService` is a sibling of `WebService`, the package's own WCF entry
 point (`ProcessDesignService`), not part of it; the similar names are deliberate, and this section is the single source
 for the folder (reuse §5.1 follows it). Every behaviour class gets an interface and a scoped DI registration in `CrtProcessBuilderApp.cs`
-(repository rule; composition-root tripwire `PBT/CrtProcessBuilderAppTests.cs`). C5 lands in its own commit within
+(repository rule; composition-root tripwire `CrtProcessBuilderAppTests`). C5 lands in its own commit within
 slice A (P-A4), after a characterization commit that pins each sub-process notice text (TC-U-93), with every
 `SubProcess*Tests` unchanged, which proves it behaviour-neutral. No new `[OperationContract]`: the two security pins stay 8 operations / 6 gate call sites (r4 H9).
 
@@ -364,7 +387,7 @@ slice A (P-A4), after a characterization commit that pins each sub-process notic
   methodResolved, parameters, issues}` (`service` a string, `serviceUId` a nullable Guid), `DescribeWebServiceParameter {name, tag, direction,
   type, required, bound, result, items}`; `[ExcludeFromCodeCoverage]` like the other DTOs; `EmitDefaultValue = false`
   on the optional members so `required: false` and `result: false` are absent.
-- Wire-contract test rows for every new DataMember (`PBT/EntryPoints/WebService/ProcessDesignServiceWireContractTests.cs`);
+- Wire-contract test rows for every new DataMember (`ProcessDesignServiceWireContractTests`);
   operation count unchanged.
 
 ### 4.3 C2: service catalog / resolver (Q9, Q16, Q20)
@@ -375,15 +398,15 @@ The only class that touches `ServiceSchemaManager`, reached as the platform prov
 
 | Member | Behaviour |
 |---|---|
-| `ResolveService(string reference)` | 1. parses as a Guid -> `FindItemByUId`; 2. name: exact ordinal match, else the case-insensitive matches over all manager items (workspace-wide, like the designer when `AutoAddPackageDependenciesInProcesses` is on and like sub-process lookup, g5 (a)); two or more that differ only in case -> refused (none in the corpus, defensive, g5 open Q4); 3. caption, case-insensitive, any culture the item exposes; two or more -> refused listing their NAMES. Returns `{UId (manager-item), Name, Caption, PackageUId, Type (REST / SOAP 1.1 / SOAP 1.2)}` |
+| `ResolveService(string reference)` | 1. parses as a Guid -> `FindItemByUId`; 2. name: exact ordinal match, else the case-insensitive matches over all manager items (workspace-wide, like the designer when `AutoAddPackageDependenciesInProcesses` is on and like sub-process lookup, g5 (a)); two or more that differ only in case -> refused (none in the corpus, defensive, g5 open Q4); 3. caption, case-insensitive, any culture the item exposes; two or more -> refused listing their NAMES, each with its methods (K-1). Unknown -> refused listing the services with their methods, bounded (5.1, K-1). Returns `{UId (manager-item), Name, Caption, PackageUId, Type (REST / SOAP 1.1 / SOAP 1.2)}` |
 | `ResolveMethod(service, string reference)` | `ServiceMethods.FindByName` (ordinal), else case-insensitive scan; two case-only twins refused; returns the method (canonical `Name`, request / response `ServiceParameter` trees with `Name`, `Caption`, `DataValueTypeName`, `IsArray`, `IsRequired`, `ItemProperties`) |
-| `ListServiceNames()`, `ListMethodNames(service)` | sorted, sanitized (`SafeText.Sanitize`); used only in refusals; the service list gives each name with its caption (Q9, Q10). 32 service schemas and 63 methods in the PackageStore corpus, max 7 per service (g5 (b), measured); stand `Creatio` ships 3 service schemas (`BingSearchApiCall`, `GeminiApiSearch`, `CreatioMarketplaceApi`, measured 2026-11-03) and holds the 3 `UsrWsc*` test services of EM1, all REST, so listing all is cheap. An empty catalog gets its own refusal (5.1) |
+| `ListServiceNames()`, `ListMethodNames(service)` | sorted, sanitized (`SafeText.Sanitize`); used only in refusals; the service list gives each name with its caption (Q9, Q10) and, for the first 30 services, their methods (K-1, measurements section 0; measured M-47; at most 30 schema loads, only on the refusal path, TC-U-125; bounds in 5.1). 32 service schemas and 63 methods in the PackageStore corpus, max 7 per service (g5 (b), measured); stand `Creatio` ships 3 service schemas (`BingSearchApiCall`, `GeminiApiSearch`, `CreatioMarketplaceApi`, measured 2026-11-03) and holds the 3 `UsrWsc*` test services of EM1, all REST, so listing all is cheap. An empty catalog gets its own refusal (5.1) |
 | `TryFind(Guid)` | null on a dangling IX1; describe never throws |
 
 Rules: the catalog never reads `DefValue`, `authInfo`, base URI or header values into any DTO the package returns or
 logs (Q16; corpus holds literal basic-auth passwords and `Bearer` header defaults, g5 (c), measured). A cross-package
 service (the service's package not in the process package's dependency closure) is not refused: run time resolves
-workspace-wide and the builder's save adds no dependency (g5 (b), traced; EM10 builder half); notice N6. The designer
+workspace-wide and the builder's save adds no dependency (g5 (b); EM10 builder half measured 2026-11-09, M-42); notice N6. The designer
 does add it (EM10 designer half, measured 2026-11-03: one new `SysPackageDependency` row on the first save of a
 process in a package with none); adding it here is a separate ticket (Q9 C). The closure read is the one open API
 choice of this component (the platform's package-hierarchy helper, else `SysPackageDependency`).
@@ -391,7 +414,7 @@ choice of this component (the platform's package-hierarchy helper, else `SysPack
 ### 4.4 C3: parameter shaper and writer (Q3)
 
 The shaper is a pure function `(ServiceMethod, ShapeContext) -> WebServiceParameterPlan`, a port of
-`NUI/process-webservice-schema.js` (`_getParameterConfig`, `_getItemProperties`, `_isParameterRequired`,
+`process-webservice-schema` (`_getParameterConfig`, `_getItemProperties`, `_isParameterRequired`,
 `_initResultParametersMetaData`, the caption-suffix rule). No platform mock is needed to test it (r8 B4).
 
 | Rule | Value |
@@ -442,7 +465,7 @@ the retarget notice and the dropped-binding list; sub-process behaviour and text
 - `WebServiceElementIdentity` (like `SubProcessElementIdentity`): `IsWebService(element)`, the ManagerItemUId, the
   result-parameter names, the legacy `WebServiceUserTask` schema UId `e7acb2e5-efc6-41d3-8c02-589ae6b943f1`.
 - Factory: one strict `EnsureBlockMatchesHandler(descriptor.WebService != null, "webService", ElementTypes.WebService, ...)`
-  line (strict like `subProcess` / `scriptTask`, `PB/Elements/ProcessElementFactory.cs:100-113`).
+  line (strict like `subProcess` / `scriptTask`, `ProcessElementFactory`).
 - DI (`CrtProcessBuilderApp.cs:124-180`): `AddScoped<IProcessElementHandler, WebServiceElementHandler>` placed so no
   earlier handler `CanBuild`s the element (none does: every other handler keys on its own class); scoped registrations
   for C2, C3 (shaper and writer), C4, C7, C8, C10, C11.
@@ -454,7 +477,7 @@ WebServiceApplyMode mode, IProcessDesignNotices notices)`; `WebServiceApplyMode 
 `SubProcessApplyMode` precedent; Settings is Update with an unchanged pair).
 
 1. Guards that need no resolution (C11): multi-instance, `timeoutSeconds` sign.
-2. Resolve service and method (C2); SOAP refused (Q20) unless an owner-requested SOAP capture shows the same shape;
+2. Resolve service and method (C2); a SOAP service is built like REST and noted by N10 (Q20 D; Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35));
    shape the plan (C3). All refusals happen here, before the first write ("untouched on refusal", the Send email
    applier invariant).
 3. Create: write IX1 (manager-item UId), IX2 (canonical), IX3, IX4 (directly, Q7); write the plan (C3); write the BK15
@@ -474,21 +497,21 @@ mirroring the client's `createMappingInfo`: `A2` = element name, `A3 = A4` = pro
 object (Success: `Value = "false"` without `ModifiedInSchemaUId`, which gives the measured `{"GS2":"false"}`; the others
 empty). Order: set the parameter's `SourceValue` first, then add the row, so the `SourceValue` setter does not alias the
 row's value and write `GS5` into Success `GT1`. Later bindings of `RequestBody` through the mapping service keep `GT1`
-equal to `L8` for free (the setter, `PB/Mappings/ProcessMappingService.cs:221-235`), which reproduces Gemini. `A2` is
+equal to `L8` for free (the setter, `ProcessMappingService`), which reproduces Gemini. `A2` is
 not rewritten when the element is renamed, as the designer does not rewrite it either (Q4). Rows are runtime-neutral
 (traced, g1 (c): no run-time, server-sync or client-sync reader depends on them). Measured on stand `Creatio`
 2026-11-03 (Q4 probe `UsrWscBk15Probe`): a designer-built element gets exactly these 4 rows in these keys; the
 designer's own copy is row-less, a re-save keeps it row-less and leaves the original's 4 rows unchanged (no duplicate,
-no rewrite), and the row-less element runs. Q4 A is agreed (write the rows); EM5 checks that a designer re-save leaves
-builder-made rows alone too. Should it not, the row-less state is one the designer itself produces and runs, so the
+no rewrite), and the row-less element runs. Q4 A is agreed (write the rows); EM5 measured that a designer re-save leaves
+builder-made rows alone too (experimental cut 2026-11-04; final-cut campaign 2026-11-09, M-37). Should it not, the row-less state is one the designer itself produces and runs, so the
 fallback is a flag, not a redesign.
 
 ### 4.10 C9: build hook and modify wiring (Q10)
 
-- `ProcessBuildHandler.SelectReferencedSources` (`PB/Design/ProcessBuildHandler.cs:157-205`) gains a branch: for every
+- `ProcessBuildHandler.SelectReferencedSources` (`ProcessBuildHandler`) gains a branch: for every
   placed `ProcessSchemaWebService` with a block, C7 Create. It runs before `ApplyDeclarativeContent`
   (`:546-605`), so `mappings[]`, `typeFromElement` parameters, other blocks and formulas see the generated names.
-- `ElementOperations.addElement` (`PB/Operations/ElementOperations.cs:60-160`): C7 Create, then `ConfigureElement`,
+- `ElementOperations.addElement` (`ElementOperations`): C7 Create, then `ConfigureElement`,
   filter, ledger, as for sub-process. `setElement` (`:250-470`): C7 Update. The "no field set" refusal (`:302-303`)
   names `webService`.
 - `ElementConfigurationLedger`: a configuration rule for the kind (C12), since "a kind with no configuration rule yields
@@ -505,7 +528,7 @@ corpus pattern-A processes are its fixtures (plan P-C1, P-C4).
 
 ### 4.12 C11: guards (Q1, Q7, Q13, Q20)
 
-`WebServiceGuards` keeps a job: the multi-instance, SOAP and `timeoutSeconds` refusals and the N3 gate; the
+`WebServiceGuards` keeps a job: the multi-instance and `timeoutSeconds` refusals and the N3 gate; the
 generic-route refusal sits in `UserTaskElementHandler`. The platform-capability guard (a reflection read of
 `IsIgnoreErrors`, its fake-absence tests and the "no IX4 on this version" refusal) is dropped by Q7, 2026-11-03: EM9
 (local compile) showed `origin/main` already fails on 8.3.1.4498 and 8.1.3.6947 for other reasons, so the package's real
@@ -515,9 +538,9 @@ floor is about 8.3.2 and a direct `IsIgnoreErrors` reference adds none (not meas
 | Guard | Where | Behaviour |
 |---|---|---|
 | IX4 feature gate | one single-purpose reader of `DisableIgnoreErrorsInWebServiceUserTask` (over `Features.GetIsEnabled`), behind an interface with a test fake, as the `FileProcessingFeatureReader` precedent (TC-U-96); the only feature read left (the shared reader for the `L18` gate went with Q3) | `ignoreErrors: true` while the feature is on -> saved, notice N3 (run time ignores the flag, g2 (b) traced; the designer hides the checkbox) |
-| generic userTask route | `UserTaskElementHandler`, keyed on the resolved schema UId `e7acb2e5-...`, pattern `RefuseUnconfigurablePageTask` (`PB/Elements/UserTaskElementHandler.cs:382-398`) | refused with a pointer to `type: "webService"` (Q1); today it would build the legacy SOAP stub that 0 processes use (r4 H2) |
+| generic userTask route | `UserTaskElementHandler`, keyed on the resolved schema UId `e7acb2e5-...`, pattern `RefuseUnconfigurablePageTask` (`UserTaskElementHandler`) | refused with a pointer to `type: "webService"` (Q1); today it would build the legacy SOAP stub that 0 processes use (r4 H2) |
 | multi-instance | `MultiInstanceOptions != null` on the element (BP6; 0 in the corpus) | `setElement.webService` on a designer-built element carrying BP6 refused (Q20, TC-U-48); describe issue (TC-U-79). On create there is no such block member: clio's key check refuses `webService.multiInstanceOptions` before sending (TC-C-02, TC-I-03), so the package sees no create case |
-| SOAP | `Type` from C2 is SOAP 1.1 / 1.2 (0 SOAP calls in the corpus) | refused with notice text unless an owner-requested SOAP capture shows the parameter shape is identical (Q20; every service on stand `Creatio`, the 3 shipped and the 3 test services, is REST; EM2's SOAP save S2 was not requested) |
+| SOAP | `Type` from C2 is SOAP 1.1 / 1.2 (0 SOAP calls in the corpus) | not refused: built like REST with N10 (Q20 D, 2026-11-05; EM2 S2-S4 showed the designer's SOAP element has the REST shape, M-33..M-35). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35). |
 | non-array Object service param | C3 | refused (unreachable through the service designer) |
 | nested array-in-array request | end-of-request rule (C12) over every WS element touched by the request: an IN CompositeObjectList item nested in another collection whose own source is None while a leaf below it has a source (the exact pre-fix defect predicate, r1 C7 verdict (a)) | notice N5; the package cannot cheaply read whether the target carries the ENG-55920 fix, so it warns on every target, names the version line and the remedy (map the container) (Q13); suppressing it on fixed builds is decided after EM12 |
 
@@ -526,13 +549,17 @@ floor is about 8.3.2 and a direct `IsIgnoreErrors` reference adds none (not meas
 `WebServiceNotices` owns every sentence of 5.2 (one place, sanitized names, no service data; only N4 carries values:
 the element's dropped stored bindings, process data the caller can already read through describe, M-31). `WebServiceConfigurationRule`
 judges at the end of the request every WS element configured in it: required inputs without any source (N8, the
-designer's own validation marks such an element invalid, r2 §6), N5, N9; and, on modify, every WS element NOT
-configured in it for N7. Notices land in `warnings`.
+designer's own validation marks such an element invalid, r2 §6), N5, N9. N7 is raised, on modify, for every WS element
+of the process, configured in the request or not, through `IWebServiceDriftNotices`, which `ElementConfigurationLedger`
+asks at the end of the request. Notices land in `warnings`. A modify the platform's validation refuses never reaches
+the end of the request; `ProcessSchemaValidator.EnsureValidForSave` then appends the N7 notices to the
+refusal text instead (section 3.3; the drift reporter is asked only when the platform refuses, and a reporter failure
+leaves the platform's refusal as it is).
 
 ### 4.14 C13: mirror refusals (Q6 v1)
 
 - A `typeFromElement` mirror whose source is a WS CompositeObjectList output is refused today with "carries no column
-  identity" (`PB/Parameters/ProcessParameterService.cs:991-1004`). The message gains, for a WS source only, the route
+  identity" (`ProcessParameterService`). The message gains, for a WS source only, the route
   that works: "declare a Collection with itemProperties and map the items from '<el>.<param>'".
 - A mirror whose source is a WS ObjectList output silently creates a parameter with no shape and no binding (r5 C6
   verdict (1), traced): refused with the same pointer.
@@ -580,13 +607,12 @@ All names pass `SafeText.Sanitize`; lists are sorted; no values, except the elem
 |---|---|
 | block missing on create | "Element 'CallEcho' has type webService but no webService block. Send webService.service and webService.method." |
 | block on another type | existing factory sentence, naming `webService` |
-| unknown service | "Element 'CallEcho': no registered web service is named 'UsrEcho'. Registered services: A (caption), B (caption), C (caption). If the service you need is not listed, it has to be registered first in Studio > Web services (base URI, methods, authentication); then repeat the call." (Q10 addition 1) |
+| unknown service | "Element 'CallEcho': no registered web service is named 'UsrEcho'. Registered services: A (caption A; methods: Echo, Ping), B (caption B; declares no methods), C (caption C; methods not readable). If the service you need is not listed, it has to be registered first in Studio > Web services (base URI, methods, authentication); then repeat the call." (Q10 addition 1; methods added by K-1, measured M-47). `WebServiceResolver.ResolveService` sorts the services by name; the first 30 carry their methods (at most 8 each, then ", and N more"; "declares no methods" when the service has none; "methods not readable" when its schema does not load), services 31-100 are listed as `Name (caption)`, the rest counted ("and N more not shown"). When services are left out, the pointer says a service not shown is used by its exact name or UId, and "if the service you need is not registered" replaces "is not listed". One refusal therefore gives service and method (AR-1, M-48) |
 | no service registered | "Element 'CallEcho': no web services are registered on this environment. Register the service in Studio > Web services (base URI, methods, authentication), then repeat the call." (Q10 addition 1) |
-| ambiguous service | "Element 'CallEcho': 'echo' matches several web services (UsrEcho, UsrECHO). Send the exact name or the service UId." |
+| ambiguous service | "Element 'CallEcho': 'echo' matches several web services (UsrECHO (methods: Echo), UsrEcho (methods: Echo)). Send the exact name or the service UId." (the matches with their methods, no caption; K-1) |
 | unknown method | "Element 'CallEcho': web service 'UsrWscEchoService' has no method 'Echoo'. Its methods: Echo, Ping." |
 | ambiguous method | "... matches several methods of 'UsrWscEchoService' (Echo, ECHO). Send the exact name." |
 | `service` alone on setElement (no `method`; nothing written, TC-U-108) | "... webService.service changes the service; send webService.method too. Methods of 'X': ..." |
-| SOAP service (Q20) | "Element 'CallEcho': 'X' is a SOAP service; Call web service elements are built here only for REST services. Configure it in the Process Designer." |
 | multi-instance element (Q20) | "Element 'CallEcho' is a multi-instance Call web service; it is not configurable through this tool." |
 | negative timeout | "webService.timeoutSeconds must be 0 (method default) or a positive number of seconds." |
 | non-array object param | "Method 'X.Echo' has an object parameter 'p' that is not an array; such parameters are not supported." |
@@ -604,11 +630,11 @@ All names pass `SafeText.Sanitize`; lists are sorted; no values, except the elem
 | N3 | IX4 feature gate | "ignoreErrors is saved, but feature DisableIgnoreErrorsInWebServiceUserTask is on, so a failing call still stops the process." | `ignoreErrors: true` while the feature is on |
 | N4 | retarget (Q11 A3) | "CallEcho now calls X.Ping; its parameters were replaced; Success, Response and StatusCode kept. Dropped input bindings: { \"elementName\": \"CallEcho\", \"elementParameter\": \"title_In\", \"processParameter\": \"Title\" }, { \"elementName\": \"CallEcho\", \"elementParameter\": \"mode_In\", \"value\": \"full\" }, { \"elementName\": \"CallEcho\", \"elementParameter\": \"RequestBody\", \"expression\": \"...\" }, ...; re-add those that still apply." Every dropped input binding, `RequestBody` included, in write shape WITH its value (constants and formulas alike), so one call re-applies those that still apply; the values are the element's stored bindings (process data the caller can already read through describe, M-31), not service data (Q16, 4.16) | each retarget with at least one dropped binding |
 | N5 | nested array-in-array (Q13) | "CallEcho: 'items_In.parts_In' has no source of its own while its items are bound. Creatio builds before the platform fix for arrays inside arrays (10.1.37 among them) send no value for this inner list; bind 'items_In.parts_In' to a collection, or build the body in RequestBody." | end of request, per touched element |
-| N6 | cross-package service (Q9) | "Service 'X' is in package P2, which package P1 of this process does not depend on. The Process Designer adds that dependency when it saves; this tool does not. The process runs here, but an export of P1 alone fails at run time; add the dependency." (designer half measured, EM10) | Create / retarget |
-| N7 | unresolved element on modify (Q12) | "WebService3 calls method 'GetTranscripts', which service 'UsrMsGraph' no longer has. Saving this process lets Creatio remove that element's service parameters (Creatio removes them the next time it loads this process from the database), and references to them stop working. Re-select the method in the Process Designer, or change it here with setElement." | end of every modify, per WS element not configured in the request |
+| N6 | cross-package service (Q9) | "Service 'X' is in package P2, which package P1 of this process does not depend on. The Process Designer adds that dependency when it saves; this tool does not. The process runs here, but an export of P1 alone fails at run time; add the dependency." (designer half measured, EM10; builder half measured, M-42) | Create / retarget |
+| N7 | unresolved element on modify (Q12) | "Element 'WebService3' calls method 'GetTranscripts', which service 'UsrMsGraph' no longer has. Saving this process lets Creatio remove that element's service parameters (Creatio removes them the next time it loads this process from the database), and references to them stop working. Point the element at a method that service 'UsrMsGraph' has, with setElement (webService.method); that keeps Success, Response and StatusCode and whatever reads them. Do not save this element in the Process Designer while its method is missing: a designer save deletes every parameter of the element, Success, Response and StatusCode included, with their mapping rows." (the shipping wording, M-54; the earlier cuts ended "Re-select the method in the Process Designer, or change it here with setElement (webService.method).") Refusal form, for an element a refused message names (F-5): the same cause without the re-select sentence; for a service that is not registered: "... calls a web service that is not registered here (UId ...). ... Restore this service by installing the package that carries it, not in Studio > Web services: registered there again, it would get another UId." | end of every modify, per WS element whose service or method does not resolve, configured in the request or not: a settings-only `setElement` does not resolve the method, and the save still runs the platform's load sync (owner, 2026-11-05). Also on a modify the platform's validation refuses (F-2, section 3.3): appended to the refusal after the platform's text, named elements first in the refusal form under the repair-order lead, the others under "Another web service element that no longer resolves:" / "Other web service elements that no longer resolve:"; with no named element the lead is "This process also has a web service element that no longer resolves."; at most 3 notices, then "1 more web service element does not resolve either; describe the process to see it." / "N more ... them." (measured M-51, M-52) |
 | N8 | required input without a source | "CallEcho: required input 'mode_In' has no value; the Process Designer marks such an element invalid." | end of request |
 | N9 | duplicate nested name or tag | "CallEcho: 'items_In' contains two items named 'id_In'; Creatio stops with an error when it runs this element." | Create / retarget |
-| N10 | SOAP (only if an owner-requested SOAP capture allows building it) | "X is a SOAP service; the element was built with the REST parameter rules, which a SOAP capture showed are the same." | only if Q20 allows SOAP |
+| N10 | SOAP service (Q20 D) | "Element 'CallEcho': 'X' is a SOAP service; the element was built with the REST parameter rules, which a designer capture showed are the same." | Create and retarget onto a SOAP 1.1 / 1.2 service, per element; not on a settings-only change |
 
 N11 dropped (Q3, 2026-11-03: nested items are always generated, so there is no flat build to report); the other
 numbers are kept.
@@ -632,13 +658,13 @@ numbers are kept.
 
 | # | Change | Where | Guard |
 |---|---|---|---|
-| K1 | Rebundle the final cut; four PROVENANCE pins; security counts unchanged | `CLIO/clio/CrtProcessBuilder/CrtProcessBuilder.gz`, `CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs` | `BundledProcessBuilderPackageTests` |
-| K2 | `WebServiceBlock` key set (`service`, `method`, `timeoutSeconds`, `ignoreErrors`) linked into `Element` and `ElementUpdate`; describe read-back keys `serviceUId`, `serviceResolved`, `methodResolved`, `issues`, `parameters`; no child key sets (`ProcessBlockKeyCheck` walks children only under write keys, and `service` is a string on both sides) | `CLIO/clio/Command/ProcessModel/ProcessBlockKeyCheck.cs:327-357` | `KeySets_Should_EqualTheMembersOfTheBundledServerContracts`, `ReadBackFields_Should_BeDescribeOnlyMembers` (`service` is on both types with the same shape: a shared key, not a read-back field) |
-| K3 | `"webService"` in `CreateElementBlockShape` (paid inside the wire-bundle headroom, measured on the branch) | `CLIO/clio/Command/McpServer/Tools/ToolContractShortForm.cs:84-88` | `ToolContractShortFormTests:572`, `MaxInlineWireReplyBytes` |
+| K1 | Rebundle the final cut; four PROVENANCE pins; security counts unchanged | `CLIO/clio/CrtProcessBuilder/CrtProcessBuilder.gz`, `BundledProcessBuilderPackageTests` | `BundledProcessBuilderPackageTests` |
+| K2 | `WebServiceBlock` key set (`service`, `method`, `timeoutSeconds`, `ignoreErrors`) linked into `Element` and `ElementUpdate`; describe read-back keys `serviceUId`, `serviceResolved`, `methodResolved`, `issues`, `parameters`; no child key sets (`ProcessBlockKeyCheck` walks children only under write keys, and `service` is a string on both sides) | `ProcessBlockKeyCheck` | `KeySets_Should_EqualTheMembersOfTheBundledServerContracts`, `ReadBackFields_Should_BeDescribeOnlyMembers` (`service` is on both types with the same shape: a shared key, not a read-back field) |
+| K3 | `"webService"` in `CreateElementBlockShape` (paid inside the wire-bundle headroom, measured on the branch) | `ToolContractShortForm` | `ToolContractShortFormTests:572`, `MaxInlineWireReplyBytes` |
 | K4 | Floors: `[RequiresPackage]` on create / modify / modify-as-new-version moves from the literal at `6be5dde28` (1.6.6.127, history) to the cut claimed in the claim comment; one floor-history paragraph; `webService` added to the floor-reason sentences; the capability is proven by probing the archive for `ProcessElementDescriptor.WebService` on the named type, both ways (bundled-packages.md) | `CreateBusinessProcessCommand.cs:215-293`, `ModifyBusinessProcessCommand.cs:227`, `ModifyProcessAsNewVersionCommand.cs:91`, e2e floor literals | `ProcessDesignerRequiresPackageAttributeTests` |
-| K5 | Descriptions (Q15): create type enum gains `webService`; one pointer clause in the `fileProcessing?` shape: `webService? (webService elements only - service + method of a registered REST service; get-guidance name=process-web-service owns the block)`; modify `addElement` and `setElement.elementUpdate` lists; describe read-back clause; `validate-process-graph` buildable list (`ValidateProcessGraphTool.cs:114`); generic-route refusal of `WebServiceUserTask` in `ListUserTasksTool.cs:58-60` | the four process tools + `ListUserTasksTool.cs` | `ToolContractPayloadBudgetTests:315`; e2e TC-I-13 in `ListUserTasksToolE2ETests` (the tool's contract text names `WebServiceUserTask` as refused on the generic route) |
+| K5 | Descriptions (Q15): create type enum gains `webService`; one pointer clause in the `fileProcessing?` shape: `webService? (webService elements only - service + method of a registered web service (REST or SOAP); get-guidance name=process-web-service owns the block)`; modify `addElement` and `setElement.elementUpdate` lists; describe read-back clause; `validate-process-graph` buildable list (`ValidateProcessGraphTool.cs:114`); generic-route refusal of `WebServiceUserTask` in `ListUserTasksTool.cs:58-60` | the four process tools + `ListUserTasksTool.cs` | `ToolContractPayloadBudgetTests:315`; e2e TC-I-13 in `ListUserTasksToolE2ETests` (the tool's contract text names `WebServiceUserTask` as refused on the generic route) |
 | K6 | Prompts: create / modify / describe process prompts, `ListUserTasksPrompt.cs:32` | `CLIO/clio/Command/McpServer/Prompts/ProcessDesigner/*` | prompt pins |
-| K7 | Typed `DescribedWebService`, `DescribedWebServiceService`, `DescribedWebServiceParameter`, each with a `[JsonExtensionData]` bag, mirroring C1 field for field; recount the bag record | `CLIO/clio/Command/ProcessModel/IProcessDescriber.cs`, `CLIO/docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md` | `ServerProcessDescriberTests` |
+| K7 | Typed `DescribedWebService`, `DescribedWebServiceService`, `DescribedWebServiceParameter`, each with a `[JsonExtensionData]` bag, mirroring C1 field for field; recount the bag record | `IProcessDescriber`, `CLIO/docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md` | `ServerProcessDescriberTests` |
 | K8 | Capability map rows; curated-knowledge re-pin to the generation that publishes `process-web-service` | `CLIO/docs/McpCapabilityMap.md:792-798`, `CLIO/clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json` | `WorkspaceTemplateGuidanceDriftTests:539-597` |
 | K9 | MCP e2e `WebServiceElementToolE2ETests`: create + describe, same-request mappings (scalar, constant, item path, RequestBody formula), modify retarget with the guard and N4, refusals with nothing created (unknown service / method lists names), the designer-built EM2 fixture read-only, `validate-process-graph` over a described element, no service-side data (service parameter default, `authInfo`, base-URI credential) in any reply while the element's stored bindings are returned by design; `MinimumPackageVersion` = the bundled version; Ignored with build instructions when `UsrWscEchoService`, `UsrWscDriftService` (with `UsrWscOrders2`), `UsrWscDeadService` or the EM2 fixture `UsrWscEm2CaptureA` is absent; strictly sequential | `CLIO/clio.mcp.e2e/` | manual run on stand `Creatio`, net10 then net8 |
 | K10 | Knowledge records only for facts the code does not say (load-path re-sync prune, measured by EM8; the package's real compile floor of about 8.3.2, EM9, which is why IX4 is referenced directly; BK15 runtime-neutral) | `CLIO/docs/knowledge/ProcessModel/` | `make check-knowledge` (advisory) |
@@ -700,9 +726,11 @@ clio PR stays draft until the KB generation is published and re-pinned (Q19; the
      still apply; a service change always renames the element caption to "<service caption> <N>", a method change
      keeps it; refused while another element, a process parameter, a flow condition or a
      formula reads any parameter of the element other than `Success` / `Response` / `StatusCode` (inputs, nested
-     items and `RequestBody` included); unresolved elements and the load-time prune (N7). A designer save of a process whose web
+     items and `RequestBody` included); unresolved elements and the load-time prune (N7); an unrelated modify that the
+     platform's validation refuses because something reads a pruned parameter, whose refusal carries N7 and the repair order
+     (section 3.3). A designer save of a process whose web
      service element no longer resolves deletes every parameter of that element (result params included) and its
-     BK15 rows and leaves the element `BL11:false` (M-30), so the remedy (fix the service, or retarget the element)
+     BK15 rows and leaves the element `BL11:false` (M-30), so the remedy (a renamed or removed method is restored in Studio > Web services and the request repeated; a service that is no longer registered is restored by installing the package that carries it, not by registering it again in Studio, which would give it another UId and leave the element unresolved; otherwise first remove the reads of the missing parameters, then re-point the element)
      comes before any designer save; describe's `methodResolved: false` is the signal.
   10. Run-time facts: `ProcessParameterCollections` feature for composite values; unbound items are left out of a row;
       before the platform fix for arrays inside arrays an inner object array with no source of its own whose items
@@ -740,10 +768,10 @@ clio PR stays draft until the KB generation is published and re-pinned (Q19; the
 | A package discovery operation | moves the security pins (8 -> 9) (g5 option C) | not planned |
 | Registering a web service (base URI, methods, parameters, authentication) | the element calls registered services only, like the Process Designer (Q10); a separate surface with its own security work | ENG-105475 "Register a REST web service through the AI Toolkit" |
 | Package dependency auto-add on save | cross-element (sub-process has the same gap); the notice covers v1 (Q9) | separate ticket |
-| SOAP methods | 0 in the corpus, none on stand `Creatio`; refused unless an owner-requested SOAP capture shows the same shape (Q20) | follow-up |
+| A non-array complex type on a SOAP method | the SOAP capture (M-33) was entered by hand, where every Object parameter is an array; the shaper's non-array-object refusal covers it | follow-up only if a WSDL import is measured |
 | Multi-instance Call web service | 0 in the corpus; refused (Q20) | follow-up |
 | A `resync` member (bring nested `L18` in line after a service change without changing the method) | Q11 A makes the same pair a no-op; describe reports nested drift | follow-up (sub-process `resync` precedent) |
-| Refusing an unrelated modify of a process with an unresolved WS element (Q12 B), a raw stored read to list the params the load pruned | contract member, budget bytes, a raw metadata read (g4 §6); Q12 A agreed: a notice, no refusal | follow-up (Q12 B); EM8 measured the prune it would prevent |
+| Refusing an unrelated modify of a process with an unresolved WS element (Q12 B), a raw stored read to list the params the load pruned | contract member, budget bytes, a raw metadata read (g4 §6); Q12 A agreed: a notice, no refusal | follow-up (Q12 B); EM8 measured the prune it would prevent. When a pruned parameter is read, the platform's validation already refuses the modify and the refusal carries N7 (M-41, M-51, M-52); Q12 B would add a refusal where nothing reads them |
 | Detecting the ENG-55920 fix on the target | the fix exposes no cheap public marker (g2 (c)) | N5 warns on every target (Q13) |
 | Clearing the latent prune for sub-process | same mechanism, different element | separate ticket |
 
@@ -751,11 +779,7 @@ clio PR stays draft until the KB generation is published and re-pinned (Q19; the
 
 | Claim (traced) | Design part that depends on it | Settled by |
 |---|---|---|
-| The platform load sync is a no-op on a C3-shaped element except the caption suffix | 3.3, 4.5 | C4 probe test, EM5 |
-| The designer re-save leaves builder-made BK15 rows alone (designer-made rows measured unchanged on re-save and row-less elements measured to run, Q4 probe) | 4.9 (Q4) | EM5 |
-| Builder-made bindings (one-item list, P1 rows, RequestBody) send the expected body; responses land in a declared Collection with `ProcessParameterCollections` on | 2.3, 2.4 | not on stand `Creatio` under EP option E4 (no echo endpoint, Q17): the request bytes rest on core unit tests and the ENG-55920 comment; the declared-Collection response needs a JSON source with the `$.orders` shape that E4 lacks. EM6 is reduced to what E4 shows (result params, StatusCode, Success / ignoreErrors behaviour) unless the owner adds a source |
-| A builder-written `IX4` behaves as the designer's (M-28: only a transport failure fails the element when `IX4` is off; an HTTP error status never does) | 4.8, 4.12 | EM7 builder half |
-| The builder's save adds no package dependency for a cross-package service (the designer's does: EM10 designer half, measured) | N6 | EM10 builder half |
+| Builder-made bindings (P1 rows, a constant RequestBody) send the expected wire body; responses land in a declared Collection with `ProcessParameterCollections` on | 2.3, 2.4 | not on stand `Creatio` under EP option E4 (no echo endpoint, Q17): the request bytes rest on core unit tests and the ENG-55920 comment; the declared-Collection response needs a JSON source with the `$.orders` shape that E4 lacks. EM6 is reduced to what E4 shows (result params, StatusCode, Success / ignoreErrors behaviour) unless the owner adds a source. The one-item list from an item mapping and an unmapped RequestBody (null, not "") are measured by EM6-B's trace (M-39); only the wire bytes stay unmeasured |
 | On 10.1.37 (no ENG-55920 fix) an inner object array with no source of its own whose items are bound is sent with no value (null), a mapped inner container is sent; whether such a process saves without error is not measured (r1 C7 verdict) | N5 | not measurable on stand `Creatio` under E4 (Q17): rests on core unit tests and the ENG-55920 comment |
 | Other-culture result captions | 4.4 | not measured (EM2 ran under en-US) |
 
@@ -765,4 +789,8 @@ no cached process and a cold load prunes; a designer save of an unresolved eleme
 BK15 rows, KB-1 item 9), the
 package compile floor (EM9, 4.12), the wrong-case method prune and run failure (EM11, 5.3), the designer's captions,
 suffix scope and element caption (EM2, 4.4), the declared-Collection response shape (EM3 route (b), 2.4), the
-designer's retarget (EM4, 3.2), what `ignoreErrors` does in the designer (EM7, 4.12).
+designer's retarget (EM4, 3.2), what `ignoreErrors` does in the designer (EM7, 4.12). Measured in the final-cut campaign
+on 2026-11-09 and removed (re-run on the shipping build 2026-11-10 except EM5, M-53..M-58): the platform load sync on a
+C3-shaped element and the designer re-save of builder-made BK15 rows (EM5, M-37; the caption suffix follows the last
+writer, 3.3), a builder-written `IX4` behaving as the designer's (EM7 builder half, M-40), and no package dependency
+added by the builder's save (EM10 builder half, M-42).

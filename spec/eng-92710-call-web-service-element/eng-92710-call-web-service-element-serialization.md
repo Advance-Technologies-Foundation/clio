@@ -7,21 +7,15 @@ Basis:
 - crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history only)
 - clio `origin/master` `6be5dde28`; clio-knowledge `origin/master` `5f14ceb`
 - CrtProcessDesigner 7.8.0 and the PackageStore corpus (branch `7.8.0` checkouts)
-- core: `<core>` trunk `468c4c71b` (tag 8.3.3.1722, 2026-01-24) for every core fact. The older
-  `<Creatio2>/TSBpm` checkout (2025-07-21) predates `IX4` and is not used here (g2).
+- core: trunk `468c4c71b` (tag 8.3.3.1722, 2026-01-24) for every core fact. An older core checkout (2025-07-21)
+  predates `IX4` and is not used here (g2).
 - stand `Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131): read-only inventory of 2026-11-02 (r9),
   plus the designer probes and captures of 2026-11-03 (measurements file M-13..M-31; decisions Q4, Q6, Q9, Q11, Q12,
   Q14, Q16)
 
 | Prefix | Root (paths after the prefix are repository-relative) |
 |---|---|
-| `CORE/` | `<core>/TSBpm/Src/Lib/` |
-| `NUI/` | `CORE/Terrasoft.Nui/Resources/Terrasoft/manager/process-flow-element-schema-manager/` (`process-webservice-schema.js` = PWS, `parametrized-process-schema-element.js` = PPE, `process-schema-parameter.js` = PSP, `dynamic-process-schema-parameter.js` = DPSP) |
-| `PD/` | `<PackageStore>/CrtProcessDesigner/branches/7.8.0/` (`Schemas/WebServiceUserTaskPropertiesPage/WebServiceUserTaskPropertiesPage.js` = PAGE) |
-| `PS/` | `<PackageStore>/` (corpus; every process cited is under `<package>/branches/7.8.0/`) |
-| `PB/` | crt-process-builder `origin/main`, `packages/CrtProcessBuilder/Files/src/cs/` |
-| `PBT/` | crt-process-builder `origin/main`, `tests/UnitTests/CrtProcessBuilder.Tests/` |
-| `R/` | `<research notes, local>/` (notes r1-r10, g1-g5, `_workflow-result.json` verdicts) |
+| (none) | Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by schema, class, file or view name only, never by repository path; the client schemas are `process-webservice-schema`, `parametrized-process-schema-element`, `process-schema-parameter` and `dynamic-process-schema-parameter`, the page is `WebServiceUserTaskPropertiesPage`; research notes r1-r10, g1-g5 and the `_workflow-result.json` verdicts are local |
 
 Tags: [traced] read in source, a hypothesis about run time until measured; [corpus] stored PackageStore metadata or
 resources; [measured <date>] counted or observed (corpus scans of 2026-11-02 are this file's own, scripts in the
@@ -30,8 +24,9 @@ that settles it. Decision ids Q1-Q20 are the [decisions](eng-92710-call-web-serv
 agreed by the owner on 2026-11-03; EM ids are the [measurements](eng-92710-call-web-service-element-measurements.md)
 file's. Run as of 2026-11-03: EM0 (M-22), EM1 (M-23), EM2 S1 (M-24), EM3 routes (a) and (b) (M-15, M-25), EM4
 S1-S3 (M-26, M-27), EM9, the designer halves of EM7, EM10 and EM11, EM8's current-builder, service-save and designer
-halves (M-18, M-29..M-31) and the Q4 BK15 probe (M-13). Open: EM5 (the STOP gate), EM6, EM2's read-back on the
-final cut and every builder half on the claimed cut. EP option E4 is chosen (Q17: the test services' base URI is the stand root, no echo
+halves (M-18, M-29..M-31) and the Q4 BK15 probe (M-13). Run since: EM5 on the experimental cut (2026-11-04), and in
+the final-cut campaign of 2026-11-09 EM2's read-back, EM5, EM6, EM6-B and the builder halves (M-36..M-46); the plan's
+late-measurement gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator). EP option E4 is chosen (Q17: the test services' base URI is the stand root, no echo
 endpoint), so EM6's request side and EM12 are not measurable on stand `Creatio`.
 
 Siblings: [README](README.md) · [facts](eng-92710-call-web-service-element-facts.md) ·
@@ -48,7 +43,7 @@ Siblings: [README](README.md) · [facts](eng-92710-call-web-service-element-fact
   untagged result parameters. [traced; corpus: IX1/IX2/BO2/BO3/BP2 66/66, IX3 6/66, IX4 2/66;
   Success/Response/StatusCode 66/66, RequestBody 14/66 (11/25 product); one BK15 row per stored result param:
   52 x 3, 14 x 4]
-- The target shape is the DESIGNER's, not the platform's: the client (PWS) builds the nested `L18` trees, the
+- The target shape is the DESIGNER's, not the platform's: the client (`process-webservice-schema`) builds the nested `L18` trees, the
   `ItemValue` child of a scalar array, the conditional caption suffix, the four result parameters and one `BK15` row
   per result parameter. The platform's `SynchronizeParameters` builds only flat top-level tagged parameters. The
   package therefore owns a port of the client algorithm (Q3) and tolerates the platform sync afterwards (section 7).
@@ -64,7 +59,7 @@ Siblings: [README](README.md) · [facts](eng-92710-call-web-service-element-fact
   designer writes the corpus key sets and the fresh order, the Boolean default on inputs as inferred (SQ5), and the
   caption suffix on TOP-LEVEL parameters only (SQ3, a generator rule). Two stay open: the wire rendering of a
   flattened request object (SQ8, not measurable on the stand under E4) and what a designer re-save does to a
-  builder-made element (SQ13, EM5).
+  builder-made element (SQ13, EM5); SQ13 is now settled by EM5 (measured: passed on the experimental cut 2026-11-04 and in the final-cut campaign 2026-11-09, M-37; a server load drops the top-level caption suffix and a designer save puts it back).
 
 ## 1. Element-level keys
 
@@ -77,13 +72,13 @@ values only. [traced]
 
 | Key | Property | Value the package writes | Default (omitted) | Evidence | Tag |
 |---|---|---|---|---|---|
-| `BL1` | type name | `Terrasoft.Core.Process.ProcessSchemaWebService` | - | `CORE/Terrasoft.Core/Process/ProcessSchemaWebService.cs:22`; 66/66 | traced, corpus |
-| `BL7` | ManagerItemUId | `652b598d-cdd5-49d5-a86d-aafac88213f3` (`ProcessSchemaElementManager.WebServiceTaskUId`) | `Guid.Empty` | `CORE/Terrasoft.Core/Process/ProcessSchemaElementManager.cs:258`; 66/66 | traced, corpus |
+| `BL1` | type name | `Terrasoft.Core.Process.ProcessSchemaWebService` | - | `ProcessSchemaWebService`; 66/66 | traced, corpus |
+| `BL7` | ManagerItemUId | `652b598d-cdd5-49d5-a86d-aafac88213f3` (`ProcessSchemaElementManager.WebServiceTaskUId`) | `Guid.Empty` | `ProcessSchemaElementManager`; 66/66 | traced, corpus |
 | `BO2` | SerializeToDB | `true` (set by `Initialize()`) | `false` | `ProcessSchemaWebService.cs:85-91`; `ProcessSchemaFlowNode.cs:20-21`; 66/66 | traced, corpus |
 | `BO3` | IsLogging | `true` (set by `Initialize()`) | `false` | same; 66/66. Side effect: a `false` is never written and reloads as `true` (verdict r3-C2) | traced, corpus |
 | `IX1` | ServiceSchemaUId | the resolved service's `SysSchema` UId (Q9) | `Guid.Empty` | `ProcessSchemaWebService.cs` writer; 66/66 | traced, corpus |
 | `IX2` | MethodName | the method's canonical NAME (not a UId), spelled as the service stores it (Q9) | `""` | 66/66 | traced, corpus |
-| `IX3` | Timeout, int, milliseconds | `timeoutSeconds * 1000` (Q8); 0 or absent = unset | `0` | page saves `seconds * 1000` (PAGE `saveValues`, verdict r2-C2(4)); corpus 6/66: 600000, 1000000 x2, 5000, 1000 x2, all multiples of 1000 | traced, corpus |
+| `IX3` | Timeout, int, milliseconds | `timeoutSeconds * 1000` (Q8); 0 or absent = unset | `0` | page saves `seconds * 1000` (`WebServiceUserTaskPropertiesPage` `saveValues`, verdict r2-C2(4)); corpus 6/66: 600000, 1000000 x2, 5000, 1000 x2, all multiples of 1000 | traced, corpus |
 | `IX4` | IsIgnoreErrors, bool | `true` when `ignoreErrors: true`, set directly on `IsIgnoreErrors` (Q7: no reflection guard; EM9) | `false` | `ProcessSchemaWebService.cs:22-23, 32, 88-89, 135-136, 205` (commit `5e53b027c9b`, first in `builds-windows/8.3.2.3590`); corpus 2/66, both `true`, both BusinessRulesTest, saved 2025-11-20 (g2) | traced, corpus |
 | `BP2` | Parameters | section 2 and 3 | always written | `ProcessSchemaActivity.cs:41`; 66/66 | traced, corpus |
 | `BP6` | MultiInstanceOptions | absent: v1 refuses multi-instance on `webService` (Q20) | written only when not null | `ProcessSchemaActivity.cs:555-567`; 0/66 carry it | traced, corpus |
@@ -104,8 +99,8 @@ after the method change) and after it pruned an element whose method is gone (EM
 
 | Key | Note | Tag; settled by |
 |---|---|---|
-| `IX4` | On a core without commit `5e53b027c9b` (< 8.3.2.3590: 8.1.3.6947, 8.3.1.4498 measured) the member is absent and a raw `IX4` key is read past and dropped on the next save. EM9 (2026-11-03): the package on `origin/main` already fails to compile on both of those cores for other reasons (CS1061/CS0117 on 8.3.1.4498, MSB3245 on 8.1.3.6947) and builds on 8.3.2.4199, so the direct `IsIgnoreErrors` reference adds no floor. Effective at run time only while feature `DisableIgnoreErrorsInWebServiceUserTask` is off (`CORE/Terrasoft.Services/WebServiceUserTaskImplementation.cs:137-138`); the 7.8.0 page hides the checkbox under the same gate (PAGE `:70-72`). | g2 (measured binaries); EM9 (measured, local builds); EM0 (feature state), EM7 (run time) |
-| `IX3` | The element timeout schedules an actor cancel (`Runtime/HttpWebRequestActor.cs:94-100`); the METHOD's own timeout (service `IR3`) is the `HttpWebRequest.Timeout`. The page shows `Math.ceil(ms/1000)`, so a ms value that is not a multiple of 1000 does not round-trip through the designer; the builder only writes multiples of 1000, and describe reports a stored value as `ms / 1000`, a fraction, not rounded (Q8, design 2.5). Changing the service on the page resets the timeout to 0 (verdict r2-C2(4)). | traced; EM4 records what a method change keeps |
+| `IX4` | On a core without commit `5e53b027c9b` (< 8.3.2.3590: 8.1.3.6947, 8.3.1.4498 measured) the member is absent and a raw `IX4` key is read past and dropped on the next save. EM9 (2026-11-03): the package on `origin/main` already fails to compile on both of those cores for other reasons (CS1061/CS0117 on 8.3.1.4498, MSB3245 on 8.1.3.6947) and builds on 8.3.2.4199, so the direct `IsIgnoreErrors` reference adds no floor. Effective at run time only while feature `DisableIgnoreErrorsInWebServiceUserTask` is off (`WebServiceUserTaskImplementation`); the 7.8.0 page hides the checkbox under the same gate (`WebServiceUserTaskPropertiesPage`). | g2 (measured binaries); EM9 (measured, local builds); EM0 (feature state), EM7 (run time) |
+| `IX3` | The element timeout schedules an actor cancel (`HttpWebRequestActor`); the METHOD's own timeout (service `IR3`) is the `HttpWebRequest.Timeout`. The page shows `Math.ceil(ms/1000)`, so a ms value that is not a multiple of 1000 does not round-trip through the designer; the builder only writes multiples of 1000, and describe reports a stored value as `ms / 1000`, a fraction, not rounded (Q8, design 2.5). Changing the service on the page resets the timeout to 0 (verdict r2-C2(4)). | traced; EM4 records what a method change keeps |
 | `IX1`/`IX2` | Not validated on save by any rule; the effective check is the next design load (section 7). An empty `IX1` clears every parameter on load; a non-resolving `IX2` (wrong case included: `FindByName` is ordinal) prunes every tagged parameter. Measured 2026-11-03: a wrong-case `IX2` saves green, the next load shows only the result params, and the run fails with `ItemNotFoundException` (EM11, designer half); an unrelated modify through the current builder then deletes the 8 tagged params from the database (EM8, current-builder half). | traced (g4 §1); measured (EM8, EM11) |
 
 ## 2. Generated parameters (tagged)
@@ -115,14 +110,14 @@ after the method change) and after it pruned an element whose method is gone (EM
 | Key | Value | Evidence | Tag |
 |---|---|---|---|
 | `BL1` | `Terrasoft.Core.Process.ProcessSchemaParameter` (751/751, the client's DynamicProcessSchemaParameter serializes under the server type name too) | g1 §b | corpus |
-| `UId` | fresh GUID per parameter, per level | PWS `_getParameterConfig` | traced, corpus |
-| `A2` | `<service param name>_In` (request) / `_Out` (response), at every level | PWS `:179-181`, `:272`; 539/539 tagged (297 top-level + 242 nested) satisfy `A2 = L17 + suffix` (verdict r2-C3) | traced, corpus |
+| `UId` | fresh GUID per parameter, per level | `process-webservice-schema` `_getParameterConfig` | traced, corpus |
+| `A2` | `<service param name>_In` (request) / `_Out` (response), at every level | `process-webservice-schema`, `:272`; 539/539 tagged (297 top-level + 242 nested) satisfy `A2 = L17 + suffix` (verdict r2-C3) | traced, corpus |
 | `A3`, `A4` | `<process UId>` at every level (751/751) | client: element `createdInSchemaUId`; server provider: `BaseProcessSchema.UId`; equal on every shipped element (g1 §b) | traced, corpus |
-| `IL2` | `<element UId>` at every level (297/297 top-level, 242/242 nested) | PWS `_getParameterConfig` sets `containerUId: this.uId` recursively (g1 §b) | traced, corpus |
+| `IL2` | `<element UId>` at every level (297/297 top-level, 242/242 nested) | `process-webservice-schema` `_getParameterConfig` sets `containerUId: this.uId` recursively (g1 §b) | traced, corpus |
 | `L1` | type map 2.2 | | |
 | `L8` | `{}` when unbound; `{"GS2":"false","GS5":<P>}` for any Boolean (2.4); a binding otherwise (section 5) | | |
 | `L6` | `true` only by the required rule 2.3; never written as `false` | `L6` appears only when true (g1 §b) | traced, corpus |
-| `L17` | `<service param name>`; for the `ItemValue` child `<name>ItemValue` | PWS `:244-253`, `:272`; verdict r2-C3 | traced, corpus |
+| `L17` | `<service param name>`; for the `ItemValue` child `<name>ItemValue` | `process-webservice-schema`, `:272`; verdict r2-C3 | traced, corpus |
 | `L12` | `0` In / `1` Out, written on EVERY parameter (only `Variable` is the default) | g1 §b | corpus |
 | `L18` | nested items, only on arrays (2.5) | | |
 
@@ -131,13 +126,13 @@ Measured key sets (g1 §b, 66 elements): top-level tagged `BL1 UId A2 A3 A4 IL2 
 writer order is `BL1, UId, A2, A3, A4, IL2, L1, L8, L6, L17, L12, L18` (`IdentitySync`
 `IdentitySynchronizationAddRights` `WebService2.clientId_In`). Absent on every WS parameter: `A5`, `BL11` (unless an
 invalidation wrote `false`, section 7), `L2`-`L5`, `L9`, `L11` (IsValueSerializable default `true`), `L13`-`L16`,
-`IsLazy`, `SourceParameterUId`; no caption key (captions go to resources, PSP `:619-638`). [traced, corpus]
+`IsLazy`, `SourceParameterUId`; no caption key (captions go to resources, `process-schema-parameter`). [traced, corpus]
 
 ### 2.2 Type map (`L1`)
 
 Rule, identical in the client and the server provider: `name = DataValueTypeName`, or `MaxSizeText` when blank; if
 `IsArray`: `CompositeObjectList` when the name is `Object`, else `ObjectList`; resolve by name; unknown or `Text` ->
-`MaxSizeText`. [traced: PWS `:210-221`; `CORE/Terrasoft.Services/ProcessSchemaWebServiceParametersProvider.cs:26-37`;
+`MaxSizeText`. [traced: `process-webservice-schema`; `ProcessSchemaWebServiceParametersProvider`;
 verdicts r3-C3, r8-C3]
 
 | Service param (`IU2`, `IU3`) | `L1` | Corpus (top-level + nested tagged, g1/r2) |
@@ -162,9 +157,9 @@ verdicts r3-C3, r8-C3]
 |---|---|---|---|
 | required In scalar, required In object array | `true` | 40 top-level In | corpus |
 | any Out parameter, even with `IU7 = true` | absent (`UsrResponse_Out` of a required `UsrResponse`) | verdict r9-S2(1) | corpus |
-| required In scalar array (ObjectList parent) | absent | PWS `:226-230` | traced; corpus 2 exceptions = legacy drift (`ProcessTests` `UsrRuntimeCollectionFormulas` `WebService3/4.UsrArray_In`) |
+| required In scalar array (ObjectList parent) | absent | `process-webservice-schema` | traced; corpus 2 exceptions = legacy drift (`ProcessTests` `UsrRuntimeCollectionFormulas` `WebService3/4.UsrArray_In`) |
 | its `ItemValue_In` child | `true` (child computed with `isArray: false`) | 6/6 nested `L6` are such children | traced, corpus |
-| UrlSegment request param | service `IsRequired` is RECOMPUTED on read as `DefValue` empty (`Metadata/ServiceParameter.cs:230-235`), so `L6 = true` exactly when the segment has no default | r3 §2 | traced; measured (EM4 S2, M-26: `UsrWscGet` UrlSegment `UsrWscId`, Text, no default, path `/{UsrWscId}`, stored `UsrWscId_In` `L6 = true`; the required Query `UsrWscQ_In` `L6 = true` too) |
+| UrlSegment request param | service `IsRequired` is RECOMPUTED on read as `DefValue` empty (`ServiceParameter`), so `L6 = true` exactly when the segment has no default | r3 §2 | traced; measured (EM4 S2, M-26: `UsrWscGet` UrlSegment `UsrWscId`, Text, no default, path `/{UsrWscId}`, stored `UsrWscId_In` `L6 = true`; the required Query `UsrWscQ_In` `L6 = true` too) |
 
 ### 2.4 Value (`L8`) of an unbound generated parameter
 
@@ -176,12 +171,12 @@ verdicts r3-C3, r8-C3]
 
 The server writes `GS2` for a non-localizable type whenever Value is non-null, and `GS5` when non-empty
 (`ProcessSchemaParameterValue.cs:459-470`), so the port sets `Value = "false"` AND `ModifiedInSchemaUId = <P>`
-explicitly; leaving them unset yields `{}`. Where the client sets `"false"` was not pinned (PSP
-`convertDataValueByType` `:974-978` is the candidate) (g1 §b). [traced]
+explicitly; leaving them unset yields `{}`. Where the client sets `"false"` was not pinned (`process-schema-parameter`
+`convertDataValueByType` is the candidate) (g1 §b). [traced]
 
 Service parameter DEFAULTS (`IU5`, Const or SysSetting) are never copied into the element: an unbound parameter is
 `{}` and the run time skips it, so the service default reaches the wire (`WebServiceUserTaskImplementation.cs:53-55`
-`ShouldSkip`; `Runtime/ServiceParameterValueProvider.cs:66-77`). Defaults can hold secrets (Bearer header,
+`ShouldSkip`; `ServiceParameterValueProvider`). Defaults can hold secrets (Bearer header,
 basic-auth password, g5); the element bytes never carry them, and describe never reads them (Q14, Q16). [traced]
 Measured 2026-11-03 for the designer (decisions Q14, Q16): on `GeminiApiSearch.GenerateContent` every input's `L8` is
 empty, the API-key header `Xgoogapikey_In` included; on `UsrWscEchoService` the header `UsrWscProbe` (service `IU5
@@ -193,13 +188,13 @@ unbound header is not measured (needs an echo endpoint; E4).
 
 | Service shape | Element shape | Evidence | Tag |
 |---|---|---|---|
-| scalar array `X` (`IU3`, not Object) | ObjectList `X_<dir>` with EXACTLY one child: `A2 = XItemValue_<dir>`, `L17 = XItemValue`, `L1` = the item's primitive type (MaxSizeText 13, Integer 10, Guid 1), no `L18`, `L6` per 2.3, caption `DefaultNestedParameterCaption` | PWS `:244-253` (`Ext.merge({}, svcParam, {isArray:false, name: svcName+"ItemValue"})`); 24/24 ObjectList, `L17` 24/24 | traced, corpus |
-| object array `X` with item properties `IU6` | CompositeObjectList `X_<dir>`, `L18` = one child per `IU6` item in service order, each built by the same rules recursively (names suffixed, tags raw, `IL2` = element, `A3`/`A4` = process) | PWS `_getItemProperties` `:235-255`; 55/56 (the 1 without `L18` is the stale `UsrUpdateLabelsCopy_In`); 76/76 joinable `L18` sets equal the service `IU6` exactly (verdict r3-C3) | traced, corpus |
+| scalar array `X` (`IU3`, not Object) | ObjectList `X_<dir>` with EXACTLY one child: `A2 = XItemValue_<dir>`, `L17 = XItemValue`, `L1` = the item's primitive type (MaxSizeText 13, Integer 10, Guid 1), no `L18`, `L6` per 2.3, caption `DefaultNestedParameterCaption` | `process-webservice-schema` (`Ext.merge({}, svcParam, {isArray:false, name: svcName+"ItemValue"})`); 24/24 ObjectList, `L17` 24/24 | traced, corpus |
+| object array `X` with item properties `IU6` | CompositeObjectList `X_<dir>`, `L18` = one child per `IU6` item in service order, each built by the same rules recursively (names suffixed, tags raw, `IL2` = element, `A3`/`A4` = process) | `process-webservice-schema` `_getItemProperties` `:235-255`; 55/56 (the 1 without `L18` is the stale `UsrUpdateLabelsCopy_In`); 76/76 joinable `L18` sets equal the service `IU6` exactly (verdict r3-C3) | traced, corpus |
 | object array inside an object array | nested CompositeObjectList with its own `L18`; corpus depth: CompositeObjectList nests 2 deep at most | Gemini `Candidates_Out > CParts_Out > PText_Out` | corpus |
-| scalar array inside an object array | nested ObjectList with its `ItemValue` child; deepest corpus path 4 parameter levels / 3 collection levels | `Candidates_Out > GMGSupports_Out > GSGCIndices_Out (ObjectList) > GSGCIndicesItemValue_Out (Integer)` (`PS/CrtGeminiApiIntegraion/.../ActionGeminiSearch`) | corpus |
+| scalar array inside an object array | nested ObjectList with its `ItemValue` child; deepest corpus path 4 parameter levels / 3 collection levels | `Candidates_Out > GMGSupports_Out > GSGCIndices_Out (ObjectList) > GSGCIndicesItemValue_Out (Integer)` (`ActionGeminiSearch`) | corpus |
 | array-in-array REQUEST (object array holding a nested array) | same bytes as above on the In side; corpus has none with a nested array on In (max request depth 2, r6 §6) | EM2 `UsrWscOrders_In` (nested `UsrWscLines_In`, `UsrWscTags_In` with its `ItemValue` child) | measured (EM2, M-24, SQ7); run time not measurable on stand `Creatio` under E4 (section 6 I15) |
 
-The client builds `L18` only while client feature `ProcessParameterCollections` is on (or debug) (PWS `:237`). The
+The client builds `L18` only while client feature `ProcessParameterCollections` is on (or debug) (`process-webservice-schema`). The
 port does not copy that gate (Q3, agreed 2026-11-03): it always writes `L18` and the `ItemValue` child. Basis: every
 checked build from 7.13 to 10.2.931 ships `Feature-ProcessParameterCollections=true` in Web.config / WebHost config,
 which the run-time re-keying reads; the client readers read DB rows only, so on a clean 8.2.1+ database the designer
@@ -222,7 +217,7 @@ stand 2026-11-02 and 2026-11-03]
 Fresh build (designer = port): `[In tagged, service request order][Out tagged, service response order][Success,
 Response, StatusCode, RequestBody]`; `L18` children in service `IU6` order. The page's caption sort is UI only. A
 parameter the service gains after the first sync is APPENDED at the end, after the result parameters, by both the
-client (PWS `:332`) and the server sync (`ProcessSchemaParameterCollection.cs:50-55`). [traced; g1 §a, g4 §4]
+client (`process-webservice-schema`) and the server sync (`ProcessSchemaParameterCollection.cs:50-55`). [traced; g1 §a, g4 §4]
 
 | Shape | Elements (g1 §a) |
 |---|---|
@@ -246,7 +241,7 @@ come from the platform sync (section 7).
 | `Success` | Boolean `90b65bf8-...` | 1 | `{"GS2":"false","GS5":<P>}` | `GetByName` in `FillResultParameters`: throws when missing; `200 <= code < 400` | 66/66 (L8 as shown 61/66) |
 | `Response` | Text `8b3f29bb-ea14-4ce5-a5c5-293a929b6ba2` (not MaxSizeText) | 1 | `{}` | `GetByName`, raw body | 66/66 |
 | `StatusCode` | Integer `6b6b74e2-...` | 1 | `{}` | `GetByName` | 66/66 |
-| `RequestBody` | Text `8b3f29bb-...` | 0 | `{}` unbound; a binding otherwise (5.2 B6) | `FindByName` (optional); a NON-NULL value replaces the generated body entirely (`Runtime/ServiceClientRequest.cs:241-252`) | 14/66 (11/25 product): the current client always adds it, so its absence dates a save (verdict r6-C4) |
+| `RequestBody` | Text `8b3f29bb-...` | 0 | `{}` unbound; a binding otherwise (5.2 B6) | `FindByName` (optional); a NON-NULL value replaces the generated body entirely (`ServiceClientRequest`) | 14/66 (11/25 product): the current client always adds it, so its absence dates a save (verdict r6-C4) |
 
 Key set `BL1 UId A2 A3 A4 IL2 L1 L8 L12`: no `L17`, no `L6`, no `L18` (212/212). `A3 = A4 = <P>`, `IL2 = <E>`. The
 missing `L17` is load-bearing: the platform sync removes only TAGGED parameters it does not produce, so a tagged
@@ -255,7 +250,7 @@ result parameter would be deleted on the next load (section 7). The port writes 
 
 ### 3.2 `BK15` (`ProcessSchemaMapping`) rows
 
-One row per result parameter, created by the CLIENT only (PPE `_updateMapping` -> `createMappingInfo`
+One row per result parameter, created by the CLIENT only (`parametrized-process-schema-element` `_updateMapping` -> `createMappingInfo`
 `:128-137, :480-499`, reached through `_synchronizeResultParameters`); the server never writes them; no reader at
 run time or in the server design-time sync depends on them (g1 §c). Byte parity only; the package writes them (Q4,
 agreed 2026-11-03), the first rows it authors itself. [traced]
@@ -290,8 +285,8 @@ value object for `GT1` (Success `{Value:"false"}` without `ModifiedInSchemaUId`)
 writes `GS5` into Success `GT1`. A later `RequestBody` binding through `ProcessMappingService.Commit` assigns
 `SourceValue`, so the setter keeps `GT1 == L8` for free, which is Gemini's stored shape. The package's
 `removeElement` already deletes every row whose `TargetMetaPath` contains the element UId
-(`PB/Graph/ProcessGraphBuilder.cs:1915-1922`). A designer re-save leaves designer-written rows as they are (Q4 probe);
-whether it duplicates or rewrites PACKAGE-written rows is EM5 (SQ13). [traced; measured for designer rows]
+(`ProcessGraphBuilder`). A designer re-save leaves designer-written rows as they are (Q4 probe);
+it neither duplicates nor rewrites PACKAGE-written rows either (SQ13, EM5 (measured: passed on the experimental cut 2026-11-04 and in the final-cut campaign 2026-11-09, M-37; a server load drops the top-level caption suffix and a designer save puts it back)). [measured]
 
 Tagged parameters (297 top-level, 242 nested) never get a row; neither does any user binding. [corpus]
 
@@ -302,11 +297,11 @@ Captions, display values and localizable constant values live in `Resources/<Pro
 
 | Key | Value | Evidence | Tag |
 |---|---|---|---|
-| `BaseElements.<El>.Caption` | designer: `generateItemUniqueName(<service caption> + " ")` -> `<service caption> <N>`; kept on a method change, renamed on a service change | PAGE `:270-286`; "JiraRuntimeCollection 1", "InvalidUrlService 1"; Bing's is `https://api.bing.microsoft.com 1`; EM2 "WSC echo service 1" (M-24), EM4 S3 "WSC drift service 1" (M-26) | traced, corpus, measured (SQ12) |
-| `BaseElements.<El>.Parameters.<A2>.Caption` | clone of the service parameter caption (all cultures the service has) | PWS `:192-205` | traced, corpus |
-| nested: `BaseElements.<El>.Parameters.<A2>.<A2 child>...Caption` | path joined by `.` from parameter NAMES, e.g. `...Parameters.Candidates_Out.GMGSupports_Out.GSGCIndices_Out.GSGCIndicesItemValue_Out.Caption` | `PS/CrtGeminiApiIntegraion/.../Resources/ActionGeminiSearch.Process/resource.en-US.xml`; 508/509 top-level and 242/242 nested have a row (g1 §b) | corpus |
+| `BaseElements.<El>.Caption` | designer: `generateItemUniqueName(<service caption> + " ")` -> `<service caption> <N>`; kept on a method change, renamed on a service change | `WebServiceUserTaskPropertiesPage`; "JiraRuntimeCollection 1", "InvalidUrlService 1"; Bing's is `https://api.bing.microsoft.com 1`; EM2 "WSC echo service 1" (M-24), EM4 S3 "WSC drift service 1" (M-26) | traced, corpus, measured (SQ12) |
+| `BaseElements.<El>.Parameters.<A2>.Caption` | clone of the service parameter caption (all cultures the service has) | `process-webservice-schema` | traced, corpus |
+| nested: `BaseElements.<El>.Parameters.<A2>.<A2 child>...Caption` | path joined by `.` from parameter NAMES, e.g. `...Parameters.Candidates_Out.GMGSupports_Out.GSGCIndices_Out.GSGCIndicesItemValue_Out.Caption` | `resource.en-US.xml`; 508/509 top-level and 242/242 nested have a row (g1 §b) | corpus |
 | `ItemValue` child | `DefaultNestedParameterCaption` = `Item value` (18; `Значение элемента` 6: the designing user's culture written under en-US) | g1 §b | corpus |
-| suffix | ` - Input` / ` - Output` appended in every culture ONLY when the same caption occurs more than once among the TOP-LEVEL parameters across the method's request and response; a nested item never gets it and is not counted | PWS `:192-205` (`filteredParameters.getCount() > 1`); verdict r2-C5(3); EM2 (M-24) | traced; measured for a fresh save (SQ3); the corpus stored form is inconsistent (below) |
+| suffix | ` - Input` / ` - Output` appended in every culture ONLY when the same caption occurs more than once among the TOP-LEVEL parameters across the method's request and response; a nested item never gets it and is not counted | `process-webservice-schema` (`filteredParameters.getCount() > 1`); verdict r2-C5(3); EM2 (M-24) | traced; measured for a fresh save (SQ3); the corpus stored form is inconsistent (below) |
 | Success / Response / StatusCode / RequestBody | `Success`, `Response body`, `Http status code`, `Request body` (`Terrasoft.Nui.resx`) | 57 en-US + 9 Russian rows in en-US files | traced, corpus |
 | bound parameter | `.DisplayValue` (112 rows) and, for a constant on a localizable type, `.Value` (14) | g1 §b; 5.2 B3 | corpus |
 
@@ -325,7 +320,7 @@ top-level pair `UsrWscStatusIn_In` / `UsrWscStatus_Out` is "Status - Input" / "S
 request item `UsrWscOrders_In.UsrWscOrdNo_In` and the top-level response `UsrWscEchoText_Out` both stay plain
 "Reference": the current designer counts TOP-LEVEL parameters only, so the corpus's nested `Id - Output` comes from an
 older designer. Its cost (EM4 S1, M-27): the designer's formula window resolves an output by caption and bound the
-nested INPUT "Reference" instead of the output. Whether a re-save strips the suffix is EM5 (SQ13).
+nested INPUT "Reference" instead of the output. A server load strips the suffix and a designer save puts it back, so the stored caption follows the last writer (SQ13, EM5 measured 2026-11-04; AD1).
 
 Culture: the client writes captions as plain strings, i.e. in the designing user's culture; the package writes
 localizable values in the request thread's culture (precedent ENG-95985 Send email attachments, serialization 2.3). Parity compares the
@@ -333,7 +328,7 @@ authoring culture only (8.3 AD4). [traced, inferred]
 
 Display values the package writes for bindings come from the existing mapping service. On 1.6.6.125 it stored the
 bare caption for a TOP-LEVEL source, where the designer stores `[#<element caption>.<param caption>#]` (ENG-95985
-serialization 2.2 AD1, `PB/Mappings/ProcessMappingService.cs:963-967`); the designer form for a web-service input is
+serialization 2.2 AD1, `ProcessMappingService`); the designer form for a web-service input is
 corpus, e.g. `[#Put build in queue.Id#]` (`ExecuteUpgradeBsf` `WebService2.Id_In`), `[#GetArray.Array:Item value#]`
 (item). The current designer's forms are measured (M-24, M-25): a process-parameter source `[#PText#]`, a formula
 `[#PCount#] + 1`, an element output `[#WSC drift service 1.UsrWscOrd2#]`, its nested items joined by `:`
@@ -348,8 +343,8 @@ in source before TC-P-05; until then it is allowed difference AD3 (resources are
 Every parameter -> parameter binding the package writes is `{"GS1":3, "GS2":"[#<meta path>#]", "GS5":<P>}`, with
 `<meta path>` = `M[Parameter:{<uid>}]` for a process parameter and `M[Element:{<container>}].[Parameter:{<uid>}]` for
 an element parameter at any depth (a nested item is addressed by its OWN UId, no collection segment), `M` =
-`[IsOwnerSchema:false].[IsSchema:false].` (g3 M6; `PB/Mappings/ProcessMappingService.cs:1071-1077, 1117-1120`;
-`CORE/Terrasoft.Core/Process/ProcessSchemaParameter.cs:1072-1085`). Formulas, constants and record columns run no
+`[IsOwnerSchema:false].[IsSchema:false].` (g3 M6; `ProcessMappingService`;
+`ProcessSchemaParameter`). Formulas, constants and record columns run no
 collection rule (g3 M2). `Tag` is read nowhere on the mapping path (g3 §4). The rules need no change for the three
 corpus composite shapes (g3 §5). [traced]
 
@@ -430,7 +425,7 @@ pruned, with no issue (EM8, M-29).
 
 Consequences for the bytes, not the design (the design file owns the notices): the generator's output must be a
 fixed point of the sync on its top-level fields (I1, I2, I6, I9); the parity rule tolerates the top-level caption
-suffix both ways until EM5 (AD1); a comparator must not require "result params last" for a capture that was
+suffix both ways, as EM5 measured it flips with the last writer (AD1); a comparator must not require "result params last" for a capture that was
 re-synced (8.2 W9).
 
 ## 8. Parity method (AC5)
@@ -445,12 +440,12 @@ re-synced (8.2 W9).
 | corpus pair 1: CrtBase `CheckMarketplaceAppNeedUpdateSubProcess` / `CreatioMarketplaceApi` | flat request and response, Query params with Const/SysSetting defaults, B2 formulas, B4b entity column, `IX3` 600000, 4 result params, 4 rows with a STALE `A2` (`WebService2`) | A: committed verbatim |
 | corpus pair 2: CrtGeminiApiIntegraion `ActionGeminiSearch` / `GeminiApiSearch` | composite response 4 levels incl. ObjectList + `ItemValue`, header defaults, B6 `RequestBody` formula with `GT1 == L8`, B8 process Collection | A |
 | corpus pair 3: StudioFreeUpdate `ExecuteUpgradeBsf` / `teamcitybpmonline_BSF` | composite REQUEST (`PropertiesProperty_In`, B5 item-level), nested Boolean default, B4 element output, 2 elements, NO `RequestBody` (2020 save), nested caption suffix | A |
-| platform writer JSON | the package's own parameter written by `WriteMetaData` and read back, diffed against a quoted corpus parameter | C (precedent `PBT/FileProcessParameterTests.cs` `WriteMetaData`/`ReadBack`/`Diff`) |
+| platform writer JSON | the package's own parameter written by `WriteMetaData` and read back, diffed against a quoted corpus parameter | C (precedent `FileProcessParameterTests` `WriteMetaData`/`ReadBack`/`Diff`) |
 
-The three pairs are drift-free on tags against their committed service (`R/scripts/crosscheck.txt` lists none of
+The three pairs are drift-free on tags against their committed service (the local research notes lists none of
 them) and keep the fresh `BP2` order. [measured 2026-11-02]
 
-Corpus fixtures to commit (pattern A), byte for byte, under a new `PBT/Fixtures/WebService/` with its own
+Corpus fixtures to commit (pattern A), byte for byte, under a new `WebService` with its own
 `PROVENANCE.md` (SHA-256 as the LAST cell of each row, the layout the existing oracle's hash reader expects) and a
 `.gitattributes` `-text` rule for the folder in the same commit. AC8 / Q16 govern builder OUTPUT (describe, refusals,
 notices, logs, test snapshots of builder output), not these files: they are copied verbatim from the shipped
@@ -458,7 +453,7 @@ PackageStore corpus into the internal package repository and may carry the shipp
 defaults. They are not redacted (the SHA pins); TC-P-08 asserts that no committed file carries a credential (no `IQ5`
 value with `IV2` 1, no Const `Authorization` default). Measured 2026-11-02 in the PackageStore checkout:
 
-| File (`PS/`, under `branches/7.8.0/Schemas/`) | Bytes | SHA-256 | First bytes | Saved (`ModifiedOnUtc`) |
+| File (shipped corpus, `branches/7.8.0`) | Bytes | SHA-256 | First bytes | Saved (`ModifiedOnUtc`) |
 |---|---|---|---|---|
 | `CrtBase/.../CheckMarketplaceAppNeedUpdateSubProcess/metadata.json` (process `b08d57c4-b1f4-4a1e-8146-b528e7fff3de`) | 109,079 | `d79f889800f948e017e725055a673dc87ebb36b85dfbbf5a295a855c94e92358` | `7b 0d 0a` (no BOM, CRLF) | 2023-07-06 |
 | `CrtBase/.../CreatioMarketplaceApi/metadata.json` (service `1ee7f166-3184-47d5-8164-43ffee35dec9`) | 4,355 | `a06df74e0d9e54ecac35a52db74b1211f247f9f94f166f48960e5066df36eb18` | `ef bb bf` (BOM) | 2023-07-04 |
@@ -478,7 +473,7 @@ shows whether the stand copy differs; it is not yet a step of EM0. Resource file
 committed: their resources are compared on the stand only (W13).
 
 Pattern B storage (EM2, EM3, EM4; EM5 is a re-save diff, not a fixture): the reads are committed REDACTED under
-`PBT/Fixtures/WebService/Stand/`, not byte-verbatim. The stand address is replaced by `<stand>` before saving
+`Stand`, not byte-verbatim. The stand address is replaced by `<stand>` before saving
 (measurements rule 11): the service `IQ1` and any value that carries it, such as a designer default element caption
 `<base URI> <N>` (r9 §3.2). `PROVENANCE.md` records, per file, the capture date, the platform and package versions
 from EM0, the redacted keys and the SHA-256 of the committed (redacted) bytes. Under WSCR the redacted keys are
@@ -519,14 +514,14 @@ element name, against the same service. Each step says what may differ; anything
 | AD7 | Success `L8` `{}` instead of `{"GS2":"false","GS5":<process>}` on a capture side | 5 ProcessTests elements store it (61/66 carry the Boolean default, 2.4) | none: corpus sweep only, in no committed pair |
 | AD8 | a stale CompositeObjectList without `L18` on a capture side | `UsrUpdateLabelsCopy_In` (55/56 carry `L18`, 2.5) | none: corpus sweep only |
 | AD9 | a parameter type drifted from its service on a capture side | `UpdateBsfNotification` `Chatid`: Text in the service, Integer in the process (484/486 type pairs match, verdict r6-C3) | none: corpus sweep only |
-| AD10 | element `BL11:false` on a capture side | the designer marks an element invalid while a required input is unbound: the EM4 S2 element after the method change (`UsrWscId_In` unbound, M-26); the package never writes `IsValid` | none: TC-P-12 (EM4 S2) |
+| AD10 | element `BL11:false` on a capture side | the designer marks an element invalid while a required input is unbound: the EM4 S2 element after the method change (`UsrWscId_In` unbound, M-26), the EM2 S2 and S4 elements (a required input unbound, M-33, M-35); the package never writes `IsValid` | none: TC-P-12 (EM4 S2), TC-P-15 (EM2 S2), TC-P-16 (EM2 S4) |
 
 AD1-AD5 and AD10 may apply to a committed test; AD7-AD9 apply only to the corpus sweep (test plan 3.1), whose
 committed pairs need W10, AD2 and AD5 only.
 
 ### 8.4 Tests per pattern (names carry no ticket key; ids are the test plan's)
 
-| Fixture (`PBT/`) | Pattern | Oracle |
+| Fixture (package tests) | Pattern | Oracle |
 |---|---|---|
 | the existing `FileProcessingCaptureOracle`, extended (fixture folder as a parameter; `L1`, `L6`, `L12`, `L17`, recursive `L18`; BK15 rows; roles), not forked; hash test TC-P-01 | A, B | `PROVENANCE.md` pins of 8.1 |
 | `WebServiceParityTests`: one test per corpus pair (element built from the paired service capture under WSCR; TC-P-01..04, 06..08) | A | 8.1 pairs |
@@ -542,7 +537,7 @@ committed pairs need W10, AD2 and AD5 only.
 |---|---|---|---|---|
 | SQ1 | Does the current designer write the corpus key sets (no `A5`, `BL11`, `L11`, `GS4` on params; row key set without `GT4`)? | W6 is built on 2020-2026 corpus saves | Settled by EM2 (M-24) | yes: every expected key set matched; the element's own `BL11:false` while a required input is unbound is AD10 (EM4 S2, M-26) |
 | SQ2 | Fresh `BP2` order with mixed Header/Body/Query request params: service request order or grouped by kind? | W9 | Settled by EM2 (M-24) and EM4 S2 (M-26) | service request order: header, URL segment, query as declared, then the four result params (2.7) |
-| SQ3 | Caption suffix: does it apply across nested items too (`ChangeId_Out` = `Id - Output` suggests yes), and does a server-side save strip it from top-level params? | generator rule and AD1 | Settled for a fresh save by EM2 (M-24); the re-save half by EM5 | top-level parameters only: "Status - Input" / "Status - Output", while the nested `UsrWscOrdNo_In` and the top-level `UsrWscEchoText_Out` stay plain "Reference" (4); whether a re-save strips it is open (SQ13) |
+| SQ3 | Caption suffix: does it apply across nested items too (`ChangeId_Out` = `Id - Output` suggests yes), and does a server-side save strip it from top-level params? | generator rule and AD1 | Settled for a fresh save by EM2 (M-24); the re-save half by EM5 (2026-11-04) | top-level parameters only: "Status - Input" / "Status - Output", while the nested `UsrWscOrdNo_In` and the top-level `UsrWscEchoText_Out` stay plain "Reference" (4); a server load strips it and a designer save puts it back (SQ13) |
 | SQ4 | Four `BK15` rows on a current designer save; `GT1` of an unset `RequestBody` = `{}` | Q4, W10 | Settled by the Q4 probe (M-13) and EM2 (M-24) | 4 rows in `BP2` result order, Success `GT1 {"GS2":"false"}`, the others `{}` (3.2) |
 | SQ5 | Boolean In default: `{"GS2":"false","GS5":<P>}` like the Out ones? | I7 on the In side | Settled by EM2 (M-24) | yes: `UsrWscFlag_In` `L8 {"GS2":"false","GS5":<P>}` (2.4) |
 | SQ6 | Required scalar array: parent without `L6`, `ItemValue_In` child with `L6: true` on a current save | 2.3 | Settled by EM2 (M-24) | yes: `UsrWscIds_In` none, `UsrWscIdsItemValue_In` `L6` true; the optional `UsrWscTagsItemValue_In` none |
@@ -552,7 +547,7 @@ committed pairs need W10, AD2 and AD5 only.
 | SQ10 | Item-level binding into an In collection with the parent unset (B5): does the current designer leave the parent `{}`? Constant (B3) and formula (B2) forms on a current save | 5.2 | Settled by EM2 (M-24) and EM4 S1 | parent `{}`; a Text constant `{GS1:1, GS5:<P>}` with the value in `.Value` / `.DisplayValue` only; an Integer constant `{GS1:1, GS2:"1", GS5:<P>}`; a formula `GS1` 3 with the text in `GS2` (5.2 B2, B3, B3b, B5) |
 | SQ11 | Response read into a Collection: designer mirror ("create parameter from element") type, item Tags (`<el>.<param>`?), and a hand-made Collection's bindings on all levels | Q6, B8 | Settled by EM3 route (a) (M-15) and route (b) on `UsrWscDriftService.UsrWscOrders2` (M-25) | the mirror is a CompositeObject wrapper with Tags `<el>.<param>` and first-level items only; a declared Collection is bound item-first, every level `GS1` 3 with an element-parameter token, items without Tag (5.2 B8) |
 | SQ12 | Element caption `<service caption> <N>` on a current save; does the builder set it (design) | parity of `BaseElements.<El>.Caption` | Settled by EM2 (M-24) and EM4 (M-26) | "WSC echo service 1"; kept on a method change, "WSC drift service 1" after a service change; the builder follows it (4) |
-| SQ13 | Designer re-save of a builder element (with and without `BK15` rows, with Success `L8`): rows duplicated or rewritten, Success rewritten, `RequestBody` added, captions re-suffixed, order changed? | the residual risk of Q3/Q4 | EM5 | open |
+| SQ13 | Designer re-save of a builder element (with and without `BK15` rows, with Success `L8`): rows duplicated or rewritten, Success rewritten, `RequestBody` added, captions re-suffixed, order changed? | the residual risk of Q3/Q4 | EM5 | settled: no rows duplicated or rewritten, Success kept, the element node byte-identical after a re-save; only the top-level caption suffix follows the last writer (experimental cut 2026-11-04; final-cut campaign 2026-11-09, M-37) |
 | SQ14 | Method change in the designer: params and rows regenerated with fresh UIds; result params re-created; `IX3` kept or reset; downstream references flagged `BL11`? | Q11 replace semantics | Settled by EM4 (M-26, decisions Q11) | method and service change both replace every parameter with fresh UIds, result params included; the 4 `BK15` rows are re-created (new row UIds, same `GT5`); `IX3` kept on a method change and reset on a service change, `IX4` kept; dependents are NOT flagged `BL11` and keep the removed UIds; the builder keeps the result params' UIds (Q11 A3) |
 
 EM6-EM12 measure run time, compile floor, dependencies and drift; they settle no stored-bytes question beyond I3,
@@ -565,7 +560,7 @@ halves of I3, I13 and I15 (EM6's request side, EM12) are not measurable on stand
 |---|---|---|
 | 1 | r6 §4.1 and §8: `{"GS1":1}` with no `GS2` on a WS input is an empty-string constant (`CanUpdateBSF` `Timeout_In` x2) | it is a constant on a LOCALIZABLE (text) parameter, whose literal lives in resources `.Value`/`.DisplayValue`: `CanUpdateBSF` `GetUpdates`/`GetMessages` `Timeout_In` = `0`, `DepTestProcess` `Parameter1_In` = `111`, `UsrBPWithInvalidWebService` `UsrParameter1_In` = `test value` [measured 2026-11-02, corpus resources]. The two product cases are bound constants, not empty strings |
 | 2 | r3 §3.2 table: result params after service params in 65/66 elements | 57/66; 9 elements have a tagged param after the result params (g1 §a) |
-| 3 | r6 §2 / verdict r6-C2: `IX4` is an orphan key no core writes | true only of the stale `<Creatio2>/TSBpm` checkout; `IX4` is read and written by core from 8.3.2.3590 (g2) |
+| 3 | r6 §2 / verdict r6-C2: `IX4` is an orphan key no core writes | true only of the stale older core checkout; `IX4` is read and written by core from 8.3.2.3590 (g2) |
 | 4 | r9 §3.4: describe on 1.6.6.131 omits `L17` and nested `L18` | wrong; verdict r9-S6 holds: the package's raw `DescribeProcess` returns each output's `tag` and its nested `itemProperties` (re-measured 2026-11-03, decisions Q14, down to three levels). It returns bound inputs only (unbound tagged inputs and an unbound `RequestBody` are omitted, M-31) and no service, method, timeout or ignore-errors member. A reply without tags or nesting seen the same day came from an older MCP clio build |
 | 5 | r6 §2 table: Success `L8 {"GS2":"false"}` on 66/66 | 61/66, full form `{"GS2":"false","GS5":<P>}`; and it is not specific to Success: every Boolean WS parameter carries it, 14/14 tagged Boolean outputs including nested ones [measured 2026-11-02] |
 | 6 | r2 §3 and §5: the caption suffix is the designer's rule | it is conditional (verdict r2-C5(3)), and two product captures with a duplicate top-level caption store no suffix while a nested parameter does (section 4); a builder that always or never suffixes fails parity somewhere |

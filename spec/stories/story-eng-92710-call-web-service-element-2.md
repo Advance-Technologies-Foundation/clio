@@ -10,8 +10,8 @@ Q12, Q14, Q16
 **Analysis**: [`spec/eng-92710-call-web-service-element/`](../eng-92710-call-web-service-element/README.md) (plan
 section 3.4 holds slice D; sections 4 and 5 the KB and clio tasks; section 9's AC6 and AC7 (drift) rows are the
 Definition of Done)
-**Status**: in-progress (set in this docs-only BMAD PR because implementation starts before it merges, so
-`ready-for-dev` is never true; plan section 2). The clio feature PR moves it to `review` when it opens; `done` is
+**Status**: review (the four ENG-92710 pull requests are open; in-progress was set in the docs-only BMAD PR because implementation starts before it merges, so
+`ready-for-dev` is never true; plan section 2). The docs-sync PR moved it to `review` when the PRs opened; `done` is
 flipped in the next clio PR that touches `spec/sprint-status.yaml` after the last merge, with only the really ticked
 Definition of Done boxes.
 **Size**: the estimate's package work package D and the modify lines of the clio and clio-knowledge rows; hours are
@@ -57,7 +57,10 @@ The full text is the SPEC's AC1-AC9 (written to ENG-92710 Call web service eleme
 - [ ] **AC7 (issues and modify notice)** - describe reports an unresolved service or method, a method that matches only
   ignoring case, nested drift, a missing result param and an element marked invalid as issues; a modify that lets the
   platform prune an unresolved element carries a notice naming the element and the method; the modify is not refused
-  (Q12 A).
+  (Q12 A). A modify the platform's validation refuses (a pruned parameter is read) carries the notice in the
+  refusal, after the platform's text, with the repair order (F-2, F-5): a missing method is restored in Studio > Web
+  services and the request repeated; a missing (unregistered) service is restored by installing the package that
+  carries it, not by registering it again in Studio (TC-U-124).
 - [ ] **AC8 (this story's outputs)** - the retarget refusal, notice N4, notice N7 and the describe issues carry no
   service-side data (service parameter default, `authInfo`, base-URI credential); the values N4 lists are the
   element's stored bindings (process data the caller can already read through describe, M-31), not service data
@@ -70,14 +73,14 @@ The full text is the SPEC's AC1-AC9 (written to ENG-92710 Call web service eleme
 
 ## Gating
 
-EM status as the measurements file records it on 2026-11-03.
+EM status 2026-11-10, as the measurements file records it (section 0).
 
 | Gate | What | Who | Before |
 |---|---|---|---|
 | Q11, Q12 | A3 (replace, `Success` / `Response` / `StatusCode` keep their UIds, guard over every other parameter of the element) and A (issues + notice, no refusal) | owner | done 2026-11-03 |
 | EM4 | designer capture C: a method change and a service change (what is cleared and kept, dependents, `IX3` / `IX4`) | lead in Claude in Chrome, owner logs in | done 2026-11-03 (M-20, M-26, M-27): the P-D1 oracle and parity row TC-P-12 |
 | STOP | EM5 passed on the experimental cut (story 1) | lead, owner's yes | slice C, so slice D |
-| EM8 | the latent loss: current-builder half done 2026-11-03 (M-18, the loss is real and silent); service-save and designer halves done 2026-11-03 (M-29..M-31: a service save writes nothing and evicts no cached process, a cold load prunes, a designer save deletes every parameter of the element and its BK15 rows); only the claimed-cut half (the notice N7) is open | lead, owner's yes per write | the P-D3 notice is confirmed before the PRs leave draft |
+| EM8 | the latent loss: current-builder half done 2026-11-03 (M-18, the loss is real and silent); service-save and designer halves done 2026-11-03 (M-29..M-31: a service save writes nothing and evicts no cached process, a cold load prunes, a designer save deletes every parameter of the element and its BK15 rows); step 8 ran in the final-cut campaign 2026-11-09 (M-41) and was re-measured on the claimed cut: refused by the platform's validation, nothing written, the refusal carries N7 (M-51, M-52; on the shipping build 2026-11-10, M-54) | lead, owner's yes per write | the P-D3 notice is confirmed before the PRs leave draft |
 | gate 1 | full 3-lens fan-out over the package diff, shared with story 1 | lead | the draft package PR opens |
 | KB publish | the knowledge generation that publishes the article with the modify section | human merge | the clio PR leaves draft |
 
@@ -103,7 +106,8 @@ section 3 holds the modify semantics). TC ids are the test plan's.
   before the S2 save), equals the S2 capture under WSCR for the element node and its BK15 rows; the S2 capture's
   dangling Formula token is outside the comparison, and the designer's `BL11:false` on the S2 element (unbound
   required `UsrWscId`) is the named allowed difference AD10 (serialization §8.3); the package never writes `IsValid`
-  (TC-U-33..36, 46, 108; TC-P-12).
+  (TC-U-33..36, 46, 108, 112, 113; TC-P-12, 16; a retarget onto or away from a SOAP service as for REST, N10 only
+  onto SOAP, Q20 D). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35).
 - [ ] **P-D2** C7 retarget guard: `IProcessDependencySnapshot.FindDependents(element, survivingParameterUIds:
   {Success, Response, StatusCode UIds}, includeOwner: false)`; the change is refused when anything (another element,
   a process parameter, a flow condition, a formula body) reads ANY parameter of the element other than `Success` /
@@ -115,9 +119,13 @@ section 3 holds the modify semantics). TC ids are the test plan's.
   are still read by ..."); nothing written (TC-U-37..39, 107).
 - [ ] **P-D3** C10 / C12 drift (Q12): describe reports `serviceResolved` / `methodResolved` false, a case-only method
   match, nested drift, a missing result param and `IsValid` false as issues; at the end of every modify, notice N7 on
-  each web-service element not configured in the request whose service or method does not resolve, saying that the
-  platform load prunes its tagged params; the modify is not refused (TC-U-53, 54, 71..73, 102..104). EM8's builder
-  half confirms the notice on the claimed cut.
+  each web-service element whose service or method does not resolve, configured in the request or not, saying that the
+  platform load prunes its tagged params; the modify is not refused by the package (TC-U-53, 54, 71..73, 102..104, 114).
+  A modify the platform's validation refuses never reaches the end of the request, so `ProcessSchemaValidator.EnsureValidForSave`
+  appends N7 to that refusal: the named elements first, under the repair-order lead, in the refusal form without the
+  re-select advice; the others with the ordinary notice; at most 3, the rest counted (F-2, F-5, measurements section 0; TC-U-115..124).
+  EM8 step 8 confirmed N7 on the refusal path (M-51, M-52; shipping build M-54); the no-reader end-of-request case is not measured on a
+  stand.
 - [ ] **P-D4** `modify-business-process-as-new-version`: the clone keeps the element, its params and its BK15 rows owned
   by the new version; no code expected, a clone round-trip test pins it (TC-U-92).
 
@@ -126,9 +134,12 @@ section 3 holds the modify semantics). TC ids are the test plan's.
 - [ ] **KB-1 (modify part)** the article's modify section: a method or service change replaces the parameters, keeps
   the result params, lists the dropped bindings with their values, is refused while anything reads a parameter of the
   element other than `Success` / `Response` / `StatusCode`; unresolved elements, the load-time prune and notice N7;
-  describe issues. It states that a designer save of a process whose web-service element no longer resolves deletes every
+  the refused unrelated modify that carries N7 and the repair order; describe issues. It states that a designer save of a process whose web-service element no longer resolves deletes every
   parameter of the element (result params included) and its BK15 rows and leaves the element `BL11:false` (M-30), so
-  the remedy (fix the service, or retarget the element) comes before any designer save; describe's
+  the remedy (a renamed or removed method is restored in Studio > Web services and the request repeated; a service
+  that is no longer registered is restored by installing the package that carries it, not by registering it again in
+  Studio, which would give it another UId and leave the element unresolved; otherwise first remove the reads of the
+  missing parameters, then re-point the element) comes before any designer save; describe's
   `methodResolved: false` is the signal.
 - [ ] **KB-5 / KB-6 (modify part)** `WebServiceGuidanceTests` covers the replace and drift claims (TC-K-05, shared
   with story 1); the fact-check gate covers this section.
@@ -138,7 +149,7 @@ section 3 holds the modify semantics). TC ids are the test plan's.
 - [ ] **CL-5 / CL-6 (modify part)** the `setElement` list in the modify description and prompt names the `webService`
   block; paid inside story 1's swaps (TC-C-11, 13, both shared with story 1).
 - [ ] **CL-9 (modify part)** e2e: modify with a method change replaces the parameters and the retarget guard refuses a
-  live dependent (TC-I-05); modify-as-new-version keeps the element (TC-I-10); run on stand `Creatio` on net10 and
+  live dependent (TC-I-05); modify-as-new-version keeps the element (TC-I-10); run on a registered test stand on net10 and
   net8, Ignored = 0.
 - [ ] **CL-10 (modify part)** knowledge record for the load-path re-sync that prunes the tagged params of an
   unresolved element (measured by EM8), a fact the code does not say; every knowledge record whose `applies-to` path
@@ -168,10 +179,11 @@ true.
 - [ ] `Success` / `Response` / `StatusCode` keep their UIds across a change, and their readers stay valid (TC-U-107).
 - [ ] The retarget guard refuses when anything reads a parameter of the element other than `Success` / `Response` /
   `StatusCode` (tagged inputs, nested items and `RequestBody` included), with nothing written (TC-U-37..39; TC-I-05).
-- [ ] Drift issues and the latent-loss notice N7 tested (Q12); EM8's builder half recorded in the measurements file.
+- [ ] Drift issues and the latent-loss notice N7 tested (Q12), N7 on a pre-save refusal included (TC-U-115..124); EM8's
+  builder half recorded in the measurements file.
 - [ ] The version clone keeps the element, its params and BK15 rows (TC-U-92; TC-I-10).
-- [ ] Every TC row this story owns implemented and green (TC-U-33..39, 46, 53, 54, 71..73, 92, 102..104, 107, 108;
-  TC-P-12; TC-I-05, 10; shared with story 1: TC-K-05, TC-C-11, TC-C-13) on dev-nf and dev-n8, in the clio unit suite,
+- [ ] Every TC row this story owns implemented and green (TC-U-33..39, 46, 53, 54, 71..73, 92, 102..104, 107, 108, 112..124;
+  TC-P-12, 16; TC-I-05, 10; shared with story 1: TC-K-05, TC-C-11, TC-C-13) on dev-nf and dev-n8, in the clio unit suite,
   the KB test project and the e2e run with Ignored = 0.
 - [ ] Review gates 1-3 passed and their tiers stated; KB fact-check passed for the modify section.
 - [ ] The CL-10 record in the clio PR, every knowledge record whose `applies-to` path is touched updated or deleted,
@@ -187,3 +199,16 @@ true.
 
 - 2026-11-03: Q11 agreed as A3 after EM4; Q12 agreed as A after EM8's current-builder half; EM8's service-save and
   designer halves measured (M-29..M-31); this BMAD set written. No product code yet.
+
+### Done so far (2026-11-10)
+
+Slice D is implemented and the stand runs of 2026-11-09 and 2026-11-10 are recorded (measurements section 0, M-36..M-59). EM8
+step 8, re-measured on the claimed cut, passes: the unrelated modify of the drifted process is refused by the platform's validation because a
+Formula task reads a pruned parameter, nothing is written, and the refusal now carries N7 after the platform's text,
+the referenced element first under the repair-order lead and the other drifted element with its ordinary notice
+(finding F-2, resolved; M-51; re-run on the shipping build 2026-11-10, M-54). The referenced element's notice no longer ends with the re-select advice that the lead
+rules out (finding F-5, resolved; M-52, whose reply equals the expected text). Package tests TC-U-115..124. From story
+1's side, the unknown-service refusal lists methods (K-1) and AR-1 passes with one refusal (M-47, M-48). Not measured:
+the no-reader case of EM8 (the end-of-request N7 on a saved modify). F-1 is corrected in the plan; still open as Low items, for a follow-up pull request: F-3, F-4
+(measurements section 0). The pull requests are open and the status is `review`; no Definition of Done box is ticked until they
+merge.

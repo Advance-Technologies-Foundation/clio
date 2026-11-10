@@ -1,17 +1,24 @@
 # ENG-92710 Call web service element: implementation plan
 
-Written 2026-11-02, updated 2026-11-03. Phase 1 only: research,
-design and plan. No product code has been written; this folder was pushed to the clio branch
-`feature/ENG-92710-call-web-service-element-plan` on 2026-11-03 and goes into the repository with the BMAD docs PR. **All twenty decisions
+Written 2026-11-02, updated 2026-11-03, 2026-11-05 and 2026-11-10. Status 2026-11-10: slices A-D implemented;
+final-cut campaign measured (M-36..M-52, 2026-11-09); late-measurement gate met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator); pull requests open for review (package, knowledge, clio, docs); stories in
+review. Decisions changed on
+2026-11-05 by the owner: Q20 is D (SOAP built like REST, notice N10, after the SOAP capture EM2 S2-S4), N7 covers
+every unresolved web service element, configured in the request or not, and a Boolean constant is checked on a stand
+on the final cut (plan section 6). The text below was written in Phase 1: research,
+design and plan. This folder was pushed to the clio branch
+`feature/ENG-92710-call-web-service-element-plan` on 2026-11-03 and went into the repository with the BMAD docs PR
+(clio #1890, merged 2026-11-04). **All twenty decisions
 were agreed by the owner on 2026-11-03**, one at a time; each Q in the decisions file ends with its "Agreed" line, which
-wins where it differs from the recommendation above it (Q3, Q5, Q7, Q10, Q13, Q17). Stand `Creatio` holds the
-owner-approved probe objects of 2026-11-03 (section 1, "Measured so far"), all on the cleanup list. Jira: the
+wins where it differs from the recommendation above it (Q3, Q5, Q7, Q10, Q13, Q17). Stand `Creatio` held the
+owner-approved probe objects of 2026-11-03 (section 1, "Measured so far"); it is retired, and the later runs used the
+registered test stands `eng105744-web02` and `eng92710-web03` (measurements section 0, section 7 for the leftovers). Jira: the
 follow-up ENG-105475 "Register a REST web service through the AI Toolkit" was created on 2026-11-03; the ENG-92710 description and its 9-item AC block were rewritten and read back the same day (Q18).
 
-> Paths in angle brackets (`<core>`, `<Creatio2>`, `<PackageStore>`, `<UnitTests>`, `<clio>`, the `<... worktree>`
-> names) are local checkouts of the repositories involved. The research notes r1-r10 and g1-g5
-> (`<research notes, local>`) and the raw stand captures are local working notes, not in this repository; every
-> fact this folder relies on is restated in it with its source.
+> Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the
+> other shipped packages, the core platform) are cited by schema, class, file or view name only, never by repository
+> path. The research notes r1-r10 and g1-g5 and the raw stand captures are local working notes, not in this
+> repository; every fact this folder relies on is restated in it with its source.
 
 Jira: ENG-92710 "Call web service element" (Story, epic ENG-92704 "Create BP via AI Toolkit", To Do, unassigned, no
 fixVersion). Its only blocker, ENG-91843 "Add and modify process parameters" (Task 5), is Closed. Composite parameter
@@ -20,11 +27,11 @@ Registering a web service is ENG-105475 (Story, same epic, "Relates" to ENG-9271
 
 Basis: crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history), clio `origin/master`
 `6be5dde28`, clio-knowledge `origin/master` `5f14ceb` (libraryVersion 1.15.176), CrtProcessDesigner 7.8.0 and the
-PackageStore corpus, core TSBpm trunk and `<core>` `468c4c71b` (8.3.3.1722; the older
-`<Creatio2>/TSBpm` checkout of 2025-07 is stale and lacks `IX4`), the Academy, a read-only inventory of
+PackageStore corpus, the core platform trunk at `468c4c71b` (8.3.3.1722; an older
+core checkout of 2025-07 is stale and lacks `IX4`), the Academy, a read-only inventory of
 stand `Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken 2026-11-02, and the stand probes
 and the local compile-floor run (EM9) of 2026-11-03. Research notes (local, not part of the plan):
-`<research notes, local>/` (r1-r10, gap notes g1-g5, 63 fact-check verdicts in
+r1-r10, gap notes g1-g5, 63 fact-check verdicts in
 `_workflow-result.json`; a verdict correction overrides a note, a g note supersedes an r note).
 
 ## 1. Short answer
@@ -60,9 +67,9 @@ and the local compile-floor run (EM9) of 2026-11-03. Research notes (local, not 
   modes, retarget guard, drift notices); parity follows the Process file capture-oracle pattern
   ([reuse](eng-92710-call-web-service-element-reuse.md)).
 - **New:** a service/method resolver (case-insensitive, canonical spelling written, refusals listing codes and
-  captions, never a default value: secrets), the parameter shaper, the `webService` block and handler with a direct
+  captions (service refusals; method refusals list codes only, F-3, measurements section 0), never a default value: secrets), the parameter shaper, the `webService` block and handler with a direct
   `IX4` write, the first package-authored BK15 rows, describe read-back, refusals (legacy user task, multi-instance,
-  SOAP, an unknown service, an environment with no registered service), notices, modify replace semantics, the KB
+  an unknown service, an environment with no registered service), SOAP services built like REST, notices, modify replace semantics, the KB
   article `process-web-service` and the clio surface.
 - **The Task-5 boundary:** request bodies live on the element's own parameters and need no new process-parameter
   type; a composite response is read into a declared Collection (<= 2 levels). The `typeFromElement` mirror of a WS
@@ -85,14 +92,19 @@ one GET method and a header default, the Q16 part); EM4 partial (a service chang
 Q14 read of today's describe. Later the same day: EM0, EM1 (three services), EM2, EM3 route (b), EM4's method and
 service change and EM7's designer half (measurements M-22 to M-28; decisions Q4, Q6, Q7, Q8, Q11); then EM8's
 service-save and designer halves (M-29 to M-31: a designer save of an element whose method is gone deletes all its
-params and BK15 rows, decisions Q12). Measured facts: M-01 to M-31. Still to do: EM5, EM6 (reduced by E4), the
-builder halves of EM7, EM10, EM11 and EM12 (the N5 notice), EM8's claimed-cut half (the N7 notice) and EM2's
-read-back on the final cut; EM12's run half is not measurable on the stand (Q17). Q11 settled as A3 after EM4: the
+params and BK15 rows, decisions Q12). EM2 S2-S4 (SOAP) on 2026-11-05 (M-32 to M-35, decisions Q20). Measured facts: M-01..M-59 (M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, M-36..M-52 on 2026-11-09, M-53..M-59 on 2026-11-10). Run on 2026-11-09 in the final-cut campaign (M-36 to M-46): EM2's
+read-back (M-36), EM5 (M-37), EM6 and EM6-B (M-38, M-39), the builder halves of EM7, EM10, EM11 and EM12 (M-40,
+M-42..M-44), EM8 step 8 (M-41) and the agent runs AR-1 / AR-2 (M-45, M-46); EM12's run half is not measurable on the
+stand (Q17). Re-measured on the claimed cut: the unknown-service refusal lists methods (M-47), so AR-1 passes with one
+refusal (M-48); EM8 step 8 is refused by the platform's validation and the refusal carries N7 with the repair order
+(M-51, M-52). On 2026-11-10 the late measurements were re-run on the shipping build (M-53..M-58, stand `eng92710-web03`, status
+line above) and the manual cases TC-01..TC-12 passed on it (M-59, stand `eng92710-web04`). Q11 settled as A3 after EM4: the
 `Success` / `Response` / `StatusCode` keep their UIds (`RequestBody`, the fourth result parameter, is regenerated), and the guard refuses while anything reads a parameter of the element other than
 `Success` / `Response` / `StatusCode`. Stand objects created: processes
 `UsrWscBk15Probe`, `UsrWscEm3Probe`, `UsrProcess_3389428`, `UsrWscEm2CaptureA`, `UsrWscEm3CaptureB`,
 `UsrWscEm4MethodChange`, `UsrWscEm7Ignore`, `UsrWscEm7Strict`, `UsrWscEm8Drift2`, `UsrWscEm8Drift3`; package `UsrWscEm10Proc`; services `UsrWscEchoService`,
-`UsrWscDriftService`, `UsrWscDeadService` (measurements section 7). Details: decisions Q4, Q6, Q7, Q9, Q11, Q12, Q14, Q16 and
+`UsrWscDriftService`, `UsrWscDeadService`; on 2026-11-05 the SOAP service `UsrWscSoapService` and process
+`UsrWscEm2SoapS2` (measurements section 7). Details: decisions Q4, Q6, Q7, Q9, Q11, Q12, Q14, Q16 and
 [measurements](eng-92710-call-web-service-element-measurements.md).
 
 ## 2. Files
@@ -141,13 +153,14 @@ The decisions file holds options, evidence, the stand measurements and cost per 
 - **Q8** Timeout in whole seconds, stored as ms (x1000); 0 / absent = unset; describe returns seconds (a non-whole
   stored value as a fraction).
 - **Q9** Service by UId, code, caption, case-insensitive, ambiguity refused; method by code, case-insensitive;
-  canonical `IX1` / `IX2` written; refusals list codes and captions; a service outside the process package's
+  canonical `IX1` / `IX2` written; refusals list codes and captions (service refusals; method refusals list codes only,
+  F-3); the unknown-service refusal also lists each service's methods, bounded, and the ambiguous one lists the
+  matching names with their methods, no caption (K-1, measurements section 0); a service outside the process package's
   dependency closure gets a notice, no dependency added (the designer adds one, measured; adding it is a separate
   ticket for every element).
 - **Q10** No new package operation, no clio discovery tool (security pins 8 ops / 6 gates unchanged); the tree comes
   back in the create/modify result and describe; same-request mappings to generated params (sub-process ordering).
-  The unknown-service refusal lists codes with captions and says a missing service is registered in Studio > Web
-  services; a new refusal covers an environment with no registered service; the KB article gets a "task without
+  The unknown-service refusal lists codes with captions and methods (K-1: one refusal finds service and method) and says a missing service is registered in Studio > Web services; a new refusal covers an environment with no registered service; the KB article gets a "task without
   details" section (agent runs AR-1, AR-2). Registration is ENG-105475.
 - **Q11** A3: method/service change = replace (regenerate, drop bindings, notice N4 lists them with their values,
   re-appliable in one call) with `Success` / `Response` / `StatusCode` keeping their UIds, so their readers stay
@@ -156,7 +169,9 @@ The decisions file holds options, evidence, the stand measurements and cost per 
   and `RequestBody` included: all regenerated with new UIds); a service change renames the element caption as the designer does
   (always: `elementUpdate` has no `caption` member), a method change keeps it (gate 1, 2026-11-03).
 - **Q12** Describe reports `serviceResolved`, `methodResolved` and nested drift as issues; a modify that lets the
-  platform prune an unresolved element gets a notice naming the element and method; not refused. A designer save of
+  platform prune an unresolved element gets a notice naming the element and method; not refused by the package. A
+  modify the platform's validation refuses (a pruned parameter is read) carries N7 in the refusal, with the repair
+  order (F-2, F-5, measurements section 0; M-51, M-52). A designer save of
   such an element deletes all its params and BK15 rows (M-30), so the KB article puts the remedy before any designer
   save.
 - **Q13** `IX4` settled by Q7; warning notice N5 on every target when an inner object list with no source of its own
@@ -180,8 +195,8 @@ The decisions file holds options, evidence, the stand measurements and cost per 
   the description only.
 - **Q19** BMAD docs PR first; package, clio-knowledge, clio PRs; cut numbers in a claim comment on ENG-92710; merge
   package -> KB (published) -> clio; merges are human.
-- **Q20** Refuse multi-instance on `webService`; SOAP refused with a notice unless an owner-requested SOAP capture
-  shows the same shape (stand `Creatio` has no SOAP service).
+- **Q20** Refuse multi-instance on `webService`; SOAP built exactly like REST, with notice N10 (D, 2026-11-05: the
+  SOAP capture EM2 S2-S4 showed the designer's REST shape, M-33..M-35). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35).
 
 ## 5. Estimate (headline)
 
@@ -206,7 +221,7 @@ registering a service (ENG-105475).
 ## 6. Rules this plan follows
 
 - No current or future CrtProcessBuilder cut number appears here; versions only as history ("measured on 1.6.6.131").
-- The stand is named only as `Creatio` (a registered clio environment); its address is not written here.
+- Stands are named only by clio environment name, never by address.
 - A source trace is a hypothesis: claims are tagged traced or measured, and every traced claim names the EM that settles it.
 - All twenty decisions are agreed (2026-11-03); options were argued on clean-slate cost, never on draft code.
 - Every stand write, Jira write, push, reviewer request and merge waits for the owner's explicit word; merges are human.

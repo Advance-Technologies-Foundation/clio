@@ -14,14 +14,18 @@ Q9, Q12, Q13, Q14, Q16 and Q20.
 question below with its sources, the [design file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-design.md)
 holds the package components C1-C14 and the clio changes K1-K11, the
 [measurements file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-measurements.md) owns
-EM0-EM12 and the measured facts M-01..M-31 and C-01..C-09.
+EM0-EM12 and the measured facts M-01..M-59 (M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, M-36..M-52 on 2026-11-09, M-53..M-59 on 2026-11-10), and C-01..C-09.
 
 `CLIO/` = the clio repository root. Sources outside the public repositories (the
 CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are
 cited by file or type name, or by the platform PR number; no repository paths of non-public repositories. Options
 are compared on clean-slate cost and platform constraints; existing prototype or draft code is not an argument for or
 against any option (owner rule). Every stand measurement below was taken on stand `Creatio` (Creatio 10.1.37, .NET
-Framework, CrtProcessBuilder 1.6.6.131) on 2026-11-02 or 2026-11-03.
+Framework, CrtProcessBuilder 1.6.6.131) on 2026-11-02 or 2026-11-03, except the SOAP capture EM2 S2-S4 (M-32..M-35),
+taken on 2026-11-05 with an experimental stand-only cut installed (designer saves; the builder was not involved), and
+M-36..M-52 on 2026-11-09 on stands `eng105744-web02` and `eng92710-web03`, and M-53..M-59 on 2026-11-10 on stands
+`eng92710-web03` (M-53..M-58) and `eng92710-web04` (M-59) (the final-cut campaign, and the re-measure
+of the service refusal, AR-1 and EM8 step 8 on the claimed cut).
 
 ---
 
@@ -105,9 +109,10 @@ key check; the mapping
 rules do not change (P-B6 pins the three corpus shapes, TC-U-56..64, 66, 67).
 
 Evidence: M-24 (EM2: element keys, `IX3` 7000 for 7 s, the stored bytes of a constant); M-23 (EM1: what Studio
-stores for every request shape, including a single object flattened into scalars, C-08); EM6 runs a builder-made
-binding on the claimed cut, reduced under the agreed endpoint option E4 (no echo) to the result parameters, so the
-request bytes rest on the core unit tests and the parity suite (decisions Q17).
+stores for every request shape, including a single object flattened into scalars, C-08); EM6 ran a builder-made
+binding in the final-cut campaign (M-38; re-run on the shipping build 2026-11-10, M-55), reduced under the agreed endpoint option E4 (no echo) to the
+result parameters, so the request wire bytes rest on the core unit tests and the parity suite (decisions Q17); EM6-B's
+trace measured the one-item list and an unmapped `RequestBody` as null (M-39).
 
 ### D3 (Q3). The package generates the parameters itself: a pure port of the designer algorithm, nested items always, no feature gate
 
@@ -137,7 +142,7 @@ platform's view would be re-synced on the next load, so the shaper follows the p
 Evidence: M-24 (EM2: the designer element matches every expected shape row: BP2 order, stamps, required rule, types,
 `ItemValue`, result parameters; the suffix applies to a top-level pair, not to nested items); C-01, C-03, C-05, C-06;
 M-16 and M-18 (what the load sync does to a shape it does not recognise); M-22 (EM0: `ProcessParameterCollections` on);
-EM5 is the open STOP gate (see Consequences).
+M-37 (EM5: the STOP gate passed; see Consequences).
 
 ### D4 (Q4). The package writes the four BK15 rows of the result parameters
 
@@ -154,13 +159,13 @@ Rejected:
   exception forever and builder output differs from a fresh designer build.
 
 Consequences: `ProcessGraphBuilder.RemoveElement` already deletes rows that target an element; nothing else reads
-them (traced). The single writer means the rows can be switched off by a flag if EM5 shows the designer duplicating
-or rewriting builder-made rows; the row-less state is one the designer itself produces.
+them (traced). The single writer means the rows can be switched off by a flag if EM5 had shown the designer duplicating
+or rewriting builder-made rows (it did not, M-37); the row-less state is one the designer itself produces.
 
 Evidence: M-13 (Q4 probe: 4 rows of the C-04 shape on a designer element; a designer copy is row-less, a re-save
 neither duplicates nor rewrites, the row-less element runs); M-24 (EM2: the same 4 rows on the test service); M-26
-(EM4: a method or service change re-creates the rows with new row UIds and the same `GT5`); C-04; EM5 (open) checks a
-builder-made element.
+(EM4: a method or service change re-creates the rows with new row UIds and the same `GT5`); C-04; EM5 measured the same for a
+builder-made element (experimental cut 2026-11-04; M-37).
 
 ### D5 (Q6). A composite response is read through a declared Collection (two levels) with item mappings; mirrors, ObjectList and deeper levels are out of scope
 
@@ -208,7 +213,8 @@ and 8.3.2.4199 are not measured; none is a supported target.
 Evidence: EM9 / M-14 (local compile: `origin/main` fails on 8.3.1.4498 and 8.1.3.6947 with or without the IX4
 reference, builds on 8.3.2.4199); M-07 (the member's presence by build); M-28 (EM7 designer half: a 404 completes the
 element with Success false and the process continues whatever IX4 is; a refused connection continues only with IX4
-true); M-22 (`DisableIgnoreErrorsInWebServiceUserTask` off on the stand); C-07.
+true); M-40 (EM7 builder half, final-cut campaign: the builder's element behaves the same); M-22
+(`DisableIgnoreErrorsInWebServiceUserTask` off on the stand); C-07.
 
 ### D7 (Q10). No discovery operation and no clio discovery tool; registered services only
 
@@ -217,7 +223,9 @@ names, describe returns the tree (Q14), and mappings in the same request may ref
 (selection and generation run in the `afterElementsPlaced` hook on create, before `mappings[]`, `typeFromElement` and
 other blocks; on modify, `addElement` generates before the next operation; design C9). The element, like the Process
 Designer, calls only services registered in Studio > Web services: the unknown-service refusal lists codes with
-captions and says a missing service must be registered first; an environment with no registered service has its own
+captions and, in the claimed cut, each service's methods, bounded (finding K-1, measurements section 0: the first 30 services with at most 8
+methods each, services 31-100 by name and caption, the rest counted; when the list is cut, a service not shown is used
+by its exact name or UId), and says a missing service must be registered first; an environment with no registered service has its own
 refusal (design 5.1). The KB article gets a "task without details" section (find the service through the refusal,
 ask when several fit, stop when none fits, build in two steps, fill a key or token from a system setting or a process
 parameter, never a constant).
@@ -233,10 +241,12 @@ Rejected:
 
 Consequences: the two security pins stay 8 operations / 6 gate call sites; registering a service is ENG-105475
 "Register a REST web service through the AI Toolkit". Agent scenario runs AR-1 (service not named) and AR-2 (service
-not registered: the agent must stop) are the check that no discovery is needed.
+not registered: the agent must stop) are the check that no discovery is needed. Both pass: AR-1
+finds service and method through one refusal (M-48; two on the draft article before K-1, M-45), AR-2 stops (M-46).
 
 Evidence: no EM; the designer's service list is `VwWebServiceV2` with no "new service" entry (checked on the stand,
-decisions Q10); M-03 (the stand registers 3 services, so a refusal can list them all; the corpus has 32 service
+decisions Q10); M-47 (the unknown-service refusal lists every service with its methods) and M-48 (AR-1 finds service
+and method through one refusal); M-03 (the stand registers 3 services, so a refusal can list them all; the corpus has 32 service
 schemas with at most 7 methods each, decisions Q9).
 
 ### D8 (Q11, A3). A method or service change replaces the generated parameters; `Success` / `Response` / `StatusCode` keep their UIds (`RequestBody`, the fourth result parameter, is regenerated); the retarget guard covers every other parameter of the element
@@ -290,14 +300,21 @@ nested input of the same caption).
 - **Q5 and Q8** are recorded inside D2.
 - **Q9 - resolution and canonical names.** Service by manager-item UId, then code, then caption; method by code
   within the service; both case-insensitive, ambiguity refused, the canonical spelling written to IX1 / IX2; refusals
-  list codes and captions only. One component (design C2) is the only reader of `ServiceSchemaManager`. A service
+  list codes and captions (service refusals; method refusals list codes only, F-3); the unknown-service refusal also
+  gives each listed service's methods, bounded (K-1, measured M-47), and the ambiguous one lists the matching names
+  with their methods, no caption (TC-U-17). One component (design C2) is the only reader of `ServiceSchemaManager`. A service
   outside the process package's dependency closure saves with notice N6 and no dependency added; adding it like the
   designer is a separate ticket for every element. Evidence: M-16 (EM11: a case-only slip saves green, is pruned on
-  load and fails the run), M-17 (EM10: the designer adds the dependency; the builder half is traced, measured on the
-  claimed cut).
+  load and fails the run), M-17 (EM10: the designer adds the dependency); M-42 and M-43 (the EM10 and EM11 builder halves in the
+  final-cut campaign: no dependency added, canonical `IX2`; re-run on the shipping build 2026-11-10, M-57).
 - **Q12 - drift and latent loss: notice, no refusal.** Describe reports `serviceResolved`, `methodResolved` and nested
-  drift as issues; at the end of every modify, each web-service element not configured in the request whose service
-  or method does not resolve gets notice N7 saying the platform load prunes its parameters. A refusal with a confirm
+  drift as issues; at the end of every modify, each web-service element whose service or method does not resolve,
+  configured in the request or not (owner, 2026-11-05), gets notice N7 saying the platform load prunes its parameters.
+  When something reads a pruned parameter, the platform's validation refuses the modify before the end of the
+  request; that refusal carries N7 after the platform's text, the named element first with the repair order (a missing method
+  is restored in Studio > Web services and the request repeated; a missing, unregistered service is restored by
+  installing the package that carries it, not by registering it again in Studio, which would give it another UId) and
+  without the re-select advice, at most 3 notices, nothing written (findings F-2, F-5, measurements section 0; M-51, M-52). A refusal with a confirm
   flag (Q12 B) is a follow-up. Evidence: M-18 (EM8 current-builder half: the loss is real and silent); M-29, M-30
   (EM8 service-save and designer halves: a service save writes nothing and evicts no cached process; a designer save
   of the process deletes every parameter of the unresolved element, result params included, and its BK15 rows, and
@@ -325,8 +342,10 @@ nested input of the same caption).
   and may carry the shipped services' non-credential `IU5` defaults; they are not redacted (their SHA pins), and
   TC-P-08 asserts that they carry no credential (no `IQ5` value with `IV2` 1, no constant `Authorization` default).
   Evidence: M-19 (the designer element carries no service default; the default lives only in the service schema).
-- **Q20 - multi-instance and SOAP refused.** 0 multi-instance and 0 SOAP calls in the corpus (C-09), none on the stand
-  (M-03); SOAP would be built only if an owner-requested SOAP capture shows the same parameter shape. The package
+- **Q20 - multi-instance refused; SOAP built like REST (D, 2026-11-05).** 0 multi-instance and 0 SOAP calls in the
+  corpus (C-09). The owner-requested SOAP capture (EM2 S2-S4) showed the designer builds a SOAP element with the REST
+  shape and no SOAP-only field, so SOAP services take every path as REST does, with notice N10 naming the element
+  (evidence: M-33..M-35; a non-array complex type is unmeasured and the shaper refuses it anyway). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35). The package
   refuses `setElement` with a `webService` block on a designer-built element that carries `BP6` and describes such
   an element with an issue; a `webService.multiInstanceOptions` key on create never reaches the server, because
   clio's key check refuses it.
@@ -350,9 +369,9 @@ nested input of the same caption).
 - Out of scope, with owners: ENG-92730 "Complex / structured parameter types" (mirror, ObjectList, three or more
   levels, the "Create from element" wrapper); ENG-105475 "Register a REST web service through the AI Toolkit"; a
   discovery tool, a `resync` member, the package-dependency auto-add, the Q12 B refusal (follow-ups; design 8).
-- Residual risk: nothing yet proves that the designer opens a builder-made element (package-generated nested items,
-  `ItemValue` children, caption resources, result parameters, the first package-authored BK15 rows) and re-saves it
-  without rewriting it, nor that the platform's load sync is a no-op on it; the Q4 probe showed both only for a
-  designer-built element (M-13). The STOP gate EM5 runs after package slice B on an experimental cut: a rewrite, a
-  duplicate BK15 row or a lost Success value stops the work and re-opens Q4 (and possibly Q3) before slice C. EM5 is
-  re-run on the final cut.
+- Residual risk, retired: the STOP gate EM5 ran after package slice B on the experimental cut (2026-11-04) and again in
+  the final-cut campaign (2026-11-09, M-37): the designer opens and re-saves a builder-made element without a rewrite,
+  a duplicate BK15 row or a lost Success value, and an unrelated builder modify leaves the element node and rows
+  byte-identical; only the top-level caption suffix follows the last writer (a server load drops it, a designer save
+  puts it back; excluded from the oracle rule, AD1). EM5 was not repeated on the shipping build (the later changes touch only
+  refusal texts and the validator).
