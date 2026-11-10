@@ -27,8 +27,8 @@ Past the message's caps the rest is counted and the next attempt names it. clio 
 (modify also names the operation when every finding sits under one). clio's own pre-send `ProcessBlockKeyCheck`
 (ENG-103085) still runs first and is STRICTER for a whole element: element-level describe fields (`uid`, `position`,
 `buildType`...) in a `setElement` elementUpdate, and an element's `parameters` / `connections`, are refused before
-anything is sent ("Nothing was sent"), so only a described readData-family block echoed back reaches the server's
-ignore-with-warning path; an email (`templateObject`, recipients' described fields), subProcess (`process`),
+anything is sent ("Nothing was sent"), so only a described readData-family or webService block echoed back reaches
+the server's ignore-with-warning path; an email (`templateObject`, recipients' described fields), subProcess (`process`),
 openEditPage (`completionMode`) or fileProcessing (`files.sourceColumn`) block can carry describe fields clio refuses
 too. Two gaps remain: a key next to the `request` wrapper passes in silence, and on a host where the check reports
 itself unavailable the write goes ahead with a warning that it was not checked. Details: the package's

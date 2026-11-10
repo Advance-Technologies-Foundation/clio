@@ -678,8 +678,23 @@ public sealed class ValidateProcessGraphToolTests {
 		string description = method!.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
 
 		// Assert
-		description.Should().Contain("changeAccessRights/subProcess/fileProcessing (Object attachments, Generated report, Process parameter) elements plus",
+		description.Should().Contain("changeAccessRights/subProcess/fileProcessing (Object attachments, Generated report, Process parameter)/",
 			because: "the canonical buildable list must carry every element type create-business-process builds, the Process file element and all three of its variants included");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The tool description is the ONE buildable-slice list, so it names the Call web service element (Q15). Without it an agent planning a webService element reads the canonical list, finds it missing and tells the user the builder cannot create it.")]
+	public void ValidateTool_ShouldNameTheWebServiceElementAsBuildable_WhenDescriptionIsRead() {
+		// Arrange
+		MethodInfo method = typeof(ValidateProcessGraphTool).GetMethod(nameof(ValidateProcessGraphTool.Validate));
+
+		// Act
+		string description = method!.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("Generated report, Process parameter)/webService (Call web service) elements plus",
+			because: "the canonical buildable list must carry every element type create-business-process builds");
 	}
 
 	[Test]

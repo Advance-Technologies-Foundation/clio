@@ -11,15 +11,15 @@ merges are done by a human.
 
 Basis: crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history), clio `origin/master`
 `6be5dde28`, clio-knowledge `origin/master` `5f14ceb`, CrtProcessDesigner 7.8.0 and the PackageStore corpus, core
-TSBpm trunk and `<core>` `468c4c71b` (8.3.3.1722), Creatio Academy, and a read-only inventory of stand
-`Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken 2026-11-02. Research notes:
-`<research notes, local>/` (`r1`..`r10`, gap notes `g1`..`g5`, fact-check verdicts in
+platform trunk at `468c4c71b` (8.3.3.1722), Creatio Academy, and a read-only inventory of stand
+`Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken 2026-11-02. Research notes (local):
+`r1`..`r10`, gap notes `g1`..`g5`, fact-check verdicts in
 `_workflow-result.json`; a verdict correction overrides a note, a `g` note supersedes an `r` note).
 
-Paths: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/` at `da719366`; `CORE/` = `<core>/TSBpm/Src/Lib/`;
-`NUI/` = `CORE/Terrasoft.Nui/Resources/Terrasoft/manager/process-flow-element-schema-manager/`; `PD/` =
-`CrtProcessDesigner/branches/7.8.0/Schemas/`; `CLIO/`, `KB/` = repository roots. The older checkout
-`<Creatio2>/TSBpm` is stale (2025-07) and lacks IX4; it is not cited for current behaviour.
+Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other
+shipped packages, the core platform) are cited by schema, class, file or view name only, never by repository path;
+`CLIO/`, `KB/` = the clio and clio-knowledge repository roots. An older core checkout (2025-07) is stale and lacks IX4;
+it is not cited for current behaviour.
 
 Tags: **traced** = read in source, a hypothesis about run time until an EM settles it; **measured** = observed in
 corpus data, a binary, git, or the stand inventory.
@@ -40,16 +40,16 @@ measurements in [measurements](eng-92710-call-web-service-element-measurements.m
 |---|---|---|---|
 | Q1 | Element identity | build `ProcessSchemaWebService`; refuse `userTask` = `WebServiceUserTask` with a pointer to `webService` | EM2 |
 | Q2 | Contract | `webService {service, method, timeoutSeconds?, ignoreErrors?}` on create / addElement / setElement; request values through the existing mapping surface on the element's own parameters by stored name; no aliases | EM2, EM6 |
-| Q3 | Parameter generation | package-owned pure generator (port of the designer algorithm), nested items always emitted (no `L18` feature gate, no N11); platform sync tolerated afterwards | EM2, EM5 |
-| Q4 | BK15 rows | emit the 4 result-param rows for byte parity | EM5 |
-| Q5 | Composite request body | nested item mappings (work today) + `RequestBody` raw text as escape hatch; no new parameter type; no JSON check or conflict notice in v1 | EM6, EM12 |
+| Q3 | Parameter generation | package-owned pure generator (port of the designer algorithm), nested items always emitted (no `L18` feature gate, no N11); platform sync tolerated afterwards | EM2, EM5 (passed, M-37) |
+| Q4 | BK15 rows | emit the 4 result-param rows for byte parity | EM5 (passed, M-37) |
+| Q5 | Composite request body | nested item mappings (work today) + `RequestBody` raw text as escape hatch; no new parameter type; no JSON check or conflict notice in v1 | EM6 (M-38), EM6-B trace (M-39), EM12 (builder half M-44) |
 | Q6 | Composite response | v1 declared Collection (<= 2 levels) + item mappings; mirror / ObjectList / 3+ levels to ENG-92730 "Complex / structured parameter types" | EM3, EM6 |
-| Q7 | Errors | `ignoreErrors` written to IX4 directly (EM9: package floor already ~8.3.2, no guard); Success / StatusCode / Response are ordinary outputs | EM0, EM7, EM9 (done) |
+| Q7 | Errors | `ignoreErrors` written to IX4 directly (EM9: package floor already ~8.3.2, no guard); Success / StatusCode / Response are ordinary outputs | EM0, EM7 (builder half M-40), EM9 (done) |
 | Q8 | Timeout | whole seconds in the contract, stored as ms; 0 / absent = unset | EM2 |
-| Q9 | Resolution | service by UId, name, caption, case-insensitive, ambiguity refused; method case-insensitive; canonical spelling written; refusals list valid names; cross-package notice | EM10, EM11 (designer halves done) |
-| Q10 | Discovery | no new package operation, no clio tool in v1; tree returned by create/modify and describe; same-request mappings; the unknown-service refusal points to registration; KB "task without details"; registration = ENG-105475 "Register a REST web service through the AI Toolkit" | agent runs AR-1, AR-2 |
+| Q9 | Resolution | service by UId, name, caption, case-insensitive, ambiguity refused; method case-insensitive; canonical spelling written; refusals list valid names (the unknown-service refusal with each service's methods, bounded, K-1 2026-11-09); cross-package notice | EM10, EM11 (designer halves done; builder halves M-42, M-43 in the final-cut campaign); M-47 |
+| Q10 | Discovery | no new package operation, no clio tool in v1; tree returned by create/modify and describe; same-request mappings; the unknown-service refusal points to registration; KB "task without details"; registration = ENG-105475 "Register a REST web service through the AI Toolkit" | agent runs AR-1 (passes with one refusal, M-48), AR-2 (passes, M-46) |
 | Q11 | Method/service change | A3: replace semantics, `Success` / `Response` / `StatusCode` keep their UIds, retarget guard over every other parameter of the element, notice lists dropped bindings | EM4 (done) |
-| Q12 | Drift / latent loss | describe issues `serviceResolved` / `methodResolved` / nested drift; notice on a modify that would prune | EM8 (current-builder half done: the loss is real) |
+| Q12 | Drift / latent loss | describe issues `serviceResolved` / `methodResolved` / nested drift; notice on a modify that would prune, also carried by a modify the platform's validation refuses (F-2, F-5, 2026-11-09) | EM8 (current-builder half done: the loss is real; step 8 re-measured on the claimed cut: refused with N7, M-51, M-52) |
 | Q13 | Platform floors | IX4 direct (Q7); warning N5 on a sourceless nested object list (ENG-55920 "Unable to use array inside array in web-service business process element") on every target | EM9 (done), EM12 |
 | Q14 | Describe read-back | `webService` member + stored parameter tree, never re-derived, never defaults | EM2, EM8 |
 | Q15 | Text budgets | swap, no ceiling raise; one pointer clause to KB `process-web-service`; flip catalog; routing disambiguation | - |
@@ -57,7 +57,7 @@ measurements in [measurements](eng-92710-call-web-service-element-measurements.m
 | Q17 | Stand captures and runs | lead in Claude in Chrome on stand `Creatio`; test services `UsrWsc*` with the stand root as base URI (EP option E4, no echo); cleanup list | EM0, EM1 |
 | Q18 | Jira description corrections | Task 22, Task 37 / ENG-92730, element identity, estimate unit; owner approves the text first | - |
 | Q19 | PR split and order | BMAD docs PR, package, clio-knowledge, clio; cuts in a claim comment; merge package -> KB -> clio, human merges | - |
-| Q20 | Legacy / edge | refuse multi-instance; SOAP built only if shown identical, else refused with a notice | EM2 |
+| Q20 | Legacy / edge | refuse multi-instance; SOAP built exactly like REST, with notice N10 (D, 2026-11-05: the SOAP capture showed the same shape) | EM2 S2-S4 |
 
 ---
 
@@ -72,15 +72,15 @@ generic `userTask` route would build the wrong thing today without complaint.
 **Facts.**
 - The designer's element is the core class `Terrasoft.Core.Process.ProcessSchemaWebService : ProcessSchemaActivity`
   (run time `ProcessWebService`), ManagerItemUId `652b598d-cdd5-49d5-a86d-aafac88213f3`, edited by
-  `WebServiceUserTaskPropertiesPage`; it is not a `ProcessSchemaUserTask` (`CORE/Terrasoft.Core/Process/ProcessSchemaWebService.cs:22`;
+  `WebServiceUserTaskPropertiesPage`; it is not a `ProcessSchemaUserTask` (`ProcessSchemaWebService`;
   r3 C1, r4 C1 confirmed). Measured: 66/66 corpus elements carry `BL1 = ...ProcessSchemaWebService`, `BL7 = 652b598d`; the
   stand inventory shows the same class (r9 S1).
 - CrtProcessDesigner's `WebServiceUserTask` (`e7acb2e5`) is a legacy SOAP user task with a hard-coded envelope; 0 processes
   reference it and no `SysProcessUserTask` row registers it (r4 H2, r6). Traced: `{"type":"userTask","userTaskName":"WebServiceUserTask"}`
-  would still build it, because `UserTaskElementHandler` resolves any user-task name (`PB/Elements/UserTaskElementHandler.cs:83-102`).
+  would still build it, because `UserTaskElementHandler` resolves any user-task name (`UserTaskElementHandler`).
 - The package has no web-service code; describe types the element `ProcessSchemaWebService`, `buildType: null` (r4 H3/H4, r9 S6).
 - Precedents for a refused generic route exist: pre-configured page, auto-generated page, Process file variants
-  (`PB/Elements/UserTaskElementHandler.cs:353, 382, 410`).
+  (`UserTaskElementHandler`).
 
 **Options.**
 - **A. Build `ProcessSchemaWebService` through a new handler; refuse `userTask` = `WebServiceUserTask`** with a refusal
@@ -111,7 +111,7 @@ agent addresses composite bodies.
   item binding; traced write, measured target).
 - Stored names are `<svc>_In` / `<svc>_Out` with Tag `L17` = the service parameter name; nested names are suffixed too;
   a scalar array has one `<Name>ItemValue_<dir>` child (r6 C3 measured 242/242 nested suffixed). Describe already
-  reports tags and nested items on 1.6.6.131 (r9 S6 corrected), but omits unbound inputs (`PB/Describe/ProcessDescriber.cs:226`).
+  reports tags and nested items on 1.6.6.131 (r9 S6 corrected), but omits unbound inputs (`ProcessDescriber`).
 - clio refuses any block key it does not declare, because WCF drops undeclared members silently (r5 C1, C2); that
   holds for servers before CrtProcessBuilder 1.6.6.136 (gate-1 note below).
 - Precedent: the `subProcess` block selects the callee; its inputs are then set through mappings by stored name.
@@ -153,7 +153,7 @@ register, and TC-U-109 replays a described block through the server key check (p
 **Why it matters.** AC5 (byte parity) and run time both depend on it.
 
 **Facts.**
-- The designer (client `NUI/process-webservice-schema.js`) emits: tagged `_In`/`_Out` params; CompositeObjectList with
+- The designer (client `process-webservice-schema`) emits: tagged `_In`/`_Out` params; CompositeObjectList with
   recursive nested `L18` items; ObjectList with one `ItemValue` child; MaxSizeText for Text/empty; the IsRequired rule;
   captions in resources (`BaseElements.<El>.Parameters.<path>.Caption`, " - Input"/" - Output" only where a caption
   is shared across request and response; the scope is pinned by EM2); then untagged Success (Boolean Out), Response
@@ -172,7 +172,7 @@ register, and TC-U-109 replays a described block through the server key check (p
 - Every design-time load re-runs the platform sync, matching by Name; a correct shape (names, Tags, provider types,
   IsRequired, `IsValueSerializable = true`) makes it a no-op (g4 §1, §5; traced, not measured).
 - Assigning `ServiceSchemaUId` / `MethodName` runs nothing (auto-properties), unlike sub-process `SchemaUId` (r4 C5).
-- Precedent: `PB/Elements/PreconfiguredPageParameterSync.cs` already ports a designer client algorithm, with a read-only
+- Precedent: `PreconfiguredPageParameterSync` already ports a designer client algorithm, with a read-only
   `IsInSync` twin.
 
 **Options.**
@@ -194,7 +194,7 @@ settled by EM0/EM6 (verdict r3-C6 (5)).
 **Recommendation (PROPOSED): A**, with the designer's `L18` gate.
 
 **Agreed by the owner on 2026-11-03: A WITHOUT the `L18` gate** - always emit nested items. Basis (research
-2026-11-03, `<research notes, local>` feature-history run): the toggle is from 2018 (CRM-38674, on
+2026-11-03, a local feature-history run): the toggle is from 2018 (CRM-38674, on
 for release in CRM-39571 / 7.12.3) and every checked build from 7.13 to 10.2.931 ships `Feature-ProcessParameterCollections=true`
 in Web.config / WebHost config, which is what the run-time re-keying reads; ENG-47367 (8.2.1, the 7.12.4 cleanup that removed the web-service feature toggles) deleted the
 CrtProcessDesigner data binding but left the core client readers, which read DB rows only, so a clean 8.2.1+ database
@@ -225,7 +225,7 @@ params?
 - Traced: nothing at run time or in the server design-time sync reads them; the designer's own copy/paste produces
   row-less web-service elements (g1 (c), "What reads them"). They are byte parity only; not stand-verified.
 - The package has never written a BK15 row (git grep, g1); `ProcessGraphBuilder.RemoveElement` already deletes rows that
-  target an element (`PB/Graph/ProcessGraphBuilder.cs:1915-1922`).
+  target an element (`ProcessGraphBuilder`).
 
 **Options.**
 - **A. Emit the rows**, mirroring `createMappingInfo` (set the param value first, then add the row, so Success `GT1`
@@ -319,7 +319,7 @@ which types exist decides the scope.
   mappings from the WS output produces the stored Gemini shape (COL/COL/text, all three levels `GS1 = 3` tokens); Tag is
   read nowhere on the mapping path.
 - Gaps (Task 37 / ENG-92730): the `typeFromElement` mirror of a WS collection is refused (item Tags are service names,
-  not GUIDs, `PB/Parameters/ProcessParameterService.cs:974-1026`); ObjectList is not declarable; declared collections
+  not GUIDs, `ProcessParameterService`); ObjectList is not declarable; declared collections
   stop at 2 levels while WS nesting reaches 3-4; single CompositeObject refused (never produced by the service designer)
   (r4 C7, C8; r5 C6).
 - Run time re-keys response values Tag->Name only while feature `ProcessParameterCollections` is on (r3 C6). On the
@@ -417,7 +417,7 @@ B's declared floor of 8.3.2.3590 is introduced, +1-4 agent h (estimate §6.1 row
 **What changes it.** EM0 (the feature state on the stand), EM7 (a call with no HTTP answer, IX4 true vs false), EM9.
 
 **EM9 measured 2026-11-03** (local, crt-process-builder `origin/main` `da719366`, `clio dconf --build` from the DFS
-zips, `dotnet build ... -c dev-nf`; logs `<research notes, local>/captures/em9/`, scratch worktree
+zips, `dotnet build ... -c dev-nf`; logs in the local captures, scratch worktree
 removed):
 
 | Core | `origin/main` as is | + `ProcessSchemaWebService.IsIgnoreErrors` |
@@ -490,8 +490,8 @@ describe returns seconds, a non-whole-second stored value as a fraction).
   `GeminiApiSearch`, `CreatioMarketplaceApi`), measured 2026-11-03. The runtime resolves the service workspace-wide; the designer save adds a package dependency, the
   builder save adds none for any element (g5 (b)). 64/66 corpus elements use a service of their own package; 2 sit in
   the dependency closure (g5, measured).
-- Precedent: `PB/Elements/SubProcessApplier.cs:560-606` (UId / name / caption, ambiguity refused) and
-  `PB/Elements/SubProcessReader.cs:176-193` (`FindItemByNameOrNull`) (g5).
+- Precedent: `SubProcessApplier` (UId / name / caption, ambiguity refused) and
+  `SubProcessReader` (`FindItemByNameOrNull`) (g5).
 
 **Options.**
 - **A. Service by UId, then name, then caption, case-insensitive, ambiguity refused; method case-insensitive within the
@@ -536,6 +536,14 @@ method by code, case-insensitive, within the service; canonical IX1/IX2 written;
 a service outside the process package's dependency closure saves with a notice and no dependency is added). Adding the
 dependency like the designer (C) is a separate ticket for every element, not this one.
 
+**Changed in the claimed cut, re-measured 2026-11-09 (finding K-1, measurements section 0; within A).** "A miss lists names and captions only" no longer
+holds for a service miss: the unknown-service refusal lists every registered service sorted by name, the first 30 as
+`Name (caption; methods: A, B)` (at most 8 methods each, then ", and N more"; "declares no methods"; "methods not
+readable" when the schema does not load), services 31-100 as `Name (caption)`, the rest counted ("and N more not
+shown"); an ambiguous match lists the matches with their methods (no caption). The methods are there because the block
+needs one, so one refusal finds service and method (measured M-47; AR-1 passes with one refusal, M-48). The
+unknown-method refusal still lists method codes without captions (finding F-3, open, Low).
+
 **Draft AC wording (now AC2).** "An unknown or ambiguous service or method fails with a message listing the
 available services, or the methods of the resolved service; names are matched case-insensitively and stored in their
 canonical spelling."
@@ -553,7 +561,7 @@ canonical spelling."
   neither; a new operation moves the contract count (r4 C11 confirmed, g5 (c)).
 - Services are few, so a refusal can list them all (Q9). Sub-process precedent: selection runs in the build's
   `afterElementsPlaced` hook, so mappings in the same request can reference the synced params (r4 §1).
-- Describe omits unbound inputs today (`PB/Describe/ProcessDescriber.cs:226`); Q14 closes that for this element.
+- Describe omits unbound inputs today (`ProcessDescriber`); Q14 closes that for this element.
 
 **Options.**
 - **A. No new package operation and no clio tool in v1; the generated parameter tree is returned by the create/modify
@@ -585,6 +593,12 @@ Registering a web service is a separate story: ENG-105475 "Register a REST web s
 service not named; AR-2: service not registered, the agent must stop). The isolated runs this section cites under
 "What changes it" did not exist in the test plan before; AR-1 and AR-2 are them.
 
+**Changed in the claimed cut, re-measured 2026-11-09 (finding K-1, addition 1).** The unknown-service refusal now also lists each
+service's methods, bounded (Q9). When services are left out of the list, the pointer says a service not shown is used
+by its exact name or UId, and "If the service you need is not registered" replaces "If the service you need is not
+listed", so a registered service left out of the list is not sent to registration. AR-1 passes with one refusal
+(M-48; the first run on the draft article needed two, M-45); AR-2 passes (M-46).
+
 ---
 
 ## Q11. Method or service change on modify
@@ -596,7 +610,7 @@ service not named; AR-2: service not registered, the agent must stop). The isola
   included) and their mappings, then regenerates (r2 §method change; g1 (a) step 2). A service change runs
   `canChangeSchema` and a confirm.
 - The package has a retarget guard for sub-process: `IProcessDependencySnapshot.FindDependents(element,
-  survivingParameterUIds, includeOwner)` refuses a retarget that would drop outputs still referenced (`PB/Elements/SubProcessApplier.cs:753-800`; r4 §2).
+  survivingParameterUIds, includeOwner)` refuses a retarget that would drop outputs still referenced (`SubProcessApplier`; r4 §2).
 - Generated UIds are fresh on every regeneration (g4 §4).
 
 **Options.**
@@ -739,7 +753,7 @@ element's input and a Formula task); then the method's code was renamed (`UsrWsc
   Formula task's token left dangling (the save reported it as a schema error and stored the process).
 A stays as agreed (the notice is about the builder's modify, and its text names the tagged params the load removes).
 What it adds: the KB article says that a designer save of such a process deletes every parameter of the element and
-its BK15 rows, so the remedy (fix the service, or retarget the element) comes before any designer save; describe's
+its BK15 rows, so the remedy (a renamed or removed method is restored in Studio > Web services and the request repeated; a service that is no longer registered is restored by installing the package that carries it, not by registering it again in Studio, which would give it another UId and leave the element unresolved; otherwise first remove the reads of the missing parameters, then re-point the element) comes before any designer save; describe's
 `methodResolved: false` (Q14) is the signal, because the synced parameter list of a cold load already shows the prune
 and a warm cache shows the stored set.
 
@@ -747,10 +761,30 @@ and a warm cache shows the stored set.
 issues; a modify that lets the platform prune an unresolved web-service element carries a notice naming the element and
 the method; the modify is not refused). B stays a follow-up option.
 
+**Agreed by the owner on 2026-11-05 (within A): N7 widened.** N7 is raised for every web service element whose
+service or method does not resolve, configured in the request or not: a `setElement` that changes only settings does
+not resolve the method, and the save still runs the platform's load sync. Package test
+`ModifyOfTheElement_ShouldNotice_OnlyWhenItStillDoesNotResolve` (TC-U-114).
+
+**Changed in the claimed cut, re-measured 2026-11-09 (findings F-2 and F-5, measurements section 0; within A).** N7 was an end-of-request notice only, so a
+modify the platform's validation refuses never carried it: when something reads a parameter the load pruned, the
+check refuses, nothing is written, and the reply said only what the platform said (EM8 step 8, M-41). The package's
+pre-save check (`ProcessSchemaValidator.EnsureValidForSave`, which runs the platform's validation) now appends N7 to such a refusal, after the platform's
+text: the elements a refused message names first, under a lead that gives the repair order (a renamed or
+removed method is restored in Studio > Web services and the request repeated, unless the process was saved in the
+Process Designer since; a service that is no longer registered is restored by installing the package that carries it,
+not by registering it again in Studio, which would give it another UId and leave the element unresolved (the
+unregistered-service refusal form, TC-U-124); otherwise
+first remove or replace every read of those parameters in a request of its own, then re-point the element and bind
+the reads to its new parameters, those two in one request), each in its refusal form, which gives the cause without
+the re-select advice (F-5: the advice contradicted the lead); then the other drifted elements with the ordinary
+notice; with no named element, the lead "This process also has a web service element that no longer resolves."; at
+most 3 notices, the rest counted. Still not refused by the package: the refusal is the platform's. Measured M-51,
+M-52; package tests TC-U-115..124.
+
 **Settled at gate 1 (2026-11-03), the lead's clarification within A.** KB-1 (its modify part) and TC-K-05 state
 that a designer save of a process whose web-service element no longer resolves deletes every parameter of the element
-(result params included) and its BK15 rows and leaves the element `BL11:false` (M-30), so the remedy (fix the
-service, or retarget the element) comes before any designer save; describe's `methodResolved: false` is the signal.
+(result params included) and its BK15 rows and leaves the element `BL11:false` (M-30), so the remedy (a renamed or removed method is restored in Studio > Web services and the request repeated; a service that is no longer registered is restored by installing the package that carries it, not by registering it again in Studio, which would give it another UId and leave the element unresolved; otherwise first remove the reads of the missing parameters, then re-point the element) comes before any designer save; describe's `methodResolved: false` is the signal.
 
 ---
 
@@ -800,7 +834,7 @@ declined by the owner: EM12's run half stays unmeasured and rests on the core un
 
 **Facts.**
 - Today: `type: ProcessSchemaWebService`, `buildType: null`, no service, method or timeout; tags and nested items are
-  reported; unbound inputs are not (r9 S6 corrected; `PB/Describe/ProcessDescriber.cs:226`).
+  reported; unbound inputs are not (r9 S6 corrected; `ProcessDescriber`).
 - What describe reads on an interpretable process is already re-synced; nested `L18` is untouched by the sync (g4 §2,
   §5).
 - Service param defaults can hold secrets (Q16).
@@ -832,7 +866,7 @@ Read-back, two layers (corrected the same day):
   returned with its value), and there is no service, method, timeout or ignore-errors member. So the fact above ("tags and nested items are reported; unbound inputs are not") holds.
 - The `describe-business-process` output seen in this session showed no `tag` and no nested items. That was the MCP
   clio serving this session, an older build: current clio source carries both fields
-  (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:2192` `tag`, `:2217` `itemProperties`, at `6be5dde28`). It is not a gap of
+  (`IProcessDescriber` `tag`, `:2217` `itemProperties`, at `6be5dde28`). It is not a gap of
   the package or of current clio.
 So what A has to add is the unbound inputs (tagged `_In`, an unbound `RequestBody`), the bound state of every input and
 the `webService` member; tags and nesting are already there. The Q9 EM11 run also shows that describe reads the synced view: the pruned element
@@ -1046,6 +1080,8 @@ r3); stand `Creatio` has no SOAP service (r9).
 - **A. Refuse multi-instance on `webService`; build SOAP only if EM2 shows an identical parameter shape, else refuse
   SOAP with a notice.** ~1 agent h.
 - B. Support both. No corpus case and no stand service to capture from; the parity claim would be unproven.
+- D (added 2026-11-05, after the SOAP capture). Refuse multi-instance; build SOAP exactly like REST on every path, with
+  notice N10 naming the element. Evidence: EM2 S2-S4 (M-32..M-35).
 
 **Recommendation (PROPOSED): A.** EM2 as planned captures a REST method on EM1's service, so unless a SOAP capture is
 added with the owner's word, the default outcome of A is the refusal.
@@ -1054,6 +1090,43 @@ added with the owner's word, the default outcome of A is the refusal.
 
 **Agreed by the owner on 2026-11-03: A** (multi-instance refused; SOAP refused with a notice unless an owner-requested
 SOAP capture shows the same parameter shape). Stand `Creatio` has 3 service schemas, all REST (measured 2026-11-03).
+
+**Measured 2026-11-05 (EM2 S2-S4, M-32..M-35, the local captures).** The owner asked for the SOAP capture, A's condition.
+On a SOAP 1.1 service entered by hand on stand `Creatio`, the designer builds the element exactly as for REST (OF-16):
+the same element keys, the same tree (names, tags, nesting, types, `L6` from `IU7`, directions), the same result
+parameters and the same 4 BK15 rows. No SOAP-only service field (`IQ7`, `IR5`, `IT1`, `IU1`, `IU8`) reaches the
+element; only the service `IX1` points at tells the protocol. A timeout-only save changes `IX3` alone. A switch to a
+REST service is a full rebuild with no SOAP leftover. Caveat: the WSDL wizard did not load, so the service was entered
+in the SOAP card, which forces every Object parameter to an array; a non-array complex type is unmeasured, and the
+shaper's existing non-array-object refusal covers it for SOAP as for REST.
+
+**Agreed by the owner on 2026-11-05: D** (the condition of A is met). SOAP services are built exactly like REST on
+every path: create, a retarget onto a SOAP service, and `setElement` of a stored SOAP element (settings or retarget).
+Create and retarget onto SOAP raise notice N10, which names the element; a settings-only change does not.
+Multi-instance stays refused. Describe reports a SOAP element as an ordinary element.
+
+---
+
+## Boolean constant at run time (owner, 2026-11-05)
+
+**Agreed by the owner on 2026-11-05: a Boolean constant is checked at run time, A + B in one run on the final cut**
+(measurements EM6-B). The designer stores a Boolean constant as Script `[#BooleanValue.True#]` (M-33); the builder's
+`value: "true"` goes through the shared mapping and stores ConstValue `{GS1: 1, GS2: "true"}`. None of the 66 web
+service elements of the PackageStore corpus (38 files) has a Boolean input parameter, so the corpus cannot answer it.
+- A: the builder creates a web service element with `value: "true"`; a downstream conditional flow on
+  `[#WebService1.<flag>#] == true` shows the run-time value through `SysProcessElementLog`.
+- B: process tracing on for the user (`IsTracing`) in the same run, to see the parameter values and the request body.
+  If the trace shows no body, the value-to-JSON step (`JsonRequestBodyRenderer`) is closed by a source trace, labelled
+  traced.
+- Only if A shows a value other than `true` do web service elements write the designer's Script form. No code change
+  before that.
+
+**Measured 2026-11-09 (EM6-B, M-39), final-cut campaign.** By trace (oracle B) the builder's ConstValue holds
+`UsrWscFlag_In = true` at run time; the trace also shows a one-item list from an item mapping and an unmapped
+`RequestBody` as null (not ""). Oracle A cannot be saved: the platform refuses an element input as a condition data
+source (finding F-1, a plan defect, resolved 2026-11-10: the oracle is dropped from the EM6-B steps). Outcome: the shared ConstValue encoding stays, no code change; the TC-P-15
+companion test pins the one-binding difference from the designer's Script form permanently. Re-run on the shipping build
+2026-11-10 with the same trace (M-55).
 
 ---
 
@@ -1080,4 +1153,4 @@ SOAP capture shows the same parameter shape). Stand `Creatio` has 3 service sche
 | Q17 | lead in Chrome, same-stand test services, EP option E4 (stand root, no echo) | day 0: plan 0.5, 0.7, 0.8 (EM0-EM4); 0.9 session 2, optional | in base, estimate §2.5: 3.25 / 4.5 / 7 agent h for EM1-EM4 (before batching); owner Chrome sessions and stand-write approvals, estimate §3; no on-stand endpoint +1.5-3 h (estimate §6.1 row 7) |
 | Q18 | lead edits description after approval | Jira, after answers | in base: draft in day 0 (estimate §2.5), owner 0.2 / 0.3 / 0.4 h (estimate §3) |
 | Q19 | 4 PRs, claim comment, package -> KB -> clio | every cut and merge | in base (estimate §4; cut cycles in §2.5) |
-| Q20 | refuse multi-instance; SOAP refused unless shown identical | package: handler | in base, WP C (P-C2) |
+| Q20 | refuse multi-instance; SOAP built like REST with N10 (D) | package: handler, notices | in base, WP C (P-C2) |
