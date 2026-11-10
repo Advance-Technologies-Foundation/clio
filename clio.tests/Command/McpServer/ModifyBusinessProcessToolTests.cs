@@ -896,8 +896,10 @@ public class ModifyBusinessProcessToolTests {
 			because: "the contract must route the block to the guide that owns it");
 		prompt.Should().Contain("never a generic `userTask` naming `WebServiceUserTask`;",
 			because: "the prompt must match its tool's generic-route refusal");
-		prompt.Should().Contain("and a `webService` element's `webService` block: an omitted member keeps its stored value, `method`",
+		prompt.Should().Contain("and a `webService` element's `webService` block: an omitted member keeps its stored value (except that a",
 			because: "a partial setElement keeps every member it does not send");
+		prompt.Should().Contain("service change resets the timeout unless `timeoutSeconds` is sent), `method`",
+			because: "the package resets the timeout on a service change, as the designer does, unless the block sends one");
 		prompt.Should().Contain("service's methods, `timeoutSeconds: 0` clears the timeout and `ignoreErrors: false` clears the flag.",
 			because: "0 and false are how a stored timeout and flag are cleared, not values to store");
 		prompt.Should().Contain("A described `webService` block re-applies unchanged: its `serviceUId`, `serviceResolved`,",

@@ -202,9 +202,9 @@ public sealed class WebServiceElementToolE2ETests {
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscNoSuchMethod" } }""",
 		new[] { "UsrWscNoSuchMethod", EchoMethod }, true)]
 	[TestCase("""{ "name": "WS1", "type": "userTask", "userTaskName": "WebServiceUserTask" }""",
-		new[] { "WebServiceUserTask", "webService" }, false)]
+		new[] { "'WebServiceUserTask' is a legacy SOAP task", "with type webService" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "userTask", "userTaskName": "EmailTemplateUserTask", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho" } }""",
-		new[] { "webService" }, false)]
+		new[] { "carries a 'webService' configuration, which is only valid on a 'webService' element" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "multiInstanceOptions": { "enabled": true } } }""",
 		new[] { "Nothing was sent", "'webService.multiInstanceOptions'" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": 1.5 } }""",
@@ -366,8 +366,8 @@ public sealed class WebServiceElementToolE2ETests {
 			LogText(refused).Should().Contain("UsrWscEchoText_Out", because: "the refusal names the parameter that is read");
 			afterRefusal.Should().Be(before, because: "a refused change writes nothing");
 			ShouldHaveLanded(changed, "with no reader left the change replaces the parameters");
-			WarningText(changed).Should().Contain("UsrWscReq_In", because: "the notice lists the dropped input binding");
-			WarningText(changed).Should().Contain("required", because: "the dropped binding is listed with its value");
+			WarningText(changed).Should().MatchRegex(@"Dropped input bindings:[^}]*UsrWscReq_In[^}]*required",
+				because: "the notice lists the dropped input binding together with its value, in one write-shape entry");
 			JsonObject block = WebServiceBlock(Element(await DescribeGraphAsync(context, processName), "WS1"));
 			Text(block, "method").Should().Be(DriftMethod, because: "the element now calls the new method");
 			Parameters(block).Should().NotContain(parameter => Text(parameter, "name") == "UsrWscReq_In",

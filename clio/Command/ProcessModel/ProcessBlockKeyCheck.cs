@@ -609,8 +609,8 @@ internal static class ProcessBlockKeyCheck {
 		// stored in milliseconds as fractional seconds (1500 ms reads back as 1.5) and a whole one as e.g. 7.0, which
 		// the server reads fine - so the VALUE is judged, not the spelling. A fraction or a value outside Int32 is not
 		// dropped: the serializer fails to read the WHOLE request, in a reply that does not name the member. Only a
-		// JSON number is judged here; any other shape, and a whole value above the server's own maximum, is left to the
-		// server's refusal.
+		// JSON number is judged here, and one too large for decimal (1e30) counts as beyond Int32; any other shape, and a
+		// whole value above the server's own maximum, is left to the server's refusal.
 		private void RefuseFractionalTimeout(JsonObject webService, string where, string path) {
 			JsonNode? timeout = null;
 			try {
@@ -624,11 +624,11 @@ internal static class ProcessBlockKeyCheck {
 				return;
 			}
 			string text = number.ToJsonString();
-			if (!decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal value)
-					|| (value == decimal.Truncate(value) && value >= int.MinValue && value <= int.MaxValue)) {
+			bool parsed = decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal value);
+			if (parsed && value == decimal.Truncate(value) && value >= int.MinValue && value <= int.MaxValue) {
 				return;
 			}
-			string problem = value == decimal.Truncate(value)
+			string problem = !parsed || value == decimal.Truncate(value)
 				? "beyond what the server can read"
 				: "a fraction, and the server takes whole seconds";
 			RefuseShape($"{where}: '{path}.timeoutSeconds' is {text}, {problem}, so the server fails the whole request. "

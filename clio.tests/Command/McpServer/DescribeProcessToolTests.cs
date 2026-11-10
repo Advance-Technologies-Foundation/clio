@@ -506,6 +506,10 @@ public sealed class DescribeProcessToolTests {
 			because: "the prompt must match the tool contract on the resubmit rule");
 		prompt.Should().Contain("`get-guidance name=process-web-service` owns the block.",
 			because: "the prompt routes the block to the guide that owns it");
+		prompt.Should().Contain("Four blocks do not replay as they are:",
+			because: "every block that is not a no-op replay is listed");
+		prompt.Should().Contain("and a stored `method` whose letter case",
+			because: "a case-drifted stored method turns a replay into a retarget, as the bundled package does");
 	}
 
 	[Test]

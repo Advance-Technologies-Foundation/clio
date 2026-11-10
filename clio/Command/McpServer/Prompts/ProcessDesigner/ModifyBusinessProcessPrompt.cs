@@ -174,7 +174,8 @@ public static class ModifyBusinessProcessPrompt {
 		 checks the stored scope again. `files` is ONE value source: sent, it replaces the binding as a whole;
 		 omitted, it is kept; it cannot be emptied, because an element whose `Files` are bound to nothing keeps
 		 the whole process from starting. Read `get-guidance name=process-files` first — it owns the block;
-		 and a `webService` element's `webService` block: an omitted member keeps its stored value, `method`
+		 and a `webService` element's `webService` block: an omitted member keeps its stored value (except that a
+		 service change resets the timeout unless `timeoutSeconds` is sent), `method`
 		 alone switches to another method of the same service, another `service` without `method` is refused with
 		 that service's methods, `timeoutSeconds: 0` clears the timeout and `ignoreErrors: false` clears the flag. A
 		 service or method change regenerates the element's parameters and is refused while anything reads one

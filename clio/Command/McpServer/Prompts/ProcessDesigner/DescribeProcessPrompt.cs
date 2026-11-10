@@ -69,10 +69,12 @@ public static class DescribeProcessPrompt {
 		   `methodResolved: false` - unless an issue says the service could not be read: then nothing was checked and
 		   the outcome is unknown. Read `issues` for the rest. To resubmit, send the block back unchanged: `serviceUId`,
 		   `serviceResolved`, `methodResolved`, `issues` and `parameters` are describe-only, and clio warns and
-		   ignores them. Three blocks do not replay as they are: a fractional `timeoutSeconds` (a timeout stored in
+		   ignores them. Four blocks do not replay as they are: a fractional `timeoutSeconds` (a timeout stored in
 		   milliseconds) is refused - leave it out to keep the stored value, or send whole seconds; a block with no
-		   `service` (`serviceResolved: false`) needs a registered service named again; and a block of `service`
-		   alone (nothing else stored) is refused as changing nothing.
+		   `service` (`serviceResolved: false`) needs a registered service named again; a block of `service`
+		   alone (nothing else stored) is refused as changing nothing; and a stored `method` whose letter case
+		   differs from the service's spelling makes the block a retarget, not a no-op: it regenerates the element's
+		   parameters and drops their input bindings, or is refused while anything reads them.
 		   `get-guidance name=process-web-service` owns the block.
 		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
 		   `email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each

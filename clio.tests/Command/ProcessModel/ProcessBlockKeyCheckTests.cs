@@ -677,7 +677,8 @@ public sealed class ProcessBlockKeyCheckTests {
 	[TestCase("1.5")]
 	[TestCase("0.4")]
 	[TestCase("3000000000")]
-	[Description("A webService.timeoutSeconds that is not a whole Int32 - the fractional seconds describe reports for a timeout stored in milliseconds, or a number beyond Int32 - is refused before sending with the remedy, because the server's serializer cannot read it and fails the whole request in a reply that does not name the member.")]
+	[TestCase("1e30")]
+	[Description("A webService.timeoutSeconds that is not a whole Int32 - the fractional seconds describe reports for a timeout stored in milliseconds, or a number beyond Int32, one too large even for decimal included - is refused before sending with the remedy, because the server's serializer cannot read it and fails the whole request in a reply that does not name the member.")]
 	public void Check_Should_RefuseATimeoutThatIsNotWholeSeconds(string timeout) {
 		// Arrange
 		string element = $$"""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": {{timeout}} } }""";
