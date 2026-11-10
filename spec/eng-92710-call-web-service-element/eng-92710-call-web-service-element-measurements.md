@@ -2,9 +2,9 @@
 
 Written 2026-11-02; updated 2026-11-03 with the owner's agreed decisions (decisions Q1-Q20, "Agreed" lines) and the
 first stand runs: EM9 is done; EM1, EM3, EM4, EM8, EM10 and EM11 are partly done; the Q4 BK15 probe is done (M-13 to
-M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-58 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day; M-47 to M-52: the 1.6.6.147 / .148 / .149 re-runs, on
+M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-59 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day; M-47 to M-52: the 1.6.6.147 / .148 / .149 re-runs, on
 `eng105744-web02` and on stand `eng92710-web03`, same day; M-53 to M-58: the 1.6.6.150 shipping-build re-run on
-`eng92710-web03`, 2026-11-10). Every other expected result is a hypothesis until its EM runs.
+`eng92710-web03`, 2026-11-10; M-59: the manual cases on `eng92710-web04`, same day). Every other expected result is a hypothesis until its EM runs.
 
 Basis:
 - crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history only): PB.
@@ -247,6 +247,7 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-56 | EM7 on 1.6.6.150: `ignoreErrors` true stores `IX4` and the run completes ("ok=False code=404", "ok=False code=0"); without it the run fails on the dead service with `System.Net.WebException` (equal to M-28, M-40) | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/em7/` |
 | M-57 | EM10, EM11, EM12 builder halves on 1.6.6.150: no `SysPackageDependency` added, cross-package notice; `USRWSCGET` stored as `UsrWscGet` with a notice, `nope` refused with the method codes (F-3); one N5 notice for the inner list only (equal to M-42..M-44) | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/em10/`, `em11/`, `em12/` |
 | M-58 | KB-7 AR-1 on article kb92710 `e3a0231` with 1.6.6.150: with a free process name, one refused create gives service and method; create with the element alone, then binding by stored names; no secret. The agent typed parameters as `Text` and needed three refused modifies before re-typing them as Long text (K-3). A first run under the taken name was refused on the name before any service lookup (O-7) | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/kb7/` |
+| M-59 | Manual cases TC-01..TC-12 on 1.6.6.150 (stand `eng92710-web04`), each given word for word to an isolated headless agent (no memory, no CLAUDE.md, clio MCP only; clio `352dcdc25`, guidance `libraryVersion` 1.15.189): all 12 pass; one discovery refusal per build case; the drifted-method modify refused with the platform text then N7; 204 tool calls, 74 of them guidance reads, 22 refused or failed across the 12 cases | measured 2026-11-10, stand `eng92710-web04` | `CAP/tc-web04/tc-web04-report.md` |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
 
