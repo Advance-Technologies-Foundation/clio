@@ -23,9 +23,11 @@ DESCRIPTION
     The theme can carry its own background, written by the same CreateTheme
     call: --background-image-id (an image uploaded with upload-image) or
     --background-color. It needs Creatio 10.2.96 or later, checked before any
-    write. After the create, the UsePanelIconBackground feature is turned off
-    for All employees unless --keep-icon-background is passed, and an image is
-    bound into the theme's package. A new theme has no background to remove,
+    write. Before the create, an image is added to the background gallery that
+    set-background-image uses. After the create, the UsePanelIconBackground
+    feature is turned off for All employees unless --keep-icon-background is
+    passed, and an image is bound into the theme's package together with its
+    gallery membership. A new theme has no background to remove,
     so null is refused: update-theme removes a theme background.
 
 SYNOPSIS

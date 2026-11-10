@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command.Branding;
 using Clio.Common;
 using CommandLine;
 
@@ -90,7 +91,9 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(UpdateThemeOptions options) {
-		if (!TryBuildRequest(options, out ThemeRequest request, out string packageName, out string error)) {
+		if (!TryBuildRequest(options, out ThemeRequest request, out string packageName, out string error)
+			|| !_backgroundWriter.TryAddImageToBackgroundGallery(request.Background,
+				out BackgroundGalleryImage galleryImage, out error)) {
 			Fail(error);
 			return;
 		}
@@ -106,8 +109,11 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Logger.WriteInfo(background.RemovesBackground
 				? "The theme has no background now."
 				: $"Theme background: {background.Describe()}.");
-			Logger.WriteWarnings(_backgroundWriter.Complete(background, options.KeepIconBackground, options.Id,
-				packageName).Warnings);
+			PanelIconBackgroundOutcome panelIcon =
+				_backgroundWriter.TurnOffPanelIconBackground(background, options.KeepIconBackground);
+			ThemeImageBindingOutcome binding =
+				_backgroundWriter.BindImageIntoThemePackage(galleryImage, options.Id, packageName);
+			Logger.WriteWarnings(ThemeBackgroundOutcome.From(panelIcon, binding).Warnings);
 		}
 	}
 
@@ -134,8 +140,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Background = background
 		};
 		return ThemeRequestBuilder.TryValidateRequest(request, out error, partial)
-			&& (background?.ImageId is null || TryResolveThemePackage(options, out packageName, out error))
-			&& _backgroundWriter.TryConfirmImage(background, out error);
+			&& (background?.ImageId is null || TryResolveThemePackage(options, out packageName, out error));
 	}
 
 	private void Fail(string error) {

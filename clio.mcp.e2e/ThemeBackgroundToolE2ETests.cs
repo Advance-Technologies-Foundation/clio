@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -7,6 +8,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Common;
 using Clio.Mcp.E2E.Support.Creatio;
+using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -22,7 +24,15 @@ public sealed class ThemeBackgroundToolE2ETests {
 
 	private const string ThemeId = "4ecdda0a-3f24-4d5c-9647-46b6d4fe0a51";
 
+	private const string ImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
+
 	private const string ColorBackground = "\"background\":{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}";
+
+	private const string ImageBackground = "\"background\":{\"mode\":\"Image\",\"imageId\":\"" + ImageId + "\"}";
+
+	private const string CatalogJson = "{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Gallery\"," +
+		"\"cssClassName\":\"gallery\",\"cssFilePath\":\"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/" + ThemeId +
+		"/theme.css\"}]}";
 
 	private static readonly string[] ContentKeys = ["\"caption\"", "\"cssClassName\"", "\"cssContent\""];
 
@@ -58,6 +68,77 @@ public sealed class ThemeBackgroundToolE2ETests {
 				result.Warnings.Should().BeNull(because: "nothing failed after the theme write");
 				ThemeWriteBody(requests, "CreateTheme").Should().Contain(ColorBackground,
 					because: "the background must reach ThemeService in the CreateTheme call itself");
+			});
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("create-theme registers the background image in the background gallery before the theme write")]
+	[AllureDescription("Calls create-theme with background-image-id and keep-icon-background through the real MCP server against a 10.2.96 stub whose background gallery lists the image once it is posted, then checks the call succeeds, the SysImageInTag POST carrying the image comes before the CreateTheme call, and the CreateTheme body carries the image background.")]
+	[Description("Registers a theme background image in the background gallery before CreateTheme through the real MCP server, then writes the theme with the image background.")]
+	public Task CreateTheme_Should_Register_The_Image_In_The_Gallery_Before_The_Theme_Write() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", GalleryStub(listsRegistration: true),
+			async (session, environmentName, stubServer, cancellationToken) => {
+				CreateThemeResult result = await CreateThemeWithImageAsync(session, environmentName, cancellationToken);
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+
+				result.Success.Should().BeTrue(
+					because: $"an image the gallery takes may become the theme background (error: {result.Error})");
+				int registration = GalleryRegistrationIndex(requests);
+				registration.Should().BeGreaterThanOrEqualTo(0, because: "the image is posted to the background gallery");
+				registration.Should().BeLessThan(ThemeWriteIndex(requests, "CreateTheme"),
+					because: "the image joins the background gallery before the theme write");
+				ThemeWriteBody(requests, "CreateTheme").Should().Contain(ImageBackground,
+					because: "the image background must reach ThemeService in the CreateTheme call itself");
+			});
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("create-theme refuses the theme write when the background gallery does not take the image")]
+	[AllureDescription("Calls create-theme with background-image-id through the real MCP server against a 10.2.96 stub whose background gallery accepts the membership POST but never lists it, then checks the call is refused because the registration failed, the theme is reported as not written, and no CreateTheme call reached the stub.")]
+	[Description("Refuses the theme write through the real MCP server when the background gallery does not list the image after its registration.")]
+	public Task CreateTheme_Should_Refuse_The_Theme_Write_When_The_Gallery_Does_Not_Take_The_Image() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", GalleryStub(listsRegistration: false),
+			async (session, environmentName, stubServer, cancellationToken) => {
+				CreateThemeResult result = await CreateThemeWithImageAsync(session, environmentName, cancellationToken);
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+
+				result.Success.Should().BeFalse(because: "a theme background must name an image the background gallery holds");
+				result.Error.Should().StartWith("Registering the image in the background gallery failed.")
+					.And.EndWith("The theme was not written.",
+						because: "the caller must learn the gallery refused the image and that the theme was not written");
+				GalleryRegistrationIndex(requests).Should().BeGreaterThanOrEqualTo(0,
+					because: "the image is posted to the background gallery before it is refused");
+				requests.Should().NotContain(request => request.Url.EndsWith("/ThemeService.svc/CreateTheme"),
+					because: "a gallery that does not take the image stops the theme write");
+			});
+
+	[Test]
+	[AllureTag(UpdateThemeTool.ToolName)]
+	[AllureName("update-theme registers the background image in the background gallery before the theme write")]
+	[AllureDescription("Calls update-theme with only id, background-image-id and keep-icon-background through the real MCP server against a 10.2.96 stub that lists the theme in its catalog and whose background gallery lists the image once it is posted, then checks the call succeeds, the SysImageInTag POST comes before the UpdateTheme call, and the UpdateTheme body carries the image background.")]
+	[Description("Registers a theme background image in the background gallery before UpdateTheme through the real MCP server, then writes the image background.")]
+	public Task UpdateTheme_Should_Register_The_Image_In_The_Gallery_Before_The_Theme_Write() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e",
+			GalleryStub(listsRegistration: true) with { ThemeCatalogJson = CatalogJson },
+			async (session, environmentName, stubServer, cancellationToken) => {
+				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
+					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["id"] = ThemeId,
+							["background-image-id"] = ImageId,
+							["keep-icon-background"] = true
+						}
+					}, cancellationToken));
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+
+				result.ExitCode.Should().Be(0, because: "an image the gallery takes may become the theme background");
+				int registration = GalleryRegistrationIndex(requests);
+				registration.Should().BeGreaterThanOrEqualTo(0, because: "the image is posted to the background gallery");
+				registration.Should().BeLessThan(ThemeWriteIndex(requests, "UpdateTheme"),
+					because: "the image joins the background gallery before the theme write");
+				ThemeWriteBody(requests, "UpdateTheme").Should().Contain(ImageBackground,
+					because: "the image background must reach ThemeService in the UpdateTheme call itself");
 			});
 
 	[Test]
@@ -159,4 +240,35 @@ public sealed class ThemeBackgroundToolE2ETests {
 	private static string ThemeWriteBody(IReadOnlyList<RecordedStubRequest> requests, string operation) =>
 		requests.Should().ContainSingle(request => request.Url.EndsWith("/ThemeService.svc/" + operation),
 			because: $"exactly one {operation} call writes the theme").Which.Body ?? string.Empty;
+
+	private static RuntimeDetectionStubServerConfiguration GalleryStub(bool listsRegistration) {
+		return Stub("10.2.96.0") with {
+			BackgroundGalleryImageId = ImageId,
+			BackgroundGalleryListsRegistration = listsRegistration
+		};
+	}
+
+	private static async Task<CreateThemeResult> CreateThemeWithImageAsync(McpServerSession session,
+		string environmentName, CancellationToken cancellationToken) {
+		CallToolResult callResult = await session.CallToolAsync(CreateThemeTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["caption"] = "Gallery probe",
+					["css-content"] = ".gallery-probe{color:#003366}",
+					["background-image-id"] = ImageId,
+					["keep-icon-background"] = true
+				}
+			}, cancellationToken);
+		return EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(callResult);
+	}
+
+	private static int GalleryRegistrationIndex(IReadOnlyList<RecordedStubRequest> requests) {
+		return requests.ToList().FindIndex(request => request.Method == "POST"
+			&& request.Url.EndsWith("/odata/SysImageInTag") && (request.Body ?? string.Empty).Contains(ImageId));
+	}
+
+	private static int ThemeWriteIndex(IReadOnlyList<RecordedStubRequest> requests, string operation) {
+		return requests.ToList().FindIndex(request => request.Url.EndsWith("/ThemeService.svc/" + operation));
+	}
 }

@@ -31,6 +31,14 @@ public sealed record PackageDataBindingOutcome(
 	public static PackageDataBindingOutcome Refused(IReadOnlyList<string> warnings) {
 		return new PackageDataBindingOutcome(false, warnings);
 	}
+
+	/// <summary>Adds the warnings to <paramref name="warnings"/> and, when bound, <paramref name="part"/> to <paramref name="bound"/>.</summary>
+	public void RecordInto(string part, List<string> bound, List<string> warnings) {
+		warnings.AddRange(Warnings);
+		if (Bound) {
+			bound.Add(part);
+		}
+	}
 }
 
 /// <summary>

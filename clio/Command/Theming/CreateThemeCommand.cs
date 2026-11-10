@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Command.Branding;
 using Clio.Common;
 using Clio.Theming;
 using CommandLine;
@@ -123,7 +124,8 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 			return false;
 		}
 		if (!TryResolvePackageUId(options.PackageName, out string packageUId, out errorMessage)
-			|| !_backgroundWriter.TryConfirmImage(background, out errorMessage)) {
+			|| !_backgroundWriter.TryAddImageToBackgroundGallery(background, out BackgroundGalleryImage galleryImage,
+				out errorMessage)) {
 			return false;
 		}
 		string requestData = JsonSerializer.Serialize(request with {
@@ -136,7 +138,11 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 			return false;
 		}
 		createdId = id;
-		backgroundOutcome = _backgroundWriter.Complete(background, options.KeepIconBackground, id, options.PackageName);
+		PanelIconBackgroundOutcome panelIcon =
+			_backgroundWriter.TurnOffPanelIconBackground(background, options.KeepIconBackground);
+		ThemeImageBindingOutcome binding =
+			_backgroundWriter.BindImageIntoThemePackage(galleryImage, id, options.PackageName);
+		backgroundOutcome = ThemeBackgroundOutcome.From(panelIcon, binding);
 		return true;
 	}
 

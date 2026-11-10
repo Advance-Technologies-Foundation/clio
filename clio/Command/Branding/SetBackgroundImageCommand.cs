@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
-using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using CommandLine;
 
@@ -112,12 +111,7 @@ public sealed record SetBackgroundResult {
 /// </summary>
 public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions> {
 
-	internal static readonly Guid ShellBackgroundTagId = new("273C2402-7CAE-456B-A9C4-067D2024F1A7");
-
 	internal const string BackgroundConfigCode = "CrtBackgroundConfig";
-
-	/// <summary>The feature code that gates the panel's own icon background.</summary>
-	internal const string PanelIconBackgroundFeatureCode = BrandingBackgroundService.PanelIconBackgroundFeatureCode;
 
 	/// <summary>Error text shared by the CLI and MCP surfaces when both image sources are passed.</summary>
 	internal const string BothSourcesError = "Pass either a file or an image-id, not both.";
@@ -126,17 +120,11 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	internal const string NoSourceError =
 		"Pass a file to upload (file) or the id of an already-uploaded image (image-id).";
 
-	private const string ShellBackgroundTagName = "shell_background";
-
 	private const string ShellBackgroundBindingSuffix = "ShellBackground";
 
-	private const string SysImageSchema = "SysImage";
-	private const string SysImageInTagSchema = "SysImageInTag";
+	private const string BackgroundConfigPart = "background-config";
+	private const string PanelIconOffStatePart = "panel-icon-off-state";
 
-	private static readonly IReadOnlyList<string> SysImageColumns = ["Id", "Name", "Data", "MimeType"];
-	private static readonly IReadOnlyList<string> SysImageInTagColumns = ["Id", "Entity", "Tag"];
-
-	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly ISysImageUploader _sysImageUploader;
 	private readonly IBrandingBackgroundService _backgroundService;
@@ -146,11 +134,9 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// Initializes a new instance of the <see cref="SetBackgroundImageCommand"/> class.
 	/// </summary>
 	public SetBackgroundImageCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		IServiceUrlBuilder serviceUrlBuilder, ISysSettingsManager sysSettingsManager,
-		ISysImageUploader sysImageUploader, IBrandingBackgroundService backgroundService,
-		IPackageDataBinder packageDataBinder)
+		ISysSettingsManager sysSettingsManager, ISysImageUploader sysImageUploader,
+		IBrandingBackgroundService backgroundService, IPackageDataBinder packageDataBinder)
 		: base(applicationClient, settings) {
-		_serviceUrlBuilder = serviceUrlBuilder;
 		_sysSettingsManager = sysSettingsManager;
 		_sysImageUploader = sysImageUploader;
 		_backgroundService = backgroundService;
@@ -168,10 +154,11 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		if (!TryResolveOrUploadImageId(options, out Guid imageId, out string sourceError)) {
 			return SetBackgroundResult.Failure(sourceError);
 		}
-		if (!TryEnsureInBackgroundGallery(imageId, out GalleryMembership membership, out string galleryError)) {
+		if (!_backgroundService.TryAddImageToBackgroundGallery(imageId, out BackgroundGalleryImage image,
+				out string galleryError)) {
 			return SetBackgroundResult.Failure(galleryError);
 		}
-		string configJson = JsonSerializer.Serialize(new { imageId = imageId.ToString(), mode = "Image" });
+		string configJson = JsonSerializer.Serialize(new { imageId = image.ImageId.ToString(), mode = "Image" });
 		//Issue #1378: the setting write no longer reports an unusable acknowledgement as `false` - a
 		//gateway or WAF page now leaves the manager as NonJsonWriteResponseException. This command's
 		//contract is a SetBackgroundResult, and the image really is in the gallery by this point, so the
@@ -192,12 +179,12 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		}
 		List<string> warnings = [];
 		if (options.KeepIconBackground) {
-			warnings.Add($"The {PanelIconBackgroundFeatureCode} feature was left as is " +
+			warnings.Add($"The {BrandingBackgroundService.PanelIconBackgroundFeatureCode} feature was left as is " +
 				"(keep-icon-background); while it is on, the panel's icon background can hide the shell background.");
-		} else {
-			DisablePanelIconBackground(warnings);
+		} else if (!_backgroundService.TryTurnOffPanelIconBackground("The background image", out string warning)) {
+			warnings.Add(warning);
 		}
-		return BindBackground(imageId, membership, options.PackageName, warnings);
+		return BindBackground(image, options.PackageName, warnings);
 	}
 
 	/// <inheritdoc />
@@ -218,40 +205,58 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		Logger.WriteError(result.Error);
 	}
 
-	private SetBackgroundResult BindBackground(
-		Guid imageId, GalleryMembership membership, string packageName, List<string> warnings) {
-		string package = null;
+	private SetBackgroundResult BindBackground(BackgroundGalleryImage image, string packageName,
+		List<string> warnings) {
 		List<string> bound = [];
-		try {
-			package = _packageDataBinder.UsePackage(packageName);
-			CreateBackgroundDataBindings(imageId, membership, bound, warnings);
-			return SetBackgroundResult.Successful(imageId, package, warnings, bound);
-		} catch (Exception exception) {
+		if (!TryUsePackage(packageName, out string package, out string error)
+			|| !TryBindGalleryImage(image, bound, warnings, out bool imageBound, out error)
+			|| !TryBindConfigAndPanelIconOffState(imageBound, bound, warnings, out error)) {
 			string into = package is null ? string.Empty : $" into package '{package}'";
 			string kept = bound.Count == 0
 				? string.Empty
 				: $" Already bound and left in place: {string.Join(", ", bound)}.";
 			return SetBackgroundResult.Failure(
-				$"The background was applied (image {imageId}), but binding it{into} failed: " +
-				$"{exception.Message}{kept}", warnings, package, bound);
+				$"The background was applied (image {image.ImageId}), but binding it{into} failed: " +
+				$"{error}{kept}", warnings, package, bound);
+		}
+		return SetBackgroundResult.Successful(image.ImageId, package, warnings, bound);
+	}
+
+	private bool TryUsePackage(string packageName, out string package, out string error) {
+		package = null;
+		error = null;
+		try {
+			package = _packageDataBinder.UsePackage(packageName);
+			return true;
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			error = exception.Message;
+			return false;
 		}
 	}
 
-	private void CreateBackgroundDataBindings(
-		Guid imageId, GalleryMembership membership, List<string> bound, List<string> warnings) {
-		PackageDataBindingOutcome image = _packageDataBinder.BindRow(
-			SysImageSchema, ShellBackgroundBindingSuffix, SysImageColumns, imageId);
-		RecordOutcome(image, "image", bound, warnings);
+	private bool TryBindGalleryImage(BackgroundGalleryImage image, List<string> bound, List<string> warnings,
+		out bool imageBound, out string error) {
+		GalleryImageBindingOutcome outcome =
+			_backgroundService.BindGalleryImage(_packageDataBinder, image, ShellBackgroundBindingSuffix);
+		bound.AddRange(outcome.Bound);
+		warnings.AddRange(outcome.Warnings);
+		imageBound = outcome.ImageBound;
+		error = outcome.Error;
+		return error is null;
+	}
 
-		PackageDataBindingOutcome galleryMembership = BindGalleryMembership(image.Bound, membership);
-		RecordOutcome(galleryMembership, "gallery-membership", bound, warnings);
-
-		PackageDataBindingOutcome config = BindBackgroundConfig(image.Bound);
-		RecordOutcome(config, "background-config", bound, warnings);
-
-		PackageDataBindingOutcome featureOffState =
-			_packageDataBinder.BindFeatureOffState(PanelIconBackgroundFeatureCode);
-		RecordOutcome(featureOffState, "panel-icon-off-state", bound, warnings);
+	private bool TryBindConfigAndPanelIconOffState(bool imageBound, List<string> bound, List<string> warnings,
+		out string error) {
+		error = null;
+		try {
+			BindBackgroundConfig(imageBound).RecordInto(BackgroundConfigPart, bound, warnings);
+			_packageDataBinder.BindFeatureOffState(BrandingBackgroundService.PanelIconBackgroundFeatureCode)
+				.RecordInto(PanelIconOffStatePart, bound, warnings);
+			return true;
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			error = exception.Message;
+			return false;
+		}
 	}
 
 	private PackageDataBindingOutcome BindBackgroundConfig(bool imageBound) {
@@ -265,46 +270,6 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			"cannot render",
 			.. dropped
 		]);
-	}
-
-	private static void RecordOutcome(
-		PackageDataBindingOutcome outcome, string part, List<string> bound, List<string> warnings) {
-		warnings.AddRange(outcome.Warnings);
-		if (outcome.Bound) {
-			bound.Add(part);
-		}
-	}
-
-	private PackageDataBindingOutcome BindGalleryMembership(bool imageBound, GalleryMembership membership) {
-		string galleryFolderName = PackageDataBindingNames.For(SysImageInTagSchema, ShellBackgroundBindingSuffix);
-		if (!imageBound) {
-			IReadOnlyList<string> droppedWithImage =
-				_packageDataBinder.RemoveBinding(galleryFolderName, SysImageInTagSchema);
-			return PackageDataBindingOutcome.Refused([
-				"background gallery membership: the image row was not bound, so the membership naming it was not " +
-				"bound either — a package that ships the membership without the image installs a gallery entry " +
-				"pointing at an image the target does not have",
-				.. droppedWithImage
-			]);
-		}
-		if (membership.TagId != ShellBackgroundTagId) {
-			IReadOnlyList<string> droppedForTag =
-				_packageDataBinder.RemoveBinding(galleryFolderName, SysImageInTagSchema);
-			return PackageDataBindingOutcome.Refused([
-				$"background gallery membership: this environment's {ShellBackgroundTagName} tag has a customized " +
-				$"id ({membership.TagId}) that would not resolve on an install target, so the membership row was " +
-				"not bound",
-				.. droppedForTag
-			]);
-		}
-		return _packageDataBinder.BindRow(
-			SysImageInTagSchema, ShellBackgroundBindingSuffix, SysImageInTagColumns, membership.RowId);
-	}
-
-	private void DisablePanelIconBackground(List<string> warnings) {
-		if (!_backgroundService.TryTurnOffPanelIconBackground("The background image", out string warning)) {
-			warnings.Add(warning);
-		}
 	}
 
 	private bool TryResolveOrUploadImageId(SetBackgroundImageOptions options, out Guid imageId, out string error) {
@@ -334,93 +299,6 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			error = $"image-id '{options.ImageId}' is not a valid id. Pass the id printed by upload-image.";
 			return false;
 		}
-		if (!_backgroundService.TryFindUploadedImage(imageId, out bool imageExists, out string imageCheckError)) {
-			error = $"Could not check the image in the environment: {imageCheckError}";
-			return false;
-		}
-		if (!imageExists) {
-			error = $"No uploaded image with id '{imageId}' was found in the environment. " +
-				"Upload the file first with upload-image and pass the id it prints.";
-			return false;
-		}
-		return true;
+		return _backgroundService.TryConfirmUploadedImage(imageId, out error);
 	}
-
-	private bool TryEnsureInBackgroundGallery(Guid imageId, out GalleryMembership membership, out string error) {
-		membership = null;
-		error = null;
-		GalleryProbe probe = EnsureMembershipForTag(imageId, ShellBackgroundTagId);
-		if (probe.HardError is not null) {
-			error = probe.HardError;
-			return false;
-		}
-		if (probe.RowId is not null) {
-			membership = new GalleryMembership(probe.RowId.Value, ShellBackgroundTagId);
-			return true;
-		}
-		if (!TryQuerySingleId(
-			$"{ODataKeyFormatter.CollectionPath("SysImageTag")}?$filter=Name eq '{ShellBackgroundTagName}'&$select=Id&$top=1",
-			out Guid? resolvedTagId, out string tagLookupError)) {
-			error = $"Could not resolve the background gallery tag: {tagLookupError}";
-			return false;
-		}
-		if (resolvedTagId is null) {
-			error = "The background gallery tag was not found in the environment, so the image could not " +
-				"be registered in the gallery.";
-			return false;
-		}
-		if (resolvedTagId.Value != ShellBackgroundTagId) {
-			probe = EnsureMembershipForTag(imageId, resolvedTagId.Value);
-			if (probe.HardError is not null) {
-				error = probe.HardError;
-				return false;
-			}
-			if (probe.RowId is not null) {
-				membership = new GalleryMembership(probe.RowId.Value, resolvedTagId.Value);
-				return true;
-			}
-		}
-		error = "Registering the image in the background gallery failed."
-			+ (probe.RegistrationError is null ? string.Empty : $" {probe.RegistrationError}");
-		return false;
-	}
-
-	private GalleryProbe EnsureMembershipForTag(Guid imageId, Guid tagId) {
-		string membershipUrl =
-			$"{ODataKeyFormatter.CollectionPath(SysImageInTagSchema)}?$filter=Entity/Id eq {imageId} and Tag/Id eq {tagId}&$select=Id&$top=1";
-		if (!TryQuerySingleId(membershipUrl, out Guid? membershipRowId, out string readError)) {
-			return new GalleryProbe(null, $"Could not check the background gallery: {readError}", null);
-		}
-		if (membershipRowId is not null) {
-			return new GalleryProbe(membershipRowId, null, null);
-		}
-		string registrationError = PostGalleryRegistration(imageId, tagId);
-		if (!TryQuerySingleId(membershipUrl, out membershipRowId, out readError)) {
-			return new GalleryProbe(null,
-				$"Could not verify the background gallery registration: {readError}", registrationError);
-		}
-		return new GalleryProbe(membershipRowId, null, registrationError);
-	}
-
-	private string PostGalleryRegistration(Guid imageId, Guid tagId) {
-		try {
-			string url = _serviceUrlBuilder.Build(ODataKeyFormatter.CollectionPath(SysImageInTagSchema));
-			string body = JsonSerializer.Serialize(new {
-				EntityId = imageId.ToString(),
-				TagId = tagId.ToString()
-			});
-			ApplicationClient.ExecutePostRequest(url, body);
-			return null;
-		} catch (Exception ex) {
-			return ex.Message;
-		}
-	}
-
-	private bool TryQuerySingleId(string relativeUrl, out Guid? id, out string error) {
-		return ODataSingleIdQuery.TryRead(ApplicationClient, _serviceUrlBuilder, relativeUrl, out id, out error);
-	}
-
-	private sealed record GalleryProbe(Guid? RowId, string HardError, string RegistrationError);
-
-	private sealed record GalleryMembership(Guid RowId, Guid TagId);
 }

@@ -1,8 +1,10 @@
 namespace Clio.Tests.Command;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
+using Clio.Command.Branding;
 using Clio.Command.Theming;
 using Clio.Common;
 using FluentAssertions;
@@ -16,6 +18,9 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	private const string ThemeId = "d53a816b-65ed-4b5b-ad3b-f739280add45";
 
 	private const string ImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
+
+	private static readonly BackgroundGalleryImage GalleryImage = new(Guid.Parse(ImageId),
+		Guid.Parse("8b1c2d3e-4f50-4a6b-9c7d-e8f9a0b1c2d3"), BrandingBackgroundService.ShellBackgroundTagId);
 
 	private IApplicationClient _applicationClient;
 	private IThemeBackgroundWriter _backgroundWriter;
@@ -39,12 +44,23 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_backgroundWriter = Substitute.For<IThemeBackgroundWriter>();
-		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackground>(), out Arg.Any<string>()).Returns(true);
-		_backgroundWriter.Complete(default, default, default, default).ReturnsForAnyArgs(ThemeBackgroundOutcome.None);
+		ArrangeGallery(added: true);
+		_backgroundWriter.TurnOffPanelIconBackground(default, default).ReturnsForAnyArgs(PanelIconBackgroundOutcome.None);
+		_backgroundWriter.BindImageIntoThemePackage(default, default, default)
+			.ReturnsForAnyArgs(ThemeImageBindingOutcome.None);
 		_themeCatalog = Substitute.For<IThemeCatalog>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _backgroundWriter);
 		containerBuilder.AddTransient(_ => _themeCatalog);
+	}
+
+	private void ArrangeGallery(bool added) {
+		_backgroundWriter.TryAddImageToBackgroundGallery(Arg.Any<ThemeBackground>(), out Arg.Any<BackgroundGalleryImage>(),
+				out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = added ? GalleryImage : null;
+				return added;
+			});
 	}
 
 	private static UpdateThemeOptions ValidOptions() => new() {
@@ -213,7 +229,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	[Description("Binds an image into the package read from the theme's catalog cssFilePath, with or without a leading slash, and writes nothing for a theme the catalog does not list, which it names as missing, or an image the environment does not have.")]
 	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, string pathPrefix,
 		bool imageFound, int expectedCalls, int expectedMissingThemeErrors) {
-		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackground>(), out Arg.Any<string>()).Returns(imageFound);
+		ArrangeGallery(imageFound);
 		StubCatalog(true, new ThemeDescriptor {
 			Id = catalogThemeId,
 			CssFilePath = $"{pathPrefix}Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{catalogThemeId}/theme.css?hash=abc"
@@ -224,7 +240,8 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 
 		_applicationClient.Received(expectedCalls).ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		_backgroundWriter.Received(expectedCalls).Complete(Arg.Any<ThemeBackground>(), false, ThemeId, "UsrBranding");
+		_backgroundWriter.Received(expectedCalls).TurnOffPanelIconBackground(Arg.Any<ThemeBackground>(), false);
+		_backgroundWriter.Received(expectedCalls).BindImageIntoThemePackage(GalleryImage, ThemeId, "UsrBranding");
 		_logger.Received(expectedMissingThemeErrors)
 			.WriteError(Arg.Is<string>(m => m != null && m.StartsWith($"No theme with id '{ThemeId}'")));
 	}
@@ -288,8 +305,8 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 
 		exitCode.Should().Be(0, because: "null alone is a valid background update");
 		_logger.Received(1).WriteInfo("The theme has no background now.");
-		_backgroundWriter.Received(1).Complete(Arg.Is<ThemeBackground>(background => background.RemovesBackground), true,
-			ThemeId, null);
+		_backgroundWriter.Received(1).TurnOffPanelIconBackground(
+			Arg.Is<ThemeBackground>(background => background.RemovesBackground), true);
 		_themeCatalog.DidNotReceiveWithAnyArgs().TryGetAvailableThemes(default, out _, out _);
 	}
 

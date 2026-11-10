@@ -16,6 +16,8 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	private const string ThemeId = "d53a816b-65ed-4b5b-ad3b-f739280add45";
 	private const string ImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
 
+	private const string GalleryMembershipId = "8b1c2d3e-4f50-4a6b-9c7d-e8f9a0b1c2d3";
+
 	private IApplicationClient _applicationClient;
 	private IFeatureStateService _featureState;
 	private IPackageDataBinder _binder;
@@ -61,6 +63,10 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 		_applicationClient.ExecuteGetRequest(Arg.Is<string>(u => u.Contains($"odata/SysImage?$filter=Id eq {ImageId}")),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(found ? $"{{\"value\":[{{\"Id\":\"{ImageId}\"}}]}}" : "{\"value\":[]}");
+		_applicationClient.ExecuteGetRequest(
+				Arg.Is<string>(u => u.Contains($"odata/SysImageInTag?$filter=Entity/Id eq {ImageId}")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"value\":[{{\"Id\":\"{GalleryMembershipId}\"}}]}}");
 	}
 
 	[Test, Category("Unit")]
@@ -357,7 +363,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	}
 
 	[Test, Category("Unit")]
-	[Description("Sends the background in the CreateTheme body, then turns the panel icon background off and binds the image into the theme's package.")]
+	[Description("Sends the background in the CreateTheme body, then turns the panel icon background off and binds the image and its gallery membership into the theme's package.")]
 	public void TryCreateTheme_ShouldWriteTheBackgroundThenTurnOffThePanelIconAndBindTheImage() {
 		string body = null;
 		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
@@ -382,6 +388,8 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			_featureState.SetFeatureState("UsePanelIconBackground", SysAdminUnitIds.AllEmployees, false);
 			_binder.BindRow("SysImage", "ThemeBackground_d53a816b65ed4b5bad3bf739280add45",
 				Arg.Any<IReadOnlyList<string>>(), Guid.Parse(ImageId));
+			_binder.BindRow("SysImageInTag", "ThemeBackground_d53a816b65ed4b5bad3bf739280add45",
+				Arg.Any<IReadOnlyList<string>>(), Guid.Parse(GalleryMembershipId));
 		});
 	}
 

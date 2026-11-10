@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.Branding;
 using Clio.Common;
@@ -14,72 +16,131 @@ namespace Clio.Tests.Command;
 [Property("Module", "Command")]
 public sealed class BrandingBackgroundServiceTests {
 
+	private const string BindingSuffix = "ThemeBackground_d53a816b65ed4b5bad3bf739280add45";
+
 	private static readonly Guid ImageId = Guid.Parse("6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81");
+
+	private static readonly Guid MembershipId = Guid.Parse("8b1c2d3e-4f50-4a6b-9c7d-e8f9a0b1c2d3");
+
+	private static readonly BackgroundGalleryImage GalleryImage =
+		new(ImageId, MembershipId, BrandingBackgroundService.ShellBackgroundTagId);
 
 	private IApplicationClient _applicationClient;
 	private IFeatureStateService _featureState;
+	private IPackageDataBinder _binder;
 	private BrandingBackgroundService _service;
 
 	[SetUp]
 	public void SetUp() {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_featureState = Substitute.For<IFeatureStateService>();
+		_binder = Substitute.For<IPackageDataBinder>();
+		_binder.BindRow(default, default, default, default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(Arg.Any<string>()).Returns(call => call.Arg<string>());
 		_service = new BrandingBackgroundService(_applicationClient, urlBuilder, _featureState);
 	}
 
 	[Test]
-	[Description("Asks the OData SysImage collection for the one row whose Id is the image id.")]
-	public void TryFindUploadedImage_Should_Query_SysImage_By_The_Image_Id() {
-		_applicationClient.ExecuteGetRequest(default).ReturnsForAnyArgs("{\"value\":[]}");
+	[Description("Confirms an uploaded image after asking the OData SysImage collection for the one row whose Id is the image id.")]
+	public void TryConfirmUploadedImage_Should_Confirm_An_Image_The_Environment_Has() {
+		// Arrange
+		ArrangeImageLookup($"{{\"value\":[{{\"Id\":\"{ImageId}\"}}]}}");
 
-		_service.TryFindUploadedImage(ImageId, out _, out _);
+		// Act
+		bool confirmed = _service.TryConfirmUploadedImage(ImageId, out string error);
 
+		// Assert
+		confirmed.Should().BeTrue(because: $"the environment returned the image row (error: {error})");
 		_applicationClient.Received(1).ExecuteGetRequest($"odata/SysImage?$filter=Id eq {ImageId}&$select=Id&$top=1");
 	}
 
-	[TestCase("{\"value\":[{\"Id\":\"6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81\"}]}", true)]
-	[TestCase("{\"value\":[]}", false)]
-	[Description("Reports whether the environment has the uploaded image once the check itself succeeds.")]
-	public void TryFindUploadedImage_Should_Report_Whether_The_Image_Exists(string response, bool expected) {
-		_applicationClient.ExecuteGetRequest(default).ReturnsForAnyArgs(response);
+	[TestCase("{\"value\":[]}", "No uploaded image with id '6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81' was found in the " +
+		"environment. Upload the file first with upload-image and pass the id it prints.")]
+	[TestCase("not json", "Could not check the image in the environment: the environment returned a non-JSON response.")]
+	[TestCase("", "Could not check the image in the environment: the environment returned an empty response.")]
+	[TestCase("{\"rows\":[]}", "Could not check the image in the environment: the environment returned an unexpected response.")]
+	[Description("Refuses an image id the environment has no SysImage row for, and an image check that could not complete, with the reason.")]
+	public void TryConfirmUploadedImage_Should_Refuse_An_Image_It_Cannot_Confirm(string response, string expectedError) {
+		// Arrange
+		ArrangeImageLookup(response);
 
-		bool checkedImage = _service.TryFindUploadedImage(ImageId, out bool exists, out _);
+		// Act
+		bool confirmed = _service.TryConfirmUploadedImage(ImageId, out string error);
 
-		checkedImage.Should().BeTrue(because: "an OData answer with a value collection is a completed check");
-		exists.Should().Be(expected, because: "only a returned row proves the image was uploaded");
-	}
-
-	[TestCase("not json", "the environment returned a non-JSON response.")]
-	[TestCase("", "the environment returned an empty response.")]
-	[TestCase("{\"rows\":[]}", "the environment returned an unexpected response.")]
-	[Description("Reports a check that could not complete, with the reason, instead of a missing image.")]
-	public void TryFindUploadedImage_Should_Report_A_Check_That_Failed(string response, string expectedError) {
-		_applicationClient.ExecuteGetRequest(default).ReturnsForAnyArgs(response);
-
-		bool checkedImage = _service.TryFindUploadedImage(ImageId, out _, out string error);
-
-		checkedImage.Should().BeFalse(because: "an unreadable answer does not say whether the image exists");
-		error.Should().Be(expectedError, because: "the caller must learn why the check failed");
+		// Assert
+		confirmed.Should().BeFalse(because: "only an image the environment confirmed may become a background");
+		error.Should().Be(expectedError, because: "the caller must learn whether the image is missing or the check failed");
 	}
 
 	[Test]
-	[Description("Reports the message of a request that throws as a failed check.")]
-	public void TryFindUploadedImage_Should_Report_The_Message_When_The_Request_Throws() {
-		_applicationClient.ExecuteGetRequest(default).ThrowsForAnyArgs(new InvalidOperationException("connection reset"));
+	[Description("Lets a cancelled image check through instead of reporting it as a check that failed.")]
+	public void TryConfirmUploadedImage_Should_Let_A_Cancellation_Through() {
+		// Arrange
+		_applicationClient.ExecuteGetRequest(default).ThrowsForAnyArgs(new OperationCanceledException());
 
-		bool checkedImage = _service.TryFindUploadedImage(ImageId, out _, out string error);
+		// Act
+		Action confirm = () => _service.TryConfirmUploadedImage(ImageId, out _);
 
-		checkedImage.Should().BeFalse(because: "a request that never answered checked nothing");
-		error.Should().Be("connection reset", because: "the request failure is the reason the check failed");
+		// Assert
+		confirm.Should().Throw<OperationCanceledException>(
+			because: "a cancelled call is the caller's decision, not a refusal of the image");
+	}
+
+	[Test]
+	[Description("Adds an image that is already in the gallery without posting a membership, and reports its membership.")]
+	public void TryAddImageToBackgroundGallery_Should_Return_The_Existing_Membership() {
+		// Arrange
+		ArrangeMembershipReads($"{{\"value\":[{{\"Id\":\"{MembershipId}\"}}]}}");
+
+		// Act
+		bool added = _service.TryAddImageToBackgroundGallery(ImageId, out BackgroundGalleryImage image, out string error);
+
+		// Assert
+		added.Should().BeTrue(because: $"an image that is already in the gallery is added (error: {error})");
+		image.Should().Be(GalleryImage, because: "the caller binds exactly this membership row");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
+	[Test]
+	[Description("Adds the image when the gallery registration request times out but the membership row landed, because the re-read decides.")]
+	public void TryAddImageToBackgroundGallery_Should_Add_The_Image_When_The_Registration_Times_Out_But_Lands() {
+		// Arrange
+		ArrangeMembershipReads("{\"value\":[]}", $"{{\"value\":[{{\"Id\":\"{MembershipId}\"}}]}}");
+		_applicationClient.ExecutePostRequest("odata/SysImageInTag", Arg.Any<string>())
+			.Throws(new AggregateException(new TaskCanceledException("A task was canceled.")));
+
+		// Act
+		bool added = _service.TryAddImageToBackgroundGallery(ImageId, out BackgroundGalleryImage image, out string error);
+
+		// Assert
+		added.Should().BeTrue(because: $"the membership row is in the gallery although the POST timed out (error: {error})");
+		image.Should().Be(GalleryImage, because: "the re-read found the membership row");
+	}
+
+	[Test]
+	[Description("Lets a cancelled gallery registration through instead of reporting it as a registration that failed.")]
+	public void TryAddImageToBackgroundGallery_Should_Let_A_Cancellation_Through() {
+		// Arrange
+		ArrangeMembershipReads("{\"value\":[]}");
+		_applicationClient.ExecutePostRequest("odata/SysImageInTag", Arg.Any<string>())
+			.Throws(new OperationCanceledException());
+
+		// Act
+		Action add = () => _service.TryAddImageToBackgroundGallery(ImageId, out _, out _);
+
+		// Assert
+		add.Should().Throw<OperationCanceledException>(
+			because: "a cancelled call is the caller's decision, not a gallery refusal");
 	}
 
 	[Test]
 	[Description("Turns the UsePanelIconBackground feature off for All employees.")]
 	public void TryTurnOffPanelIconBackground_Should_Turn_The_Feature_Off_For_All_Employees() {
+		// Act
 		bool turnedOff = _service.TryTurnOffPanelIconBackground("The theme background", out _);
 
+		// Assert
 		turnedOff.Should().BeTrue(because: "the feature write succeeded");
 		_featureState.Received(1).SetFeatureState("UsePanelIconBackground", SysAdminUnitIds.AllEmployees, false);
 	}
@@ -87,11 +148,14 @@ public sealed class BrandingBackgroundServiceTests {
 	[Test]
 	[Description("Turns a failed feature write into a warning that names what was applied and why the panel may still hide it.")]
 	public void TryTurnOffPanelIconBackground_Should_Turn_A_Failure_Into_A_Warning() {
+		// Arrange
 		_featureState.WhenForAnyArgs(service => service.SetFeatureState(default, default, default, default))
 			.Do(_ => throw new InvalidOperationException("feature service unavailable"));
 
+		// Act
 		bool turnedOff = _service.TryTurnOffPanelIconBackground("The background image", out string warning);
 
+		// Assert
 		turnedOff.Should().BeFalse(because: "the feature write failed");
 		warning.Should().Be("The background image was applied, but turning off the UsePanelIconBackground feature " +
 			"failed, so the panel may still hide it: feature service unavailable",
@@ -99,25 +163,95 @@ public sealed class BrandingBackgroundServiceTests {
 	}
 
 	[Test]
-	[Description("Lets a cancelled image check through instead of reporting it as a check that failed.")]
-	public void TryFindUploadedImage_Should_Let_A_Cancellation_Through() {
-		_applicationClient.ExecuteGetRequest(default).ThrowsForAnyArgs(new OperationCanceledException());
-
-		Action check = () => _service.TryFindUploadedImage(ImageId, out _, out _);
-
-		check.Should().Throw<OperationCanceledException>(
-			because: "a cancelled call is the caller's decision, not a refusal of the image");
-	}
-
-	[Test]
 	[Description("Lets a cancelled feature write through instead of reporting it as a warning.")]
 	public void TryTurnOffPanelIconBackground_Should_Let_A_Cancellation_Through() {
+		// Arrange
 		_featureState.WhenForAnyArgs(service => service.SetFeatureState(default, default, default, default))
 			.Do(_ => throw new OperationCanceledException());
 
+		// Act
 		Action turnOff = () => _service.TryTurnOffPanelIconBackground("The theme background", out _);
 
+		// Assert
 		turnOff.Should().Throw<OperationCanceledException>(
 			because: "a cancelled call is the caller's decision, not a failed turn-off to warn about");
+	}
+
+	[Test]
+	[Description("Binds the image and then its gallery membership through the given binder under the given binding name, without selecting a package and without binding anything else.")]
+	public void BindGalleryImage_Should_Bind_The_Image_And_Then_Its_Membership() {
+		// Act
+		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
+
+		// Assert
+		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome(true,
+				[BrandingBackgroundService.ImagePart, BrandingBackgroundService.GalleryMembershipPart], []),
+			because: "the image and its gallery membership are the parts every background delivers");
+		Received.InOrder(() => {
+			_binder.BindRow("SysImage", BindingSuffix, Arg.Any<IReadOnlyList<string>>(), ImageId);
+			_binder.BindRow("SysImageInTag", BindingSuffix, Arg.Any<IReadOnlyList<string>>(), MembershipId);
+		});
+		_binder.DidNotReceiveWithAnyArgs().UsePackage(default);
+		_binder.DidNotReceiveWithAnyArgs().BindSysSettingsValue(default);
+		_binder.DidNotReceiveWithAnyArgs().BindFeatureOffState(default);
+	}
+
+	[Test]
+	[Description("Does not bind the gallery membership when the image is not bound, and passes on why.")]
+	public void BindGalleryImage_Should_Not_Bind_The_Membership_Of_An_Unbound_Image() {
+		// Arrange
+		_binder.BindRow("SysImage", Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<Guid>()).Returns(
+			PackageDataBindingOutcome.Refused(["SysImage_ShellBackground: row not found on this environment"]));
+		_binder.RemoveBinding(default, default).ReturnsForAnyArgs([]);
+
+		// Act
+		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, "ShellBackground");
+
+		// Assert
+		outcome.ImageBound.Should().BeFalse(because: "the binder refused the image row");
+		outcome.Bound.Should().BeEmpty(because: "a package must not ship a membership that names an image it does not carry");
+		outcome.Warnings.Should().HaveCount(2, because: "the caller must learn why the image and the membership are missing");
+		_binder.DidNotReceive().BindRow("SysImageInTag", Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
+			Arg.Any<Guid>());
+		_binder.Received(1).RemoveBinding("SysImageInTag_ShellBackground", "SysImageInTag");
+	}
+
+	[Test]
+	[Description("Reports the parts already bound when a later binding step fails, a request timeout included.")]
+	public void BindGalleryImage_Should_Report_The_Parts_Bound_Before_A_Failure() {
+		// Arrange
+		_binder.BindRow("SysImageInTag", Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<Guid>())
+			.Throws(new AggregateException("package is locked", new TaskCanceledException()));
+
+		// Act
+		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
+
+		// Assert
+		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome(true, [BrandingBackgroundService.ImagePart], [],
+				"package is locked (A task was canceled.)"),
+			because: "the parts that landed stay in the package, so the caller must learn which they are");
+	}
+
+	[Test]
+	[Description("Lets a cancelled binding through instead of reporting it as a failed binding.")]
+	public void BindGalleryImage_Should_Let_A_Cancellation_Through() {
+		// Arrange
+		_binder.BindRow(default, default, default, default).ThrowsForAnyArgs(new OperationCanceledException());
+
+		// Act
+		Action bind = () => _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
+
+		// Assert
+		bind.Should().Throw<OperationCanceledException>(
+			because: "a cancelled call is the caller's decision, not a failed binding to report");
+	}
+
+	private void ArrangeImageLookup(string response) {
+		_applicationClient.ExecuteGetRequest(Arg.Is<string>(url => url.StartsWith("odata/SysImage?"))).Returns(response);
+	}
+
+	private void ArrangeMembershipReads(string first, params string[] next) {
+		_applicationClient.ExecuteGetRequest(Arg.Is<string>(url => url.StartsWith("odata/SysImageInTag?")))
+			.Returns(first, next);
 	}
 }

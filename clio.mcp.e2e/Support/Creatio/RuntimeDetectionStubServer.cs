@@ -235,6 +235,7 @@ const http = require("http");
 const config = {{configJson}};
 const port = {{port.ToString(CultureInfo.InvariantCulture)}};
 const recordedRequests = [];
+let backgroundGalleryRegistered = false;
 
 // CSDL 4.0 served at the SERVICE-ROOT odata/$metadata. Declares only Id and Name, so any other
 // field name in an odata-update payload must be rejected before the PATCH.
@@ -617,6 +618,24 @@ http.createServer((request, response) => {
       response.end(config.ThemeWriteResponseJson);
       return;
     }
+    if (config.BackgroundGalleryImageId && url.includes("/odata/SysImage")) {
+      if (request.method === "GET" && url.includes("/odata/SysImage?")) {
+        sendJson(response, 200, { value: [{ Id: config.BackgroundGalleryImageId }] });
+        return;
+      }
+      if (request.method === "GET" && url.includes("/odata/SysImageTag?")) {
+        sendJson(response, 200, { value: [{ Id: "273C2402-7CAE-456B-A9C4-067D2024F1A7" }] });
+        return;
+      }
+      if (request.method === "POST" && url.endsWith("/odata/SysImageInTag")) {
+        backgroundGalleryRegistered = true;
+        sendJson(response, 201, {});
+        return;
+      }
+      const listed = config.BackgroundGalleryListsRegistration && backgroundGalleryRegistered;
+      sendJson(response, 200, { value: listed ? [{ Id: "8b1c2d3e-4f50-4a6b-9c7d-e8f9a0b1c2d3" }] : [] });
+      return;
+    }
     if (request.method === "GET" && config.ThemeCssPath && url === config.ThemeCssPath) {
       response.writeHead(200, { "Content-Type": "text/css" });
       response.end(config.ThemeCssContent || "");
@@ -890,7 +909,9 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? PackageSynchronizationResponse = null,
 	bool NonJsonSysSettingsWriteEnabled = false,
 	string? ShellPageHtml = null,
-	string? ThemeWriteResponseJson = null);
+	string? ThemeWriteResponseJson = null,
+	string? BackgroundGalleryImageId = null,
+	bool BackgroundGalleryListsRegistration = false);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by
