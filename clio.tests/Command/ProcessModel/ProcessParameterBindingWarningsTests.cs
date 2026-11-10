@@ -82,9 +82,10 @@ public class ProcessParameterBindingWarningsTests {
 	// refuses mergeFrom on one that already takes a value - and the Formula names the warned parameter itself.
 	private static bool RecommendsMergeFirst(string warning, string parameter) {
 		int merge = warning.IndexOf("give a NEW Guid parameter mergeFrom [", System.StringComparison.Ordinal);
-		int readInstead = warning.IndexOf($"bind '{parameter}' once to that read's output", System.StringComparison.Ordinal);
-		int fallback = warning.IndexOf("Otherwise (signal starts on different objects, a timer or message start, "
-			+ "gateway branches)", System.StringComparison.Ordinal);
+		int readInstead = warning.IndexOf("filter ONE shared chain by it (for example one Read data), and bind "
+			+ $"'{parameter}' once to that chain's output", System.StringComparison.Ordinal);
+		int fallback = warning.IndexOf("Otherwise (signal starts on different objects, a named signal start, a timer or "
+			+ "message start, gateway branches)", System.StringComparison.Ordinal);
 		int formula = warning.IndexOf($"formula.resultProcessParameter is '{parameter}'", System.StringComparison.Ordinal);
 		return merge >= 0 && readInstead > merge
 			&& warning.Contains("process-multi-start", System.StringComparison.Ordinal)
@@ -294,6 +295,52 @@ public class ProcessParameterBindingWarningsTests {
 			because: "the SigB run never executes ReadA");
 		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
 			because: "a start that is not on an object cannot be merged, so naming mergeFrom would send the caller to a refusal");
+	}
+
+	[Test]
+	[Description("One record signal start beside one named signal start is not a pair mergeFrom can merge: the named start is on no object, so the unreached warning names the Formula only. This is the graph where the named start's exclusion decides the count.")]
+	public void ForOperations_ShouldRecommendOnlyAFormula_WhenARecordSignalStartSitsBesideANamedOne() {
+		// Arrange
+		DescribeProcessResult after = TwoStartProcess();
+		after.Elements[1].Signal = null;
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForOperations($"[{AddMapping(ReadAName)}]",
+			null, after);
+
+		// Assert
+		string warning = warnings.Should().ContainSingle(w => w.Contains("started by 'SigB' does not reach"),
+			because: "the SigB run never executes ReadA").Which;
+		RecommendsOnlyAFormula(warning, "PName").Should().BeTrue(
+			because: "one record start has nothing to merge with, and the named start can never be listed in mergeFrom");
+	}
+
+	[Test]
+	[Description("Binding the warned parameter to the shared chain's output is the step the merge remedy asks for, and on modify it replaces a stored binding. A process that already holds a merged parameter is told the replacement may be the intended one, so a caller who has just merged is not sent to a second merged parameter; a process with no merge gets no such sentence.")]
+	public void ForOperations_ShouldSayTheBindingMayBeTheMergeStep_WhenTheProcessAlreadyMerges() {
+		// Arrange
+		DescribedParameter stored = new() {
+			Name = "PName", Source = "Script", Value = "[#...#]",
+			SourceElement = "ReadA", SourceElementParameter = "ResultEntity", SourceColumn = "Name"
+		};
+		DescribedParameter merged = new() { Name = "RecordIdParameter", MergeFrom = ["SigA.RecordId", "SigB.RecordId"] };
+		DescribeProcessResult before = TwoStartProcess(stored);
+		DescribeProcessResult after = TwoStartProcess(stored, merged);
+
+		// Act
+		IReadOnlyList<string> withMerge = ProcessParameterBindingWarnings.ForOperations(
+			$"[{AddMapping(ReadBName)}]", before, after);
+		IReadOnlyList<string> withoutMerge = ProcessParameterBindingWarnings.ForOperations(
+			$"[{AddMapping(ReadBName)}]", before, before);
+
+		// Assert
+		withMerge.Should().Contain(w => w.Contains("replaced the existing binding of process parameter 'PName'")
+				&& w.Contains("this binding is the intended one: add no second merged parameter")
+				&& RecommendsMergeFirst(w, "PName"),
+			because: "the process already merges its starts, so the replacement may be the remedy carried out");
+		withoutMerge.Should().Contain(w => w.Contains("replaced the existing binding of process parameter 'PName'"))
+			.And.NotContain(w => w.Contains("add no second merged parameter"),
+				because: "with no merged parameter the sentence would describe a step nobody took");
 	}
 
 	#endregion

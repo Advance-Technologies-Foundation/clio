@@ -21,9 +21,13 @@ namespace Clio.Command.ProcessModel;
 /// on one object, the remedy names <c>mergeFrom</c> first: a NEW Guid parameter with <c>mergeFrom</c> takes the record
 /// Id of whichever start fired, so ONE shared chain reads the record and no branch needs its own binding or Formula.
 /// It must be a new parameter, because the server refuses <c>mergeFrom</c> on one that already takes a value and
-/// modify has no removeMapping. Everything <c>mergeFrom</c> cannot merge - signal starts on different objects, a timer
-/// or message start, gateway branches after a single start - is answered by a Formula per branch, which assigns per
-/// run and wins over the stored binding; a graph without two such signal starts gets that remedy alone.</para>
+/// modify has no removeMapping. Everything <c>mergeFrom</c> cannot merge - signal starts on different objects, a named
+/// signal start, a timer or message start, gateway branches after a single start - is answered by a Formula per
+/// branch, which assigns per run and wins over the stored binding; a graph without two such signal starts gets that
+/// remedy alone. The shared chain is not assumed to be a Read data: the bound source may be any element's output.
+/// A process that already holds a merged parameter is told so, because binding the warned parameter to the shared
+/// chain's output is the step the remedy itself asks for, and it replaces a stored binding - without that sentence
+/// the replaced-binding warning would send a caller who has just merged to a second merge.</para>
 /// <para>Two warnings follow from that, and only those two, because each is true whenever it fires:</para>
 /// <list type="bullet">
 /// <item>the same process parameter is bound more than once - in one payload, or on a modify over a binding the
@@ -202,12 +206,17 @@ public static class ProcessParameterBindingWarnings {
 	private static string Remedy(string parameter, BindingGraph graph) {
 		string perBranch = $"a formulaTask on each branch whose formula.resultProcessParameter is {Quote(parameter)}: "
 			+ "its assignment wins over the stored binding (get-guidance name=process-parameters)";
+		string alreadyMerged = graph.HasMergedParameter
+			? "If the process already merges those starts and the source bound here sits on the merged chain, this "
+				+ "binding is the intended one: add no second merged parameter. "
+			: string.Empty;
 		return graph.HasMergeableSignalStarts
 			? "If the branches are signal starts on one object, merge them instead: give a NEW Guid parameter "
 				+ "mergeFrom [\"<Start>.RecordId\", ...] (omit direction: a merged parameter is Internal), filter ONE "
-				+ $"shared Read data by it, and bind {Quote(parameter)} once to that read's output instead of one read per "
-				+ "start (get-guidance name=process-multi-start). Otherwise (signal starts on different objects, a timer or "
-				+ $"message start, gateway branches) set it with {perBranch}."
+				+ $"shared chain by it (for example one Read data), and bind {Quote(parameter)} once to that chain's "
+				+ "output instead of one source per start (get-guidance name=process-multi-start). " + alreadyMerged
+				+ "Otherwise (signal starts on different objects, a named signal start, a timer or message start, "
+				+ $"gateway branches) set it with {perBranch}."
 			: $"To give each branch its own value, set it with {perBranch}.";
 	}
 
@@ -332,6 +341,8 @@ public static class ProcessParameterBindingWarnings {
 
 		internal List<string> Starts { get; } = [];
 
+		internal bool HasMergedParameter { get; private set; }
+
 		/// <summary>
 		/// Whether two signal starts may sit on one object, the only starts <c>mergeFrom</c> merges. A start whose
 		/// object the data does not name could be on any, so it pairs with every other signal start.
@@ -380,6 +391,8 @@ public static class ProcessParameterBindingWarnings {
 			foreach (DescribedFlow flow in described.Flows ?? []) {
 				graph.AddFlow(flow?.Source, flow?.Target);
 			}
+			graph.HasMergedParameter =
+				described.Parameters?.Any(parameter => parameter?.MergeFrom is { Count: > 0 }) == true;
 			return graph;
 		}
 
