@@ -403,7 +403,144 @@ internal sealed class DataBindingDbLocalizerTests {
 			.WithMessage("*nothing was written*culture of the connected user could not be read (endpoint unreachable)*");
 	}
 
-	private void SetupReads(string profileName, string? localizedName, string? failingUpdateRowId = null) {
+	[Test]
+	[Description("Resolves the site's default culture from the All-employees value of the PrimaryCulture system setting, next to the profile culture.")]
+	public void Validate_Should_Resolve_Default_Culture_From_PrimaryCulture() {
+		// Arrange
+		SetupDefaultCultureReads("1a778e3f-0a8e-e111-84a3-00155d054c03", "en-US");
+		_cultureResolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Clio.Command.EntitySchemaDesigner.CultureResolution.Resolved("uk-UA")));
+		DataBindingRowLocalization row = Row("New", ("en-US", "Name", "New"));
+
+		// Act
+		DataBindingLocalizationPlan? plan = _sut.Validate(SchemaName, PackageUId, RuntimeColumns, [row]);
+
+		// Assert
+		plan!.ProfileCulture.Should().Be("uk-UA", because: "the connected user's profile culture is uk-UA");
+		plan.SiteDefaultCulture.Should().Be("en-US", because: "PrimaryCulture points at the en-US culture row");
+		JsonNode settingQuery = JsonNode.Parse(_posts.First(post => post.Body.Contains("SysSettingsValue")).Body)!;
+		settingQuery.ToJsonString().Should().Contain("PrimaryCulture", because: "the default culture is the PrimaryCulture setting")
+			.And.Contain("a29a3ba5-4b0d-de11-9a51-005056c00008", because: "the platform reads the All-employees value");
+	}
+
+	[Test]
+	[Description("Falls back to en-US, as the platform does, when the PrimaryCulture system setting has no value.")]
+	public void Validate_Should_Fall_Back_To_EnUs_When_PrimaryCulture_Has_No_Value() {
+		// Arrange
+		SetupDefaultCultureReads(primaryCultureId: null, primaryCultureName: null);
+		DataBindingRowLocalization row = Row("New", ("uk-UA", "Name", "Нове"));
+
+		// Act
+		DataBindingLocalizationPlan? plan = _sut.Validate(SchemaName, PackageUId, RuntimeColumns, [row]);
+
+		// Assert
+		plan!.SiteDefaultCulture.Should().Be("en-US", because: "the platform uses en-US when PrimaryCulture is empty");
+	}
+
+	[Test]
+	[Description("Leaves the default culture unknown, not en-US, when PrimaryCulture points at a culture row the user cannot read, so a wrong culture is never assumed.")]
+	public void Validate_Should_Mark_Default_Culture_Unknown_When_Culture_Row_Is_Missing() {
+		// Arrange
+		SetupDefaultCultureReads("1a778e3f-0a8e-e111-84a3-00155d054c03", primaryCultureName: null);
+		DataBindingRowLocalization row = Row("New", ("uk-UA", "Name", "Нове"));
+
+		// Act
+		DataBindingLocalizationPlan? plan = _sut.Validate(SchemaName, PackageUId, RuntimeColumns, [row]);
+
+		// Assert
+		plan!.SiteDefaultCulture.Should().BeNull(because: "the setting has a value whose culture could not be read");
+	}
+
+	[Test]
+	[Description("Keeps validating when the default culture cannot be read, and marks it unknown instead of refusing the call.")]
+	public void Validate_Should_Mark_Default_Culture_Unknown_When_It_Cannot_Be_Read() {
+		// Arrange
+		SetupDefaultCultureReads(primaryCultureId: null, primaryCultureName: null, fail: true);
+		DataBindingRowLocalization row = Row("New", ("uk-UA", "Name", "Нове"));
+
+		// Act
+		DataBindingLocalizationPlan? plan = _sut.Validate(SchemaName, PackageUId, RuntimeColumns, [row]);
+
+		// Assert
+		plan.Should().NotBeNull(because: "an unreadable default culture only weakens verification");
+		plan!.SiteDefaultCulture.Should().BeNull(because: "the default culture could not be read");
+	}
+
+	[Test]
+	[Description("Verifies a translation in the site's default culture with a select without localization when the profile culture differs, so a correct write is not reported as NOT verified.")]
+	public void Write_Should_Verify_Default_Culture_From_Entity_Table_When_Profile_Differs() {
+		// Arrange
+		SetupReads(profileName: "Новый", localizedName: null, tableName: "New");
+		DataBindingRowLocalization row = Row("New", ("en-US", "Name", "New"));
+
+		// Act
+		IReadOnlyList<DataBindingLocalizationWrite> result = _sut.Write(RuProfileEnDefaultPlan, SchemaName, [(RowId, row)]);
+
+		// Assert
+		result.Should().ContainSingle(because: "one culture was written")
+			.Which.Verified.Should().BeTrue(because: "the default-culture value was read back from the entity table");
+		_posts.Where(post => post.Url == "route:Select")
+			.Select(post => JsonNode.Parse(post.Body)!["useLocalization"]!.GetValue<bool>())
+			.Should().Contain(false, because: "the entity table, which holds the default culture, is read without localization");
+	}
+
+	[Test]
+	[Description("Carries the profile-culture value the record already has when it is not the default culture, because a required column rejects a map without it, and leaves the default culture out, since a culture missing from the map keeps its stored value.")]
+	public void Write_Should_Keep_Profile_Value_And_Leave_Default_Out_When_Cultures_Differ() {
+		// Arrange
+		SetupReads(profileName: "Новый", localizedName: "Нове", tableName: "New");
+		DataBindingRowLocalization row = Row("New", ("uk-UA", "Name", "Нове"));
+
+		// Act
+		_sut.Write(RuProfileEnDefaultPlan, SchemaName, [(RowId, row)]);
+
+		// Assert
+		(string _, string body) = _posts.Single(post => post.Url == "route:UpdateLocalizationQuery");
+		JsonNode cultures = JsonNode.Parse(JsonNode.Parse(body)!["columnValues"]!["items"]!["Name"]!["parameter"]!["value"]!
+			.GetValue<string>())!;
+		cultures["ru-RU"]!.GetValue<string>().Should().Be("Новый", because: "the profile-culture value is kept");
+		cultures["en-US"].Should().BeNull(because: "the default culture keeps its stored value without being sent");
+		cultures["uk-UA"]!.GetValue<string>().Should().Be("Нове", because: "the requested translation is written");
+	}
+
+	[Test]
+	[Description("Reports a culture without a localization row as written but not verified, instead of failing, when the site's default culture is unknown.")]
+	public void Write_Should_Report_Unverified_When_Default_Culture_Is_Unknown() {
+		// Arrange
+		SetupReads(profileName: "Новый", localizedName: null);
+		DataBindingRowLocalization row = Row("New", ("en-US", "Name", "New"));
+		DataBindingLocalizationPlan plan = new("ru-RU", null, DataBindingLocalizationPlan.UnknownDefaultCulture);
+
+		// Act
+		IReadOnlyList<DataBindingLocalizationWrite> result = _sut.Write(plan, SchemaName, [(RowId, row)]);
+
+		// Assert
+		result.Should().ContainSingle(because: "the value was written")
+			.Which.Verified.Should().BeFalse(because: "without the default culture the value cannot be read back");
+	}
+
+	[Test]
+	[Description("Verifies the profile culture with a localized read even when the default culture is unknown, and marks only the culture that could not be read back as not verified.")]
+	public void Write_Should_Mark_Only_Unreadable_Cultures_Unverified_When_Default_Is_Unknown() {
+		// Arrange
+		SetupReads(profileName: "Новый", localizedName: "Нове");
+		DataBindingRowLocalization row = Row("New", ("ru-RU", "Name", "Новый"), ("uk-UA", "Name", "Нове"), ("en-US", "Name", "New"));
+		DataBindingLocalizationPlan plan = new("ru-RU", null, DataBindingLocalizationPlan.UnknownDefaultCulture);
+
+		// Act
+		IReadOnlyList<DataBindingLocalizationWrite> result = _sut.Write(plan, SchemaName, [(RowId, row)]);
+
+		// Assert
+		result.Single(write => write.Culture == "ru-RU").Verified.Should().BeTrue(
+			because: "the profile culture is read back as the connected user sees it");
+		result.Single(write => write.Culture == "uk-UA").Verified.Should().BeTrue(
+			because: "uk-UA has a localization row that matches");
+		result.Single(write => write.Culture == "en-US").Verified.Should().BeFalse(
+			because: "without the default culture an en-US value without a localization row cannot be read back");
+	}
+
+	private void SetupReads(string profileName, string? localizedName, string? failingUpdateRowId = null,
+		string? tableName = null) {
 		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(callInfo => {
 			string url = callInfo.ArgAt<string>(0);
 			string body = callInfo.ArgAt<string>(1);
@@ -413,8 +550,9 @@ internal sealed class DataBindingDbLocalizerTests {
 				return """{"success":false,"errorInfo":{"message":"Update refused"}}""";
 			}
 
+			bool localized = JsonNode.Parse(body)?["useLocalization"]?.GetValue<bool>() ?? false;
 			return url switch {
-				"route:Select" => $$"""{"success":true,"rows":[{"Name":"{{profileName}}"}]}""",
+				"route:Select" => $$"""{"success":true,"rows":[{"Name":"{{(localized ? profileName : tableName ?? profileName)}}"}]}""",
 				"route:SelectLocalizationQuery" => localizedName is null
 					? """{"success":true,"rows":[]}"""
 					: $$"""{"success":true,"rows":[{"CultureName":"uk-UA","Name":"{{localizedName}}"}]}""",
@@ -422,6 +560,29 @@ internal sealed class DataBindingDbLocalizerTests {
 			};
 		});
 	}
+
+	private void SetupDefaultCultureReads(string? primaryCultureId, string? primaryCultureName, bool fail = false) {
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(callInfo => {
+			string body = callInfo.ArgAt<string>(1);
+			_posts.Add((callInfo.ArgAt<string>(0), body));
+			string? root = JsonNode.Parse(body)?["rootSchemaName"]?.GetValue<string>();
+			if (fail) {
+				return """{"success":false,"errorInfo":{"message":"Access denied"}}""";
+			}
+
+			return root switch {
+				"SysSettingsValue" => primaryCultureId is null
+					? """{"success":true,"rows":[]}"""
+					: $$"""{"success":true,"rows":[{"GuidValue":"{{primaryCultureId}}"}]}""",
+				"SysCulture" => primaryCultureName is null
+					? """{"success":true,"rows":[]}"""
+					: $$"""{"success":true,"rows":[{"Name":"{{primaryCultureName}}"}]}""",
+				_ => """{"success":true,"rows":[]}"""
+			};
+		});
+	}
+
+	private static readonly DataBindingLocalizationPlan RuProfileEnDefaultPlan = new("ru-RU", null, "en-US");
 
 	private static DataBindingRowLocalization Row(string label, params (string Culture, string Column, string Value)[] cells) =>
 		new(label, cells

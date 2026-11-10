@@ -102,6 +102,12 @@ public class CreateDataBindingDbCommand(IDataBindingDbService dataBindingDbServi
 					$"Localized row: {localization.RowId} ({localization.RowLabel}) [{localization.Culture}]: "
 					+ string.Join(", ", localization.Columns));
 			}
+			foreach (DataBindingLocalizationWrite localization in result.Localizations.Where(write => !write.Verified)) {
+				logger.WriteWarning(
+					$"Row {localization.RowId} ({localization.RowLabel}) [{localization.Culture}] was written, but not "
+					+ "verified: the site's default culture could not be read, so the value could not be read back. "
+					+ "Check the record in Creatio.");
+			}
 			if (result.Localizations.Count > 0) {
 				logger.WriteInfo(
 					$"Translations are stored on the records and in the per-culture data of binding "
@@ -586,8 +592,11 @@ internal sealed class DataBindingDbService(
 	/// Refuses a profile-culture translation that differs from the row's own value of the same column. The insert
 	/// writes <c>values</c> in the profile culture, so a different translation would rename the record after the
 	/// insert, and a re-run of the same call - which matches existing rows by <c>Name</c> - would insert a duplicate.
+	/// A profile-culture translation of a column missing from <c>values</c> is refused too: on a row matched by
+	/// <c>Id</c> it would rewrite the stored value, and translating adds cultures without rewriting the record.
 	/// </summary>
-	/// <exception cref="InvalidOperationException">A row's profile-culture translation differs from its value.</exception>
+	/// <exception cref="InvalidOperationException">A row's profile-culture translation differs from its value or has no
+	/// value to match.</exception>
 	private static void ValidateProfileCultureValues(IEnumerable<DataBindingDbRowInput> rowInputs, string profileCulture) {
 		List<string> failures = [];
 		foreach (DataBindingDbRowInput input in rowInputs) {
@@ -600,7 +609,12 @@ internal sealed class DataBindingDbService(
 			foreach ((string column, string translation) in profileTranslations.Value) {
 				KeyValuePair<string, JsonNode?> value = input.Values.FirstOrDefault(pair =>
 					string.Equals(pair.Key, column, StringComparison.OrdinalIgnoreCase));
-				if (value.Key is not null && !string.Equals(value.Value?.ToString(), translation, StringComparison.Ordinal)) {
+				if (value.Key is null) {
+					failures.Add(
+						$"Row '{input.Localization.RowLabel}' [{profileCulture}] column '{column}': the profile culture "
+						+ $"'{profileCulture}' takes its value from 'values', and 'values' has no '{column}'; drop it from "
+						+ "'localizations' or pass the same value in 'values'.");
+				} else if (!string.Equals(value.Value?.ToString(), translation, StringComparison.Ordinal)) {
 					failures.Add(
 						$"Row '{input.Localization.RowLabel}' [{profileCulture}] column '{column}': the translation "
 						+ $"'{translation}' differs from the row value '{value.Value}'; the profile culture '{profileCulture}' "

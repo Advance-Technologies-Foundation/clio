@@ -26,11 +26,15 @@ public sealed record DataBindingRowLocalization(
 /// <param name="RowLabel">How the row is named in messages.</param>
 /// <param name="Culture">Culture name.</param>
 /// <param name="Columns">The columns written in that culture.</param>
+/// <param name="Verified"><see langword="false"/> when the value was written but could not be read back: the culture
+/// has no localization row and the site's default culture could not be read, so it is unknown whether the value
+/// lives in the entity table.</param>
 public sealed record DataBindingLocalizationWrite(
 	string RowId,
 	string RowLabel,
 	string Culture,
-	IReadOnlyList<string> Columns);
+	IReadOnlyList<string> Columns,
+	bool Verified = true);
 
 /// <summary>
 /// A localization write that failed or did not verify, with the rows and cultures already written before it stopped.
@@ -60,9 +64,29 @@ public sealed class DataBindingLocalizationException : InvalidOperationException
 /// write to.</param>
 /// <param name="CultureNames">Requested culture name (any letter case) → the site's spelling of it; a culture
 /// missing from it is sent as requested.</param>
+/// <param name="DefaultCulture">The site's default culture (system setting <c>PrimaryCulture</c>): the culture whose
+/// value lives in the entity table and has no localization row. <see langword="null"/> means the same as
+/// <paramref name="ProfileCulture"/>; use <see cref="UnknownDefaultCulture"/> when it could not be read.</param>
 internal sealed record DataBindingLocalizationPlan(
 	string ProfileCulture,
-	IReadOnlyDictionary<string, string>? CultureNames = null) {
+	IReadOnlyDictionary<string, string>? CultureNames = null,
+	string? DefaultCulture = null) {
+
+	/// <summary>Marks a plan whose site default culture could not be read.</summary>
+	public const string UnknownDefaultCulture = "";
+
+	/// <summary>The site's default culture, or <see langword="null"/> when it could not be read.</summary>
+	public string? SiteDefaultCulture => DefaultCulture is null
+		? ProfileCulture
+		: DefaultCulture.Length == 0 ? null : DefaultCulture;
+
+	/// <summary>Whether <paramref name="culture"/> is the profile culture.</summary>
+	public bool IsProfileCulture(string culture) =>
+		string.Equals(culture, ProfileCulture, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>Whether <paramref name="culture"/> is the site's default culture; false when it is unknown.</summary>
+	public bool IsDefaultCulture(string culture) =>
+		SiteDefaultCulture is not null && string.Equals(culture, SiteDefaultCulture, StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>Returns the site's spelling of <paramref name="culture"/> (<c>ru-ru</c> → <c>ru-RU</c>).</summary>
 	public string ToSiteCultureName(string culture) =>
@@ -126,6 +150,11 @@ internal sealed class DataBindingDbLocalizer(
 
 	private const string CultureNameAlias = "CultureName";
 
+	private const string PrimaryCultureSettingCode = "PrimaryCulture";
+
+	/// <summary>The culture the platform falls back to when <c>PrimaryCulture</c> has no value.</summary>
+	private const string PlatformFallbackCulture = "en-US";
+
 	/// <summary>Maximum length of the fixed-size runtime text types; the other text types are not limited.</summary>
 	private static readonly IReadOnlyDictionary<int, int> TextLengthByDataValueType = new Dictionary<int, int> {
 		[27] = 50, // ShortText
@@ -160,7 +189,48 @@ internal sealed class DataBindingDbLocalizer(
 				+ $"be read ({profileCulture.FailureReason}).");
 		}
 
-		return new DataBindingLocalizationPlan(profileCulture.Culture, cultureNames);
+		return new DataBindingLocalizationPlan(
+			profileCulture.Culture, cultureNames, ReadDefaultCulture() ?? DataBindingLocalizationPlan.UnknownDefaultCulture);
+	}
+
+	/// <summary>
+	/// Reads the site's default culture the way the platform resolves it: the All-employees value of the
+	/// <c>PrimaryCulture</c> system setting, or <c>en-US</c> when the setting has no value.
+	/// </summary>
+	/// <returns>The culture name, or <see langword="null"/> when it could not be read (for example no read access to
+	/// system settings); verification then reports a culture without a localization row as not verifiable.</returns>
+	private string? ReadDefaultCulture() {
+		try {
+			JsonArray settingRows = ReadRows(
+				ServiceUrlBuilder.KnownRoute.Select,
+				"SelectQuery",
+				SelectQueryHelper.BuildSelectQuery(
+					"SysSettingsValue",
+					[new SelectQueryHelper.SelectQueryColumnDefinition("GuidValue", "GuidValue")],
+					[
+						new SelectQueryHelper.SelectQueryFilterDefinition(
+							"SysSettings.Code", PrimaryCultureSettingCode, SelectQueryHelper.TextDataValueType),
+						new SelectQueryHelper.SelectQueryFilterDefinition(
+							"SysAdminUnit", SysAdminUnitIds.AllEmployees.ToString(), SelectQueryHelper.GuidDataValueType)
+					]));
+			string? cultureId = settingRows.FirstOrDefault()?["GuidValue"]?.GetValue<string>();
+			if (string.IsNullOrEmpty(cultureId) || (Guid.TryParse(cultureId, out Guid id) && id == Guid.Empty)) {
+				return PlatformFallbackCulture;
+			}
+
+			JsonArray cultureRows = ReadRows(
+				ServiceUrlBuilder.KnownRoute.Select,
+				"SelectQuery",
+				SelectQueryHelper.BuildSelectQuery(
+					"SysCulture",
+					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
+					[new SelectQueryHelper.SelectQueryFilterDefinition("Id", cultureId, SelectQueryHelper.GuidDataValueType)]));
+			// A setting that points at a culture this user cannot read leaves the default unknown, not en-US.
+			return cultureRows.FirstOrDefault()?["Name"]?.GetValue<string>();
+		}
+		catch (Exception exception) when (exception is not OperationCanceledException) {
+			return null;
+		}
 	}
 
 	/// <inheritdoc />
@@ -181,11 +251,15 @@ internal sealed class DataBindingDbLocalizer(
 				.Distinct(StringComparer.OrdinalIgnoreCase)
 				.ToList();
 			try {
-				IReadOnlyDictionary<string, string?> profileValues = ReadProfileValues(schemaName, rowId, columns);
+				IReadOnlyDictionary<string, string?> profileValues =
+					ReadValues(schemaName, rowId, columns, useLocalization: true);
 				WriteRow(plan, schemaName, rowId, localization, columns, profileValues);
+				int firstWrite = written.Count;
 				written.AddRange(localization.Cultures.Select(culture => new DataBindingLocalizationWrite(
 					rowId, localization.RowLabel, plan.ToSiteCultureName(culture.Key), culture.Value.Keys.ToList())));
-				mismatches.AddRange(VerifyRow(plan, schemaName, rowId, localization, columns));
+				RowVerification verification = VerifyRow(plan, schemaName, rowId, localization, columns);
+				mismatches.AddRange(verification.Mismatches);
+				MarkUnverified(written, firstWrite, verification.UnverifiedCultures, plan);
 			}
 			catch (Exception exception) when (exception is not OperationCanceledException) {
 				throw new DataBindingLocalizationException(
@@ -204,6 +278,24 @@ internal sealed class DataBindingDbLocalizer(
 		}
 
 		return written;
+	}
+
+	private static void MarkUnverified(
+		List<DataBindingLocalizationWrite> written,
+		int firstWrite,
+		IReadOnlyCollection<string> unverifiedCultures,
+		DataBindingLocalizationPlan plan) {
+		if (unverifiedCultures.Count == 0) {
+			return;
+		}
+
+		HashSet<string> cultures = new(unverifiedCultures.Select(plan.ToSiteCultureName), StringComparer.OrdinalIgnoreCase);
+		for (int index = firstWrite; index < written.Count; index++) {
+			DataBindingLocalizationWrite write = written[index];
+			if (cultures.Contains(write.Culture)) {
+				written[index] = write with { Verified = false };
+			}
+		}
 	}
 
 	private static string DescribeMismatches(IReadOnlyList<string> mismatches) =>
@@ -285,21 +377,25 @@ internal sealed class DataBindingDbLocalizer(
 			: null;
 	}
 
+	/// <summary>The outcome of reading one row back.</summary>
+	private sealed record RowVerification(IReadOnlyList<string> Mismatches, IReadOnlyCollection<string> UnverifiedCultures);
+
 	/// <summary>
-	/// Reads the row's current values of <paramref name="columns"/>. A plain select answers in the connected user's
-	/// culture, which is the culture an insert or update of the row wrote.
+	/// Reads the row's current values of <paramref name="columns"/>. With <paramref name="useLocalization"/> the select
+	/// answers in the connected user's culture (falling back to the entity table where that culture has no value);
+	/// without it, a DataService select reads the entity table itself, which holds the site's default culture.
 	/// </summary>
-	private IReadOnlyDictionary<string, string?> ReadProfileValues(
+	private IReadOnlyDictionary<string, string?> ReadValues(
 		string schemaName,
 		string rowId,
-		IReadOnlyList<string> columns) {
-		JsonArray rows = ReadRows(
-			ServiceUrlBuilder.KnownRoute.Select,
-			"SelectQuery",
-			SelectQueryHelper.BuildSelectQuery(
-				schemaName,
-				columns.Select(column => new SelectQueryHelper.SelectQueryColumnDefinition(column, column)).ToList(),
-				[new SelectQueryHelper.SelectQueryFilterDefinition("Id", rowId, SelectQueryHelper.GuidDataValueType)]));
+		IReadOnlyList<string> columns,
+		bool useLocalization) {
+		JsonObject query = JsonSerializer.SerializeToNode(SelectQueryHelper.BuildSelectQuery(
+			schemaName,
+			columns.Select(column => new SelectQueryHelper.SelectQueryColumnDefinition(column, column)).ToList(),
+			[new SelectQueryHelper.SelectQueryFilterDefinition("Id", rowId, SelectQueryHelper.GuidDataValueType)]))!.AsObject();
+		query["useLocalization"] = useLocalization;
+		JsonArray rows = ReadRows(ServiceUrlBuilder.KnownRoute.Select, "SelectQuery", query);
 		JsonObject? row = rows.FirstOrDefault() as JsonObject
 			?? throw new InvalidOperationException($"Record '{rowId}' of '{schemaName}' was not found.");
 		return columns.ToDictionary(
@@ -326,13 +422,10 @@ internal sealed class DataBindingDbLocalizer(
 				}
 			}
 
-			// The platform rebuilds the column value from this map, and a required column such as Name rejects
-			// the save when the profile culture is missing from it, so the value the row already has goes along.
-			if (!cultureValues.ContainsKey(plan.ProfileCulture)
-				&& profileValues.TryGetValue(column, out string? profileValue)
-				&& !string.IsNullOrEmpty(profileValue)) {
-				cultureValues[plan.ProfileCulture] = profileValue;
-			}
+			// A required column such as Name rejects the save when the profile culture is missing from this map,
+			// also when the profile is not the site's default culture, so the value the user sees goes along. A
+			// culture left out of the map, the default one included, keeps its stored value.
+			KeepStoredValue(cultureValues, plan.ProfileCulture, profileValues, column);
 
 			items[column] = SelectQueryHelper.BuildParameterExpression(
 				LocalizableStringDataValueType, JsonSerializer.Serialize(cultureValues));
@@ -351,11 +444,23 @@ internal sealed class DataBindingDbLocalizer(
 		DataServiceResponse.ThrowIfUnsuccessful(response, "UpdateLocalizationQuery");
 	}
 
+	private static void KeepStoredValue(
+		Dictionary<string, string> cultureValues,
+		string culture,
+		IReadOnlyDictionary<string, string?> storedValues,
+		string column) {
+		if (!cultureValues.ContainsKey(culture)
+			&& storedValues.TryGetValue(column, out string? storedValue)
+			&& !string.IsNullOrEmpty(storedValue)) {
+			cultureValues[culture] = storedValue;
+		}
+	}
+
 	/// <summary>
 	/// Compares the stored value of every requested culture and column with the request.
 	/// </summary>
-	/// <returns>One label per value that differs, empty when every value matches.</returns>
-	private IEnumerable<string> VerifyRow(
+	/// <returns>One label per value that differs, and the cultures that could not be read back.</returns>
+	private RowVerification VerifyRow(
 		DataBindingLocalizationPlan plan,
 		string schemaName,
 		string rowId,
@@ -371,16 +476,26 @@ internal sealed class DataBindingDbLocalizer(
 				selectColumns,
 				[new SelectQueryHelper.SelectQueryFilterDefinition("Record", rowId, SelectQueryHelper.GuidDataValueType)]));
 		IReadOnlyDictionary<string, string?>? profileValues = null;
+		IReadOnlyDictionary<string, string?>? defaultValues = null;
 		List<string> mismatches = [];
+		List<string> unverified = [];
 		foreach ((string culture, IReadOnlyDictionary<string, string> values) in localization.Cultures) {
 			JsonObject? cultureRow = stored.OfType<JsonObject>().FirstOrDefault(row =>
 				string.Equals(row[CultureNameAlias]?.GetValue<string>(), culture, StringComparison.OrdinalIgnoreCase));
-			// The culture whose value lives in the entity table itself has no localization row; when it is the
-			// profile culture, a plain select reads it.
-			IReadOnlyDictionary<string, string?>? tableValues =
-				cultureRow is null && string.Equals(culture, plan.ProfileCulture, StringComparison.OrdinalIgnoreCase)
-					? profileValues ??= ReadProfileValues(schemaName, rowId, columns)
-					: null;
+			// The site's default culture lives in the entity table and has no localization row: a select without
+			// localization reads it. The profile culture is read with localization, as the connected user sees it.
+			IReadOnlyDictionary<string, string?>? tableValues = null;
+			if (cultureRow is null) {
+				if (plan.IsDefaultCulture(culture)) {
+					tableValues = defaultValues ??= ReadValues(schemaName, rowId, columns, useLocalization: false);
+				} else if (plan.IsProfileCulture(culture)) {
+					tableValues = profileValues ??= ReadValues(schemaName, rowId, columns, useLocalization: true);
+				} else if (plan.SiteDefaultCulture is null) {
+					// Without the default culture it is unknown whether this value lives in the entity table.
+					unverified.Add(culture);
+					continue;
+				}
+			}
 
 			foreach ((string column, string expected) in values) {
 				string? actual = cultureRow is not null
@@ -392,7 +507,7 @@ internal sealed class DataBindingDbLocalizer(
 			}
 		}
 
-		return mismatches;
+		return new RowVerification(mismatches, unverified);
 	}
 
 	private JsonArray ReadRows(ServiceUrlBuilder.KnownRoute route, string operation, object query) {

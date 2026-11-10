@@ -43,7 +43,8 @@ without creating a duplicate.
 A row may carry `localizations` next to `values`: an object keyed by culture (for example `uk-UA`),
 then column name, with text values. Each translation must be a JSON string (create-data-binding
 also accepts other JSON values here; this command does not). A translation in the connected user's
-own culture must equal the row's value of the same column in `values`, or be left out.
+own culture must be present in `values` with the same value of the same column, or be left out of
+`localizations`.
 
 ```json
 [{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове","Description":"Новий ремонт"}}}]
@@ -55,11 +56,14 @@ the package carries every culture and an install on another site brings them alo
 
 - Before any write the command refuses the whole call when a culture is not active on the site, a
   column is not localizable, a value is longer than its column (ShortText 50, MediumText 250,
-  LongText 500), or a translation in the connected user's culture differs from the row's value in
-  `values`. The message names every failure.
+  LongText 500), or a translation in the connected user's culture is missing from `values` or differs
+  from the row's value there. The message names every failure.
 - When a write fails partway, the error lists the records and cultures already translated.
 - After the write it reads each culture back and fails with "saved, but NOT verified" on any difference.
   The rows and the binding are saved even then, so run the same call again to retry the translations.
+  The site's default culture (system setting `PrimaryCulture`) is stored in the entity table and is read
+  from there; when the default culture cannot be read, a culture with no stored translation row is
+  reported as a "written, but not verified" warning instead of an error.
 - The output prints one `Localized row` line per record and culture.
 - To translate records that already exist, run the command again with the same rows. Pass the record's
   `Id` or its exact `Name` in the connected user's culture; a row that matches neither is inserted as a new

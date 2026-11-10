@@ -5047,7 +5047,7 @@ internal static class ToolContractCatalog {
 					"Entity schema name for the binding.",
 					Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
 					Field("rows", StringType,
-						"Optional JSON array of row objects. Each row must contain a values object keyed by column name, and may carry a localizations object keyed by culture, then column, with JSON string values only (localizable columns only, active cultures only; a value in the connected user's culture must equal the row's own value of that column). Binding metadata is projected from the primary key plus referenced row and localized columns. Re-running with rows that already exist (matched by Name or Id) adds their translations without rewriting them."))),
+						"Optional JSON array of row objects. Each row must contain a values object keyed by column name, and may carry a localizations object keyed by culture, then column, with JSON string values only (localizable columns only, active cultures only; a value in the connected user's culture must be present in values with the same value). Binding metadata is projected from the primary key plus referenced row and localized columns. Re-running with rows that already exist (matched by Name or Id) adds their translations without rewriting them."))),
 			CommandExecutionOutput(),
 			CommonErrorContract,
 			EnvironmentPackageSchemaAliases(),

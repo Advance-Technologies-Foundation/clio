@@ -28,17 +28,21 @@ BEHAVIOR:
   without creating a duplicate.
   Translations: a row may carry 'localizations' next to 'values' - an object keyed by
   culture (for example uk-UA), then column name, with string values (other JSON values
-  are refused); a value in the connected user's own culture must equal the row's value
-  in 'values', or be left out:
+  are refused); a value in the connected user's own culture must be present in 'values'
+  with the same value, or be left out of 'localizations':
     {"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}
   A plain insert writes a localizable column in the connected user's culture only; the
   other cultures are written per record (DataService UpdateLocalizationQuery) before the
   binding is saved, so the package carries every culture and an install elsewhere brings
   them along. Before any write the command refuses the whole call when a culture is not
-  active on the site, a column is not localizable, or a value is longer than its column
-  (ShortText 50, MediumText 250, LongText 500); the message names every failure. After the
+  active on the site, a column is not localizable, a value is longer than its column
+  (ShortText 50, MediumText 250, LongText 500), or a value in the connected user's culture
+  is missing from 'values' or differs from it; the message names every failure. After the
   write it reads each culture back and fails with "saved, but NOT verified" on any
   difference; the rows and the binding are saved even then, so re-run the call to retry.
+  The site's default culture (PrimaryCulture) is read back from the entity table; when it
+  cannot be read, a culture without a stored translation row is a "written, but not
+  verified" warning, not an error.
   A failure partway lists the records and cultures already translated. The output prints one "Localized row" line per record and culture.
   To translate records that already exist, run the command again with the same rows: a row
   matched by Name or Id is not rewritten, only its translations are added. Pass the record's

@@ -1189,6 +1189,32 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("ENG-105291: refuses a profile-culture translation of a column missing from 'values' before anything is written, because on a row matched by Id it would rewrite the stored value instead of adding a culture.")]
+	public void CreateDataBindingDb_Should_Refuse_Profile_Culture_Translation_Of_Column_Missing_From_Values() {
+		// Arrange
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Id":"7c1c2f5a-6a4f-4c1e-9d1b-2b3c4d5e6f70"},"localizations":{"en-US":{"Name":"Renamed"},"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the profile culture takes its value from 'values', which has no Name");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("nothing was written") && message.Contains("[en-US] column 'Name'")
+			&& message.Contains("'values' has no 'Name'")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery") || url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_localizer.DidNotReceiveWithAnyArgs().Write(default!, default!, default!);
+	}
+
+	[Test]
 	[Description("ENG-105291: refuses a profile-culture translation that differs from the row's own value before anything is written, because it would rename the record and a re-run matching by Name would insert a duplicate (AC-5).")]
 	public void CreateDataBindingDb_Should_Refuse_Profile_Culture_Translation_That_Differs_From_Value() {
 		// Arrange
