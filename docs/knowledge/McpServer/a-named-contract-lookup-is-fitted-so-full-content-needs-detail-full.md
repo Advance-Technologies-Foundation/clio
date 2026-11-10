@@ -90,7 +90,7 @@ a change that keeps one of the seven whole, or brings their floor back under Fit
 `GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget`,
 so the trade is re-decided rather than drifting.
 
-Both budgets are nearly spent. Measured after ENG-92710 (2026-11-09): the largest full contract,
+Both budgets are nearly spent. Measured after ENG-92710 (2026-11-10): the largest full contract,
 `create-business-process`, is 35 069 bytes, 3 under the 35 072-byte per-contract ceiling in
 `ToolContractPayloadBudgetTests`, and the seven-contract reply 18 845 bytes, 155 under 19 000 on the wire;
 that test's comment carries the current figures for each contract.

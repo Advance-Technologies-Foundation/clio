@@ -674,6 +674,43 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "the refusal says what the block accepts");
 	}
 
+	[TestCase("1.5")]
+	[TestCase("7.0")]
+	[TestCase("1e3")]
+	[TestCase("3000000000")]
+	[Description("A webService.timeoutSeconds that is not a whole Int32 - the fractional seconds describe reports for a timeout stored in milliseconds, a decimal point, an exponent or an out-of-range number - is refused before sending with the remedy, because the server's serializer cannot read it and fails the whole request in a reply that does not name the member.")]
+	public void Check_Should_RefuseATimeoutThatIsNotWholeSeconds(string timeout) {
+		// Arrange
+		string element = $$"""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": {{timeout}} } }""";
+		string operations = $$"""[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": { "timeoutSeconds": {{timeout}} } } } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
+		create.Error.Should().Contain($"'webService.timeoutSeconds' is {timeout}",
+			because: "the refusal names the member and the value sent");
+		create.Error.Should().Contain("Send a whole number of seconds", because: "the refusal carries the remedy");
+		modify.Error.Should().Contain("'elementUpdate.webService.timeoutSeconds'",
+			because: "a setElement sending only the timeout is checked the same way");
+	}
+
+	[TestCase("30")]
+	[TestCase("0")]
+	[Description("A whole-seconds webService.timeoutSeconds passes the check, 0 included, which clears a stored timeout.")]
+	public void Check_Should_AcceptAWholeSecondsTimeout(string timeout) {
+		// Arrange
+		string operations = $$"""[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": { "timeoutSeconds": {{timeout}} } } } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean, because: "a whole number of seconds is what the server reads");
+	}
+
 	[Test]
 	[Description("A described webService block fed back unchanged - the replay rule describe states (Q14), service being the name string on both sides - keeps building: serviceUId, serviceResolved, methodResolved, issues and parameters are describe-only, so they are named in the read-back warning, never refused.")]
 	public void Check_Should_TolerateTheReadBackFields_OfADescribedBlock() {

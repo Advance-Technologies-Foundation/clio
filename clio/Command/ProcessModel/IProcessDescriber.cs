@@ -847,7 +847,9 @@ public sealed class DescribedElement {
 	/// every other element and on a server that predates the element.
 	/// <para>Every write member keeps its write shape, so the block is sent back unchanged; the describe-only members -
 	/// <c>serviceUId</c>, <c>serviceResolved</c>, <c>methodResolved</c>, <c>parameters</c> and <c>issues</c> - draw a
-	/// warning there. See <see cref="DescribedWebService"/>.</para>
+	/// warning there. Two exceptions: a fractional <c>timeoutSeconds</c> (a timeout stored in milliseconds) is refused
+	/// before sending until rounded to whole seconds, and <c>service: null</c> needs a registered service named again.
+	/// See <see cref="DescribedWebService"/>.</para>
 	/// </summary>
 	[JsonPropertyName("webService")]
 	public DescribedWebService WebService { get; set; }
@@ -2688,7 +2690,7 @@ public sealed class DescribedWebService {
 	[JsonPropertyName("parameters")]
 	public List<DescribedWebServiceParameter> Parameters { get; set; }
 
-	/// <summary>Describe-only: hazards of the stored shape at run time; <c>null</c> when there are none.</summary>
+	/// <summary>Describe-only: hazards of the stored shape at run time; an empty list when there are none.</summary>
 	[JsonPropertyName("issues")]
 	public List<string> Issues { get; set; }
 
@@ -2714,7 +2716,7 @@ public sealed class DescribedWebServiceParameter {
 	[JsonPropertyName("tag")]
 	public string Tag { get; set; }
 
-	/// <summary><c>in</c> or <c>out</c>.</summary>
+	/// <summary><c>in</c>, <c>out</c> or <c>variable</c>.</summary>
 	[JsonPropertyName("direction")]
 	public string Direction { get; set; }
 

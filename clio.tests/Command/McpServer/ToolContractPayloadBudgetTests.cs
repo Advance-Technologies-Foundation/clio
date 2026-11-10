@@ -335,7 +335,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// modify-business-process.)"; modify dropped the specifics of how a quoted expression differs from what was
 	// written (a parameter reference by NAME, an 'm' suffix, a ((decimal)...) wrapper), which process-formulas owns
 	// verbatim; describe dropped the parenthesis about an older CrtProcessBuilder reporting ignoreEmailErrors: true on
-	// an unconfigured Approval, dead since clio refuses a package older than the one it ships. Re-measured by lowering
+	// an unconfigured Approval, normally dead since clio refuses a package older than the one it ships. Re-measured by lowering
 	// the ceiling: before the change create 35033, modify 35069, describe 35029; as committed create 34999, modify
 	// 34979, describe 35006 - 73, 93 and 66 bytes of headroom. Each contract's pointer to process-web-service waits for
 	// the knowledge generation that publishes it (curated-knowledge-names.json); with the three pointers in place,

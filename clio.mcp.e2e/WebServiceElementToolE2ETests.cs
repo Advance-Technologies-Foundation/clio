@@ -35,8 +35,8 @@ namespace Clio.Mcp.E2E;
 /// <c>UsrWscEm2CaptureA</c>. A case that needs an absent one is Ignored with the build instructions. Every other case
 /// builds its own processes and removes them, newest first, in <c>finally</c>. Strictly sequential: schema writes in a
 /// parallel burst take a .NET Framework stand's app pool down.</para>
-/// <para>Every case that reads a reply asserts the <c>X-Wsc-Probe</c> header default is absent from it: no data
-/// stored in the web service itself reaches builder output.</para>
+/// <para>Every create, modify, describe and run reply goes through a helper that asserts the <c>X-Wsc-Probe</c>
+/// header default is absent from it: no data stored in the web service itself reaches builder output.</para>
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -141,10 +141,10 @@ public sealed class WebServiceElementToolE2ETests {
 			string elementUId = UId(element);
 			string node = await ReadLastElementNodeAsync(context, processName, elementUId);
 			JsonObject stored = StoredNode(node);
-			stored["IX2"]?.GetValue<string>().Should().Be(EchoMethod, because: "IX2 stores the canonical method name");
-			stored["IX3"]?.GetValue<int>().Should().Be(7000, because: "IX3 stores the timeout in milliseconds");
-			stored["IX4"]?.GetValue<bool>().Should().BeTrue(because: "IX4 stores the ignore-errors flag directly");
-			stored["IX1"]?.GetValue<string>().Should().Be(Text(block, "serviceUId"),
+			StoredMember(stored, "IX2").GetValue<string>().Should().Be(EchoMethod, because: "IX2 stores the canonical method name");
+			StoredMember(stored, "IX3").GetValue<int>().Should().Be(7000, because: "IX3 stores the timeout in milliseconds");
+			StoredMember(stored, "IX4").GetValue<bool>().Should().BeTrue(because: "IX4 stores the ignore-errors flag directly");
+			StoredMember(stored, "IX1").GetValue<string>().Should().Be(Text(block, "serviceUId"),
 				because: "IX1 stores the service's manager-item UId that describe reports");
 			node.Should().Contain("\"L18\"", because: "nested items are stored the way the designer stores them");
 			node.Should().Contain("UsrWscIdsItemValue_In", because: "a scalar array carries its item value child");
@@ -198,21 +198,22 @@ public sealed class WebServiceElementToolE2ETests {
 	// The refusals are the package's own wording; each case asserts only what the AC promises: the name sent and the
 	// list or the pointer that lets the caller pick a real one.
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscNoSuchService", "method": "Any" } }""",
-		new[] { "UsrWscNoSuchService", EchoService })]
+		new[] { "UsrWscNoSuchService", EchoService }, true)]
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscNoSuchMethod" } }""",
-		new[] { "UsrWscNoSuchMethod", EchoMethod })]
+		new[] { "UsrWscNoSuchMethod", EchoMethod }, true)]
 	[TestCase("""{ "name": "WS1", "type": "userTask", "userTaskName": "WebServiceUserTask" }""",
-		new[] { "WebServiceUserTask", "webService" })]
+		new[] { "WebServiceUserTask", "webService" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "userTask", "userTaskName": "EmailTemplateUserTask", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho" } }""",
-		new[] { "webService" })]
+		new[] { "webService" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "multiInstanceOptions": { "enabled": true } } }""",
-		new[] { "Nothing was sent", "'webService.multiInstanceOptions'" })]
-	[Description("TC-I-03: an unknown service (refused with the registered services), an unknown method (refused with the service's methods), a generic userTask naming WebServiceUserTask (refused with a pointer to the block) and a webService block on another element type are refused by the server; webService.multiInstanceOptions is refused by clio's key check before anything is sent. Nothing is created in any case: describe of the process name answers that it was not found.")]
+		new[] { "Nothing was sent", "'webService.multiInstanceOptions'" }, false)]
+	[Description("TC-I-03: an unknown service (refused with the registered services), an unknown method (refused with the service's methods), a generic userTask naming WebServiceUserTask (refused with a pointer to the block) and a webService block on another element type are refused by the server; webService.multiInstanceOptions is refused by clio's key check before anything is sent. Nothing is created in any case: describe of the process name answers that it was not found. Only the two cases that name a real service need it on the stand.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process refuses an unusable web service element and creates nothing")]
-	public async Task CreateBusinessProcess_Should_RefuseAndCreateNothing(string elementJson, string[] expectedFragments) {
+	public async Task CreateBusinessProcess_Should_RefuseAndCreateNothing(string elementJson, string[] expectedFragments,
+			bool needsEchoService) {
 		// Arrange
-		await using ProcessDesignerArrangeContext context = await StartAsync(EchoService);
+		await using ProcessDesignerArrangeContext context = needsEchoService ? await StartAsync(EchoService) : await StartAsync();
 		List<string> created = [];
 		try {
 			string processName = NewProcessName("Refuse");
@@ -261,7 +262,7 @@ public sealed class WebServiceElementToolE2ETests {
 			block["methodResolved"]!.GetValue<bool>().Should().BeTrue(because: "the stored name matches ordinally");
 			Parameters(block).Should().Contain(parameter => Text(parameter, "name") == "UsrWscText_In",
 				because: "the canonical name keeps the generated parameters, which a wrong-case name loses on load");
-			StoredNode(await ReadLastElementNodeAsync(context, processName, UId(element)))["IX2"]?.GetValue<string>()
+			StoredMember(StoredNode(await ReadLastElementNodeAsync(context, processName, UId(element))), "IX2").GetValue<string>()
 				.Should().Be(EchoMethod, because: "IX2 holds the canonical spelling");
 		} finally {
 			await DeleteProcessesAsync(context, created);
@@ -328,7 +329,7 @@ public sealed class WebServiceElementToolE2ETests {
 	#region Methods: Tests - modify
 
 	[Test]
-	[Description("TC-I-05: a method change on a built element is refused while another element (a formula) or a process parameter reads a parameter of the element other than Success, Response or StatusCode, and nothing is written; once the reader is removed the change builds, the element's parameters are replaced by the new method's, and the notice lists the dropped input bindings with their values in the write shape.")]
+	[Description("TC-I-05: a service and method change on a built element is refused while a process parameter reads a parameter of the element other than Success, Response or StatusCode, and nothing is written; once the reader is removed the change builds, the element's parameters are replaced by the new method's, and the notice lists the dropped input bindings with their values in the write shape.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process replaces the parameters on a method change and guards their readers")]
 	public async Task ModifyBusinessProcess_Should_ReplaceOnMethodChange_AndGuardDependents() {
@@ -671,6 +672,7 @@ public sealed class WebServiceElementToolE2ETests {
 				["descriptor"] = descriptor
 			});
 		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		ShouldCarryNoServiceData(result);
 		return result;
 	}
 
@@ -691,6 +693,7 @@ public sealed class WebServiceElementToolE2ETests {
 				["operations"] = operations
 			});
 		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		ShouldCarryNoServiceData(result);
 		return result;
 	}
 
@@ -703,8 +706,11 @@ public sealed class WebServiceElementToolE2ETests {
 
 	/// <summary>Reads a process back in full and returns its graph.</summary>
 	private static async Task<JsonObject> DescribeGraphAsync(ProcessDesignerArrangeContext context,
-			string processName) =>
-		DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+			string processName) {
+		CallToolResult described = await ProcessDesignerE2EArrange.DescribeAsync(context, processName);
+		ShouldCarryNoServiceData(described);
+		return DescribedProcessGraph.Read(described);
+	}
 
 	/// <summary>Removes every process a test built, newest first; a failed delete is reported, not thrown.</summary>
 	private static async Task DeleteProcessesAsync(ProcessDesignerArrangeContext context, List<string> created) {
@@ -753,7 +759,6 @@ public sealed class WebServiceElementToolE2ETests {
 		}
 	}
 
-	/// <summary>Runs the process through clio-run and waits for it, with no record watch.</summary>
 	/// <summary>
 	/// Runs the process and waits for it. <paramref name="resultParameters"/> must be parameters the process declares:
 	/// run-process refuses an unknown one before starting anything, which would read as a run with no status.
@@ -771,6 +776,7 @@ public sealed class WebServiceElementToolE2ETests {
 		CallToolResult result = await context.Session.CallToolAsync(ClioRunTool.ToolName,
 			new Dictionary<string, object?> { ["command"] = RunProcessTool.ToolName, ["args"] = args },
 			context.CancellationTokenSource.Token);
+		ShouldCarryNoServiceData(result);
 		return EntitySchemaStructuredResultParser.Extract<RunProcessEnvelope>(result);
 	}
 
@@ -778,6 +784,12 @@ public sealed class WebServiceElementToolE2ETests {
 	/// Parses a stored element node. The platform stores process metadata indented, so a member is compared by value,
 	/// never by searching the text for its compact form.
 	/// </summary>
+	/// <summary>A member of a stored element node; a missing one fails the test rather than skipping the check.</summary>
+	private static JsonNode StoredMember(JsonObject stored, string key) {
+		stored[key].Should().NotBeNull(because: $"the stored element node carries {key}");
+		return stored[key]!;
+	}
+
 	private static JsonObject StoredNode(string node) =>
 		JsonNode.Parse(node) as JsonObject
 		?? throw new InvalidOperationException("A stored element node is a JSON object.");

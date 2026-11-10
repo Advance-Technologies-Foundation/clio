@@ -30,7 +30,8 @@ public static class ModifyBusinessProcessPrompt {
 		 openEditPage or fileProcessing block can carry describe fields clio refuses before sending (the email's
 		 templateObject and its recipients' described fields, subProcess.process, completionMode, files.sourceColumn) -
 		 remove them. A described `webService` block re-applies unchanged: its `serviceUId`, `serviceResolved`,
-		 `methodResolved`, `issues` and `parameters` are describe-only, ignored and named in a warning. A filter, signal or
+		 `methodResolved`, `issues` and `parameters` are describe-only, ignored and named in a warning; only a
+		 fractional `timeoutSeconds` must be rounded to whole seconds, and `service: null` replaced by a registered service. A filter, signal or
 		 connections goes in its own operation (setFilter, setSignal, setConnections), and flat approval fields are
 		 written nested in the same block (approver.type, notifyApprover.emailTemplate); (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
@@ -173,8 +174,8 @@ public static class ModifyBusinessProcessPrompt {
 		 omitted, it is kept; it cannot be emptied, because an element whose `Files` are bound to nothing keeps
 		 the whole process from starting. Read `get-guidance name=process-files` first — it owns the block;
 		 and a `webService` element's `webService` block: an omitted member keeps its stored value, `method`
-		 alone switches to another method of the same service, `service` without `method` is refused with that
-		 service's methods, `timeoutSeconds: 0` clears the timeout and `ignoreErrors: false` clears the flag. A
+		 alone switches to another method of the same service, another `service` without `method` is refused with
+		 that service's methods, `timeoutSeconds: 0` clears the timeout and `ignoreErrors: false` clears the flag. A
 		 service or method change regenerates the element's parameters and is refused while anything reads one
 		 of them other than `Success`, `Response` or `StatusCode`. Read `get-guidance name=process-web-service`
 		 first - it owns the block;

@@ -647,12 +647,15 @@ public class BundledProcessBuilderPackageTests {
 		// but written by set-pkg-version after the export (CRLF on Windows), and it is pinned separately by
 		// ExpectedArchiveVersion and ExpectedDescriptorModifiedOnUtc.
 		List<string> crlfEntries = [];
+		List<string> unreadableEntries = [];
 		foreach (string entryName in entryNames) {
 			if (string.Equals(entryName, "descriptor.json", StringComparison.Ordinal)) {
 				continue;
 			}
-			compressionUtilities.TryReadFileFromGZip(BundledArchivePath, entryName, out byte[] content)
-				.Should().BeTrue(because: $"the entry '{entryName}' was listed by the same reader");
+			if (!compressionUtilities.TryReadFileFromGZip(BundledArchivePath, entryName, out byte[] content)) {
+				unreadableEntries.Add(entryName);
+				continue;
+			}
 			if (Array.IndexOf(content, (byte)0) >= 0) {
 				continue;
 			}
@@ -666,6 +669,7 @@ public class BundledProcessBuilderPackageTests {
 
 		// Assert
 		entryNames.Should().NotBeEmpty(because: "an empty listing would pass this check vacuously");
+		unreadableEntries.Should().BeEmpty(because: "every entry was listed by the same reader, so an unread one would go unchecked");
 		crlfEntries.Should().BeEmpty(
 			because: "the producing commit's blobs are LF, so a CRLF entry means the export was made without "
 				+ "core.autocrlf=false / core.eol=lf (bundled-packages.md step 3b) and the pinned SHA-256 cannot be "
