@@ -106,8 +106,14 @@ public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 		string nothingWritten = dependenciesLeft
 			? " The case was not written, but the package dependencies this call added are still declared."
 			: NothingWritten;
+		bool caseExisted = result.Case?.Status == DynamicCaseOutcomes.AlreadyPresent;
 		return result.Outcome switch {
+			DynamicCaseOutcomes.Planned when caseExisted => $"Dry run: the equivalent case '{name}' already exists, so a "
+				+ $"real run writes nothing to it.{NothingWritten}",
 			DynamicCaseOutcomes.Planned => $"Dry run: '{name}' can be created as planned.{NothingWritten}",
+			DynamicCaseOutcomes.CreatedPageFailed when caseExisted => $"The equivalent case '{name}' already exists and "
+				+ $"was kept, but the progress bar was NOT added to '{page}': {result.Page?.Error} Add it with the "
+				+ "update-page call in page.retry.",
 			DynamicCaseOutcomes.Created => $"Dynamic case '{name}' created (UId: {result.Case?.SchemaUId})."
 				+ PageClause(result),
 			DynamicCaseOutcomes.CreatedPageSkipped => $"Dynamic case '{name}' created (UId: {result.Case?.SchemaUId}). "

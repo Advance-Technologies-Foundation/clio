@@ -60,13 +60,13 @@ public sealed class CreateDynamicCaseCommandTests : BaseClioModuleTests {
 
 	private static DynamicCaseResult Result(string outcome, string errorCode = null, string errorMessage = null,
 		string pageStatus = null, string dependencyStatus = DynamicCaseService.DependenciesNoneMissing,
-		List<string> leftovers = null) =>
+		List<string> leftovers = null, string caseStatus = "created") =>
 		new() {
 			Success = DynamicCaseOutcomes.IsSuccess(outcome),
 			Outcome = outcome,
 			ErrorCode = errorCode,
 			ErrorMessage = errorMessage,
-			Case = new DynamicCaseInfo { SchemaName = "UsrOrderCase", SchemaUId = "uid", Status = "created" },
+			Case = new DynamicCaseInfo { SchemaName = "UsrOrderCase", SchemaUId = "uid", Status = caseStatus },
 			Dependencies = new DynamicCaseDependencies { Status = dependencyStatus, Required = [], Missing = [], Added = [] },
 			Page = new DynamicCasePageInfo {
 				Status = pageStatus, PageSchemaName = "UsrOrders_FormPage", Error = "conflict",
@@ -168,6 +168,25 @@ public sealed class CreateDynamicCaseCommandTests : BaseClioModuleTests {
 		Verdict().Should().Contain("CREATED and kept").And.Contain("page.retry",
 			because: "the caller must know the case exists and how to finish");
 		Verdict().Should().NotContain("Nothing was written", because: "the case WAS written");
+	}
+
+	[Test]
+	[Description("A dry run and a page failure on a case that already existed say that the case already exists, never that it was created.")]
+	public void Verdict_ShouldNotClaimACreate_WhenTheCaseAlreadyExisted() {
+		// Arrange
+		DynamicCaseResult planned = Result(DynamicCaseOutcomes.Planned, caseStatus: DynamicCaseOutcomes.AlreadyPresent);
+		DynamicCaseResult pageFailed = Result(DynamicCaseOutcomes.CreatedPageFailed, DynamicCaseErrorCodes.PageAppendRejected,
+			"page failed", pageStatus: DynamicCaseService.PageFailed, caseStatus: DynamicCaseOutcomes.AlreadyPresent);
+
+		// Act
+		string plannedVerdict = CreateDynamicCaseCommand.Verdict(planned);
+		string pageFailedVerdict = CreateDynamicCaseCommand.Verdict(pageFailed);
+
+		// Assert
+		plannedVerdict.Should().Contain("already exists").And.NotContain("can be created",
+			because: "a dry run against an equivalent case would write nothing to it");
+		pageFailedVerdict.Should().Contain("already exists and was kept").And.NotContain("CREATED",
+			because: "this call did not create the case it kept");
 	}
 
 	[Test]
