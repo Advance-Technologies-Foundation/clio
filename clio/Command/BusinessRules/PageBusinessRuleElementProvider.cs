@@ -14,33 +14,9 @@ internal sealed class PageBusinessRuleElementProvider : IPageBusinessRuleElement
 		ArgumentNullException.ThrowIfNull(bundle);
 
 		HashSet<string> result = new(StringComparer.Ordinal);
-		CollectElementNames(bundle.ViewConfig, result);
-		return result;
-	}
-
-	private static void CollectElementNames(JsonNode? node, ISet<string> sink) {
-		Stack<JsonNode?> pending = new();
-		pending.Push(node);
-		while (pending.Count > 0) {
-			JsonNode? current = pending.Pop();
-			switch (current) {
-				case JsonArray array:
-					foreach (JsonNode? item in array) {
-						pending.Push(item);
-					}
-					break;
-				case JsonObject obj:
-					// In Freedom UI viewConfig, "name" is reserved for element declarations.
-					// Traversing every branch keeps discovery aligned with valid nested element placements.
-					string name = obj["name"]?.GetValue<string>() ?? string.Empty;
-					if (!string.IsNullOrWhiteSpace(name)) {
-						sink.Add(name);
-					}
-					foreach (KeyValuePair<string, JsonNode?> property in obj) {
-						pending.Push(property.Value);
-					}
-					break;
-			}
+		foreach ((string? _, string name) in ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
+			result.Add(name);
 		}
+		return result;
 	}
 }
