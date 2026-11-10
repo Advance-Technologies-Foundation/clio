@@ -386,7 +386,8 @@ public class BundledProcessBuilderPackageTests {
 		typeof(Clio.Command.CompileBusinessProcessOptions),
 		typeof(Clio.Command.DescribeProcessOptions),
 		typeof(Clio.Command.ListUserTasksOptions),
-		typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ValidateProcessGraphArgs)
+		typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ValidateProcessGraphArgs),
+		typeof(Clio.Command.CreateDynamicCaseOptions)
 	];
 
 	/// <summary>
@@ -892,7 +893,7 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: five of the eight carry a version literal, and they do NOT all agree with
+		// The loop EXECUTES today: six of the nine carry a version literal, and they do NOT all agree with
 		// each other — create, modify and modify-as-new-version at 1.6.6.30 since ENG-92711 (create and modify had
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
 		// the new-version route followed because it shares the operations vocabulary and runs no read-back),
@@ -903,7 +904,7 @@ public class BundledProcessBuilderPackageTests {
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor
 		// version == a constant), which needed hand-synchronising on every rebundle and asserted a
 		// coincidence, not a rule.
-		versioned.Should().HaveCount(5,
+		versioned.Should().HaveCount(6,
 			because: "the version loop is the only automated coupling stopping an archive below the floor the "
 				+ "two version tools demand from shipping, so a literal silently becoming presence-only must "
 				+ "redden here rather than leave the loop iterating over fewer gates than exist");
