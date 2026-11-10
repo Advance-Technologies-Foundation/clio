@@ -117,7 +117,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 
 				result.ExitCode.Should().Be(0, because: "a removal alone is a valid call");
 				result.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info
-						&& message.Value == "Removed the theme background.",
+						&& message.Value == "The theme has no background now.",
 					because: "the log must say the background was removed");
 				result.Output.Should().NotContain(message => message.MessageType == LogDecoratorType.Warning,
 					because: "a removal has no step after the theme write that can fail");

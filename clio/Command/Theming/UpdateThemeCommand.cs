@@ -104,7 +104,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 		ThemeBackground background = request.Background;
 		if (background is not null) {
 			Logger.WriteInfo(background.RemovesBackground
-				? "Removed the theme background."
+				? "The theme has no background now."
 				: $"Theme background: {background.Describe()}.");
 			Logger.WriteWarnings(_backgroundWriter.Complete(background, options.KeepIconBackground, options.Id,
 				packageName).Warnings);

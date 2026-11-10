@@ -287,7 +287,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		});
 
 		exitCode.Should().Be(0, because: "null alone is a valid background update");
-		_logger.Received(1).WriteInfo("Removed the theme background.");
+		_logger.Received(1).WriteInfo("The theme has no background now.");
 		_backgroundWriter.Received(1).Complete(Arg.Is<ThemeBackground>(background => background.RemovesBackground), true,
 			ThemeId, null);
 		_themeCatalog.DidNotReceiveWithAnyArgs().TryGetAvailableThemes(default, out _, out _);
