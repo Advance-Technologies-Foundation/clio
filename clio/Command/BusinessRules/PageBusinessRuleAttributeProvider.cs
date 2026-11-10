@@ -14,6 +14,9 @@ internal sealed class PageBusinessRuleAttributeProvider(
 	: IPageBusinessRuleAttributeProvider {
 
 	private const string PageParametersScopeName = "PageParameters";
+	private const string StepperComponentType = "crt.Stepper";
+	private const string ActiveStepAttributeSuffix = "_ActiveStep";
+	private const string ActiveStepDataValueTypeName = "Text";
 
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
@@ -61,6 +64,7 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
 		AddPageParameterAttributes(result, parametersByName);
+		AddStepperActiveStepAttributes(result, bundle);
 		return result;
 	}
 
@@ -81,6 +85,43 @@ internal sealed class PageBusinessRuleAttributeProvider(
 				dataValueTypeName,
 				referenceSchemaName,
 				PageParametersScopeName);
+		}
+	}
+
+	// A crt.Stepper generates "<name>_ActiveStep" at runtime; the page body never declares it, so it
+	// is not among the view-model attributes. Expose it as an unscoped Text attribute (the active step
+	// is compared with a step name) keyed and addressed by the generated name, as the Designer saves it.
+	private static void AddStepperActiveStepAttributes(
+		IDictionary<string, BusinessRuleAttributeDescriptor> result,
+		PageBundleInfo bundle) {
+		foreach (string stepperName in FindStepperNames(bundle.ViewConfig)) {
+			string attributeName = stepperName + ActiveStepAttributeSuffix;
+			result[attributeName] = new BusinessRuleAttributeDescriptor(attributeName, ActiveStepDataValueTypeName, null);
+		}
+	}
+
+	private static IEnumerable<string> FindStepperNames(JsonNode? viewConfig) {
+		Stack<JsonNode?> pending = new();
+		pending.Push(viewConfig);
+		while (pending.Count > 0) {
+			switch (pending.Pop()) {
+				case JsonArray array:
+					foreach (JsonNode? item in array) {
+						pending.Push(item);
+					}
+					break;
+				case JsonObject obj:
+					string? name = obj["name"] is JsonValue nameValue && nameValue.TryGetValue(out string? text) ? text : null;
+					string? type = obj["type"] is JsonValue typeValue && typeValue.TryGetValue(out string? typeText) ? typeText : null;
+					if (string.Equals(type, StepperComponentType, StringComparison.Ordinal)
+						&& !string.IsNullOrWhiteSpace(name)) {
+						yield return name;
+					}
+					foreach (KeyValuePair<string, JsonNode?> property in obj) {
+						pending.Push(property.Value);
+					}
+					break;
+			}
 		}
 	}
 

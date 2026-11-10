@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
@@ -553,6 +554,132 @@ public sealed class PageBusinessRuleServiceTests {
 			because: "the resolved type must reach the converter so the persisted operand is a SysSetting expression");
 		condition.LeftExpression.DataValueTypeName.Should().Be("Boolean",
 			because: "the resolver-provided data value type must be persisted on the operand");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Create accepts a condition on '<Stepper>_ActiveStep' resolved by the real attribute provider and saves it as an unscoped Text attribute compared with a Text constant.")]
+	public void Create_Should_Accept_Stepper_Active_Step_Condition() {
+		// Arrange
+		PageBusinessRuleService service = BuildStepperService(out IBusinessRuleAddonService addonService);
+		IReadOnlyList<BusinessRuleMetadataDto>? capturedMetadata = null;
+		BusinessRule rule = CreateStepperRule();
+		addonService.AppendRule(
+				Arg.Any<AddonGetRequestDto>(),
+				rule,
+				Arg.Do<IReadOnlyList<BusinessRuleMetadataDto>>(metadata => capturedMetadata = metadata))
+			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
+
+		// Act
+		BusinessRuleCreateResult result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		result.RuleName.Should().Be("BusinessRule_1234567",
+			because: "a condition on the stepper's active step must pass validation and be saved");
+		BusinessRuleConditionMetadataDto condition = ((BusinessRuleGroupConditionMetadataDto)capturedMetadata!.Single()
+			.Cases.Single().Condition!).Conditions.Single();
+		condition.LeftExpression.Path.Should().Be("RequestStepper_ActiveStep",
+			because: "the saved path is the stepper's runtime attribute, as the Designer saves it");
+		condition.LeftExpression.DataValueTypeName.Should().Be("Text",
+			because: "the active step is addressed by step name");
+		condition.LeftExpression.ScopeId.Should().BeNull(
+			because: "the active-step attribute lives in the local view model scope");
+		condition.RightExpression!.DataValueTypeName.Should().Be("Text",
+			because: "the constant takes its type from the left operand");
+		condition.RightExpression.Value!.ToString().Should().Be("DeliveryStep",
+			because: "the right operand is the step name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Update accepts a condition on '<Stepper>_ActiveStep' and persists it in the replaced rule.")]
+	public void Update_Should_Accept_Stepper_Active_Step_Condition() {
+		// Arrange
+		PageBusinessRuleService service = BuildStepperService(out IBusinessRuleAddonService addonService);
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildPageAddonSchema(("BusinessRule_pg", "pg-rule")));
+		AddonSchemaDto? saved = null;
+		addonService
+			.When(addon => addon.SaveSchema(Arg.Any<AddonSchemaDto>()))
+			.Do(callInfo => saved = callInfo.Arg<AddonSchemaDto>());
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(
+			new BusinessRulesBatchRequest("UsrPkg", "UsrPage", [CreateStepperRule() with { Name = "BusinessRule_pg" }]));
+
+		// Assert
+		results.Should().ContainSingle().Which.Success.Should().BeTrue(
+			because: "the stepper's active-step attribute is a valid condition attribute on update too");
+		saved!.MetaData.Should().Contain("RequestStepper_ActiveStep",
+			because: "the persisted rule keeps the active-step condition path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Still rejects an unknown condition attribute and lists the stepper attribute among the available ones.")]
+	public void Create_Should_Reject_Unknown_Attribute_And_List_Stepper_Attribute() {
+		// Arrange
+		PageBusinessRuleService service = BuildStepperService(out _);
+		BusinessRule rule = new(
+			"Show input",
+			new BusinessRuleConditionGroup("AND", [
+				new BusinessRuleCondition(
+					new BusinessRuleExpression("AttributeValue", "OtherStepper_ActiveStep", null),
+					"equal",
+					new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"DeliveryStep\"")))
+			]),
+			[new ShowElementBusinessRuleAction(["Input_One"])]);
+
+		// Act
+		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*OtherStepper_ActiveStep*RequestStepper_ActiveStep*",
+				because: "an undeclared stepper is still rejected and the hint offers the real stepper attribute");
+	}
+
+	private static BusinessRule CreateStepperRule() =>
+		new(
+			"Require on step",
+			new BusinessRuleConditionGroup("AND", [
+				new BusinessRuleCondition(
+					new BusinessRuleExpression("AttributeValue", "RequestStepper_ActiveStep", null),
+					"equal",
+					new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"DeliveryStep\"")))
+			]),
+			[new ShowElementBusinessRuleAction(["Input_One"])]);
+
+	private static PageBusinessRuleService BuildStepperService(out IBusinessRuleAddonService addonService) {
+		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
+		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+		PageBundleInfo bundle = new() {
+			ViewConfig = JsonNode.Parse("""
+				[
+					{ "type": "crt.Stepper", "name": "RequestStepper", "items": [ { "type": "crt.StepperItem", "name": "DeliveryStep" } ] },
+					{ "type": "crt.Input", "name": "Input_One" }
+				]
+				""")!.AsArray()
+		};
+		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
+		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
+			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			bundle));
+		addonService = Substitute.For<IBusinessRuleAddonService>();
+		addonService.AppendRules(Arg.Any<AddonGetRequestDto>(), Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>())
+			.Returns(new BusinessRuleCreateResult("BusinessRule_1234567"));
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(new AddonSchemaDto { MetaData = string.Empty, Resources = [] });
+		return new PageBusinessRuleService(
+			packageResolver,
+			schemaProvider,
+			new PageBusinessRuleAttributeProvider(Substitute.For<IEntityBusinessRuleAttributeProvider>()),
+			new PageBusinessRuleElementProvider(),
+			addonService,
+			new PageBusinessRuleValidator(new BusinessRuleValidator(Substitute.For<IBusinessRuleLookupReferenceValidator>())),
+			Substitute.For<ISysSettingConditionOperandResolver>());
 	}
 
 	private static PageBusinessRuleService BuildBatchService(out IBusinessRuleAddonService addonService) {
