@@ -184,7 +184,7 @@ public sealed class BrandingBackgroundServiceTests {
 		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
 
 		// Assert
-		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome(true,
+		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome(
 				[BrandingBackgroundService.ImagePart, BrandingBackgroundService.GalleryMembershipPart], []),
 			because: "the image and its gallery membership are the parts every background delivers");
 		Received.InOrder(() => {
@@ -227,7 +227,7 @@ public sealed class BrandingBackgroundServiceTests {
 		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
 
 		// Assert
-		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome(true, [BrandingBackgroundService.ImagePart], [],
+		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome([BrandingBackgroundService.ImagePart], [],
 				"package is locked (A task was canceled.)"),
 			because: "the parts that landed stay in the package, so the caller must learn which they are");
 	}
@@ -244,6 +244,69 @@ public sealed class BrandingBackgroundServiceTests {
 		// Assert
 		bind.Should().Throw<OperationCanceledException>(
 			because: "a cancelled call is the caller's decision, not a failed binding to report");
+	}
+
+	[Test]
+	[Description("Selects the named package on the given binder and reports the resolved name.")]
+	public void TryUsePackage_Should_Select_The_Package_On_The_Given_Binder() {
+		// Arrange
+		_binder.UsePackage("UsrThemes").Returns("UsrThemes");
+
+		// Act
+		bool selected = _service.TryUsePackage(_binder, "UsrThemes", out string package, out string error);
+
+		// Assert
+		selected.Should().BeTrue(because: $"the binder selected the package (error: {error})");
+		package.Should().Be("UsrThemes", because: "the caller names the package the parts land in");
+	}
+
+	[Test]
+	[Description("Turns a package that cannot be selected into a failure with the reason, and no package.")]
+	public void TryUsePackage_Should_Report_A_Package_That_Cannot_Be_Selected() {
+		// Arrange
+		_binder.UsePackage(default).ThrowsForAnyArgs(new InvalidOperationException("package is locked"));
+
+		// Act
+		bool selected = _service.TryUsePackage(_binder, "UsrThemes", out string package, out string error);
+
+		// Assert
+		selected.Should().BeFalse(because: "the binder could not select the package");
+		package.Should().BeNull(because: "nothing can be bound into a package that was not selected");
+		error.Should().Be("package is locked", because: "the caller must learn why the package was not selected");
+	}
+
+	[Test]
+	[Description("Binds the UsePanelIconBackground off state and records it as a bound part.")]
+	public void TryBindPanelIconOffState_Should_Bind_The_Off_State() {
+		// Arrange
+		_binder.BindFeatureOffState("UsePanelIconBackground").Returns(PackageDataBindingOutcome.Success());
+		List<string> bound = [];
+		List<string> warnings = [];
+
+		// Act
+		bool completed = _service.TryBindPanelIconOffState(_binder, bound, warnings, out string error);
+
+		// Assert
+		completed.Should().BeTrue(because: $"the binding completed (error: {error})");
+		bound.Should().Equal([BrandingBackgroundService.PanelIconOffStatePart],
+			because: "the off state is the part this step delivers");
+		warnings.Should().BeEmpty(because: "nothing was refused");
+	}
+
+	[Test]
+	[Description("Reports a failed off-state binding with the reason instead of throwing.")]
+	public void TryBindPanelIconOffState_Should_Report_A_Failed_Binding() {
+		// Arrange
+		_binder.BindFeatureOffState(default).ThrowsForAnyArgs(new InvalidOperationException("SaveSchema rejected"));
+		List<string> bound = [];
+
+		// Act
+		bool completed = _service.TryBindPanelIconOffState(_binder, bound, [], out string error);
+
+		// Assert
+		completed.Should().BeFalse(because: "the binding did not complete");
+		error.Should().Be("SaveSchema rejected", because: "the caller must learn why the binding failed");
+		bound.Should().BeEmpty(because: "nothing was bound");
 	}
 
 	private void ArrangeImageLookup(string response) {

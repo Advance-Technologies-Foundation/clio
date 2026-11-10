@@ -45,6 +45,8 @@ public interface IThemeBackgroundWriter {
 internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroundService,
 	IPackageDataBinder packageDataBinder, ILogger logger) : IThemeBackgroundWriter {
 
+	private const string ThemeBackgroundBindingPrefix = "ThemeBackground_";
+
 	public bool TryAddImageToBackgroundGallery(ThemeBackground background, out BackgroundGalleryImage image,
 		out string error) {
 		image = null;
@@ -83,57 +85,30 @@ internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroun
 		}
 		List<string> bound = [];
 		List<string> warnings = [];
-		if (!TryUsePackage(packageName, out string package, out string error)
-			|| !TryBindGalleryImage(image, themeId, bound, warnings, out bool imageBound, out error)
-			|| !TryBindPanelIconOffState(bound, warnings, out error)) {
+		if (!backgroundService.TryUsePackage(packageDataBinder, packageName, out string package, out string error)
+			|| !TryBindGalleryImage(image, themeId, bound, warnings, out error)
+			|| !backgroundService.TryBindPanelIconOffState(packageDataBinder, bound, warnings, out error)) {
 			warnings.Add(DescribeBindingFailure(package, bound, error));
-			imageBound = bound.Contains(BrandingBackgroundService.ImagePart);
 		}
 		if (bound.Count > 0) {
 			logger.WriteInfo($"Bound the background into package '{package}': {string.Join(", ", bound)}.");
 		}
-		return new ThemeBackgroundBindingOutcome(imageBound ? package : null,
-			SensitiveErrorTextRedactor.RedactAll(warnings));
-	}
-
-	private bool TryUsePackage(string packageName, out string package, out string error) {
-		package = null;
-		error = null;
-		try {
-			package = packageDataBinder.UsePackage(packageName);
-			return true;
-		} catch (Exception exception) when (exception is not OperationCanceledException) {
-			error = exception.Message;
-			return false;
-		}
+		string imagePackage = bound.Contains(BrandingBackgroundService.ImagePart) ? package : null;
+		return new ThemeBackgroundBindingOutcome(imagePackage, SensitiveErrorTextRedactor.RedactAll(warnings));
 	}
 
 	private bool TryBindGalleryImage(BackgroundGalleryImage image, string themeId, List<string> bound,
-		List<string> warnings, out bool imageBound, out string error) {
-		imageBound = false;
+		List<string> warnings, out string error) {
 		error = null;
 		if (image is null) {
 			return true;
 		}
 		GalleryImageBindingOutcome binding = backgroundService.BindGalleryImage(packageDataBinder, image,
-			"ThemeBackground_" + Guid.Parse(themeId).ToString("N"));
+			ThemeBackgroundBindingPrefix + Guid.Parse(themeId).ToString("N"));
 		bound.AddRange(binding.Bound);
 		warnings.AddRange(binding.Warnings);
-		imageBound = binding.ImageBound;
 		error = binding.Error;
 		return error is null;
-	}
-
-	private bool TryBindPanelIconOffState(List<string> bound, List<string> warnings, out string error) {
-		error = null;
-		try {
-			packageDataBinder.BindFeatureOffState(BrandingBackgroundService.PanelIconBackgroundFeatureCode)
-				.RecordInto(BrandingBackgroundService.PanelIconOffStatePart, bound, warnings);
-			return true;
-		} catch (Exception exception) when (exception is not OperationCanceledException) {
-			error = exception.Message;
-			return false;
-		}
 	}
 
 	private static string DescribeBindingFailure(string package, IReadOnlyList<string> bound, string error) {

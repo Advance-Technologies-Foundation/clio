@@ -42,7 +42,8 @@ public class UpdateThemeTool(
 		"(full overwrite by id without a background argument; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
 		" or later on the target environment. Only inline CSS content is accepted. " +
 		"A background argument is at most one of background-image-id (an image from upload-image) or background-color; " +
-		"null for either removes the theme's own background. It needs Creatio " +
+		"null for either removes the theme's own background; a null next to a value in the other argument, or in " +
+		"both, is ignored. It needs Creatio " +
 		ThemeServiceRequirement.BackgroundMinVersion + " or later, " +
 		"checked before any write. Without one, caption, css-class-name and css-content are all required; with one, " +
 		"they are optional and the omitted ones are kept. An image or a color turns the environment-wide " +
@@ -68,7 +69,9 @@ public class UpdateThemeTool(
 		if (string.IsNullOrWhiteSpace(args.Id)) {
 			return CommandExecutionResult.FromValidationError("id is required and cannot be empty.");
 		}
-		bool hasBackground = ThemeBackground.IsGiven(args.BackgroundImageId, args.BackgroundColor);
+		(string? backgroundImageId, string? backgroundColor) =
+			IgnoreUnusedRemovals(args.BackgroundImageId, args.BackgroundColor);
+		bool hasBackground = ThemeBackground.IsGiven(backgroundImageId, backgroundColor);
 		if (!hasBackground && string.IsNullOrWhiteSpace(args.Caption)) {
 			return CommandExecutionResult.FromValidationError("caption is required and cannot be empty.");
 		}
@@ -84,11 +87,30 @@ public class UpdateThemeTool(
 			Caption = args.Caption,
 			CssClassName = args.CssClassName,
 			CssContent = args.CssContent,
-			BackgroundImageId = args.BackgroundImageId,
-			BackgroundColor = args.BackgroundColor,
+			BackgroundImageId = backgroundImageId,
+			BackgroundColor = backgroundColor,
 			KeepIconBackground = args.KeepIconBackground ?? false
 		};
 		return InternalExecute<UpdateThemeCommand>(options);
+	}
+
+	private static (string? ImageId, string? Color) IgnoreUnusedRemovals(string? imageId, string? color) {
+		bool imageIdRemoves = IsRemoval(imageId);
+		bool colorRemoves = IsRemoval(color);
+		if (imageIdRemoves && colorRemoves) {
+			return (null, null);
+		}
+		if (imageIdRemoves && ThemeBackground.IsGiven(null, color)) {
+			return (null, color);
+		}
+		if (colorRemoves && ThemeBackground.IsGiven(imageId, null)) {
+			return (imageId, null);
+		}
+		return (imageId, color);
+	}
+
+	private static bool IsRemoval(string? value) {
+		return string.Equals(value?.Trim(), ThemeBackground.RemovalValue, StringComparison.OrdinalIgnoreCase);
 	}
 }
 

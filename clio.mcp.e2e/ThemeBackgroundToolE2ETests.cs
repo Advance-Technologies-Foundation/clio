@@ -30,7 +30,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 
 	private const string PackageDeliveryWarning = "The theme background was applied, but binding it into ";
 
-	private const string ImageBackground ="\"background\":{\"mode\":\"Image\",\"imageId\":\"" + ImageId + "\"}";
+	private const string ImageBackground = "\"background\":{\"mode\":\"Image\",\"imageId\":\"" + ImageId + "\"}";
 
 	private const string CatalogJson = "{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Gallery\"," +
 		"\"cssClassName\":\"gallery\",\"cssFilePath\":\"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/" + ThemeId +
@@ -51,6 +51,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 	public Task CreateTheme_Should_Write_The_Background() =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0"),
 			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
 				CreateThemeResult result = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
 					await session.CallToolAsync(CreateThemeTool.ToolName, new Dictionary<string, object?> {
 						["args"] = new Dictionary<string, object?> {
@@ -63,6 +64,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 					}, cancellationToken));
 				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
 
+				// Assert
 				result.Success.Should().BeTrue(
 					because: $"a theme and its background are written by one call (error: {result.Error})");
 				result.PanelIconBackground.Should().Be(ThemeBackgroundOutcome.PanelIconKept,
@@ -82,9 +84,11 @@ public sealed class ThemeBackgroundToolE2ETests {
 	public Task CreateTheme_Should_Register_The_Image_In_The_Gallery_Before_The_Theme_Write() =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", GalleryStub(listsRegistration: true),
 			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
 				CreateThemeResult result = await CreateThemeWithImageAsync(session, environmentName, cancellationToken);
 				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
 
+				// Assert
 				result.Success.Should().BeTrue(
 					because: $"an image the gallery takes may become the theme background (error: {result.Error})");
 				int registration = GalleryRegistrationIndex(requests);
@@ -103,9 +107,11 @@ public sealed class ThemeBackgroundToolE2ETests {
 	public Task CreateTheme_Should_Refuse_The_Theme_Write_When_The_Gallery_Does_Not_Take_The_Image() =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", GalleryStub(listsRegistration: false),
 			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
 				CreateThemeResult result = await CreateThemeWithImageAsync(session, environmentName, cancellationToken);
 				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
 
+				// Assert
 				result.Success.Should().BeFalse(because: "a theme background must name an image the background gallery holds");
 				result.Error.Should().StartWith("Registering the image in the background gallery failed.")
 					.And.EndWith("The theme was not written.",
@@ -125,6 +131,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e",
 			GalleryStub(listsRegistration: true) with { ThemeCatalogJson = CatalogJson },
 			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
 				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
 					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
 						["args"] = new Dictionary<string, object?> {
@@ -136,6 +143,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 					}, cancellationToken));
 				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
 
+				// Assert
 				result.ExitCode.Should().Be(0, because: "an image the gallery takes may become the theme background");
 				int registration = GalleryRegistrationIndex(requests);
 				registration.Should().BeGreaterThanOrEqualTo(0, because: "the image is posted to the background gallery");
@@ -153,6 +161,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 	public Task UpdateTheme_Should_Write_Only_The_Background() =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0") with { ThemeCatalogJson = CatalogJson },
 			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
 				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
 					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
 						["args"] = new Dictionary<string, object?> {
@@ -165,6 +174,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
 				string body = ThemeWriteBody(requests, "UpdateTheme");
 
+				// Assert
 				result.ExitCode.Should().Be(0, because: "a background-only update is a valid call");
 				result.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info
 						&& message.Value == "Theme background: Color #1A2B3C.",
@@ -182,6 +192,102 @@ public sealed class ThemeBackgroundToolE2ETests {
 					because: "an omitted content field must be left out so the stored value is kept");
 			});
 
+	[Test]
+	[AllureTag(UpdateThemeTool.ToolName)]
+	[AllureName("update-theme ignores a JSON null in both background arguments")]
+	[AllureDescription("Calls update-theme with caption, css-class-name and css-content and a JSON null for both background arguments, as a client that serializes every optional field sends it, through the real MCP server against a 10.2.95 stub below the background floor, then checks the call succeeds as a plain overwrite whose UpdateTheme body carries the content and no background.")]
+	[Description("Runs a plain overwrite whose client sends JSON null for both background arguments, even below the background floor, and sends no background.")]
+	public Task UpdateTheme_Should_Ignore_Null_In_Both_Background_Arguments() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.95.0"),
+			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
+				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
+					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["id"] = ThemeId,
+							["caption"] = "Overwrite probe",
+							["css-class-name"] = "overwrite-probe",
+							["css-content"] = ".overwrite-probe{color:#003366}",
+							["background-image-id"] = null,
+							["background-color"] = null,
+							["keep-icon-background"] = null
+						}
+					}, cancellationToken));
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+				string body = ThemeWriteBody(requests, "UpdateTheme");
+
+				// Assert
+				result.ExitCode.Should().Be(0, because: "a null in every unused optional argument is a plain overwrite");
+				body.Should().ContainAll(ContentKeys, because: "a plain overwrite sends every content field");
+				body.Should().NotContain("\"background\"",
+					because: "a null the client did not mean must not remove the stored background");
+			});
+
+	[Test]
+	[AllureTag(UpdateThemeTool.ToolName)]
+	[AllureName("update-theme writes a color next to a JSON null image id")]
+	[AllureDescription("Calls update-theme with background-color and a JSON null background-image-id, as a client that serializes every optional field sends it, through the real MCP server against a 10.2.96 stub that lists the theme, then checks the UpdateTheme body carries the color background.")]
+	[Description("Writes the color background when the client sends a JSON null for the unused background-image-id.")]
+	public Task UpdateTheme_Should_Write_A_Color_Next_To_A_Null_Image_Id() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0") with { ThemeCatalogJson = CatalogJson },
+			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
+				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
+					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["id"] = ThemeId,
+							["background-image-id"] = null,
+							["background-color"] = "#1A2B3C",
+							["keep-icon-background"] = true
+						}
+					}, cancellationToken));
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+
+				// Assert
+				result.ExitCode.Should().Be(0, because: "a null next to a value is the client's unused argument");
+				ThemeWriteBody(requests, "UpdateTheme").Should().Contain(ColorBackground,
+					because: "the color the caller set must reach ThemeService");
+			});
+
+	[Test]
+	[AllureTag(CreateThemeTool.ToolName)]
+	[AllureName("create-theme turns the panel icon background off after the theme write when it is not kept")]
+	[AllureDescription("Calls create-theme with background-color and without keep-icon-background through the real MCP server against a 10.2.96 stub that serves no feature-state write, then checks the theme is created with the background, the UsePanelIconBackground turn-off runs after the CreateTheme call, and its failure comes back as the first warning with no panel icon state.")]
+	[Description("Turns the panel icon background off after the theme write when keep-icon-background is not set, and reports a failed turn-off as a warning without undoing the theme.")]
+	public Task CreateTheme_Should_Turn_The_Panel_Icon_Background_Off_When_It_Is_Not_Kept() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0"),
+			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
+				CreateThemeResult result = EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(
+					await session.CallToolAsync(CreateThemeTool.ToolName, new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["caption"] = "Panel icon probe",
+							["css-content"] = ".panel-icon-probe{color:#003366}",
+							["background-color"] = "#1A2B3C"
+						}
+					}, cancellationToken));
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+
+				// Assert
+				result.Success.Should().BeTrue(
+					because: $"a failure after the theme write does not undo the theme (error: {result.Error})");
+				ThemeWriteBody(requests, "CreateTheme").Should().Contain(ColorBackground,
+					because: "the background must reach ThemeService in the CreateTheme call itself");
+				int createIndex = ThemeWriteIndex(requests, "CreateTheme");
+				requests.Skip(createIndex + 1).Should().Contain(request => request.Url.Contains("SelectQuery")
+						&& (request.Body ?? string.Empty).Contains("AppFeature"),
+					because: "the UsePanelIconBackground turn-off reads the feature after the theme write");
+				result.PanelIconBackground.Should().BeNull(
+					because: "the stub serves no feature-state write, so the feature state is unknown");
+				result.Warnings.Should().NotBeNullOrEmpty(because: "the failed turn-off must reach the caller");
+				result.Warnings![0].Should().StartWith(
+					"The theme background was applied, but turning off the UsePanelIconBackground feature failed",
+					because: "without keep-icon-background the turn-off runs, and its failure is the first warning");
+			});
+
 	[TestCase("background-image-id")]
 	[TestCase("background-color")]
 	[AllureTag(UpdateThemeTool.ToolName)]
@@ -191,6 +297,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 	public Task UpdateTheme_Should_Remove_The_Background_When_A_Background_Argument_Is_Null(string argument) =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0"),
 			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
 				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
 					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
 						["args"] = new Dictionary<string, object?> {
@@ -202,6 +309,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
 				string body = ThemeWriteBody(requests, "UpdateTheme");
 
+				// Assert
 				result.ExitCode.Should().Be(0, because: "a removal alone is a valid call");
 				result.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info
 						&& message.Value == "The theme has no background now.",
@@ -223,6 +331,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 	public Task Theme_Write_Should_Refuse_A_Background_Below_The_Floor(string toolName, string operation) =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.95.0"),
 			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
 				CallToolResult callResult = await session.CallToolAsync(toolName, new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
 						["environment-name"] = environmentName,
@@ -235,8 +344,9 @@ public sealed class ThemeBackgroundToolE2ETests {
 				string refusal = toolName == CreateThemeTool.ToolName
 					? EntitySchemaStructuredResultParser.Extract<CreateThemeResult>(callResult).Error
 					: string.Join(" ", McpCommandExecutionParser.Extract(callResult).Output.Select(message => message.Value));
-				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync();
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
 
+				// Assert
 				refusal.Should().Contain(CreatioVersionRequirementException.VersionTooOldCode,
 					because: "an older ThemeService would drop the background silently, so clio refuses it");
 				requests.Should().NotContain(request => request.Url.EndsWith("/ThemeService.svc/" + operation),

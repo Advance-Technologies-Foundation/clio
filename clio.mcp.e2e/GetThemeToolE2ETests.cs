@@ -235,8 +235,10 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 	[AllureDescription("Serves a theme catalog whose theme declares an image background from a local stub inside an isolated CLIO_HOME, then calls list-themes through the real clio MCP server and verifies the theme carries that background.")]
 	[Description("Verifies list-themes carries a theme's declared background over the real MCP transport.")]
 	public async Task ListThemes_Should_Return_The_Background_When_Catalog_Declares_It() {
+		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
 
+		// Act
 		CallToolResult callResult = await context.Session.CallToolAsync(
 			ListThemesTool.ToolName,
 			new Dictionary<string, object?> {
@@ -247,6 +249,7 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 		ListThemesResult result = EntitySchemaStructuredResultParser.Extract<ListThemesResult>(callResult);
 
+		// Assert
 		result.Themes.Should().ContainSingle().Which.Background.Should().BeEquivalentTo(
 			new ThemeBackground { Mode = "Image", ImageId = BackgroundImageId },
 			because: $"the declared background must survive the whole MCP transport unchanged (error: {result.Error})");

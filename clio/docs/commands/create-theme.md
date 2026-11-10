@@ -32,7 +32,7 @@ passed. The background is bound into the theme's package: an image with its gall
 `UsePanelIconBackground` off state for an image or a color. The output says whether
 `UsePanelIconBackground` is off or was kept and names the package the image was bound into; the MCP tool returns
 them as `panel-icon-background` (`off` or `kept`) and `background-image-package`. A new theme has no background to
-remove, so `null` is refused: [`update-theme`](update-theme.md) removes a theme background.
+remove, so `null` is refused.
 
 ## Synopsis
 

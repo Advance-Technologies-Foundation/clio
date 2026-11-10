@@ -207,9 +207,10 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	private SetBackgroundResult BindBackground(BackgroundGalleryImage image, string packageName,
 		List<string> warnings) {
 		List<string> bound = [];
-		if (!TryUsePackage(packageName, out string package, out string error)
-			|| !TryBindGalleryImage(image, bound, warnings, out bool imageBound, out error)
-			|| !TryBindConfigAndPanelIconOffState(imageBound, bound, warnings, out error)) {
+		if (!_backgroundService.TryUsePackage(_packageDataBinder, packageName, out string package, out string error)
+			|| !TryBindGalleryImage(image, bound, warnings, out error)
+			|| !TryBindBackgroundConfig(bound, warnings, out error)
+			|| !_backgroundService.TryBindPanelIconOffState(_packageDataBinder, bound, warnings, out error)) {
 			string into = package is null ? string.Empty : $" into package '{package}'";
 			string kept = bound.Count == 0
 				? string.Empty
@@ -221,36 +222,21 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		return SetBackgroundResult.Successful(image.ImageId, package, warnings, bound);
 	}
 
-	private bool TryUsePackage(string packageName, out string package, out string error) {
-		package = null;
-		error = null;
-		try {
-			package = _packageDataBinder.UsePackage(packageName);
-			return true;
-		} catch (Exception exception) when (exception is not OperationCanceledException) {
-			error = exception.Message;
-			return false;
-		}
-	}
-
 	private bool TryBindGalleryImage(BackgroundGalleryImage image, List<string> bound, List<string> warnings,
-		out bool imageBound, out string error) {
+		out string error) {
 		GalleryImageBindingOutcome outcome =
 			_backgroundService.BindGalleryImage(_packageDataBinder, image, ShellBackgroundBindingSuffix);
 		bound.AddRange(outcome.Bound);
 		warnings.AddRange(outcome.Warnings);
-		imageBound = outcome.ImageBound;
 		error = outcome.Error;
 		return error is null;
 	}
 
-	private bool TryBindConfigAndPanelIconOffState(bool imageBound, List<string> bound, List<string> warnings,
-		out string error) {
+	private bool TryBindBackgroundConfig(List<string> bound, List<string> warnings, out string error) {
 		error = null;
 		try {
-			BindBackgroundConfig(imageBound).RecordInto(BackgroundConfigPart, bound, warnings);
-			_packageDataBinder.BindFeatureOffState(BrandingBackgroundService.PanelIconBackgroundFeatureCode)
-				.RecordInto(BrandingBackgroundService.PanelIconOffStatePart, bound, warnings);
+			BindBackgroundConfig(bound.Contains(BrandingBackgroundService.ImagePart))
+				.RecordInto(BackgroundConfigPart, bound, warnings);
 			return true;
 		} catch (Exception exception) when (exception is not OperationCanceledException) {
 			error = exception.Message;

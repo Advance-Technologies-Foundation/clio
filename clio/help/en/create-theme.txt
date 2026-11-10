@@ -28,8 +28,7 @@ DESCRIPTION
     off for All employees unless --keep-icon-background is passed. The
     background is bound into the theme's package: an image with its gallery
     membership, and the UsePanelIconBackground off state for an image or a
-    color. A new theme has no background to remove, so null is refused:
-    update-theme removes a theme background.
+    color. A new theme has no background to remove, so null is refused.
 
 SYNOPSIS
     clio create-theme [options]

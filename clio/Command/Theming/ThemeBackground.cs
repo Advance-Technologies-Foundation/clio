@@ -63,8 +63,7 @@ public sealed record ThemeBackground
 				background = new ThemeBackground();
 				return true;
 			}
-			error = $"{argument} {RemovalValue} removes a theme background, and only update-theme removes one: " +
-				$"pass {expected} or leave {argument} out.";
+			error = $"{argument} {RemovalValue} is not accepted: a new theme has no background to remove.";
 			return false;
 		}
 		background = Parse(hasImageId, value);

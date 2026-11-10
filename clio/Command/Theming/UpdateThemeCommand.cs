@@ -91,7 +91,8 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(UpdateThemeOptions options) {
-		if (!TryBuildRequest(options, out ThemeRequest request, out string packageName, out string error)
+		if (!TryBuildRequest(options, out ThemeRequest request, out string error)
+			|| !TryResolveBackgroundPackage(options, request.Background, out string packageName, out error)
 			|| !_backgroundWriter.TryAddImageToBackgroundGallery(request.Background,
 				out BackgroundGalleryImage galleryImage, out error)) {
 			Fail(error);
@@ -117,10 +118,8 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 		}
 	}
 
-	private bool TryBuildRequest(UpdateThemeOptions options, out ThemeRequest request, out string packageName,
-		out string error) {
+	private bool TryBuildRequest(UpdateThemeOptions options, out ThemeRequest request, out string error) {
 		request = null;
-		packageName = null;
 		if (!ThemeBackground.TryParse(options.BackgroundImageId, options.BackgroundColor, allowRemoval: true,
 				out ThemeBackground background, out error)) {
 			return false;
@@ -139,9 +138,15 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			CssContent = cssContent,
 			Background = background
 		};
-		return ThemeRequestBuilder.TryValidateRequest(request, out error, partial)
-			&& (background is null || background.RemovesBackground
-				|| TryResolveThemePackage(options, out packageName, out error));
+		return ThemeRequestBuilder.TryValidateRequest(request, out error, partial);
+	}
+
+	private bool TryResolveBackgroundPackage(UpdateThemeOptions options, ThemeBackground background,
+		out string packageName, out string error) {
+		packageName = null;
+		error = null;
+		return background is null || background.RemovesBackground
+			|| TryResolveThemePackage(options, out packageName, out error);
 	}
 
 	private void Fail(string error) {

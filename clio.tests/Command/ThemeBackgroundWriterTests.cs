@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.Branding;
 using Clio.Command.Theming;
@@ -157,15 +158,14 @@ public sealed class ThemeBackgroundWriterTests {
 		outcome.Should().BeEquivalentTo(PanelIconBackgroundOutcome.None, because: "nothing happened after the theme write");
 	}
 
-
 	[Test]
-	[Description("Binds the image, its gallery membership and the panel icon off state into the theme's package through the writer's binder, and names the package in the log and the outcome.")]
+	[Description("Selects the theme's package, then binds the image, its gallery membership and the panel icon off state through the writer's binder, and names the package in the log and the outcome.")]
 	public void BindBackgroundIntoThemePackage_Should_Bind_An_Image_Background_Into_The_Theme_Package() {
 		// Arrange
-		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
-		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(new GalleryImageBindingOutcome(true,
+		IBrandingBackgroundService service = ServiceWithThemePackage();
+		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(new GalleryImageBindingOutcome(
 			[BrandingBackgroundService.ImagePart, BrandingBackgroundService.GalleryMembershipPart], []));
-		IPackageDataBinder binder = ThemePackageBinder();
+		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
 		ILogger logger = Substitute.For<ILogger>();
 
 		// Act
@@ -174,9 +174,10 @@ public sealed class ThemeBackgroundWriterTests {
 
 		// Assert
 		Received.InOrder(() => {
-			binder.UsePackage("UsrThemes");
+			service.TryUsePackage(binder, "UsrThemes", out Arg.Any<string>(), out Arg.Any<string>());
 			service.BindGalleryImage(binder, GalleryImage, BindingSuffix);
-			binder.BindFeatureOffState("UsePanelIconBackground");
+			service.TryBindPanelIconOffState(binder, Arg.Any<List<string>>(), Arg.Any<List<string>>(),
+				out Arg.Any<string>());
 		});
 		logger.Received(1).WriteInfo(
 			"Bound the background into package 'UsrThemes': image, gallery-membership, panel-icon-off-state.");
@@ -185,18 +186,19 @@ public sealed class ThemeBackgroundWriterTests {
 	}
 
 	[Test]
-	[Description("Binds only the panel icon off state for a color background, as set-background-image delivers it with every background, and reports no image package.")]
+	[Description("Binds only the panel icon off state for a color background, which ships with every background, and reports no image package.")]
 	public void BindBackgroundIntoThemePackage_Should_Bind_The_Panel_Icon_Off_State_For_A_Color_Background() {
 		// Arrange
-		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
-		IPackageDataBinder binder = ThemePackageBinder();
+		IBrandingBackgroundService service = ServiceWithThemePackage();
+		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
 
 		// Act
 		ThemeBackgroundBindingOutcome outcome = CreateWriter(service, binder: binder)
 			.BindBackgroundIntoThemePackage(ColorBackground, null, ThemeId, "UsrThemes");
 
 		// Assert
-		binder.Received(1).BindFeatureOffState("UsePanelIconBackground");
+		service.Received(1).TryBindPanelIconOffState(binder, Arg.Any<List<string>>(), Arg.Any<List<string>>(),
+			out Arg.Any<string>());
 		service.DidNotReceiveWithAnyArgs().BindGalleryImage(default, default, default);
 		outcome.Should().BeEquivalentTo(new ThemeBackgroundBindingOutcome(null, []),
 			because: "a color names no image, so no package holds one");
@@ -208,14 +210,13 @@ public sealed class ThemeBackgroundWriterTests {
 	public void BindBackgroundIntoThemePackage_Should_Not_Bind_Without_A_Background_To_Set(bool removed) {
 		// Arrange
 		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
-		IPackageDataBinder binder = ThemePackageBinder();
 
 		// Act
-		ThemeBackgroundBindingOutcome outcome = CreateWriter(service, binder: binder)
+		ThemeBackgroundBindingOutcome outcome = CreateWriter(service)
 			.BindBackgroundIntoThemePackage(removed ? new ThemeBackground() : null, null, ThemeId, "UsrThemes");
 
 		// Assert
-		binder.ReceivedCalls().Should().BeEmpty(because: "a removal delivers nothing into the package");
+		service.ReceivedCalls().Should().BeEmpty(because: "a removal delivers nothing into the package");
 		outcome.Should().BeEquivalentTo(ThemeBackgroundBindingOutcome.None, because: "nothing was bound");
 	}
 
@@ -224,11 +225,13 @@ public sealed class ThemeBackgroundWriterTests {
 	public void BindBackgroundIntoThemePackage_Should_Warn_When_The_Theme_Package_Cannot_Be_Selected() {
 		// Arrange
 		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
-		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
-		binder.UsePackage(default).ThrowsForAnyArgs(new InvalidOperationException(MessageWithCredential));
+		service.TryUsePackage(default, default, out _, out _).ReturnsForAnyArgs(call => {
+			call[3] = MessageWithCredential;
+			return false;
+		});
 
 		// Act
-		ThemeBackgroundBindingOutcome outcome = CreateWriter(service, binder: binder)
+		ThemeBackgroundBindingOutcome outcome = CreateWriter(service)
 			.BindBackgroundIntoThemePackage(ImageBackground, GalleryImage, ThemeId, "UsrThemes");
 
 		// Assert
@@ -239,19 +242,19 @@ public sealed class ThemeBackgroundWriterTests {
 				&& !value.Warnings[0].Contains("hunter2"),
 			because: "a package that cannot be selected holds nothing, and the reason reaches the caller without a credential");
 		service.DidNotReceiveWithAnyArgs().BindGalleryImage(default, default, default);
-		binder.DidNotReceiveWithAnyArgs().BindFeatureOffState(default);
+		service.DidNotReceiveWithAnyArgs().TryBindPanelIconOffState(default, default, default, out _);
 	}
 
 	[Test]
 	[Description("Passes on the binding warnings without a credential and reports no image package when the image is not bound.")]
 	public void BindBackgroundIntoThemePackage_Should_Pass_On_The_Binding_Warnings_When_The_Image_Is_Not_Bound() {
 		// Arrange
-		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		IBrandingBackgroundService service = ServiceWithThemePackage();
 		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(
-			new GalleryImageBindingOutcome(false, [], [MessageWithCredential]));
+			new GalleryImageBindingOutcome([], [MessageWithCredential]));
 
 		// Act
-		ThemeBackgroundBindingOutcome outcome = CreateWriter(service, binder: ThemePackageBinder())
+		ThemeBackgroundBindingOutcome outcome = CreateWriter(service)
 			.BindBackgroundIntoThemePackage(ImageBackground, GalleryImage, ThemeId, "UsrThemes");
 
 		// Assert
@@ -266,13 +269,12 @@ public sealed class ThemeBackgroundWriterTests {
 	[Description("Names the package and the bound image when the binding stops after the image, binds nothing more, and keeps the image package, so the warning agrees with it.")]
 	public void BindBackgroundIntoThemePackage_Should_Name_What_Was_Bound_When_The_Binding_Stops_After_The_Image() {
 		// Arrange
-		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
-		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(new GalleryImageBindingOutcome(true,
+		IBrandingBackgroundService service = ServiceWithThemePackage();
+		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(new GalleryImageBindingOutcome(
 			[BrandingBackgroundService.ImagePart], [], MessageWithCredential));
-		IPackageDataBinder binder = ThemePackageBinder();
 
 		// Act
-		ThemeBackgroundBindingOutcome outcome = CreateWriter(service, binder: binder)
+		ThemeBackgroundBindingOutcome outcome = CreateWriter(service)
 			.BindBackgroundIntoThemePackage(ImageBackground, GalleryImage, ThemeId, "UsrThemes");
 
 		// Assert
@@ -283,7 +285,7 @@ public sealed class ThemeBackgroundWriterTests {
 				&& value.Warnings[0].EndsWith(" Already bound and left in place: image.")
 				&& !value.Warnings[0].Contains("hunter2"),
 			because: "the image is in the package, so the warning must not claim the image binding failed");
-		binder.DidNotReceiveWithAnyArgs().BindFeatureOffState(default);
+		service.DidNotReceiveWithAnyArgs().TryBindPanelIconOffState(default, default, default, out _);
 	}
 
 	[Test]
@@ -300,11 +302,17 @@ public sealed class ThemeBackgroundWriterTests {
 			because: "the warnings keep the order the steps ran in, and the package and state come from their steps");
 	}
 
-	private static IPackageDataBinder ThemePackageBinder() {
-		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
-		binder.UsePackage("UsrThemes").Returns("UsrThemes");
-		binder.BindFeatureOffState(default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
-		return binder;
+	private static IBrandingBackgroundService ServiceWithThemePackage() {
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		service.TryUsePackage(default, default, out _, out _).ReturnsForAnyArgs(call => {
+			call[2] = "UsrThemes";
+			return true;
+		});
+		service.TryBindPanelIconOffState(default, default, default, out _).ReturnsForAnyArgs(call => {
+			((List<string>)call[1]).Add(BrandingBackgroundService.PanelIconOffStatePart);
+			return true;
+		});
+		return service;
 	}
 
 	private static ThemeBackgroundWriter CreateWriter(IBrandingBackgroundService service = null, ILogger logger = null,

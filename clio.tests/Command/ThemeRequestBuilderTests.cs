@@ -117,10 +117,13 @@ public sealed class ThemeRequestBuilderTests
 	[Description("In a partial update, checks the id and only the content fields that are given, so a background-only update needs none of them.")]
 	public void TryValidateRequest_ShouldCheckOnlyTheGivenFields_WhenPartial(string id, string caption, string cssClassName,
 		string cssContent, bool expected) {
+		// Arrange
 		ThemeRequest request = new() { Id = id, Caption = caption, CssClassName = cssClassName, CssContent = cssContent };
 
+		// Act
 		bool ok = ThemeRequestBuilder.TryValidateRequest(request, out _, partial: true);
 
+		// Assert
 		ok.Should().Be(expected, because: "an omitted field is kept by the platform, while a given one is written and must be valid");
 	}
 

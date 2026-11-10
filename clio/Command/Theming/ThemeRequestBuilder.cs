@@ -60,12 +60,13 @@ internal static class ThemeRequestBuilder
 	}
 
 	/// <summary>
-	/// Validates the full create/update field contract carried by <paramref name="request"/>: id, caption,
+	/// Validates the create/update field contract carried by <paramref name="request"/>: id, caption,
 	/// cssClassName, and the already-resolved cssContent. Each parameter rule is delegated to
 	/// <see cref="ThemeParameterValidator"/>.
 	/// </summary>
 	/// <param name="request">The theme request whose contract fields are validated.</param>
 	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
+	/// <param name="partial">When <c>true</c>, only the id and the fields that are set are validated.</param>
 	/// <returns><c>true</c> when every field satisfies the contract.</returns>
 	public static bool TryValidateRequest(ThemeRequest request, out string error, bool partial = false) {
 		if (!ThemeParameterValidator.TryValidateId(request.Id, out error)) {

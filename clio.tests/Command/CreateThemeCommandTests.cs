@@ -365,6 +365,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	[Test, Category("Unit")]
 	[Description("Sends the background in the CreateTheme body, then turns the panel icon background off and binds the image and its gallery membership into the theme's package.")]
 	public void TryCreateTheme_ShouldWriteTheBackgroundThenTurnOffThePanelIconAndBindTheImage() {
+		// Arrange
 		string body = null;
 		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -372,14 +373,18 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 				body = call.ArgAt<string>(1);
 				return "{\"success\":true}";
 			});
+		_binder.UsePackage(default).ReturnsForAnyArgs("UsrThemes");
 		_binder.BindRow(default, default, default, default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
+		_binder.BindFeatureOffState(default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
 		StubImageLookup(found: true);
 		CreateThemeOptions options = ValidOptions();
 		options.Id = ThemeId;
 		options.BackgroundImageId = ImageId;
 
-		_command.TryCreateTheme(options, out _, out _, out _);
+		// Act
+		_command.TryCreateTheme(options, out _, out _, out ThemeBackgroundOutcome backgroundOutcome);
 
+		// Assert
 		body.Should().Contain($"\"background\":{{\"mode\":\"Image\",\"imageId\":\"{ImageId}\"}}",
 			because: "the theme and its background are written by one CreateTheme call");
 		Received.InOrder(() => {
@@ -390,43 +395,69 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 				Arg.Any<IReadOnlyList<string>>(), Guid.Parse(ImageId));
 			_binder.BindRow("SysImageInTag", "ThemeBackground_d53a816b65ed4b5bad3bf739280add45",
 				Arg.Any<IReadOnlyList<string>>(), Guid.Parse(GalleryMembershipId));
+			_binder.BindFeatureOffState("UsePanelIconBackground");
 		});
+		backgroundOutcome.Should().BeEquivalentTo(
+			new ThemeBackgroundOutcome([], "UsrThemes", ThemeBackgroundOutcome.PanelIconOff),
+			because: "every step after the theme write succeeded, so the outcome names the package and the off state");
 	}
 
-	[TestCase(false, 0)]
-	[TestCase(true, 1)]
-	[Category("Unit")]
-	[Description("Writes nothing for an image the environment does not have, and stops after a CreateTheme that does not confirm success, so neither the panel icon feature nor the package changes.")]
-	public void TryCreateTheme_ShouldChangeNothingElse_WhenTheCreateFails(bool imageFound, int expectedCreates) {
-		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
-				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"id already exists\"}}");
-		StubImageLookup(imageFound);
+	[Test, Category("Unit")]
+	[Description("Writes nothing for an image the environment does not have: no CreateTheme call, no panel icon change, no package binding.")]
+	public void TryCreateTheme_ShouldWriteNothing_WhenTheImageIsMissing() {
+		// Arrange
+		StubImageLookup(found: false);
 		CreateThemeOptions options = ValidOptions();
 		options.BackgroundImageId = ImageId;
 
-		_command.TryCreateTheme(options, out _, out _, out _);
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out _, out _);
 
-		_applicationClient.Received(expectedCreates).ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")),
+		// Assert
+		created.Should().BeFalse(because: "a background must name an uploaded image");
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_featureState.ReceivedCalls().Should().BeEmpty(because: "a refused image changes no feature");
+		_binder.ReceivedCalls().Should().BeEmpty(because: "a refused image binds nothing");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Stops after a CreateTheme that does not confirm success, so neither the panel icon feature nor the package changes.")]
+	public void TryCreateTheme_ShouldChangeNothingElse_WhenTheCreateFails() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"id already exists\"}}");
+		StubImageLookup(found: true);
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out _, out _);
+
+		// Assert
+		created.Should().BeFalse(because: "ThemeService refused the theme");
 		_featureState.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created gets no follow-ups");
 		_binder.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created has no package to bind into");
 	}
 
-	[TestCase("null", null, "background-image-id null removes a theme background, and only update-theme removes one")]
-	[TestCase(null, "null", "background-color null removes a theme background, and only update-theme removes one")]
+	[TestCase("null", null, "background-image-id null is not accepted: a new theme has no background to remove.")]
+	[TestCase(null, "null", "background-color null is not accepted: a new theme has no background to remove.")]
 	[Category("Unit")]
-	[Description("Refuses null in a background argument before any HTTP call, because only update-theme removes a theme background.")]
+	[Description("Refuses null in a background argument before any HTTP call, because a new theme has no background to remove.")]
 	public void TryCreateTheme_ShouldRefuseNull_WhenGivenAsABackgroundArgument(string imageId, string color,
 		string expectedError) {
+		// Arrange
 		CreateThemeOptions options = ValidOptions();
 		options.BackgroundImageId = imageId;
 		options.BackgroundColor = color;
 
+		// Act
 		bool succeeded = _command.TryCreateTheme(options, out _, out string errorMessage, out _);
 
+		// Assert
 		succeeded.Should().BeFalse(because: "create-theme has no background to remove");
-		errorMessage.Should().StartWith(expectedError, because: "the caller must learn that update-theme removes a background");
+		errorMessage.Should().Be(expectedError, because: "the caller must learn why null is refused");
 		_applicationClient.ReceivedCalls().Should().BeEmpty(because: "a refused argument must stop the command before any request");
 	}
 }

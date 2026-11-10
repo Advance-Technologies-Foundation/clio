@@ -1817,6 +1817,7 @@ public class CreateThemeToolTests {
 	[Category("Unit")]
 	[Description("Redacts the background warnings before they reach the MCP transcript, because a binding failure can carry a server message.")]
 	public void CreateTheme_ShouldRedactTheBackgroundWarnings() {
+		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(new FakeCreateThemeCommand(
 			warnings: ["binding failed at http://admin:hunter2@proxy.internal.example:8080/trace"]));
@@ -1824,9 +1825,11 @@ public class CreateThemeToolTests {
 			.Returns(Substitute.For<ICreatioVersionChecker>());
 		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
+		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
 			CssContent: ".x{}", Caption: "Ocean", BackgroundColor: "#123"));
 
+		// Assert
 		result.Warnings.Should().ContainSingle(warning => !warning.Contains("hunter2"),
 			because: "a credential in a server message must not reach the model transcript");
 	}
@@ -1835,6 +1838,7 @@ public class CreateThemeToolTests {
 	[Category("Unit")]
 	[Description("Returns the package the background image was bound into and whether the panel icon background is off or kept.")]
 	public void CreateTheme_ShouldReturnTheImagePackageAndThePanelIconState() {
+		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(new FakeCreateThemeCommand(
 			imagePackage: "UsrBranding", panelIconBackground: ThemeBackgroundOutcome.PanelIconOff));
@@ -1842,9 +1846,11 @@ public class CreateThemeToolTests {
 			.Returns(Substitute.For<ICreatioVersionChecker>());
 		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
+		// Act
 		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
 			CssContent: ".x{}", Caption: "Ocean", BackgroundImageId: "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81"));
 
+		// Assert
 		JsonSerializer.Serialize(result).Should().Contain(
 			"\"background-image-package\":\"UsrBranding\",\"panel-icon-background\":\"off\"",
 			because: "an MCP client reads where the image went and the panel icon state only from the result");
@@ -1854,6 +1860,7 @@ public class CreateThemeToolTests {
 	[Category("Unit")]
 	[Description("Maps background-image-id into the create options in brand mode and leaves keep-icon-background false when it is omitted.")]
 	public void CreateTheme_ShouldMapTheBackgroundImage_WhenBrandModeSupplied() {
+		// Arrange
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		BuildThemeCommandHarness build = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -1863,9 +1870,11 @@ public class CreateThemeToolTests {
 		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
 		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
+		// Act
 		tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6",
 			BackgroundImageId: "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81"));
 
+		// Assert
 		resolvedCommand.CapturedOptions.Should().BeEquivalentTo(new {
 			BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81",
 			BackgroundColor = (string)null,
@@ -1877,6 +1886,7 @@ public class CreateThemeToolTests {
 	[Category("Unit")]
 	[Description("Maps background-color and keep-icon-background into the create options in inline mode.")]
 	public void CreateTheme_ShouldMapTheBackgroundColorAndKeepIconBackground_WhenInlineModeSupplied() {
+		// Arrange
 		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
@@ -1884,9 +1894,11 @@ public class CreateThemeToolTests {
 			.Returns(Substitute.For<ICreatioVersionChecker>());
 		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
+		// Act
 		tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2", CssContent: ".x{}", Caption: "Ocean",
 			BackgroundColor: "#1A2B3C", KeepIconBackground: true));
 
+		// Assert
 		resolvedCommand.CapturedOptions.Should().BeEquivalentTo(new {
 			BackgroundImageId = (string)null,
 			BackgroundColor = "#1A2B3C",
@@ -1898,10 +1910,12 @@ public class CreateThemeToolTests {
 	[Category("Unit")]
 	[Description("Binds a JSON null background argument of create-theme as an absent one with the real MCP serializer options, because create-theme has no background to remove.")]
 	public void CreateThemeArgs_ShouldBindAJsonNullBackgroundArgumentAsAbsent() {
+		// Act
 		CreateThemeArgs args = JsonSerializer.Deserialize<CreateThemeArgs>(
 			"""{"environment-name":"docker_fix2","css-content":".x{}","background-image-id":null,"background-color":null}""",
 			Clio.BindingsModule.CreateMcpSerializerOptions())!;
 
+		// Assert
 		new { args.BackgroundImageId, args.BackgroundColor }.Should().BeEquivalentTo(
 			new { BackgroundImageId = (string)null, BackgroundColor = (string)null },
 			because: "a JSON null in create-theme means no background, exactly like an omitted argument");

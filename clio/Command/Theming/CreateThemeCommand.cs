@@ -89,11 +89,14 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 
 	/// <summary>
 	/// Creates the theme on the target environment and reports the effective id (the supplied id or an
-	/// auto-generated one). Resolves the CSS and validates the fields before any HTTP call.
+	/// auto-generated one). Resolves the CSS and validates the fields before any HTTP call. With a background, the
+	/// image joins the shell background gallery before the create; after it, the panel icon background is turned off
+	/// unless kept, and the background is bound into the theme's package.
 	/// </summary>
 	/// <param name="options">Create options carrying the theme fields and connection settings.</param>
 	/// <param name="createdId">On success, the effective theme id (supplied or auto-generated).</param>
 	/// <param name="errorMessage">On failure, the validation or server-provided message.</param>
+	/// <param name="backgroundOutcome">On success, what happened to the background after the create.</param>
 	/// <returns><c>true</c> when the theme was created; otherwise <c>false</c>.</returns>
 	public virtual bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
 		out ThemeBackgroundOutcome backgroundOutcome) {

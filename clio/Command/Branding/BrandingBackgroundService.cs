@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -9,10 +10,16 @@ namespace Clio.Command.Branding;
 public sealed record BackgroundGalleryImage(Guid ImageId, Guid MembershipId, Guid TagId);
 
 public sealed record GalleryImageBindingOutcome(
-	bool ImageBound,
 	IReadOnlyList<string> Bound,
 	IReadOnlyList<string> Warnings,
-	string Error = null);
+	string Error = null)
+{
+	public bool ImageBound {
+		get {
+			return Bound.Contains(BrandingBackgroundService.ImagePart);
+		}
+	}
+}
 
 public interface IBrandingBackgroundService
 {
@@ -22,8 +29,13 @@ public interface IBrandingBackgroundService
 
 	bool TryTurnOffPanelIconBackground(string appliedBackground, out string warning);
 
+	bool TryUsePackage(IPackageDataBinder binder, string packageName, out string package, out string error);
+
 	GalleryImageBindingOutcome BindGalleryImage(IPackageDataBinder binder, BackgroundGalleryImage image,
 		string bindingSuffix);
+
+	bool TryBindPanelIconOffState(IPackageDataBinder binder, List<string> bound, List<string> warnings,
+		out string error);
 }
 
 internal sealed class BrandingBackgroundService(IApplicationClient applicationClient,
@@ -112,21 +124,43 @@ internal sealed class BrandingBackgroundService(IApplicationClient applicationCl
 		}
 	}
 
+	public bool TryUsePackage(IPackageDataBinder binder, string packageName, out string package, out string error) {
+		package = null;
+		error = null;
+		try {
+			package = binder.UsePackage(packageName);
+			return true;
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			error = exception.Message;
+			return false;
+		}
+	}
+
 	public GalleryImageBindingOutcome BindGalleryImage(IPackageDataBinder binder, BackgroundGalleryImage image,
 		string bindingSuffix) {
-		bool imageBound = false;
 		List<string> bound = [];
 		List<string> warnings = [];
 		try {
 			PackageDataBindingOutcome imageRow = binder.BindRow(SysImageSchema, bindingSuffix, SysImageColumns,
 				image.ImageId);
-			imageBound = imageRow.Bound;
 			imageRow.RecordInto(ImagePart, bound, warnings);
-			BindGalleryMembership(binder, imageBound, image, bindingSuffix)
+			BindGalleryMembership(binder, imageRow.Bound, image, bindingSuffix)
 				.RecordInto(GalleryMembershipPart, bound, warnings);
-			return new GalleryImageBindingOutcome(imageBound, bound, warnings);
+			return new GalleryImageBindingOutcome(bound, warnings);
 		} catch (Exception exception) when (exception is not OperationCanceledException) {
-			return new GalleryImageBindingOutcome(imageBound, bound, warnings, exception.Message);
+			return new GalleryImageBindingOutcome(bound, warnings, exception.Message);
+		}
+	}
+
+	public bool TryBindPanelIconOffState(IPackageDataBinder binder, List<string> bound, List<string> warnings,
+		out string error) {
+		error = null;
+		try {
+			binder.BindFeatureOffState(PanelIconBackgroundFeatureCode).RecordInto(PanelIconOffStatePart, bound, warnings);
+			return true;
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			error = exception.Message;
+			return false;
 		}
 	}
 
@@ -186,7 +220,44 @@ internal sealed class BrandingBackgroundService(IApplicationClient applicationCl
 	}
 
 	private bool TryQuerySingleId(string relativeUrl, out Guid? id, out string error) {
-		return ODataSingleIdQuery.TryRead(applicationClient, serviceUrlBuilder, relativeUrl, out id, out error);
+		id = null;
+		error = null;
+		try {
+			string response = applicationClient.ExecuteGetRequest(serviceUrlBuilder.Build(relativeUrl));
+			if (string.IsNullOrWhiteSpace(response)) {
+				error = "the environment returned an empty response.";
+				return false;
+			}
+			using JsonDocument document = JsonDocument.Parse(response);
+			//Every caller hands this an ODataKeyFormatter.CollectionPath URL and expects the standard OData
+			//"value" collection below, so the response has to be classified as OData. Under Service the
+			//BaseResponse heuristics run over entity data, and an entity carrying a business Success:false
+			//column was rejected as a service failure.
+			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload,
+				out string serverError)) {
+				error = serverError;
+				return false;
+			}
+			if (!document.RootElement.TryGetProperty("value", out JsonElement rows)
+				|| rows.ValueKind != JsonValueKind.Array) {
+				error = "the environment returned an unexpected response.";
+				return false;
+			}
+			if (rows.GetArrayLength() > 0
+				&& rows[0].TryGetProperty("Id", out JsonElement idElement)
+				&& idElement.ValueKind == JsonValueKind.String
+				&& Guid.TryParse(idElement.GetString(), out Guid parsed)
+				&& parsed != Guid.Empty) {
+				id = parsed;
+			}
+			return true;
+		} catch (JsonException) {
+			error = "the environment returned a non-JSON response.";
+			return false;
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			error = exception.Message;
+			return false;
+		}
 	}
 
 	private sealed record GalleryProbe(Guid? RowId, string HardError, string RegistrationError);
