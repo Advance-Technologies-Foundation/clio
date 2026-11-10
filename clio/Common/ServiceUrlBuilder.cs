@@ -424,7 +424,14 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     <c>parentColumnValue</c> from the query string; it answers HTTP 200 with
 		///     <c>{"success":false,"errorInfo":{...}}</c> on a rejection.
 		/// </summary>
-		FileApiUploadFile = 121
+		FileApiUploadFile = 121,
+
+		/// <summary>
+		///     Builds a minimal dynamic case (DCM) for an object from one of its lookup columns via the
+		///     ProcessDesignService package. The body is <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and
+		///     the answer is wrapped under <c>BuildCaseResult</c>; <c>validateOnly: true</c> plans without writing.
+		/// </summary>
+		BuildCase = 122
 
 	}
 
@@ -527,6 +534,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
+		{KnownRoute.BuildCase, "/rest/ProcessDesignService/BuildCase"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
 		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},
