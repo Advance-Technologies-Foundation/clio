@@ -55,10 +55,10 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	}
 
 	private void ArrangeGallery(bool added) {
-		_backgroundWriter.TryAddImageToBackgroundGallery(Arg.Any<ThemeBackground>(), out Arg.Any<BackgroundGalleryImage>(),
-				out Arg.Any<string>())
+		_backgroundWriter.TryAddImageToBackgroundGallery(Arg.Any<ThemeBackground>(), Arg.Any<string>(),
+				out Arg.Any<BackgroundGalleryImage>(), out Arg.Any<string>())
 			.Returns(call => {
-				call[1] = added ? GalleryImage : null;
+				call[2] = added ? GalleryImage : null;
 				return added;
 			});
 	}
@@ -252,6 +252,8 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_backgroundWriter.Received(expectedCalls).TurnOffPanelIconBackground(Arg.Any<ThemeBackground>(), false);
 		_backgroundWriter.Received(expectedCalls).BindBackgroundIntoThemePackage(Arg.Any<ThemeBackground>(), GalleryImage,
 			ThemeId, "UsrBranding");
+		_backgroundWriter.Received(1 - expectedMissingThemeErrors).TryAddImageToBackgroundGallery(
+			Arg.Any<ThemeBackground>(), "UsrBranding", out Arg.Any<BackgroundGalleryImage>(), out Arg.Any<string>());
 		_logger.Received(expectedMissingThemeErrors)
 			.WriteError(Arg.Is<string>(m => m != null && m.StartsWith($"No theme with id '{ThemeId}'")));
 	}
@@ -305,7 +307,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 
 		// Assert
 		exitCode.Should().Be(1, because: "an image needs the theme's package, so the theme is not written without one");
-		_backgroundWriter.DidNotReceiveWithAnyArgs().TryAddImageToBackgroundGallery(default, out _, out _);
+		_backgroundWriter.DidNotReceiveWithAnyArgs().TryAddImageToBackgroundGallery(default, default, out _, out _);
 		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m != null && m.StartsWith(expectedError)));

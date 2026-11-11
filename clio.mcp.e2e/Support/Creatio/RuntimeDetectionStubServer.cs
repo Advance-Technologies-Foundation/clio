@@ -389,6 +389,17 @@ http.createServer((request, response) => {
         + "Server Error in '/' Application. {{DesignerHtmlBodyMarker}}</body></html>");
       return;
     }
+    if (config.ThemePackageName && request.method === "POST"
+      && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
+      && body.includes('"SysPackage"')) {
+      sendJson(response, 200, { success: true, rows: [{
+        Id: "cccccccc-0000-0000-0000-000000000001",
+        Name: config.ThemePackageName,
+        UId: "cccccccc-0000-0000-0000-000000000002",
+        InstallType: config.ThemePackageLocked ? 1 : 0
+      }] });
+      return;
+    }
     if (config.DesignerPackageName && !config.AuthRejectedSelectQuerySchemaName && !config.HtmlSelectQuerySchemaName
       && request.method === "POST"
       && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")) {
@@ -879,6 +890,11 @@ http.createServer((request, response) => {
 /// <paramref name="ThemeCatalogJson"/>, prefixed with '/', because that is the value the tool builds the URL from.
 /// </param>
 /// <param name="ThemeCssContent">The body served at <paramref name="ThemeCssPath"/>; null or empty serves an empty file.</param>
+/// <param name="ThemePackageName">
+/// When set, a DataService <c>SelectQuery</c> on <c>SysPackage</c> answers with this one package, so a theme
+/// background can check its package before the background gallery step.
+/// </param>
+/// <param name="ThemePackageLocked">Whether the package named by <paramref name="ThemePackageName"/> is locked.</param>
 internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreHealthEnabled,
 	bool NetFrameworkHealthEnabled,
@@ -911,7 +927,9 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? ShellPageHtml = null,
 	string? ThemeWriteResponseJson = null,
 	string? BackgroundGalleryImageId = null,
-	bool BackgroundGalleryListsRegistration = false);
+	bool BackgroundGalleryListsRegistration = false,
+	string? ThemePackageName = null,
+	bool ThemePackageLocked = false);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

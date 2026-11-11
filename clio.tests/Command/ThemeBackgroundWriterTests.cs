@@ -45,7 +45,7 @@ public sealed class ThemeBackgroundWriterTests {
 			});
 
 		// Act
-		bool added = CreateWriter(service).TryAddImageToBackgroundGallery(ImageBackground,
+		bool added = CreateWriter(service).TryAddImageToBackgroundGallery(ImageBackground, "UsrThemes",
 			out BackgroundGalleryImage image, out string error);
 
 		// Assert
@@ -70,7 +70,8 @@ public sealed class ThemeBackgroundWriterTests {
 		});
 
 		// Act
-		bool added = CreateWriter(service).TryAddImageToBackgroundGallery(ImageBackground, out _, out string error);
+		bool added = CreateWriter(service).TryAddImageToBackgroundGallery(ImageBackground, "UsrThemes", out _,
+			out string error);
 
 		// Assert
 		added.Should().BeFalse(because: "a theme background must name an image the gallery holds");
@@ -78,10 +79,51 @@ public sealed class ThemeBackgroundWriterTests {
 			.And.NotContain("hunter2", because: "a credential in a server message must not reach the caller");
 	}
 
+	[Test]
+	[Description("Refuses the theme write before the image is checked or joins the gallery when the theme's package cannot be resolved, and strips a credential from the reason.")]
+	public void TryAddImageToBackgroundGallery_Should_Refuse_The_Theme_Write_When_The_Package_Cannot_Be_Resolved() {
+		// Arrange
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		IPackageTargetResolver resolver = Substitute.For<IPackageTargetResolver>();
+		resolver.Resolve("UsrThemes", true).Returns(PackageTargetResolution.Unresolvable(MessageWithCredential));
+
+		// Act
+		bool added = CreateWriter(service, resolver: resolver).TryAddImageToBackgroundGallery(ImageBackground,
+			"UsrThemes", out BackgroundGalleryImage image, out string error);
+
+		// Assert
+		added.Should().BeFalse(because: "a package the background cannot land in refuses the theme write, so nothing may change before it");
+		image.Should().BeNull(because: "no image joined the gallery");
+		error.Should().StartWith("refused by ").And.EndWith(" The theme was not written.")
+			.And.NotContain("hunter2", because: "a credential in a server message must not reach the caller");
+		service.ReceivedCalls().Should().BeEmpty(
+			because: "the image is neither checked nor added to the environment-wide gallery for a theme that cannot be written");
+	}
+
+	[Test]
+	[Description("Names the locked package and nothing else when the theme's package is locked, so the caller is not told to unlock it, and leaves the gallery alone.")]
+	public void TryAddImageToBackgroundGallery_Should_State_Only_The_Lock_When_The_Package_Is_Locked() {
+		// Arrange
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		IPackageTargetResolver resolver = Substitute.For<IPackageTargetResolver>();
+		resolver.Resolve("UsrThemes", true).Returns(PackageTargetResolution.Locked("UsrThemes",
+			"Package 'UsrThemes' is locked, so it cannot receive design-time writes. Unlock it with unlock-package."));
+
+		// Act
+		bool added = CreateWriter(service, resolver: resolver).TryAddImageToBackgroundGallery(ImageBackground,
+			"UsrThemes", out _, out string error);
+
+		// Assert
+		added.Should().BeFalse(because: "ThemeService cannot write a theme into a locked package");
+		error.Should().Be("The theme's package 'UsrThemes' is locked. The theme was not written.",
+			because: "an agent acts on advice in an error, and unlocking a package is the user's decision");
+		service.ReceivedCalls().Should().BeEmpty(because: "the image does not join the gallery for a theme that cannot be written");
+	}
+
 	[TestCase(null)]
 	[TestCase("#123")]
 	[TestCase("")]
-	[Description("Lets a color, a removal or no background through without asking the environment for an image.")]
+	[Description("Lets a color, a removal or no background through without asking the environment for an image or the package.")]
 	public void TryAddImageToBackgroundGallery_Should_Not_Query_Without_An_Image(string color) {
 		// Arrange
 		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
@@ -91,14 +133,17 @@ public sealed class ThemeBackgroundWriterTests {
 			_ => ColorBackground
 		};
 
+		IPackageTargetResolver resolver = Substitute.For<IPackageTargetResolver>();
+
 		// Act
-		bool added = CreateWriter(service).TryAddImageToBackgroundGallery(background, out BackgroundGalleryImage image,
-			out _);
+		bool added = CreateWriter(service, resolver: resolver).TryAddImageToBackgroundGallery(background, "UsrThemes",
+			out BackgroundGalleryImage image, out _);
 
 		// Assert
 		added.Should().BeTrue(because: "only an image background names a row that must join the gallery");
 		image.Should().BeNull(because: "there is no image to bind after the theme write");
 		service.ReceivedCalls().Should().BeEmpty(because: "nothing about the gallery needs the environment here");
+		resolver.ReceivedCalls().Should().BeEmpty(because: "only the gallery step needs the package checked first");
 	}
 
 	[TestCase(false, 1, "UsePanelIconBackground is off for All employees.", ThemeBackgroundOutcome.PanelIconOff)]
@@ -325,8 +370,16 @@ public sealed class ThemeBackgroundWriterTests {
 	}
 
 	private static ThemeBackgroundWriter CreateWriter(IBrandingBackgroundService service = null, ILogger logger = null,
-		IPackageDataBinder binder = null) {
+		IPackageDataBinder binder = null, IPackageTargetResolver resolver = null) {
 		return new ThemeBackgroundWriter(service ?? Substitute.For<IBrandingBackgroundService>(),
-			binder ?? Substitute.For<IPackageDataBinder>(), logger ?? Substitute.For<ILogger>());
+			binder ?? Substitute.For<IPackageDataBinder>(), resolver ?? EditablePackageResolver(),
+			logger ?? Substitute.For<ILogger>());
+	}
+
+	private static IPackageTargetResolver EditablePackageResolver() {
+		IPackageTargetResolver resolver = Substitute.For<IPackageTargetResolver>();
+		resolver.Resolve(default, default).ReturnsForAnyArgs(call =>
+			PackageTargetResolution.Resolved((string)call[0] ?? "Custom", Guid.NewGuid()));
+		return resolver;
 	}
 }

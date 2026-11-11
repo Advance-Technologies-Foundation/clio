@@ -25,7 +25,8 @@ Pass at most one background argument: `--background-image-id` (an image uploaded
 [`upload-image`](upload-image.md)) or `--background-color`. The value `null` for either removes the theme's own
 background, so its users see the site background again; an image binding and its gallery entry stay. A background
 argument needs Creatio 10.2.96 or later, checked before any write. Before the update, an image is added to the shell
-background gallery. With a background argument, `--caption`, `--css-class-name` and the CSS are optional and the omitted ones are kept.
+background gallery; when the theme's package is locked, the update is refused before that and nothing is written.
+With a background argument, `--caption`, `--css-class-name` and the CSS are optional and the omitted ones are kept.
 After an image or a color is written, the `UsePanelIconBackground` feature is turned off for All employees unless
 `--keep-icon-background` is passed. The background is bound into the theme's package, read from the theme's
 `cssFilePath`: an image with its gallery membership, and the `UsePanelIconBackground` off state for an image or a

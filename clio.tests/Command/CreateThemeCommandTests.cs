@@ -21,6 +21,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	private IApplicationClient _applicationClient;
 	private IFeatureStateService _featureState;
 	private IPackageDataBinder _binder;
+	private IPackageTargetResolver _packageTargetResolver;
 	private ILogger _logger;
 	private CreateThemeCommand _command;
 
@@ -41,9 +42,13 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_featureState = Substitute.For<IFeatureStateService>();
 		_binder = Substitute.For<IPackageDataBinder>();
+		_packageTargetResolver = Substitute.For<IPackageTargetResolver>();
+		_packageTargetResolver.Resolve(default, default).ReturnsForAnyArgs(call =>
+			PackageTargetResolution.Resolved((string)call[0] ?? "Custom", Guid.NewGuid()));
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _featureState);
 		containerBuilder.AddTransient(_ => _binder);
+		containerBuilder.AddTransient(_ => _packageTargetResolver);
 	}
 
 	private static CreateThemeOptions ValidOptions() => new() {
@@ -419,6 +424,29 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_featureState.ReceivedCalls().Should().BeEmpty(because: "a refused image changes no feature");
 		_binder.ReceivedCalls().Should().BeEmpty(because: "a refused image binds nothing");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Leaves the background gallery alone and writes no theme when the package the theme would land in is locked: the environment's current package when --package-name is omitted.")]
+	public void TryCreateTheme_ShouldNotTouchTheGallery_WhenTheThemePackageIsLocked() {
+		// Arrange
+		_packageTargetResolver.Resolve(null, true).Returns(PackageTargetResolution.Locked("UsrLocked",
+			"The environment's CurrentPackageId system setting points at package 'UsrLocked', which is locked."));
+		StubImageLookup(found: true);
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out string errorMessage, out _);
+
+		// Assert
+		created.Should().BeFalse(because: "a locked package refuses the theme write");
+		errorMessage.Should().Be("The theme's package 'UsrLocked' is locked. The theme was not written.",
+			because: "the refusal names the locked package and that nothing was written, and no unlock advice");
+		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Is<string>(u => u.Contains("odata/SysImage")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test, Category("Unit")]

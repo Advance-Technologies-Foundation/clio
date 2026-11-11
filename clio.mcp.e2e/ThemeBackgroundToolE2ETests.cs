@@ -26,6 +26,8 @@ public sealed class ThemeBackgroundToolE2ETests {
 
 	private const string ImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
 
+	private const string ThemePackageName = "UsrBranding";
+
 	private const string ColorBackground = "\"background\":{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}";
 
 	private const string PackageDeliveryWarning = "The theme background was applied, but binding it into ";
@@ -151,6 +153,38 @@ public sealed class ThemeBackgroundToolE2ETests {
 					because: "the image joins the background gallery before the theme write");
 				ThemeWriteBody(requests, "UpdateTheme").Should().Contain(ImageBackground,
 					because: "the image background must reach ThemeService in the UpdateTheme call itself");
+			});
+
+	[Test]
+	[AllureTag(UpdateThemeTool.ToolName)]
+	[AllureName("update-theme leaves the background gallery alone for a theme in a locked package")]
+	[AllureDescription("Calls update-theme with id and background-image-id through the real MCP server against a 10.2.96 stub that lists the theme in its catalog and reports the theme's package as locked, then checks the call is refused naming the locked package, and neither a SysImageInTag POST nor an UpdateTheme call reached the stub.")]
+	[Description("Refuses an image background through the real MCP server for a theme whose package is locked, before the image joins the background gallery.")]
+	public Task UpdateTheme_Should_Leave_The_Gallery_Alone_When_The_Theme_Package_Is_Locked() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e",
+			GalleryStub(listsRegistration: true) with { ThemeCatalogJson = CatalogJson, ThemePackageLocked = true },
+			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
+				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
+					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["id"] = ThemeId,
+							["background-image-id"] = ImageId
+						}
+					}, cancellationToken));
+				string output = string.Join(" ", result.Output.Select(message => message.Value));
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+
+				// Assert
+				result.ExitCode.Should().Be(1, because: "a locked package refuses the theme write");
+				output.Should().Contain($"The theme's package '{ThemePackageName}' is locked. The theme was not written.")
+					.And.NotContainEquivalentOf("unlock",
+						because: "the caller learns the package is locked and nothing was written, without advice to unlock it");
+				GalleryRegistrationIndex(requests).Should().Be(-1,
+					because: "the image must not join the environment-wide gallery for a theme that cannot be written");
+				requests.Should().NotContain(request => request.Url.EndsWith("/ThemeService.svc/UpdateTheme"),
+					because: "a locked package stops the theme write before it is sent");
 			});
 
 	[Test]
@@ -388,7 +422,8 @@ public sealed class ThemeBackgroundToolE2ETests {
 	private static RuntimeDetectionStubServerConfiguration GalleryStub(bool listsRegistration) {
 		return Stub("10.2.96.0") with {
 			BackgroundGalleryImageId = ImageId,
-			BackgroundGalleryListsRegistration = listsRegistration
+			BackgroundGalleryListsRegistration = listsRegistration,
+			ThemePackageName = ThemePackageName
 		};
 	}
 
@@ -400,6 +435,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 					["environment-name"] = environmentName,
 					["caption"] = "Gallery probe",
 					["css-content"] = ".gallery-probe{color:#003366}",
+					["package-name"] = ThemePackageName,
 					["background-image-id"] = ImageId,
 					["keep-icon-background"] = true
 				}

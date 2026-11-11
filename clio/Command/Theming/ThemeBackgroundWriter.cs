@@ -33,8 +33,8 @@ public sealed record ThemeBackgroundOutcome(IReadOnlyList<string> Warnings, stri
 
 public interface IThemeBackgroundWriter {
 
-	bool TryAddImageToBackgroundGallery(ThemeBackground background, out BackgroundGalleryImage image,
-		out string error);
+	bool TryAddImageToBackgroundGallery(ThemeBackground background, string packageName,
+		out BackgroundGalleryImage image, out string error);
 
 	PanelIconBackgroundOutcome TurnOffPanelIconBackground(ThemeBackground background, bool keepIconBackground);
 
@@ -43,16 +43,22 @@ public interface IThemeBackgroundWriter {
 }
 
 internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroundService,
-	IPackageDataBinder packageDataBinder, ILogger logger) : IThemeBackgroundWriter {
+	IPackageDataBinder packageDataBinder, IPackageTargetResolver packageTargetResolver, ILogger logger)
+	: IThemeBackgroundWriter {
 
 	private const string ThemeBackgroundBindingPrefix = "ThemeBackground_";
 
-	public bool TryAddImageToBackgroundGallery(ThemeBackground background, out BackgroundGalleryImage image,
-		out string error) {
+	public bool TryAddImageToBackgroundGallery(ThemeBackground background, string packageName,
+		out BackgroundGalleryImage image, out string error) {
 		image = null;
 		error = null;
 		if (background?.ImageId is null) {
 			return true;
+		}
+		PackageTargetResolution package = packageTargetResolver.Resolve(packageName, requireEditable: true);
+		if (!package.Success) {
+			error = DescribeRefusedPackage(package);
+			return false;
 		}
 		Guid imageId = Guid.Parse(background.ImageId);
 		if (backgroundService.TryConfirmUploadedImage(imageId, out string imageError)
@@ -102,6 +108,13 @@ internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroun
 		error = null;
 		return image is null || backgroundService.TryBindGalleryImage(packageDataBinder, image,
 			ThemeBackgroundBindingPrefix + Guid.Parse(themeId).ToString("N"), bound, warnings, out error);
+	}
+
+	private static string DescribeRefusedPackage(PackageTargetResolution package) {
+		string cause = package.LockedPackageName is null
+			? SensitiveErrorTextRedactor.Redact(package.Error)
+			: $"The theme's package '{package.LockedPackageName}' is locked.";
+		return $"{cause} The theme was not written.";
 	}
 
 	private static string DescribeBindingFailure(string package, IReadOnlyList<string> bound, string error) {

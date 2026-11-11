@@ -93,7 +93,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 	protected override void ExecuteRemoteCommand(UpdateThemeOptions options) {
 		if (!TryBuildRequest(options, out ThemeRequest request, out string error)
 			|| !TryResolveBackgroundPackage(options, request.Background, out string packageName, out error)
-			|| !_backgroundWriter.TryAddImageToBackgroundGallery(request.Background,
+			|| !_backgroundWriter.TryAddImageToBackgroundGallery(request.Background, packageName,
 				out BackgroundGalleryImage galleryImage, out error)) {
 			Fail(error);
 			return;

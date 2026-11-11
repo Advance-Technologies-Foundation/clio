@@ -127,8 +127,8 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 			return false;
 		}
 		if (!TryResolvePackageUId(options.PackageName, out string packageUId, out errorMessage)
-			|| !_backgroundWriter.TryAddImageToBackgroundGallery(background, out BackgroundGalleryImage galleryImage,
-				out errorMessage)) {
+			|| !_backgroundWriter.TryAddImageToBackgroundGallery(background, options.PackageName,
+				out BackgroundGalleryImage galleryImage, out errorMessage)) {
 			return false;
 		}
 		string requestData = JsonSerializer.Serialize(request with {
