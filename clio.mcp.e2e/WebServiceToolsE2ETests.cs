@@ -24,7 +24,6 @@ namespace Clio.Mcp.E2E;
 public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	private const string PackageName = "Custom";
-	private const string MethodCode = "UsrGetOrders";
 
 	/// <summary>The first CrtProcessBuilder that builds a Call web service element (ENG-92710).</summary>
 	private const string CallWebServiceElementPackageVersion = "1.6.6.150";
@@ -36,6 +35,20 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	private string? _serviceCode;
 	private string? _oauthApplicationId;
 
+	/// <summary>
+	/// The stand's <c>SchemaNamePrefix</c>, read by <see cref="ResolvePrefixAsync"/>. Every service, method,
+	/// parameter and process code is built from it, so the tests run on a stand with any prefix, or none.
+	/// </summary>
+	private string _prefix = string.Empty;
+
+	/// <summary>A code carrying the stand's prefix.</summary>
+	private string Prefixed(string name) => _prefix + name;
+
+	private string MethodCode => Prefixed("GetOrders");
+
+	/// <summary>A unique throwaway code: the prefix, a stem and 12 hex digits.</summary>
+	private string UniqueCode(string stem) => Prefixed(stem) + Guid.NewGuid().ToString("N")[..12];
+
 	[TearDown]
 	public async Task RemoveThrowawayFixturesAsync() {
 		try {
@@ -45,6 +58,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			await RemoveThrowawayOAuthApplicationAsync();
 			_serviceCode = null;
 			_oauthApplicationId = null;
+			_prefix = string.Empty;
 		}
 	}
 
@@ -105,7 +119,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
-		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+		await ResolvePrefixAsync(settings, cts.Token);
+		_serviceCode = UniqueCode("E2eWs");
 
 		// Act
 		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
@@ -154,9 +169,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
 		method.Uri.Should().Be("orders/{id}", because: "the method address is stored without a leading slash");
-		method.RequestParameters.Should().Contain(p => p.Code == "UsrApiKey" && p.DefaultSysSetting == "SchemaNamePrefix",
+		method.RequestParameters.Should().Contain(p => p.Code == Prefixed("ApiKey") && p.DefaultSysSetting == "SchemaNamePrefix",
 			because: "a header bound to a system setting is returned as the setting code, never as its value");
-		method.ResponseParameters.Single(p => p.Code == "UsrItems").Items.Should().ContainSingle(p => p.Code == "UsrNumber",
+		method.ResponseParameters.Single(p => p.Code == Prefixed("Items")).Items.Should().ContainSingle(p => p.Code == Prefixed("Number"),
 			because: "nested response items must round-trip through the platform");
 		described.Usages.Should().BeEmpty(because: "no process calls a service registered a moment ago");
 		literalKey.Success.Should().BeFalse(because: "a constant value on a header parameter must be refused");
@@ -165,7 +180,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		literalKey.Error.Should().NotContain("sk-live-123", because: "a refused credential value is never echoed back");
 		modified.Success.Should().BeTrue(because: $"a valid setMethod must save; error: {modified.Error}");
 		modified.Service!.RetryCount.Should().Be(2, because: "setRetryCount is applied in the same call");
-		modified.Service.Methods.Single().RequestParameters.Select(p => p.Code).Should().BeEquivalentTo(["UsrId"],
+		modified.Service.Methods.Single().RequestParameters.Select(p => p.Code).Should().BeEquivalentTo([Prefixed("Id")],
 			because: "setMethod replaces the whole method definition, so the dropped header is gone");
 	}
 
@@ -182,8 +197,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		await using ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(
 			"Web service usage guard", CallWebServiceElementPackageVersion, TimeSpan.FromMinutes(10));
 		_environmentName = context.EnvironmentName;
-		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
-		string processName = $"UsrE2eWsCaller{Guid.NewGuid():N}"[..24];
+		await ResolvePrefixAsync(settings, context.CancellationTokenSource.Token);
+		_serviceCode = UniqueCode("E2eWs");
+		string processName = UniqueCode("E2eWsCaller");
 		bool processCreated = false;
 		try {
 			WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
@@ -253,10 +269,11 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(settings, cts.Token);
 		// The test creates its own application: the tools only link an existing one, and a stand need not have any.
 		string applicationName = $"E2eWsOAuth{Guid.NewGuid():N}"[..24];
 		await CreateOAuthApplicationAsync(settings, applicationName, cts.Token);
-		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+		_serviceCode = UniqueCode("E2eWs");
 
 		// Act
 		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
@@ -295,7 +312,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
-		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+		await ResolvePrefixAsync(settings, cts.Token);
+		_serviceCode = UniqueCode("E2eWs");
 		string missingApplication = $"E2eMissingOAuth{Guid.NewGuid():N}";
 
 		// Act
@@ -329,7 +347,13 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
-		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+		await ResolvePrefixAsync(settings, cts.Token);
+		if (_prefix.Length == 0) {
+			Assert.Ignore($"'{_environmentName}' has no SchemaNamePrefix, so there is no prefix rule to refuse against.");
+		}
+		_serviceCode = UniqueCode("E2eWs");
+		string unprefixedMethod = Unprefixed("GetOrders");
+		string unprefixedParameter = Unprefixed("page");
 
 		// Act
 		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
@@ -340,8 +364,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["base-uri"] = "https://example.invalid/api",
 				["methods"] = new[] {
 					new Dictionary<string, object?> {
-						["code"] = "GetOrders", ["http-method"] = "GET", ["uri"] = "orders",
-						["request-parameters"] = new[] { new Dictionary<string, object?> { ["code"] = "page", ["in"] = "query" } }
+						["code"] = unprefixedMethod, ["http-method"] = "GET", ["uri"] = "orders",
+						["request-parameters"] = new[] {
+							new Dictionary<string, object?> { ["code"] = unprefixedParameter, ["in"] = "query", ["path"] = "page" }
+						}
 					}
 				}
 			}, cts.Token);
@@ -350,8 +376,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 		// Assert
 		refused.Success.Should().BeFalse(because: "Studio refuses to save a method whose codes lack the prefix, so the tool must not create one");
-		refused.Error.Should().Contain("'GetOrders'", because: "the refusal names the unprefixed method code");
-		refused.Error.Should().Contain("'page'", because: "the refusal names the unprefixed parameter code in the same answer");
+		refused.Error.Should().Contain($"'{unprefixedMethod}'", because: "the refusal names the unprefixed method code");
+		refused.Error.Should().Contain($"'{unprefixedParameter}'",
+			because: "the refusal names the unprefixed parameter code in the same answer");
 		listed.Services.Should().NotContain(s => s.Code == _serviceCode, because: "a refused registration saves nothing");
 	}
 
@@ -385,6 +412,28 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: $"DataService must accept the insert; output: {inserted.StandardOutput}");
 	}
 
+	/// <summary>
+	/// Reads the stand's <c>SchemaNamePrefix</c> through the platform's own system-setting query. An empty value is a
+	/// valid answer: Studio and the tools then apply no prefix rule.
+	/// </summary>
+	private async Task ResolvePrefixAsync(McpE2ESettings settings, CancellationToken token) {
+		ClioCliCommandResult queried = await ClioCliCommandRunner.RunAsync(settings, [
+			"call-service", "-e", _environmentName!, "--service-path", "DataService/json/SyncReply/QuerySysSettings",
+			"-b", JsonSerializer.Serialize(new { sysSettingsNameCollection = new[] { "SchemaNamePrefix" } })
+		], cancellationToken: token);
+		queried.ExitCode.Should().Be(0,
+			because: $"the codes are built from the stand's prefix; output: {queried.StandardOutput} {queried.StandardError}");
+		using JsonDocument answer = JsonDocument.Parse(queried.StandardOutput[queried.StandardOutput.IndexOf('{')..]);
+		_prefix = answer.RootElement.GetProperty("values").TryGetProperty("SchemaNamePrefix", out JsonElement setting)
+			&& setting.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.String
+				? value.GetString()!.Trim()
+				: string.Empty;
+	}
+
+	/// <summary>A code that does not start with the stand's prefix, even when the plain name happens to.</summary>
+	private string Unprefixed(string name) =>
+		name.StartsWith(_prefix, StringComparison.Ordinal) ? "Zq" + name : name;
+
 	private static object IdFilter(string rootSchemaName, string id) => new {
 		rootSchemaName, filterType = 6, logicalOperation = 0, isEnabled = true,
 		items = new {
@@ -403,7 +452,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	}
 
 	/// <summary>A start - Call web service - end process whose element calls <see cref="MethodCode"/>.</summary>
-	private static string CallerDescriptor(string processName, string serviceCode) => JsonSerializer.Serialize(new {
+	private string CallerDescriptor(string processName, string serviceCode) => JsonSerializer.Serialize(new {
 		name = processName,
 		caption = processName,
 		elements = new object[] {
@@ -415,23 +464,23 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			new { source = "Start1", target = CallerElement },
 			new { source = CallerElement, target = "End1" }
 		},
-		mappings = new[] { new { elementName = CallerElement, elementParameter = "UsrId_In", value = "1" } }
+		mappings = new[] { new { elementName = CallerElement, elementParameter = Prefixed("Id") + "_In", value = "1" } }
 	});
 
-	private static Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null) {
+	private Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null) {
 		var requestParameters = new List<Dictionary<string, object?>> {
-			new() { ["code"] = "UsrId", ["in"] = "path", ["path"] = "id" }
+			new() { ["code"] = Prefixed("Id"), ["in"] = "path", ["path"] = "id" }
 		};
 		if (withHeader) {
 			// SchemaNamePrefix exists on every stand, so the reference passes the existence check without
 			// the test creating a system setting.
 			requestParameters.Add(new() {
-				["code"] = "UsrApiKey", ["in"] = "header", ["path"] = "X-Api-Key", ["default-sys-setting"] = "SchemaNamePrefix"
+				["code"] = Prefixed("ApiKey"), ["in"] = "header", ["path"] = "X-Api-Key", ["default-sys-setting"] = "SchemaNamePrefix"
 			});
 		}
 		if (literalHeader is not null) {
 			requestParameters.Add(new() {
-				["code"] = "UsrApiKey", ["in"] = "header", ["path"] = "X-Api-Key", ["default-value"] = literalHeader
+				["code"] = Prefixed("ApiKey"), ["in"] = "header", ["path"] = "X-Api-Key", ["default-value"] = literalHeader
 			});
 		}
 		return new Dictionary<string, object?> {
@@ -440,10 +489,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			["uri"] = "/orders/{id}",
 			["request-parameters"] = requestParameters,
 			["response-parameters"] = new[] {
-				new Dictionary<string, object?> { ["code"] = "UsrStatus", ["path"] = "$.status" },
+				new Dictionary<string, object?> { ["code"] = Prefixed("Status"), ["path"] = "$.status" },
 				new Dictionary<string, object?> {
-					["code"] = "UsrItems", ["path"] = "$.items", ["type"] = "Object", ["array"] = true,
-					["items"] = new[] { new Dictionary<string, object?> { ["code"] = "UsrNumber", ["path"] = "number" } }
+					["code"] = Prefixed("Items"), ["path"] = "$.items", ["type"] = "Object", ["array"] = true,
+					["items"] = new[] { new Dictionary<string, object?> { ["code"] = Prefixed("Number"), ["path"] = "number" } }
 				}
 			}
 		};
