@@ -4,6 +4,11 @@ NAME
 DESCRIPTION
     Combines multiple workspaces into a single resulting workspace structure.
 
+    With --install, when the environment reports the installation as
+    failed, the installer writes "Package installation failed: <reason>",
+    the command closes with "Merged workspace packages were not installed:
+    <packages>.", and it exits with 1.
+
 SYNOPSIS
     clio merge-workspaces [OPTIONS]
 

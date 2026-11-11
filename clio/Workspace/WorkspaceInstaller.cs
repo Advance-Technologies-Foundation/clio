@@ -218,20 +218,13 @@ namespace Clio.Workspaces
 			if (!installed) {
 				// Names what failed only: the installer has already logged why, as "Package installation failed:
 				// <reason>", together with the installation log.
-				throw new InvalidOperationException(packageNames.Count == 0
-					? "Workspace packages were not installed."
-					: $"Workspace packages were not installed: {DescribePackages(packageNames)}.");
+				throw new InvalidOperationException(InstallFailureMessages.NotInstalled("Workspace packages", packageNames));
 			}
 			if (useApplicationInstaller && _applicationInstaller != null) {
 				_logger.WriteInfo("Installation completed successfully.");
 			}
 		}
 
-		private static string DescribePackages(IReadOnlyList<string> packageNames) {
-			const int maxNamed = 10;
-			string named = string.Join(", ", packageNames.Take(maxNamed));
-			return packageNames.Count > maxNamed ? $"{named} and {packageNames.Count - maxNamed} more" : named;
-		}
 
 		private void BuildStandalonePackagesIfNeeded(){
 			if (_osPlatformChecker.IsWindowsEnvironment || _environmentSettings.IsNetCore) {

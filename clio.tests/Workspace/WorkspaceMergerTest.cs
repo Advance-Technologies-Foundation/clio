@@ -48,6 +48,8 @@ internal class WorkspaceMergerTest {
 		_workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		_packageArchiver = Substitute.For<IPackageArchiver>();
 		_packageInstaller = Substitute.For<IPackageInstaller>();
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
 		_workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		_fileSystem = new MockFileSystem();
 		_clioFileSystemMock = new FileSystem(_fileSystem);
@@ -83,6 +85,29 @@ internal class WorkspaceMergerTest {
 	#endregion
 
 	#region Test Methods
+
+	[Test]
+	[Description("When the installer reports the merged installation as failed, MergeAndInstall throws naming the merged packages and does not log 'Installation completed successfully.', so merge-workspaces exits 1.")]
+	public void MergeAndInstall_ShouldThrowAndNameThePackages_WhenTheInstallerReportsAFailure() {
+		// Arrange
+		string workspacePath = Path.Combine("/", "ws-merge-fail");
+		string packagesPath = Path.Combine(workspacePath, "packages");
+		_workspacePathBuilder.RootPath.Returns(workspacePath);
+		_workspacePathBuilder.PackagesFolderPath.Returns(packagesPath);
+		_fileSystem.Directory.CreateDirectory(Path.Combine(packagesPath, "UsrB"));
+		_fileSystem.Directory.CreateDirectory(Path.Combine(packagesPath, "UsrA"));
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>()).Returns(false);
+
+		// Act
+		Action act = () => _workspaceMerger.MergeAndInstall([workspacePath]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the installer reported the installation as failed")
+			.WithMessage("Merged workspace packages were not installed: UsrA, UsrB.",
+				because: "the closing error names what was not installed; the installer has already logged why");
+		_logger.DidNotReceive().WriteInfo("Installation completed successfully.");
+	}
 
 	[Test]
 	public void MergeAndInstall_WithValidWorkspaces_ShouldCallPackageInstallerWithMergedZip() {
