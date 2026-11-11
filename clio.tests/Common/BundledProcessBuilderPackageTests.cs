@@ -72,7 +72,8 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
 	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>0d02ecce</c>, to be tagged
 	/// <c>crtprocessbuilder-1.6.6.152</c>): branch <c>feature/ENG-92710-deferred-lows</c>, cut on <c>main</c> at 1.6.6.150
-	/// (<c>655b7386</c>, tag <c>crtprocessbuilder-1.6.6.150</c>), so the cut carries everything 1.6.6.150 shipped.
+	/// (<c>655b7386</c>, the merge of the tagged <c>crtprocessbuilder-1.6.6.150</c> commit; same package tree), so the
+	/// cut carries everything 1.6.6.150 shipped.
 	/// This cut is a HAND cut from the stamp commit: the producing commit carries the restamped descriptor itself, so
 	/// its descriptor reads 1.6.6.152 and every archive entry is byte-identical to that commit's blob.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew

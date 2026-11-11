@@ -2,6 +2,7 @@
 description: describe-business-process reports each element's position and size and each flow's geometry chain, which is what makes a layout claim checkable without opening the designer - and reading a row off a position REQUIRES the size, because elements of different heights share a row by its centre line
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
+  - clio/Command/ProcessModel/ProcessBlockKeyCheck.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-95890

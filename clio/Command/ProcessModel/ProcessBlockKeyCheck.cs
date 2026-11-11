@@ -33,8 +33,8 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// <c>filter</c> nested inside <c>readData</c> instead of beside it saved green, and every Read data read the first
 /// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
-/// and it covers a package before that version, the other package line, and a host whose server check reports itself
-/// unavailable. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
+/// and it covers a host whose server check reports itself unavailable (every caller requires 1.6.6.150, so an older
+/// package or the other package line never receives these payloads). It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
 /// payloads.</para>
 /// <para>The key sets mirror the server's request contracts one type per <see cref="KeySet"/> and are held equal
 /// to the bundled CrtProcessBuilder by <c>ProcessBlockKeyCheckTests</c>, so a new server member cannot be refused
@@ -42,10 +42,10 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// (<c>sourceSchemaUId</c>, <c>outputs</c>, <c>position</c>, ...) are DERIVED read-backs: a described block fed
 /// back keeps building. clio tolerates them and says nothing: the server they reach (every caller requires
 /// CrtProcessBuilder 1.6.6.150) ignores them and names them in its own "Read-only fields copied from describe were
-/// ignored" warning, which says how to change each one. A second warning from clio about the same fields only doubled
-/// the noise of a describe -> setElement round trip. The accepted cost: on a host whose server check reports itself
-/// unavailable, the server's warning only says the request was not checked and names none of these fields, where
-/// clio used to name them.</para>
+/// ignored" warning, which names them and, where it can, the key that changes each. A second warning from clio about
+/// the same fields only doubled the noise of a describe -> setElement round trip. The accepted cost: on a host whose
+/// server check reports itself unavailable, the server's warning says the request was not checked and may name none of
+/// these fields, where clio used to name them.</para>
 /// </remarks>
 internal static class ProcessBlockKeyCheck {
 
