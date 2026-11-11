@@ -34,7 +34,8 @@ namespace Clio.Command.McpServer.Tools;
 /// input schema with its required list and validators; the error codes, preconditions,
 /// aliases, defaults, flows, deprecations and anti-patterns. What it leaves out: the rest of the description
 /// (for the process tools, mostly the per-element reference that the process guides own), the examples, and
-/// each field description past its first sentence unless that field carries a marker. A rule worded with no
+/// each field description past its first sentence unless that field carries a marker - a cut object or array
+/// input field gets one short example of its value back in their place (<see cref="TrimInputFields"/>). A rule worded with no
 /// marker ("do NOT run compile-creatio") is left out too - the markers are what fits the budget, see
 /// <see cref="ClauseStart"/> - and the note says "safety-marked sentences", not "all rules". It says so in
 /// the description, with how to get the rest (<c>detail="full"</c>). It does NOT keep everything a caller
@@ -223,6 +224,24 @@ internal static class ToolContractShortForm {
 	/// <summary>Longest field description the short form keeps when it carries no safety sentence.</summary>
 	internal const int MaxFieldDescriptionChars = 200;
 
+	/// <summary>
+	/// Longest example the short form appends to a cut object or array INPUT field; a longer one is left out,
+	/// never cut, because a cut example is a wrong one.
+	/// </summary>
+	internal const int MaxFieldExampleChars = 160;
+
+	/// <summary>The marker an appended field example starts with, and that a field already showing one carries.</summary>
+	internal const string FieldExampleMarker = "Example:";
+
+	/// <summary>
+	/// Compact and unescaped: the example is quoted inside a description, and the reply's own encoder escapes it
+	/// once more on the wire.
+	/// </summary>
+	private static readonly JsonSerializerOptions FieldExampleJsonOptions = new() {
+		Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+		WriteIndented = false
+	};
+
 	/// <summary>Longest single safety sentence kept from outside the lead, cut at word boundaries around its marker.</summary>
 	internal const int MaxSafetySentenceChars = 600;
 
@@ -408,7 +427,7 @@ internal static class ToolContractShortForm {
 		if (CallShapes.TryGetValue(contract.Name, out string? shape)) {
 			kept = kept.TrimEnd() + " " + shape;
 		}
-		IReadOnlyList<ToolContractField> inputFields = TrimFields(contract.InputSchema?.Properties);
+		IReadOnlyList<ToolContractField> inputFields = TrimInputFields(contract);
 		IReadOnlyList<ToolContractField> outputFields = TrimFields(contract.OutputContract?.Fields);
 		bool fieldsTrimmed = !SameDescriptions(inputFields, contract.InputSchema?.Properties)
 			|| !SameDescriptions(outputFields, contract.OutputContract?.Fields);
@@ -514,6 +533,66 @@ internal static class ToolContractShortForm {
 		fields is null
 			? []
 			: fields.Select(field => field with { Description = TrimFieldDescription(field.Description) }).ToArray();
+
+	/// <summary>
+	/// Trims the input fields like <see cref="TrimFields"/>, and gives each object or array field whose description
+	/// was cut one example of its value (<see cref="FindFieldExample"/>).
+	/// </summary>
+	/// <remarks>
+	/// A cut field keeps only its first sentence, and for a structured field that sentence names the field without
+	/// its shape: odata-read's <c>filters</c> came back as "Structured filter." while the shape lived only in the
+	/// examples the short form drops, so a caller that read the short contract guessed
+	/// <c>{"all": [{"column": ..., "operator": ...}]}</c>. One compact example is the shape in the fewest bytes.
+	/// A tool with a <see cref="CallShapes"/> entry is skipped - its shape block already describes every nested
+	/// field - and a scalar field needs no example: its type says it all.
+	/// </remarks>
+	private static IReadOnlyList<ToolContractField> TrimInputFields(ToolContractDefinition contract) {
+		IReadOnlyList<ToolContractField>? fields = contract.InputSchema?.Properties;
+		if (fields is null) {
+			return [];
+		}
+		bool hasCallShape = CallShapes.ContainsKey(contract.Name);
+		return fields.Select(field => {
+			string trimmed = TrimFieldDescription(field.Description);
+			if (hasCallShape || !IsStructuredType(field.Type)
+				|| string.Equals(trimmed, field.Description ?? string.Empty, StringComparison.Ordinal)
+				|| trimmed.Contains(FieldExampleMarker, StringComparison.Ordinal)
+				|| FindFieldExample(field, contract.Examples) is not { } example) {
+				return field with { Description = trimmed };
+			}
+			return field with { Description = $"{trimmed} {FieldExampleMarker} {example}" };
+		}).ToArray();
+	}
+
+	private static bool IsStructuredType(string? type) =>
+		type is not null && (type.StartsWith("object", StringComparison.OrdinalIgnoreCase)
+			|| type.StartsWith("array", StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// The field's value in the first contract example that carries one within <see cref="MaxFieldExampleChars"/>,
+	/// as compact JSON; otherwise the field description's own <c>Example:</c> sentence when it fits; otherwise
+	/// <see langword="null"/>.
+	/// </summary>
+	internal static string? FindFieldExample(ToolContractField field, IReadOnlyList<ToolContractExample>? examples) {
+		foreach (ToolContractExample example in examples ?? []) {
+			if (example.Arguments is null || !example.Arguments.TryGetValue(field.Name, out object? value) || value is null) {
+				continue;
+			}
+			string json = JsonSerializer.Serialize(value, FieldExampleJsonOptions);
+			if (json.Length <= MaxFieldExampleChars) {
+				return json;
+			}
+		}
+		string description = field.Description ?? string.Empty;
+		int marker = description.IndexOf(FieldExampleMarker, StringComparison.Ordinal);
+		if (marker < 0) {
+			return null;
+		}
+		int start = marker + FieldExampleMarker.Length;
+		int end = ToolContractCatalog.FindSentenceEnd(description, start);
+		string own = description[start..(end < 0 ? description.Length : end + 1)].Trim();
+		return own.Length is > 0 and <= MaxFieldExampleChars ? own : null;
+	}
 
 	/// <summary>
 	/// A field description that states a safety duty is kept WHOLE; any other is cut to its first real
