@@ -104,6 +104,8 @@ public sealed class WebServiceResponseMaskerTests {
 		// Assert
 		spanningUnlocated.Should().BeFalse(because: "the literal template text anchors a value that contains a slash");
 		secrets.Should().Contain("a/b-secret", because: "the whole value between the anchors is the secret");
+		WebServiceResponseMasker.SentSecrets(method, "GET https://erp.example/v1/accounts/acme-key/orders HTTPS/1.1", null)
+			.Should().Contain("acme-key", because: "a capture that starts inside the base path still yields the real value as a suffix");
 		unrelatedUnlocated.Should().BeTrue(because: "a value that cannot be found cannot be masked, so the caller must withhold the response");
 	}
 

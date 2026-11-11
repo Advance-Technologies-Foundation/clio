@@ -272,9 +272,15 @@ public static partial class WebServiceResponseMasker {
 		}
 		for (int i = 0; i < placeholders.Count; i++) {
 			if (string.Equals(placeholders[i], name, StringComparison.Ordinal)) {
+				// The match is anchored at the end only, so a capture may start too early and carry segments of the
+				// base path ("v1/acme-key" for "acme-key"). The real value is one of its suffixes at a '/', so
+				// every such suffix is masked: over-masking a path word is the accepted cost of failing closed.
 				string raw = match.Groups[i + 1].Value;
-				values.Add(raw);
-				values.Add(Uri.UnescapeDataString(raw));
+				for (int start = 0; start >= 0; start = raw.IndexOf('/', start) is int slash and >= 0 ? slash + 1 : -1) {
+					string candidate = raw[start..];
+					values.Add(candidate);
+					values.Add(Uri.UnescapeDataString(candidate));
+				}
 			}
 		}
 		return values.Count > 0 ? values : null;
