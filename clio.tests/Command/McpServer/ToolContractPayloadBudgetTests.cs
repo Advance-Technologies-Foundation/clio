@@ -378,7 +378,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// and moved to the 1.6.6.153 floor (same length): re-measured by lowering the ceiling, create 35065, modify 35037,
 	// describe 35069 - 7, 35 and 3 bytes of headroom.
 	//
-	// ENG-105557 (2026-11-11, filter-condition values; the 1.6.6.154 floor is the same length) named `values` in all three:
+	// ENG-105557 (2026-11-11, filter-condition values; the 1.6.6.156 floor is the same length) named `values` in all three:
 	// create's and modify's floor clauses ('values, ', +8 each), create's signal-start right side and one rule line
 	// ('any of several lookup records is ONE condition with values'), modify's setFilter condition sources and its
 	// signal-start right side, and describe's raw-filter clause ('a lookup value list reads back as values'). Paid by

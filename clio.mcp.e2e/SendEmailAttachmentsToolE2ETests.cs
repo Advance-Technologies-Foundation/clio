@@ -28,7 +28,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.154 or later (clio's create and
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.156 or later (clio's create and
 /// modify floor; the fixture's own gate is 1.6.6.140), one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
@@ -54,7 +54,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	/// <summary>
 	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.140,
-	/// the create and modify floor when it was set (that floor is now 1.6.6.154). 1.6.6.127 is the first that reads
+	/// the create and modify floor when it was set (that floor is now 1.6.6.156). 1.6.6.127 is the first that reads
 	/// <c>email.attachments</c> and 1.6.6.128 the first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.140 is the first
 	/// released archive that reports a source running after the email, names the route of the same files through a
 	/// process parameter, expands a name in a performer contact, and stores a record id mapped onto a recipient that

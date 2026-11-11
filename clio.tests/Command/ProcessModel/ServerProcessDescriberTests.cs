@@ -468,7 +468,31 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Deserializes a filter condition's values (ENG-105557): CrtProcessBuilder 1.6.6.154 reads a condition over several lookup records back whole, and DescribedFilterCondition has no extension-data bag, so without the typed property the records would be dropped here and describe -> setFilter would keep none of them.")]
+	[Description("ENG-105557: every describe asks for value lists (readsFilterValues), because CrtProcessBuilder returns a condition over several lookup records whole only to a caller that says it reads 'values'; without the flag it describes the condition as its first record, marked, for a clio that predates them.")]
+	public void Describe_ShouldAskForFilterValueLists() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[]}}");
+		string sentBody = null;
+		client.When(c => c.ExecutePostRequest(DescribeUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>()))
+			.Do(call => sentBody = call.ArgAt<string>(1));
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		sentBody.Should().NotBeNull(because: "describe posts one request to the server");
+		JsonNode flag = Wrapped(sentBody)["readsFilterValues"];
+		flag.Should().NotBeNull(because: "the request must carry the flag, or the package narrows every value list");
+		flag.GetValue<bool>().Should().BeTrue(
+			because: "the package returns a list of lookup records whole only to a caller that asks for it");
+	}
+
+	[Test]
+	[Description("Deserializes a filter condition's values (ENG-105557): CrtProcessBuilder 1.6.6.156 reads a condition over several lookup records back whole for a caller that asks for it, and DescribedFilterCondition has no extension-data bag, so without the typed property the records would be dropped here and describe -> setFilter would keep none of them.")]
 	public void Describe_ShouldReadFilterConditionValues_WhenServerReportsThem() {
 		// Arrange
 		IApplicationClient client = ClientReturning(
