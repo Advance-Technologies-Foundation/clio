@@ -3,6 +3,7 @@ using System.Text.Json;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
@@ -60,7 +61,7 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			ClioProcessDescriptor descriptor = ClioExecutableResolver.Resolve(settings, McpServerVerb);
-			string clioHome = Path.Combine(Path.GetTempPath(), $"clio-mcp-git-startup-{Guid.NewGuid():N}");
+			string clioHome = Path.Combine(PhysicalPath.Resolve(Path.GetTempPath()), $"clio-mcp-git-startup-{Guid.NewGuid():N}");
 			string knowledgeRoot = Path.Combine(clioHome, "knowledge");
 			Directory.CreateDirectory(knowledgeRoot);
 			string fixtureDirectory = ResolveFixtureDirectory();
@@ -86,12 +87,14 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			startInfo.ArgumentList.Add("--log");
 			startInfo.ArgumentList.Add(logPath);
 			startInfo.Environment["CLIO_HOME"] = clioHome;
+			string gitDirectory = CreateRuntimeLocatingGitWrapper(clioHome, fixtureDirectory, descriptor.Command)
+				?? fixtureDirectory;
 			string inheritedPath = startInfo.Environment.TryGetValue("PATH", out string? path)
 				? path ?? string.Empty
 				: string.Empty;
 			startInfo.Environment["PATH"] = string.IsNullOrEmpty(inheritedPath)
-				? fixtureDirectory
-				: $"{fixtureDirectory}{Path.PathSeparator}{inheritedPath}";
+				? gitDirectory
+				: $"{gitDirectory}{Path.PathSeparator}{inheritedPath}";
 
 			return new ArrangeContext(clioHome, logPath, invocationMarkerPath, descendantIdentityPath, startInfo);
 		});
@@ -248,6 +251,43 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 			return false;
 		}
 	}
+
+	/// <summary>
+	/// On a host whose .NET runtime is not where an apphost looks by default, a directory holding a <c>git</c>
+	/// script that runs the fake Git apphost with <c>DOTNET_ROOT</c> set; <see langword="null"/> when no
+	/// wrapper is needed.
+	/// </summary>
+	/// <remarks>
+	/// The fake Git is a framework-dependent apphost, and clio starts Git with a cleared environment - an
+	/// allow-list without <c>DOTNET_ROOT</c>, which is right for the real Git. So the apphost finds a runtime only
+	/// in the default install locations, and on a host with .NET in <c>~/.dotnet</c> it exits 131 ("You must
+	/// install .NET") before the code under test runs. The script <c>exec</c>s the apphost itself, not
+	/// <c>dotnet git.dll</c>, so the process path, the base directory and the descendant it starts all stay the
+	/// fixture's own, and the descendant inherits <c>DOTNET_ROOT</c>.
+	/// </remarks>
+	private static string? CreateRuntimeLocatingGitWrapper(string clioHome, string fixtureDirectory, string dotnetHost) {
+		if (OperatingSystem.IsWindows() || HasDefaultDotnetRuntime()
+				|| !Path.IsPathFullyQualified(dotnetHost)
+				|| Path.GetFileNameWithoutExtension(dotnetHost) != "dotnet"
+				|| Path.GetDirectoryName(dotnetHost) is not { Length: > 0 } dotnetRoot) {
+			return null;
+		}
+		string wrapperDirectory = Path.Combine(clioHome, "git-wrapper");
+		Directory.CreateDirectory(wrapperDirectory);
+		string wrapperPath = Path.Combine(wrapperDirectory, "git");
+		File.WriteAllText(wrapperPath,
+			$"#!/bin/sh\nDOTNET_ROOT='{dotnetRoot}' exec '{Path.Combine(fixtureDirectory, "git")}' \"$@\"\n");
+		File.SetUnixFileMode(wrapperPath,
+			UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+		return wrapperDirectory;
+	}
+
+	/// <summary>Whether an apphost finds a .NET runtime without <c>DOTNET_ROOT</c> on this host.</summary>
+	private static bool HasDefaultDotnetRuntime() =>
+		File.Exists("/etc/dotnet/install_location")
+		|| File.Exists("/usr/local/share/dotnet/dotnet")
+		|| File.Exists("/usr/share/dotnet/dotnet")
+		|| File.Exists("/usr/lib/dotnet/dotnet");
 
 	private static string ResolveFixtureDirectory() {
 		DirectoryInfo testDirectory = new(TestContext.CurrentContext.TestDirectory);
