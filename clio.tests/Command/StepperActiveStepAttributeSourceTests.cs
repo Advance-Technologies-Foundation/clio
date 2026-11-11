@@ -31,6 +31,7 @@ public sealed class StepperActiveStepAttributeSourceTests {
 	[TestCase(null, "RentalStepper", "RentalStepper_ActiveStep", TestName = "unbound")]
 	[TestCase("null", "RentalStepper", "RentalStepper_ActiveStep", TestName = "explicit null")]
 	[TestCase("\"DeliveryStep\"", "RentalStepper", "RentalStepper_ActiveStep", TestName = "constant step name")]
+	[TestCase("\"\"", "RentalStepper", "RentalStepper_ActiveStep", TestName = "empty step name")]
 	[TestCase(null, "Quote.Stepper", "Quote_Stepper_ActiveStep", TestName = "dots in the stepper name")]
 	[TestCase("\"$RentalStep\"", "RentalStepper", "RentalStep", TestName = "plain attribute binding")]
 	[TestCase("\"$_Rental_Step2\"", "RentalStepper", "_Rental_Step2", TestName = "plain attribute binding with underscores and digits")]

@@ -299,6 +299,38 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Exposes the generated active-step attribute for a named stepper nested in a container and nothing for an unnamed stepper.")]
+	public void GetAttributes_Should_Expose_Nested_Stepper_And_Skip_Unnamed_Stepper() {
+		// Arrange
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider, [new StepperActiveStepAttributeSource()]);
+		PageBundleInfo bundle = new() {
+			ViewConfig = JsonNode.Parse("""
+				[
+					{ "type": "crt.Stepper" },
+					{ "type": "crt.Stepper", "name": "   " },
+					{ "type": "crt.FlexContainer", "name": "Container", "items": [
+						{ "type": "crt.Stepper", "name": "NestedStepper" }
+					] }
+				]
+				""")!.AsArray()
+		};
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
+			bundle,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.Keys.Should().BeEquivalentTo(["NestedStepper_ActiveStep"],
+			because: "a named stepper inside a container exposes its generated active step, while a stepper without a name exposes none");
+		result["NestedStepper_ActiveStep"].Should().Be(
+			new BusinessRuleAttributeDescriptor("NestedStepper_ActiveStep", "Text", null) { IsComponentAttribute = true },
+			because: "the open step of a nested stepper is an unscoped Text component attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Resolves the provider from the real container with exactly one source per component type, so the stepper active step is exposed.")]
 	public void Provider_Should_Resolve_From_Container_With_Stepper_Source() {
 		// Arrange
