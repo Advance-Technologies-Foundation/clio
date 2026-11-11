@@ -3,6 +3,8 @@ description: a `required` member on an MCP args record is enforced by the serial
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/RunProcessTool.cs
   - clio/Command/McpServer/McpToolErrorFilter.cs
+  - clio/Command/McpServer/McpToolErrorFilter.ShapeDiagnosis.cs
+  - clio/Command/McpServer/Tools/ODataReadTool.cs
 ticket: ENG-98566
 date: 2026-11-11
 ---
@@ -27,8 +29,8 @@ serializer refused (see [[system-text-json-reports-the-object-for-a-missing-memb
   required member". The guard is not broken: the call never reached it. Supply the `required` member.
 - A tool's alias table does not rename a misspelled REQUIRED member. `odata-read` lists
   `environmentName` -> `environment-name`, but that rename runs in the tool body, which a payload
-  missing `environment-name` never reaches; the refusal's "did you mean" comes from the binder-side
-  prefix and edit-distance match instead, so an alias that resembles nothing gets no suggestion there.
+  missing `environment-name` never reaches; the refusal's "did you mean" comes from the error filter's
+  own prefix and edit-distance match instead, so an alias that resembles nothing gets no suggestion there.
 
 Adding `required` to an args record is therefore a contract decision, not a nullability tidy-up. See
 [[a-null-args-object-never-reaches-a-long-tail-tool]] for the sibling case, `{"args":null}`.

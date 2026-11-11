@@ -281,6 +281,58 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 			because: "an echoed key is truncated, so one huge key cannot inflate the refusal");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A string-bound member with a format is worded with that format: an unknown enum value names the allowed values instead of 'must be a string' for a value that was one.")]
+	public async Task HandleCallToolErrors_ShouldNameTheAllowedValues_WhenAnEnumValueIsUnknown() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateFakeContext<FakeColorTool>("{\"color\":\"Purple\"}");
+
+		// Act
+		string text = await CallAndReadTextAsync(context);
+
+		// Assert
+		text.Should().Contain("argument 'color' for MCP tool 'fake-tool' must be a string naming one of Red, Blue.",
+			because: "the caller sent a string, so the correction is which string, not which JSON kind");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An explicit JSON null for a required GUID parameter is refused as 'must be a GUID string', the format the member takes, not as 'an object'.")]
+	public async Task HandleCallToolErrors_ShouldWordTheGuidFormat_WhenARequiredGuidParameterIsNull() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
+			"fake-tool",
+			new Dictionary<string, JsonElement> {
+				["id"] = JsonDocument.Parse("null").RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(typeof(FakeGuidTool).GetMethod("Execute")!, new FakeGuidTool());
+
+		// Act
+		string text = await CallAndReadTextAsync(context);
+
+		// Assert
+		text.Should().Contain("argument 'id' for MCP tool 'fake-tool' must be a GUID string. Received a JSON null",
+			because: "a GUID travels as a string on the wire, and the message says which kind of string");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A dictionary parameter's key is located as a key, and the dictionary's indexer is never reported as a member named Item.")]
+	public async Task HandleCallToolErrors_ShouldLocateTheKey_WhenADictionaryParameterHoldsAWrongValue() {
+		// Arrange
+		RequestContext<CallToolRequestParams> context = CreateFakeContext<FakeDictionaryTool>("{\"item\":\"abc\"}");
+
+		// Act
+		string text = await CallAndReadTextAsync(context);
+
+		// Assert
+		text.Should().Contain("At args['item']: expected a number, received a string.",
+			because: "the failing value is the dictionary's entry, named by its key");
+		text.Should().NotContain("'Item'",
+			because: "System.Text.Json never binds an indexer, so it is not a member a caller can send");
+	}
+
 	private static RequestContext<CallToolRequestParams> CreateODataReadContext(string argsJson) {
 		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
 			ODataReadTool.ToolName,
@@ -367,5 +419,26 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 
 	public sealed class FakeMapTool {
 		public string Execute(FakeMapArgs args) => "ok";
+	}
+
+	public enum FakeColor {
+		Red,
+		Blue
+	}
+
+	public sealed record FakeColorArgs(
+		[property: JsonPropertyName("color")]
+		FakeColor Color);
+
+	public sealed class FakeColorTool {
+		public string Execute(FakeColorArgs args) => "ok";
+	}
+
+	public sealed class FakeGuidTool {
+		public string Execute([System.ComponentModel.DataAnnotations.Required] System.Guid id) => "ok";
+	}
+
+	public sealed class FakeDictionaryTool {
+		public string Execute(Dictionary<string, int> args) => "ok";
 	}
 }

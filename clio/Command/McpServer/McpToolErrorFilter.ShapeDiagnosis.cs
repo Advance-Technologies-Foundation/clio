@@ -38,7 +38,8 @@ namespace Clio.Command.McpServer;
 /// Caller-supplied text reaches the message only as member names and dictionary keys, through
 /// <see cref="McpToolArgumentSupport.DescribeCallerKey"/> and capped at
 /// <see cref="McpToolArgumentSupport.MaxEchoedKeys"/>; a VALUE never does, since a value can be a secret.
-/// Member names in a location and an expected shape are the declared wire names, not the caller's spelling.
+/// Member names in a location and an expected shape are the record's own names - its <c>[JsonPropertyName]</c>,
+/// else the property name, the same list the flat-argument classifier uses - not the caller's spelling.
 /// </para>
 /// </remarks>
 public static partial class McpToolErrorFilter
@@ -71,7 +72,7 @@ public static partial class McpToolErrorFilter
 	private static readonly ConcurrentDictionary<Type, IReadOnlyList<WireMember>> WireMembersByType = new();
 
 	/// <summary>One member a caller can supply on the wire.</summary>
-	/// <param name="Name">The declared wire name.</param>
+	/// <param name="Name">The record's name for the member: its <c>[JsonPropertyName]</c>, else the property name.</param>
 	/// <param name="Property">The bound property.</param>
 	/// <param name="Required">Whether the serializer refuses a payload that omits it.</param>
 	private sealed record WireMember(string Name, PropertyInfo Property, bool Required);
@@ -80,7 +81,7 @@ public static partial class McpToolErrorFilter
 	private sealed record PathSegment(string? PropertyName, int? Index);
 
 	/// <summary>One step of the walk, as the message shows it.</summary>
-	/// <param name="Display">The step in a location: a declared member name, <c>[0]</c> or <c>['key']</c>.</param>
+	/// <param name="Display">The step in a location: the record's member name, <c>[0]</c> or <c>['key']</c>.</param>
 	/// <param name="Member">The record member the step entered; null for an array index or a dictionary key.</param>
 	private sealed record WalkStep(string Display, PropertyInfo? Member);
 
@@ -221,7 +222,7 @@ public static partial class McpToolErrorFilter
 				UnknownMemberCount: 0,
 				ExpectedShape: DescribeShape(type),
 				MemberDescription: FirstSentence(memberDescription),
-				JsonTextExpected: expected == "a string" && node.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+				JsonTextExpected: type == typeof(string) && node.ValueKind is JsonValueKind.Object or JsonValueKind.Array
 					&& memberDescription is not null && JsonTextMember.IsMatch(memberDescription),
 				Example: example);
 		}
@@ -372,7 +373,7 @@ public static partial class McpToolErrorFilter
 			return null;
 		}
 		if (type == typeof(byte[]) || IsStringLike(type)) {
-			return "a string";
+			return DescribeStringFormat(type);
 		}
 		if (type == typeof(bool)) {
 			return "a boolean";
@@ -387,6 +388,31 @@ public static partial class McpToolErrorFilter
 			return "an array";
 		}
 		return IsCompositeRecord(type) || IsPolymorphic(type) ? "an object" : null;
+	}
+
+	/// <summary>
+	/// A string-bound type with its format, because a value of the right JSON kind can still fail on it: "must
+	/// be a string" is no correction for <c>{"id": "nope"}</c> when the member is a GUID.
+	/// </summary>
+	private static string DescribeStringFormat(Type type) {
+		if (type.IsEnum) {
+			string[] names = Enum.GetNames(type);
+			string list = string.Join(", ", names.Take(MaxShapeMembers));
+			return names.Length > MaxShapeMembers
+				? $"a string naming one of {list} and {names.Length - MaxShapeMembers} more"
+				: $"a string naming one of {list}";
+		}
+		return type switch {
+			_ when type == typeof(Guid) => "a GUID string",
+			_ when type == typeof(DateTime) || type == typeof(DateTimeOffset) => "an ISO 8601 date-time string",
+			_ when type == typeof(DateOnly) => "an ISO 8601 date string",
+			_ when type == typeof(TimeOnly) => "an ISO 8601 time string",
+			_ when type == typeof(TimeSpan) => "a time-span string such as \"00:05:00\"",
+			_ when type == typeof(Uri) => "a URI string",
+			_ when type == typeof(char) => "a one-character string",
+			_ when type == typeof(byte[]) => "a base64 string",
+			_ => "a string"
+		};
 	}
 
 	private static string DescribeReceivedKind(JsonValueKind kind) => kind switch {
@@ -412,9 +438,13 @@ public static partial class McpToolErrorFilter
 			return node.ValueKind is JsonValueKind.True or JsonValueKind.False;
 		}
 		if (IsNumber(type)) {
+			// The options read a number from a string too, but only from a string that holds one: "many" for
+			// top is still the wrong kind.
 			return node.ValueKind == JsonValueKind.Number
 				|| (node.ValueKind == JsonValueKind.String
-					&& SerializerOptions.NumberHandling.HasFlag(JsonNumberHandling.AllowReadingFromString));
+					&& SerializerOptions.NumberHandling.HasFlag(JsonNumberHandling.AllowReadingFromString)
+					&& decimal.TryParse(node.GetString(), System.Globalization.NumberStyles.Float,
+						System.Globalization.CultureInfo.InvariantCulture, out _));
 		}
 		if (IsJsonObjectContract(type)) {
 			return node.ValueKind == JsonValueKind.Object;
@@ -562,9 +592,13 @@ public static partial class McpToolErrorFilter
 		&& (type.GetCustomAttribute<JsonConverterAttribute>() is not null
 			|| SerializerOptions.Converters.Any(converter => converter.CanConvert(type)));
 
+	/// <remarks>
+	/// <see cref="JsonNode"/> and <see cref="JsonValue"/> themselves, not every subclass: a
+	/// <see cref="JsonObject"/> or <see cref="JsonArray"/> member takes exactly one JSON kind.
+	/// </remarks>
 	private static bool AcceptsAnyJson(Type type) =>
 		type == typeof(JsonElement) || type == typeof(JsonDocument) || type == typeof(object)
-		|| typeof(JsonNode).IsAssignableFrom(type);
+		|| type == typeof(JsonNode) || type == typeof(JsonValue);
 
 	private static bool IsStringLike(Type type) =>
 		type == typeof(string) || type == typeof(char) || type == typeof(Guid) || type == typeof(DateTime)

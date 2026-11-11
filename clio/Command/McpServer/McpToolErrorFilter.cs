@@ -1245,7 +1245,9 @@ public static partial class McpToolErrorFilter
 	/// A record's positional / <c>init</c> properties all have a set accessor, so nothing shifts today.
 	/// </remarks>
 	private static bool IsWireContractProperty(PropertyInfo property) =>
-		IsSettableByJson(property)
+		// An indexer (a dictionary's Item) is never bound from JSON, yet it has a public setter.
+		property.GetIndexParameters().Length == 0
+		&& IsSettableByJson(property)
 		&& IsNotExcludedFromTheWire(property);
 
 	/// <summary>
