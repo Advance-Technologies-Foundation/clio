@@ -837,7 +837,7 @@ public sealed class PageBusinessRuleServiceTests {
 		return new PageBusinessRuleService(
 			packageResolver,
 			schemaProvider,
-			new PageBusinessRuleAttributeProvider(Substitute.For<IEntityBusinessRuleAttributeProvider>()),
+			new PageBusinessRuleAttributeProvider(Substitute.For<IEntityBusinessRuleAttributeProvider>(), [new StepperActiveStepAttributeSource()]),
 			new PageBusinessRuleElementProvider(),
 			addonService,
 			new PageBusinessRuleValidator(new BusinessRuleValidator(Substitute.For<IBusinessRuleLookupReferenceValidator>())),

@@ -1,0 +1,74 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Text.Json.Nodes;
+
+namespace Clio.Command.BusinessRules;
+
+/// <summary>
+/// The open step of a <c>crt.Stepper</c>, compared with a step name. Unbound <c>activeStep</c> or a
+/// constant step name: the generated <c>&lt;name&gt;_ActiveStep</c>, dots in the name becoming
+/// underscores. Bound to a plain <c>$Attr</c>: that attribute. Any other binding (a nested path, a
+/// converter, an attribute bound to a record column) leaves the stepper unprepared, so it exposes none.
+/// </summary>
+internal sealed class StepperActiveStepAttributeSource : IComponentConditionAttributeSource {
+
+	private const string ActiveStepPropertyName = "activeStep";
+	private const string GeneratedSuffix = "_ActiveStep";
+	private const string DataValueTypeName = "Text";
+
+	public string ComponentType => "crt.Stepper";
+
+	public bool TryResolve(
+		JsonObject element,
+		string elementName,
+		JsonObject pageAttributes,
+		[NotNullWhen(true)] out BusinessRuleAttributeDescriptor? descriptor) {
+		descriptor = null;
+		if (!TryResolveAttributeName(element, elementName, pageAttributes, out string attributeName)) {
+			return false;
+		}
+		descriptor = new BusinessRuleAttributeDescriptor(attributeName, DataValueTypeName, null) {
+			IsComponentAttribute = true
+		};
+		return true;
+	}
+
+	private static bool TryResolveAttributeName(
+		JsonObject stepper,
+		string stepperName,
+		JsonObject pageAttributes,
+		out string attributeName) {
+		attributeName = string.Empty;
+		JsonNode? binding = stepper[ActiveStepPropertyName];
+		string? text = null;
+		if (binding is not null && (binding is not JsonValue value || !value.TryGetValue(out text))) {
+			return false;
+		}
+		if (text is null || !text.StartsWith('$')) {
+			attributeName = stepperName.Replace('.', '_') + GeneratedSuffix;
+			return true;
+		}
+		if (!TryGetPlainAttributeBinding(text, out string boundName)
+			|| IsModelBoundAttribute(pageAttributes, boundName)) {
+			return false;
+		}
+		attributeName = boundName;
+		return true;
+	}
+
+	private static bool IsModelBoundAttribute(JsonObject pageAttributes, string attributeName) =>
+		pageAttributes[attributeName] is JsonObject attribute && attribute["modelConfig"] is not null;
+
+	private static bool TryGetPlainAttributeBinding(string binding, out string attributeName) {
+		attributeName = string.Empty;
+		if (binding.Length < 2 || binding[0] != '$' || char.IsDigit(binding[1])) {
+			return false;
+		}
+		for (int i = 1; i < binding.Length; i++) {
+			if (!char.IsAsciiLetterOrDigit(binding[i]) && binding[i] != '_') {
+				return false;
+			}
+		}
+		attributeName = binding[1..];
+		return true;
+	}
+}

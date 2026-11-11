@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Common;
 
@@ -10,15 +11,14 @@ internal interface IPageBusinessRuleAttributeProvider {
 }
 
 internal sealed class PageBusinessRuleAttributeProvider(
-	IEntityBusinessRuleAttributeProvider entityAttributeProvider)
+	IEntityBusinessRuleAttributeProvider entityAttributeProvider,
+	IEnumerable<IComponentConditionAttributeSource> componentSources)
 	: IPageBusinessRuleAttributeProvider {
 
 	private const string PageParametersScopeName = "PageParameters";
 
-	private const string StepperComponentType = "crt.Stepper";
-	private const string ActiveStepPropertyName = "activeStep";
-	private const string GeneratedActiveStepSuffix = "_ActiveStep";
-	private const string ActiveStepDataValueTypeName = "Text";
+	private readonly Dictionary<string, IComponentConditionAttributeSource> _componentSources =
+		componentSources.ToDictionary(source => source.ComponentType, StringComparer.Ordinal);
 
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
@@ -66,7 +66,7 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
 		AddPageParameterAttributes(result, parametersByName);
-		AddStepperActiveStepAttributes(result, bundle, attributes);
+		AddComponentAttributes(result, bundle, attributes);
 		return result;
 	}
 
@@ -90,66 +90,24 @@ internal sealed class PageBusinessRuleAttributeProvider(
 		}
 	}
 
-	// The open step of every named crt.Stepper the platform prepares, compared with a step name.
-	// A declared attribute of the same name keeps its own scoped, typed descriptor.
-	private static void AddStepperActiveStepAttributes(
+	// Condition attributes that hold a view-config component's state, one per named element whose type
+	// has a source. A declared attribute of the same name keeps its own scoped, typed descriptor.
+	private void AddComponentAttributes(
 		IDictionary<string, BusinessRuleAttributeDescriptor> result,
 		PageBundleInfo bundle,
 		JsonObject attributes) {
+		if (_componentSources.Count == 0) {
+			return;
+		}
 		foreach ((string? componentType, string componentName, JsonObject element) in
 			ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
-			if (!string.Equals(componentType, StepperComponentType, StringComparison.Ordinal)
-				|| !TryResolveActiveStepAttribute(element, componentName, attributes, out string attributeName)) {
+			if (componentType is null
+				|| !_componentSources.TryGetValue(componentType, out IComponentConditionAttributeSource? source)
+				|| !source.TryResolve(element, componentName, attributes, out BusinessRuleAttributeDescriptor? descriptor)) {
 				continue;
 			}
-			result.TryAdd(attributeName, new BusinessRuleAttributeDescriptor(attributeName, ActiveStepDataValueTypeName, null) {
-				IsComponentAttribute = true
-			});
+			result.TryAdd(descriptor.Path, descriptor);
 		}
-	}
-
-	// Unbound activeStep or a constant step name: the generated "<name>_ActiveStep", dots in the name
-	// becoming underscores. Bound to a plain "$Attr": that attribute. Any other binding (a nested path, a
-	// converter, an attribute bound to a record column) leaves the stepper unprepared, so it has no
-	// active-step attribute.
-	private static bool TryResolveActiveStepAttribute(
-		JsonObject stepper,
-		string stepperName,
-		JsonObject attributes,
-		out string attributeName) {
-		attributeName = string.Empty;
-		JsonNode? binding = stepper[ActiveStepPropertyName];
-		string? text = null;
-		if (binding is not null && (binding is not JsonValue value || !value.TryGetValue(out text))) {
-			return false;
-		}
-		if (text is null || !text.StartsWith('$')) {
-			attributeName = stepperName.Replace('.', '_') + GeneratedActiveStepSuffix;
-			return true;
-		}
-		if (!TryGetPlainAttributeBinding(text, out string boundName)
-			|| IsModelBoundAttribute(attributes, boundName)) {
-			return false;
-		}
-		attributeName = boundName;
-		return true;
-	}
-
-	private static bool IsModelBoundAttribute(JsonObject attributes, string attributeName) =>
-		attributes[attributeName] is JsonObject attribute && attribute["modelConfig"] is not null;
-
-	private static bool TryGetPlainAttributeBinding(string binding, out string attributeName) {
-		attributeName = string.Empty;
-		if (binding.Length < 2 || binding[0] != '$' || char.IsDigit(binding[1])) {
-			return false;
-		}
-		for (int i = 1; i < binding.Length; i++) {
-			if (!char.IsAsciiLetterOrDigit(binding[i]) && binding[i] != '_') {
-				return false;
-			}
-		}
-		attributeName = binding[1..];
-		return true;
 	}
 
 	private static Dictionary<string, PageParameterInfo> BuildParameterMap(PageBundleInfo bundle) {

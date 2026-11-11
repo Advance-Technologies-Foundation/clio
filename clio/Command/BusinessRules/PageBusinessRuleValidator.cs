@@ -80,7 +80,7 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 		return result;
 	}
 
-	// Component attributes (e.g. a stepper's active step) are few and easy to miss among the many
+	// Component attributes are few and easy to miss among the many
 	// data-source columns, so they are listed first and never fall behind the cap.
 	private static string FormatAttributeCandidates(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>

@@ -8,8 +8,8 @@ internal sealed record BusinessRuleAttributeDescriptor(
 	public bool IsScoped => !string.IsNullOrEmpty(ScopeName);
 
 	/// <summary>
-	/// True for an attribute that holds a view-config component's state (a stepper's active step, generated
-	/// or bound) rather than a data source column; such attributes are listed first in hints.
+	/// True for an attribute that holds a view-config component's state rather than a data source column;
+	/// such attributes are listed first in hints.
 	/// </summary>
 	public bool IsComponentAttribute { get; init; }
 }

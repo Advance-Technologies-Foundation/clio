@@ -1,11 +1,17 @@
-using System;
 using System.Collections.Generic;
-using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
+using System.IO.Abstractions.TestingHelpers;
 using System.Text.Json.Nodes;
-using Clio.Command;
+using System.Text.Json;
+using System;
 using Clio.Command.BusinessRules;
 using Clio.Command.EntitySchemaDesigner;
+using Clio.Command;
+using Clio.Common;
+using Clio.Tests.Infrastructure;
+using Clio;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -28,7 +34,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 					["UsrText2"] = new("UsrText2", "Text", null),
 					["UsrLookupCountry"] = new("UsrLookupCountry", "Lookup", "Country")
 				}));
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = CreateBundleWithAttributes(
 			new Dictionary<string, object?> {
 				["PDS_Text"] = CreateAttribute("PDS.UsrText"),
@@ -76,7 +82,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 	public void GetAttributes_Should_Expose_Page_Parameters_As_Scoped_Condition_Sources() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = CreateBundleWithParameters([
 			new PageParameterInfo { Name = "UsrBooleanParameter1", DataValueType = 12 },
 			new PageParameterInfo { Name = "UsrIntegerParameter1", DataValueType = 4 },
@@ -111,7 +117,7 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 	public void GetAttributes_Should_Expose_Bound_Page_Parameter_Under_Both_Addressing_Forms() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = new() {
 			ViewModelConfig = new JsonObject {
 				["attributes"] = JsonSerializer.SerializeToNode(new Dictionary<string, object?> {
@@ -140,20 +146,20 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Exposes '<Stepper>_ActiveStep' as an unscoped Text condition attribute for every named crt.Stepper in the view config, including nested ones, and skips unnamed steppers.")]
-	public void GetAttributes_Should_Expose_Active_Step_Attribute_For_Named_Steppers() {
+	[Description("Asks the registered source for every named element of its component type, including nested ones, and skips unnamed elements and other types.")]
+	public void GetAttributes_Should_Expose_Component_Attribute_For_Every_Named_Element_Of_Source_Type() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = new() {
 			ViewConfig = JsonNode.Parse("""
 				[
-					{ "type": "crt.Stepper", "name": "RequestStepper", "items": [ { "type": "crt.StepperItem", "name": "DeliveryStep" } ] },
+					{ "type": "test.Widget", "name": "FirstWidget" },
 					{ "type": "crt.FlexContainer", "name": "Container", "items": [
-						{ "type": "crt.Stepper", "name": "Stepper_ns7dls6" },
-						{ "type": "crt.Stepper" },
-						{ "type": "crt.Stepper", "name": "   " },
-						{ "type": "crt.Input", "name": "NotAStepper" }
+						{ "type": "test.Widget", "name": "NestedWidget" },
+						{ "type": "test.Widget" },
+						{ "type": "test.Widget", "name": "   " },
+						{ "type": "crt.Input", "name": "NotAWidget" }
 					] }
 				]
 				""")!.AsArray()
@@ -166,20 +172,20 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 
 		// Assert
 		result.Keys.Should().BeEquivalentTo(
-			["RequestStepper_ActiveStep", "Stepper_ns7dls6_ActiveStep"],
-			because: "the stepper generates '<name>_ActiveStep' at runtime, so only named steppers can be addressed");
-		result["RequestStepper_ActiveStep"].Should().Be(
-			new BusinessRuleAttributeDescriptor("RequestStepper_ActiveStep", "Text", null) { IsComponentAttribute = true },
-			because: "the active step is compared to a step name, so it is a Text attribute, unscoped, with the key as the metadata path");
+			["FirstWidget_State", "NestedWidget_State"],
+			because: "only named elements of a type with a registered source expose a component attribute");
+		result["FirstWidget_State"].Should().Be(
+			new BusinessRuleAttributeDescriptor("FirstWidget_State", "Text", null) { IsComponentAttribute = true },
+			because: "the provider stores the descriptor the source resolved, keyed by its path");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Adds no stepper attribute when the view config has no crt.Stepper.")]
-	public void GetAttributes_Should_Not_Expose_Active_Step_Attribute_Without_Stepper() {
+	[Description("Exposes no component attribute when the view config has no element of a registered source type.")]
+	public void GetAttributes_Should_Not_Expose_Component_Attribute_Without_Matching_Element() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = new() {
 			ViewConfig = JsonNode.Parse("""[ { "type": "crt.Input", "name": "Input_1" } ]""")!.AsArray()
 		};
@@ -190,117 +196,13 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
 
 		// Assert
-		result.Should().BeEmpty(because: "a page without a stepper has no active-step attribute");
+		result.Should().BeEmpty(because: "a page without an element of a registered source type has no component attribute");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Exposes the attribute bound to a stepper's activeStep as its active step and does not offer the generated '<Stepper>_ActiveStep'.")]
-	public void GetAttributes_Should_Expose_Bound_Attribute_For_Stepper_With_Bound_Active_Step() {
-		// Arrange
-		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
-		PageBundleInfo bundle = new() {
-			ViewModelConfig = new JsonObject {
-				["attributes"] = new JsonObject { ["RentalStep"] = new JsonObject { ["value"] = null } }
-			},
-			ViewConfig = JsonNode.Parse("""
-				[ { "type": "crt.Stepper", "name": "RentalStepper", "activeStep": "$RentalStep",
-				    "items": [ { "type": "crt.StepperItem", "name": "DeliveryStep" } ] } ]
-				""")!.AsArray()
-		};
-
-		// Act
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
-			bundle,
-			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
-
-		// Assert
-		result.Keys.Should().BeEquivalentTo(["RentalStep"],
-			because: "a bound stepper keeps its open step in the bound attribute; rules on the generated name have no effect");
-		result["RentalStep"].Should().Be(
-			new BusinessRuleAttributeDescriptor("RentalStep", "Text", null) { IsComponentAttribute = true },
-			because: "the bound attribute holds a step name, so it is an unscoped Text attribute with its own name as the path");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Replaces dots in the stepper name with underscores in the generated active-step attribute.")]
-	public void GetAttributes_Should_Replace_Dots_In_Generated_Active_Step_Attribute() {
-		// Arrange
-		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
-		PageBundleInfo bundle = new() {
-			ViewConfig = JsonNode.Parse("""[ { "type": "crt.Stepper", "name": "Quote.Stepper", "activeStep": null } ]""")!.AsArray()
-		};
-
-		// Act
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
-			bundle,
-			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
-
-		// Assert
-		result.Keys.Should().BeEquivalentTo(["Quote_Stepper_ActiveStep"],
-			because: "the platform builds the generated attribute prefix from the stepper name with dots replaced by underscores");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Exposes the generated '<Stepper>_ActiveStep' for a stepper whose activeStep is a constant step name, as the Interface Designer does.")]
-	public void GetAttributes_Should_Expose_Generated_Attribute_For_Constant_Active_Step() {
-		// Arrange
-		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
-		PageBundleInfo bundle = new() {
-			ViewConfig = JsonNode.Parse("""[ { "type": "crt.Stepper", "name": "RentalStepper", "activeStep": "DeliveryStep" } ]""")!.AsArray()
-		};
-
-		// Act
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
-			bundle,
-			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
-
-		// Assert
-		result.Keys.Should().BeEquivalentTo(["RentalStepper_ActiveStep"],
-			because: "a constant only sets the opening step; the open step lives in the generated attribute");
-	}
-
-	[TestCase("\"$Stage.Value\"", TestName = "nested path")]
-	[TestCase("\"$Stage | crt.ToObjectProp\"", TestName = "converter")]
-	[TestCase("\"$Stage:prop\"", TestName = "property binding")]
-	[TestCase("\"$PDS_Stage\"", TestName = "record column")]
-	[TestCase("1", TestName = "non-string value")]
-	[Category("Unit")]
-	[Description("Adds no active-step attribute for a stepper whose activeStep binding leaves it unprepared at runtime.")]
-	public void GetAttributes_Should_Not_Expose_Active_Step_Attribute_For_Unprepared_Stepper(string activeStepJson) {
-		// Arrange
-		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
-		PageBundleInfo bundle = new() {
-			ViewModelConfig = new JsonObject {
-				["attributes"] = new JsonObject {
-					["Stage"] = new JsonObject { ["value"] = null },
-					["PDS_Stage"] = JsonSerializer.SerializeToNode(CreateAttribute("PDS.UsrStage"))
-				}
-			},
-			ViewConfig = JsonNode.Parse(
-				$$"""[ { "type": "crt.Stepper", "name": "RentalStepper", "activeStep": {{activeStepJson}} } ]""")!.AsArray()
-		};
-
-		// Act
-		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
-			bundle,
-			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
-
-		// Assert
-		result.Should().BeEmpty(
-			because: "only an unbound activeStep or one bound to a plain page attribute prepares the stepper");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Keeps a declared attribute that has the same key as a runtime stepper attribute and coexists with data source, page parameter and declared attributes.")]
-	public void GetAttributes_Should_Keep_Declared_Attribute_On_Stepper_Key_Collision_And_Coexist_With_Other_Sources() {
+	[Description("Keeps a declared attribute that has the same key as a component attribute and coexists with data source, page parameter and declared attributes.")]
+	public void GetAttributes_Should_Keep_Declared_Attribute_On_Component_Key_Collision_And_Coexist_With_Other_Sources() {
 		// Arrange
 		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
 		entityAttributeProvider.GetAttributes("UsrTestBR", Arg.Any<Guid>())
@@ -309,17 +211,17 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 				new Dictionary<string, BusinessRuleAttributeDescriptor> {
 					["UsrText"] = new("UsrText", "Text", null)
 				}));
-		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider);
+		PageBusinessRuleAttributeProvider provider = CreateProvider(entityAttributeProvider);
 		PageBundleInfo bundle = CreateBundleWithAttributes(
 			new Dictionary<string, object?> {
 				["PDS_Text"] = CreateAttribute("PDS.UsrText"),
-				["RequestStepper_ActiveStep"] = CreateAttribute("PDS.UsrText")
+				["FirstWidget_State"] = CreateAttribute("PDS.UsrText")
 			});
 		bundle = new PageBundleInfo {
 			ViewModelConfig = bundle.ViewModelConfig,
 			ModelConfig = bundle.ModelConfig,
 			Parameters = [new PageParameterInfo { Name = "UsrFlag", DataValueType = 12 }],
-			ViewConfig = JsonNode.Parse("""[ { "type": "crt.Stepper", "name": "RequestStepper" }, { "type": "crt.Stepper", "name": "OtherStepper" } ]""")!.AsArray()
+			ViewConfig = JsonNode.Parse("""[ { "type": "test.Widget", "name": "FirstWidget" }, { "type": "test.Widget", "name": "OtherWidget" } ]""")!.AsArray()
 		};
 
 		// Act
@@ -329,12 +231,74 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 
 		// Assert
 		result.Keys.Should().BeEquivalentTo(
-			["PDS_Text", "RequestStepper_ActiveStep", "PDS.UsrText", "PageParameters.UsrFlag", "OtherStepper_ActiveStep"],
-			because: "stepper attributes are added next to declared, data source and page parameter attributes");
-		result["RequestStepper_ActiveStep"].IsComponentAttribute.Should().BeFalse(
+			["PDS_Text", "FirstWidget_State", "PDS.UsrText", "PageParameters.UsrFlag", "OtherWidget_State"],
+			because: "component attributes are added next to declared, data source and page parameter attributes");
+		result["FirstWidget_State"].IsComponentAttribute.Should().BeFalse(
 			because: "a declared attribute of the same name keeps its own descriptor instead of being overwritten");
-		result["OtherStepper_ActiveStep"].IsComponentAttribute.Should().BeTrue(
-			because: "an undeclared stepper attribute is a component attribute descriptor");
+		result["OtherWidget_State"].IsComponentAttribute.Should().BeTrue(
+			because: "an undeclared component attribute comes from the source");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Exposes no component attribute for an element type that has no registered source.")]
+	public void GetAttributes_Should_Not_Expose_Component_Attribute_Without_Source() {
+		// Arrange
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider, []);
+		PageBundleInfo bundle = new() {
+			ViewConfig = JsonNode.Parse("""[ { "type": "test.Widget", "name": "FirstWidget" } ]""")!.AsArray()
+		};
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
+			bundle,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.Should().BeEmpty(because: "the provider knows no component; only a registered source exposes one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Resolves the provider from the real container with exactly one source per component type, so the stepper active step is exposed.")]
+	public void Provider_Should_Resolve_From_Container_With_Stepper_Source() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		using ServiceProvider container = (ServiceProvider)new BindingsModule(fileSystem).Register(new EnvironmentSettings {
+			Uri = "http://localhost"
+		});
+		IPageBusinessRuleAttributeProvider provider = container.GetRequiredService<IPageBusinessRuleAttributeProvider>();
+		PageBundleInfo bundle = new() {
+			ViewConfig = JsonNode.Parse("""[ { "type": "crt.Stepper", "name": "RequestStepper" } ]""")!.AsArray()
+		};
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
+			bundle,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.Keys.Should().BeEquivalentTo(["RequestStepper_ActiveStep"],
+			because: "the container registers each component source once and the provider receives the stepper source");
+	}
+
+	private static PageBusinessRuleAttributeProvider CreateProvider(IEntityBusinessRuleAttributeProvider entityAttributeProvider) =>
+		new(entityAttributeProvider, [new WidgetStateSource()]);
+
+	private sealed class WidgetStateSource : IComponentConditionAttributeSource {
+		public string ComponentType => "test.Widget";
+
+		public bool TryResolve(
+			JsonObject element,
+			string elementName,
+			JsonObject pageAttributes,
+			[NotNullWhen(true)] out BusinessRuleAttributeDescriptor? descriptor) {
+			descriptor = new BusinessRuleAttributeDescriptor(elementName + "_State", "Text", null) {
+				IsComponentAttribute = true
+			};
+			return true;
+		}
 	}
 
 	private static PageBundleInfo CreateBundleWithParameters(IReadOnlyList<PageParameterInfo> parameters) =>
