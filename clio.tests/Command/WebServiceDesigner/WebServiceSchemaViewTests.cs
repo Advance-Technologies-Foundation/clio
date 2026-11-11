@@ -47,7 +47,10 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("https://user:p%41ss@erp.example/", "https://[redacted]@erp.example/")]
 	[TestCase("https://user:p\u00e4@erp.example/", "https://[redacted]@erp.example/")]
 	[TestCase("https://user:p/ss@erp.example/v1?x=1", "https://[redacted]@erp.example/v1?x=1")]
-	[TestCase("https://erp.example/v1/?mail=a@b", "https://erp.example/v1/?mail=a@b")]
+	[TestCase("https://user:p?ss@erp.example/", "https://[redacted]@erp.example/")]
+	[TestCase("https://user:p#ss@erp.example/", "https://[redacted]@erp.example/")]
+	[TestCase("https://erp.example/v1/?mail=a@b", "https://[redacted]@b")]
+	[TestCase("https://?x", "https://?x")]
 	[TestCase("https://erp.example/v1/", "https://erp.example/v1/")]
 	[Description("StripUserInfo hides user information in every form Studio can store, including ones Uri cannot parse.")]
 	public void StripUserInfo_Should_Fail_Closed(string stored, string expected) {
@@ -55,7 +58,7 @@ public sealed class WebServiceSchemaViewTests {
 		string result = WebServiceSchemaView.StripUserInfo(stored);
 
 		// Assert
-		result.Should().Be(expected, because: "nothing between the scheme and the last '@' before the query may be shown");
+		result.Should().Be(expected, because: "nothing between the scheme and the last '@' may be shown, whatever the password contains");
 	}
 
 	[Test]

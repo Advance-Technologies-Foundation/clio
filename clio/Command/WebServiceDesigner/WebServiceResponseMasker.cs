@@ -69,7 +69,7 @@ public static partial class WebServiceResponseMasker {
 					secrets.AddRange(BodyValues(body, LastPathSegment(name)));
 					break;
 				case PlacementPath:
-					secrets.AddRange(PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name));
+					secrets.AddRange(PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name) ?? []);
 					break;
 			}
 		}
@@ -217,26 +217,46 @@ public static partial class WebServiceResponseMasker {
 	}
 
 	/// <summary>
+	/// Whether a request parameter filled from a system setting sits in the URL path and its value cannot be
+	/// located in the sent request line. The value is then unknown and cannot be masked, so the caller withholds
+	/// the response instead of returning it unmasked.
+	/// </summary>
+	/// <param name="method">The called method.</param>
+	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
+	/// <returns><c>true</c> when such a value could not be located.</returns>
+	public static bool HasUnlocatedPathSecret(ServiceMethodDto method, string requestRawData) {
+		string requestLine = (requestRawData ?? string.Empty).Split(["\r\n", "\n"], StringSplitOptions.None)[0];
+		return SettingBound(method?.Request?.Parameters)
+			.Where(p => p.Type == PlacementPath)
+			.Any(p => PathValues(requestLine, method.Request.Uri, string.IsNullOrEmpty(p.Path) ? p.Name : p.Path)
+				is not { Count: > 0 });
+	}
+
+	/// <summary>
 	/// The value a setting-bound path parameter took in the sent URL: the method URI template
-	/// (<c>orders/{id}</c>) is matched against the end of the request path.
+	/// (<c>orders/{id}</c>) is matched against the end of the request path. A placeholder may span several
+	/// segments. Returns <c>null</c> when the value cannot be located.
 	/// </summary>
 	private static List<string> PathValues(string requestLine, string template, string name) {
 		var values = new List<string>();
-		string[] parts = (requestLine ?? string.Empty).Split(' ');
-		string target = parts.Length > 1 ? parts[1] : string.Empty;
+		// The target sits between the method and the protocol: the first and the last space.
+		string line = requestLine ?? string.Empty;
+		int first = line.IndexOf(' ');
+		int last = line.LastIndexOf(' ');
+		string target = first >= 0 && last > first ? line[(first + 1)..last] : string.Empty;
 		int cut = target.IndexOfAny(['?', '#']);
 		string path = cut < 0 ? target : target[..cut];
 		string pattern = template ?? string.Empty;
 		int query = pattern.IndexOfAny(['?', '#']);
 		pattern = (query < 0 ? pattern : pattern[..query]).Trim('/');
 		if (pattern.Length == 0 || string.IsNullOrEmpty(name)) {
-			return values;
+			return null;
 		}
 		var regex = new StringBuilder("/");
 		var placeholders = new List<string>();
 		int position = 0;
 		foreach (Match placeholder in PlaceholderPattern().Matches(pattern)) {
-			regex.Append(Regex.Escape(pattern[position..placeholder.Index])).Append("([^/]+)");
+			regex.Append(Regex.Escape(pattern[position..placeholder.Index])).Append("(.+?)");
 			placeholders.Add(placeholder.Groups[1].Value);
 			position = placeholder.Index + placeholder.Length;
 		}
@@ -245,16 +265,19 @@ public static partial class WebServiceResponseMasker {
 		try {
 			match = Regex.Match(path, regex.ToString(), RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 		} catch (RegexMatchTimeoutException) {
-			return values;
+			return null;
 		}
-		for (int i = 0; match.Success && i < placeholders.Count; i++) {
+		if (!match.Success) {
+			return null;
+		}
+		for (int i = 0; i < placeholders.Count; i++) {
 			if (string.Equals(placeholders[i], name, StringComparison.Ordinal)) {
 				string raw = match.Groups[i + 1].Value;
 				values.Add(raw);
 				values.Add(Uri.UnescapeDataString(raw));
 			}
 		}
-		return values;
+		return values.Count > 0 ? values : null;
 	}
 
 	[GeneratedRegex(@"\{([^{}]+)\}", RegexOptions.CultureInvariant)]

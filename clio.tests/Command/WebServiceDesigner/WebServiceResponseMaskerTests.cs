@@ -86,6 +86,28 @@ public sealed class WebServiceResponseMaskerTests {
 	}
 
 	[Test]
+	[Description("A setting-bound path value that spans segments is located; one that cannot be located is reported so the response is withheld.")]
+	public void HasUnlocatedPathSecret_Should_Fail_Closed() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Account", "GET", "accounts/{tenant}/orders", RequestParameters: [
+				new WebServiceParameterArg("tenant", "path", DefaultSysSetting: "UsrTenant")]), null, false, errors);
+		const string spanning = "GET https://erp.example/v1/accounts/a/b-secret/orders HTTPS/1.1";
+		const string unrelated = "GET https://erp.example/elsewhere HTTPS/1.1";
+
+		// Act
+		bool spanningUnlocated = WebServiceResponseMasker.HasUnlocatedPathSecret(method, spanning);
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, spanning, null);
+		bool unrelatedUnlocated = WebServiceResponseMasker.HasUnlocatedPathSecret(method, unrelated);
+
+		// Assert
+		spanningUnlocated.Should().BeFalse(because: "the literal template text anchors a value that contains a slash");
+		secrets.Should().Contain("a/b-secret", because: "the whole value between the anchors is the secret");
+		unrelatedUnlocated.Should().BeTrue(because: "a value that cannot be found cannot be masked, so the caller must withhold the response");
+	}
+
+	[Test]
 	[Description("In a JSON body a secret is masked in values and in property names, and keys masked to the same text keep both values.")]
 	public void ApplyToBody_Should_Mask_Values_And_Property_Names() {
 		// Arrange

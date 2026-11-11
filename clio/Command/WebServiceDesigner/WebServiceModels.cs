@@ -263,9 +263,10 @@ public static partial class WebServiceSchemaView {
 
 	/// <summary>
 	/// Removes <c>user:password@</c> from a URI; Studio accepts one in the base URI. Works on the raw text and
-	/// fails closed: everything between the scheme and the last <c>@</c> before the query is hidden, because
-	/// <see cref="Uri"/> rejects a password containing <c>@</c> and reports an escaped one in a form that no
-	/// longer occurs in the stored text.
+	/// fails closed: everything between the scheme and the LAST <c>@</c> of the text is hidden, because a
+	/// password may itself contain <c>@</c>, <c>/</c>, <c>?</c> or <c>#</c>, <see cref="Uri"/> rejects some of
+	/// those, and it reports an escaped password in a form that no longer occurs in the stored text. A URI with
+	/// an <c>@</c> only in its path or query loses that part of the display too; that is the accepted cost.
 	/// </summary>
 	/// <param name="uri">The URI as stored.</param>
 	/// <returns>The URI without its user information.</returns>
@@ -275,8 +276,7 @@ public static partial class WebServiceSchemaView {
 		}
 		int scheme = uri.IndexOf("://", StringComparison.Ordinal);
 		int start = scheme < 0 ? 0 : scheme + 3;
-		int end = uri.IndexOfAny(['?', '#'], start);
-		int at = uri.LastIndexOf('@', (end < 0 ? uri.Length : end) - 1);
+		int at = uri.LastIndexOf('@');
 		return at < start ? uri : uri[..start] + "[redacted]" + uri[at..];
 	}
 

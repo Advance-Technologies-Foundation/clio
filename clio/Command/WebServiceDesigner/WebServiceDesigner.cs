@@ -203,6 +203,12 @@ public sealed class WebServiceDesigner(
 			?? throw new ArgumentException(
 				$"method '{methodCode}' not found; methods: {string.Join(", ", schema.Methods.Items.Values.Select(m => m.Name))}.");
 		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, values);
+		if (WebServiceResponseMasker.HasUnlocatedPathSecret(method, result.RequestRawData)) {
+			// The value is unknown, so it cannot be masked: fail closed and return the status only.
+			return new WebServiceTestResult(result.Success,
+				"The response is withheld: a path parameter filled from a system setting could not be located in "
+				+ "the sent URL, so it could not be masked.", result.StatusCode, null, false, true);
+		}
 		IReadOnlyList<string> secrets =
 			WebServiceResponseMasker.SentSecrets(method, result.RequestRawData, result.RequestBody);
 		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
