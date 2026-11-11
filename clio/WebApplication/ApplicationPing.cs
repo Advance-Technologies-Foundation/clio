@@ -76,6 +76,8 @@
 
 		public bool Ping(EnvironmentSettings environmentSettings) => TryPing(environmentSettings, out _);
 
+		public bool Ping() => Ping(_environmentSettings);
+
 		public bool TryPing(EnvironmentSettings environmentSettings, out string failureReason) {
 			try {
 				using IOwnedApplicationClient client = CreateApplicationClient(environmentSettings);
@@ -88,8 +90,6 @@
 				return false;
 			}
 		}
-
-		public bool Ping() => Ping(_environmentSettings);
 
 		#endregion
 
