@@ -385,7 +385,7 @@ public sealed class WebServiceElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-06: describe, then replay the described webService block through setElement unchanged - the describe-only serviceUId, serviceResolved, methodResolved, issues and parameters included - changes no stored byte of the element.")]
+	[Description("TC-I-06: describe, then replay the described webService block through setElement unchanged - the describe-only serviceUId, serviceResolved, methodResolved, issues and parameters included - changes no stored byte of the element, and the reply carries one warning about those members, the server's.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process changes nothing when the described block is sent back")]
 	public async Task ModifyBusinessProcess_Should_ChangeNoStoredByte_WhenTheDescribedBlockIsSentBack() {
@@ -414,6 +414,10 @@ public sealed class WebServiceElementToolE2ETests {
 			ShouldHaveLanded(callResult, "the described block is a valid setElement as is; its read-back keys draw warnings only");
 			(await ReadLastElementNodeAsync(context, processName, UId(element))).Should().Be(before,
 				because: "the same service, method, timeout and flag are a no-op, so no stored byte changes");
+			WarningText(callResult).Should().Contain("Read-only fields copied from describe were ignored",
+				because: "the server names the describe-only members it ignored");
+			WarningText(callResult).Should().NotContain("Ignored describe-business-process read-back fields",
+				because: "one round trip carries one warning about those members, the server's, not a second one from clio");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
