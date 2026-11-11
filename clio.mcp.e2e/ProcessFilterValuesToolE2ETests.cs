@@ -22,7 +22,8 @@ namespace Clio.Mcp.E2E;
 /// condition (<c>values</c>), built the way the process designer stores its multi-select and read back whole by
 /// describe, on a signal start, Read data and Modify data alike. NOT in CI - run manually against a stand carrying
 /// CrtProcessBuilder 1.6.6.154 or newer (the cut that reads <c>values</c>, and the create and modify floor). The
-/// records are the platform's own Country rows (Algeria, Andorra, Armenia), named by display name.
+/// records are the platform's own Country rows (Algeria, Andorra, Armenia), named by display name; the run check
+/// takes the two countries that hold the most contacts on the stand instead, so it counts real records.
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -163,9 +164,168 @@ public sealed class ProcessFilterValuesToolE2ETests {
 		built.Should().NotContain("created (UId:", because: "a refused descriptor creates nothing: {0}", built);
 	}
 
+	[Test]
+	[Description("Done when, on a stand: a process whose two Read data elements count the contacts in, and outside, the two countries holding the most contacts - each built with 'values', equal and notEqual - returns from a run exactly what the platform's own query counts with an OR of equalities and an AND of inequalities on the same lookup column. The countries are read from the stand, so the count of the records in them is never zero by accident.")]
+	[AllureTag(RunProcessTool.ToolName)]
+	[AllureName("a value list selects what any-of and none-of select")]
+	public async Task RunProcess_Should_CountExactlyTheRecordsTheValueListSelects() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion);
+		IReadOnlyList<(string Id, string Name)> countries = await CountriesHoldingContactsAsync(context);
+		if (countries.Count < 2) {
+			Assert.Ignore($"This check needs contacts in at least two countries on '{context.EnvironmentName}'; "
+				+ $"it found {countries.Count}.");
+		}
+		string processName = $"UsrClioBpValuesRun{Guid.NewGuid():N}";
+		string built = ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = CountingDescriptor(processName, countries.Select(country => country.Name).ToArray())
+			}));
+		built.Should().Contain("created (UId:", because: "the arrange step must have built the process: {0}", built);
+		int expectedFrom = await CountContactsAsync(context, CountryIdFilter(countries, notEqual: false));
+		int expectedOutside = await CountContactsAsync(context, CountryIdFilter(countries, notEqual: true));
+
+		// Act
+		RunProcessEnvelope run = EntitySchemaStructuredResultParser.Extract<RunProcessEnvelope>(
+			await ProcessDesignerE2EArrange.CallToolAsync(context, RunProcessTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName,
+					["result-parameters"] = new[] { "PCountFrom", "PCountOutside" }
+				}));
+
+		// Assert
+		run.ResultParameterValues.Should().NotBeNull(because: "the run must end and report its counts: {0}", run.Error);
+		Convert.ToInt32(run.ResultParameterValues!["PCountFrom"].ToString()).Should().Be(expectedFrom,
+			because: "equal over the two countries selects every contact in either of them, as an OR does");
+		Convert.ToInt32(run.ResultParameterValues!["PCountOutside"].ToString()).Should().Be(expectedOutside,
+			because: "notEqual over the two selects every contact in neither of them, as an AND of inequalities does");
+	}
+
 	#endregion
 
 	#region Methods: Private
+
+	/// <summary>
+	/// The two countries holding the most contacts on the stand, read through execute-esq, so the count of the
+	/// contacts in them selects real records whatever the stand's data is.
+	/// </summary>
+	private static async Task<IReadOnlyList<(string Id, string Name)>> CountriesHoldingContactsAsync(
+			ProcessDesignerArrangeContext context) {
+		JsonElement rows = await QueryContactsAsync(context, new Dictionary<string, object> {
+			["CountryId"] = ColumnPath("Country.Id"),
+			["CountryName"] = ColumnPath("Country.Name"),
+			["Cnt"] = CountColumn(descending: true)
+		}, new Dictionary<string, object> {
+			["filterType"] = 6, ["logicalOperation"] = 0, ["isEnabled"] = true,
+			["items"] = new Dictionary<string, object> {
+				["filled"] = new Dictionary<string, object> {
+					["filterType"] = 2, ["comparisonType"] = 2, ["isNull"] = false, ["isEnabled"] = true,
+					["leftExpression"] = new Dictionary<string, object> {
+						["expressionType"] = 0, ["columnPath"] = "Country"
+					}
+				}
+			}
+		});
+		return rows.EnumerateArray().Take(2)
+			.Select(row => (row.GetProperty("CountryId").GetString()!, row.GetProperty("CountryName").GetString()!))
+			.ToList();
+	}
+
+	/// <summary>Counts contacts through execute-esq, the platform's own query path, independent of the builder.</summary>
+	private static async Task<int> CountContactsAsync(ProcessDesignerArrangeContext context,
+			Dictionary<string, object> filters) {
+		JsonElement rows = await QueryContactsAsync(context,
+			new Dictionary<string, object> { ["Cnt"] = CountColumn(descending: false) }, filters);
+		return rows[0].GetProperty("Cnt").GetInt32();
+	}
+
+	private static async Task<JsonElement> QueryContactsAsync(ProcessDesignerArrangeContext context,
+			Dictionary<string, object> columns, Dictionary<string, object> filters) {
+		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(
+			await ProcessDesignerE2EArrange.CallToolAsync(context, ExecuteEsqTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["query"] = new Dictionary<string, object> {
+						["rootSchemaName"] = "Contact", ["operationType"] = 0, ["allColumns"] = false,
+						["columns"] = new Dictionary<string, object> { ["items"] = columns },
+						["filters"] = filters
+					}
+				}));
+		response.Success.Should().BeTrue(because: "the reference query must run: {0}", response.Error);
+		return response.Rows!.Value;
+	}
+
+	private static Dictionary<string, object> ColumnPath(string path) =>
+		new() { ["expression"] = new Dictionary<string, object> { ["expressionType"] = 0, ["columnPath"] = path } };
+
+	private static Dictionary<string, object> CountColumn(bool descending) {
+		Dictionary<string, object> column = new() {
+			["expression"] = new Dictionary<string, object> {
+				["expressionType"] = 1, ["functionType"] = 2, ["aggregationType"] = 1, ["aggregationEvalType"] = 2,
+				["functionArgument"] = new Dictionary<string, object> { ["expressionType"] = 0, ["columnPath"] = "Id" }
+			}
+		};
+		if (descending) {
+			column["orderDirection"] = 2;
+			column["orderPosition"] = 0;
+		}
+		return column;
+	}
+
+	/// <summary>
+	/// Any of the countries (an OR of equalities) or none of them (an AND of inequalities), compared on the lookup
+	/// column itself, by id, as the process compares it. Measured on a stand: the platform's notEqual on a lookup
+	/// column also selects the records whose column is EMPTY, so a contact with no country is "in none of them",
+	/// while a notEqual on the joined Country.Name leaves that contact out. The reference therefore never goes
+	/// through the name.
+	/// </summary>
+	private static Dictionary<string, object> CountryIdFilter(IReadOnlyList<(string Id, string Name)> countries,
+			bool notEqual) =>
+		new() {
+			["filterType"] = 6, ["logicalOperation"] = notEqual ? 0 : 1, ["isEnabled"] = true,
+			["items"] = countries.ToDictionary(country => country.Id, country => (object)new Dictionary<string, object> {
+				["filterType"] = 1, ["comparisonType"] = notEqual ? 4 : 3, ["isEnabled"] = true,
+				["leftExpression"] = new Dictionary<string, object> { ["expressionType"] = 0, ["columnPath"] = "Country" },
+				["rightExpression"] = new Dictionary<string, object> {
+					["expressionType"] = 2,
+					["parameter"] = new Dictionary<string, object> { ["dataValueType"] = 10, ["value"] = country.Id }
+				}
+			})
+		};
+
+	private static string CountingDescriptor(string processName, string[] countryNames) =>
+		JsonSerializer.Serialize(new Dictionary<string, object> {
+			["name"] = processName, ["caption"] = "Clio BP Filter Values Run E2E", ["packageName"] = "Custom",
+			["parameters"] = new object[] {
+				new Dictionary<string, object> { ["name"] = "PCountFrom", ["type"] = "Integer", ["direction"] = "Out" },
+				new Dictionary<string, object> { ["name"] = "PCountOutside", ["type"] = "Integer", ["direction"] = "Out" }
+			},
+			["elements"] = new object[] {
+				new Dictionary<string, object> { ["name"] = "StartCount", ["type"] = "startEvent", ["caption"] = "Start" },
+				CountRead("CountFromCountries", Filter("and",
+					Condition("Country", "equal", values: countryNames))),
+				CountRead("CountOutsideCountries", Filter("and",
+					Condition("Country", "notEqual", values: countryNames))),
+				new Dictionary<string, object> { ["name"] = "EndCount", ["type"] = "endEvent", ["caption"] = "Counted" }
+			},
+			["flows"] = new[] {
+				Flow("StartCount", "CountFromCountries"), Flow("CountFromCountries", "CountOutsideCountries"),
+				Flow("CountOutsideCountries", "EndCount")
+			},
+			["mappings"] = new object[] {
+				new Dictionary<string, object> {
+					["targetProcessParameter"] = "PCountFrom", ["sourceElement"] = "CountFromCountries",
+					["sourceElementParameter"] = "ResultCount"
+				},
+				new Dictionary<string, object> {
+					["targetProcessParameter"] = "PCountOutside", ["sourceElement"] = "CountOutsideCountries",
+					["sourceElementParameter"] = "ResultCount"
+				}
+			}
+		});
 
 	private static string ToolText(CallToolResult callResult) =>
 		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
