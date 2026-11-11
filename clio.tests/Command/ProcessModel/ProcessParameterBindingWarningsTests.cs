@@ -23,7 +23,8 @@ public class ProcessParameterBindingWarningsTests {
 	// both branches joining into one consumer.
 	private const string TwoStartElements = """
 		"elements":[
-			{"name":"SigA","type":"signalStart"},{"name":"SigB","type":"signalStart"},
+			{"name":"SigA","type":"signalStart","signal":{"entity":"Contact","on":"added"}},
+			{"name":"SigB","type":"signalStart","signal":{"entity":"Contact","on":"modified"}},
 			{"name":"ReadA","type":"readData"},{"name":"ReadB","type":"readData"},
 			{"name":"Join","type":"formulaTask"},{"name":"End1","type":"endEvent"}],
 		"flows":[
@@ -48,8 +49,14 @@ public class ProcessParameterBindingWarningsTests {
 	private static DescribeProcessResult TwoStartProcess(params DescribedParameter[] parameters) =>
 		new() {
 			Elements = [
-				new DescribedElement { Name = "SigA", Uid = "a0000000-0000-0000-0000-000000000001", Type = "ProcessSchemaStartSignalEvent", BuildType = "signalstart" },
-				new DescribedElement { Name = "SigB", Uid = "a0000000-0000-0000-0000-000000000002", Type = "ProcessSchemaStartSignalEvent", BuildType = "signalstart" },
+				new DescribedElement {
+					Name = "SigA", Uid = "a0000000-0000-0000-0000-000000000001", Type = "ProcessSchemaStartSignalEvent",
+					BuildType = "signalstart", Signal = new DescribedSignal { Entity = "Contact", On = "added" }
+				},
+				new DescribedElement {
+					Name = "SigB", Uid = "a0000000-0000-0000-0000-000000000002", Type = "ProcessSchemaStartSignalEvent",
+					BuildType = "signalstart", Signal = new DescribedSignal { Entity = "Contact", On = "modified" }
+				},
 				new DescribedElement {
 					Name = "ReadA", Uid = "a0000000-0000-0000-0000-000000000003", Type = "ProcessSchemaUserTask",
 					BuildType = "readdata",
@@ -69,12 +76,37 @@ public class ProcessParameterBindingWarningsTests {
 
 	private static string AddMapping(string mapping) => $$"""{"op":"addMapping","mapping":{{mapping}}}""";
 
+	// mergeFrom covers only signal starts on one object, so a remedy that named it alone would leave a process with
+	// a timer start, starts on two objects or gateway branches no remedy at all; the Formula per branch stays, after
+	// the merge and conditioned on the cases the merge cannot take. The merge names a NEW parameter - the server
+	// refuses mergeFrom on one that already takes a value - and the Formula names the warned parameter itself.
+	private static bool RecommendsMergeFirst(string warning, string parameter) {
+		int merge = warning.IndexOf("give a NEW Guid parameter mergeFrom [", System.StringComparison.Ordinal);
+		int readInstead = warning.IndexOf("filter ONE shared chain by it (for example one Read data), and bind "
+			+ $"'{parameter}' once to that chain's output", System.StringComparison.Ordinal);
+		int fallback = warning.IndexOf("Otherwise (signal starts on different objects, a named signal start, a timer or "
+			+ "message start, gateway branches)", System.StringComparison.Ordinal);
+		int formula = warning.IndexOf($"formula.resultProcessParameter is '{parameter}'", System.StringComparison.Ordinal);
+		return merge >= 0 && readInstead > merge
+			&& warning.Contains("process-multi-start", System.StringComparison.Ordinal)
+			&& fallback > readInstead && formula > fallback
+			&& warning.Contains("name=process-parameters", System.StringComparison.Ordinal);
+	}
+
+	// Where mergeFrom cannot apply the remedy must not name it at all - the server would refuse the merge - and the
+	// Formula must name the parameter it sets.
+	private static bool RecommendsOnlyAFormula(string warning, string parameter) =>
+		!warning.Contains("mergeFrom", System.StringComparison.Ordinal)
+		&& !warning.Contains("process-multi-start", System.StringComparison.Ordinal)
+		&& warning.Contains($"a formulaTask on each branch whose formula.resultProcessParameter is '{parameter}'",
+			System.StringComparison.Ordinal);
+
 	#endregion
 
 	#region Methods: ForDescriptor
 
 	[Test]
-	[Description("Two mappings onto one process parameter in a build warn once, naming both sources and the one that is saved (the last listed, measured), and point at formulaTask + formula.resultProcessParameter as the per-branch assignment. This is the ENG-103081 scenario: the build used to succeed in silence and the shared parameter read empty on the run.")]
+	[Description("Two mappings onto one process parameter in a build warn once, naming both sources and the one that is saved (the last listed, measured), and - the starts being signal starts on one object - point first at a NEW parameter with mergeFrom (ENG-103990), naming a formulaTask per branch that sets PName only for branches mergeFrom cannot merge. This is the ENG-103081 scenario: the build used to succeed in silence and the shared parameter read empty on the run.")]
 	public void ForDescriptor_ShouldWarn_WhenTwoMappingsBindTheSameProcessParameter() {
 		// Arrange
 		string descriptor = Descriptor(TwoStartElements, ReadAName, ReadBName);
@@ -86,8 +118,8 @@ public class ProcessParameterBindingWarningsTests {
 		warnings.Should().ContainSingle(w => w.Contains("binds process parameter 'PName' 2 times"),
 			because: "a second binding of one parameter silently replaces the first");
 		warnings.Should().Contain(w => w.Contains("only the last one listed (ReadB.ResultEntity.Name) is saved")
-				&& w.Contains("formula.resultProcessParameter 'PName'"),
-			because: "the caller must learn which binding survived and how to assign per branch instead");
+				&& RecommendsMergeFirst(w, "PName"),
+			because: "the caller must learn which binding survived and that merging the starts is the remedy");
 	}
 
 	[Test]
@@ -105,6 +137,9 @@ public class ProcessParameterBindingWarningsTests {
 			because: "the warning has to name the start whose runs read the default value");
 		warnings[0].Should().NotContain("'SigA'",
 			because: "the start that does reach the element is not a problem and must not be named as one");
+		RecommendsMergeFirst(warnings[0], "PName").Should().BeTrue(
+			because: "with two signal starts on one object the remedy recommends a new mergeFrom parameter first and keeps "
+				+ "a Formula per branch only for branches it cannot merge (ENG-103990 D7, review of clio#1899)");
 	}
 
 	[Test]
@@ -189,6 +224,125 @@ public class ProcessParameterBindingWarningsTests {
 		warnings.Should().BeEmpty(because: "the SigB run sets PName in its own Formula, so its value exists there");
 	}
 
+	[Test]
+	[Description("A single-start process whose gateway arms each bind the same parameter warns with the Formula remedy only, naming the parameter it sets: mergeFrom needs at least two signal starts, so the server would refuse the merge a remedy pointed at (review of clio#1899).")]
+	public void ForDescriptor_ShouldRecommendOnlyAFormula_WhenTheGatewayArmsOfOneStartBindOneParameter() {
+		// Arrange
+		const string gatewayArms = """
+			"elements":[
+				{"name":"Start1","type":"startEvent"},{"name":"Gate","type":"exclusiveGateway"},
+				{"name":"ReadA","type":"readData"},{"name":"ReadB","type":"readData"},
+				{"name":"Join","type":"formulaTask"},{"name":"End1","type":"endEvent"}],
+			"flows":[
+				{"source":"Start1","target":"Gate"},{"source":"Gate","target":"ReadA"},{"source":"Gate","target":"ReadB"},
+				{"source":"ReadA","target":"Join"},{"source":"ReadB","target":"Join"},{"source":"Join","target":"End1"}]
+			""";
+		string descriptor = Descriptor(gatewayArms, ReadAName, ReadBName);
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForDescriptor(descriptor);
+
+		// Assert
+		warnings.Should().ContainSingle(because: "the two arms bind one parameter, and a single start reaches every element");
+		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
+			because: "one start leaves nothing to merge, so the remedy is a Formula per branch setting PName by name");
+		warnings[0].Should().Contain("get-guidance name=process-parameters",
+			because: "the Formula rule is owned by the process-parameters guide");
+	}
+
+	[TestCase("""{"name":"SigA","type":"signalStart","signal":{"entity":"Contact","on":"added"}},{"name":"SigB","type":"signalStart","signal":{"entity":"Account","on":"added"}}""",
+		TestName = "ForDescriptor_ShouldRecommendOnlyAFormula_WhenTheSignalStartsAreOnDifferentObjects")]
+	[TestCase("""{"name":"SigA","type":"signalStart","signal":{"entity":"Contact","on":"added"}},{"name":"SigB","type":"startEventTimer"}""",
+		TestName = "ForDescriptor_ShouldRecommendOnlyAFormula_WhenOneStartIsATimer")]
+	[Description("Two starts mergeFrom cannot merge - signal starts on different objects, or a signal start beside a timer start - earn the unreached warning with the Formula remedy only: naming mergeFrom there would send the caller to a merge the server refuses.")]
+	public void ForDescriptor_ShouldRecommendOnlyAFormula_WhenTheStartsCannotBeMerged(string starts) {
+		// Arrange
+		string elements = $$"""
+			"elements":[
+				{{starts}},
+				{"name":"ReadA","type":"readData"},{"name":"ReadB","type":"readData"},
+				{"name":"Join","type":"formulaTask"}],
+			"flows":[
+				{"source":"SigA","target":"ReadA"},{"source":"SigB","target":"ReadB"},
+				{"source":"ReadA","target":"Join"},{"source":"ReadB","target":"Join"}]
+			""";
+		string descriptor = Descriptor(elements, ReadAName);
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForDescriptor(descriptor);
+
+		// Assert
+		warnings.Should().ContainSingle(w => w.Contains("started by 'SigB' does not reach"),
+			because: "the SigB run never executes ReadA, whatever kind of start SigB is");
+		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
+			because: "mergeFrom merges only signal starts on one object, so a Formula per branch is the remedy here");
+	}
+
+	[Test]
+	[Description("On the modify path a described signal start with no signal block is a named signal, which the server describes without one and refuses to merge, so two of them earn the Formula remedy only - not the merge the server would refuse.")]
+	public void ForOperations_ShouldRecommendOnlyAFormula_WhenTheSignalStartsAreNotRecordSignals() {
+		// Arrange
+		DescribeProcessResult after = TwoStartProcess();
+		after.Elements[0].Signal = null;
+		after.Elements[1].Signal = null;
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForOperations($"[{AddMapping(ReadAName)}]",
+			null, after);
+
+		// Assert
+		warnings.Should().ContainSingle(w => w.Contains("started by 'SigB' does not reach"),
+			because: "the SigB run never executes ReadA");
+		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
+			because: "a start that is not on an object cannot be merged, so naming mergeFrom would send the caller to a refusal");
+	}
+
+	[Test]
+	[Description("One record signal start beside one named signal start is not a pair mergeFrom can merge: the named start is on no object, so the unreached warning names the Formula only. This is the graph where the named start's exclusion decides the count.")]
+	public void ForOperations_ShouldRecommendOnlyAFormula_WhenARecordSignalStartSitsBesideANamedOne() {
+		// Arrange
+		DescribeProcessResult after = TwoStartProcess();
+		after.Elements[1].Signal = null;
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForOperations($"[{AddMapping(ReadAName)}]",
+			null, after);
+
+		// Assert
+		string warning = warnings.Should().ContainSingle(w => w.Contains("started by 'SigB' does not reach"),
+			because: "the SigB run never executes ReadA").Which;
+		RecommendsOnlyAFormula(warning, "PName").Should().BeTrue(
+			because: "one record start has nothing to merge with, and the named start can never be listed in mergeFrom");
+	}
+
+	[Test]
+	[Description("Binding the warned parameter to the shared chain's output is the step the merge remedy asks for, and on modify it replaces a stored binding. A process that already holds a merged parameter is told the replacement may be the intended one, so a caller who has just merged is not sent to a second merged parameter; a process with no merge gets no such sentence.")]
+	public void ForOperations_ShouldSayTheBindingMayBeTheMergeStep_WhenTheProcessAlreadyMerges() {
+		// Arrange
+		DescribedParameter stored = new() {
+			Name = "PName", Source = "Script", Value = "[#...#]",
+			SourceElement = "ReadA", SourceElementParameter = "ResultEntity", SourceColumn = "Name"
+		};
+		DescribedParameter merged = new() { Name = "RecordIdParameter", MergeFrom = ["SigA.RecordId", "SigB.RecordId"] };
+		DescribeProcessResult before = TwoStartProcess(stored);
+		DescribeProcessResult after = TwoStartProcess(stored, merged);
+
+		// Act
+		IReadOnlyList<string> withMerge = ProcessParameterBindingWarnings.ForOperations(
+			$"[{AddMapping(ReadBName)}]", before, after);
+		IReadOnlyList<string> withoutMerge = ProcessParameterBindingWarnings.ForOperations(
+			$"[{AddMapping(ReadBName)}]", before, before);
+
+		// Assert
+		withMerge.Should().Contain(w => w.Contains("replaced the existing binding of process parameter 'PName'")
+				&& w.Contains("this binding is the intended one: add no second merged parameter")
+				&& RecommendsMergeFirst(w, "PName"),
+			because: "the process already merges its starts, so the replacement may be the remedy carried out");
+		withoutMerge.Should().Contain(w => w.Contains("replaced the existing binding of process parameter 'PName'"))
+			.And.NotContain(w => w.Contains("add no second merged parameter"),
+				because: "with no merged parameter the sentence would describe a step nobody took");
+	}
+
 	#endregion
 
 	#region Methods: ForOperations
@@ -205,6 +359,9 @@ public class ProcessParameterBindingWarningsTests {
 		// Assert
 		warnings.Should().ContainSingle(w => w.Contains("this addMapping batch binds process parameter 'PName' 2 times"),
 			because: "the batch keeps only the last binding");
+		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
+			because: "without a read-back nothing shows the two signal starts on one object mergeFrom needs, so only the "
+				+ "Formula that fits every graph can be named");
 	}
 
 	[Test]
@@ -222,8 +379,9 @@ public class ProcessParameterBindingWarningsTests {
 
 		// Assert
 		warnings.Should().ContainSingle(w => w.Contains("replaced the existing binding of process parameter 'PName'")
-				&& w.Contains("was ReadA.ResultEntity.Name, now ReadB.ResultEntity.Name"),
-			because: "the caller must see which binding the edit dropped");
+				&& w.Contains("was ReadA.ResultEntity.Name, now ReadB.ResultEntity.Name")
+				&& RecommendsMergeFirst(w, "PName"),
+			because: "the caller must see which binding the edit dropped, and the one remedy every warning names");
 	}
 
 	[Test]

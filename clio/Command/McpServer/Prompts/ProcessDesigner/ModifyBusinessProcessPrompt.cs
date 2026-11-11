@@ -103,7 +103,9 @@ public static class ModifyBusinessProcessPrompt {
 		 a branch always taken set its condition to `true`. An EMPTY condition is refused
 		 because the platform stores one as the literal `true`. `setFilter`/`clearFilter`
 		 set or remove a `signalStart`'s record filter, `setSignal` reconfigures a `signalStart`'s record trigger
-		 and its tracked-change `changedColumns` in place, and `setElement` changes element-level fields in place —
+		 and its tracked-change `changedColumns` in place (a start a `mergeFrom` parameter lists keeps its object
+		 unless every listed start moves with it; `removeElement` refuses it until `setParameter` takes it out of
+		 the list), and `setElement` changes element-level fields in place —
 		 `useBackgroundMode` on an element kind that offers it (it takes effect only on a start event and an
 		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
