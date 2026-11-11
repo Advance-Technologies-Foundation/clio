@@ -31,6 +31,11 @@ and no cliogate endpoint (cliogate adds nothing but SQL, and is absent on many s
   a method whose codes lack it opens but cannot be saved (measured 2026-11-11 on a .NET Framework stand with
   prefix `Usr`). clio requires the prefix on every method and parameter code it introduces, and keeps a code
   the service already has, since renaming a called method breaks its processes. No prefix set: no rule.
+- A single (non-array) Object parameter is refused. Studio forbids it ("You can select Object type only if Is
+  Array attribute set"), its JSON quick setup flattens a nested object into fields with dotted paths, a Call web
+  service element maps a single Object to a plain Object parameter with no fields, and CrtProcessBuilder refuses
+  it. A dotted request path renders as a nested body object (Terrasoft.Services JsonRequestBodyRenderer);
+  measured 2026-11-11 with a test call and a process run.
 - A default bound to a missing system setting is dropped from the request without an error at run time
   (measured on 10.2.565); a reference to a missing setting is refused.
 - A Call web service element stores the service UId in `IX1` and the method name in `IX2`; `SysSchema.MetaData`

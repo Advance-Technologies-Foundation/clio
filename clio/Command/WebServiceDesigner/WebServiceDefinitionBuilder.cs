@@ -220,6 +220,15 @@ public static partial class WebServiceDefinitionBuilder {
 		if (type == "Object" && !hasItems) {
 			errors.Add($"{owner}: an Object parameter needs items.");
 		}
+		// Studio refuses a single Object ("You can select Object type only if Is Array attribute set"), its JSON
+		// quick setup never makes one, and a Call web service element maps one to a plain Object parameter with no
+		// fields to bind: the product describes a single nested object by its fields, each with a dotted path.
+		// A parameter the service already has is kept, as with the prefix rule.
+		if (type == "Object" && arg.Array != true && !string.Equals(previous?.Name, arg.Code, StringComparison.Ordinal)) {
+			errors.Add($"{owner}: an Object parameter must be an array. Describe a single nested object by its fields as "
+				+ "separate parameters with a dotted path instead, e.g. path 'customer.name' for a request body field or "
+				+ "'$.customer.name' for a response value.");
+		}
 		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors);
 		return new ServiceParameterDto {
 			UId = previous?.UId ?? Guid.NewGuid(),

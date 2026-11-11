@@ -63,7 +63,9 @@ public static class WebServiceResponseMasker {
 					secrets.AddRange(Lookup(cookies, name));
 					break;
 				case PlacementBody:
-					secrets.AddRange(BodyValues(body, name));
+					// A field of a nested object is described by a dotted path (customer.name, $.auth.secret);
+					// the body carries it under its last segment.
+					secrets.AddRange(BodyValues(body, LastPathSegment(name)));
 					break;
 			}
 		}
@@ -177,6 +179,11 @@ public static class WebServiceResponseMasker {
 		} catch (JsonException) {
 			return null;
 		}
+	}
+
+	private static string LastPathSegment(string path) {
+		int dot = path.LastIndexOf('.');
+		return dot >= 0 && dot < path.Length - 1 ? path[(dot + 1)..] : path;
 	}
 
 	private static IEnumerable<string> BodyValues(JsonNode node, string name) {

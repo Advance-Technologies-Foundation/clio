@@ -32,8 +32,7 @@ public sealed class WebServiceResponseMaskerTests {
 			new WebServiceParameterArg("token", "query", DefaultSysSetting: "UsrToken"),
 			new WebServiceParameterArg("page", "query"),
 			new WebServiceParameterArg("sid", "cookie", DefaultSysSetting: "UsrSid"),
-			new WebServiceParameterArg("auth", Type: "Object",
-				Items: [new WebServiceParameterArg("secret", DefaultSysSetting: "UsrBodySecret")]));
+			new WebServiceParameterArg("authSecret", Path: "auth.secret", DefaultSysSetting: "UsrBodySecret"));
 
 		// Act
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, RawRequest,
@@ -41,7 +40,7 @@ public sealed class WebServiceResponseMaskerTests {
 
 		// Assert
 		secrets.Should().BeEquivalentTo(["sk-header-secret", "q/secret-42", "cookie-secret-9", "body-secret-7"],
-			because: "each setting-bound value is read from where the platform put it, and 'page' is the caller's own value");
+			because: "each setting-bound value is read from where the platform put it, a dotted body path under its last segment, and 'page' is the caller's own value");
 	}
 
 	[Test]

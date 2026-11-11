@@ -120,7 +120,7 @@ public sealed class WebServiceDefinitionBuilderTests {
 		// Arrange
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		WebServiceMethodArg method = new("GetOrders", "GET", "orders", ResponseParameters: [
-			new WebServiceParameterArg("items", Type: "Object"),
+			new WebServiceParameterArg("items", Type: "Object", Array: true),
 			new WebServiceParameterArg("count", Type: "Integer", Items: [new WebServiceParameterArg("x")])
 		]);
 
@@ -128,7 +128,72 @@ public sealed class WebServiceDefinitionBuilderTests {
 		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors);
 
 		// Assert
-		errors.Should().HaveCount(2, because: "one Object lacks items and one scalar carries them");
+		errors.Should().HaveCount(2, because: "one Object array lacks items and one scalar carries them");
+	}
+
+	[Test]
+	[Description("A new single Object parameter is refused, request or response, top level or nested, with the dotted-path alternative.")]
+	public void BuildMethod_Should_Refuse_A_Single_Object() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("CreateOrder", "POST", "orders",
+			RequestParameters: [
+				new WebServiceParameterArg("customer", Type: "Object", Items: [new WebServiceParameterArg("name")])
+			],
+			ResponseParameters: [
+				new WebServiceParameterArg("lines", Type: "Object", Array: true, Items: [
+					new WebServiceParameterArg("product", Type: "Object", Items: [new WebServiceParameterArg("sku")])
+				])
+			]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors);
+
+		// Assert
+		errors.Should().HaveCount(2, because: "the request object and the object nested in the array are single objects");
+		errors.Should().OnlyContain(e => e.Contains("must be an array") && e.Contains("customer.name"),
+			because: "each refusal names the rule and the dotted-path alternative");
+	}
+
+	[Test]
+	[Description("A single nested object described by dotted paths is accepted and the paths are stored as given.")]
+	public void BuildMethod_Should_Accept_Dotted_Paths_For_A_Nested_Object() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("UsrCreateOrder", "POST", "orders",
+			RequestParameters: [new WebServiceParameterArg("UsrCustomerName", Path: "customer.name")],
+			ResponseParameters: [new WebServiceParameterArg("UsrCustomerName", Path: "$.customer.name")]);
+
+		// Act
+		ServiceMethodDto built = WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+
+		// Assert
+		errors.Should().BeEmpty(because: "flat parameters with dotted paths are how Studio describes a nested object");
+		built.Request.Parameters.Items.Values.Single().Path.Should().Be("customer.name",
+			because: "the platform splits the path into nested JSON when it renders the body");
+		built.Response.Parameters.Items.Values.Single().Path.Should().Be("$.customer.name",
+			because: "the response path is a JSONPath read as given");
+	}
+
+	[Test]
+	[Description("A single Object the service already has is kept on a rebuild, as other existing codes are.")]
+	public void BuildMethod_Should_Keep_An_Existing_Single_Object() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Orders", "GET", "orders"),
+			null, false, errors);
+		existing.Response.Parameters.Items["x"] = new ServiceParameterDto {
+			UId = Guid.NewGuid(), Name = "meta", Path = "$.meta", DataValueTypeName = "Object"
+		};
+		WebServiceMethodArg rebuilt = new("Orders", "GET", "orders", ResponseParameters: [
+			new WebServiceParameterArg("meta", Type: "Object", Items: [new WebServiceParameterArg("total")])
+		]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(rebuilt, existing, false, errors);
+
+		// Assert
+		errors.Should().BeEmpty(because: "changing a kept parameter's shape is the user's call, not a new single object");
 	}
 
 	[TestCase("https://api.example.com/v1", "https://api.example.com/v1/")]

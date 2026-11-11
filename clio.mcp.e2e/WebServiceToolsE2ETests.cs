@@ -382,6 +382,58 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		listed.Services.Should().NotContain(s => s.Code == _serviceCode, because: "a refused registration saves nothing");
 	}
 
+	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureName("register-web-service refuses a single Object parameter and accepts its fields with dotted paths")]
+	[Description("Asks to register a body parameter of type Object that is not an array, which Studio refuses and a Call web service element cannot bind, and expects a refusal with the dotted-path alternative and no service; then registers the same object as two fields with dotted paths and expects them stored as given.")]
+	public async Task RegisterWebService_Should_Refuse_A_Single_Object_And_Accept_Dotted_Paths() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(settings, cts.Token);
+		_serviceCode = UniqueCode("E2eWs");
+		Dictionary<string, object?> Register(params Dictionary<string, object?>[] requestParameters) => new() {
+			["environment-name"] = _environmentName,
+			["package-name"] = PackageName,
+			["code"] = _serviceCode,
+			["base-uri"] = "https://example.invalid/api",
+			["methods"] = new[] {
+				new Dictionary<string, object?> {
+					["code"] = Prefixed("CreateOrder"), ["http-method"] = "POST", ["uri"] = "orders",
+					["request-parameters"] = requestParameters
+				}
+			}
+		};
+
+		// Act
+		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			Register(new Dictionary<string, object?> {
+				["code"] = Prefixed("Customer"), ["path"] = "customer", ["type"] = "Object",
+				["items"] = new[] { new Dictionary<string, object?> { ["code"] = Prefixed("Name"), ["path"] = "name" } }
+			}), cts.Token);
+		WebServiceListResult afterRefusal = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName }, cts.Token);
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			Register(
+				new Dictionary<string, object?> { ["code"] = Prefixed("CustomerName"), ["path"] = "customer.name" },
+				new Dictionary<string, object?> { ["code"] = Prefixed("CustomerEmail"), ["path"] = "customer.email" }),
+			cts.Token);
+
+		// Assert
+		refused.Success.Should().BeFalse(because: "a single Object cannot be saved in Studio nor bound by a process element");
+		refused.Error.Should().Contain("must be an array", because: "the refusal names the rule");
+		refused.Error.Should().Contain("customer.name", because: "the refusal names the dotted-path alternative");
+		afterRefusal.Services.Should().NotContain(s => s.Code == _serviceCode, because: "a refused registration saves nothing");
+		registered.Success.Should().BeTrue(because: $"fields with dotted paths are the supported shape; error: {registered.Error}");
+		registered.Service!.Methods.Single().RequestParameters.Select(p => p.Path).Should().BeEquivalentTo(
+			["customer.name", "customer.email"], because: "the platform renders each dotted path into the nested body object");
+	}
+
 	/// <summary>
 	/// Inserts an OAuth application with placeholder endpoints and a placeholder client id; it carries no secret.
 	/// Only ClientId is required by the entity. The id is recorded BEFORE the insert, so the teardown deletes the

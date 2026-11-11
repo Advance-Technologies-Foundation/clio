@@ -50,7 +50,7 @@ public sealed record WebServiceMethodArg(
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 
-/// <summary>A request or response parameter; <see cref="Items"/> describes the fields of an Object.</summary>
+/// <summary>A request or response parameter; <see cref="Items"/> describes the fields of each element of an Object array.</summary>
 public sealed record WebServiceParameterArg(
 	[property: JsonPropertyName("code")]
 	[property: Description("Parameter code with the schema-name prefix, unique among its siblings, e.g. UsrOrderId; the wire name goes in path")]
@@ -61,7 +61,7 @@ public sealed record WebServiceParameterArg(
 	string In = null,
 
 	[property: JsonPropertyName("type")]
-	[property: Description("Text (default), Integer, Float, Boolean, DateTime, Date, Time, Guid or Object")]
+	[property: Description("Text (default), Integer, Float, Boolean, DateTime, Date, Time, Guid or Object. Object only with array true; a single nested object is described by its fields, each with a dotted path such as customer.name")]
 	string Type = null,
 
 	[property: JsonPropertyName("path")]
@@ -86,7 +86,7 @@ public sealed record WebServiceParameterArg(
 	string DefaultSysSetting = null,
 
 	[property: JsonPropertyName("items")]
-	[property: Description("Nested parameters of an Object (or of each element of an Object array)")]
+	[property: Description("Fields of each element of an Object array")]
 	IReadOnlyList<WebServiceParameterArg> Items = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
