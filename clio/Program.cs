@@ -1133,7 +1133,8 @@ internal class Program {
 					Thread.Sleep(2000);
 					again = !bool.Parse(client.ExecutePostRequest(ExistsPackageZipUrl, string.Empty));
 					if (++count > 600) {
-						throw new TimeoutException("Timeout exception");
+						throw new TimeoutException(
+							$"The archive of package {packageName} was not ready after 20 minutes of polling, so it was not downloaded.");
 					}
 				} while (again);
 				Thread.Sleep(1000);

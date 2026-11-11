@@ -152,7 +152,7 @@ public class PushWorkspaceCommandTests : BaseCommandTests<PushWorkspaceCommandOp
 	[Description("When the environment reports the installation as failed, push-workspace logs the closing error and exits 1, instead of logging Done and exiting 0 after the installer's own error line.")]
 	public void Execute_ShouldExitOne_WhenTheInstallationFails() {
 		// Arrange
-		const string failure = "Workspace packages were not installed: UsrPkg. The reason is the installation error above.";
+		const string failure = "Workspace packages were not installed: UsrPkg.";
 		_inspector.Inspect(Arg.Any<System.Collections.Generic.IEnumerable<string>>()).Returns([]);
 		_workspace.When(workspace => workspace.Install(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>()))
 			.Do(_ => throw new System.InvalidOperationException(failure));

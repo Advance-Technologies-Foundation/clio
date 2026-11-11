@@ -100,13 +100,13 @@ are not checked.
 
 ### A failed installation
 
-When Creatio reports the installation as failed, the installer writes the reason
-and the command closes with the packages that were not installed, then exits
-with `1`:
+When the installation fails - Creatio reports it as failed, or the backup before
+it cannot be created - the installer writes the reason and the command closes
+with the packages that were not installed, then exits with `1`:
 
 ```text
 [ERR] - Package installation failed: <reason>
-[ERR] - Workspace packages were not installed: UsrApp, UsrAppData. The reason is the installation error above.
+[ERR] - Workspace packages were not installed: UsrApp, UsrAppData.
 ```
 
 ## See Also

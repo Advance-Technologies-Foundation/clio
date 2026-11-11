@@ -1,27 +1,32 @@
 ---
-description: IPackageInstaller.Install and IApplicationInstaller.Install report a failed installation by logging "Package installation failed: <reason>" and returning false, never by throwing - a caller that drops the bool reports success for an installation that failed (push-workspace logged Done and exited 0)
+description: IPackageInstaller.Install and IApplicationInstaller.Install report a failed installation OUTCOME by logging "Package installation failed: <reason>" and returning false, so a caller that drops the bool reports success for a failed installation; merge-workspaces, deploy-app and install-nuget-pkg still drop it
 applies-to:
   - clio/Package/BasePackageInstaller.cs
+  - clio/Package/ApplicationInstaller.cs
   - clio/Package/IPackageInstaller.cs
   - clio/Package/IApplicationInstaller.cs
   - clio/Workspace/WorkspaceInstaller.cs
+  - clio/Workspace/WorkspaceMerger.cs
+  - clio/Command/ApplicationManager.cs
+  - clio/Package/NuGet/InstallNugetPackage.cs
 date: 2026-11-11
 ---
 
-**What is true** — both installers end a failed installation (the server's response says it failed, the
-install log lacks the success marker, or the backup could not be created) by writing an `[ERR]` line
-through the logger and returning `false`. They throw only for a few recognized pre-flight failures
-(an invalid gzip archive, a package folder without `descriptor.json`). So the exit code and any closing
-"Done" are the caller's to decide from the returned bool. `push-pkg` and `install-application` check it
-and close with `PushPackageCommand.BuildFailureMessage`; `WorkspaceInstaller.InstallApplication` throws
+**What is true** — the installers return `false` for an installation that ran and failed: the service's
+response says it failed, the install log lacks the success marker, or the backup before it could not be
+created. Each of these writes `[ERR] - Package installation failed: <reason>` first. A package that is not
+found by its path also returns `false`, after a plain `WriteLine`. Failures to reach the environment -
+upload, login, the design-node session, a body that is not JSON - throw instead. So does an invalid gzip
+archive on the application-installer path (`ThrowInvalidGZipArchiveInstallException`); the package
+installer returns `false` for it. `push-pkg` and `install-application` check the bool and close with
+`PushPackageCommand.BuildFailureMessage`. `WorkspaceInstaller.InstallApplication` throws an
 `InvalidOperationException` naming the packages, which `push-workspace` turns into exit code 1.
 
-**Why it is this way** — the installer already wrote the reason, together with the install log, at the
-moment it saw it; the caller only adds what failed and decides how to end.
+**Why it is this way** — the installer writes the reason, together with the install log, at the moment it
+sees it; the caller only adds what failed and decides how to end.
 
-**What breaks if you ignore it** — a new caller that writes `installer.Install(...)` as a statement
-compiles, logs the installer's error, and then reports success. Until 2026-11 `WorkspaceInstaller` did
-exactly that: push-workspace printed "Package installation failed: ..." and then "Done" with exit code 0,
-and on the application-installer path (the one MCP push-workspace uses) it even logged "Installation
-completed successfully." in between. An agent or a CI step that reads the exit code goes on as if the
-packages were installed.
+**What breaks if you ignore it** — a call written as a statement, `installer.Install(...);`, compiles,
+logs the installer's error, and lets the command report success. Three callers still do that:
+`WorkspaceMerger.InstallApplication` (merge-workspaces), `ApplicationManager` (deploy-app) and
+`InstallNugetPackage` (install-nuget-pkg). An agent or a CI step that reads their exit code goes on as if
+the packages were installed. Check the bool in any new caller, and in those three when you touch them.

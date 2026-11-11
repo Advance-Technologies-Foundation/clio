@@ -30,8 +30,8 @@ namespace Clio.Workspaces
 		/// names the folders of all packages.
 		/// </exception>
 		/// <exception cref="InvalidOperationException">
-		/// The environment reported the installation as failed. The installer has already logged the reason
-		/// ("Package installation failed: &lt;reason&gt;"); the exception names the packages that were not installed.
+		/// The installer reported the installation as failed. It has already logged the reason ("Package
+		/// installation failed: &lt;reason&gt;"); the exception names the packages that were not installed.
 		/// </exception>
 		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null,
 			bool useApplicationInstaller = false, bool createBackup = true);
@@ -216,8 +216,11 @@ namespace Clio.Workspaces
 			// to be dropped, so push-workspace logged Done and exited 0 for a failed installation - and the
 			// application-installer path even logged "Installation completed successfully." first.
 			if (!installed) {
-				throw new InvalidOperationException(
-					$"Workspace packages were not installed: {DescribePackages(packageNames)}. The reason is the installation error above.");
+				// Names what failed only: the installer has already logged why, as "Package installation failed:
+				// <reason>", together with the installation log.
+				throw new InvalidOperationException(packageNames.Count == 0
+					? "Workspace packages were not installed."
+					: $"Workspace packages were not installed: {DescribePackages(packageNames)}.");
 			}
 			if (useApplicationInstaller && _applicationInstaller != null) {
 				_logger.WriteInfo("Installation completed successfully.");

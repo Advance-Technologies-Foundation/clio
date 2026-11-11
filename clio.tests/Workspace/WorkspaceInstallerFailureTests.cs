@@ -25,16 +25,13 @@ public sealed class WorkspaceInstallerFailureTests : BaseClioModuleTests {
 
 	private IPackageInstaller _packageInstaller;
 	private IApplicationInstaller _applicationInstaller;
-	private IOwnedApplicationClient _applicationClient;
 	private ILogger _logger;
 
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_packageInstaller = Substitute.For<IPackageInstaller>();
 		_applicationInstaller = Substitute.For<IApplicationInstaller>();
-		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		IApplicationClientFactory applicationClientFactory = Substitute.For<IApplicationClientFactory>();
-		applicationClientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(_applicationClient);
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		workspacePathBuilder.PackagesFolderPath.Returns(PackagesPath);
 		IOSPlatformChecker osPlatformChecker = Substitute.For<IOSPlatformChecker>();
@@ -53,7 +50,6 @@ public sealed class WorkspaceInstallerFailureTests : BaseClioModuleTests {
 		_packageInstaller.ClearReceivedCalls();
 		_applicationInstaller.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
-		_applicationClient.Dispose();
 		base.TearDown();
 	}
 
@@ -70,8 +66,8 @@ public sealed class WorkspaceInstallerFailureTests : BaseClioModuleTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "the environment reported the installation as failed")
-			.WithMessage("Workspace packages were not installed: UsrA, UsrB.*",
-				because: "the closing error names what was not installed; the reason is the installer's line above");
+			.WithMessage("Workspace packages were not installed: UsrA, UsrB.",
+				because: "the closing error names what was not installed; the installer has already logged why");
 	}
 
 	[Test]
@@ -87,11 +83,24 @@ public sealed class WorkspaceInstallerFailureTests : BaseClioModuleTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "the environment reported the installation as failed");
-		_logger.ReceivedCalls()
-			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
-			.Select(call => call.GetArguments().FirstOrDefault()?.ToString())
-			.Should().NotContain("Installation completed successfully.",
-				because: "a failed installation must not be reported as completed");
+		_logger.DidNotReceive().WriteInfo("Installation completed successfully.");
+	}
+
+	[Test]
+	[Description("A failure for many packages names the first ten and counts the rest, so the closing line stays short.")]
+	public void Install_ShouldNameTenPackagesAndCountTheRest_WhenManyPackagesWereNotInstalled() {
+		// Arrange
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>()).Returns(false);
+		IWorkspaceInstaller sut = Container.GetRequiredService<IWorkspaceInstaller>();
+		string[] packages = [.. Enumerable.Range(1, 12).Select(index => $"UsrPkg{index}")];
+
+		// Act
+		Action act = () => sut.Install(packages);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the environment reported the installation as failed")
+			.WithMessage("*UsrPkg10 and 2 more.", because: "the eleventh and twelfth packages are counted, not listed");
 	}
 
 	[Test]

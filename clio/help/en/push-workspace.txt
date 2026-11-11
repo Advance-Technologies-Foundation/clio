@@ -69,9 +69,10 @@ NOTES
     Empty folders and files excluded by clioignore are not packed, so they are
     not reported.
 
-    When Creatio reports the installation as failed, the installer writes
-    "Package installation failed: <reason>", the command closes with
-    "Workspace packages were not installed: <packages>", and it exits with 1.
+    When the installation fails - Creatio reports it as failed, or the backup
+    before it cannot be created - the installer writes "Package installation
+    failed: <reason>", the command closes with "Workspace packages were not
+    installed: <packages>", and it exits with 1.
 
 SEE ALSO
     create-workspace - Create a workspace

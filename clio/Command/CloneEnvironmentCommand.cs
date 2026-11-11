@@ -99,7 +99,12 @@ namespace Clio.Command
 					pullPkgOptions.DestPath = sourceZipPackagePath;
 					string progress = $"({number++} from {packagesCount})";
 					Logger.WriteInfo($"Start pull package: {package.Name} {progress}");
-					pullPkgCommand.Execute(pullPkgOptions);
+					// pull-pkg reports a failed download through its exit code and its own [ERR] line; going on would
+					// fail later at the unzip with a missing archive, or clone an incomplete set of packages.
+					if (pullPkgCommand.Execute(pullPkgOptions) != 0) {
+						throw new InvalidOperationException(
+							$"Package {package.Name} was not pulled from {options.Source}, so the environment was not cloned.");
+					}
 					Logger.WriteInfo($"Done pull package: {package.Name} {progress}");
 				}
 				string sourceGzPackages = Path.Combine(workingDirectoryPath, "SourceGzPackages");
