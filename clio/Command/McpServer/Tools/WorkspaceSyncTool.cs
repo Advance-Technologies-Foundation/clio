@@ -165,7 +165,7 @@ public sealed class RestoreWorkspaceTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Restores packages listed in `.clio/workspaceSettings.json` at `workspace-path` from the specified Creatio environment. When no packages are eligible, returns success with a warning and does not clear or delete existing package directories.")]
+	[Description("Restores packages listed in `.clio/workspaceSettings.json` at `workspace-path` from the specified Creatio environment. When no packages are eligible, returns success with a warning and does not clear or delete existing package directories. When the environment does not answer - a rejected login, a stopped site - the call fails with the reason and restores nothing.")]
 	public CommandExecutionResult RestoreWorkspace(
 		[Description("Restore-workspace parameters")] [Required] RestoreWorkspaceArgs args
 	) {

@@ -18,6 +18,10 @@ namespace Clio.Package
 		/// Downloads and overwrites the requested package directories without clearing unrelated content from
 		/// the shared destination root.
 		/// </summary>
+		/// <exception cref="System.InvalidOperationException">
+		/// The environment did not answer the ping - a rejected login, a stopped site - so nothing was downloaded
+		/// and the destination was not touched. The message carries the ping's own failure.
+		/// </exception>
 		void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
 			string destinationPath = null);
 		void DownloadPackage(string packageName, EnvironmentSettings environmentSettings  = null,

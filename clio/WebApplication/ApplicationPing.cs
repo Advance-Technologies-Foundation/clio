@@ -13,6 +13,22 @@
 		bool Ping();
 		bool Ping(EnvironmentSettings environmentSettings);
 
+		/// <summary>
+		/// Pings the environment and, when it does not answer, says why.
+		/// </summary>
+		/// <param name="environmentSettings">The environment to ping.</param>
+		/// <param name="failureReason">
+		/// The message of the failure that stopped the ping - for a rejected login, for example,
+		/// <c>Unauthorized &lt;user&gt; for &lt;url&gt;</c>; <see langword="null"/> when the environment answered.
+		/// </param>
+		/// <returns><see langword="true"/> when the environment answered.</returns>
+		/// <remarks>
+		/// <see cref="Ping(EnvironmentSettings)"/> answers only true or false, so a caller that stops on a false
+		/// cannot tell a wrong password from a stopped site - and a caller that stops SILENTLY reports success for
+		/// work it never did.
+		/// </remarks>
+		bool TryPing(EnvironmentSettings environmentSettings, out string failureReason);
+
 		#endregion
 
 	}
@@ -58,12 +74,16 @@
 
 		#region Methods: Public
 
-		public bool Ping(EnvironmentSettings environmentSettings) {
+		public bool Ping(EnvironmentSettings environmentSettings) => TryPing(environmentSettings, out _);
+
+		public bool TryPing(EnvironmentSettings environmentSettings, out string failureReason) {
 			try {
 				using IOwnedApplicationClient client = CreateApplicationClient(environmentSettings);
 				client.ExecuteGetRequest(PingUri);
+				failureReason = null;
 				return true;
-			} catch (Exception) {
+			} catch (Exception exception) {
+				failureReason = SurfacedExceptionMessage.Resolve(exception);
 				return false;
 			}
 		}

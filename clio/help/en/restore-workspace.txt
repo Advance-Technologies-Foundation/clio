@@ -184,6 +184,13 @@ TROUBLESHOOTING
         Ensure build props were created:
             clio restore-workspace -e dev --add-build-props true
     
+    Error: "Packages were not downloaded: the environment did not answer (...)"
+        The environment rejected the login or is not running, so nothing was restored
+        and the command exits with a non-zero code. The text in parentheses is the reason.
+        Check the environment with:
+            clio ping-app -e <ENVIRONMENT_NAME>
+        and correct its registered credentials with reg-web-app if the login is rejected.
+
     Missing packages:
         Check workspace settings filter in .clio/workspaceSettings.json
 
