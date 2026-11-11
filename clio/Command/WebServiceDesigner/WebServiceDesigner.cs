@@ -154,7 +154,7 @@ public sealed class WebServiceDesigner(
 		IReadOnlyList<string> secrets =
 			WebServiceResponseMasker.SentSecrets(method, result.RequestRawData, result.RequestBody);
 		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
-		string body = WebServiceResponseMasker.Apply(result.ResponseBody, secrets, out bool bodyMasked);
+		string body = WebServiceResponseMasker.ApplyToBody(result.ResponseBody, secrets, out bool bodyMasked);
 		string error = WebServiceResponseMasker.Apply(result.Error, secrets, out bool errorMasked);
 		bool truncated = body is { Length: > MaxResponseBodyLength };
 		return new WebServiceTestResult(result.Success,

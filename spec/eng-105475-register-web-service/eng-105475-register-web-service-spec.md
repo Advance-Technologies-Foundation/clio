@@ -36,6 +36,14 @@ and no cliogate endpoint (cliogate adds nothing but SQL, and is absent on many s
   service element maps a single Object to a plain Object parameter with no fields, and CrtProcessBuilder refuses
   it. A dotted request path renders as a nested body object (Terrasoft.Services JsonRequestBodyRenderer);
   measured 2026-11-11 with a test call and a process run.
+- Response parameters are read from the body, a header or a cookie (Studio offers the three; the platform reads
+  header and cookie values by path from an ordinal dictionary keyed as the server sent the name, so the letter
+  case must match - measured: x-wsm read, X-Wsm null). describe reports the real placement, so a setMethod
+  rebuilt from it no longer rewrites them as body values. As Studio, a GET has no body request parameter and an
+  xml method no body parameter in request or response (RestWebServiceMethodPage._contentTypeValidator); the
+  platform builds REST bodies as JSON only, so such calls failed ("Rest:Xml", "Cannot send a content-body").
+- test-web-service-method masks a JSON body value by value (numbers and booleans whole) and a property name only
+  for a token-like secret (8+ characters or a non-letter), so a short login equal to a key keeps the structure.
 - A default bound to a missing system setting is dropped from the request without an error at run time
   (measured on 10.2.565); a reference to a missing setting is refused.
 - A Call web service element stores the service UId in `IX1` and the method name in `IX2`; `SysSchema.MetaData`

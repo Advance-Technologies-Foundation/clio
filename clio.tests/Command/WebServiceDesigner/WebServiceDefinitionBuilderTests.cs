@@ -431,6 +431,114 @@ public sealed class WebServiceDefinitionBuilderTests {
 	}
 
 	[Test]
+	[Description("Response parameters can be read from a response header or cookie, and describe reports where each one is read from.")]
+	public void BuildMethod_Should_Keep_Header_And_Cookie_Response_Placements() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("UsrGetOrders", "GET", "orders", ResponseParameters: [
+			new WebServiceParameterArg("UsrRequestId", "header", Path: "X-Request-Id"),
+			new WebServiceParameterArg("UsrSession", "cookie", Path: "sid"),
+			new WebServiceParameterArg("UsrStatus", Path: "$.status")
+		]);
+
+		// Act
+		ServiceMethodDto built = WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+		WebServiceMethodView view = WebServiceSchemaView.From(new ServiceSchemaDto {
+			Name = "UsrErp", Type = ServiceSchemaCodes.ServiceTypeRest,
+			Methods = { Items = { [built.UId.ToString()] = built } }
+		}, "Custom").Methods.Single();
+
+		// Assert
+		errors.Should().BeEmpty(because: "Studio offers body, header and cookie for a response parameter");
+		view.ResponseParameters.Select(p => (p.Code, p.In)).Should().BeEquivalentTo(
+			new[] { ("UsrRequestId", "header"), ("UsrSession", "cookie"), ("UsrStatus", "body") },
+			because: "describe must report the real placement, or a setMethod rebuilt from it turns a header into a body value");
+	}
+
+	[Test]
+	[Description("A response parameter cannot be read from a query, path or unknown placement.")]
+	public void BuildMethod_Should_Refuse_A_Request_Only_Placement_On_A_Response_Parameter() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("UsrGetOrders", "GET", "orders",
+			ResponseParameters: [new WebServiceParameterArg("UsrPage", "query", Path: "page")]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+
+		// Assert
+		errors.Should().ContainSingle(because: "a response has no query string")
+			.Which.Should().Contain("body, header or cookie", because: "the refusal names the allowed placements");
+	}
+
+	[Test]
+	[Description("A GET with a body request parameter is refused, as Studio refuses it; a POST with the same parameter passes.")]
+	public void BuildMethod_Should_Refuse_A_Body_Parameter_On_Get() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceParameterArg[] body = [new WebServiceParameterArg("UsrNumber", Path: "number")];
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrGetOrders", "GET", "orders",
+			RequestParameters: body), null, false, errors, "Usr");
+		var postErrors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrPostOrders", "POST", "orders",
+			RequestParameters: body), null, false, postErrors, "Usr");
+
+		// Assert
+		errors.Should().ContainSingle(because: ".NET refuses to send a body with GET and Studio cannot save one")
+			.Which.Should().Contain("GET", because: "the refusal names the rule");
+		postErrors.Should().BeEmpty(because: "a POST carries a body");
+	}
+
+	[Test]
+	[Description("An xml method with a body parameter in its request or its response is refused; one with only query and header parameters passes.")]
+	public void BuildMethod_Should_Refuse_Body_Parameters_On_An_Xml_Method() {
+		// Arrange
+		var requestErrors = new WebServiceDefinitionBuilder.Errors();
+		var responseErrors = new WebServiceDefinitionBuilder.Errors();
+		var plainErrors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrAdd", "POST", "add", ContentType: "xml",
+			RequestParameters: [new WebServiceParameterArg("UsrA", Path: "a")]), null, false, requestErrors, "Usr");
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrAdd", "GET", "add", ContentType: "xml",
+			ResponseParameters: [new WebServiceParameterArg("UsrResult", Path: "AddResult")]), null, false, responseErrors, "Usr");
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrAdd", "GET", "add", ContentType: "xml",
+			RequestParameters: [new WebServiceParameterArg("UsrA", "query", Path: "a")],
+			ResponseParameters: [new WebServiceParameterArg("UsrTrace", "header", Path: "X-Trace")]), null, false,
+			plainErrors, "Usr");
+
+		// Assert
+		requestErrors.Should().ContainSingle(because: "the platform builds a REST body as JSON only")
+			.Which.Should().Contain("RequestBody", because: "the refusal names the process route for an XML body");
+		responseErrors.Should().ContainSingle(because: "Studio refuses a body parameter in an xml response as well");
+		plainErrors.Should().BeEmpty(because: "an xml method without body parameters is one Studio saves");
+	}
+
+	[Test]
+	[Description("A header or cookie parameter carries one value: an Object there is refused, and a field inside an Object array cannot have its own placement.")]
+	public void BuildMethod_Should_Refuse_Objects_In_Headers_And_Placements_On_Nested_Fields() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("UsrGetOrders", "GET", "orders", ResponseParameters: [
+			new WebServiceParameterArg("UsrMeta", "header", Type: "Object", Array: true, Path: "X-Meta",
+				Items: [new WebServiceParameterArg("UsrA", Path: "a")]),
+			new WebServiceParameterArg("UsrLines", Type: "Object", Array: true, Path: "$.lines",
+				Items: [new WebServiceParameterArg("UsrTrace", "header", Path: "x-trace")])
+		]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+
+		// Assert
+		errors.Should().HaveCount(2, because: "the header Object and the header field inside the array are both invalid");
+		errors.Should().Contain(e => e.Contains("header or cookie parameter carries one value"),
+			because: "an Object in a header is refused");
+		errors.Should().Contain(e => e.Contains("no placement of its own"), because: "a nested field cannot be a header");
+	}
+
+	[Test]
 	[Description("A service code without the environment prefix is refused.")]
 	public void ValidateServiceCode_Should_Require_Prefix() {
 		// Arrange

@@ -16,7 +16,7 @@ public sealed record WebServiceMethodArg(
 	string Code,
 
 	[property: JsonPropertyName("http-method")]
-	[property: Description("GET, POST, PUT, PATCH or DELETE")]
+	[property: Description("GET, POST, PUT, PATCH or DELETE; a GET has no body request parameters")]
 	string HttpMethod,
 
 	[property: JsonPropertyName("uri")]
@@ -32,7 +32,7 @@ public sealed record WebServiceMethodArg(
 	int? TimeoutMs = null,
 
 	[property: JsonPropertyName("content-type")]
-	[property: Description("json (default) or xml")]
+	[property: Description("json (default) or xml. An xml method has no body parameters in request or response (Studio refuses them); a process sends the XML body through the element's RequestBody and reads Response")]
 	string ContentType = null,
 
 	[property: JsonPropertyName("use-auth")]
@@ -57,7 +57,7 @@ public sealed record WebServiceParameterArg(
 	string Code,
 
 	[property: JsonPropertyName("in")]
-	[property: Description("Request parameters: path, query, header, body or cookie (default body). Response parameters: body.")]
+	[property: Description("Request parameters: path, query, header, body or cookie (default body). Response parameters: body (default), header or cookie; the platform matches a response header name in path exactly as the API sends it, letter case included (often lowercase).")]
 	string In = null,
 
 	[property: JsonPropertyName("type")]
@@ -303,7 +303,7 @@ public static partial class WebServiceSchemaView {
 		bool masked = isConstant
 			&& (IsSecretLike(parameter.Name, parameter.Type) || IsSecretLike(parameter.Path, parameter.Type));
 		return new WebServiceParameterView(parameter.Name, Localized(parameter.Caption),
-			isRequest ? ServiceSchemaCodes.Placements.FirstOrDefault(p => p.Value == parameter.Type).Key : "body",
+			ServiceSchemaCodes.Placements.FirstOrDefault(p => p.Value == parameter.Type).Key ?? "body",
 			parameter.Path, parameter.DataValueTypeName, parameter.IsArray, parameter.IsRequired,
 			SysSettingCode(value), isConstant && !masked ? value.Value : null, masked,
 			Parameters(parameter.ItemProperties, isRequest));

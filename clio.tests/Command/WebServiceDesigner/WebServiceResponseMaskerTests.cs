@@ -44,6 +44,98 @@ public sealed class WebServiceResponseMaskerTests {
 	}
 
 	[Test]
+	[Description("In a JSON body a secret is masked in string values only, so a secret equal to a property name keeps the structure.")]
+	public void ApplyToBody_Should_Mask_Json_Values_Not_Property_Names() {
+		// Arrange
+		const string body = """{"authenticated":true,"user":"user","nested":{"echo":"token user-77"}}""";
+
+		// Act
+		string result = WebServiceResponseMasker.ApplyToBody(body, ["user"], out bool masked);
+
+		// Assert
+		masked.Should().BeTrue(because: "the value carries the secret");
+		result.Should().Contain("\"user\": \"[masked]\"", because: "the property name stays and its value is masked");
+		result.Should().Contain("token [masked]-77", because: "a secret inside a longer string value is masked too");
+		result.Should().Contain("\"authenticated\": true", because: "the rest of the structure is unchanged");
+	}
+
+	[Test]
+	[Description("A secret carried by a JSON number or boolean is masked whole.")]
+	public void ApplyToBody_Should_Mask_A_Numeric_Secret() {
+		// Arrange
+		const string body = """{"accountId":12345678,"active":true}""";
+
+		// Act
+		string result = WebServiceResponseMasker.ApplyToBody(body, ["12345678"], out bool masked);
+
+		// Assert
+		masked.Should().BeTrue(because: "a setting-bound integer echoed as a number is still the secret");
+		result.Should().Contain("\"accountId\": \"[masked]\"", because: "the number is replaced by the mask");
+		result.Should().NotContain("12345678", because: "no form of the secret may survive");
+	}
+
+	[Test]
+	[Description("A token-like secret used as a property name is masked; a short plain word used as one is not.")]
+	public void ApplyToBody_Should_Mask_Token_Like_Property_Names_Only() {
+		// Arrange
+		const string body = """{"sessions":{"tok_abcdef":{"ok":true}},"user":"user"}""";
+
+		// Act
+		string result = WebServiceResponseMasker.ApplyToBody(body, ["tok_abcdef", "user"], out bool masked);
+
+		// Assert
+		masked.Should().BeTrue(because: "both secrets occur");
+		result.Should().NotContain("tok_abcdef", because: "a token echoed as a key is still a token");
+		result.Should().Contain("\"user\": \"[masked]\"",
+			because: "a short plain-word secret is masked in the value and the key stays readable");
+	}
+
+	[Test]
+	[Description("JSON with duplicate keys falls back to plain-text masking instead of failing the call.")]
+	public void ApplyToBody_Should_Fall_Back_On_Duplicate_Keys() {
+		// Arrange
+		const string body = """{"k":"sk-secret-1","k":"y"}""";
+
+		// Act
+		string result = WebServiceResponseMasker.ApplyToBody(body, ["sk-secret-1"], out bool masked);
+
+		// Assert
+		masked.Should().BeTrue(because: "the secret is still found");
+		result.Should().Be("""{"k":"[masked]","k":"y"}""", because: "the body is masked as text when the JSON walk rejects it");
+	}
+
+	[Test]
+	[Description("A JSON body without any secret comes back byte for byte, and a JSON string at the root is masked as text.")]
+	public void ApplyToBody_Should_Leave_A_Clean_Body_Unchanged() {
+		// Arrange
+		const string clean = "{\n  \"a\" : 1 }";
+
+		// Act
+		string unchanged = WebServiceResponseMasker.ApplyToBody(clean, ["sk-secret-1"], out bool cleanMasked);
+		string rootString = WebServiceResponseMasker.ApplyToBody("\"sk-secret-1\"", ["sk-secret-1"], out bool rootMasked);
+
+		// Assert
+		cleanMasked.Should().BeFalse(because: "nothing to mask");
+		unchanged.Should().Be(clean, because: "an unmasked body is not re-serialized");
+		rootMasked.Should().BeTrue(because: "a JSON string at the root is text");
+		rootString.Should().Be("\"[masked]\"", because: "the root string is masked in place");
+	}
+
+	[Test]
+	[Description("A body that is not JSON is masked as plain text.")]
+	public void ApplyToBody_Should_Mask_Plain_Text() {
+		// Arrange
+		const string body = "<r><key>sk-secret-1</key></r>";
+
+		// Act
+		string result = WebServiceResponseMasker.ApplyToBody(body, ["sk-secret-1"], out bool masked);
+
+		// Assert
+		masked.Should().BeTrue(because: "the XML body carries the secret");
+		result.Should().Be("<r><key>[masked]</key></r>", because: "plain text is masked wherever the secret occurs");
+	}
+
+	[Test]
 	[Description("A Basic Authorization header yields the encoded credentials and both decoded parts.")]
 	public void SentSecrets_Should_Collect_Basic_Authorization_Parts() {
 		// Arrange

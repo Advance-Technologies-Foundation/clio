@@ -103,13 +103,18 @@ public static class ServiceSchemaCodes {
 			["GET"] = 1, ["POST"] = 2, ["PUT"] = 3, ["PATCH"] = 4, ["DELETE"] = 5
 		};
 
-	// Request placement (ServiceParameterType). "body" is also every response parameter's placement.
+	// Parameter placement (ServiceParameterType). A response parameter uses body, header or cookie.
 	public static readonly IReadOnlyDictionary<string, int> Placements =
 		new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
 			["body"] = 1, ["path"] = 2, ["query"] = 3, ["header"] = 4, ["cookie"] = 5
 		};
 
+	/// <summary>Where a RESPONSE parameter can be read from; Studio offers these three.</summary>
+	public static readonly IReadOnlySet<string> ResponsePlacements =
+		new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "body", "header", "cookie" };
+
 	// The ServiceDesigner's ServiceEnums.DataValueTypeName; the platform stores any string, Studio offers these.
+
 	public static readonly IReadOnlyList<string> DataTypes =
 		["Text", "Integer", "Float", "Boolean", "DateTime", "Date", "Time", "Guid", "Object"];
 

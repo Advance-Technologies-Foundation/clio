@@ -434,6 +434,84 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			["customer.name", "customer.email"], because: "the platform renders each dotted path into the nested body object");
 	}
 
+	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureName("register-web-service keeps header and cookie response parameters and refuses bodies Studio refuses")]
+	[Description("Registers a method whose response parameters are read from a header, a cookie and the body, expects describe to report each placement, then expects a setMethod rebuilt from describe to keep them; finally expects an xml method with a body parameter and a GET with a body parameter to be refused in one answer.")]
+	public async Task RegisterWebService_Should_Keep_Response_Placements_And_Refuse_Invalid_Bodies() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(settings, cts.Token);
+		_serviceCode = UniqueCode("E2eWs");
+		string method = Prefixed("GetStatus");
+		Dictionary<string, object?> Parameter(string code, string place, string path) =>
+			new() { ["code"] = Prefixed(code), ["in"] = place, ["path"] = path };
+
+		// Act
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["package-name"] = PackageName, ["code"] = _serviceCode,
+				["base-uri"] = "https://example.invalid/api",
+				["methods"] = new[] {
+					new Dictionary<string, object?> {
+						["code"] = method, ["http-method"] = "GET", ["uri"] = "status",
+						["response-parameters"] = new[] {
+							Parameter("RequestId", "header", "x-request-id"), Parameter("Session", "cookie", "sid"),
+							Parameter("Status", "body", "$.status")
+						}
+					}
+				}
+			}, cts.Token);
+		registered.Success.Should().BeTrue(because: $"header, cookie and body response parameters are valid; error: {registered.Error}");
+		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode }, cts.Token);
+		described.Success.Should().BeTrue(because: $"the round trip starts from describe; error: {described.Error}");
+		WebServiceMethodView read = described.Service!.Methods.Single();
+		WebServiceToolResult roundTrip = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode,
+				["operations"] = new[] {
+					new Dictionary<string, object?> {
+						["op"] = "setMethod",
+						["method"] = new Dictionary<string, object?> {
+							["code"] = read.Code, ["http-method"] = read.HttpMethod, ["uri"] = read.Uri,
+							["response-parameters"] = read.ResponseParameters
+								.Select(p => new Dictionary<string, object?> { ["code"] = p.Code, ["in"] = p.In, ["path"] = p.Path })
+								.ToArray()
+						}
+					}
+				}
+			}, cts.Token);
+		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode,
+				["operations"] = new[] {
+					new Dictionary<string, object?> { ["op"] = "addMethod", ["method"] = new Dictionary<string, object?> {
+						["code"] = Prefixed("PostXml"), ["http-method"] = "POST", ["uri"] = "xml", ["content-type"] = "xml",
+						["request-parameters"] = new[] { Parameter("Amount", "body", "amount") } } },
+					new Dictionary<string, object?> { ["op"] = "addMethod", ["method"] = new Dictionary<string, object?> {
+						["code"] = Prefixed("GetWithBody"), ["http-method"] = "GET", ["uri"] = "get",
+						["request-parameters"] = new[] { Parameter("Filter", "body", "filter") } } }
+				}
+			}, cts.Token);
+
+		// Assert
+		read.ResponseParameters.Select(p => p.In).Should().BeEquivalentTo(["header", "cookie", "body"],
+			because: "describe reports where each response parameter is read from");
+		roundTrip.Success.Should().BeTrue(because: $"a setMethod rebuilt from describe is valid; error: {roundTrip.Error}");
+		roundTrip.Service!.Methods.Single().ResponseParameters.Select(p => p.In).Should().BeEquivalentTo(
+			["header", "cookie", "body"], because: "the round trip must not turn a header or cookie value into a body value");
+		refused.Success.Should().BeFalse(because: "Studio refuses an xml method with a body parameter and a GET with one");
+		refused.Error.Should().Contain("xml method", because: "the xml refusal is reported");
+		refused.Error.Should().Contain("GET method", because: "the GET refusal is reported in the same answer");
+	}
+
 	/// <summary>
 	/// Inserts an OAuth application with placeholder endpoints and a placeholder client id; it carries no secret.
 	/// Only ClientId is required by the entity. The id is recorded BEFORE the insert, so the teardown deletes the

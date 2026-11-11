@@ -152,7 +152,30 @@ public static partial class WebServiceDefinitionBuilder {
 			}
 		};
 		ValidatePathPlaceholders(code, uri, method.Request.Parameters, errors);
+		ValidateBodyRules(code, verb, contentType, method, errors);
 		return method;
+	}
+
+	/// <summary>
+	/// The two body rules Studio's method page enforces (<c>WebServiceMethodPage._requestTypeValidator</c>,
+	/// <c>RestWebServiceMethodPage._contentTypeValidator</c>): a GET has no body parameter, and an XML method has no
+	/// body parameter in its request or its response. The platform builds a REST body as JSON only, so an XML method
+	/// with one fails at call time ("Rest:Xml"), and .NET refuses a GET with a body; Studio cannot save either.
+	/// </summary>
+	private static void ValidateBodyRules(string code, int verb, int contentType, ServiceMethodDto method, Errors errors) {
+		int body = ServiceSchemaCodes.Placements["body"];
+		bool requestBody = method.Request.Parameters.Items.Values.Any(p => p.Type == body);
+		bool responseBody = method.Response.Parameters.Items.Values.Any(p => p.Type == body);
+		if (verb == ServiceSchemaCodes.HttpMethods["GET"] && requestBody) {
+			errors.Add($"method '{code}': a GET method cannot have body request parameters; use query or path parameters, "
+				+ "or another http-method.");
+		}
+		if (contentType == ServiceSchemaCodes.ContentTypeXml && (requestBody || responseBody)) {
+			errors.Add($"method '{code}': an xml method cannot have body parameters in its request or response (Studio "
+				+ "refuses them and the platform builds REST bodies as JSON only); keep path, query, header and cookie "
+				+ "parameters, and let a process send the XML through the Call web service element's RequestBody and read "
+				+ "its Response.");
+		}
 	}
 
 	public static IReadOnlyCollection<string> CollectSysSettingCodes(ServiceSchemaDto schema) {
@@ -170,7 +193,7 @@ public static partial class WebServiceDefinitionBuilder {
 
 	private static ServiceItemCollection<ServiceParameterDto> BuildParameters(
 		IReadOnlyList<WebServiceParameterArg> args, ServiceItemCollection<ServiceParameterDto> existing,
-		bool isRequest, string owner, Errors errors, string prefix) {
+		bool isRequest, string owner, Errors errors, string prefix, bool nested = false) {
 		var result = new ServiceItemCollection<ServiceParameterDto>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (WebServiceParameterArg arg in args ?? []) {
@@ -186,6 +209,13 @@ public static partial class WebServiceDefinitionBuilder {
 				.FirstOrDefault(p => string.Equals(p.Name, arg.Code, StringComparison.OrdinalIgnoreCase));
 			if (!string.Equals(previous?.Name, arg.Code, StringComparison.Ordinal)) {
 				RequireNewParameterNames($"{owner} parameter", arg, prefix, isRequest, errors);
+			}
+			if (nested && arg.In is not null && !string.Equals(arg.In, "body", StringComparison.OrdinalIgnoreCase)) {
+				// A field of an Object array element is read from that element; the platform fills header and cookie
+				// values for top-level parameters only.
+				errors.Add($"{owner} parameter '{arg.Code}': a field inside an Object array has no placement of its own; "
+					+ "omit in.");
+				continue;
 			}
 			ServiceParameterDto parameter = BuildParameter(arg, previous, isRequest, $"{owner} parameter '{arg.Code}'",
 				errors, prefix);
@@ -204,8 +234,17 @@ public static partial class WebServiceDefinitionBuilder {
 			errors.Add($"{owner}: in '{arg.In}' must be path, query, header, body or cookie.");
 			return null;
 		}
-		if (!isRequest && arg.In is not null && !string.Equals(arg.In, "body", StringComparison.OrdinalIgnoreCase)) {
-			errors.Add($"{owner}: response parameters are read from the body; omit in or use body.");
+		// A response parameter is read from the body, a response header or a response cookie (Studio offers the
+		// three; ServiceClientResponse reads header and cookie values by the parameter's path, case-sensitively).
+		if (!isRequest && arg.In is not null && (!ServiceSchemaCodes.ResponsePlacements.Contains(arg.In)
+				|| !ServiceSchemaCodes.Placements.TryGetValue(arg.In, out placement))) {
+			errors.Add($"{owner}: in '{arg.In}' must be body, header or cookie for a response parameter.");
+			return null;
+		}
+		if (placement != ServiceSchemaCodes.Placements["body"] && placement != ServiceSchemaCodes.Placements["path"]
+				&& placement != ServiceSchemaCodes.Placements["query"] && (arg.Type is not null
+				&& string.Equals(arg.Type, "Object", StringComparison.OrdinalIgnoreCase) || arg.Items is { Count: > 0 })) {
+			errors.Add($"{owner}: a header or cookie parameter carries one value; it cannot be an Object or have items.");
 		}
 		string type = ServiceSchemaCodes.DataTypes.FirstOrDefault(
 			t => string.Equals(t, arg.Type ?? "Text", StringComparison.OrdinalIgnoreCase));
@@ -241,7 +280,8 @@ public static partial class WebServiceDefinitionBuilder {
 			DefValue = defValue,
 			Caption = Caption(arg.Caption ?? arg.Code),
 			Extra = previous?.Extra,
-			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties, isRequest, owner, errors, prefix)
+			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties, isRequest, owner, errors, prefix,
+				nested: true)
 		};
 	}
 
@@ -262,13 +302,15 @@ public static partial class WebServiceDefinitionBuilder {
 		if (string.IsNullOrEmpty(prefix)) {
 			return;
 		}
-		string example = $"code '{prefix}{char.ToUpperInvariant(arg.Code[0])}{arg.Code[1..]}', path '{(isRequest ? arg.Code : "$." + arg.Code)}'";
+		bool responseBody = !isRequest && (arg.In is null || string.Equals(arg.In, "body", StringComparison.OrdinalIgnoreCase));
+		string example = $"code '{prefix}{char.ToUpperInvariant(arg.Code[0])}{arg.Code[1..]}', path '{(responseBody ? "$." + arg.Code : arg.Code)}'";
 		if (!arg.Code.StartsWith(prefix, StringComparison.Ordinal)) {
 			errors.Add($"{owner} code '{arg.Code}' must start with the environment's schema-name prefix '{prefix}', or "
 				+ $"Studio refuses to save the method; keep the wire name in path, e.g. {example}.");
 		} else if (string.IsNullOrWhiteSpace(arg.Path)) {
 			errors.Add($"{owner} '{arg.Code}' needs path: its code carries the schema-name prefix, so it is not the "
-				+ "name the API sees; give the wire name (a JSONPath such as $.status for a response value).");
+				+ "name the API sees; give the wire name (a JSONPath such as $.status for a response body value, the "
+				+ "header or cookie name for a response header or cookie).");
 		}
 	}
 

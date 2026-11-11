@@ -100,6 +100,91 @@ public static class WebServiceResponseMasker {
 		return result;
 	}
 
+	/// <summary>
+	/// Masks a response BODY. In a JSON body every value that carries a secret is masked - strings inside, numbers
+	/// and booleans whole - and a property NAME only when the secret is token-like (see <see cref="IsTokenLike"/>),
+	/// so a short login such as "user" next to a "user" key does not wipe the structure. Any other body, and any
+	/// JSON the parser or the walk rejects (duplicate keys among them), is masked as plain text.
+	/// </summary>
+	/// <param name="body">The response body.</param>
+	/// <param name="secrets">Values from <see cref="SentSecrets"/>.</param>
+	/// <param name="masked">Whether anything was replaced.</param>
+	/// <returns>The body without the secrets; unchanged, byte for byte, when nothing was masked.</returns>
+	public static string ApplyToBody(string body, IReadOnlyList<string> secrets, out bool masked) {
+		masked = false;
+		if (string.IsNullOrEmpty(body) || secrets is not { Count: > 0 }) {
+			return body;
+		}
+		try {
+			JsonNode root = JsonNode.Parse(body);
+			if (root is not (JsonObject or JsonArray)) {
+				return Apply(body, secrets, out masked);
+			}
+			bool any = false;
+			JsonNode result = MaskNode(root, secrets, ref any);
+			masked = any;
+			return any ? result.ToJsonString(IndentedRelaxedJson) : body;
+		} catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException) {
+			// JsonNode parses lazily: a duplicate key surfaces as ArgumentException during the walk.
+			return Apply(body, secrets, out masked);
+		}
+	}
+
+	private static readonly JsonSerializerOptions IndentedRelaxedJson =
+		new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
+
+	/// <summary>
+	/// A secret that looks like a key, token or password rather than a plain word: at least eight characters, or one
+	/// that contains a digit or a symbol. Only such a secret is masked in a JSON property name.
+	/// </summary>
+	private static bool IsTokenLike(string secret) =>
+		secret.Length >= 8 || secret.Any(c => !char.IsLetter(c));
+
+	private static JsonNode MaskNode(JsonNode node, IReadOnlyList<string> secrets, ref bool masked) {
+		switch (node) {
+			case JsonObject obj: {
+				var rebuilt = new JsonObject();
+				List<KeyValuePair<string, JsonNode>> properties = obj.ToList();
+				obj.Clear();
+				foreach (KeyValuePair<string, JsonNode> property in properties) {
+					string key = Apply(property.Key, secrets.Where(IsTokenLike).ToList(), out bool keyMasked);
+					masked |= keyMasked;
+					JsonNode value = property.Value is null ? null : MaskNode(property.Value, secrets, ref masked);
+					// Two keys masked to the same text keep both values: a suffix keeps them apart.
+					string unique = key;
+					for (int n = 2; rebuilt.ContainsKey(unique); n++) {
+						unique = $"{key}#{n}";
+					}
+					rebuilt[unique] = value;
+				}
+				return rebuilt;
+			}
+			case JsonArray array: {
+				var rebuilt = new JsonArray();
+				List<JsonNode> items = array.ToList();
+				array.Clear();
+				foreach (JsonNode item in items) {
+					rebuilt.Add(item is null ? null : MaskNode(item, secrets, ref masked));
+				}
+				return rebuilt;
+			}
+			case JsonValue value when value.TryGetValue(out string text): {
+				string replaced = Apply(text, secrets, out bool changed);
+				masked |= changed;
+				return changed ? JsonValue.Create(replaced) : value;
+			}
+			case JsonValue value: {
+				// A number or a boolean: masked whole when its text carries a secret (an account number, a PIN).
+				string text = value.ToJsonString();
+				Apply(text, secrets, out bool changed);
+				masked |= changed;
+				return changed ? JsonValue.Create(Mask) : value;
+			}
+			default:
+				return node;
+		}
+	}
+
 	private static IEnumerable<string> Forms(string secret) {
 		yield return secret;
 		string escaped = Uri.EscapeDataString(secret);
