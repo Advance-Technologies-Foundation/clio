@@ -3230,6 +3230,37 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The create-sys-setting contract tells callers that the setting exists only on the target environment and routes shipping it with a package through the SysSettings / SysSettingsValue binding pair.")]
+	public void ToolContractGet_Should_Return_CreateSysSetting_Contract_With_Package_Binding_Flow() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
+			SysSettingCreateTool.CreateSysSettingToolName
+		]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Description.Should().Contain("exists only on the target environment",
+			because: "an agent that stops after create-sys-setting ships package code that reads a setting the next environment does not have");
+		contract.Description.Should().Contain("name=sys-settings",
+			because: "the description must route to the guide that owns the shipping procedure");
+		contract.PreferredFlow.Tools.Should().Equal(
+			[
+				SysSettingCreateTool.CreateSysSettingToolName,
+				SysSettingUpdateTool.UpdateSysSettingToolName,
+				CreateDataBindingDbTool.CreateDataBindingDbToolName,
+				ReadDataBindingDbTool.ReadDataBindingDbToolName
+			],
+			because: "the preferred flow must continue past the environment write to the package bindings and their read-back");
+		contract.PreferredFlow.Notes.Should().ContainAll(
+			["SysSettings_<Code>", "SysSettingsValue_<Code>", "binding-name", "TextValue", "set the value first"],
+			because: "the notes must carry the binding names and the two rules whose omission makes the binding fail or ship an empty value");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the canonical list-sys-settings contract documenting that Binary settings are listed (value shown as <binary>) and written via value-file-path.")]
 	public void ToolContractGet_Should_Return_ListSysSettings_Contract_With_Binary_Note() {
 		ToolContractGetTool tool = new();
