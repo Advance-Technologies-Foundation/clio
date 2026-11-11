@@ -83,7 +83,7 @@ public class CreateBusinessProcessTool(
 		 + "record author; it reads only the address this field writes, and sends nothing when it is empty. THREE parameters are DERIVED from 'object' server-side and never accepted as input — the visa "
 		 + "schema, its master column and the section — with the platform's SysApproval fallback when the object has "
 		 + "no approval settings. BRANCHING on the outcome needs no gateway and is declared WHERE THE FLOW "
-		 + "IS: flows[].kind 'conditional' plus flows[].results with the verdict captions, which are exactly "
+		 + "IS: flows[].kind 'conditional' plus flows[].results with the verdict codes, which are exactly "
 		 + "'Positive', 'Negative' and 'Canceled' - the final VisaStatus values, NOT 'Approved'/'Rejected', "
 		 + "which the server does not accept. Do NOT use a formula here, and this is the instruction on this "
 		 + "element most likely to be got wrong because it was the advice given until CrtProcessBuilder "
