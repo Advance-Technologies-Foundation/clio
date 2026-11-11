@@ -1168,6 +1168,12 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "the page contract should advertise odata-read lookup validation for condition constants");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "page-attribute" &&
+				validator.Field == "rules[*].condition.conditions[*].leftExpression.path" &&
+				validator.Context!.Contains("'$RentalStep' gives 'RentalStep'", StringComparison.Ordinal) &&
+				validator.Context.Contains("'<StepperName>_ActiveStep' when activeStep is unbound or a constant step name", StringComparison.Ordinal),
+			because: "the contract should name both stepper active-step forms: the bound attribute and the generated name");
 		contract.PreferredFlow.Tools.Should().Equal(
 			[
 				PageListTool.ToolName,

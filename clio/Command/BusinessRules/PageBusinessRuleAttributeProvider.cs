@@ -15,15 +15,10 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 	private const string PageParametersScopeName = "PageParameters";
 
-	// Attributes a view-config component generates at runtime. The page body never declares them, so
-	// they are absent from the view-model attributes; each rule exposes "<component name><suffix>" as an
-	// unscoped attribute of the given type for every named component of that type. Add a row to support
-	// another component that behaves the same way.
-	private static readonly ComponentRuntimeAttribute[] ComponentRuntimeAttributes = [
-		new("crt.Stepper", "_ActiveStep", "Text") // the open step's name, compared with a step name
-	];
-
-	private sealed record ComponentRuntimeAttribute(string ComponentType, string Suffix, string DataValueTypeName);
+	private const string StepperComponentType = "crt.Stepper";
+	private const string ActiveStepPropertyName = "activeStep";
+	private const string GeneratedActiveStepSuffix = "_ActiveStep";
+	private const string ActiveStepDataValueTypeName = "Text";
 
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
@@ -71,7 +66,7 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
 		AddPageParameterAttributes(result, parametersByName);
-		AddComponentRuntimeAttributes(result, bundle);
+		AddStepperActiveStepAttributes(result, bundle, attributes);
 		return result;
 	}
 
@@ -95,21 +90,66 @@ internal sealed class PageBusinessRuleAttributeProvider(
 		}
 	}
 
-	private static void AddComponentRuntimeAttributes(
+	// The open step of every named crt.Stepper the platform prepares, compared with a step name.
+	// A declared attribute of the same name keeps its own scoped, typed descriptor.
+	private static void AddStepperActiveStepAttributes(
 		IDictionary<string, BusinessRuleAttributeDescriptor> result,
-		PageBundleInfo bundle) {
-		foreach ((string? componentType, string componentName) in ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
-			foreach (ComponentRuntimeAttribute rule in ComponentRuntimeAttributes) {
-				if (!string.Equals(rule.ComponentType, componentType, StringComparison.Ordinal)) {
-					continue;
-				}
-				// A declared attribute of the same name keeps its own scoped, typed descriptor.
-				string attributeName = componentName + rule.Suffix;
-				result.TryAdd(attributeName, new BusinessRuleAttributeDescriptor(attributeName, rule.DataValueTypeName, null) {
-					IsRuntimeGenerated = true
-				});
+		PageBundleInfo bundle,
+		JsonObject attributes) {
+		foreach ((string? componentType, string componentName, JsonObject element) in
+			ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
+			if (!string.Equals(componentType, StepperComponentType, StringComparison.Ordinal)
+				|| !TryResolveActiveStepAttribute(element, componentName, attributes, out string attributeName)) {
+				continue;
+			}
+			result.TryAdd(attributeName, new BusinessRuleAttributeDescriptor(attributeName, ActiveStepDataValueTypeName, null) {
+				IsComponentAttribute = true
+			});
+		}
+	}
+
+	// Unbound activeStep or a constant step name: the generated "<name>_ActiveStep", dots in the name
+	// becoming underscores. Bound to a plain "$Attr": that attribute. Any other binding (a nested path, a
+	// converter, an attribute bound to a record column) leaves the stepper unprepared, so it has no
+	// active-step attribute.
+	private static bool TryResolveActiveStepAttribute(
+		JsonObject stepper,
+		string stepperName,
+		JsonObject attributes,
+		out string attributeName) {
+		attributeName = string.Empty;
+		JsonNode? binding = stepper[ActiveStepPropertyName];
+		string? text = null;
+		if (binding is not null && (binding is not JsonValue value || !value.TryGetValue(out text))) {
+			return false;
+		}
+		if (text is null || !text.StartsWith('$')) {
+			attributeName = stepperName.Replace('.', '_') + GeneratedActiveStepSuffix;
+			return true;
+		}
+		if (!TryGetPlainAttributeBinding(text, out string boundName)
+			|| IsModelBoundAttribute(attributes, boundName)) {
+			return false;
+		}
+		attributeName = boundName;
+		return true;
+	}
+
+	private static bool IsModelBoundAttribute(JsonObject attributes, string attributeName) =>
+		attributes[attributeName] is JsonObject attribute && attribute["modelConfig"] is not null;
+
+	private static bool TryGetPlainAttributeBinding(string binding, out string attributeName) {
+		attributeName = string.Empty;
+		if (binding.Length < 2 || binding[0] != '$' || char.IsDigit(binding[1])) {
+			return false;
+		}
+		for (int i = 1; i < binding.Length; i++) {
+			if (!char.IsAsciiLetterOrDigit(binding[i]) && binding[i] != '_') {
+				return false;
 			}
 		}
+		attributeName = binding[1..];
+		return true;
 	}
 
 	private static Dictionary<string, PageParameterInfo> BuildParameterMap(PageBundleInfo bundle) {

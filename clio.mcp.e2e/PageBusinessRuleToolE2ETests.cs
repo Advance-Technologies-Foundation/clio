@@ -208,12 +208,13 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Category("McpE2E.NoEnvironment")]
-	[Test]
-	[Description("Binds a stepper active-step condition payload (a '<StepperName>_ActiveStep' path) through the real MCP server and reports an invalid environment failure from command execution.")]
+	[TestCase("RequestStepper_ActiveStep", TestName = "BusinessRuleCreate_Should_Bind_Stepper_Active_Step_Condition_Payload_And_Report_Invalid_Environment(generated)")]
+	[TestCase("RequestStep", TestName = "BusinessRuleCreate_Should_Bind_Stepper_Active_Step_Condition_Payload_And_Report_Invalid_Environment(bound)")]
+	[Description("Binds a stepper active-step condition payload (the generated '<StepperName>_ActiveStep' or the attribute a bound activeStep names) through the real MCP server and reports an invalid environment failure from command execution.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool binds stepper active-step condition paths")]
-	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with a condition on a '<StepperName>_ActiveStep' path and an intentionally missing environment, then verifies the payload binds and reaches command execution instead of failing MCP payload binding.")]
-	public async Task BusinessRuleCreate_Should_Bind_Stepper_Active_Step_Condition_Payload_And_Report_Invalid_Environment() {
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with a condition on a stepper's active-step attribute (generated or bound) and an intentionally missing environment, then verifies the payload binds and reaches command execution instead of failing MCP payload binding.")]
+	public async Task BusinessRuleCreate_Should_Bind_Stepper_Active_Step_Condition_Payload_And_Report_Invalid_Environment(string activeStepPath) {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
 		string invalidEnvironmentName = $"missing-stepper-env-{Guid.NewGuid():N}";
@@ -226,7 +227,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrRentalRequestWizard_FormPage",
-					["rules"] = new object[] { CreateStepperActiveStepConditionRule() }
+					["rules"] = new object[] { CreateStepperActiveStepConditionRule(activeStepPath) }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -234,7 +235,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		callResult.IsError.Should().NotBeTrue(
-			because: "a condition using a '<StepperName>_ActiveStep' path should bind and return the standard command execution envelope");
+			because: "a condition on a stepper's active-step attribute should bind and return the standard command execution envelope");
 		execution.ExitCode.Should().NotBe(0,
 			because: "the intentionally missing environment should fail during command execution");
 		execution.Output.Should().Contain(message =>
@@ -1199,14 +1200,14 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			}
 		};
 
-	private static IReadOnlyDictionary<string, object?> CreateStepperActiveStepConditionRule() =>
+	private static IReadOnlyDictionary<string, object?> CreateStepperActiveStepConditionRule(string activeStepPath) =>
 		new Dictionary<string, object?> {
 			["caption"] = "Show label while the delivery step is open",
 			["condition"] = new Dictionary<string, object?> {
 				["logicalOperation"] = "AND",
 				["conditions"] = new object[] {
 					new Dictionary<string, object?> {
-						["leftExpression"] = CreateAttributeExpression("RequestStepper_ActiveStep"),
+						["leftExpression"] = CreateAttributeExpression(activeStepPath),
 						["comparisonType"] = "equal",
 						["rightExpression"] = new Dictionary<string, object?> {
 							["type"] = "Const",
