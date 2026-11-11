@@ -1914,6 +1914,26 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Refuses an invalid background in brand mode before the version gate and the CSS build run.")]
+	public void CreateTheme_ShouldRefuseAnInvalidBackground_BeforeTheBrandBuild() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
+			Caption: "Ocean", Primary: "#004fd6", BackgroundColor: "red"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a color that is not hex is refused");
+		result.Error.Should().Be("background-color 'red' is not a hex color (#RGB, #RRGGBB or #RRGGBBAA).",
+			because: "the refusal names the argument and its accepted forms");
+		commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "neither the environment nor the theme build is touched for an argument refused locally");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Maps background-color and keep-icon-background into the create options in inline mode.")]
 	public void CreateTheme_ShouldMapTheBackgroundColorAndKeepIconBackground_WhenInlineModeSupplied() {
 		// Arrange

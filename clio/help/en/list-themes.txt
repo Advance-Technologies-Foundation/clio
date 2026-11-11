@@ -8,7 +8,8 @@ DESCRIPTION
     list-themes prints the custom themes available on the target environment,
     reading them from the native ThemeService.svc/GetAvailableThemes endpoint.
     For each theme it shows the id, caption, CSS class name, CSS file path,
-    and background (see get-theme).
+    and background: the mode with the image id or the color, empty when the
+    theme has none.
 
     The command requires Creatio 10.0.0 or later on the target environment and
     the CanCustomizeBranding license; a caller without the license receives an

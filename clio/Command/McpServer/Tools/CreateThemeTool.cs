@@ -120,6 +120,10 @@ public class CreateThemeTool(
 				: $"{ErrorCodes.CssSourceMissing}: provide either css-content (inline CSS) or primary (brand colours; " +
 					"clio builds the theme CSS server-side and creates the theme in one call).");
 		}
+		if (!ThemeBackground.TryParse(args.BackgroundImageId, args.BackgroundColor, allowRemoval: false, out _,
+				out string backgroundError)) {
+			return CreateThemeResult.Failure(backgroundError);
+		}
 		CreateThemeOptions options = new() {
 			Environment = args.EnvironmentName,
 			Caption = args.Caption,
