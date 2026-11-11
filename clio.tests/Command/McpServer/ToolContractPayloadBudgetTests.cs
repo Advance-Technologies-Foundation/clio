@@ -104,9 +104,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-pinned for ENG-105681: get-page-modal-size and set-page-modal-size are two more long-tail tools. Measured
 	// 49486 bytes with them registered (78 over 49408), after shortening their first sentences so the line index
 	// below still fits; next 256-byte step is 49664 (194).
-	// Re-pinned for ENG-105556: create-dynamic-case is one more long-tail tool. Measured with it on top of the two above;
-	// still inside the 49664 (194) step.
-	private const int MaxCompactIndexSerializedBytes = 194 * 256;
+	// Re-pinned for ENG-105556: create-dynamic-case is one more long-tail tool. Measured 49716 bytes with it on top of
+	// the two above (52 over 49664); next 256-byte step is 49920 (195).
+	private const int MaxCompactIndexSerializedBytes = 195 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -130,7 +130,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	//
 	// Re-pinned for ENG-101678: get-entity-connections and update-entity-connections add two lines. Measured
 	// 18244 bytes (68 over 18176); next 256-byte step is 18432 (72), 568 bytes under the 19000-byte spill line.
-	private const int MaxToolIndexSerializedBytes = 72 * 256;
+	//
+	// Re-pinned for ENG-105556: create-dynamic-case adds one line on top of get-page-modal-size and
+	// set-page-modal-size. Measured 18503 bytes (71 over 18432); next 256-byte step is 18688 (73), 312 bytes under
+	// the 19000-byte spill line, so the next long-tail tool has to pay with a shorter legend or purpose cut.
+	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
