@@ -238,6 +238,41 @@ public sealed class DynamicCaseRecordPageResolverTests {
 	}
 
 	[Test]
+	[Description("A default bound to a custom role is another audience's page: the employee default is chosen next to it.")]
+	public void Resolve_ShouldSkipACustomRoleDefault_WhenAnEmployeeDefaultExists() {
+		// Arrange
+		AddonLists("UsrOrder",
+			Entry("UsrOrders_SalesPage", role: "3f1d8f0c-0d0a-4c4e-9a43-2a1f5c7e9b11", roleName: "Sales department"),
+			Entry("UsrOrders_FormPage", role: AllEmployeesId, roleName: "All employees"));
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "UsrOrder", null);
+
+		// Assert
+		resolution.PageSchemaNames.Should().Equal(["UsrOrders_FormPage"],
+			because: "decorating the custom-role page would change what another audience sees");
+	}
+
+	[Test]
+	[Description("When the only add-on default belongs to a custom role, the add-on names no employee page and the card registration decides.")]
+	public void Resolve_ShouldFallBackToTheCard_WhenTheOnlyDefaultHasACustomRole() {
+		// Arrange
+		AddonLists("UsrOrder",
+			Entry("UsrOrders_SalesPage", role: "3f1d8f0c-0d0a-4c4e-9a43-2a1f5c7e9b11", roleName: "Sales department"));
+		CardsAre("UsrOrder", new MigrationEditPageInfo {
+			CardSchema = "UsrOrders_FormPage", Kind = ListEntityClientSchemasCommand.KindFreedom
+		});
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "UsrOrder", null);
+
+		// Assert
+		resolution.PageSchemaNames.Should().Equal(["UsrOrders_FormPage"], because: "the card is the employees' page");
+		resolution.ResolvedBy.Should().Be(DynamicCaseRecordPageResolver.ResolvedBySysModuleEdit,
+			because: "the add-on had no employee default");
+	}
+
+	[Test]
 	[Description("An add-on that lists two untyped employee defaults is ambiguous.")]
 	public void Resolve_ShouldBeAmbiguous_WhenTheAddonListsTwoUntypedDefaults() {
 		// Arrange
