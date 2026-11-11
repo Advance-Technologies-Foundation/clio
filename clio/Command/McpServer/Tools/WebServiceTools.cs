@@ -142,7 +142,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData,
 				"Valid: environment-name, code, method, parameters.");
 			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args.EnvironmentName);
-			return designer.TestMethod(args.Code, args.Method, args.Parameters);
+			return designer.TestMethod(args.Code, args.Method, WebServiceToolRunner.ToWireValues(args.Parameters));
 		} catch (Exception exception) {
 			return new WebServiceTestResult(false, WebServiceToolRunner.Describe(exception));
 		}
@@ -176,6 +176,33 @@ internal static class WebServiceToolRunner {
 		} catch (Exception exception) {
 			return new WebServiceToolResult(false, Describe(exception));
 		}
+	}
+
+	/// <summary>
+	/// Test-call values as the platform's test call takes them: text. A JSON number or boolean is written as its JSON
+	/// text (1.5, true), so an agent that sends an amount as a number is not refused; null leaves the parameter out.
+	/// </summary>
+	public static IReadOnlyDictionary<string, string> ToWireValues(IReadOnlyDictionary<string, JsonElement> values) {
+		if (values is null) {
+			return null;
+		}
+		var result = new Dictionary<string, string>(StringComparer.Ordinal);
+		foreach ((string code, JsonElement value) in values) {
+			switch (value.ValueKind) {
+				case JsonValueKind.Null or JsonValueKind.Undefined:
+					break;
+				case JsonValueKind.String:
+					result[code] = value.GetString();
+					break;
+				case JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False:
+					result[code] = value.GetRawText();
+					break;
+				default:
+					throw new ArgumentException($"parameters: '{code}' is an object or an array; the test call takes "
+						+ "one text, number or boolean value per top-level parameter.");
+			}
+		}
+		return result;
 	}
 
 	public static string Describe(Exception exception) =>
@@ -288,8 +315,8 @@ public sealed record TestWebServiceMethodArgs(
 	string Method,
 
 	[property: JsonPropertyName("parameters")]
-	[property: Description("Values of top-level request parameters by code")]
-	IReadOnlyDictionary<string, string> Parameters = null) {
+	[property: Description("Values of top-level request parameters by code; text, numbers and booleans are accepted")]
+	IReadOnlyDictionary<string, JsonElement> Parameters = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

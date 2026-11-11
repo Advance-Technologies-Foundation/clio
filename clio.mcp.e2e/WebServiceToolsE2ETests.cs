@@ -296,9 +296,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["operations"] = new[] {
 					new Dictionary<string, object?> {
 						["op"] = "setAuth",
-						["auth"] = new Dictionary<string, object?> {
-							["type"] = "oauth20", ["oauth-app"] = described.Service?.Auth?.OAuthAppId
-						}
+						// The auth block exactly as describe returned it: oauth-app-id and the read-only flag included.
+						["auth"] = described.Service?.Auth
 					}
 				}
 			}, cts.Token);
@@ -496,9 +495,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 						["op"] = "setMethod",
 						["method"] = new Dictionary<string, object?> {
 							["code"] = read.Code, ["http-method"] = read.HttpMethod, ["uri"] = read.Uri,
+							// The parameters exactly as describe returned them, read-only fields included.
 							["response-parameters"] = read.ResponseParameters
-								.Select(p => new Dictionary<string, object?> { ["code"] = p.Code, ["in"] = p.In, ["path"] = p.Path })
-								.ToArray()
 						}
 					}
 				}

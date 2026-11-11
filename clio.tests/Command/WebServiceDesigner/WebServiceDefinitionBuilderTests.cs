@@ -539,6 +539,121 @@ public sealed class WebServiceDefinitionBuilderTests {
 	}
 
 	[Test]
+	[Description("A parameter read back by describe-web-service, read-only default-masked included, is valid input for a rebuild.")]
+	public void Describe_Shaped_Parameter_Should_Deserialize_Without_Unknown_Fields() {
+		// Arrange
+		const string described = """
+			{"code":"UsrApiKey","caption":"UsrApiKey","in":"header","path":"X-Api-Key","type":"Text","array":false,
+			 "required":false,"default-sys-setting":null,"default-value":null,"default-masked":true,"items":[]}
+			""";
+
+		// Act
+		WebServiceParameterArg arg = System.Text.Json.JsonSerializer.Deserialize<WebServiceParameterArg>(described);
+
+		// Assert
+		arg.ExtensionData.Should().BeNullOrEmpty(because: "every field describe returns is a known argument, read-only ones included");
+		arg.DefaultMasked.Should().BeTrue(because: "the read-only flag binds and is then ignored");
+	}
+
+	[Test]
+	[Description("A kept parameter whose secret constant default describe hides keeps that default when the rebuild sends none.")]
+	public void BuildMethod_Should_Keep_A_Hidden_Secret_Constant_On_Rebuild() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key")]),
+			null, false, errors);
+		ServiceParameterDto key = existing.Request.Parameters.Items.Values.Single();
+		key.DefValue = new ServiceParameterValueDto { Value = "sk-studio-1", Source = ServiceSchemaCodes.ValueSourceConst };
+		WebServiceMethodArg rebuilt = new("Search", "GET", "search", TimeoutMs: 9000, RequestParameters: [
+			new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultMasked: true)
+		]);
+
+		// Act
+		ServiceMethodDto built = WebServiceDefinitionBuilder.BuildMethod(rebuilt, existing, false, errors, "Usr");
+
+		// Assert
+		errors.Should().BeEmpty(because: "the kept header is resent as describe showed it");
+		ServiceParameterValueDto kept = built.Request.Parameters.Items.Values.Single().DefValue;
+		kept.Value.Should().Be("sk-studio-1", because: "describe hid the constant, so leaving it out must not erase it");
+		kept.Source.Should().Be(ServiceSchemaCodes.ValueSourceConst, because: "the default stays a constant");
+	}
+
+	[Test]
+	[Description("A hidden secret constant is not carried into a visible place; an explicit empty default clears it; a system setting replaces it.")]
+	public void BuildMethod_Should_Not_Expose_Or_Pin_A_Hidden_Secret_Constant() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [new WebServiceParameterArg("XPartner", "header", Path: "X-Partner")]),
+			null, false, errors);
+		existing.Request.Parameters.Items.Values.Single().DefValue =
+			new ServiceParameterValueDto { Value = "s3cr3t-partner", Source = ServiceSchemaCodes.ValueSourceConst };
+		WebServiceMethodArg Moved(WebServiceParameterArg p) => new("Search", "GET", "search", RequestParameters: [p]);
+		var movedErrors = new WebServiceDefinitionBuilder.Errors();
+		var clearedErrors = new WebServiceDefinitionBuilder.Errors();
+		var settingErrors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(Moved(new WebServiceParameterArg("XPartner", "query", Path: "partner")),
+			existing, false, movedErrors);
+		ServiceMethodDto cleared = WebServiceDefinitionBuilder.BuildMethod(
+			Moved(new WebServiceParameterArg("XPartner", "header", Path: "X-Partner", DefaultValue: "")), existing, false, clearedErrors);
+		ServiceMethodDto setting = WebServiceDefinitionBuilder.BuildMethod(
+			Moved(new WebServiceParameterArg("XPartner", "header", Path: "X-Partner", DefaultSysSetting: "UsrPartnerKey")),
+			existing, false, settingErrors);
+
+		// Assert
+		movedErrors.Should().ContainSingle(because: "a query parameter would print the secret in the next reply and send it in the URL")
+			.Which.Should().NotContain("s3cr3t-partner", because: "the refusal never repeats the hidden value");
+		clearedErrors.Should().BeEmpty(because: "an explicit empty default is how a hidden constant is removed");
+		cleared.Request.Parameters.Items.Values.Single().DefValue.Value.Should().BeEmpty(
+			because: "the cleared parameter sends no constant any more");
+		settingErrors.Should().BeEmpty(because: "a system-setting reference is the allowed replacement");
+		setting.Request.Parameters.Items.Values.Single().DefValue.Source.Should().Be(ServiceSchemaCodes.ValueSourceSysSetting,
+			because: "the setting replaces the hidden constant instead of being ignored");
+	}
+
+	[Test]
+	[Description("A constant describe shows (not secret-like) is dropped when the rebuild leaves it out, since the caller saw it.")]
+	public void BuildMethod_Should_Drop_A_Visible_Constant_The_Rebuild_Omits() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search",
+				RequestParameters: [new WebServiceParameterArg("page", "query", DefaultValue: "1")]), null, false, errors);
+
+		// Act
+		ServiceMethodDto rebuilt = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [new WebServiceParameterArg("page", "query")]),
+			existing, false, errors);
+
+		// Assert
+		errors.Should().BeEmpty(because: "the rebuild is valid");
+		rebuilt.Request.Parameters.Items.Values.Single().DefValue.Value.Should().BeEmpty(
+			because: "only a constant describe hid is kept; a visible one the caller left out is removed");
+	}
+
+	[Test]
+	[Description("An unknown field in the auth block is reported readably after error redaction.")]
+	public void BuildAuth_Unknown_Field_Message_Should_Survive_Redaction() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		var auth = new WebServiceAuthArg("none") {
+			ExtensionData = new Dictionary<string, System.Text.Json.JsonElement> {
+				["tokenUrl"] = System.Text.Json.JsonDocument.Parse("\"x\"").RootElement
+			}
+		};
+
+		// Act
+		WebServiceDefinitionBuilder.BuildAuth(auth, null, errors);
+		string redacted = Clio.Common.SensitiveErrorTextRedactor.Redact(string.Join(" ", errors));
+
+		// Assert
+		redacted.Should().Contain("unknown field(s) tokenUrl", because: "the agent needs the field name to correct the call");
+	}
+
+	[Test]
 	[Description("A service code without the environment prefix is refused.")]
 	public void ValidateServiceCode_Should_Require_Prefix() {
 		// Arrange

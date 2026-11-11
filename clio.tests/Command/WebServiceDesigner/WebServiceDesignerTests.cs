@@ -330,6 +330,88 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("setAuth accepts the auth block exactly as describe returns it: oauth-app-id plus the read-only flag.")]
+	public void Modify_SetAuth_Should_Accept_The_Describe_Auth_Block() {
+		// Arrange
+		Guid applicationId = Guid.Parse("5b0f1c0e-7a7d-4c1a-9a51-3f3a0f6a2b10");
+		GivenRegisteredService(BingSchema());
+		_client.Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(),
+				Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Id") && f["Id"] == applicationId.ToString()),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns([new JsonObject { ["Id"] = applicationId.ToString() }]);
+		WebServiceAuthArg described = JsonSerializer.Deserialize<WebServiceAuthArg>(
+			$$"""{"type":"oauth20","oauth-app-id":"{{applicationId}}","constant-credentials-masked":false}""");
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setAuth", Auth: described)], null);
+
+		// Assert
+		described.ExtensionData.Should().BeNullOrEmpty(because: "every field describe returns for auth is a known argument");
+		result.Success.Should().BeTrue(because: "the id from describe names an existing application");
+	}
+
+	[Test]
+	[Description("The same OAuth application given by name and by id is accepted; two different applications are refused readably.")]
+	public void Modify_SetAuth_Should_Compare_Resolved_Applications() {
+		// Arrange
+		Guid erp = Guid.Parse("11111111-2222-3333-4444-555555555555");
+		Guid other = Guid.Parse("66666666-7777-8888-9999-000000000000");
+		GivenRegisteredService(BingSchema());
+		_client.Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(),
+				Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Name") && f["Name"] == "Erp"),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns([new JsonObject { ["Id"] = erp.ToString() }]);
+		_client.Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(),
+				Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Id")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns(call => [new JsonObject { ["Id"] = call.ArgAt<IReadOnlyDictionary<string, string>>(2)["Id"] }]);
+
+		// Act
+		WebServiceToolResult same = _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setAuth",
+			Auth: new WebServiceAuthArg("oauth20", OAuthApp: "Erp", OAuthAppId: "{" + erp.ToString().ToUpperInvariant() + "}"))], null);
+		Action differ = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setAuth",
+			Auth: new WebServiceAuthArg("oauth20", OAuthApp: "Erp", OAuthAppId: other.ToString()))], null);
+
+		// Assert
+		same.Success.Should().BeTrue(because: "the name and the id resolve to the same application");
+		differ.Should().Throw<ArgumentException>(because: "two different applications cannot both be linked")
+			.WithMessage("*two different OAuth applications*", because: "the message says what to fix");
+	}
+
+	[Test]
+	[Description("An object or array as a test-call value is refused by name instead of being sent as raw JSON.")]
+	public void ToWireValues_Should_Refuse_Objects_And_Arrays() {
+		// Arrange
+		var values = new Dictionary<string, JsonElement> { ["UsrItems"] = JsonDocument.Parse("[1,2]").RootElement };
+
+		// Act
+		Action act = () => Clio.Command.McpServer.Tools.WebServiceToolRunner.ToWireValues(values);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the test call takes one scalar per top-level parameter")
+			.WithMessage("*UsrItems*", because: "the refusal names the parameter");
+	}
+
+	[Test]
+	[Description("Test-call values arrive as text: numbers and booleans as their JSON text, null left out.")]
+	public void ToWireValues_Should_Turn_Json_Scalars_Into_Text() {
+		// Arrange
+		var values = new Dictionary<string, JsonElement> {
+			["UsrAmount"] = JsonDocument.Parse("1.5").RootElement,
+			["UsrActive"] = JsonDocument.Parse("true").RootElement,
+			["UsrName"] = JsonDocument.Parse("\"Alice\"").RootElement,
+			["UsrNote"] = JsonDocument.Parse("null").RootElement
+		};
+
+		// Act
+		IReadOnlyDictionary<string, string> wire = Clio.Command.McpServer.Tools.WebServiceToolRunner.ToWireValues(values);
+
+		// Assert
+		wire.Should().BeEquivalentTo(new Dictionary<string, string> { ["UsrAmount"] = "1.5", ["UsrActive"] = "true", ["UsrName"] = "Alice" },
+			because: "the platform's test call takes text, and a null value means the parameter is not sent");
+	}
+
+	[Test]
 	[Description("Every tool that reads or writes a service refuses a user without CanManageSolution.")]
 	public void Describe_Should_Require_CanManageSolution() {
 		// Arrange

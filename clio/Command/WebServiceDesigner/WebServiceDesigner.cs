@@ -328,12 +328,25 @@ public sealed class WebServiceDesigner(
 
 	private Guid? FindOAuthApp(WebServiceAuthArg auth) {
 		if (auth?.Type is null || !string.Equals(auth.Type, "oauth20", StringComparison.OrdinalIgnoreCase)
-			|| string.IsNullOrWhiteSpace(auth.OAuthApp)) {
+			|| string.IsNullOrWhiteSpace(auth.OAuthAppReference)) {
 			return null;
 		}
 		// describe-web-service reports the linked application as oauth-app-id, so a setAuth rebuilt from it passes
-		// the id; a person passes the name. Both resolve to the same row.
-		string value = auth.OAuthApp.Trim();
+		// the id; a person passes the name. Both resolve to the same row; when both are given they must agree.
+		Guid? byApp = ResolveOAuthApp(auth.OAuthApp);
+		Guid? byId = ResolveOAuthApp(auth.OAuthAppId);
+		if (!string.IsNullOrWhiteSpace(auth.OAuthApp) && !string.IsNullOrWhiteSpace(auth.OAuthAppId) && byApp != byId) {
+			throw new ArgumentException("the auth block names two different OAuth applications in oauth-app and "
+				+ "oauth-app-id; give one.");
+		}
+		return byApp ?? byId;
+	}
+
+	private Guid? ResolveOAuthApp(string reference) {
+		if (string.IsNullOrWhiteSpace(reference)) {
+			return null;
+		}
+		string value = reference.Trim();
 		string column = Guid.TryParse(value, out Guid id) ? "Id" : "Name";
 		JsonObject row = client.Select("OAuthApplications", ["Id"],
 			new Dictionary<string, string> { [column] = column == "Id" ? id.ToString() : value }).FirstOrDefault();

@@ -70,7 +70,10 @@ public static partial class WebServiceDefinitionBuilder {
 		if (auth is null) {
 			return null;
 		}
-		RejectUnknownFields(auth.ExtensionData, "auth", errors);
+		// "the auth block", not "auth": SensitiveErrorTextRedactor reads "auth: <text>" as a credential pair and
+		// replaces the reason with [redacted] before the agent sees it.
+		RejectUnknownFields(auth.ExtensionData, "the auth block", errors);
+
 		if (!ServiceSchemaCodes.AuthTypes.TryGetValue(auth.Type ?? string.Empty, out int authType)) {
 			errors.Add($"auth.type '{auth.Type}' must be none, basic, digest or oauth20.");
 			return null;
@@ -89,7 +92,7 @@ public static partial class WebServiceDefinitionBuilder {
 				return result;
 			default:
 				if (oauthAppId is null) {
-					errors.Add($"auth oauth20 needs oauth-app with the name or id of an existing OAuth application ('{auth.OAuthApp}' was not found).");
+					errors.Add($"auth oauth20 needs oauth-app with the name or id of an existing OAuth application ('{auth.OAuthAppReference}' was not found).");
 					return null;
 				}
 				result.Values.Items["applicationId"] = new ServiceParameterValueDto {
@@ -314,6 +317,11 @@ public static partial class WebServiceDefinitionBuilder {
 		}
 	}
 
+	private static bool IsHiddenSecretConstant(ServiceParameterDto previous) =>
+		previous?.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst } value && !string.IsNullOrEmpty(value.Value)
+		&& (WebServiceSchemaView.IsSecretLike(previous.Name, previous.Type)
+			|| WebServiceSchemaView.IsSecretLike(previous.Path, previous.Type));
+
 	private static ServiceParameterValueDto BuildDefault(WebServiceParameterArg arg, ServiceParameterDto previous,
 		int placement, string owner, Errors errors) {
 		bool hasConstant = !string.IsNullOrEmpty(arg.DefaultValue);
@@ -331,6 +339,22 @@ public static partial class WebServiceDefinitionBuilder {
 		}
 		if (hasSetting) {
 			return SysSettingValue(arg.DefaultSysSetting);
+		}
+		// describe-web-service hides a secret constant default (default-masked), so a setMethod rebuilt from describe
+		// cannot send it back; without this the save would erase the key or token the service sends. An explicit
+		// default-value "" clears it. It is kept only where it stays hidden: moved to a visible place (a query
+		// parameter, a path that is not credential-like) the next reply would print it, and it would travel in the
+		// URL, so that move is refused instead.
+		bool clears = arg.DefaultValue is { Length: 0 };
+		if (!hasConstant && !clears && IsHiddenSecretConstant(previous)) {
+			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement)
+					&& !WebServiceSchemaView.IsSecretLike(wireName, placement)) {
+				errors.Add($"{owner}: it carries a secret constant default that describe hides, and the new placement "
+					+ "or path would show it; reference a system setting with default-sys-setting, or send "
+					+ "default-value \"\" to clear it.");
+				return Empty();
+			}
+			return new ServiceParameterValueDto { Value = previous.DefValue.Value, Source = previous.DefValue.Source };
 		}
 		return hasConstant
 			? new ServiceParameterValueDto { Value = arg.DefaultValue, Source = ServiceSchemaCodes.ValueSourceConst }

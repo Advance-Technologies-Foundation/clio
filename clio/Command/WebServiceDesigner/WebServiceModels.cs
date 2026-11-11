@@ -87,7 +87,11 @@ public sealed record WebServiceParameterArg(
 
 	[property: JsonPropertyName("items")]
 	[property: Description("Fields of each element of an Object array")]
-	IReadOnlyList<WebServiceParameterArg> Items = null
+	IReadOnlyList<WebServiceParameterArg> Items = null,
+
+	[property: JsonPropertyName("default-masked")]
+	[property: Description("Read-only, from describe-web-service; accepted and ignored. A kept parameter whose secret constant default describe hid keeps that default when no default is sent.")]
+	bool? DefaultMasked = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
@@ -108,8 +112,21 @@ public sealed record WebServiceAuthArg(
 
 	[property: JsonPropertyName("oauth-app")]
 	[property: Description("oauth20: name or id of an existing OAuth application (OAuthApplications); describe-web-service reports the id as oauth-app-id")]
-	string OAuthApp = null
+	string OAuthApp = null,
+
+	[property: JsonPropertyName("oauth-app-id")]
+	[property: Description("oauth20: the application id as describe-web-service reports it; the same as oauth-app")]
+	string OAuthAppId = null,
+
+	[property: JsonPropertyName("constant-credentials-masked")]
+	[property: Description("Read-only, from describe-web-service; accepted and ignored")]
+	bool? ConstantCredentialsMasked = null
 ) {
+	/// <summary>The OAuth application named by oauth-app, or by oauth-app-id when only that is given.</summary>
+	[JsonIgnore]
+	public string OAuthAppReference => string.IsNullOrWhiteSpace(OAuthApp) ? OAuthAppId : OAuthApp;
+
+
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

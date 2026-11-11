@@ -45,6 +45,10 @@ and no cliogate endpoint (cliogate adds nothing but SQL, and is absent on many s
 - test-web-service-method masks a JSON body value by value (numbers and booleans whole) and every property name
   that carries a secret (fail closed; colliding masked keys get a #n suffix), and keeps a key without a secret
   readable; JSON the walk rejects is masked as plain text.
+- describe-web-service output is valid modify input: the auth block (oauth-app-id, read-only flag) and method
+  parameters (default-masked) are accepted back. A kept parameter whose secret constant describe hid keeps it when
+  no default is sent, so a setMethod rebuilt from describe does not erase a Studio-set key; default-value "" clears
+  it, and moving it to a place where describe would show it is refused.
 - A default bound to a missing system setting is dropped from the request without an error at run time
   (measured on 10.2.565); a reference to a missing setting is refused.
 - A Call web service element stores the service UId in `IX1` and the method name in `IX2`; `SysSchema.MetaData`
