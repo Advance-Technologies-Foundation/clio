@@ -227,13 +227,13 @@ public sealed class DynamicCasePageStepTests {
 	}
 
 	[Test]
-	[Description("Write runs the data-source validator on the fragment, then the append save with the same body, not a dry run.")]
-	public void Write_ShouldValidateThenSaveTheSameFragment() {
+	[Description("Write saves the planned fragment with append, not a dry run, and runs no gate of its own: every gate ran in Plan, before the case was written.")]
+	public void Write_ShouldSaveTheSameFragment() {
 		// Arrange
 		Saves();
 		DynamicCasePagePlan plan = new() {
 			Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page,
-			Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty), ModelConfigJson = "{}"
+			Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty)
 		};
 
 		// Act
@@ -241,30 +241,33 @@ public sealed class DynamicCasePageStepTests {
 
 		// Assert
 		write.Inserted.Should().BeTrue(because: "the save succeeded");
-		_validator.Received(1).Validate(plan.Fragment, Arg.Any<Func<string>>());
+		_validator.DidNotReceiveWithAnyArgs().Validate(default!, default!);
 		_writer.Received(1).TryUpdatePage(Arg.Is<PageUpdateOptions>(options =>
 				!options.DryRun && options.Mode == "append" && options.Body == plan.Fragment),
 			out Arg.Any<PageUpdateResponse>());
 	}
 
 	private static DynamicCasePagePlan PlannedBody() => new() {
-		Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page, Fragment = "body", ModelConfigJson = "{}"
+		Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page, Fragment = "body"
 	};
 
 	[Test]
-	[Description("A data-source validator refusal is a failed write and nothing is saved.")]
-	public void Write_ShouldNotSave_WhenTheValidatorRefuses() {
+	[Description("A data-source validator refusal is a page refusal in Plan, before the case is written, and no dry run is sent.")]
+	public void Plan_ShouldRefuse_WhenTheValidatorRefusesTheFragment() {
 		// Arrange
-		_validator.Validate("body", Arg.Any<Func<string>>()).Returns(new SchemaValidationResult {
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()));
+		Saves();
+		_validator.Validate(Arg.Any<string>(), Arg.Any<Func<string>>()).Returns(new SchemaValidationResult {
 			IsValid = false, Errors = ["undeclared data source"]
 		});
 
 		// Act
-		DynamicCasePageWrite write = _step.Write(Env, PlannedBody());
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
 
 		// Assert
-		write.Inserted.Should().BeFalse(because: "the validator refused the fragment");
-		write.Error.Should().Contain("undeclared data source", because: "its reason is relayed");
+		plan.Status.Should().Be(DynamicCasePageStep.StatusRefused, because: "the fragment references missing data");
+		plan.ErrorCode.Should().Be(DynamicCaseErrorCodes.PageAppendRejected, because: "the append would be rejected");
+		plan.ErrorMessage.Should().Contain("undeclared data source", because: "its reason is relayed");
 		_writer.DidNotReceiveWithAnyArgs().TryUpdatePage(default!, out _);
 	}
 

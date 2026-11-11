@@ -198,11 +198,14 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 		}
 	}
 
+	/// <summary>Opens the storage's validation errors in a failed save's message; callers classify on it.</summary>
+	internal const string ValidationErrorsMarker = "Validation errors:";
+
 	private static string BuildSaveErrorMessage(SavePackagePropertiesResponse response) {
 		StringBuilder message = new();
 		message.Append(response.ErrorInfo?.Message ?? "Failed to save package dependencies.");
 		if (response.ValidationErrors is { Length: > 0 }) {
-			message.Append(" Validation errors: ");
+			message.Append(' ').Append(ValidationErrorsMarker).Append(' ');
 			message.Append(string.Join("; ", response.ValidationErrors
 				.Select(error => $"{error.PackageName}/{error.ItemName}: {error.Message}")));
 		}

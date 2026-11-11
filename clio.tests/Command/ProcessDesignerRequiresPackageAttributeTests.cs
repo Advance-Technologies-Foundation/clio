@@ -163,8 +163,8 @@ namespace Clio.Tests
                 because: "the floor is written in one place, so the rebundle moves one constant");
             PackageVersion.TryParseVersion(requirement.Version, out PackageVersion floor).Should().BeTrue(
                 because: "the checker parses the literal, and an unparseable one throws instead of gating");
-            (floor > PackageVersion.ParseVersion("1.6.6.150")).Should().BeTrue(
-                because: "1.6.6.150 has no BuildCase, so a floor at or below it lets the call reach a 404");
+            (floor > PackageVersion.ParseVersion("1.6.6.152")).Should().BeTrue(
+                because: "1.6.6.152 has no BuildCase, so a floor at or below it lets the call reach a 404");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }

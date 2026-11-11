@@ -32,9 +32,6 @@ public sealed class DynamicCasePagePlan {
 	/// <summary>The marker-wrapped append body the write sends.</summary>
 	public string Fragment { get; init; }
 
-	/// <summary>The page's merged model config, which the data-source validator reads as the base of the write.</summary>
-	public string ModelConfigJson { get; init; }
-
 	/// <summary>The typed pages to choose from, on <c>record-page-ambiguous</c>.</summary>
 	public IReadOnlyList<DynamicCasePageCandidate> Candidates { get; init; } = [];
 
@@ -138,6 +135,12 @@ public sealed class DynamicCasePageStep(
 		// overwrite that element instead of adding the bar.
 		string suffix = check.NamesTaken ? "_" + Guid.NewGuid().ToString("N")[..8] : string.Empty;
 		string fragment = ProgressBarFragment.BuildBody(pageSchemaName, entitySchemaName, suffix);
+		SchemaValidationResult references = dataSourceValidator.Validate(fragment, () => page.Bundle.ModelConfig?.ToJsonString());
+		if (references is { IsValid: false }) {
+			return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
+				$"The progress bar on '{pageSchemaName}' references data the page does not have: "
+				+ string.Join("; ", references.Errors));
+		}
 		if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, pageSchemaName, fragment, dryRun: true),
 				out PageUpdateResponse dryRun) || dryRun?.Success != true) {
 			return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
@@ -151,7 +154,6 @@ public sealed class DynamicCasePageStep(
 			DesignPackageName = designPackageName,
 			Template = check.Template,
 			Fragment = fragment,
-			ModelConfigJson = page.Bundle.ModelConfig?.ToJsonString(),
 			Notes = notes,
 			Warnings = dryRun.Warnings?.ToList() ?? []
 		};
@@ -161,10 +163,6 @@ public sealed class DynamicCasePageStep(
 	public DynamicCasePageWrite Write(string environmentName, DynamicCasePagePlan plan) {
 		ArgumentNullException.ThrowIfNull(plan);
 		try {
-			SchemaValidationResult references = dataSourceValidator.Validate(plan.Fragment, () => plan.ModelConfigJson);
-			if (references is { IsValid: false }) {
-				return new DynamicCasePageWrite(false, string.Join("; ", references.Errors), []);
-			}
 			if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, plan.PageSchemaName, plan.Fragment,
 					dryRun: false), out PageUpdateResponse saved) || saved?.Success != true) {
 				return new DynamicCasePageWrite(false, saved?.Error ?? "The page save gave no answer.", []);

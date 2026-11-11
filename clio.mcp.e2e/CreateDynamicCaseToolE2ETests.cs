@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Allure.NUnit.Attributes;
 using Clio.Command;
@@ -56,6 +58,10 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	private const string Entity = "UsrDcmTOrder";
 	private const string StageColumn = "UsrStatus";
 	private const string StageLookup = "UsrDcmTStatus";
+
+	/// <summary>The lookup's integer position column, passed explicitly: only unprefixed names (Position,
+	/// StageOrder, Number, StageNumber) are detected without it, and a custom column carries the Usr prefix.</summary>
+	private const string OrderColumn = "UsrPosition";
 	private const string TextColumn = "UsrName";
 	private const int StageCount = 4;
 
@@ -95,6 +101,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		string pageDirectory = ScratchDirectory.CreateUnderPhysicalTemp("clio-dynamic-case-e2e");
 		JsonObject? created = null;
 		PageGetResponse? pageBefore = null;
+		string? bodyBefore = null;
 		try {
 			CallToolResult planCall = await CallAsync(context, new Dictionary<string, object?> { ["dry-run"] = true });
 			IgnoreWhenProcessBuilderIsBehind(ToolText(planCall), MinimumPackageVersion);
@@ -102,6 +109,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			string? pageName = Text(plan["page"]!.AsObject(), "pageSchemaName");
 			pageName.Should().NotBeNullOrWhiteSpace(because: "the seeded object has a registered record page");
 			pageBefore = await GetPageAsync(context, pageName!, pageDirectory);
+			// The MCP get-page answers with files, and a later read of the same page overwrites them.
+			bodyBefore = await File.ReadAllTextAsync(pageBefore.Files.BodyFile);
 
 			// Act
 			CallToolResult createCall = await CallAsync(context, []);
@@ -143,7 +152,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(1,
 				because: "neither the re-run nor the refusal wrote a second case");
 		} finally {
-			await CleanUpAsync(context, created, pageBefore, pageDirectory);
+			await CleanUpAsync(context, created, pageBefore, bodyBefore, pageDirectory);
 			ScratchDirectory.TryDelete(pageDirectory);
 		}
 	}
@@ -155,6 +164,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		// Arrange
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		int casesBefore = (await CaseSchemaRowsAsync(context)).GetArrayLength();
+		int settingsBefore = (await SettingsRowsAsync(context)).GetArrayLength();
 
 		// Act
 		CallToolResult notLookup = await CallAsync(context, new Dictionary<string, object?> {
@@ -171,6 +181,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		ShouldBeRefused(unknownValue, "a stage must name a lookup value");
 		Text(ResultOf(unknownValue), "errorCode").Should().Be("stage-value-unknown", because: "the code names the reason");
 		(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(casesBefore, because: "a refusal writes nothing");
+		(await SettingsRowsAsync(context)).GetArrayLength().Should().Be(settingsBefore,
+			because: "a refusal writes no settings row");
 	}
 
 	#region Methods: Arrange and calls
@@ -205,7 +217,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["package-name"] = Package,
 			["entity-schema-name"] = Entity,
-			["stage-column-name"] = StageColumn
+			["stage-column-name"] = StageColumn,
+			["order-column"] = OrderColumn
 		};
 		foreach (KeyValuePair<string, object?> pair in extra) {
 			args[pair.Key] = pair.Value;
@@ -272,7 +285,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysSchema",
 			[
 				new SelectQueryHelper.SelectQueryColumnDefinition("MetaData", "MetaData"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("PackageName", "SysPackage.Name")
+				new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", "PackageName")
 			],
 			[
 				new SelectQueryHelper.SelectQueryFilterDefinition("UId", Text(caseBlock, "schemaUId")!,
@@ -301,12 +314,24 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		bindings.Select(binding => binding!.GetValue<string>()).Should()
 			.Contain(binding => binding.StartsWith("SysDcmSchemaInSettings_", StringComparison.Ordinal),
 				because: "the link row is bound to the package");
+		string? settingsId = Text(settings, "sysDcmSettingsId");
+		settingsId.Should().NotBeNullOrWhiteSpace(because: "the designer needs the settings row the link points at");
+		JsonElement settingsRow = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysDcmSettings",
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+			[new SelectQueryHelper.SelectQueryFilterDefinition("Id", settingsId!, SelectQueryHelper.GuidDataValueType)],
+			rowCount: 1), "the settings row");
+		settingsRow.GetArrayLength().Should().Be(1, because: "the settings row exists");
+		if (Text(settings, "status") == "created") {
+			bindings.Select(binding => binding!.GetValue<string>()).Should()
+				.Contain(binding => binding.StartsWith("SysDcmSettings_", StringComparison.Ordinal),
+					because: "a settings row this call created is bound to the package");
+		}
 	}
 
 	private static async Task ShouldCarryTheBarAsync(ProcessDesignerArrangeContext context, string pageName,
 		string directory) {
 		PageGetResponse page = await GetPageAsync(context, pageName, directory);
-		string viewConfig = page.Bundle.ViewConfig.ToJsonString();
+		string viewConfig = Regex.Replace(await File.ReadAllTextAsync(page.Files.BundleFile), @"\s+", string.Empty);
 		viewConfig.Should().Contain("crt.EntityStageProgressBar", because: "the bar was appended to the record page");
 		viewConfig.Should().Contain($"\"entityName\":\"{Entity}\"", because: "the bar names the case object");
 	}
@@ -318,7 +343,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	// Strictly sequential and best-effort: each step reports its own failure instead of throwing, so one failed undo
 	// neither hides the assertion that failed nor skips the steps after it.
 	private static async Task CleanUpAsync(ProcessDesignerArrangeContext context, JsonObject? created,
-		PageGetResponse? pageBefore, string directory) {
+		PageGetResponse? pageBefore, string? bodyBefore, string directory) {
 		if (created is null || Text(created, "outcome") is not ("created" or "created-page-failed")) {
 			return;
 		}
@@ -334,7 +359,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		if (!string.IsNullOrWhiteSpace(caseName)) {
 			await DeleteProcessAsync(context.EnvironmentName, caseName);
 		}
-		await RestorePageAsync(context, pageBefore, directory);
+		await RestorePageAsync(context, pageBefore, bodyBefore, directory);
 	}
 
 	private static async Task RemoveBindingRowAsync(ProcessDesignerArrangeContext context, List<string> bindings,
@@ -361,8 +386,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	private static async Task RestorePageAsync(ProcessDesignerArrangeContext context, PageGetResponse? pageBefore,
-		string directory) {
-		if (pageBefore?.Page is null) {
+		string? bodyBefore, string directory) {
+		if (pageBefore?.Page is null || bodyBefore is null) {
 			return;
 		}
 		string pageName = pageBefore.Page.SchemaName;
@@ -377,9 +402,11 @@ public sealed class CreateDynamicCaseToolE2ETests {
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
 						["schema-name"] = pageName,
-						["body"] = pageBefore.Raw.Body,
+						["body"] = bodyBefore,
 						["environment-name"] = context.EnvironmentName,
-						["output-directory"] = directory
+						["output-directory"] = directory,
+						// The body written back is the page's own; its pre-existing defects are not this run's to fix.
+						["validate"] = false
 					}
 				}, context.CancellationTokenSource.Token);
 			PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(restored);

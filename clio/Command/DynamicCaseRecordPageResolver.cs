@@ -62,17 +62,18 @@ public sealed class DynamicCaseRecordPageResolver(
 		} catch (Exception exception) {
 			addonFailure = exception.Message;
 		}
+		// An add-on that could not be read is not an empty one: the card registrations would then decorate a page
+		// the object does not open, or call a Freedom object Classic. The read fails, for example, when the case
+		// package does not reach the object yet (its dependencies are added only after these checks).
+		if (addonFailure is not null) {
+			return NotFound($"The RelatedPage add-on of '{entitySchemaName}' could not be read in '{packageName}', so "
+				+ $"the record page the object opens is unknown: {addonFailure}" + RemedyNamePage);
+		}
 		List<RelatedPageEntry> defaults = pages.Where(IsEmployeeDefault).ToList();
 		if (defaults.Count > 0) {
 			return FromAddon(entitySchemaName, defaults);
 		}
-		RecordPageResolution card = FromSysModuleEdit(entitySchemaName);
-		if (card.ErrorCode == DynamicCaseErrorCodes.RecordPageNotFound && addonFailure is not null) {
-			return card with {
-				ErrorMessage = card.ErrorMessage + $" The RelatedPage add-on could not be read: {addonFailure}"
-			};
-		}
-		return card;
+		return FromSysModuleEdit(entitySchemaName);
 	}
 
 	// The Freedom UI picks the web default for an employee: the portal default and a page restricted to a custom role
@@ -132,7 +133,21 @@ public sealed class DynamicCaseRecordPageResolver(
 					PageSchemaName = page.CardSchema, TypeColumnValue = page.TypeColumnValue
 				}).ToList());
 		}
-		MigrationEditPageInfo card = untyped.FirstOrDefault();
+		List<MigrationEditPageInfo> distinctUntyped = untyped
+			.GroupBy(page => page.CardSchema, StringComparer.OrdinalIgnoreCase)
+			.Select(group => group.First())
+			.ToList();
+		if (distinctUntyped.Count > 1) {
+			// The registrations come back unordered, and an object may register a portal card next to the employee
+			// one: picking the first would decorate whichever page the database returns first.
+			return new RecordPageResolution([], ResolvedBySysModuleEdit, DynamicCaseErrorCodes.RecordPageAmbiguous,
+				$"'{entitySchemaName}' registers {distinctUntyped.Count} record pages, so the page to decorate has to be "
+				+ "named." + RemedyNamePage,
+				distinctUntyped.Select(page => new DynamicCasePageCandidate {
+					PageSchemaName = page.CardSchema, TypeColumnValue = page.TypeColumnValue
+				}).ToList());
+		}
+		MigrationEditPageInfo card = distinctUntyped.FirstOrDefault();
 		if (card is null) {
 			return NotFound($"'{entitySchemaName}' has neither a RelatedPage add-on default page nor a card "
 				+ "registration." + RemedyNamePage);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
@@ -158,7 +159,8 @@ public sealed class DynamicCaseService(
 		} catch (Exception exception) {
 			// SavePackageProperties applies the whole list in one save, so a refused save added nothing; the
 			// storage's validation errors are what a dependency cycle comes back as.
-			bool validation = exception.Message.Contains("Validation errors:", StringComparison.Ordinal);
+			bool validation = exception.Message.Contains(PackageDependencyManager.ValidationErrorsMarker,
+				StringComparison.Ordinal);
 			return new DynamicCaseResult {
 				Success = false,
 				Outcome = DynamicCaseOutcomes.Refused,
@@ -208,8 +210,8 @@ public sealed class DynamicCaseService(
 		}
 		notes.AddRange(pagePlan.Notes);
 		warnings.AddRange(pagePlan.Warnings);
-		AddPackageNote(options, pagePlan, notes);
 		if (pagePlan.Status == DynamicCasePageStep.StatusAlreadyPresent) {
+			AddPackageNote(options, pagePlan, notes);
 			return Result(alreadyPresent ? DynamicCaseOutcomes.AlreadyPresent : DynamicCaseOutcomes.Created, options,
 				built, designerUrl, dependencies, PageInfo(pagePlan, DynamicCasePageStep.StatusAlreadyPresent), notes,
 				warnings, pageWritten: false);
@@ -217,6 +219,7 @@ public sealed class DynamicCaseService(
 		DynamicCasePageWrite write = pageStep.Write(options.Environment, pagePlan);
 		warnings.AddRange(write.Warnings ?? []);
 		if (write.Inserted) {
+			AddPackageNote(options, pagePlan, notes);
 			return Result(alreadyPresent ? DynamicCaseOutcomes.AlreadyPresent : DynamicCaseOutcomes.Created, options,
 				built, designerUrl, dependencies, PageInfo(pagePlan, PageInserted), notes, warnings, pageWritten: true);
 		}
@@ -338,8 +341,16 @@ public sealed class DynamicCaseService(
 	}
 
 	private static DynamicCaseResult ValidatePassFault(BuildCaseReply reply) {
-		bool missingOperation = reply.Kind is BuildCaseReplyKind.RouteMissing or BuildCaseReplyKind.NotAnEnvelope;
-		string message = missingOperation
+		// WCF answers a request it cannot read before any operation runs, so the operation exists: a reinstall would
+		// restart the site and change nothing.
+		bool unreadable = reply.Kind == BuildCaseReplyKind.NotAnEnvelope
+			&& ProcessDesignServerFault.IsUnreadableRequest(reply.Detail);
+		bool missingOperation = !unreadable
+			&& reply.Kind is BuildCaseReplyKind.RouteMissing or BuildCaseReplyKind.NotAnEnvelope;
+		string message = unreadable
+			? "BuildCase could not read the request, so nothing was written; check the arguments against "
+				+ $"get-tool-contract create-dynamic-case. The server said: {reply.Detail}"
+			: missingOperation
 			? "The environment's CrtProcessBuilder answered BuildCase with "
 				+ (reply.Kind == BuildCaseReplyKind.RouteMissing ? "a 404" : "a body that is not its result")
 				+ ", so the installed package does not carry the dynamic-case operation although it passed the "

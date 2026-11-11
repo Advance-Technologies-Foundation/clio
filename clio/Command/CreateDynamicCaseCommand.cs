@@ -20,14 +20,14 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 
 	/// <summary>The first CrtProcessBuilder archive that carries <c>BuildCase</c>.</summary>
 	/// <remarks>
-	/// The one place the floor is written. It names the cut PLANNED for the operation, which is not bundled yet: the
-	/// archive this clio ships is 1.6.6.150 and has no <c>BuildCase</c>, 1.6.6.146-1.6.6.149 were consumed by
-	/// superseded cuts of another branch, and a rebundle must go UP, so the first cut that can carry the operation is
-	/// above 1.6.6.150. Until that rebundle lands, <c>BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement</c>
-	/// reports that this clio demands a version it does not ship, which is true. Move this constant to the claimed cut
-	/// in the rebundle commit.
+	/// The one place the floor is written. It must sit above every archive without the operation: the archive this
+	/// clio ships is 1.6.6.152 and has no <c>BuildCase</c>, so the first cut that can carry it is above 1.6.6.152, and
+	/// this number is provisional until that cut is claimed. Until the rebundle lands,
+	/// <c>BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement</c> reports that this clio demands a version it
+	/// does not ship, which is true; once it lands, <c>BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor</c>
+	/// checks the archive's content, not only its number. Move this constant to the claimed cut in the rebundle commit.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.151";
+	public const string MinimumProcessBuilderVersion = "1.6.6.153";
 
 	/// <summary>The editable package that receives the case and both settings bindings.</summary>
 	public string PackageName { get; set; } = string.Empty;

@@ -852,6 +852,29 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
+	[Description("An archive that meets the create-dynamic-case floor must carry the BuildCase operation: a version number alone let a higher cut without the operation pass every gate, and the install remedy would then reinstall the same package.")]
+	public void BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.CreateDynamicCaseOptions.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool carriesBuildCase = archive.Contains("BuildCaseResponse BuildCase(", StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			carriesBuildCase.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the create-dynamic-case floor {floor}, so it must expose "
+					+ "the operation the tool calls");
+		} else {
+			carriesBuildCase.Should().BeFalse(
+				because: $"the bundled {bundledVersion} is below the floor {floor}; an archive below it that already "
+					+ "carries BuildCase means the floor is higher than it needs to be");
+		}
+	}
+
+	[Test]
 	[Description("Every literal version declared in a [RequiresPackage] against the bundled package must be satisfiable by the archive clio itself ships, or clio demands of an environment something it cannot supply and its own remediation cannot help.")]
 	public void BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement() {
 		// Arrange

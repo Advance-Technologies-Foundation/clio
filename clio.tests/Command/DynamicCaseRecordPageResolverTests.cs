@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.RelatedPages;
 using FluentAssertions;
@@ -170,5 +171,83 @@ public sealed class DynamicCaseRecordPageResolverTests {
 		resolution.ErrorCode.Should().Be(DynamicCaseErrorCodes.RecordPageNotFound, because: "no page was found");
 		resolution.ErrorMessage.Should().Contain("add-on read failed",
 			because: "a silent add-on failure would read as an object that has no record page");
+	}
+
+	[TestCase(ListEntityClientSchemasCommand.KindClassic)]
+	[TestCase(ListEntityClientSchemasCommand.KindFreedom)]
+	[Description("An add-on that cannot be read is not an empty one: the card registration is not consulted, so a Classic card cannot be blamed and another Freedom card cannot get the bar.")]
+	public void Resolve_ShouldNotFallBackToACard_WhenTheAddonCannotBeRead(string cardKind) {
+		// Arrange
+		_addons.Get(Arg.Any<RelatedPageAddonReadRequest>()).Throws(new InvalidOperationException("schema is not available"));
+		CardsAre("UsrOrder", new MigrationEditPageInfo { CardSchema = "UsrOrderPage", Kind = cardKind });
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "UsrOrder", null);
+
+		// Assert
+		resolution.ErrorCode.Should().Be(DynamicCaseErrorCodes.RecordPageNotFound,
+			because: "the page the object opens is unknown, which is neither a Classic page nor this card");
+		resolution.ErrorMessage.Should().Contain("schema is not available").And.Contain("page-schema-name",
+			because: "the refusal names why and the remedy");
+		_cards.DidNotReceiveWithAnyArgs().TryResolve(default!, out _);
+	}
+
+	[Test]
+	[Description("Several untyped card registrations are ambiguous: their order is the database's, and one may be a portal card.")]
+	public void Resolve_ShouldBeAmbiguous_WhenSeveralUntypedCardsExist() {
+		// Arrange
+		AddonLists("Order");
+		CardsAre("Order",
+			new MigrationEditPageInfo { CardSchema = "PortalOrderPage", Kind = ListEntityClientSchemasCommand.KindClassic },
+			new MigrationEditPageInfo { CardSchema = "OrderPageV2", Kind = ListEntityClientSchemasCommand.KindClassic });
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "Order", null);
+
+		// Assert
+		resolution.ErrorCode.Should().Be(DynamicCaseErrorCodes.RecordPageAmbiguous, because: "two pages are registered");
+		resolution.Candidates.Select(candidate => candidate.PageSchemaName).Should()
+			.BeEquivalentTo(["PortalOrderPage", "OrderPageV2"], because: "every registered page is a choice");
+		resolution.ResolvedBy.Should().Be(DynamicCaseRecordPageResolver.ResolvedBySysModuleEdit,
+			because: "the card registrations decided it");
+	}
+
+	[Test]
+	[Description("Typed card registrations only (no add-on default) are ambiguous, not not-found.")]
+	public void Resolve_ShouldBeAmbiguous_WhenOnlyTypedCardsExist() {
+		// Arrange
+		AddonLists("Activity");
+		CardsAre("Activity",
+			new MigrationEditPageInfo {
+				CardSchema = "TaskPage", TypeColumnValue = "fbe0acdc-cfc0-df11-b00f-001d60e938c6",
+				Kind = ListEntityClientSchemasCommand.KindFreedom
+			},
+			new MigrationEditPageInfo {
+				CardSchema = "CallPage", TypeColumnValue = "e2831dec-cfc0-df11-b00f-001d60e938c6",
+				Kind = ListEntityClientSchemasCommand.KindFreedom
+			});
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "Activity", null);
+
+		// Assert
+		resolution.ErrorCode.Should().Be(DynamicCaseErrorCodes.RecordPageAmbiguous, because: "each type opens its own page");
+		resolution.Candidates.Should().HaveCount(2, because: "every typed card is a choice");
+		resolution.ResolvedBy.Should().Be(DynamicCaseRecordPageResolver.ResolvedBySysModuleEdit,
+			because: "the card registrations decided it");
+	}
+
+	[Test]
+	[Description("An add-on that lists two untyped employee defaults is ambiguous.")]
+	public void Resolve_ShouldBeAmbiguous_WhenTheAddonListsTwoUntypedDefaults() {
+		// Arrange
+		AddonLists("UsrOrder", Entry("UsrOrders_FormPage"), Entry("UsrOrders_OtherPage"));
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "UsrOrder", null);
+
+		// Assert
+		resolution.ErrorCode.Should().Be(DynamicCaseErrorCodes.RecordPageAmbiguous, because: "two defaults compete");
+		resolution.ErrorMessage.Should().Contain("lists 2 default pages", because: "the reason names the count");
 	}
 }

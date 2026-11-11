@@ -63,8 +63,7 @@ public sealed class DynamicCaseServiceTests {
 	private static DynamicCasePagePlan PlannedPage(string designPackage = Package) => new() {
 		Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page,
 		ResolvedBy = DynamicCaseRecordPageResolver.ResolvedByRelatedPageAddon, DesignPackageName = designPackage,
-		Template = "PageWithTabsFreedomTemplate", Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty),
-		ModelConfigJson = "{}"
+		Template = "PageWithTabsFreedomTemplate", Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty)
 	};
 
 	private static BuildCaseReply Envelope(string outcome, bool success = true, string errorCode = null,
@@ -81,7 +80,7 @@ public sealed class DynamicCaseServiceTests {
 			RequiredPackages = ["UsrOrders", "CrtBase"],
 			MissingDependencies = missing ?? [],
 			Obligations = new DynamicCaseObligations {
-				ReloadOpenPages = true,
+				ReloadOpenPages = false,
 				Artifacts = [new DynamicCaseArtifactObligation { Kind = "dcm" },
 					new DynamicCaseArtifactObligation { Kind = "settings-data" }]
 			},
@@ -293,6 +292,71 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
+	[Description("A page write that fails outside the case package does not claim the bar was written to the design package.")]
+	public void Create_ShouldNotNoteTheDesignPackage_WhenThePageWriteFails() {
+		// Arrange
+		Passes(Envelope("planned"));
+		_pageStep.Plan(Env, Package, Entity, null).Returns(PlannedPage(designPackage: "Custom"));
+		_pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>()).Returns(new DynamicCasePageWrite(false, "conflict", []));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseOutcomes.CreatedPageFailed, because: "the bar was not written");
+		result.Notes.Should().NotContain(note => note.Contains("Deploy 'Custom'"),
+			because: "nothing was written to the design package");
+	}
+
+	[Test]
+	[Description("A transport failure on the validate pass is request-failed: no page is read and nothing is written.")]
+	public void Create_ShouldReportRequestFailed_WhenTheValidatePassCannotBeSent() {
+		// Arrange
+		Passes(new BuildCaseReply(BuildCaseReplyKind.TransportFailure, null, "timeout"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed,
+			because: "a timeout says nothing about the package, so no reinstall is advised");
+		result.ErrorMessage.Should().NotContain("install-process-builder", because: "a reinstall would not help");
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!);
+	}
+
+	[Test]
+	[Description("WCF's request-deserialization fault on the validate pass is request-failed, not a package without BuildCase: the operation exists and only the request shape was rejected.")]
+	public void Create_ShouldReportRequestFailed_WhenTheServerCannotReadTheRequest() {
+		// Arrange
+		Passes(new BuildCaseReply(BuildCaseReplyKind.NotAnEnvelope, null,
+			"The formatter threw an exception while trying to deserialize the message"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the request shape was rejected");
+		result.ErrorMessage.Should().NotContain("install-process-builder", because: "a reinstall restarts the site for nothing");
+	}
+
+	[Test]
+	[Description("A dependency add that fails without storage validation errors is dependency-add-failed, the dependencies stay missing and the build pass is never called.")]
+	public void Create_ShouldRefuseWithDependencyAddFailed_WhenTheAddFailsOtherwise() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]));
+		_dependencies.AddDependencies(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Throws(new InvalidOperationException("Failed to save package dependencies."));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.DependencyAddFailed, because: "no validation error came back");
+		result.Dependencies.Status.Should().Be("missing", because: "nothing was added");
+		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
+	}
+
+	[Test]
 	[Description("A created case with the bar written reports the page artifact on top of the server's, the designer link with the 0/ alias of a .NET Framework environment, and no compile.")]
 	public void Create_ShouldReportTheDesignerUrlAndThePageArtifact_WhenEverythingLands() {
 		// Arrange
@@ -309,6 +373,12 @@ public sealed class DynamicCaseServiceTests {
 		result.Obligations.Artifacts.Select(artifact => artifact.Kind).Should().Equal(["dcm", "settings-data", "page"],
 			because: "clio adds the page artifact to the server's two");
 		result.Obligations.CompileRequired.Should().BeFalse(because: "nothing written needs a compile");
+		result.Obligations.RestartRequired.Should().BeFalse(because: "nothing written needs a restart");
+		result.Obligations.ReloadOpenPages.Should().BeTrue(
+			because: "clio adds the reload for the page it wrote, whatever the server said");
+		result.Obligations.Artifacts.Single(artifact => artifact.Kind == "page")
+			.Should().Match<DynamicCaseArtifactObligation>(artifact => artifact.Compile == false && artifact.Restart == false,
+				because: "a Freedom UI page is served as saved");
 		result.Page.Status.Should().Be(DynamicCaseService.PageInserted, because: "the bar was written");
 	}
 
