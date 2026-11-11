@@ -7,7 +7,7 @@ date: 2026-11-11
 ---
 
 **What is true** — `ServiceClientResponse` reads a header or cookie response parameter by its `Path` with an ordinal,
-case-sensitive lookup, and `ServiceClientRequest` fills `{placeholder}` in the method URI with a case-sensitive
+case-sensitive lookup, and `ServiceClientRequest` fills `{placeholder}` in the method URI and in the base URI with a case-sensitive
 `Replace` of `"{" + Path + "}"`. The header case was measured on a .NET Framework stand in November 2026; the
 placeholder rule is read from the platform source (`Terrasoft.Services/Runtime/ServiceClientRequest.cs`).
 

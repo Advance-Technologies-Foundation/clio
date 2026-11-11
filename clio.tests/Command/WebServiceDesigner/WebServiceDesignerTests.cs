@@ -438,6 +438,73 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("A process whose metadata names the service but cannot be read blocks every change to a method until it is acknowledged.")]
+	public void Modify_Should_Refuse_A_Change_When_A_Caller_Cannot_Be_Read() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		GivenSelect("SysSchema", new JsonObject {
+			["Name"] = "BrokenProcess", ["Caption"] = "BrokenProcess", ["SysPackageName"] = "Custom",
+			["MetaData"] = "{\"a\":1,\"a\":\"" + ServiceUId + "\"}"
+		});
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("removeMethod", MethodCode: "Search")], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a caller the scan cannot read may call the removed method");
+		result.Usages.Should().ContainSingle(u => u.Process == "BrokenProcess" && u.Method == null,
+			because: "the unreadable process is named so the user can check it");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("A test call whose setting-bound path value cannot be found in the sent URL returns the status only.")]
+	public void TestMethod_Should_Withhold_The_Response_When_A_Path_Secret_Cannot_Be_Located() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "tenants/{tenant}/search", RequestParameters: [
+				new WebServiceParameterArg("tenant", "path", DefaultSysSetting: "UsrTenant")
+			]), null, false, errors);
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Clear();
+		schema.Methods.Items[method.UId.ToString()] = method;
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, 404, "no tenant hidden-tenant-77", null,
+				"GET https://api.bing.example/elsewhere HTTPS/1.1\r\nHost: api.bing.example"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "a value that cannot be found cannot be masked, so nothing of the body is returned");
+		result.Error.Should().Contain("withheld", because: "the agent is told why the body is missing");
+		result.StatusCode.Should().Be(404, because: "the status code carries no secret");
+	}
+
+	[Test]
+	[Description("oauth-app and oauth-app-id where one names no application are refused naming the unknown one.")]
+	public void Modify_SetAuth_Should_Name_The_Unknown_OAuth_Reference() {
+		// Arrange
+		Guid erp = Guid.Parse("11111111-2222-3333-4444-555555555555");
+		GivenRegisteredService(BingSchema());
+		_client.Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(),
+				Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Name")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns([new JsonObject { ["Id"] = erp.ToString() }]);
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setAuth",
+			Auth: new WebServiceAuthArg("oauth20", OAuthApp: "Erp", OAuthAppId: "66666666-7777-8888-9999-000000000000"))], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "an application that does not exist cannot be linked")
+			.WithMessage("*oauth-app-id '66666666-7777-8888-9999-000000000000'*", because: "the message names the field to fix, not the valid one");
+	}
+
+	[Test]
 	[Description("FindElements reads process metadata that starts with a byte-order mark.")]
 	public void FindElements_Should_Read_Metadata_With_A_Byte_Order_Mark() {
 		// Arrange

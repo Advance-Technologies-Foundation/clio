@@ -203,14 +203,14 @@ public sealed class WebServiceDesigner(
 			?? throw new ArgumentException(
 				$"method '{methodCode}' not found; methods: {string.Join(", ", schema.Methods.Items.Values.Select(m => m.Name))}.");
 		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, values);
-		if (WebServiceResponseMasker.HasUnlocatedPathSecret(method, result.RequestRawData)) {
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, result.RequestRawData,
+			result.RequestBody, out bool pathSecretUnlocated);
+		if (pathSecretUnlocated) {
 			// The value is unknown, so it cannot be masked: fail closed and return the status only.
 			return new WebServiceTestResult(result.Success,
 				"The response is withheld: a path parameter filled from a system setting could not be located in "
 				+ "the sent URL, so it could not be masked.", result.StatusCode, null, false, true);
 		}
-		IReadOnlyList<string> secrets =
-			WebServiceResponseMasker.SentSecrets(method, result.RequestRawData, result.RequestBody);
 		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
 		string body = WebServiceResponseMasker.ApplyToBody(result.ResponseBody, secrets, out bool bodyMasked);
 		string error = WebServiceResponseMasker.Apply(result.Error, secrets, out bool errorMasked);
@@ -249,32 +249,29 @@ public sealed class WebServiceDesigner(
 	}
 
 	/// <remarks>
-	/// Fails closed: a process whose metadata names the service but cannot be parsed is reported as one usage
-	/// with no element and no method, which the guard treats as calling every method. Metadata saved by the
-	/// platform may start with a byte-order mark, which <c>JsonNode.Parse</c> rejects.
+	/// Fails closed: a process whose metadata names the service but cannot be read - not JSON, a duplicate key,
+	/// or the UId found nowhere an element stores it - is reported as one usage with no element and no method,
+	/// which the guard treats as calling every method. Metadata saved by the platform may start with a
+	/// byte-order mark, which <c>JsonNode.Parse</c> rejects.
 	/// </remarks>
-	internal static IEnumerable<(string Element, string Method)> FindElements(string metadata, string uid) {
-		JsonNode root;
+	internal static IReadOnlyList<(string Element, string Method)> FindElements(string metadata, string uid) {
+		var found = new List<(string Element, string Method)>();
 		try {
-			root = JsonNode.Parse(metadata.TrimStart('\uFEFF'));
-		} catch (JsonException) {
-			root = null;
-		}
-		if (root is null) {
-			yield return (null, null);
-			yield break;
-		}
-		var pending = new Stack<JsonNode>();
-		pending.Push(root);
-		while (pending.Count > 0) {
-			JsonNode current = pending.Pop();
-			if (current is JsonObject node && IsElementOf(node, uid)) {
-				yield return (node["A2"]?.ToString(), node["IX2"]?.ToString());
+			var pending = new Stack<JsonNode>();
+			pending.Push(JsonNode.Parse(metadata.TrimStart('\uFEFF')));
+			while (pending.Count > 0) {
+				JsonNode current = pending.Pop();
+				if (current is JsonObject node && IsElementOf(node, uid)) {
+					found.Add((node["A2"]?.ToString(), node["IX2"]?.ToString()));
+				}
+				foreach (JsonNode child in Children(current)) {
+					pending.Push(child);
+				}
 			}
-			foreach (JsonNode child in Children(current)) {
-				pending.Push(child);
-			}
+		} catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException) {
+			found.Clear();
 		}
+		return found.Count > 0 ? found : [(null, null)];
 	}
 
 	private static bool IsElementOf(JsonObject node, string uid) =>
@@ -404,7 +401,9 @@ public sealed class WebServiceDesigner(
 		Guid? byId = ResolveOAuthApp(auth.OAuthAppId);
 		if (!string.IsNullOrWhiteSpace(auth.OAuthApp) && !string.IsNullOrWhiteSpace(auth.OAuthAppId)) {
 			if (byApp is null || byId is null) {
-				return null; // the caller refuses it as an unknown application
+				string unknown = byApp is null ? $"oauth-app '{auth.OAuthApp}'" : $"oauth-app-id '{auth.OAuthAppId}'";
+				throw new ArgumentException($"the auth block's {unknown} names no OAuth application; give one existing "
+					+ "application by name or id.");
 			}
 			if (byApp != byId) {
 				throw new ArgumentException("the auth block names two different OAuth applications in oauth-app and "

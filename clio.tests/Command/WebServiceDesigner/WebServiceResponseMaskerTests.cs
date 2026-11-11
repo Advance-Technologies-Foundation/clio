@@ -109,6 +109,41 @@ public sealed class WebServiceResponseMaskerTests {
 		unrelatedUnlocated.Should().BeTrue(because: "a value that cannot be found cannot be masked, so the caller must withhold the response");
 	}
 
+	[TestCase("{apiKey}/data", "GET https://h.example/v2/KEY-0042/data HTTPS/1.1", "KEY-0042")]
+	[TestCase("{apiKey}", "GET https://erp.example/v1/SECRET-77 HTTPS/1.1", "SECRET-77")]
+	[TestCase("orders/{apiKey}", "GET https://h.example/orders/v1/orders/SECRET-88 HTTPS/1.1", "SECRET-88")]
+	[TestCase("cities/{apiKey}", "GET https://h.example/cities/New York secret HTTPS/1.1", "New York secret")]
+	[Description("A setting-bound path value is found even when the template's literal text also occurs in the base URI or the value contains spaces.")]
+	public void SentSecrets_Should_Locate_Path_Values_Without_A_Left_Anchor(string uri, string requestLine, string expected) {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Data", "GET", uri, RequestParameters: [
+				new WebServiceParameterArg("apiKey", "path", DefaultSysSetting: "UsrKey")]), null, false, errors);
+
+		// Act
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, requestLine, null, out bool unlocated);
+
+		// Assert
+		errors.Should().BeEmpty(because: "the method is valid");
+		unlocated.Should().BeFalse(because: "the template matches the end of the sent path");
+		secrets.Should().Contain(expected, because: "the real value is one of the masked suffixes of the capture");
+	}
+
+	[Test]
+	[Description("A space in the sent URL does not stop the query values filled from settings from being collected.")]
+	public void SentSecrets_Should_Read_The_Query_Of_A_Url_With_Spaces() {
+		// Arrange
+		ServiceMethodDto method = Method(new WebServiceParameterArg("apikey", "query", DefaultSysSetting: "UsrKey"));
+
+		// Act
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method,
+			"POST https://api.example/cities/New York?apikey=query-secret-5 HTTPS/1.1", null);
+
+		// Assert
+		secrets.Should().Contain("query-secret-5", because: "the request target runs from the first to the last space");
+	}
+
 	[Test]
 	[Description("In a JSON body a secret is masked in values and in property names, and keys masked to the same text keep both values.")]
 	public void ApplyToBody_Should_Mask_Values_And_Property_Names() {

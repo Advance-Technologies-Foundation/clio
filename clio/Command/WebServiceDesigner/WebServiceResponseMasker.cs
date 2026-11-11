@@ -44,7 +44,21 @@ public static partial class WebServiceResponseMasker {
 	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
 	/// <param name="requestBody">The request body the platform reports as sent.</param>
 	/// <returns>Distinct values, longest first.</returns>
-	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody) {
+	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody) =>
+		SentSecrets(method, requestRawData, requestBody, out _);
+
+	/// <summary>
+	/// Collects the values the call sent that must not be shown, and reports in the same pass whether a
+	/// setting-bound path value could not be located, so the caller decides on one consistent reading.
+	/// </summary>
+	/// <param name="method">The called method.</param>
+	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
+	/// <param name="requestBody">The request body the platform reports as sent.</param>
+	/// <param name="pathSecretUnlocated">Whether a setting-bound path value could not be located.</param>
+	/// <returns>Distinct values, longest first.</returns>
+	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
+		out bool pathSecretUnlocated) {
+		pathSecretUnlocated = false;
 		string[] lines = (requestRawData ?? string.Empty).Split(["\r\n", "\n"], StringSplitOptions.None);
 		Dictionary<string, List<string>> headers = Headers(lines);
 		Dictionary<string, List<string>> query = Query(lines.FirstOrDefault());
@@ -69,7 +83,9 @@ public static partial class WebServiceResponseMasker {
 					secrets.AddRange(BodyValues(body, LastPathSegment(name)));
 					break;
 				case PlacementPath:
-					secrets.AddRange(PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name) ?? []);
+					List<string> located = PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name);
+					pathSecretUnlocated |= located is null;
+					secrets.AddRange(located ?? []);
 					break;
 			}
 		}
@@ -225,11 +241,19 @@ public static partial class WebServiceResponseMasker {
 	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
 	/// <returns><c>true</c> when such a value could not be located.</returns>
 	public static bool HasUnlocatedPathSecret(ServiceMethodDto method, string requestRawData) {
-		string requestLine = (requestRawData ?? string.Empty).Split(["\r\n", "\n"], StringSplitOptions.None)[0];
-		return SettingBound(method?.Request?.Parameters)
-			.Where(p => p.Type == PlacementPath)
-			.Any(p => PathValues(requestLine, method.Request.Uri, string.IsNullOrEmpty(p.Path) ? p.Name : p.Path)
-				is not { Count: > 0 });
+		SentSecrets(method, requestRawData, null, out bool unlocated);
+		return unlocated;
+	}
+
+	/// <summary>
+	/// The request target of a request line: the text between the first and the last space, because the
+	/// platform prints the URL unescaped and a value may contain spaces.
+	/// </summary>
+	private static string RequestTarget(string requestLine) {
+		string line = requestLine ?? string.Empty;
+		int first = line.IndexOf(' ');
+		int last = line.LastIndexOf(' ');
+		return first >= 0 && last > first ? line[(first + 1)..last] : string.Empty;
 	}
 
 	/// <summary>
@@ -239,11 +263,7 @@ public static partial class WebServiceResponseMasker {
 	/// </summary>
 	private static List<string> PathValues(string requestLine, string template, string name) {
 		var values = new List<string>();
-		// The target sits between the method and the protocol: the first and the last space.
-		string line = requestLine ?? string.Empty;
-		int first = line.IndexOf(' ');
-		int last = line.LastIndexOf(' ');
-		string target = first >= 0 && last > first ? line[(first + 1)..last] : string.Empty;
+		string target = RequestTarget(requestLine);
 		int cut = target.IndexOfAny(['?', '#']);
 		string path = cut < 0 ? target : target[..cut];
 		string pattern = template ?? string.Empty;
@@ -313,8 +333,7 @@ public static partial class WebServiceResponseMasker {
 
 	private static Dictionary<string, List<string>> Query(string requestLine) {
 		var query = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-		string[] parts = (requestLine ?? string.Empty).Split(' ');
-		string target = parts.Length > 1 ? parts[1] : string.Empty;
+		string target = RequestTarget(requestLine);
 		int question = target.IndexOf('?');
 		if (question < 0) {
 			return query;
