@@ -147,4 +147,22 @@ public class PushWorkspaceCommandTests : BaseCommandTests<PushWorkspaceCommandOp
 		_logger.DidNotReceive().WriteError(Arg.Is<string>(line => line.Contains(nameof(PackageItemDescriptorMissingException))));
 		_logger.DidNotReceive().WriteInfo("Done");
 	}
+
+	[Test]
+	[Description("When the environment reports the installation as failed, push-workspace logs the closing error and exits 1, instead of logging Done and exiting 0 after the installer's own error line.")]
+	public void Execute_ShouldExitOne_WhenTheInstallationFails() {
+		// Arrange
+		const string failure = "Workspace packages were not installed: UsrPkg. The reason is the installation error above.";
+		_inspector.Inspect(Arg.Any<System.Collections.Generic.IEnumerable<string>>()).Returns([]);
+		_workspace.When(workspace => workspace.Install(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>()))
+			.Do(_ => throw new System.InvalidOperationException(failure));
+
+		// Act
+		int exitCode = _command.Execute(new PushWorkspaceCommandOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "a push whose installation failed must not look like a success to a script or an agent");
+		_logger.Received(1).WriteError(failure);
+		_logger.DidNotReceive().WriteInfo("Done");
+	}
 }
