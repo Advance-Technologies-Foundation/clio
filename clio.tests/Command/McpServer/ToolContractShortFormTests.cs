@@ -529,8 +529,50 @@ public sealed class ToolContractShortFormTests {
 		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "select");
 
 		// Assert
-		trimmed.Should().Be("Fields to return. Example: [\"Id\",\"Name\"].",
-			because: "the field's own documented example is the next best source of its shape");
+		trimmed.Should().Be("Fields to return. Example: [\"Id\",\"Name\"]",
+			because: "the field's own documented example is the next best source of its shape, read as one JSON value");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The description's own example is read as one JSON value, so a period inside a string value does not cut it and the prose after it is not carried along.")]
+	public void Shorten_Should_ReadTheDescriptionExampleAsOneJsonValue_WhenAStringValueHoldsAPeriod() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("data", "object",
+				"Fields to change. Example: { \"Name\": \"Acme Inc. Ltd\" } Exactly one of data or rows-file is required."),
+			new Dictionary<string, object?> { ["environment-name"] = "dev" });
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "data");
+
+		// Assert
+		trimmed.Should().Be("Fields to change. Example: {\"Name\":\"Acme Inc. Ltd\"}",
+			because: "a cut example is a wrong one, and the sentence after the example is not part of it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A first contract example whose value is over the bound is skipped for the next example that carries the field.")]
+	public void Shorten_Should_UseTheNextContractExample_WhenTheFirstIsTooLong() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("rows", "array", "Rows to insert. Each row is one record."),
+			new Dictionary<string, object?> {
+				["rows"] = new[] { new Dictionary<string, object?> { ["Name"] = new string('n', ToolContractShortForm.MaxFieldExampleChars) } }
+			});
+		full = full with {
+			Examples = [.. full.Examples, new ToolContractExample("short", new Dictionary<string, object?> {
+				["rows"] = new[] { new Dictionary<string, object?> { ["Name"] = "Jane" } }
+			})]
+		};
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "rows");
+
+		// Assert
+		trimmed.Should().Be("Rows to insert. Example: [{\"Name\":\"Jane\"}]",
+			because: "an example over the bound is left out, and the next one that fits is used instead");
 	}
 
 	[Test]

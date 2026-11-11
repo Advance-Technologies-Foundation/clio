@@ -44,13 +44,15 @@ MEASURED against the budget:
   as "Optional, default true." is kept in front of the field's first sentence, not instead of it.
 - A cut INPUT field of type object or array gets one example of its value appended (`Example: <compact
   JSON>`): the field's value in the first contract example that carries it within 160 characters, else the
-  field description's own `Example:` sentence within 160 characters, else nothing - an example over the
-  bound is left out, never cut. Without it odata-read's `filters` read only "Structured filter." and an
-  agent guessed `{"all": [{"column": ..., "operator": ...}]}` (2026-11). Measured over the catalog on
-  2026-11-11: six fields in six tools gain one (about 620 bytes in all), none of them in the seven-contract
-  bundle. The `CallShapes` tools are skipped by name, because their shape block already lists every
-  nested field and their bundle has about 145 bytes of headroom; a new short example on another of the
-  seven would spend that headroom, which the budget tests below report.
+  JSON value after the field description's own `Example:` marker - parsed as JSON, never cut at a period -
+  within 160 characters, else nothing. Without it odata-read's `filters` read only "Structured filter." and
+  an agent guessed `{"all": [{"column": ..., "operator": ...}]}`. Measured over the catalog on 2026-11-11:
+  seven fields in seven tools gain one, about 650 bytes in Fit's measure, none of them in the
+  seven-contract bundle; a single-tool lookup of those seven still fits whole, but in a multi-contract
+  reply Fit may now shorten one contract more than before. The `CallShapes` tools are skipped by name,
+  because their shape block already lists every nested field and their bundle has about 145 bytes of
+  headroom; a new short example on another of the seven would spend that headroom, which the budget tests
+  below report.
 - The short `create-business-process` and `modify-business-process` contracts also carry a `SHAPE:` block
   (`ToolContractShortForm.CallShapes`, ENG-102797), about 0.9 KB each and names-and-nesting only: the
   descriptor fields and element blocks, and every modify operation with its fields. It is appended after

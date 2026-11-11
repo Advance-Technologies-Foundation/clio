@@ -234,13 +234,15 @@ internal static class ToolContractShortForm {
 	internal const string FieldExampleMarker = "Example:";
 
 	/// <summary>
-	/// Compact and unescaped: the example is quoted inside a description, and the reply's own encoder escapes it
-	/// once more on the wire.
+	/// The MCP serializer's own options - so a record or an enum in an example reads as it does in the full
+	/// contract - compact and unescaped: the example is quoted inside a description, and the reply's own encoder
+	/// escapes it once more on the wire.
 	/// </summary>
-	private static readonly JsonSerializerOptions FieldExampleJsonOptions = new() {
-		Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-		WriteIndented = false
-	};
+	private static readonly JsonSerializerOptions FieldExampleJsonOptions =
+		new(BindingsModule.CreateMcpSerializerOptions()) {
+			Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+			WriteIndented = false
+		};
 
 	/// <summary>Longest single safety sentence kept from outside the lead, cut at word boundaries around its marker.</summary>
 	internal const int MaxSafetySentenceChars = 600;
@@ -570,9 +572,14 @@ internal static class ToolContractShortForm {
 
 	/// <summary>
 	/// The field's value in the first contract example that carries one within <see cref="MaxFieldExampleChars"/>,
-	/// as compact JSON; otherwise the field description's own <c>Example:</c> sentence when it fits; otherwise
-	/// <see langword="null"/>.
+	/// as compact JSON; otherwise the JSON value that follows the field description's own <c>Example:</c> marker,
+	/// when it parses and fits; otherwise <see langword="null"/>.
 	/// </summary>
+	/// <remarks>
+	/// The description's example is read as ONE JSON value, not up to the next sentence end: a period inside a
+	/// string value (<c>{"Name":"Acme Inc. Ltd"}</c>) would otherwise cut it, and an example with no period after
+	/// it would carry the following prose along. Text that does not parse as JSON gives no example.
+	/// </remarks>
 	internal static string? FindFieldExample(ToolContractField field, IReadOnlyList<ToolContractExample>? examples) {
 		foreach (ToolContractExample example in examples ?? []) {
 			if (example.Arguments is null || !example.Arguments.TryGetValue(field.Name, out object? value) || value is null) {
@@ -588,10 +595,29 @@ internal static class ToolContractShortForm {
 		if (marker < 0) {
 			return null;
 		}
-		int start = marker + FieldExampleMarker.Length;
-		int end = ToolContractCatalog.FindSentenceEnd(description, start);
-		string own = description[start..(end < 0 ? description.Length : end + 1)].Trim();
-		return own.Length is > 0 and <= MaxFieldExampleChars ? own : null;
+		string own = ReadJsonValue(description[(marker + FieldExampleMarker.Length)..]);
+		return own is { Length: > 0 and <= MaxFieldExampleChars } ? own : null;
+	}
+
+	/// <summary>
+	/// The first JSON value in <paramref name="text"/>, re-serialized compactly, or <see langword="null"/> when the
+	/// text does not start with one.
+	/// </summary>
+	private static string? ReadJsonValue(string text) {
+		Utf8JsonReader reader = new(Encoding.UTF8.GetBytes(text.TrimStart()), new JsonReaderOptions {
+			CommentHandling = JsonCommentHandling.Skip
+		});
+		try {
+			if (!JsonDocument.TryParseValue(ref reader, out JsonDocument? document)) {
+				return null;
+			}
+			using (document) {
+				return JsonSerializer.Serialize(document.RootElement, FieldExampleJsonOptions);
+			}
+		}
+		catch (JsonException) {
+			return null;
+		}
 	}
 
 	/// <summary>
