@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Command.McpServer.Tools;
 
 namespace Clio.Command.McpServer;
@@ -29,9 +30,15 @@ namespace Clio.Command.McpServer;
 /// <para>
 /// The serializer's own <see cref="JsonException.Path"/> says WHERE the failure is; this walks the caller's
 /// JSON and the declared CLR type down that path together and describes the node it reaches. It never
-/// re-implements binding: a node it cannot explain (a custom converter, a path it cannot follow) yields no
-/// finding, and the caller keeps the generic message. Only member NAMES the caller sent are echoed, through
-/// <see cref="McpToolArgumentSupport.DescribeCallerKey"/>, never a value: a value can be a secret.
+/// re-implements binding: a node it cannot explain - a converter-bound or polymorphic type, a path it cannot
+/// follow - yields no finding, and the caller keeps the generic message. It runs only on a call that has
+/// already failed, and a failure of its own is swallowed for the same reason.
+/// </para>
+/// <para>
+/// Caller-supplied text reaches the message only as member names and dictionary keys, through
+/// <see cref="McpToolArgumentSupport.DescribeCallerKey"/> and capped at
+/// <see cref="McpToolArgumentSupport.MaxEchoedKeys"/>; a VALUE never does, since a value can be a secret.
+/// Member names in a location and an expected shape are the declared wire names, not the caller's spelling.
 /// </para>
 /// </remarks>
 public static partial class McpToolErrorFilter
@@ -45,13 +52,26 @@ public static partial class McpToolErrorFilter
 	/// <summary>Longest description of the failing member quoted in the message.</summary>
 	private const int MaxQuotedDescriptionChars = 200;
 
+	/// <summary>
+	/// Longest unknown key a "did you mean" suggestion is computed for. The edit distance is quadratic in the
+	/// key's length, and a key this long is not a misspelling of a member name.
+	/// </summary>
+	private const int MaxSuggestedKeyLength = 64;
+
 	private const string ExampleMarker = "Example:";
+
+	/// <summary>
+	/// A member description that says the member holds a JSON document as text: "JSON object string",
+	/// "JSON array of ...", "JSON text".
+	/// </summary>
+	private static readonly Regex JsonTextMember = new(@"\bJSON\s+(object|array|document|text|string)\b",
+		RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 
 	/// <summary>Wire members per CLR type, computed once per type; see <see cref="GetWireMembers"/>.</summary>
 	private static readonly ConcurrentDictionary<Type, IReadOnlyList<WireMember>> WireMembersByType = new();
 
 	/// <summary>One member a caller can supply on the wire.</summary>
-	/// <param name="Name">The wire name.</param>
+	/// <param name="Name">The declared wire name.</param>
 	/// <param name="Property">The bound property.</param>
 	/// <param name="Required">Whether the serializer refuses a payload that omits it.</param>
 	private sealed record WireMember(string Name, PropertyInfo Property, bool Required);
@@ -59,29 +79,36 @@ public static partial class McpToolErrorFilter
 	/// <summary>One step of a <see cref="JsonException.Path"/>: a property name or an array index.</summary>
 	private sealed record PathSegment(string? PropertyName, int? Index);
 
+	/// <summary>One step of the walk, as the message shows it.</summary>
+	/// <param name="Display">The step in a location: a declared member name, <c>[0]</c> or <c>['key']</c>.</param>
+	/// <param name="Member">The record member the step entered; null for an array index or a dictionary key.</param>
+	private sealed record WalkStep(string Display, PropertyInfo? Member);
+
 	/// <summary>What the failing node is and what the contract expects there.</summary>
-	/// <param name="Location">The node, relative to the argument: <c>filters.all[0]</c>, or the argument name itself.</param>
-	/// <param name="IsNamedArgument">Whether the node IS the argument the message names, not something inside it.</param>
+	/// <param name="NamedArgument">The argument the lead sentence names: the first member, or the parameter.</param>
+	/// <param name="Location">The node, relative to that argument: <c>filters.all[0]</c>, or the argument itself.</param>
+	/// <param name="IsNamedArgument">Whether the node IS the named argument, not something inside it.</param>
 	/// <param name="Expected">The JSON kind the contract expects, when the caller sent another kind.</param>
 	/// <param name="Received">The JSON kind the caller sent, when it is the wrong one.</param>
 	/// <param name="MissingRequired">Required members the node's object omits.</param>
-	/// <param name="UnknownMembers">Rendered names the node's object carries but the contract does not know.</param>
+	/// <param name="UnknownMembers">Rendered unknown names, at most <see cref="McpToolArgumentSupport.MaxEchoedKeys"/>.</param>
+	/// <param name="UnknownMemberCount">How many unknown names the node's object carries in all.</param>
 	/// <param name="ExpectedShape">The expected node in one line, for an object or an array of objects.</param>
 	/// <param name="MemberDescription">The failing member's own description, first sentence.</param>
 	/// <param name="JsonTextExpected">Whether the member takes a JSON document as TEXT and got the JSON itself.</param>
-	/// <param name="ExampleOwner">The argument the example belongs to.</param>
-	/// <param name="Example">An example quoted from that argument's description.</param>
+	/// <param name="Example">An example quoted from the named argument's description.</param>
 	private sealed record ShapeFinding(
+		string NamedArgument,
 		string Location,
 		bool IsNamedArgument,
 		string? Expected,
 		string? Received,
 		IReadOnlyList<string> MissingRequired,
 		IReadOnlyList<string> UnknownMembers,
+		int UnknownMemberCount,
 		string? ExpectedShape,
 		string? MemberDescription,
 		bool JsonTextExpected,
-		string? ExampleOwner,
 		string? Example);
 
 	/// <summary>
@@ -92,14 +119,22 @@ public static partial class McpToolErrorFilter
 		string toolLabel,
 		Type parameterType,
 		string argumentName,
-		string preciseArgumentName,
 		JsonElement argumentValue,
 		Exception exception) {
-		ShapeFinding? finding = DiagnoseShape(parameterType, argumentName, argumentValue, exception);
+		ShapeFinding? finding;
+		try {
+			finding = DiagnoseShape(parameterType, argumentName, argumentValue, exception);
+		}
+		catch (Exception diagnosticFailure) when (!McpExceptionPolicy.IsUnrecoverable(diagnosticFailure)) {
+			// The diagnosis explains a failure; it must never become one. On the direct path this runs outside the
+			// filter's redacted try, so a throw here would reach the SDK's default handler as raw text.
+			return null;
+		}
 		if (finding is null) {
 			return null;
 		}
-		StringBuilder message = new($"invalid-parameter-type: argument '{preciseArgumentName}' for MCP tool '{toolLabel}' ");
+		StringBuilder message = new(
+			$"invalid-parameter-type: argument '{finding.NamedArgument}' for MCP tool '{toolLabel}' ");
 		if (finding.IsNamedArgument) {
 			message.Append(finding.MissingRequired.Count > 0
 				? $"is missing required {DescribeMembers(finding.MissingRequired)}."
@@ -111,9 +146,11 @@ public static partial class McpToolErrorFilter
 				? $"missing required {DescribeMembers(finding.MissingRequired)}."
 				: $"expected {finding.Expected}, received {finding.Received}.");
 		}
-		if (finding.UnknownMembers.Count > 0) {
-			string label = finding.UnknownMembers.Count == 1 ? "Unknown member" : "Unknown members";
-			message.Append($" {label} {McpToolArgumentSupport.JoinCallerKeys(finding.UnknownMembers)}.");
+		if (finding.UnknownMemberCount > 0) {
+			int hidden = finding.UnknownMemberCount - finding.UnknownMembers.Count;
+			message.Append(finding.UnknownMemberCount == 1 ? " Unknown member " : " Unknown members ");
+			message.Append(string.Join(", ", finding.UnknownMembers));
+			message.Append(hidden > 0 ? $" and {hidden} more." : ".");
 		}
 		if (finding.JsonTextExpected) {
 			message.Append(" This member takes a JSON document as TEXT: send it as one JSON string, not as a nested JSON value.");
@@ -125,7 +162,7 @@ public static partial class McpToolErrorFilter
 			message.Append($" Expected {finding.Location}: {finding.ExpectedShape}.");
 		}
 		if (finding.Example is not null) {
-			message.Append($" Example {finding.ExampleOwner}: {finding.Example}");
+			message.Append($" Example {finding.NamedArgument}: {finding.Example}");
 		}
 		return message.ToString();
 	}
@@ -145,84 +182,94 @@ public static partial class McpToolErrorFilter
 		}
 		Type type = UnwrapNullable(parameterType);
 		JsonElement node = argumentValue;
-		PropertyInfo? member = null;
-		PropertyInfo? topLevelMember = null;
-		for (int step = 0; step < segments.Count; step++) {
-			if (!TryStep(ref type, ref node, ref member, segments[step])) {
+		List<WalkStep> steps = [];
+		foreach (PathSegment segment in segments) {
+			if (!TryStep(ref type, ref node, segment, out WalkStep? step)) {
 				return null;
 			}
-			if (step == 0) {
-				topLevelMember = member;
-			}
+			steps.Add(step!);
 		}
 
-		// The argument a message names: its first property when the parameter is a composite record (what
-		// GetPreciseArgumentName reports), otherwise the parameter itself.
-		bool startsWithMember = segments.Count > 0 && segments[0].PropertyName is not null;
-		string location = FormatLocation(argumentName, segments, startsWithMember);
-		bool isNamedArgument = segments.Count == 0 || (startsWithMember && segments.Count == 1);
-		(string? exampleOwner, string? example) = topLevelMember is null
-			? (null, null)
-			: (location.Split('.', '[')[0], ExtractExample(topLevelMember.GetCustomAttribute<DescriptionAttribute>()?.Description));
+		// The argument a message names: the parameter's first member when the walk entered one (what
+		// GetPreciseArgumentName reports), otherwise the parameter itself - a flat array or dictionary parameter.
+		bool startsWithMember = steps.Count > 0 && steps[0].Member is not null;
+		string namedArgument = startsWithMember ? steps[0].Display : argumentName;
+		string location = FormatLocation(namedArgument, steps, startsWithMember);
+		bool isNamedArgument = steps.Count == 0 || (startsWithMember && steps.Count == 1);
+		string? example = startsWithMember
+			? ExtractExample(steps[0].Member!.GetCustomAttribute<DescriptionAttribute>()?.Description)
+			: null;
+		// Only a node that IS a member has a description of its own: an array element or a dictionary value is
+		// not described by its container's text.
+		string? memberDescription = steps.Count > 0
+			? steps[^1].Member?.GetCustomAttribute<DescriptionAttribute>()?.Description
+			: null;
 
 		string? expected = DescribeExpectedKind(type);
 		if (expected is null) {
 			return null;
 		}
 		if (!KindMatches(type, node)) {
-			string? description = member?.GetCustomAttribute<DescriptionAttribute>()?.Description;
 			return new ShapeFinding(
-				location,
-				isNamedArgument,
-				expected,
-				DescribeReceivedKind(node.ValueKind),
-				[],
-				[],
-				DescribeShape(type),
-				FirstSentence(description),
-				expected == "a string" && node.ValueKind is JsonValueKind.Object or JsonValueKind.Array
-					&& description?.Contains("JSON", StringComparison.Ordinal) == true,
-				exampleOwner,
-				example);
+				NamedArgument: namedArgument,
+				Location: location,
+				IsNamedArgument: isNamedArgument,
+				Expected: expected,
+				Received: DescribeReceivedKind(node.ValueKind),
+				MissingRequired: [],
+				UnknownMembers: [],
+				UnknownMemberCount: 0,
+				ExpectedShape: DescribeShape(type),
+				MemberDescription: FirstSentence(memberDescription),
+				JsonTextExpected: expected == "a string" && node.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+					&& memberDescription is not null && JsonTextMember.IsMatch(memberDescription),
+				Example: example);
 		}
 		if (node.ValueKind != JsonValueKind.Object || !IsCompositeRecord(type)) {
 			return null;
 		}
 		IReadOnlyList<WireMember> members = GetWireMembers(type);
-		List<string> supplied = [.. node.EnumerateObject().Select(property => property.Name)];
+		HashSet<string> memberNames = new(members.Select(candidate => candidate.Name), StringComparer.OrdinalIgnoreCase);
+		HashSet<string> supplied = new(StringComparer.OrdinalIgnoreCase);
+		List<string> unknown = [];
+		foreach (JsonProperty property in node.EnumerateObject()) {
+			supplied.Add(property.Name);
+			if (!memberNames.Contains(property.Name)) {
+				unknown.Add(property.Name);
+			}
+		}
 		List<string> missing = [.. members
-			.Where(candidate => candidate.Required
-				&& !supplied.Contains(candidate.Name, StringComparer.OrdinalIgnoreCase))
+			.Where(candidate => candidate.Required && !supplied.Contains(candidate.Name))
 			.Select(candidate => candidate.Name)];
 		if (missing.Count == 0) {
 			// The serializer refused this object for a reason this cannot see (a converter, a member it binds
 			// differently): naming nothing is better than naming the wrong thing.
 			return null;
 		}
-		List<WireMember> unsupplied = [.. members
-			.Where(candidate => !supplied.Contains(candidate.Name, StringComparer.OrdinalIgnoreCase))];
-		List<string> unknown = [.. supplied
-			.Where(name => !members.Any(candidate => string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase)))
-			.Select(name => DescribeUnknownMember(name, unsupplied))];
+		List<WireMember> unsupplied = [.. members.Where(candidate => !supplied.Contains(candidate.Name))];
 		return new ShapeFinding(
-			location,
-			isNamedArgument,
-			null,
-			null,
-			missing,
-			unknown,
-			DescribeShape(type),
-			null,
-			false,
-			exampleOwner,
-			example);
+			NamedArgument: namedArgument,
+			Location: location,
+			IsNamedArgument: isNamedArgument,
+			Expected: null,
+			Received: null,
+			MissingRequired: missing,
+			UnknownMembers: [.. unknown.Take(McpToolArgumentSupport.MaxEchoedKeys)
+				.Select(name => DescribeUnknownMember(name, unsupplied))],
+			UnknownMemberCount: unknown.Count,
+			ExpectedShape: DescribeShape(type),
+			MemberDescription: null,
+			JsonTextExpected: false,
+			Example: example);
 	}
 
 	/// <summary>
 	/// Moves one path segment down, in the JSON and in the declared type together. False when the step does
-	/// not exist on either side - the path then describes something this cannot explain.
+	/// not exist on either side, or leads into a member read through its own converter - the path then
+	/// describes something this cannot explain.
 	/// </summary>
-	private static bool TryStep(ref Type type, ref JsonElement node, ref PropertyInfo? member, PathSegment segment) {
+	private static bool TryStep(ref Type type, ref JsonElement node, PathSegment segment, out WalkStep? step) {
+		step = null;
 		if (segment.Index is { } index) {
 			if (node.ValueKind != JsonValueKind.Array || index >= node.GetArrayLength()
 				|| GetEnumerableElementType(type) is not { } elementType) {
@@ -230,28 +277,36 @@ public static partial class McpToolErrorFilter
 			}
 			node = node[index];
 			type = UnwrapNullable(elementType);
+			step = new WalkStep($"[{index}]", null);
 			return true;
 		}
-		if (node.ValueKind != JsonValueKind.Object
-			|| !TryGetPropertyIgnoreCase(node, segment.PropertyName!, out JsonElement child)) {
+		string name = segment.PropertyName!;
+		if (node.ValueKind != JsonValueKind.Object) {
 			return false;
 		}
 		if (GetDictionaryValueType(type) is { } valueType) {
-			node = child;
+			// A dictionary key is the caller's own text, matched exactly as the serializer stores it, and shown
+			// bracketed so it cannot read as the server's prose.
+			if (!TryGetProperty(node, name, StringComparison.Ordinal, out JsonElement value)) {
+				return false;
+			}
+			node = value;
 			type = UnwrapNullable(valueType);
+			step = new WalkStep($"['{McpToolArgumentSupport.DescribeCallerKey(name)}']", null);
 			return true;
 		}
 		if (!IsCompositeRecord(type)) {
 			return false;
 		}
-		WireMember? wireMember = GetWireMembers(type).FirstOrDefault(candidate =>
-			string.Equals(candidate.Name, segment.PropertyName, StringComparison.OrdinalIgnoreCase));
-		if (wireMember is null) {
+		WireMember? member = GetWireMembers(type).FirstOrDefault(candidate =>
+			string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+		if (member is null || member.Property.GetCustomAttribute<JsonConverterAttribute>() is not null
+			|| !TryGetProperty(node, name, StringComparison.OrdinalIgnoreCase, out JsonElement child)) {
 			return false;
 		}
 		node = child;
-		member = wireMember.Property;
-		type = UnwrapNullable(wireMember.Property.PropertyType);
+		type = UnwrapNullable(member.Property.PropertyType);
+		step = new WalkStep(member.Name, member.Property);
 		return true;
 	}
 
@@ -297,32 +352,26 @@ public static partial class McpToolErrorFilter
 
 	/// <summary>
 	/// The node relative to the argument the message names: <c>filters.all[0]</c> under a composite record,
-	/// <c>select[1]</c> for a flat parameter, or the argument name itself.
+	/// <c>select[1]</c> or <c>labels['en']</c> for a flat parameter, or the argument name itself.
 	/// </summary>
-	private static string FormatLocation(string argumentName, IReadOnlyList<PathSegment> segments, bool startsWithMember) {
-		StringBuilder location = new(startsWithMember ? string.Empty : argumentName);
-		foreach (PathSegment segment in segments) {
-			if (segment.Index is { } index) {
-				location.Append('[').Append(index).Append(']');
-			} else {
-				if (location.Length > 0) {
-					location.Append('.');
-				}
-				location.Append(McpToolArgumentSupport.DescribeCallerKey(segment.PropertyName!));
-			}
+	private static string FormatLocation(string namedArgument, IReadOnlyList<WalkStep> steps, bool startsWithMember) {
+		StringBuilder location = new(namedArgument);
+		foreach (WalkStep step in steps.Skip(startsWithMember ? 1 : 0)) {
+			location.Append(step.Member is null ? step.Display : "." + step.Display);
 		}
-		return location.Length == 0 ? argumentName : location.ToString();
+		return location.ToString();
 	}
 
 	/// <summary>
-	/// The JSON kind a type is bound from, as the messages word it, or <see langword="null"/> for a type that
-	/// accepts any JSON (<see cref="JsonElement"/>, <see cref="JsonNode"/>, <see cref="object"/>).
+	/// The JSON kind a type is bound from, as the messages word it, or <see langword="null"/> when this cannot
+	/// say: a type that accepts any JSON (<see cref="JsonElement"/>, <see cref="JsonNode"/>, <see cref="object"/>),
+	/// one read through its own converter, or a class with no wire members of its own.
 	/// </summary>
 	private static string? DescribeExpectedKind(Type type) {
-		if (AcceptsAnyJson(type)) {
+		if (AcceptsAnyJson(type) || HasOwnConverter(type)) {
 			return null;
 		}
-		if (IsStringLike(type)) {
+		if (type == typeof(byte[]) || IsStringLike(type)) {
 			return "a string";
 		}
 		if (type == typeof(bool)) {
@@ -337,7 +386,7 @@ public static partial class McpToolErrorFilter
 		if (GetEnumerableElementType(type) is not null) {
 			return "an array";
 		}
-		return "an object";
+		return IsCompositeRecord(type) || IsPolymorphic(type) ? "an object" : null;
 	}
 
 	private static string DescribeReceivedKind(JsonValueKind kind) => kind switch {
@@ -355,7 +404,7 @@ public static partial class McpToolErrorFilter
 		if (node.ValueKind == JsonValueKind.Null) {
 			return !type.IsValueType;
 		}
-		if (IsStringLike(type)) {
+		if (type == typeof(byte[]) || IsStringLike(type)) {
 			return node.ValueKind == JsonValueKind.String
 				|| (type.IsEnum && node.ValueKind == JsonValueKind.Number);
 		}
@@ -378,7 +427,8 @@ public static partial class McpToolErrorFilter
 
 	/// <summary>
 	/// The expected node in one line - <c>an object with field (required), op, value, in</c> or <c>an array of
-	/// objects with ...</c> - or <see langword="null"/> for any other type, whose kind already says it all.
+	/// objects with ...</c> - or <see langword="null"/> for any other type, whose kind already says it all, and
+	/// for a polymorphic one, whose members depend on its discriminator.
 	/// </summary>
 	private static string? DescribeShape(Type type) {
 		if (IsCompositeRecord(type)) {
@@ -417,6 +467,9 @@ public static partial class McpToolErrorFilter
 	/// when neither holds: a semantic guess (<c>column</c> for <c>field</c>) is left to the expected shape.
 	/// </summary>
 	private static string? SuggestWireName(string name, IReadOnlyList<WireMember> candidates) {
+		if (name.Length > MaxSuggestedKeyLength) {
+			return null;
+		}
 		string normalized = NormalizeMemberName(name);
 		if (normalized.Length < 2) {
 			return null;
@@ -430,8 +483,9 @@ public static partial class McpToolErrorFilter
 			return prefixMatch.Name;
 		}
 		return candidates
-			.Select(candidate => (candidate.Name,
-				Distance: McpToolArgumentSupport.LevenshteinDistance(normalized, NormalizeMemberName(candidate.Name))))
+			.Select(candidate => (candidate.Name, Known: NormalizeMemberName(candidate.Name)))
+			.Where(scored => Math.Abs(scored.Known.Length - normalized.Length) <= 2)
+			.Select(scored => (scored.Name, Distance: McpToolArgumentSupport.LevenshteinDistance(normalized, scored.Known)))
 			.Where(scored => scored.Distance <= 2 && scored.Distance * 2 < normalized.Length)
 			.OrderBy(scored => scored.Distance)
 			.Select(scored => scored.Name)
@@ -466,30 +520,47 @@ public static partial class McpToolErrorFilter
 	}
 
 	/// <summary>
-	/// The members a caller can supply for a composite record, with the names the serializer reads them by.
+	/// The members a caller can supply for a type, with the names the serializer reads them by, computed once
+	/// per type. The one definition behind <see cref="GetJsonPropertyNames"/> as well.
 	/// </summary>
 	/// <remarks>
-	/// The same supplyable set as <see cref="GetJsonPropertyNames"/>, plus the property and whether the
-	/// serializer requires it: a C# <c>required</c> member or <see cref="JsonRequiredAttribute"/>. A positional
-	/// record parameter is NOT required - the options leave RespectRequiredConstructorParameters off, so a
-	/// missing one binds to its default - and so is never reported missing.
+	/// Required means what the serializer enforces: a C# <c>required</c> member or
+	/// <see cref="JsonRequiredAttribute"/>. A positional record parameter is NOT required - the options leave
+	/// RespectRequiredConstructorParameters off, so a missing one binds to its default - and so is never
+	/// reported missing.
 	/// </remarks>
 	private static IReadOnlyList<WireMember> GetWireMembers(Type type) =>
 		WireMembersByType.GetOrAdd(type, static key => key
 			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
 			.Where(IsWireContractProperty)
 			.Select(property => new WireMember(
-				GetJsonPropertyName(property)
-					?? SerializerOptions.PropertyNamingPolicy?.ConvertName(property.Name)
-					?? property.Name,
+				GetJsonPropertyName(property) ?? property.Name,
 				property,
 				property.GetCustomAttribute<RequiredMemberAttribute>() is not null
 					|| property.GetCustomAttribute<JsonRequiredAttribute>() is not null))
 			.ToArray());
 
+	/// <summary>
+	/// A class bound member by member: not a collection, not a JSON-anything type, not polymorphic (its members
+	/// depend on the discriminator) and not read through its own converter.
+	/// </summary>
 	private static bool IsCompositeRecord(Type type) =>
 		type.IsClass && type != typeof(string) && !AcceptsAnyJson(type) && !IsJsonObjectContract(type)
-		&& GetEnumerableElementType(type) is null && GetWireMembers(type).Count > 0;
+		&& GetEnumerableElementType(type) is null && !IsPolymorphic(type) && !HasOwnConverter(type)
+		&& GetWireMembers(type).Count > 0;
+
+	private static bool IsPolymorphic(Type type) =>
+		type.GetCustomAttribute<JsonPolymorphicAttribute>() is not null
+		|| type.GetCustomAttributes<JsonDerivedTypeAttribute>().Any();
+
+	/// <summary>
+	/// Whether the type is read through a converter of its own - an attribute on the type, or one the MCP
+	/// options carry - except an enum, whose string converter is what makes it "a string".
+	/// </summary>
+	private static bool HasOwnConverter(Type type) =>
+		!type.IsEnum
+		&& (type.GetCustomAttribute<JsonConverterAttribute>() is not null
+			|| SerializerOptions.Converters.Any(converter => converter.CanConvert(type)));
 
 	private static bool AcceptsAnyJson(Type type) =>
 		type == typeof(JsonElement) || type == typeof(JsonDocument) || type == typeof(object)
@@ -505,9 +576,12 @@ public static partial class McpToolErrorFilter
 
 	private static Type UnwrapNullable(Type type) => Nullable.GetUnderlyingType(type) ?? type;
 
-	/// <summary>The element type of an array or <see cref="IEnumerable{T}"/>; null for a string or a dictionary.</summary>
+	/// <summary>
+	/// The element type of an array or <see cref="IEnumerable{T}"/>; null for a string, a byte array (base64
+	/// text on the wire) or a dictionary.
+	/// </summary>
 	private static Type? GetEnumerableElementType(Type type) {
-		if (type == typeof(string) || IsJsonObjectContract(type) || AcceptsAnyJson(type)) {
+		if (type == typeof(string) || type == typeof(byte[]) || IsJsonObjectContract(type) || AcceptsAnyJson(type)) {
 			return null;
 		}
 		if (type.IsArray) {
@@ -530,9 +604,9 @@ public static partial class McpToolErrorFilter
 		return dictionary?.GetGenericArguments()[1] ?? typeof(object);
 	}
 
-	private static bool TryGetPropertyIgnoreCase(JsonElement node, string name, out JsonElement value) {
+	private static bool TryGetProperty(JsonElement node, string name, StringComparison comparison, out JsonElement value) {
 		foreach (JsonProperty property in node.EnumerateObject()) {
-			if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) {
+			if (string.Equals(property.Name, name, comparison)) {
 				value = property.Value;
 				return true;
 			}

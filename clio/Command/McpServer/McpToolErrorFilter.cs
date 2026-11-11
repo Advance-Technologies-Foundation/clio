@@ -965,8 +965,8 @@ public static partial class McpToolErrorFilter
 	/// accept a string value, so a string there is not a caller mistake.
 	/// </summary>
 	private static bool ExpectsJsonObject(Type parameterType) {
-		Type type = Nullable.GetUnderlyingType(parameterType) ?? parameterType;
-		if (type == typeof(JsonElement) || type == typeof(JsonDocument) || type == typeof(object)) {
+		Type type = UnwrapNullable(parameterType);
+		if (AcceptsAnyJson(type)) {
 			return false;
 		}
 		if (IsJsonObjectContract(type)) {
@@ -1008,7 +1008,7 @@ public static partial class McpToolErrorFilter
 		// Where the serializer's path can be followed, the message names the failing member, what the
 		// contract expects there and an example, instead of only the argument (McpToolErrorFilter.ShapeDiagnosis.cs).
 		if (!string.IsNullOrWhiteSpace(argumentName)
-			&& BuildShapeFindingMessage(toolLabel, parameterType, argumentName, preciseArgumentName, argumentValue, exception)
+			&& BuildShapeFindingMessage(toolLabel, parameterType, argumentName, argumentValue, exception)
 				is { } shapeMessage) {
 			return shapeMessage;
 		}
@@ -1039,52 +1039,46 @@ public static partial class McpToolErrorFilter
 	/// <c>$.rules[0].actions[0].type</c> is reported as <c>rules</c>. Without this distinction the message
 	/// then describes the CLR type of <c>rules</c>, which the caller already supplied correctly.
 	/// </remarks>
-	private static bool IsNestedBindingFailure(Type parameterType, Exception exception) {
-		if (!parameterType.IsClass || parameterType == typeof(string)
-			|| exception is not JsonException { Path: { } path }
-			|| !path.StartsWith("$.", StringComparison.Ordinal)) {
-			return false;
-		}
-		string remainder = path[2..];
-		int boundary = remainder.IndexOfAny(['.', '[']);
-		if (boundary < 0) {
-			return false;
-		}
+	private static bool IsNestedBindingFailure(Type parameterType, Exception exception) =>
 		// Only when the first segment actually resolved to a documented property. Otherwise the reported
 		// name is the outer argument itself and "must be <type>" remains the accurate advice.
-		return GetJsonPropertyNames(parameterType)
-			.Contains(remainder[..boundary], StringComparer.OrdinalIgnoreCase);
-	}
+		TryGetFirstDocumentedMember(parameterType, exception, out _, out int segmentCount) && segmentCount > 1;
 
-	private static string GetPreciseArgumentName(Type parameterType, string? argumentName, Exception exception) {
-		if (parameterType.IsClass && parameterType != typeof(string)
-			&& exception is JsonException { Path: { } path }
-			&& path.StartsWith("$.", StringComparison.Ordinal)) {
-			string propertyName = path[2..].Split(['.', '['], 2)[0];
-			if (GetJsonPropertyNames(parameterType).Contains(propertyName, StringComparer.OrdinalIgnoreCase)) {
-				return propertyName;
-			}
+	private static string GetPreciseArgumentName(Type parameterType, string? argumentName, Exception exception) =>
+		TryGetFirstDocumentedMember(parameterType, exception, out string? memberName, out _)
+			? memberName!
+			: argumentName ?? string.Empty;
+
+	/// <summary>
+	/// The declared wire name of the documented member the failing JSON path starts with, and how many
+	/// segments the path has; false when the parameter is not a record or the path starts elsewhere.
+	/// </summary>
+	private static bool TryGetFirstDocumentedMember(
+		Type parameterType, Exception exception, out string? memberName, out int segmentCount) {
+		memberName = null;
+		segmentCount = 0;
+		if (!parameterType.IsClass || parameterType == typeof(string)
+			|| exception is not JsonException { Path: { } path }
+			|| !TryParseJsonPath(path, out List<PathSegment> segments)
+			|| segments.Count == 0 || segments[0].PropertyName is not { } first) {
+			return false;
 		}
-		return argumentName ?? string.Empty;
+		memberName = GetJsonPropertyNames(parameterType)
+			.FirstOrDefault(name => string.Equals(name, first, StringComparison.OrdinalIgnoreCase));
+		segmentCount = segments.Count;
+		return memberName is not null;
 	}
 
 	private static string GetExpectedJsonType(Type parameterType, string argumentName) {
 		PropertyInfo? property = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
 			.FirstOrDefault(candidate =>
 				(GetJsonPropertyName(candidate) ?? candidate.Name).Equals(argumentName, StringComparison.OrdinalIgnoreCase));
-		Type type = property?.PropertyType ?? parameterType;
-		if (Nullable.GetUnderlyingType(type) is { } underlyingType) {
-			type = underlyingType;
-		}
-		if (type == typeof(string)) return "a string";
-		if (type == typeof(bool)) return "a boolean";
-		// A dictionary IS an IEnumerable, so it has to be recognized BEFORE the enumerable branch below.
-		// Without this, a contract taking Dictionary<string, JsonElement> — clio-run's own `args` — was
-		// reported as "an array", telling the caller to resend the very shape that had just failed.
-		if (IsJsonObjectContract(type)) return "an object";
-		if (type.IsArray || (typeof(System.Collections.IEnumerable).IsAssignableFrom(type) && type != typeof(string))) return "an array";
-		if (type.IsPrimitive || type == typeof(decimal)) return "a number";
-		return "an object";
+		Type type = UnwrapNullable(property?.PropertyType ?? parameterType);
+		// One definition with the shape diagnosis (DescribeExpectedKind), which recognizes a dictionary BEFORE
+		// an enumerable - a contract taking Dictionary<string, JsonElement>, clio-run's own `args`, was once
+		// reported as "an array" - and words Guid, DateTime, an enum and a Uri as the strings they are on the
+		// wire. A type it cannot word (JsonElement, a converter-bound class) keeps the old "an object".
+		return DescribeExpectedKind(type) ?? "an object";
 	}
 
 	/// <summary>
@@ -1227,16 +1221,9 @@ public static partial class McpToolErrorFilter
 	/// </para>
 	/// </remarks>
 	private static IReadOnlyList<string> GetJsonPropertyNames(Type type) =>
-		CanonicalNamesByType.GetOrAdd(type, static key => {
-			if (!key.IsClass || key == typeof(string)) {
-				return [];
-			}
-			return key.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-				.Where(IsWireContractProperty)
-				.Select(property =>
-					property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
-				.ToArray();
-		});
+		CanonicalNamesByType.GetOrAdd(type, static key => !key.IsClass || key == typeof(string)
+			? []
+			: GetWireMembers(key).Select(member => member.Name).ToArray());
 
 	/// <summary>Canonical wire names per args-record type; see <see cref="GetJsonPropertyNames"/>.</summary>
 	private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, IReadOnlyList<string>>

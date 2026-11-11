@@ -206,6 +206,81 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 			because: "the suggestion travels on the clio-run path as well");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A polymorphic member is never described by its base type's members: the derived members and the discriminator decide its shape, so listing the base's alone would send the caller to a second failure.")]
+	public async Task HandleCallToolErrors_ShouldNameNoMembers_WhenTheFailingNodeIsPolymorphic() {
+		// Arrange
+		RequestContext<CallToolRequestParams> arrayContext = CreateFakeContext<FakeRuleTool>("{\"actions\":{}}");
+		RequestContext<CallToolRequestParams> elementContext = CreateFakeContext<FakeRuleTool>("{\"actions\":[\"make-editable\"]}");
+
+		// Act
+		string arrayText = await CallAndReadTextAsync(arrayContext);
+		string elementText = await CallAndReadTextAsync(elementContext);
+
+		// Assert
+		arrayText.Should().Contain("argument 'actions' for MCP tool 'fake-tool' must be an array. Received an object.",
+			because: "the JSON kinds are still certain when the element type is polymorphic");
+		elementText.Should().Contain("At actions[0]: expected an object, received a string.",
+			because: "an element of a polymorphic type is still an object on the wire");
+		(arrayText + elementText).Should().NotContain("uId",
+			because: "the base type's members are not the shape of any derived action");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A dictionary key on the path is shown bracketed and sanitized, and an element is not described by its container's description or JSON-text hint.")]
+	public async Task HandleCallToolErrors_ShouldBracketDictionaryKeysAndKeepContainerTextOffElements() {
+		// Arrange
+		RequestContext<CallToolRequestParams> keyContext = CreateFakeContext<FakeMapTool>(
+			"{\"map\":{\"en\\nfake prose\":{\"x\":1}}}");
+		RequestContext<CallToolRequestParams> elementContext = CreateFakeContext<FakeMapTool>(
+			"{\"map\":{\"en\":{\"label\":\"a\",\"tags\":[{\"a\":1}]}}}");
+
+		// Act
+		string keyText = await CallAndReadTextAsync(keyContext);
+		string elementText = await CallAndReadTextAsync(elementContext);
+
+		// Assert
+		keyText.Should().Contain("At map['",
+			because: "a caller's dictionary key is framed so it cannot read as the server's own prose");
+		keyText.Should().Contain("missing required member 'label'",
+			because: "the dictionary value is still diagnosed as the record it is");
+		keyText.Should().NotContain("\n",
+			because: "a line break in a caller's key must not start a new line of the message");
+		elementText.Should().Contain("At map['en'].tags[0]: expected a string, received an object.",
+			because: "the element is located through the dictionary key and the member");
+		elementText.Should().NotContain("About ",
+			because: "the container's description describes the list, not one of its elements");
+		elementText.Should().NotContain("as TEXT",
+			because: "the JSON-text hint belongs to the member whose description says so, not to its elements");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Unknown keys are echoed sanitized and capped: control characters and quotes never reach the message, at most ten keys are named with the rest counted, and an over-long key gets no suggestion.")]
+	public async Task HandleCallToolErrors_ShouldSanitizeAndCapUnknownKeys_WhenRequiredMemberIsMissing() {
+		// Arrange
+		string longKey = new('k', 10_000);
+		string extraKeys = string.Join(",", Enumerable.Range(1, 13).Select(index => $"\"extra{index}\":1"));
+		RequestContext<CallToolRequestParams> context = CreateODataReadContext(
+			"{\"environment-name\":\"dev\",\"bad\\u001b[31m'\\n\\\"key\":1,\"" + longKey + "\":1," + extraKeys + "}");
+
+		// Act
+		string text = await CallAndReadTextAsync(context);
+
+		// Assert
+		text.Should().Contain("is missing required member 'entity'",
+			because: "the refusal is still about the member the payload omitted");
+		text.Should().Contain("and 5 more.",
+			because: "fifteen unknown keys are named ten at a time with the rest counted");
+		text.Should().NotContain("\u001b", because: "a terminal escape in a caller's key must not reach the transcript");
+		text.Should().NotContain("\n", because: "a line break in a caller's key must not start a new line of the message");
+		text.Should().NotContain("'\"", because: "a quote in a caller's key must not close the quoting around it");
+		text.Length.Should().BeLessThan(3_000,
+			because: "an echoed key is truncated, so one huge key cannot inflate the refusal");
+	}
+
 	private static RequestContext<CallToolRequestParams> CreateODataReadContext(string argsJson) {
 		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
 			ODataReadTool.ToolName,
@@ -215,6 +290,16 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		context.MatchedPrimitive = McpServerTool.Create(
 			typeof(ODataReadTool).GetMethod(nameof(ODataReadTool.Read), BindingFlags.Public | BindingFlags.Instance)!,
 			CreateODataReadTool());
+		return context;
+	}
+
+	private static RequestContext<CallToolRequestParams> CreateFakeContext<TTool>(string argsJson) where TTool : new() {
+		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
+			"fake-tool",
+			new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse(argsJson).RootElement
+			});
+		context.MatchedPrimitive = McpServerTool.Create(typeof(TTool).GetMethod("Execute")!, new TTool());
 		return context;
 	}
 
@@ -245,5 +330,42 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 
 	public sealed class FakeConverterTool {
 		public string Execute(FakeConverterArgs args) => "ok";
+	}
+
+	[JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
+	[JsonDerivedType(typeof(FakeMakeEditableAction), "make-editable")]
+	public abstract record FakeAction {
+		[JsonPropertyName("uId")]
+		public string? UId { get; init; }
+	}
+
+	public sealed record FakeMakeEditableAction : FakeAction {
+		[JsonPropertyName("items")]
+		public List<string>? Items { get; init; }
+	}
+
+	public sealed record FakeRuleArgs(
+		[property: JsonPropertyName("actions")]
+		List<FakeAction> Actions);
+
+	public sealed class FakeRuleTool {
+		public string Execute(FakeRuleArgs args) => "ok";
+	}
+
+	public sealed record FakeLabel {
+		[JsonPropertyName("label")]
+		public required string Label { get; init; }
+
+		[JsonPropertyName("tags")]
+		[System.ComponentModel.Description("JSON array of tag names.")]
+		public List<string>? Tags { get; init; }
+	}
+
+	public sealed record FakeMapArgs(
+		[property: JsonPropertyName("map")]
+		Dictionary<string, FakeLabel> Map);
+
+	public sealed class FakeMapTool {
+		public string Execute(FakeMapArgs args) => "ok";
 	}
 }
