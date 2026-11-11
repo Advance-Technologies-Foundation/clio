@@ -19,7 +19,7 @@ namespace Clio.Command.McpServer;
 /// <summary>
 /// Converts MCP tool invocation failures that happen before tool method execution into readable tool results.
 /// </summary>
-public static class McpToolErrorFilter
+public static partial class McpToolErrorFilter
 {
 	// Placeholder surfaced in error text when the MCP request carries no tool name (context.Params?.Name is null).
 	private const string UnknownToolName = "<unknown>";
@@ -903,6 +903,7 @@ public static class McpToolErrorFilter
 					context.Params.Name,
 					parameter.ParameterType,
 					argumentName,
+					argumentValue,
 					ex));
 				return true;
 			}
@@ -1000,9 +1001,17 @@ public static class McpToolErrorFilter
 		string? toolName,
 		Type parameterType,
 		string? argumentName,
+		JsonElement argumentValue,
 		Exception exception) {
 		string preciseArgumentName = GetPreciseArgumentName(parameterType, argumentName, exception);
 		string toolLabel = toolName ?? UnknownToolName;
+		// Where the serializer's path can be followed, the message names the failing member, what the
+		// contract expects there and an example, instead of only the argument (McpToolErrorFilter.ShapeDiagnosis.cs).
+		if (!string.IsNullOrWhiteSpace(argumentName)
+			&& BuildShapeFindingMessage(toolLabel, parameterType, argumentName, preciseArgumentName, argumentValue, exception)
+				is { } shapeMessage) {
+			return shapeMessage;
+		}
 		string message;
 		if (string.IsNullOrWhiteSpace(argumentName)) {
 			message = $"invalid-parameter-type: arguments for MCP tool '{toolLabel}' must match the documented shape "
