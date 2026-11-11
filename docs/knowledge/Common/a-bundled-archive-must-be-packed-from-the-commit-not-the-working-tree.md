@@ -31,10 +31,14 @@ verify on Windows.
 
 **What breaks if you ignore it** — the pin degrades from provenance to a change detector: it still goes red
 when the archive moves, and it establishes nothing about WHERE the bytes came from, which is the one
-question it exists to answer. This has already happened twice — nine files at the 1.3.1.1 cut, thirteen at
-1.6.1.0 — and both times the archive was clean, correct and unreproducible at the same time. Note especially
+question it exists to answer. This has happened three times — nine files at the 1.3.1.1 cut, thirteen at
+1.6.1.0, and all 366 text entries of a 1.6.6.149 cut exported without the two flags (ENG-92710, caught in review
+and re-exported before release) — and each time the archive was clean, correct and unreproducible at the same time. Note especially
 that the script's clean-tree gate **cannot** catch it: a tree can be clean, current and CRLF at once, so
-there is no dirty state to refuse. That is why the fix is structural rather than another gate. If you change
+there is no dirty state to refuse. That is why the fix is structural - the export recipe - backed since ENG-92710
+by `BundledArchive_ShouldCarryNoCrlfInAnyTextEntry`, which fails on any text entry carrying CRLF. It exempts
+`descriptor.json`, the one entry a SCRIPT cut writes with `set-pkg-version` after the export (CRLF on Windows)
+and pins separately. If you change
 how the archive is produced, change the recipe in `docs/agent-instructions/bundled-packages.md` and the
 remarks on `ExpectedArchiveSha256` in the same commit — those two are what a reviewer follows, and a recipe
 that no longer reproduces the pin is the defect this record is about.

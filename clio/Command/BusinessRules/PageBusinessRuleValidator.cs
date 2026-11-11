@@ -72,7 +72,7 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 			"Unknown or unsupported datasource-bound page attribute",
 			StringComparison.Ordinal);
 		if (result.Contains("rule.condition.conditions", StringComparison.Ordinal)) {
-			result += $" Available condition attributes: {FormatCandidates(attributeMap.Keys)}.";
+			result += $" Available condition attributes: {FormatAttributeCandidates(attributeMap)}.";
 		}
 		if (result.Contains("rule.actions", StringComparison.Ordinal)) {
 			result += $" Available page elements: {FormatCandidates(elementNames)}.";
@@ -80,10 +80,20 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 		return result;
 	}
 
-	private static string FormatCandidates(IEnumerable<string> candidates) {
-		string[] values = candidates
-			.Where(candidate => !string.IsNullOrWhiteSpace(candidate))
-			.OrderBy(candidate => candidate, StringComparer.OrdinalIgnoreCase)
+	// Runtime-generated attributes (e.g. a stepper's active step) are few and easy to miss among the many
+	// data-source columns, so they are listed first and never fall behind the cap.
+	private static string FormatAttributeCandidates(
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
+		FormatCandidates(
+			attributeMap.Where(pair => pair.Value.IsRuntimeGenerated).Select(pair => pair.Key)
+				.OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+				.Concat(attributeMap.Where(pair => !pair.Value.IsRuntimeGenerated).Select(pair => pair.Key)
+					.OrderBy(key => key, StringComparer.OrdinalIgnoreCase)),
+			keepOrder: true);
+
+	private static string FormatCandidates(IEnumerable<string> candidates, bool keepOrder = false) {
+		IEnumerable<string> filtered = candidates.Where(candidate => !string.IsNullOrWhiteSpace(candidate));
+		string[] values = (keepOrder ? filtered : filtered.OrderBy(candidate => candidate, StringComparer.OrdinalIgnoreCase))
 			.Take(20)
 			.ToArray();
 		return values.Length == 0 ? "<none>" : string.Join(", ", values);

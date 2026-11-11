@@ -70,13 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>d6a314a8</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.140</c>): branch <c>feature/ENG-105549-send-email-gaps</c> from <c>main</c> at 1.6.6.136
-	/// (<c>0f68ccfe</c>), so the cut carries everything 1.6.6.136 shipped. 1.6.6.137 is claimed by ENG-92710 and is not in it;
-	/// 1.6.6.138 and 1.6.6.139 were cut on this branch and superseded before release.
-	/// This cut was a HAND cut from the stamp commit: the package branch committed and tagged its own
-	/// <c>set-pkg-version</c>, so the stamp commit was exported with the two <c>-c</c> flags and packed as it is, with no
-	/// <c>descriptor.json</c> overlay.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>bc823805</c>, to be tagged
+	/// <c>crtprocessbuilder-1.6.6.150</c>): branch <c>feature/ENG-92710-call-web-service-element</c>, which merged <c>main</c> at
+	/// 1.6.6.145 (<c>cba8abac</c>), so the cut carries everything 1.6.6.145 shipped. 1.6.6.146,
+	/// 1.6.6.147, 1.6.6.148 and 1.6.6.149 were cut on this branch and superseded before release.
+	/// This cut is a HAND cut from the stamp commit: the producing commit carries the restamped descriptor itself, so
+	/// its descriptor reads 1.6.6.150 and every archive entry is byte-identical to that commit's blob.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -89,37 +88,21 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.136 (ENG-105549): describe reports an attachment row whose source element
-	/// does not run before the email; the same-files notice also catches a process parameter whose file item reads the
-	/// same element output; a performer contact expands <c>[#ParameterName#]</c> and <c>[#Element.Output#]</c>; a failed
-	/// nested read refuses a save that holds attachments or a Process file; a <c>Mapping</c> attachment value that names
-	/// nothing counts as undecodable. Send email recipients take record ids: a record id mapped onto a recipient that
-	/// references an object is stored as the <c>[#Lookup.&lt;object&gt;.&lt;id&gt;#]</c> formula; a record id mapped onto a
-	/// text recipient, or sent as an <c>email.to</c>/<c>cc</c>/<c>bcc</c> <c>value</c>, is refused naming Contact and
-	/// Account; an <c>expression</c> with <c>referenceSchema</c> naming a held constant-id recipient rewrites it in place;
-	/// re-sending a held recipient is a no-op; an <c>expression</c> record macro must name an existing record; and the
-	/// request ends with a warning for each recipient that holds a constant id. Over 1.6.6.139, 1.6.6.140 adds: one
-	/// anchored <c>[#Lookup...#]</c> record reader; a record formula on a Send email recipient always ends as a Lookup
-	/// recipient of its object (an <c>addMapping</c> <c>expression</c> or <c>value</c>, or an <c>email.to</c>/<c>cc</c>/<c>bcc</c>
-	/// <c>expression</c> without <c>referenceSchema</c>), and a Lookup recipient is never rewritten; an entry naming what a
-	/// recipient already holds is a no-op before any refusal; objects are compared by their resolved root/parent
-	/// schema; a macro-text value onto a non-Lookup recipient is refused; a held repair that cannot run is reported; a
-	/// recipient whose record is gone is reported without a re-map remedy; and the map-path walk follows a path the way
-	/// both platform readers do. The service surface is unchanged (8 operations, 6 gate call sites, checked against the
-	/// sources). The create/modify floor rises to 1.6.6.140 even though clio sends no new member: this cut also
-	/// tightens the unscoped-files guard, and a server-side change with a security character takes a
-	/// <c>[RequiresPackage]</c> literal rather than being left to convergence. What earlier
-	/// cuts carried is in this file's git history rather than here: it described archives that are no longer
-	/// shipped.</para>
+	/// <para>What this cut carries over 1.6.6.145 (ENG-92710): the Call web service element - a <c>webService</c> element
+	/// type with its <c>webService</c> block (<c>service</c>, <c>method</c>, <c>timeoutSeconds</c>, <c>ignoreErrors</c>) on create,
+	/// <c>addElement</c> and <c>setElement</c>, a retarget on <c>setElement</c> that keeps the Success, Response and StatusCode
+	/// result parameters, a describe read-back (<c>DescribeWebServiceInfo</c>) with <c>serviceUId</c>, <c>serviceResolved</c>,
+	/// <c>methodResolved</c>, <c>parameters</c> and <c>issues</c>, SOAP services built as REST ones, and the refusals of the legacy
+	/// SOAP task route and of a multi-instance web service element. The service surface is unchanged (8 operations, 6
+	/// design-gate call sites, counted in the producing sources). The <c>[RequiresPackage]</c> floor of the webService
+	/// surface moves to 1.6.6.150. What earlier cuts carried is in this file's git history rather than here: it described
+	/// archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5545 passed,
-	/// 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> -
-	/// measured on this cut, not carried over from a
+	/// This cut did NOT skip the package suite: it passed on the producing sources -
+	/// 5995 passed, 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
-	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two
-	/// security counts below exist to catch. The inventory was checked by hand: 326
-	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
-	/// that executes on install; every entry is byte-identical to the stamp commit's blob.
+	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two security counts below
+	/// exist to catch.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -198,7 +181,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"CB69FC2EA261A90418954EA4F9394AF322889AFA73EE95E65D4E29E2AEA7EDD8";
+		"2A7427BFAC76FF891A2F7CC5596FC46F55508ABBD8E6D9FC235E175BFF2EAA87";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -226,14 +209,15 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.140";
+	private const string ExpectedArchiveVersion = "1.6.6.150";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
 	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut; 1.6.6.136 was a script cut
-	/// again; 1.6.6.138, 1.6.6.139 and 1.6.6.140 are hand cuts from the stamp commit, so it names that commit and its descriptor
+	/// again; 1.6.6.138, 1.6.6.139 and 1.6.6.140 are hand cuts from the stamp commit, 1.6.6.145 a script cut, and 1.6.6.150 a
+	/// hand cut from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
@@ -242,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "d6a314a81db8d7be561c05948659747d6eeb2893";
+	private const string ExpectedProducingCommit = "bc82380506f2ce52d5567c4b8c7a7ec660b91cc3";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -268,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793829279000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794285814000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -283,7 +267,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1785919371000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794285790000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -646,6 +630,51 @@ public class BundledProcessBuilderPackageTests {
 				+ "rather than a diff line reading 'Bin N -> M bytes'. If this failed because you replaced "
 				+ "the archive on purpose, update ExpectedArchiveSha256 in the same commit and record where "
 				+ "the new bytes came from");
+	}
+
+	[Test]
+	[Description("Every text entry of the bundled archive must use LF line endings, because the SHA-256 pin is reproducible from the producing commit only when the entries are its blobs byte for byte - an export that let git convert to CRLF ships the same sources under a hash nobody can rebuild.")]
+	public void BundledArchive_ShouldCarryNoCrlfInAnyTextEntry() {
+		// Arrange
+		IFileSystem fileSystem = new FileSystem(new System.IO.Abstractions.FileSystem());
+		ICompressionUtilities compressionUtilities = new CompressionUtilities(fileSystem, new ZipFileWrapper());
+		IReadOnlyList<string> entryNames = ReadBundledArchiveEntryNames();
+
+		// Act
+		// A text entry is one without a NUL byte; the two reference assemblies under Files/Libs carry NULs and are
+		// compared as binaries by the SHA pin alone. Keyed on content, not on an extension list, so a new text file
+		// type cannot slip past. descriptor.json is exempt: on a SCRIPT cut it is the one entry not taken from the commit
+		// but written by set-pkg-version after the export (CRLF on Windows), and it is pinned separately by
+		// ExpectedArchiveVersion and ExpectedDescriptorModifiedOnUtc.
+		List<string> crlfEntries = [];
+		List<string> unreadableEntries = [];
+		foreach (string entryName in entryNames) {
+			if (string.Equals(entryName, "descriptor.json", StringComparison.Ordinal)) {
+				continue;
+			}
+			if (!compressionUtilities.TryReadFileFromGZip(BundledArchivePath, entryName, out byte[] content)) {
+				unreadableEntries.Add(entryName);
+				continue;
+			}
+			if (Array.IndexOf(content, (byte)0) >= 0) {
+				continue;
+			}
+			for (int index = 1; index < content.Length; index++) {
+				if (content[index] == (byte)10 && content[index - 1] == (byte)13) {
+					crlfEntries.Add(entryName);
+					break;
+				}
+			}
+		}
+
+		// Assert
+		entryNames.Should().NotBeEmpty(because: "an empty listing would pass this check vacuously");
+		unreadableEntries.Should().BeEmpty(because: "every entry was listed by the same reader, so an unread one would go unchecked");
+		crlfEntries.Should().BeEmpty(
+			because: "the producing commit's blobs are LF, so a CRLF entry means the export was made without "
+				+ "core.autocrlf=false / core.eol=lf (bundled-packages.md step 3b) and the pinned SHA-256 cannot be "
+				+ "rebuilt from ExpectedProducingCommit. Re-export the commit with both flags and re-pack; {0} of {1} "
+				+ "entries are affected", crlfEntries.Count, entryNames.Count);
 	}
 
 	[Test]
@@ -1075,7 +1104,7 @@ public class BundledProcessBuilderPackageTests {
 			because: "clio reads the wrapped answer as CompileProcessResult, named after this operation");
 		foreach (string member in new[] {
 				"success", "errorMessage", "processName", "packageName", "packageType", "compileRequired", "compiled",
-				"durationMs", "errors", "errorCount" }) {
+				"durationMs", "errors", "errorCount", "restartRequired" }) {
 			DeclaresMemberOn(archive, "CompileProcessResponse", member).Should().BeTrue(
 				because: $"CompileBusinessProcessService reads '{member}' off the compile answer");
 		}

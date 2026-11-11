@@ -56,7 +56,8 @@ arguments and each `operations[i]` object. Keys nested INSIDE `columns[*]`, `upd
 `seed-rows[*]` are deliberately bound loosely and an unknown one there is dropped silently under
 `success: true`. That is on purpose: the `get-app-info` column round-trip (see
 [get-app-info](get-app-info.md)) sends a column back exactly as it was read, and a strict bind at that
-level would reject it. Send only the documented keys inside those three collections.
+level would reject it. Send only the documented keys inside those three collections (`values` and
+`localizations` for `seed-rows[*]`).
 
 #### `create-lookup`
 
@@ -133,6 +134,18 @@ Each seed row must have a `values` key containing column name-value pairs:
 [
   {"values": {"Id": "guid-1", "Name": "New"}},
   {"values": {"Id": "guid-2", "Name": "Done"}}
+]
+```
+
+A seed row may also carry `localizations`: the row's values in other cultures, keyed by culture, then
+column, with text values. Only active cultures and localizable columns (for example `Name` and
+`Description` of a lookup) are accepted, and a failed check refuses the operation before any write. The
+rows go to `create-data-binding-db`, so the rules in
+[create-data-binding-db](create-data-binding-db.md#translations) apply.
+
+```json
+[
+  {"values": {"Name": "New"}, "localizations": {"uk-UA": {"Name": "Нове"}}}
 ]
 ```
 

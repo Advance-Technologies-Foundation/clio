@@ -458,12 +458,13 @@ public sealed class McpExecutionRouterTests {
 			"execute-esq",
 			"odata-read"
 		];
-		// The three withdrawn reads, pinned as ABSENT. Re-admitting one requires the worker to speak on
+		// The withdrawn schema-designer reads, pinned as ABSENT. Re-admitting one requires the worker to speak on
 		// the parent's Creatio session; until then this list failing is the intended outcome.
 		string[] schemaDesignerReadsWithheld = [
 			"get-page",
 			"get-schema",
-			"get-related-page-addon"
+			"get-related-page-addon",
+			"get-page-modal-size"
 		];
 		// Story 7's promise: the four long-running families, each added WHOLE — a starter without its
 		// poller would leave the poll answering from an empty registry in another process, and a poller

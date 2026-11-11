@@ -60,6 +60,22 @@ public static class DescribeProcessPrompt {
 		   resubmitting; clio warns and ignores them if sent back. `bindingLevels` other than `both` or `itemOnly`
 		   comes with an issue: `outerOnly` fails at run time, and with `none` the process cannot start.
 		   `get-guidance name=process-files` owns the block.
+		   A `webService` element (the designer's "Call web service") carries its `webService` block: the
+		   `service` it calls (its name, the string the write side takes; `serviceUId` holds the stored UId), the
+		   `method`, `timeoutSeconds` and `ignoreErrors`, and
+		   `parameters` - every parameter the element stores, unbound inputs included, with its `tag` (the service
+		   parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags. Those
+		   names are what a mapping addresses. `serviceResolved: false` means the call fails at run time, and so does
+		   `methodResolved: false` - unless an issue says the service could not be read: then nothing was checked and
+		   the outcome is unknown. Read `issues` for the rest. To resubmit, send the block back unchanged: `serviceUId`,
+		   `serviceResolved`, `methodResolved`, `issues` and `parameters` are describe-only, and clio warns and
+		   ignores them. Four blocks do not replay as they are: a fractional `timeoutSeconds` (a timeout stored in
+		   milliseconds) is refused - leave it out to keep the stored value, or send whole seconds; a block with no
+		   `service` (`serviceResolved: false`) needs a registered service named again; a block of `service`
+		   alone (nothing else stored) is refused as changing nothing; and a stored `method` whose letter case
+		   differs from the service's spelling makes the block a retarget, not a no-op: it regenerates the element's
+		   parameters and drops their input bindings, or is refused while anything reads them.
+		   `get-guidance name=process-web-service` owns the block.
 		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
 		   `email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each
 		   row attaches, and read its `issues`, which name a row that fails or surprises at run time.

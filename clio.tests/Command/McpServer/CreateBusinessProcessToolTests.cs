@@ -186,6 +186,37 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards a descriptor whose webService element carries the whole block - service, method, timeoutSeconds, ignoreErrors - and whose mappings[] set a request value, a nested item and RequestBody on the generated names in the same request (Q2, Q5, Q10) verbatim, so the opaque pass-through never reshapes what the server resolves and binds.")]
+	[Category("Unit")]
+	public void CreateBusinessProcess_Should_Forward_WebService_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string webServiceDescriptor =
+			"{\"name\":\"UsrCallEchoProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"CallEcho\","
+			+ "\"type\":\"webService\",\"webService\":{\"service\":\"UsrWscEchoService\",\"method\":\"UsrWscEcho\","
+			+ "\"timeoutSeconds\":30,\"ignoreErrors\":true}}],\"flows\":[],"
+			+ "\"mappings\":[{\"elementName\":\"CallEcho\",\"elementParameter\":\"title_In\",\"processParameter\":\"Title\"},"
+			+ "{\"elementName\":\"CallEcho\",\"elementParameter\":\"items_In.name_In\",\"value\":\"first\"},"
+			+ "{\"elementName\":\"CallEcho\",\"elementParameter\":\"RequestBody\",\"expression\":\"[#Body#]\"}]}";
+		FakeCreateBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(new FakeCreateBusinessProcessCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(webServiceDescriptor), null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a descriptor with a webService element must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(webServiceDescriptor,
+			because: "the block and the mappings onto its generated names must reach the server byte for byte");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
 	[Category("Unit")]
 	[Description("The create contract names email.attachments in the email shape with its three source members and tells the agent to read its guide, and the prompt names the member and the Process file element as a source of the files an email sends - an agent that cannot see the member builds an email without its files.")]
 	public void CreateBusinessProcessTool_ShouldNameEmailAttachments_InTheContractAndThePrompt() {
@@ -499,8 +530,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.140 (for email.attachments, itemProperties, isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal)");
+		toolDescription.Should().Contain("this clio requires 1.6.6.150 (for webService, email.attachments, itemProperties, isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}
@@ -558,7 +589,7 @@ public class CreateBusinessProcessToolTests {
 		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
 
 		// Assert
-		toolDescription.Should().Contain("|scriptTask|fileProcessing (aliases ",
+		toolDescription.Should().Contain("|scriptTask|fileProcessing|webService (aliases ",
 			because: "the element type list is where an agent learns which type tokens a build accepts");
 		toolDescription.Should().NotContain("processFile",
 			because: "the server accepts processFile on build but never emits it, and it reads like the Process-parameter variant, so the contract names only fileProcessing");
@@ -580,6 +611,35 @@ public class CreateBusinessProcessToolTests {
 			because: "the group selects the variant, so an agent must send exactly one");
 		prompt.Should().Contain("Read `get-guidance name=process-files` before writing it",
 			because: "the guide owns the block's members and refusals");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract names the webService element type and its webService block - a registered web service, REST or SOAP alike, and its method (Q2, Q15) - and its prompt carves WebServiceUserTask out of the generic userTask route (Q1), says request values go through mappings on the generated names and that an unregistered service is the user's to register, and routes the block to process-web-service. A later description trim would drop the token unseen, and an agent would build the generic userTask the server refuses.")]
+	public void CreateBusinessProcessTool_ShouldOfferTheWebServiceElementAndRouteToItsGuide() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		toolDescription.Should().Contain("|fileProcessing|webService (aliases ",
+			because: "the element type list is where an agent learns which type tokens a build accepts");
+		toolDescription.Should().Contain("webService? (webService elements only - a registered REST/SOAP service and its method; get-guidance name=process-web-service owns the block)",
+			because: "the block clause names what the block selects, that the service must already be registered, and the guide that owns the block");
+		prompt.Should().Contain("and except `WebServiceUserTask` (Call web service), which is built as a `webService` element;",
+			because: "the list-user-tasks step must not hand the agent the Call web service task for a generic userTask");
+		prompt.Should().Contain("`userTask` naming `WebServiceUserTask`, which is refused.",
+			because: "the prompt must keep the agent off the generic route the server refuses");
+		prompt.Should().Contain("(`<name>_In`, a nested item dotted, `RequestBody` for a raw body)",
+			because: "request values are set through mappings on the generated names, not inside the block");
+		prompt.Should().Contain("that is not registered cannot be called from here - tell the user to register it in Studio > Web",
+			because: "registering a service is outside the builder, so the agent stops and tells the user");
+		prompt.Should().Contain("Read `get-guidance name=process-web-service` before writing it",
+			because: "the guide owns the block's members, notices and refusals");
 	}
 
 	[Test]

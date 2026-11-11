@@ -497,6 +497,47 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Property("Module", "McpServer")]
+	[Description("ENG-105291: passes each seed row's localizations through to create-data-binding-db unchanged, and leaves the key out of a row that has none, so translations sent on the canonical sync-schemas path are not dropped.")]
+	public async Task SchemaSync_SeedRows_Should_Forward_Localizations() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeSeedCommand = new FakeCreateDataBindingDbCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<CreateDataBindingDbOptions>())
+			.Returns(fakeSeedCommand);
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, new OptionSuggestionService(), Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus",
+				TitleLocalizations: Localizations("Todo Status"),
+				SeedRows: [
+					new SchemaSyncSeedRow(
+						new Dictionary<string, System.Text.Json.JsonElement> { ["Name"] = ToJsonElement("New") },
+						new Dictionary<string, Dictionary<string, string>> { ["uk-UA"] = new() { ["Name"] = "Нове" } }),
+					new SchemaSyncSeedRow(
+						new Dictionary<string, System.Text.Json.JsonElement> { ["Name"] = ToJsonElement("Done") })
+				])]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "both operations succeed");
+		System.Text.Json.Nodes.JsonArray rows = System.Text.Json.Nodes.JsonNode.Parse(
+			fakeSeedCommand.CapturedOptions!.RowsJson!)!.AsArray();
+		rows[0]!["localizations"]!["uk-UA"]!["Name"]!.GetValue<string>().Should().Be("Нове",
+			because: "create-data-binding-db reads the translations from the row's localizations key");
+		rows[1]!.AsObject().ContainsKey("localizations").Should().BeFalse(
+			because: "a row without translations is serialized exactly as before");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Executes seed-data after a successful create-lookup with seed-rows")]
 	public async Task SchemaSync_SeedRows_Should_Execute_After_Create() {
 		// Arrange

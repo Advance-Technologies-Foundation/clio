@@ -25,7 +25,7 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
-				 Registers a REST web service (base URI, methods, request and response parameters, authentication) in a package, exactly as Studio > Web services creates one, so a business process can call it with the Call web service element.
+				 Registers a REST web service. It is saved in a package with its base URI, methods, request and response parameters and authentication, exactly as Studio > Web services creates one, so a business process can call it with the Call web service element.
 
 				 Credentials are never values: basic/digest auth and every header, cookie, key or token parameter reference a SYSTEM SETTING code (it must exist), and the user fills its value; a constant there, or user:password@ in base-uri, is refused. The service code and every method and parameter code must carry the environment's schema-name prefix (Studio refuses to save a method without it; wire names go in uri and path), and the service code must not be used by another service (an existing service is changed with modify-web-service). The caller needs CanManageSolution. Returns the registered service with its parameter tree and the steps left to the user.
 				 """)]
@@ -53,7 +53,7 @@ public sealed class ListWebServicesTool(IToolCommandResolver commandResolver) {
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Lists the web services registered in Studio > Web services (code, caption, REST or SOAP, package, base URI). Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code.")]
+	[Description("Lists web services. Each comes with its code, caption, REST or SOAP, package and base URI, as Studio > Web services shows it. Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code.")]
 	public WebServiceListResult ListWebServices(
 		[Description("Parameters: environment-name (required)")] [Required] WebServiceEnvironmentArgs args) {
 		try {
@@ -80,7 +80,7 @@ public sealed class DescribeWebServiceTool(IToolCommandResolver commandResolver)
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Reads a registered web service: base URI, authentication type and the system settings it reads, and every method with its request and response parameter trees. Credential values and constant defaults of header, cookie, key or token parameters are never returned (default-masked: true). With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
+	[Description("Reads one web service. It returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees. Credential values and constant defaults of header, cookie, key or token parameters are never returned (default-masked: true). With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
 	public WebServiceToolResult DescribeWebService(
 		[Description("Parameters: environment-name, code (required); usages (optional, default false)")]
 		[Required]
@@ -105,7 +105,7 @@ public sealed class ModifyWebServiceTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
-				 Changes a registered REST web service by ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth. Credentials follow the register-web-service rules. Codes the service already has are kept as they are, prefix or not (never rename one to add it); a method or parameter this call adds follows the register-web-service prefix and path rules.
+				 Changes a REST web service. It applies ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth. Credentials follow the register-web-service rules. Codes the service already has are kept as they are, prefix or not (never rename one to add it); a method or parameter this call adds follows the register-web-service prefix and path rules.
 
 				 BEFORE CALLING with setMethod or removeMethod: a process whose Call web service element calls that method loses its parameters on the next designer load and fails at run time, silently. The tool refuses such a change and lists the processes; show them to the user and repeat with acknowledge-usages naming them only after the user says yes. The caller needs CanManageSolution.
 				 """)]
@@ -132,7 +132,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Sends one real request through a registered web service method, as Studio's Send test request does, and returns the HTTP status and the response body (request and response headers are never returned; values sent from system settings or in Authorization are masked in the body). The call reaches the external API, so a POST, PUT, PATCH or DELETE method changes data there: confirm with the user first. The caller needs CanManageSolution.")]
+	[Description("Test-calls a web service method. It sends one real request, as Studio's Send test request does, and returns the HTTP status and the response body (request and response headers are never returned; values sent from system settings or in Authorization are masked in the body). The call reaches the external API, so a POST, PUT, PATCH or DELETE method changes data there: confirm with the user first. The caller needs CanManageSolution.")]
 	public WebServiceTestResult TestWebServiceMethod(
 		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value)")]
 		[Required]

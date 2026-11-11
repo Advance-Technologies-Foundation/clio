@@ -483,6 +483,37 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The describe contract and its prompt name the webService block a Call web service element reads back (Q14): every write member keeps its write shape, so the block is sent back unchanged, and serviceUId, serviceResolved, methodResolved, issues and parameters - the whole stored tree, unbound inputs included - are describe-only and draw a warning; methodResolved false over a service that could not be read means unchecked, not failing. A describe-then-modify round trip works only when the agent knows the block replays as is.")]
+	public void DescribeProcess_ShouldDocumentTheWebServiceBlock_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert
+		toolText.Should().Contain("a webService element's webService block (the describe-only serviceUId, serviceResolved, methodResolved, issues and parameters - the stored tree, unbound inputs included - draw a warning when it is sent back unchanged",
+			because: "the read-back members are describe-only and the block replays in its write shape");
+		toolText.Should().Contain("sent back unchanged; get-guidance name=process-web-service owns the block)",
+			because: "the contract must route the block to the guide that owns it");
+		prompt.Should().Contain("A `webService` element (the designer's \"Call web service\") carries its `webService` block",
+			because: "the prompt lists every configuration block the tool reports");
+		prompt.Should().Contain("parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags.",
+			because: "the prompt must say what one node of the stored tree carries");
+		prompt.Should().Contain("unless an issue says the service could not be read: then nothing was checked and",
+			because: "methodResolved false over an unreadable service means unchecked, not a failing call");
+		prompt.Should().Contain("To resubmit, send the block back unchanged: `serviceUId`,",
+			because: "the prompt must match the tool contract on the resubmit rule");
+		prompt.Should().Contain("`get-guidance name=process-web-service` owns the block.",
+			because: "the prompt routes the block to the guide that owns it");
+		prompt.Should().Contain("Four blocks do not replay as they are:",
+			because: "every block that is not a no-op replay is listed");
+		prompt.Should().Contain("and a stored `method` whose letter case",
+			because: "a case-drifted stored method turns a replay into a retarget, as the bundled package does");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back, its three groups, and the describe-only members to remove before resubmitting: the server reports actionStored, outputs, issues, bindingLevels, report.caption, report.convertToPdf and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
 	public void DescribeProcess_ShouldDocumentTheFileProcessingBlock_WhenToolContractIsRead() {
 		// Arrange
