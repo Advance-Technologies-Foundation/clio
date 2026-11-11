@@ -1846,9 +1846,18 @@ public sealed class DescribedFilterCondition {
 	[JsonPropertyName("comparison")]
 	public string Comparison { get; set; }
 
-	/// <summary>Constant value (string form); null for a reference or a null check.</summary>
+	/// <summary>Constant value (string form); null for a reference, a null check or a value list.</summary>
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	/// <summary>
+	/// The records of ONE condition over several records of a lookup column - equal: the record is any of them,
+	/// notEqual: it is none of them - in stored order, their captions joined by "; " in <see cref="DisplayValue"/>
+	/// (ENG-105557). The designer's multi-select reads back here too. Null for any other condition; sent back with
+	/// setFilter as read, it keeps every record.
+	/// </summary>
+	[JsonPropertyName("values")]
+	public List<string> Values { get; set; }
 
 	/// <summary>
 	/// Human-readable caption of the value on read-back (never sent on write). For a lookup constant this is the

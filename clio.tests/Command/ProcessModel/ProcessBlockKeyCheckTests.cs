@@ -196,6 +196,84 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "every key is one the server declares, so there is nothing to refuse or warn about");
 	}
 
+	private static ProcessBlockKeyCheckResult CheckFilterCondition(string route, string condition) {
+		string filter = $"{{\"object\":\"Contact\",\"conditions\":[{condition}]}}";
+		return route == "create"
+			? CheckElements(
+				$"{{\"name\":\"ReadContacts\",\"type\":\"readData\",\"readData\":{{\"source\":\"Contact\"}},\"filter\":{filter}}}")
+			: CheckOperations($"[{{\"op\":\"setFilter\",\"elementName\":\"ReadContacts\",\"filter\":{filter}}}]");
+	}
+
+	[TestCase("create")]
+	[TestCase("setFilter")]
+	[Description("ENG-105557: a filter condition over several lookup records - 'values' with equal - is a key the server declares from CrtProcessBuilder 1.6.6.154, so it passes clean on create and on setFilter.")]
+	public void Check_Should_AcceptAValueList_OnCreateAndSetFilter(string route) {
+		// Act
+		ProcessBlockKeyCheckResult result = CheckFilterCondition(route,
+			"""{"column":"Country","comparison":"equal","values":["Algeria","Andorra"]}""");
+
+		// Assert
+		result.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "'values' is a FilterConditionDescriptor key of the bundled package");
+	}
+
+	[TestCase("create")]
+	[TestCase("setFilter")]
+	[Description("ENG-105557 D7: a list in a filter condition's 'value' - the form agents reach for first - is refused before sending, because the server cannot read the whole request (it answered 'a response clio could not read'); the refusal points to 'values'.")]
+	public void Check_Should_RefuseAListInValue_AndPointToValues(string route) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckFilterCondition(route,
+			"""{"column":"Country","comparison":"equal","value":["Algeria","Andorra"]}""");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:",
+			because: "a list where the contract reads one string fails the whole request on the server");
+		refused.Error.Should().Contain("conditions[0].value' is a list",
+			because: "the refusal names the member and what was wrong with it");
+		refused.Error.Should().Contain("\"values\": [...]", because: "the refusal shows the shape to send instead");
+	}
+
+	[Test]
+	[Description("ENG-105557 D7: an object in a filter condition's 'value' fails the whole request as well, so it is refused before sending and the refusal asks for the constant as a string.")]
+	public void Check_Should_RefuseAnObjectInValue() {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckFilterCondition("setFilter",
+			"""{"column":"Country","comparison":"equal","value":{"value":"Algeria"}}""");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:", because: "the server cannot read an object there");
+		refused.Error.Should().Contain("conditions[0].value' is an object",
+			because: "the refusal names the member and what was wrong with it");
+	}
+
+	[TestCase("\"Algeria\"", "\"Algeria\"")]
+	[TestCase("{\"value\":\"Algeria\"}", "an object")]
+	[Description("ENG-105557: 'values' that is not a list - one string or an object - fails the whole request on the server, so it is refused before sending with the list shape to send instead.")]
+	public void Check_Should_RefuseValuesThatIsNotAList(string values, string printed) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckFilterCondition("create",
+			$"{{\"column\":\"Country\",\"comparison\":\"equal\",\"values\":{values}}}");
+
+		// Assert
+		refused.Error.Should().Contain($"conditions[0].values' takes a LIST of records, so {printed}",
+			because: "the refusal names the member and what was sent there");
+		refused.Error.Should().Contain("\"values\": [\"<record>\", \"<record>\"]",
+			because: "the refusal shows the list shape");
+	}
+
+	[Test]
+	[Description("ENG-105557: an entry of 'values' that is an object or a list fails the whole request, so it is refused before sending; plain strings are what the server reads.")]
+	public void Check_Should_RefuseAnObjectEntryInValues() {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckFilterCondition("setFilter",
+			"""{"column":"Country","comparison":"equal","values":["Algeria",{"value":"Andorra"}]}""");
+
+		// Assert
+		refused.Error.Should().Contain("every entry of '", because: "the refusal is about the entries")
+			.And.Contain("conditions[0].values' is one record as a string",
+				because: "the refusal names the member and the shape each entry takes");
+	}
+
 	[TestCase("{\"object\":\"Contact\"}")]
 	[TestCase("{\"object\":\"Contact\",\"source\":\"Contact\"}")]
 	[Description("'object' inside readData stays refused and points to 'source' - with or without a source beside it. Before, only the source-less shape was stopped (by 'requires a source'), and the object next to a source was dropped silently.")]

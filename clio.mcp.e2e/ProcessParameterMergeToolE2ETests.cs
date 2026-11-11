@@ -20,7 +20,8 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for ENG-103990 over the real MCP path: several signal starts on one object share ONE chain
 /// through a process parameter with <c>mergeFrom</c>, which takes the record Id of whichever start fired. NOT in CI -
-/// run manually against a stand carrying CrtProcessBuilder 1.6.6.153 or newer.
+/// run manually against a stand carrying CrtProcessBuilder 1.6.6.154 or newer (mergeFrom arrived in 1.6.6.153;
+/// 1.6.6.154 is the create and modify floor).
 /// <para>Two facts a caller can see: the run started by either signal reads the triggering record through the merged
 /// parameter, and a describe -> modify round trip through clio keeps the merge byte for byte (D7) - the field is
 /// declared on clio's describe model, so it is not dropped on the way to the caller.</para>
@@ -36,7 +37,7 @@ public sealed class ProcessParameterMergeToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 
 	/// <summary>The cut that reads mergeFrom; named in the skip message.</summary>
-	private const string MinimumPackageVersion = "1.6.6.153";
+	private const string MinimumPackageVersion = "1.6.6.154";
 
 	private const string MergedParameter = "PContactId";
 

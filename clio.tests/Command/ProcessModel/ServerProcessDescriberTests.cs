@@ -468,6 +468,31 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a filter condition's values (ENG-105557): CrtProcessBuilder 1.6.6.154 reads a condition over several lookup records back whole, and DescribedFilterCondition has no extension-data bag, so without the typed property the records would be dropped here and describe -> setFilter would keep none of them.")]
+	public void Describe_ShouldReadFilterConditionValues_WhenServerReportsThem() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"flows\":[],\"parameters\":[],"
+			+ "\"elements\":[{\"name\":\"ReadContacts\",\"uid\":\"e1\",\"filterDecodedCompletely\":true,"
+			+ "\"filter\":{\"object\":\"Contact\",\"logicalOperation\":\"and\",\"conditions\":[{\"column\":\"Country\","
+			+ "\"comparison\":\"notEqual\",\"values\":[\"a0f7cbdf-dc18-4502-a97c-55f96fed5bc6\","
+			+ "\"caf1be51-a314-414a-acb7-0db927354055\"],\"displayValue\":\"Algeria; Andorra\"}]}}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFilterCondition condition = result.Value.Elements[0].Filter.Conditions[0];
+		condition.Values.Should().Equal(
+			new[] { "a0f7cbdf-dc18-4502-a97c-55f96fed5bc6", "caf1be51-a314-414a-acb7-0db927354055" },
+			because: "every record of the condition reaches the caller, in the server's order");
+		condition.Value.Should().BeNull(because: "a value list is the condition's one right-hand source");
+		condition.DisplayValue.Should().Be("Algeria; Andorra", because: "the joined captions are read back as sent");
+	}
+
+	[Test]
 	[Description("Deserializes a collection parameter's provenance tag and its per-item shape (itemProperties, each a parameter with name/type/tag) into the DescribedParameter DTO - the design-time contract a consumer binds against - so the shape the server reports is not dropped by the client the way an untyped field would be (ENG-96230).")]
 	public void Describe_ShouldReadParameterTagAndItemProperties_WhenServerReportsThem() {
 		// Arrange — a process-level collection mirrored from a read element's shaped output, plus a scalar beside it
