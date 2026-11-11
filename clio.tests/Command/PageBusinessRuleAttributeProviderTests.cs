@@ -261,6 +261,44 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Passes the declared page attributes to the stepper source: a stepper bound to a declared plain attribute exposes it, while one bound to a record column or an undeclared attribute exposes nothing.")]
+	public void GetAttributes_Should_Pass_Page_Attributes_To_Stepper_Source() {
+		// Arrange
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		entityAttributeProvider.GetAttributes("UsrTestBR", Arg.Any<Guid>())
+			.Returns(new EntityBusinessRuleAttributeContext(
+				new EntityDesignSchemaDto(),
+				new Dictionary<string, BusinessRuleAttributeDescriptor>()));
+		PageBusinessRuleAttributeProvider provider = new(entityAttributeProvider, [new StepperActiveStepAttributeSource()]);
+		PageBundleInfo bundle = CreateBundleWithAttributes(
+			new Dictionary<string, object?> {
+				["RentalStep"] = new Dictionary<string, object?> { ["value"] = null },
+				["PDS_Stage"] = CreateAttribute("PDS.UsrStage")
+			});
+		bundle = new PageBundleInfo {
+			ViewModelConfig = bundle.ViewModelConfig,
+			ModelConfig = bundle.ModelConfig,
+			ViewConfig = JsonNode.Parse("""
+				[
+					{ "type": "crt.Stepper", "name": "BoundStepper", "activeStep": "$RentalStep" },
+					{ "type": "crt.Stepper", "name": "ColumnStepper", "activeStep": "$PDS_Stage" },
+					{ "type": "crt.Stepper", "name": "UndeclaredStepper", "activeStep": "$UndeclaredStep" }
+				]
+				""")!.AsArray()
+		};
+
+		// Act
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> result = provider.GetAttributes(
+			bundle,
+			Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+		// Assert
+		result.Keys.Should().BeEquivalentTo(["RentalStep"],
+			because: "only the stepper bound to a declared plain attribute can change step; the others expose no active-step attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Resolves the provider from the real container with exactly one source per component type, so the stepper active step is exposed.")]
 	public void Provider_Should_Resolve_From_Container_With_Stepper_Source() {
 		// Arrange

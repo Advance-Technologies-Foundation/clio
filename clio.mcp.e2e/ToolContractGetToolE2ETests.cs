@@ -1172,7 +1172,8 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				validator.Name == "page-attribute" &&
 				validator.Field == "rules[*].condition.conditions[*].leftExpression.path" &&
 				validator.Context!.Contains("'$RentalStep' gives 'RentalStep'", StringComparison.Ordinal) &&
-				validator.Context.Contains("'<StepperName>_ActiveStep' when activeStep is unbound or a constant step name", StringComparison.Ordinal),
+				validator.Context.Contains("'<StepperName>_ActiveStep' when activeStep is unbound or a constant step name", StringComparison.Ordinal) &&
+				validator.Context.Contains("any other activeStep binding", StringComparison.Ordinal),
 			because: "the contract should name both stepper active-step forms: the bound attribute and the generated name");
 		contract.PreferredFlow.Tools.Should().Equal(
 			[

@@ -10,6 +10,7 @@ namespace Clio.Tests.Command;
 public sealed class StepperActiveStepAttributeSourceTests {
 	private static readonly JsonObject PageAttributes = new() {
 		["RentalStep"] = new JsonObject { ["value"] = null },
+		["_Rental_Step2"] = new JsonObject { ["value"] = null },
 		["PDS_Stage"] = new JsonObject { ["modelConfig"] = new JsonObject { ["path"] = "PDS.UsrStage" } }
 	};
 
@@ -32,6 +33,7 @@ public sealed class StepperActiveStepAttributeSourceTests {
 	[TestCase("\"DeliveryStep\"", "RentalStepper", "RentalStepper_ActiveStep", TestName = "constant step name")]
 	[TestCase(null, "Quote.Stepper", "Quote_Stepper_ActiveStep", TestName = "dots in the stepper name")]
 	[TestCase("\"$RentalStep\"", "RentalStepper", "RentalStep", TestName = "plain attribute binding")]
+	[TestCase("\"$_Rental_Step2\"", "RentalStepper", "_Rental_Step2", TestName = "plain attribute binding with underscores and digits")]
 	[Category("Unit")]
 	[Description("Resolves the open step to the bound plain attribute, or to the generated '<name>_ActiveStep' when activeStep is unbound or a constant.")]
 	public void TryResolve_Should_Return_Active_Step_Attribute(string? activeStepJson, string stepperName, string expectedPath) {
@@ -53,6 +55,10 @@ public sealed class StepperActiveStepAttributeSourceTests {
 	[TestCase("\"$Stage | crt.ToObjectProp\"", TestName = "converter")]
 	[TestCase("\"$Stage:prop\"", TestName = "property binding")]
 	[TestCase("\"$PDS_Stage\"", TestName = "record column")]
+	[TestCase("\"$UndeclaredStep\"", TestName = "undeclared attribute")]
+	[TestCase("\"$\"", TestName = "bare dollar")]
+	[TestCase("\"$1Step\"", TestName = "name starting with a digit")]
+	[TestCase("\"$Rental-Step\"", TestName = "name with a non-identifier character")]
 	[TestCase("1", TestName = "non-string value")]
 	[Category("Unit")]
 	[Description("Resolves nothing for an activeStep binding that leaves the stepper unprepared at runtime.")]
@@ -65,7 +71,7 @@ public sealed class StepperActiveStepAttributeSourceTests {
 		bool resolved = source.TryResolve(stepper, "RentalStepper", PageAttributes, out BusinessRuleAttributeDescriptor? descriptor);
 
 		// Assert
-		resolved.Should().BeFalse(because: "only an unbound, constant or plain-attribute activeStep prepares the stepper");
+		resolved.Should().BeFalse(because: "only an unbound, constant or declared plain-attribute activeStep lets the stepper change step");
 		descriptor.Should().BeNull(because: "an unprepared stepper exposes no active-step attribute");
 	}
 

@@ -6,8 +6,10 @@ namespace Clio.Command.BusinessRules;
 /// <summary>
 /// The open step of a <c>crt.Stepper</c>, compared with a step name. Unbound <c>activeStep</c> or a
 /// constant step name: the generated <c>&lt;name&gt;_ActiveStep</c>, dots in the name becoming
-/// underscores. Bound to a plain <c>$Attr</c>: that attribute. Any other binding (a nested path, a
-/// converter, an attribute bound to a record column) leaves the stepper unprepared, so it exposes none.
+/// underscores. Bound to a plain <c>$Attr</c> the page declares without a data source: that attribute.
+/// Any other binding (a nested path, a converter, a property binding such as <c>$Attr:prop</c>, an
+/// undeclared attribute, an attribute bound to a record column) leaves the stepper unable to change
+/// step, so it exposes none.
 /// </summary>
 internal sealed class StepperActiveStepAttributeSource : IComponentConditionAttributeSource {
 
@@ -45,7 +47,7 @@ internal sealed class StepperActiveStepAttributeSource : IComponentConditionAttr
 				return true;
 			case JsonValue value when value.TryGetValue(out string? text)
 				&& TryGetPlainAttributeBinding(text, out string boundName)
-				&& !IsModelBoundAttribute(pageAttributes, boundName):
+				&& IsPlainDeclaredAttribute(pageAttributes, boundName):
 				attributeName = boundName;
 				return true;
 			default:
@@ -53,8 +55,8 @@ internal sealed class StepperActiveStepAttributeSource : IComponentConditionAttr
 		}
 	}
 
-	private static bool IsModelBoundAttribute(JsonObject pageAttributes, string attributeName) =>
-		pageAttributes[attributeName] is JsonObject attribute && attribute["modelConfig"] is not null;
+	private static bool IsPlainDeclaredAttribute(JsonObject pageAttributes, string attributeName) =>
+		pageAttributes[attributeName] is JsonObject attribute && attribute["modelConfig"] is null;
 
 	private static bool TryGetPlainAttributeBinding(string binding, out string attributeName) {
 		attributeName = string.Empty;
