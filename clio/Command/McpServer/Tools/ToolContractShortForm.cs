@@ -581,14 +581,15 @@ internal static class ToolContractShortForm {
 	/// it would carry the following prose along. Text that does not parse as JSON gives no example.
 	/// </remarks>
 	internal static string? FindFieldExample(ToolContractField field, IReadOnlyList<ToolContractExample>? examples) {
-		foreach (ToolContractExample example in examples ?? []) {
-			if (example.Arguments is null || !example.Arguments.TryGetValue(field.Name, out object? value) || value is null) {
-				continue;
-			}
-			string json = JsonSerializer.Serialize(value, FieldExampleJsonOptions);
-			if (json.Length <= MaxFieldExampleChars) {
-				return json;
-			}
+		string? fromContract = (examples ?? [])
+			.Select(example => example.Arguments)
+			.Where(arguments => arguments is not null)
+			.Select(arguments => arguments.TryGetValue(field.Name, out object? value) ? value : null)
+			.Where(value => value is not null)
+			.Select(value => JsonSerializer.Serialize(value, FieldExampleJsonOptions))
+			.FirstOrDefault(json => json.Length <= MaxFieldExampleChars);
+		if (fromContract is not null) {
+			return fromContract;
 		}
 		string description = field.Description ?? string.Empty;
 		int marker = description.IndexOf(FieldExampleMarker, StringComparison.Ordinal);
