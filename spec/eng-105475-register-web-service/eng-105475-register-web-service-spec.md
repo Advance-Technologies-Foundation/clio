@@ -50,7 +50,8 @@ and no cliogate endpoint (cliogate adds nothing but SQL, and is absent on many s
 - `clio.mcp.e2e` `WebServiceToolsE2ETests` (Sandbox): register, list, describe, constant-header refusal,
   unprefixed-code refusal and setMethod on a throwaway service that teardown removes; the usage guard over a
   throwaway service and a process the test builds with a Call web service element (CrtProcessBuilder 1.6.6.150
-  or later, else Ignored), so it no longer depends on a shipped package being installed.
+  or later, else Ignored), so it no longer depends on a shipped package being installed. The OAuth 2.0 case
+  creates and removes its own OAuth application (placeholder client id, no secret).
 
 ## Follow-ups
 

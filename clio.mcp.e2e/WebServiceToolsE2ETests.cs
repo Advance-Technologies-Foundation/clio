@@ -34,9 +34,41 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	private string? _environmentName;
 	private string? _serviceCode;
+	private string? _oauthApplicationId;
 
 	[TearDown]
-	public async Task RemoveThrowawayServiceAsync() {
+	public async Task RemoveThrowawayFixturesAsync() {
+		try {
+			await RemoveThrowawayServiceAsync();
+		} finally {
+			// The service goes first: it references the application by id.
+			await RemoveThrowawayOAuthApplicationAsync();
+			_serviceCode = null;
+			_oauthApplicationId = null;
+		}
+	}
+
+	private async Task RemoveThrowawayOAuthApplicationAsync() {
+		if (_environmentName is null || _oauthApplicationId is null) {
+			return;
+		}
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
+		McpE2ESettings settings = TestConfiguration.Load();
+		ClioCliCommandResult deleted = await ClioCliCommandRunner.RunAsync(settings, [
+			"call-service", "-e", _environmentName, "--service-path", "DataService/json/SyncReply/DeleteQuery",
+			"-b", JsonSerializer.Serialize(new {
+				rootSchemaName = "OAuthApplications",
+				operationType = 3,
+				filters = IdFilter("OAuthApplications", _oauthApplicationId)
+			})
+		], cancellationToken: cts.Token);
+		if (deleted.ExitCode != 0) {
+			await TestContext.Error.WriteLineAsync(
+				$"Could not delete OAuth application {_oauthApplicationId}: {deleted.StandardOutput} {deleted.StandardError}");
+		}
+	}
+
+	private async Task RemoveThrowawayServiceAsync() {
 		if (_environmentName is null || _serviceCode is null) {
 			return;
 		}
@@ -211,7 +243,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureName("register-web-service links an existing OAuth 2.0 application")]
-	[Description("Registers a REST service with auth oauth20 naming an OAuth application that exists on the stand, and expects the application's id in the read-back, the method sending the authentication, and describe returning the same reference.")]
+	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, and describe returning the same reference.")]
 	public async Task RegisterWebService_Should_Link_An_Existing_OAuth_Application() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -221,10 +253,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
-		(string Id, string Name)? application = await FindOAuthApplicationAsync(settings, _environmentName, cts.Token);
-		if (application is null) {
-			Assert.Ignore("No named OAuth application exists on this stand; the tools only link an existing one.");
-		}
+		// The test creates its own application: the tools only link an existing one, and a stand need not have any.
+		string applicationName = $"E2eWsOAuth{Guid.NewGuid():N}"[..24];
+		await CreateOAuthApplicationAsync(settings, applicationName, cts.Token);
 		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
 
 		// Act
@@ -234,7 +265,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["package-name"] = PackageName,
 				["code"] = _serviceCode,
 				["base-uri"] = "https://example.invalid/api",
-				["auth"] = new Dictionary<string, object?> { ["type"] = "oauth20", ["oauth-app"] = application.Value.Name },
+				["auth"] = new Dictionary<string, object?> { ["type"] = "oauth20", ["oauth-app"] = applicationName },
 				["methods"] = new[] {
 					new Dictionary<string, object?> { ["code"] = MethodCode, ["http-method"] = "GET", ["uri"] = "orders" }
 				}
@@ -246,11 +277,11 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		// Assert
 		registered.Success.Should().BeTrue(because: $"an existing OAuth application must be accepted; error: {registered.Error}");
 		registered.Service!.Auth!.Type.Should().Be("oauth20", because: "the service authenticates with OAuth 2.0");
-		registered.Service.Auth.OAuthAppId.Should().BeEquivalentTo(application.Value.Id,
+		registered.Service.Auth.OAuthAppId.Should().BeEquivalentTo(_oauthApplicationId,
 			because: "the platform stores the application by id, which Studio shows as the Application lookup");
 		registered.Service.Methods.Single().UseAuth.Should().BeTrue(
 			because: "a method of a service with authentication sends it by default, as the designer does");
-		described.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(application.Value.Id,
+		described.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(_oauthApplicationId,
 			because: "the reference survives a read through the platform's own contract");
 	}
 
@@ -324,30 +355,46 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		listed.Services.Should().NotContain(s => s.Code == _serviceCode, because: "a refused registration saves nothing");
 	}
 
-	private static async Task<(string Id, string Name)?> FindOAuthApplicationAsync(McpE2ESettings settings,
-		string environmentName, CancellationToken token) {
-		ClioCliCommandResult select = await ClioCliCommandRunner.RunAsync(settings, [
-			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
+	/// <summary>
+	/// Inserts an OAuth application with placeholder endpoints and a placeholder client id; it carries no secret.
+	/// Only ClientId is required by the entity. The id is recorded BEFORE the insert, so the teardown deletes the
+	/// row even when the insert's answer fails an assertion.
+	/// </summary>
+	private async Task CreateOAuthApplicationAsync(McpE2ESettings settings, string name, CancellationToken token) {
+		string id = Guid.NewGuid().ToString();
+		_oauthApplicationId = id;
+		ClioCliCommandResult inserted = await ClioCliCommandRunner.RunAsync(settings, [
+			"call-service", "-e", _environmentName!, "--service-path", "DataService/json/SyncReply/InsertQuery",
 			"-b", JsonSerializer.Serialize(new {
 				rootSchemaName = "OAuthApplications",
-				operationType = 0,
-				columns = new {
+				operationType = 1,
+				columnValues = new {
 					items = new {
-						Id = new { expression = new { expressionType = 0, columnPath = "Id" } },
-						Name = new { expression = new { expressionType = 0, columnPath = "Name" } }
+						Id = new { expressionType = 2, parameter = new { dataValueType = 0, value = id } },
+						Name = new { expressionType = 2, parameter = new { dataValueType = 1, value = name } },
+						ClientId = new { expressionType = 2, parameter = new { dataValueType = 1, value = "e2e-placeholder-client" } },
+						TokenUrl = new { expressionType = 2, parameter = new { dataValueType = 1, value = "https://example.invalid/oauth/token" } }
 					}
 				}
 			})
 		], cancellationToken: token);
-		using JsonDocument rows = JsonDocument.Parse(select.StandardOutput[select.StandardOutput.IndexOf('{')..]);
-		foreach (JsonElement row in rows.RootElement.GetProperty("rows").EnumerateArray()) {
-			string? name = row.GetProperty("Name").GetString();
-			if (!string.IsNullOrWhiteSpace(name)) {
-				return (row.GetProperty("Id").GetString()!, name);
+		inserted.ExitCode.Should().Be(0,
+			because: $"the arrange step needs an OAuth application; output: {inserted.StandardOutput} {inserted.StandardError}");
+		using JsonDocument answer = JsonDocument.Parse(inserted.StandardOutput[inserted.StandardOutput.IndexOf('{')..]);
+		answer.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"DataService must accept the insert; output: {inserted.StandardOutput}");
+	}
+
+	private static object IdFilter(string rootSchemaName, string id) => new {
+		rootSchemaName, filterType = 6, logicalOperation = 0, isEnabled = true,
+		items = new {
+			Id = new {
+				filterType = 1, comparisonType = 3, isEnabled = true, dataValueType = 0,
+				leftExpression = new { expressionType = 0, columnPath = "Id" },
+				rightExpression = new { expressionType = 2, parameter = new { dataValueType = 0, value = id } }
 			}
 		}
-		return null;
-	}
+	};
 
 	private async Task<T> CallAsync<T>(string toolName, Dictionary<string, object?> args, CancellationToken token) {
 		CallToolResult result = await Session.CallToolAsync(toolName,
