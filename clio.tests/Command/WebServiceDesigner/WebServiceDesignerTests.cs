@@ -236,7 +236,7 @@ public sealed class WebServiceDesignerTests {
 		GivenSelect("VwWebServiceV2", new JsonObject {
 			["UId"] = ServiceUId.ToString(), ["PackageUId"] = PackageUId.ToString(), ["Name"] = "UsrErp",
 			["Caption"] = "ERP", ["TypeName"] = "REST", ["SysPackageName"] = "Custom",
-			["MetaData"] = "﻿{\"MetaData\":{\"Schema\":{\"IQ1\":\"https://admin:hunter2@erp.example/api/\",\"IQ7\":{\"x\":\"hunter2\"}}}}"
+			["MetaData"] = "\uFEFF{\"MetaData\":{\"Schema\":{\"IQ1\":\"https://admin:hunter2@erp.example/api/\",\"IQ7\":{\"x\":\"hunter2\"}}}}"
 		});
 
 		// Act
@@ -426,13 +426,55 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("FindElements returns nothing for metadata that is not JSON instead of throwing.")]
-	public void FindElements_Should_Ignore_Unparsable_Metadata() {
+	[Description("FindElements reports metadata that names the service but is not JSON as one usage of every method instead of skipping it.")]
+	public void FindElements_Should_Fail_Closed_On_Unparsable_Metadata() {
 		// Act
 		var elements = Clio.Command.WebServiceDesigner.WebServiceDesigner
 			.FindElements("not json " + ServiceUId, ServiceUId.ToString()).ToList();
 
 		// Assert
-		elements.Should().BeEmpty(because: "a damaged process row must not stop the scan");
+		elements.Should().ContainSingle(because: "a process the scan cannot read may still call the service")
+			.Which.Method.Should().BeNull(because: "an unknown method is treated as every method by the usage guard");
+	}
+
+	[Test]
+	[Description("FindElements reads process metadata that starts with a byte-order mark.")]
+	public void FindElements_Should_Read_Metadata_With_A_Byte_Order_Mark() {
+		// Arrange
+		string metadata = "\uFEFF{\"items\":[{\"A2\":\"CallSearch\",\"IX1\":\"" + ServiceUId + "\",\"IX2\":\"Search\"}]}";
+
+		// Act
+		var elements = Clio.Command.WebServiceDesigner.WebServiceDesigner
+			.FindElements(metadata, ServiceUId.ToString()).ToList();
+
+		// Assert
+		elements.Should().ContainSingle(because: "metadata saved by the platform may carry a BOM and is still JSON")
+			.Which.Should().Be(("CallSearch", "Search"), because: "the element and the method it calls are read");
+	}
+
+	[Test]
+	[Description("A method added without use-auth gets authentication when the same call also sets it, whatever the order.")]
+	public void Modify_AddMethod_Should_Follow_Authentication_Set_Later_In_The_Same_Call() {
+		// Arrange
+		Guid applicationId = Guid.Parse("8695135d-1c0a-4b9e-9d3e-2f1f4f3e2a11");
+		GivenRegisteredService(BingSchema());
+		_client.Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyDictionary<string, string>>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns([new JsonObject { ["Id"] = applicationId.ToString() }]);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("addMethod", new WebServiceMethodArg("UsrSuggest", "GET", "suggest")),
+			new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("oauth20", OAuthApp: "Erp"))
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "both operations are valid");
+		saved.Methods.Items.Values.Single(m => m.Name == "UsrSuggest").UseAuthInfo.Should().BeTrue(
+			because: "the new method follows the service's authentication as it is after the call, not before setAuth ran");
+		saved.Methods.Items.Values.Single(m => m.Name == "Search").UseAuthInfo.Should().BeFalse(
+			because: "setAuth leaves the methods the call does not touch as they were");
 	}
 }

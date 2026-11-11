@@ -363,12 +363,14 @@ public static partial class WebServiceDefinitionBuilder {
 
 	private static void ValidatePathPlaceholders(string code, string uri,
 		ServiceItemCollection<ServiceParameterDto> parameters, Errors errors) {
+		// Ordinal: the platform substitutes "{" + Path + "}" with a case-sensitive Replace, so {Id} is never
+		// filled from a parameter whose path is "id".
 		var placeholders = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value)
-			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			.ToHashSet(StringComparer.Ordinal);
 		var pathParameters = parameters.Items.Values
 			.Where(p => p.Type == ServiceSchemaCodes.Placements["path"])
 			.Select(p => p.Path)
-			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			.ToHashSet(StringComparer.Ordinal);
 		foreach (string missing in placeholders.Except(pathParameters)) {
 			errors.Add($"method '{code}': uri placeholder {{{missing}}} has no path parameter.");
 		}

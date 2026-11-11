@@ -42,6 +42,22 @@ public sealed class WebServiceSchemaViewTests {
 		}
 		""";
 
+	[TestCase("https://user:p@ss@erp.example/v1/", "https://[redacted]@erp.example/v1/")]
+	[TestCase("https://user:pa ss@erp.example/", "https://[redacted]@erp.example/")]
+	[TestCase("https://user:p%41ss@erp.example/", "https://[redacted]@erp.example/")]
+	[TestCase("https://user:p\u00e4@erp.example/", "https://[redacted]@erp.example/")]
+	[TestCase("https://user:p/ss@erp.example/v1?x=1", "https://[redacted]@erp.example/v1?x=1")]
+	[TestCase("https://erp.example/v1/?mail=a@b", "https://erp.example/v1/?mail=a@b")]
+	[TestCase("https://erp.example/v1/", "https://erp.example/v1/")]
+	[Description("StripUserInfo hides user information in every form Studio can store, including ones Uri cannot parse.")]
+	public void StripUserInfo_Should_Fail_Closed(string stored, string expected) {
+		// Act
+		string result = WebServiceSchemaView.StripUserInfo(stored);
+
+		// Assert
+		result.Should().Be(expected, because: "nothing between the scheme and the last '@' before the query may be shown");
+	}
+
 	[Test]
 	[Description("No credential value of a designer-made service reaches the view: Basic password, Bearer header default and base-URI credentials.")]
 	public void From_Should_Strip_Every_Credential_Value() {

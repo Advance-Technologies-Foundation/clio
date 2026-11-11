@@ -14,17 +14,46 @@ namespace Clio.Command.WebServiceDesigner;
 /// authentication values, and stripping them is <see cref="WebServiceSchemaView"/>'s job, never the caller's.
 /// </summary>
 public interface IWebServiceDesignerClient {
+	/// <summary>Reads a web service schema through <c>ServiceSchemaRequest</c>, credential values included.</summary>
+	/// <param name="uId">The schema UId.</param>
+	/// <param name="packageUId">The UId of the package that owns it.</param>
+	/// <returns>The raw schema.</returns>
 	ServiceSchemaDto ReadSchema(Guid uId, Guid packageUId);
+
+	/// <summary>
+	/// Saves a schema through <c>ServiceDataContract</c>. The platform validates nothing here and replaces an
+	/// existing schema of the same name, so callers check the name first.
+	/// </summary>
+	/// <param name="schema">The complete schema to store.</param>
 	void SaveSchema(ServiceSchemaDto schema);
+
+	/// <summary>Asks the platform whether no schema of a manager uses the name yet, case-insensitively.</summary>
+	/// <param name="managerName">The schema manager.</param>
+	/// <param name="schemaName">The name to check.</param>
+	/// <returns><c>true</c> when the name is free.</returns>
 	bool IsSchemaNameUnique(string managerName, string schemaName);
+
+	/// <summary>Reads rows through DataService with equality filters.</summary>
+	/// <param name="rootSchemaName">The entity to read.</param>
+	/// <param name="columns">Column paths to return.</param>
+	/// <param name="equalFilters">Column path to value; all must match.</param>
+	/// <param name="rowCount">The page size, or -1 for all rows.</param>
+	/// <param name="rowsOffset">Rows to skip.</param>
+	/// <param name="orderColumn">The column to sort by, needed for stable paging.</param>
+	/// <returns>One JSON object per row.</returns>
 	IReadOnlyList<JsonObject> Select(string rootSchemaName, IReadOnlyList<string> columns,
 		IReadOnlyDictionary<string, string> equalFilters, int rowCount = -1, int rowsOffset = 0,
 		string orderColumn = null);
+
+	/// <summary>Calls one method through <c>CallServiceSchemaService.Execute</c>, as Studio's test request does.</summary>
+	/// <param name="serviceName">The service code.</param>
+	/// <param name="methodName">The method code.</param>
+	/// <param name="parameterValues">Values for top-level request parameters, by code.</param>
+	/// <returns>The raw outcome, including what the platform reports as sent.</returns>
 	ServiceMethodCallResult CallMethod(string serviceName, string methodName,
 		IReadOnlyDictionary<string, string> parameterValues);
 }
 
-/// <summary>What a test call returned; request and response headers are deliberately not modelled.</summary>
 /// <summary>The outcome of a test call. The request fields stay inside clio: they are read only to mask secrets.</summary>
 public sealed record ServiceMethodCallResult(bool Success, int? StatusCode, string ResponseBody, string Error,
 	string RequestRawData = null, string RequestBody = null);

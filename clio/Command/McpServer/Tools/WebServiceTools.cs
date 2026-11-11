@@ -39,7 +39,7 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 			args.PackageName, args.Code, args.Caption, args.BaseUri, args.RetryCount, args.Auth, args.Methods));
 }
 
-/// <summary>Lists registered web services by name only; method trees come from describe-web-service.</summary>
+/// <summary>Lists registered web services with code, caption, type, package and base URI; method trees come from describe-web-service.</summary>
 [McpServerToolType]
 public sealed class ListWebServicesTool(IToolCommandResolver commandResolver) {
 

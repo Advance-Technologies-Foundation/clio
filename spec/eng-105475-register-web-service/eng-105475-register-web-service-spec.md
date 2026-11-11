@@ -12,7 +12,7 @@ and no cliogate endpoint (cliogate adds nothing but SQL, and is absent on many s
 | Tool | Platform calls |
 | --- | --- |
 | `register-web-service` | `CheckUniqueSchemaName`, `SelectQuery` (SysPackage, SysSettings, OAuthApplications), `ServiceDataContract`, `ServiceSchemaRequest` |
-| `list-web-services` | `SelectQuery` on `VwWebServiceV2` (no `MetaData`) |
+| `list-web-services` | `SelectQuery` on `VwWebServiceV2`; `MetaData` read only for the base URI, user information removed |
 | `describe-web-service` | `ServiceSchemaRequest`; with `usages`, paged `SelectQuery` on `SysSchema` process rows |
 | `modify-web-service` | `ServiceSchemaRequest`, the usage scan, `ServiceDataContract` |
 | `test-web-service-method` | `rest/CallServiceSchemaService/Execute` |

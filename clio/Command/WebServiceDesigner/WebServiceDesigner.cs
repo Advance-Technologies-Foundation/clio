@@ -9,12 +9,57 @@ namespace Clio.Command.WebServiceDesigner;
 
 /// <summary>Registers, reads and changes REST web services the way Studio > Web services does.</summary>
 public interface IWebServiceDesigner {
+	/// <summary>
+	/// Lists the web services of the environment, REST and SOAP, as Studio > Web services shows them. Needs no
+	/// CanManageSolution: it returns codes, captions, packages and base URIs with user information removed.
+	/// </summary>
+	/// <returns>One row per service.</returns>
 	IReadOnlyList<WebServiceListItem> List();
+
+	/// <summary>
+	/// Reads one service with its methods and parameters. Credential values and secret-like constant defaults
+	/// are never returned; setting codes are.
+	/// </summary>
+	/// <param name="code">The service code.</param>
+	/// <param name="includeUsages">Whether to scan every process schema for Call web service elements calling it.</param>
+	/// <returns>The service view, and its usages when asked for.</returns>
 	WebServiceToolResult Describe(string code, bool includeUsages);
+
+	/// <summary>
+	/// Creates a REST service. Every rule Studio enforces on save is checked first and all problems are reported
+	/// in one refusal; nothing is saved unless everything passes.
+	/// </summary>
+	/// <param name="packageName">The package that will own the service.</param>
+	/// <param name="code">The service code; must carry the schema-name prefix and be unused.</param>
+	/// <param name="caption">The caption; the code when empty.</param>
+	/// <param name="baseUri">An absolute http(s) URI without user information.</param>
+	/// <param name="retryCount">How many times the platform retries a failed call.</param>
+	/// <param name="auth">The authentication, by system-setting codes or an OAuth application only.</param>
+	/// <param name="methods">At least one method.</param>
+	/// <returns>The saved service as the platform stores it, with notices for the user.</returns>
 	WebServiceToolResult Register(string packageName, string code, string caption, string baseUri, int? retryCount,
 		WebServiceAuthArg auth, IReadOnlyList<WebServiceMethodArg> methods);
+
+	/// <summary>
+	/// Applies operations to a REST service in order, all or nothing. Changing or removing a method a process
+	/// calls is refused unless <paramref name="acknowledgedProcesses"/> names exactly those processes. A method
+	/// sent without use-auth follows the service authentication as it is after the whole call.
+	/// </summary>
+	/// <param name="code">The service code.</param>
+	/// <param name="operations">addMethod, setMethod, removeMethod, setBaseUri, setRetryCount or setAuth.</param>
+	/// <param name="acknowledgedProcesses">Process codes the user agreed to affect.</param>
+	/// <returns>The saved service, or a refusal listing the affected processes.</returns>
 	WebServiceToolResult Modify(string code, IReadOnlyList<WebServiceOperationArg> operations,
 		IReadOnlyList<string> acknowledgedProcesses);
+
+	/// <summary>
+	/// Sends one real request through the platform, as Studio's Send test request does. Values sent from system
+	/// settings, the Authorization header and secret constant defaults are masked in the returned body and error.
+	/// </summary>
+	/// <param name="code">The service code.</param>
+	/// <param name="methodCode">The method code.</param>
+	/// <param name="values">Values for top-level request parameters, by parameter code.</param>
+	/// <returns>The status code and the masked, length-limited response body or error.</returns>
 	WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, string> values);
 }
 
@@ -95,7 +140,7 @@ public sealed class WebServiceDesigner(
 			errors.Add("methods: register at least one method.");
 		}
 		foreach (WebServiceMethodArg method in methods ?? []) {
-			AddMethod(schema, method, prefix, errors);
+			AddMethod(schema, method, prefix, HasAuth(schema), errors);
 		}
 		IReadOnlyCollection<string> settings = RequireSysSettings(schema, errors);
 		errors.ThrowIfAny();
@@ -120,14 +165,21 @@ public sealed class WebServiceDesigner(
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		// Only a method definition carries codes the prefix rule applies to; skip the read otherwise.
 		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixResolver.Resolve(null) : null;
+		// A method sent without use-auth follows the service's authentication as it is after this call, so
+		// [addMethod, setAuth] gives the new method authentication just like [setAuth, addMethod] does.
+		WebServiceOperationArg lastSetAuth = operations.LastOrDefault(o => o?.Op == "setAuth");
+		bool methodsUseAuth = lastSetAuth is null
+			? HasAuth(schema)
+			: ServiceSchemaCodes.AuthTypes.TryGetValue(lastSetAuth.Auth?.Type ?? string.Empty, out int authType)
+				&& authType != ServiceSchemaCodes.AuthNone;
 		foreach (WebServiceOperationArg operation in operations) {
-			Apply(schema, operation, prefix, changedMethods, errors);
+			Apply(schema, operation, prefix, methodsUseAuth, changedMethods, errors);
 		}
 		IReadOnlyCollection<string> settings = RequireSysSettings(schema, errors);
 		errors.ThrowIfAny();
 		IReadOnlyList<WebServiceUsage> affected = changedMethods.Count == 0
 			? []
-			: FindUsages(schema.UId).Where(u => changedMethods.Contains(u.Method ?? string.Empty)).ToList();
+			: FindUsages(schema.UId).Where(u => u.Method is null || changedMethods.Contains(u.Method)).ToList();
 		var acknowledged = new HashSet<string>(acknowledgedProcesses ?? [], StringComparer.OrdinalIgnoreCase);
 		List<WebServiceUsage> unacknowledged = affected.Where(u => !acknowledged.Contains(u.Process)).ToList();
 		if (unacknowledged.Count > 0) {
@@ -190,11 +242,20 @@ public sealed class WebServiceDesigner(
 			Text(row, CaptionColumn), Text(row, PackageNameColumn), found.Element, found.Method));
 	}
 
+	/// <remarks>
+	/// Fails closed: a process whose metadata names the service but cannot be parsed is reported as one usage
+	/// with no element and no method, which the guard treats as calling every method. Metadata saved by the
+	/// platform may start with a byte-order mark, which <c>JsonNode.Parse</c> rejects.
+	/// </remarks>
 	internal static IEnumerable<(string Element, string Method)> FindElements(string metadata, string uid) {
 		JsonNode root;
 		try {
-			root = JsonNode.Parse(metadata);
+			root = JsonNode.Parse(metadata.TrimStart('\uFEFF'));
 		} catch (JsonException) {
+			root = null;
+		}
+		if (root is null) {
+			yield return (null, null);
 			yield break;
 		}
 		var pending = new Stack<JsonNode>();
@@ -219,12 +280,12 @@ public sealed class WebServiceDesigner(
 		_ => []
 	};
 
-	private void Apply(ServiceSchemaDto schema, WebServiceOperationArg operation, string prefix,
+	private void Apply(ServiceSchemaDto schema, WebServiceOperationArg operation, string prefix, bool methodsUseAuth,
 		ISet<string> changedMethods, WebServiceDefinitionBuilder.Errors errors) {
 		WebServiceDefinitionBuilder.RejectUnknownFields(operation?.ExtensionData, $"op '{operation?.Op}'", errors);
 		switch (operation?.Op) {
 			case "addMethod":
-				AddMethod(schema, operation.Method, prefix, errors);
+				AddMethod(schema, operation.Method, prefix, methodsUseAuth, errors);
 				break;
 			case "setMethod":
 				ServiceMethodDto existing = FindMethod(schema, operation.Method?.Code);
@@ -233,7 +294,7 @@ public sealed class WebServiceDesigner(
 					break;
 				}
 				ServiceMethodDto replacement = WebServiceDefinitionBuilder.BuildMethod(operation.Method, existing,
-					HasAuth(schema), errors, prefix);
+					methodsUseAuth, errors, prefix);
 				if (replacement is not null) {
 					schema.Methods.Items.Remove(existing.UId.ToString());
 					schema.Methods.Items[replacement.UId.ToString()] = replacement;
@@ -264,13 +325,13 @@ public sealed class WebServiceDesigner(
 		}
 	}
 
-	private static void AddMethod(ServiceSchemaDto schema, WebServiceMethodArg arg, string prefix,
+	private static void AddMethod(ServiceSchemaDto schema, WebServiceMethodArg arg, string prefix, bool useAuth,
 		WebServiceDefinitionBuilder.Errors errors) {
 		if (FindMethod(schema, arg?.Code) is not null) {
 			errors.Add($"method code '{arg?.Code}' is used twice.");
 			return;
 		}
-		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, HasAuth(schema), errors, prefix);
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, useAuth, errors, prefix);
 		if (method is not null) {
 			schema.Methods.Items[method.UId.ToString()] = method;
 		}
@@ -335,9 +396,14 @@ public sealed class WebServiceDesigner(
 		// the id; a person passes the name. Both resolve to the same row; when both are given they must agree.
 		Guid? byApp = ResolveOAuthApp(auth.OAuthApp);
 		Guid? byId = ResolveOAuthApp(auth.OAuthAppId);
-		if (!string.IsNullOrWhiteSpace(auth.OAuthApp) && !string.IsNullOrWhiteSpace(auth.OAuthAppId) && byApp != byId) {
-			throw new ArgumentException("the auth block names two different OAuth applications in oauth-app and "
-				+ "oauth-app-id; give one.");
+		if (!string.IsNullOrWhiteSpace(auth.OAuthApp) && !string.IsNullOrWhiteSpace(auth.OAuthAppId)) {
+			if (byApp is null || byId is null) {
+				return null; // the caller refuses it as an unknown application
+			}
+			if (byApp != byId) {
+				throw new ArgumentException("the auth block names two different OAuth applications in oauth-app and "
+					+ "oauth-app-id; give one.");
+			}
 		}
 		return byApp ?? byId;
 	}

@@ -986,13 +986,13 @@ These tools let an agent register and maintain the REST web service a business p
 Call web service element, so a task that names an unregistered API no longer stops at "register it in
 Studio first". They call the platform contracts the Studio web service designer itself uses
 (`ServiceSchemaRequest`, `ServiceDataContract`, `CheckUniqueSchemaName`, `CallServiceSchemaService`), need
-no package on the target, and are non-resident (discovered through `get-tool-contract`). Every one
-requires the environment user to hold `CanManageSolution`, which clio checks itself because the
-platform's save and read paths do not.
+no package on the target, and are non-resident (discovered through `get-tool-contract`). Every one except
+`list-web-services` requires the environment user to hold `CanManageSolution`, which clio checks itself
+because the platform's save and read paths do not.
 
 - `register-web-service` (`ReadOnly=false`, `Destructive=true`, **environment-sensitive**) — creates a REST service (code with the schema-name prefix, base URI, methods, request and response parameter trees, authentication) in a named package. The platform's save validates nothing and overwrites an existing schema of the same name, so clio enforces Studio's rules, refuses a taken code, and refuses every credential value: basic/digest credentials and header, cookie, key or token defaults are system-setting codes only, and the setting must exist.
-- `list-web-services` (`ReadOnly=true`) — the registered services (code, caption, REST or SOAP, package), read from `VwWebServiceV2` without its metadata column.
-- `describe-web-service` (`ReadOnly=true`) — one service with its parameter trees; authentication values and constant defaults of header, cookie or credential-like parameters are masked. `usages: true` scans process metadata for the service UId and lists the calling processes and Call web service elements.
+- `list-web-services` (`ReadOnly=true`) — the registered services (code, caption, REST or SOAP, package, base URI), read from `VwWebServiceV2`; the base URI is taken from the schema metadata with any user information removed, and nothing else from the metadata is returned.
+- `describe-web-service` (`ReadOnly=true`) — one service with its parameter trees; authentication values and constant defaults of header, cookie or credential-like parameters are masked. `usages: true` scans process metadata for the service UId and lists the calling processes and Call web service elements; a process that names the service but cannot be parsed is listed as calling every method.
 - `modify-web-service` (`ReadOnly=false`, `Destructive=true`) — ordered `addMethod` / `setMethod` / `removeMethod` / `setBaseUri` / `setRetryCount` / `setAuth`; existing UIds are kept. A change to a method that a process calls is refused, naming the processes, unless `acknowledge-usages` repeats them after the user agreed.
 - `test-web-service-method` (`ReadOnly=false`, `OpenWorld=true`) — one real request through a method; returns the status and body, never headers.
 

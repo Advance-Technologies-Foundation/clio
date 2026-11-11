@@ -261,13 +261,23 @@ public static partial class WebServiceSchemaView {
 			schema.Methods.Items.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
 				.Select(Method).ToList());
 
-	/// <summary>Removes <c>user:password@</c> from an absolute URI; Studio accepts one in the base URI.</summary>
+	/// <summary>
+	/// Removes <c>user:password@</c> from a URI; Studio accepts one in the base URI. Works on the raw text and
+	/// fails closed: everything between the scheme and the last <c>@</c> before the query is hidden, because
+	/// <see cref="Uri"/> rejects a password containing <c>@</c> and reports an escaped one in a form that no
+	/// longer occurs in the stored text.
+	/// </summary>
+	/// <param name="uri">The URI as stored.</param>
+	/// <returns>The URI without its user information.</returns>
 	public static string StripUserInfo(string uri) {
-		if (string.IsNullOrEmpty(uri) || !Uri.TryCreate(uri, UriKind.Absolute, out Uri parsed)
-			|| string.IsNullOrEmpty(parsed.UserInfo)) {
+		if (string.IsNullOrEmpty(uri)) {
 			return uri;
 		}
-		return uri.Replace(parsed.UserInfo + "@", "[redacted]@", StringComparison.Ordinal);
+		int scheme = uri.IndexOf("://", StringComparison.Ordinal);
+		int start = scheme < 0 ? 0 : scheme + 3;
+		int end = uri.IndexOfAny(['?', '#'], start);
+		int at = uri.LastIndexOf('@', (end < 0 ? uri.Length : end) - 1);
+		return at < start ? uri : uri[..start] + "[redacted]" + uri[at..];
 	}
 
 	public static string Localized(Dictionary<string, string> captions) {

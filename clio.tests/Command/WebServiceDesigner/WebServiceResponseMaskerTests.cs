@@ -44,6 +44,48 @@ public sealed class WebServiceResponseMaskerTests {
 	}
 
 	[Test]
+	[Description("A secret constant default describe hides is collected even though no setting filled it; a visible constant is not.")]
+	public void SentSecrets_Should_Collect_Secret_Constants() {
+		// Arrange
+		ServiceMethodDto method = Method(
+			new WebServiceParameterArg("XPartner", "header", Path: "X-Partner"),
+			new WebServiceParameterArg("apiKey", "query"),
+			new WebServiceParameterArg("lang", "query"));
+		foreach (ServiceParameterDto parameter in method.Request.Parameters.Items.Values) {
+			parameter.DefValue = new ServiceParameterValueDto {
+				Value = parameter.Name switch { "XPartner" => "partner-secret-1", "apiKey" => "query-key-2", _ => "en-GB" },
+				Source = ServiceSchemaCodes.ValueSourceConst
+			};
+		}
+
+		// Act
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, "GET https://x/ HTTP/1.1", null);
+
+		// Assert
+		secrets.Should().BeEquivalentTo(["partner-secret-1", "query-key-2"],
+			because: "a constant on a header or under a credential-like name is hidden by describe, so an echo must hide it too, while 'lang' is shown by describe anyway");
+	}
+
+	[Test]
+	[Description("A path parameter filled from a system setting is found in the sent URL through the method URI template.")]
+	public void SentSecrets_Should_Collect_A_Setting_Bound_Path_Value() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Account", "GET", "accounts/{tenant}/orders", RequestParameters: [
+				new WebServiceParameterArg("tenant", "path", DefaultSysSetting: "UsrTenant")]), null, false, errors);
+
+		// Act
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method,
+			"GET https://erp.example/v1/accounts/tenant%20secret/orders?page=1 HTTPS/1.1\r\nHost: erp.example", null);
+
+		// Assert
+		errors.Should().BeEmpty(because: "the method is valid");
+		secrets.Should().Contain(["tenant%20secret", "tenant secret"],
+			because: "the value is read from the path segment the template names, as sent and unescaped");
+	}
+
+	[Test]
 	[Description("In a JSON body a secret is masked in values and in property names, and keys masked to the same text keep both values.")]
 	public void ApplyToBody_Should_Mask_Values_And_Property_Names() {
 		// Arrange

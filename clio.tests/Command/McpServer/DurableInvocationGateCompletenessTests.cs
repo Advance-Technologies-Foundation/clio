@@ -133,7 +133,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-pages",
 		"list-printables",
 		"list-sys-settings",
-		// Reads VwWebServiceV2 names only; no metadata, no credentials.
+		// Reads VwWebServiceV2 rows and the base URI with user information removed; no credentials.
 		"list-web-services",
 		"list-themes",
 		"list-user-tasks",

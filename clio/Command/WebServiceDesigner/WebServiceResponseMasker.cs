@@ -4,22 +4,22 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace Clio.Command.WebServiceDesigner;
 
 /// <summary>
-/// Hides, in what a test call returns, the values the platform filled in from system settings and the
-/// Authorization header. An API may echo request headers or put a key into an error body, and the
-/// agent must never read a credential that way.
+/// Hides, in what a test call returns, the values the platform filled in from system settings, the
+/// Authorization header, and the secret constant defaults describe-web-service hides. An API may echo
+/// request headers or put a key into an error body, and the agent must never read a credential that way.
 /// </summary>
 /// <remarks>
-/// The values are taken from the request the platform reports as sent, not from the settings: reading a
+/// Setting values are taken from the request the platform reports as sent, not from the settings: reading a
 /// setting value needs cliogate, which many environments lack, and the sent value is exactly what can
-/// come back. A path
-/// parameter cannot be told apart from the rest of the URL and is not masked; values shorter than
-/// <see cref="MinMaskedLength"/> are left alone so that common short words are not erased.
+/// come back. A path parameter is found by matching the method URI template against the request line;
+/// values shorter than <see cref="MinMaskedLength"/> are left alone so that common short words are not erased.
 /// </remarks>
-public static class WebServiceResponseMasker {
+public static partial class WebServiceResponseMasker {
 
 	/// <summary>Text that replaces a masked value.</summary>
 	public const string Mask = "[masked]";
@@ -31,6 +31,7 @@ public static class WebServiceResponseMasker {
 		new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
 	private const int PlacementBody = 1;
+	private const int PlacementPath = 2;
 	private const int PlacementQuery = 3;
 	private const int PlacementHeader = 4;
 	private const int PlacementCookie = 5;
@@ -67,8 +68,14 @@ public static class WebServiceResponseMasker {
 					// the body carries it under its last segment.
 					secrets.AddRange(BodyValues(body, LastPathSegment(name)));
 					break;
+				case PlacementPath:
+					secrets.AddRange(PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name));
+					break;
 			}
 		}
+		// describe-web-service hides a secret constant (an API key typed in Studio); an echo must not show it
+		// either. It is known from the schema, so it is masked whether or not the request carried it.
+		secrets.AddRange(SecretConstants(method?.Request?.Parameters));
 		foreach (string authorization in Lookup(headers, "Authorization")) {
 			secrets.AddRange(AuthorizationParts(authorization));
 		}
@@ -195,6 +202,63 @@ public static class WebServiceResponseMasker {
 			}
 		}
 	}
+
+	private static IEnumerable<string> SecretConstants(ServiceItemCollection<ServiceParameterDto> parameters) {
+		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
+			if (parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value: { Length: > 0 } value }
+					&& (WebServiceSchemaView.IsSecretLike(parameter.Name, parameter.Type)
+						|| WebServiceSchemaView.IsSecretLike(parameter.Path, parameter.Type))) {
+				yield return value;
+			}
+			foreach (string nested in SecretConstants(parameter.ItemProperties)) {
+				yield return nested;
+			}
+		}
+	}
+
+	/// <summary>
+	/// The value a setting-bound path parameter took in the sent URL: the method URI template
+	/// (<c>orders/{id}</c>) is matched against the end of the request path.
+	/// </summary>
+	private static List<string> PathValues(string requestLine, string template, string name) {
+		var values = new List<string>();
+		string[] parts = (requestLine ?? string.Empty).Split(' ');
+		string target = parts.Length > 1 ? parts[1] : string.Empty;
+		int cut = target.IndexOfAny(['?', '#']);
+		string path = cut < 0 ? target : target[..cut];
+		string pattern = template ?? string.Empty;
+		int query = pattern.IndexOfAny(['?', '#']);
+		pattern = (query < 0 ? pattern : pattern[..query]).Trim('/');
+		if (pattern.Length == 0 || string.IsNullOrEmpty(name)) {
+			return values;
+		}
+		var regex = new StringBuilder("/");
+		var placeholders = new List<string>();
+		int position = 0;
+		foreach (Match placeholder in PlaceholderPattern().Matches(pattern)) {
+			regex.Append(Regex.Escape(pattern[position..placeholder.Index])).Append("([^/]+)");
+			placeholders.Add(placeholder.Groups[1].Value);
+			position = placeholder.Index + placeholder.Length;
+		}
+		regex.Append(Regex.Escape(pattern[position..])).Append("/?$");
+		Match match;
+		try {
+			match = Regex.Match(path, regex.ToString(), RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+		} catch (RegexMatchTimeoutException) {
+			return values;
+		}
+		for (int i = 0; match.Success && i < placeholders.Count; i++) {
+			if (string.Equals(placeholders[i], name, StringComparison.Ordinal)) {
+				string raw = match.Groups[i + 1].Value;
+				values.Add(raw);
+				values.Add(Uri.UnescapeDataString(raw));
+			}
+		}
+		return values;
+	}
+
+	[GeneratedRegex(@"\{([^{}]+)\}", RegexOptions.CultureInvariant)]
+	private static partial Regex PlaceholderPattern();
 
 	private static IEnumerable<ServiceParameterDto> SettingBound(ServiceItemCollection<ServiceParameterDto> parameters) {
 		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {

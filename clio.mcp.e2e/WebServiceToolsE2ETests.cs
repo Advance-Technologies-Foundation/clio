@@ -108,8 +108,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
-	[AllureName("register, list, describe and modify a REST web service")]
-	[Description("Registers a REST service with a path parameter, a system-setting header and a nested response array, finds it through list-web-services, reads it back through describe-web-service with no credential value, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
+	[AllureTag(TestWebServiceMethodTool.ToolName)]
+	[AllureName("register, list, describe, test-call and modify a REST web service")]
+	[Description("Registers a REST service with a path parameter, a system-setting header and a nested response array, finds it through list-web-services, reads it back through describe-web-service with no credential value, test-calls a method through the platform and gets a readable failure for an unresolvable host and for an unknown method, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
 	public async Task WebServiceTools_Should_Register_Read_And_Modify_A_Rest_Service() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -137,6 +138,18 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["usages"] = true
+			}, cts.Token);
+		// A real call through the platform's test-request service. The host never resolves, so the call fails in
+		// the platform the same way on every stand; what is checked is the path through the tool: argument
+		// conversion (a JSON number), the platform call, and a readable failure instead of an exception.
+		WebServiceTestResult testCall = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = MethodCode,
+				["parameters"] = new Dictionary<string, object?> { [Prefixed("Id")] = 42 }
+			}, cts.Token);
+		WebServiceTestResult unknownMethod = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = Prefixed("NoSuchMethod")
 			}, cts.Token);
 		WebServiceToolResult literalKey = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
 			new Dictionary<string, object?> {
@@ -174,6 +187,13 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		method.ResponseParameters.Single(p => p.Code == Prefixed("Items")).Items.Should().ContainSingle(p => p.Code == Prefixed("Number"),
 			because: "nested response items must round-trip through the platform");
 		described.Usages.Should().BeEmpty(because: "no process calls a service registered a moment ago");
+		testCall.Success.Should().BeFalse(because: "the base URI points at a host that never resolves");
+		testCall.Error.Should().NotBeNullOrWhiteSpace(
+			because: "the platform's failure reaches the agent as text, not as a thrown tool error");
+		testCall.ResponseBody.Should().BeNullOrEmpty(because: "no response came back from an unresolvable host");
+		unknownMethod.Success.Should().BeFalse(because: "a method the service does not have cannot be called");
+		unknownMethod.Error.Should().Contain(MethodCode,
+			because: "the refusal lists the methods the service does have");
 		literalKey.Success.Should().BeFalse(because: "a constant value on a header parameter must be refused");
 		literalKey.Error.Should().Contain("default-sys-setting",
 			because: "the refusal must point the agent at the system-setting route");
