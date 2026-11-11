@@ -433,6 +433,130 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"upsert must UPDATE a row that exists in the table but is unbound in the target binding, not attempt an insert that fails on required columns");
 	}
 
+	[Test]
+	[Description("ENG-105291: refuses create-data-binding-db through MCP when a row's localizations name a culture that is not active on the site, names the culture and the active cultures, and creates no row.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureName("create-data-binding-db refuses an inactive localization culture before any write")]
+	[AllureDescription("Invokes create-data-binding-db with localizations in a culture the site does not have and verifies exit code 1, an error naming that culture and the active cultures, and no 'Created row' output.")]
+	public async Task CreateDataBindingDb_Should_Refuse_Inactive_Localization_Culture_Before_Any_Write() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(arrangeContext, CreateDbToolName,
+			BuildLocalizedRowArgs(arrangeContext, $"UsrLczRefuseE2E{arrangeContext.PackageName}", "xx-XX", "E2E refused row"));
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 1, "a culture the site does not have must refuse the whole call");
+		AssertOutputContains(result, "Culture 'xx-XX' is not active on the site",
+			"the refusal must name the culture the agent has to fix");
+		AssertOutputContains(result, "nothing was written", "the refusal must say no write happened");
+		AssertOutputDoesNotContain(result, "Created row", "the check runs before any row is inserted");
+	}
+
+	[Test]
+	[Description("ENG-105291: stores a lookup value in an active culture other than the connected user's through create-data-binding-db over MCP, reads it back, and reports the record and culture written.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureName("create-data-binding-db stores and verifies a lookup value translation")]
+	[AllureDescription("Discovers an active non-en-US culture from the refusal message, then creates a Lookup row with a translation in that culture and verifies exit code 0 and the 'Localized row' line; the tool itself fails when the value read back differs.")]
+	public async Task CreateDataBindingDb_Should_Store_Lookup_Value_Translation() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string culture = await DiscoverActiveCultureOtherThanEnUsAsync(arrangeContext);
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(arrangeContext, CreateDbToolName,
+			BuildLocalizedRowArgs(arrangeContext, $"UsrLczE2E{arrangeContext.PackageName}", culture!,
+				$"E2E translated row {arrangeContext.PackageName}"));
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 0,
+			"the translation is written and the value read back matches, otherwise the tool fails as not verified");
+		AssertOutputContains(result, $"[{culture}]: Name", "the result lists the culture and column written per record");
+	}
+
+	[Test]
+	[Description("ENG-105291: forwards seed-rows localizations of a sync-schemas seed-data operation to create-data-binding-db over MCP, so translations sent on the canonical batched path are written instead of dropped.")]
+	[AllureTag(SchemaSyncTool.ToolName)]
+	[AllureName("sync-schemas seed-rows carry lookup value translations")]
+	[AllureDescription("Runs a sync-schemas seed-data operation on Lookup whose seed row carries localizations in an active non-en-US culture and verifies the seed-data result reports the 'Localized row' line for that culture.")]
+	public async Task SyncSchemas_SeedRows_Should_Store_Lookup_Value_Translation() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string culture = await DiscoverActiveCultureOtherThanEnUsAsync(arrangeContext);
+		string rowName = $"E2E seed translated {arrangeContext.PackageName}";
+
+		// Act
+		ModelContextProtocol.Protocol.CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			SchemaSyncTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["package-name"] = arrangeContext.PackageName,
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "seed-data",
+							["schema-name"] = "Lookup",
+							["seed-rows"] = new object?[] {
+								new Dictionary<string, object?> {
+									["values"] = new Dictionary<string, object?> { ["Name"] = rowName },
+									["localizations"] = new Dictionary<string, object?> {
+										[culture] = new Dictionary<string, object?> { ["Name"] = $"{rowName} ({culture})" }
+									}
+								}
+							}
+						}
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		string diagnostics = DescribeCallResult(callResult);
+		callResult.IsError.Should().NotBeTrue(because: $"the seed-data operation is valid. Result: {diagnostics}");
+		diagnostics.Should().Contain($"[{culture}]: Name",
+			because: "the seed-data result must report the translation written per record and culture, proving the localizations reached create-data-binding-db");
+	}
+
+	/// <summary>
+	///     Reads the active cultures from the refusal of an impossible culture and returns one other than en-US,
+	///     or ignores the test when the sandbox has none.
+	/// </summary>
+	private static async Task<string> DiscoverActiveCultureOtherThanEnUsAsync(DataBindingDbArrangeContext arrangeContext) {
+		CommandExecutionActResult probe = await ActCommandAsync(arrangeContext, CreateDbToolName,
+			BuildLocalizedRowArgs(arrangeContext, $"UsrLczProbeE2E{arrangeContext.PackageName}", "xx-XX", "E2E probe row"));
+		string probeOutput = DescribeExecution(probe.Execution);
+		System.Text.RegularExpressions.Match activeList = System.Text.RegularExpressions.Regex.Match(
+			probeOutput, @"active cultures: (?<list>[^)]*)\)");
+		string? culture = activeList.Groups["list"].Value
+			.Split(',', System.StringSplitOptions.TrimEntries | System.StringSplitOptions.RemoveEmptyEntries)
+			.FirstOrDefault(name => !string.Equals(name, "en-US", System.StringComparison.OrdinalIgnoreCase));
+		if (culture is null) {
+			Assert.Ignore($"The sandbox has no active culture besides en-US ({probeOutput}); activate one to run this test.");
+		}
+
+		return culture!;
+	}
+
+	private static Dictionary<string, object?> BuildLocalizedRowArgs(
+		DataBindingDbArrangeContext arrangeContext, string bindingName, string culture, string rowName) =>
+		new() {
+			["environment-name"] = arrangeContext.EnvironmentName,
+			["package-name"] = arrangeContext.PackageName,
+			["schema-name"] = "Lookup",
+			["binding-name"] = bindingName,
+			["rows"] = System.Text.Json.JsonSerializer.Serialize(new[] {
+				new Dictionary<string, object> {
+					["values"] = new Dictionary<string, string> { ["Name"] = rowName },
+					["localizations"] = new Dictionary<string, Dictionary<string, string>> {
+						[culture] = new() { ["Name"] = $"{rowName} ({culture})" }
+					}
+				}
+			})
+		};
+
 	private static void AssertIncludesInfoMessage(CommandExecutionActResult actResult, string because) {
 		actResult.Execution.Output.Should().NotBeNullOrEmpty(
 			because: "command execution should emit human-readable diagnostics");

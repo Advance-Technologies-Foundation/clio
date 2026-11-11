@@ -1,0 +1,42 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-page-modal-size - Read the modal window size of a Freedom UI modal page
+
+DESCRIPTION
+    Reads the window size of a Freedom UI modal page (a page inheriting BaseMiniPageTemplate). The
+    size is not part of the page body: it is stored in the page's AppearanceSettings add-on
+    (modalSettings.size). layoutConfig.width of the 'Main' container is not the window size.
+
+    Returns the size the package sees (small, medium, large or extra-large), the raw stored value,
+    the package of the add-on layer that size comes from, and the size the window opens with
+    (effectiveSize), which is the runtime default (small) when no size is set. When a package the
+    requested one does not depend on overrides the size, effectiveSourcePackageName names it and a
+    warning says that a write to the requested package would not change the window (a stale runtime
+    cache looks the same: clear it with clio clear-redis-db or restart the application, then read
+    again).
+
+    Read-only. A page that is not a modal page is refused.
+
+SYNOPSIS
+    clio get-page-modal-size -e ENVIRONMENT --page-schema-name NAME --package-name NAME
+
+OPTIONS
+    -e, --environment NAME
+        Registered Creatio environment to target.
+
+    --page-schema-name NAME
+        Required. Modal page schema name, e.g. 'UsrOrder_MiniPage'.
+
+    --package-name NAME
+        Required. Package the page is read from, e.g. 'Custom'.
+
+EXAMPLES
+    # Read the window size of a modal page.
+    clio get-page-modal-size -e dev --page-schema-name UsrOrder_MiniPage --package-name Custom
+
+NOTES
+    Aliases: page-modal-size-get.
+
+    Pairs with set-page-modal-size.

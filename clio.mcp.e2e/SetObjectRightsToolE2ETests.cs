@@ -97,6 +97,26 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 			because: "the call must fail on the missing environment rather than on an unknown argument or missing operations");
 	}
 
+	[Test]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureName("set-object-rights binds the package argument")]
+	[AllureDescription("package binds through the real MCP server beside a grant, and the call fails on the missing environment, not on an unknown argument (ENG-105290).")]
+	[Description("Binds the package argument through the real MCP server: a grant naming the package that receives the rights binding reaches the environment check.")]
+	public async Task SetObjectRights_ShouldBindPackageArgument_WhenPassedThroughTheTool() {
+		// Arrange
+		string invalidEnvironmentName = $"missing-{ToolName}-package-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> args = InvalidEnvironmentArgs(invalidEnvironmentName);
+		args["package"] = "UsrAppRights";
+
+		// Act
+		(CallToolResult callResult, ObjectRightsToolResponse response) = await CallAsync(args);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "package is part of the tool contract and binds like any argument");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the call must fail on the missing environment rather than on an unknown argument");
+	}
+
 	[TestCase("confirm", true)]
 	[TestCase("confirmation-code", "0123456789abcdef")]
 	[TestCase("include-connected", true)]

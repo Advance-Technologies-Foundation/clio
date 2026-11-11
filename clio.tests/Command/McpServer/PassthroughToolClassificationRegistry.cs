@@ -347,6 +347,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["inspect-license"] = PassthroughClassification.NotApplicable,
 			["manage-license"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
+			["get-page-modal-size"] = PassthroughClassification.NotApplicable,
+			["set-page-modal-size"] = PassthroughClassification.NotApplicable,
 			["get-entity-connections"] = PassthroughClassification.NotApplicable,
 			["update-entity-connections"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
