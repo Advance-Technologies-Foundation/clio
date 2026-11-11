@@ -73,7 +73,8 @@ public sealed class WebServiceDesigner(
 		int? retryCount, WebServiceAuthArg auth, IReadOnlyList<WebServiceMethodArg> methods) {
 		RequireManageSolution();
 		var errors = new WebServiceDefinitionBuilder.Errors();
-		WebServiceDefinitionBuilder.ValidateServiceCode(code, prefixResolver.Resolve(null), errors);
+		string prefix = prefixResolver.Resolve(null);
+		WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, errors);
 		if (errors.Count == 0 && !client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, code)) {
 			// The platform's save looks an existing schema up by name first, so a duplicate code would
 			// silently overwrite that service, UId included, and orphan every process that calls it.
@@ -94,7 +95,7 @@ public sealed class WebServiceDesigner(
 			errors.Add("methods: register at least one method.");
 		}
 		foreach (WebServiceMethodArg method in methods ?? []) {
-			AddMethod(schema, method, errors);
+			AddMethod(schema, method, prefix, errors);
 		}
 		IReadOnlyCollection<string> settings = RequireSysSettings(schema, errors);
 		errors.ThrowIfAny();
@@ -117,8 +118,10 @@ public sealed class WebServiceDesigner(
 		}
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		// Only a method definition carries codes the prefix rule applies to; skip the read otherwise.
+		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixResolver.Resolve(null) : null;
 		foreach (WebServiceOperationArg operation in operations) {
-			Apply(schema, operation, changedMethods, errors);
+			Apply(schema, operation, prefix, changedMethods, errors);
 		}
 		IReadOnlyCollection<string> settings = RequireSysSettings(schema, errors);
 		errors.ThrowIfAny();
@@ -216,12 +219,12 @@ public sealed class WebServiceDesigner(
 		_ => []
 	};
 
-	private void Apply(ServiceSchemaDto schema, WebServiceOperationArg operation, ISet<string> changedMethods,
-		WebServiceDefinitionBuilder.Errors errors) {
+	private void Apply(ServiceSchemaDto schema, WebServiceOperationArg operation, string prefix,
+		ISet<string> changedMethods, WebServiceDefinitionBuilder.Errors errors) {
 		WebServiceDefinitionBuilder.RejectUnknownFields(operation?.ExtensionData, $"op '{operation?.Op}'", errors);
 		switch (operation?.Op) {
 			case "addMethod":
-				AddMethod(schema, operation.Method, errors);
+				AddMethod(schema, operation.Method, prefix, errors);
 				break;
 			case "setMethod":
 				ServiceMethodDto existing = FindMethod(schema, operation.Method?.Code);
@@ -230,7 +233,7 @@ public sealed class WebServiceDesigner(
 					break;
 				}
 				ServiceMethodDto replacement = WebServiceDefinitionBuilder.BuildMethod(operation.Method, existing,
-					HasAuth(schema), errors);
+					HasAuth(schema), errors, prefix);
 				if (replacement is not null) {
 					schema.Methods.Items.Remove(existing.UId.ToString());
 					schema.Methods.Items[replacement.UId.ToString()] = replacement;
@@ -261,13 +264,13 @@ public sealed class WebServiceDesigner(
 		}
 	}
 
-	private static void AddMethod(ServiceSchemaDto schema, WebServiceMethodArg arg,
+	private static void AddMethod(ServiceSchemaDto schema, WebServiceMethodArg arg, string prefix,
 		WebServiceDefinitionBuilder.Errors errors) {
 		if (FindMethod(schema, arg?.Code) is not null) {
 			errors.Add($"method code '{arg?.Code}' is used twice.");
 			return;
 		}
-		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, HasAuth(schema), errors);
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, HasAuth(schema), errors, prefix);
 		if (method is not null) {
 			schema.Methods.Items[method.UId.ToString()] = method;
 		}

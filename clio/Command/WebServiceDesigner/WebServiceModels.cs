@@ -12,7 +12,7 @@ namespace Clio.Command.WebServiceDesigner;
 
 public sealed record WebServiceMethodArg(
 	[property: JsonPropertyName("code")]
-	[property: Description("Method code, unique within the service, e.g. GetOrders. This is what a Call web service element stores.")]
+	[property: Description("Method code with the schema-name prefix, unique within the service, e.g. UsrGetOrders. This is what a Call web service element stores.")]
 	string Code,
 
 	[property: JsonPropertyName("http-method")]
@@ -20,7 +20,7 @@ public sealed record WebServiceMethodArg(
 	string HttpMethod,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Method address relative to the base URI; path parameters as {code}, e.g. orders/{id}")]
+	[property: Description("Method address relative to the base URI; a path parameter as {path}, its wire name, e.g. orders/{id}")]
 	string Uri,
 
 	[property: JsonPropertyName("caption")]
@@ -53,7 +53,7 @@ public sealed record WebServiceMethodArg(
 /// <summary>A request or response parameter; <see cref="Items"/> describes the fields of an Object.</summary>
 public sealed record WebServiceParameterArg(
 	[property: JsonPropertyName("code")]
-	[property: Description("Parameter code, unique among its siblings")]
+	[property: Description("Parameter code with the schema-name prefix, unique among its siblings, e.g. UsrOrderId; the wire name goes in path")]
 	string Code,
 
 	[property: JsonPropertyName("in")]
@@ -65,7 +65,7 @@ public sealed record WebServiceParameterArg(
 	string Type = null,
 
 	[property: JsonPropertyName("path")]
-	[property: Description("Optional wire name or JSONPath; defaults to the code for request parameters and $.<code> for response parameters")]
+	[property: Description("Wire name (query, header, cookie or body key; the {placeholder} of a path parameter) or the JSONPath of a response value, e.g. $.status. Required for a new parameter when the environment has a schema-name prefix; otherwise it defaults to the code, and a kept parameter keeps its own.")]
 	string Path = null,
 
 	[property: JsonPropertyName("caption")]
@@ -300,7 +300,8 @@ public static partial class WebServiceSchemaView {
 	private static WebServiceParameterView Parameter(ServiceParameterDto parameter, bool isRequest) {
 		ServiceParameterValueDto value = parameter.DefValue;
 		bool isConstant = IsConstant(value);
-		bool masked = isConstant && IsSecretLike(parameter.Name, parameter.Type);
+		bool masked = isConstant
+			&& (IsSecretLike(parameter.Name, parameter.Type) || IsSecretLike(parameter.Path, parameter.Type));
 		return new WebServiceParameterView(parameter.Name, Localized(parameter.Caption),
 			isRequest ? ServiceSchemaCodes.Placements.FirstOrDefault(p => p.Value == parameter.Type).Key : "body",
 			parameter.Path, parameter.DataValueTypeName, parameter.IsArray, parameter.IsRequired,

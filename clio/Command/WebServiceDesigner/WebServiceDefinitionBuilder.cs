@@ -103,12 +103,21 @@ public static partial class WebServiceDefinitionBuilder {
 	/// Builds a method; when <paramref name="existing"/> is given its UId and the UIds of every parameter that
 	/// keeps its code are reused, so the Process Designer keeps resolving the elements that call it.
 	/// </summary>
+	/// <param name="prefix">
+	/// The environment's schema-name prefix. Studio refuses to save a method or a parameter whose code lacks it
+	/// (its method and parameter pages validate both codes against <c>SchemaNamePrefix</c> unconditionally), so a
+	/// code this call INTRODUCES must carry it. A code the service already has is kept as it is: renaming it is
+	/// what breaks the processes that call the method. Null or empty: no prefix rule, as in Studio.
+	/// </param>
 	public static ServiceMethodDto BuildMethod(WebServiceMethodArg arg, ServiceMethodDto existing,
-		bool serviceHasAuth, Errors errors) {
+		bool serviceHasAuth, Errors errors, string prefix = null) {
 		string code = arg?.Code;
 		if (string.IsNullOrWhiteSpace(code) || !IdentifierPattern().IsMatch(code)) {
 			errors.Add($"method code '{code}' must be a Latin identifier.");
 			return null;
+		}
+		if (!string.Equals(existing?.Name, code, StringComparison.Ordinal)) {
+			RequirePrefix($"method code '{code}'", code, prefix, errors);
 		}
 		RejectUnknownFields(arg.ExtensionData, $"method '{code}'", errors);
 		if (!ServiceSchemaCodes.HttpMethods.TryGetValue(arg.HttpMethod ?? string.Empty, out int verb)) {
@@ -133,13 +142,13 @@ public static partial class WebServiceDefinitionBuilder {
 				Uri = uri, ContentType = contentType, HttpMethodType = verb,
 				Extra = existing?.Request?.Extra,
 				Parameters = BuildParameters(arg.RequestParameters, existing?.Request?.Parameters, true,
-					$"method '{code}' request", errors)
+					$"method '{code}' request", errors, prefix)
 			},
 			Response = new ServiceMethodResponseDto {
 				ContentType = contentType,
 				Extra = existing?.Response?.Extra,
 				Parameters = BuildParameters(arg.ResponseParameters, existing?.Response?.Parameters, false,
-					$"method '{code}' response", errors)
+					$"method '{code}' response", errors, prefix)
 			}
 		};
 		ValidatePathPlaceholders(code, uri, method.Request.Parameters, errors);
@@ -161,7 +170,7 @@ public static partial class WebServiceDefinitionBuilder {
 
 	private static ServiceItemCollection<ServiceParameterDto> BuildParameters(
 		IReadOnlyList<WebServiceParameterArg> args, ServiceItemCollection<ServiceParameterDto> existing,
-		bool isRequest, string owner, Errors errors) {
+		bool isRequest, string owner, Errors errors, string prefix) {
 		var result = new ServiceItemCollection<ServiceParameterDto>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (WebServiceParameterArg arg in args ?? []) {
@@ -175,7 +184,11 @@ public static partial class WebServiceDefinitionBuilder {
 			}
 			ServiceParameterDto previous = existing?.Items.Values
 				.FirstOrDefault(p => string.Equals(p.Name, arg.Code, StringComparison.OrdinalIgnoreCase));
-			ServiceParameterDto parameter = BuildParameter(arg, previous, isRequest, $"{owner} parameter '{arg.Code}'", errors);
+			if (!string.Equals(previous?.Name, arg.Code, StringComparison.Ordinal)) {
+				RequireNewParameterNames($"{owner} parameter", arg, prefix, isRequest, errors);
+			}
+			ServiceParameterDto parameter = BuildParameter(arg, previous, isRequest, $"{owner} parameter '{arg.Code}'",
+				errors, prefix);
 			if (parameter is not null) {
 				result.Items[parameter.UId.ToString()] = parameter;
 			}
@@ -184,7 +197,7 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	private static ServiceParameterDto BuildParameter(WebServiceParameterArg arg, ServiceParameterDto previous,
-		bool isRequest, string owner, Errors errors) {
+		bool isRequest, string owner, Errors errors, string prefix) {
 		RejectUnknownFields(arg.ExtensionData, owner, errors);
 		int placement = ServiceSchemaCodes.Placements["body"];
 		if (isRequest && arg.In is not null && !ServiceSchemaCodes.Placements.TryGetValue(arg.In, out placement)) {
@@ -207,31 +220,60 @@ public static partial class WebServiceDefinitionBuilder {
 		if (type == "Object" && !hasItems) {
 			errors.Add($"{owner}: an Object parameter needs items.");
 		}
-		ServiceParameterValueDto defValue = BuildDefault(arg, placement, owner, errors);
+		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors);
 		return new ServiceParameterDto {
 			UId = previous?.UId ?? Guid.NewGuid(),
 			Name = arg.Code,
 			Type = placement,
-			Path = string.IsNullOrWhiteSpace(arg.Path) ? arg.Code : arg.Path,
+			Path = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path ?? arg.Code : arg.Path,
 			DataValueTypeName = type,
 			IsArray = arg.Array ?? false,
 			IsRequired = arg.Required ?? placement == ServiceSchemaCodes.Placements["path"],
 			DefValue = defValue,
 			Caption = Caption(arg.Caption ?? arg.Code),
 			Extra = previous?.Extra,
-			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties, isRequest, owner, errors)
+			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties, isRequest, owner, errors, prefix)
 		};
 	}
 
-	private static ServiceParameterValueDto BuildDefault(WebServiceParameterArg arg, int placement, string owner,
-		Errors errors) {
+	private static void RequirePrefix(string what, string code, string prefix, Errors errors) {
+		if (!string.IsNullOrEmpty(prefix) && !code.StartsWith(prefix, StringComparison.Ordinal)) {
+			errors.Add($"{what} must start with the environment's schema-name prefix '{prefix}', or Studio refuses to "
+				+ "save the method; the address and the wire name come from uri and path, not from the code.");
+		}
+	}
+
+	/// <summary>
+	/// A parameter code that carries the prefix is no longer the name the API sees, so a new parameter on a
+	/// prefixed environment names its wire name (or JSONPath) in <c>path</c> instead of inheriting the code:
+	/// a query <c>UsrPage</c> or a header <c>UsrApiKey</c> would be sent under the wrong name, silently.
+	/// </summary>
+	private static void RequireNewParameterNames(string owner, WebServiceParameterArg arg, string prefix,
+		bool isRequest, Errors errors) {
+		if (string.IsNullOrEmpty(prefix)) {
+			return;
+		}
+		string example = $"code '{prefix}{char.ToUpperInvariant(arg.Code[0])}{arg.Code[1..]}', path '{(isRequest ? arg.Code : "$." + arg.Code)}'";
+		if (!arg.Code.StartsWith(prefix, StringComparison.Ordinal)) {
+			errors.Add($"{owner} code '{arg.Code}' must start with the environment's schema-name prefix '{prefix}', or "
+				+ $"Studio refuses to save the method; keep the wire name in path, e.g. {example}.");
+		} else if (string.IsNullOrWhiteSpace(arg.Path)) {
+			errors.Add($"{owner} '{arg.Code}' needs path: its code carries the schema-name prefix, so it is not the "
+				+ "name the API sees; give the wire name (a JSONPath such as $.status for a response value).");
+		}
+	}
+
+	private static ServiceParameterValueDto BuildDefault(WebServiceParameterArg arg, ServiceParameterDto previous,
+		int placement, string owner, Errors errors) {
 		bool hasConstant = !string.IsNullOrEmpty(arg.DefaultValue);
 		bool hasSetting = !string.IsNullOrWhiteSpace(arg.DefaultSysSetting);
 		if (hasConstant && hasSetting) {
 			errors.Add($"{owner}: give default-value or default-sys-setting, not both.");
 			return Empty();
 		}
-		if (hasConstant && WebServiceSchemaView.IsSecretLike(arg.Code, placement)) {
+		string wireName = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path : arg.Path;
+		if (hasConstant && (WebServiceSchemaView.IsSecretLike(arg.Code, placement)
+				|| WebServiceSchemaView.IsSecretLike(wireName, placement))) {
 			errors.Add($"{owner}: a constant default is refused on a header, cookie or credential-like parameter; "
 				+ "reference a system setting with default-sys-setting and let the user fill its value.");
 			return Empty();

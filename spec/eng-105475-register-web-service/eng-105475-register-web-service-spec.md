@@ -26,6 +26,11 @@ and no cliogate endpoint (cliogate adds nothing but SQL, and is absent on many s
   by `WebServiceSchemaView`, which masks constant credentials, credential-like constant defaults and
   `user:password@` in the base URI.
 - The designer joins base URI and method URI verbatim; the base URI is stored with a trailing slash.
+- Studio's method and parameter pages validate the method code and every parameter code against
+  `SchemaNamePrefix` unconditionally (`RestWebServiceMethodPage` / `ServiceParameterPage` `_prefixValidator`):
+  a method whose codes lack it opens but cannot be saved (measured 2026-11-11 on a .NET Framework stand with
+  prefix `Usr`). clio requires the prefix on every method and parameter code it introduces, and keeps a code
+  the service already has, since renaming a called method breaks its processes. No prefix set: no rule.
 - A default bound to a missing system setting is dropped from the request without an error at run time
   (measured on 10.2.565); a reference to a missing setting is refused.
 - A Call web service element stores the service UId in `IX1` and the method name in `IX2`; `SysSchema.MetaData`

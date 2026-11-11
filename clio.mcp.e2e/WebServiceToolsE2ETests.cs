@@ -23,7 +23,7 @@ namespace Clio.Mcp.E2E;
 public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	private const string PackageName = "Custom";
-	private const string MethodCode = "GetOrders";
+	private const string MethodCode = "UsrGetOrders";
 
 	private string? _environmentName;
 	private string? _serviceCode;
@@ -115,9 +115,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
 		method.Uri.Should().Be("orders/{id}", because: "the method address is stored without a leading slash");
-		method.RequestParameters.Should().Contain(p => p.Code == "XApiKey" && p.DefaultSysSetting == "SchemaNamePrefix",
+		method.RequestParameters.Should().Contain(p => p.Code == "UsrApiKey" && p.DefaultSysSetting == "SchemaNamePrefix",
 			because: "a header bound to a system setting is returned as the setting code, never as its value");
-		method.ResponseParameters.Single(p => p.Code == "items").Items.Should().ContainSingle(p => p.Code == "number",
+		method.ResponseParameters.Single(p => p.Code == "UsrItems").Items.Should().ContainSingle(p => p.Code == "UsrNumber",
 			because: "nested response items must round-trip through the platform");
 		described.Usages.Should().BeEmpty(because: "no process calls a service registered a moment ago");
 		literalKey.Success.Should().BeFalse(because: "a constant value on a header parameter must be refused");
@@ -126,7 +126,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		literalKey.Error.Should().NotContain("sk-live-123", because: "a refused credential value is never echoed back");
 		modified.Success.Should().BeTrue(because: $"a valid setMethod must save; error: {modified.Error}");
 		modified.Service!.RetryCount.Should().Be(2, because: "setRetryCount is applied in the same call");
-		modified.Service.Methods.Single().RequestParameters.Select(p => p.Code).Should().BeEquivalentTo(["id"],
+		modified.Service.Methods.Single().RequestParameters.Select(p => p.Code).Should().BeEquivalentTo(["UsrId"],
 			because: "setMethod replaces the whole method definition, so the dropped header is gone");
 	}
 
@@ -253,6 +253,42 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		listed.Services.Should().NotContain(s => s.Code == _serviceCode, because: "a refused registration saves nothing");
 	}
 
+	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureName("register-web-service refuses method and parameter codes without the schema-name prefix")]
+	[Description("Asks to register a method and a parameter whose codes lack the environment's schema-name prefix, which Studio refuses to save, and expects a refusal naming both codes and no service to be created.")]
+	public async Task RegisterWebService_Should_Refuse_Unprefixed_Method_And_Parameter_Codes() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+
+		// Act
+		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName,
+				["package-name"] = PackageName,
+				["code"] = _serviceCode,
+				["base-uri"] = "https://example.invalid/api",
+				["methods"] = new[] {
+					new Dictionary<string, object?> {
+						["code"] = "GetOrders", ["http-method"] = "GET", ["uri"] = "orders",
+						["request-parameters"] = new[] { new Dictionary<string, object?> { ["code"] = "page", ["in"] = "query" } }
+					}
+				}
+			}, cts.Token);
+		WebServiceListResult listed = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName }, cts.Token);
+
+		// Assert
+		refused.Success.Should().BeFalse(because: "Studio refuses to save a method whose codes lack the prefix, so the tool must not create one");
+		refused.Error.Should().Contain("'GetOrders'", because: "the refusal names the unprefixed method code");
+		refused.Error.Should().Contain("'page'", because: "the refusal names the unprefixed parameter code in the same answer");
+		listed.Services.Should().NotContain(s => s.Code == _serviceCode, because: "a refused registration saves nothing");
+	}
+
 	private static async Task<(string Id, string Name)?> FindOAuthApplicationAsync(McpE2ESettings settings,
 		string environmentName, CancellationToken token) {
 		ClioCliCommandResult select = await ClioCliCommandRunner.RunAsync(settings, [
@@ -286,18 +322,18 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	private static Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null) {
 		var requestParameters = new List<Dictionary<string, object?>> {
-			new() { ["code"] = "id", ["in"] = "path" }
+			new() { ["code"] = "UsrId", ["in"] = "path", ["path"] = "id" }
 		};
 		if (withHeader) {
 			// SchemaNamePrefix exists on every stand, so the reference passes the existence check without
 			// the test creating a system setting.
 			requestParameters.Add(new() {
-				["code"] = "XApiKey", ["in"] = "header", ["path"] = "X-Api-Key", ["default-sys-setting"] = "SchemaNamePrefix"
+				["code"] = "UsrApiKey", ["in"] = "header", ["path"] = "X-Api-Key", ["default-sys-setting"] = "SchemaNamePrefix"
 			});
 		}
 		if (literalHeader is not null) {
 			requestParameters.Add(new() {
-				["code"] = "XApiKey", ["in"] = "header", ["path"] = "X-Api-Key", ["default-value"] = literalHeader
+				["code"] = "UsrApiKey", ["in"] = "header", ["path"] = "X-Api-Key", ["default-value"] = literalHeader
 			});
 		}
 		return new Dictionary<string, object?> {
@@ -306,10 +342,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			["uri"] = "/orders/{id}",
 			["request-parameters"] = requestParameters,
 			["response-parameters"] = new[] {
-				new Dictionary<string, object?> { ["code"] = "status" },
+				new Dictionary<string, object?> { ["code"] = "UsrStatus", ["path"] = "$.status" },
 				new Dictionary<string, object?> {
-					["code"] = "items", ["type"] = "Object", ["array"] = true,
-					["items"] = new[] { new Dictionary<string, object?> { ["code"] = "number" } }
+					["code"] = "UsrItems", ["path"] = "$.items", ["type"] = "Object", ["array"] = true,
+					["items"] = new[] { new Dictionary<string, object?> { ["code"] = "UsrNumber", ["path"] = "number" } }
 				}
 			}
 		};

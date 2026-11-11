@@ -216,6 +216,156 @@ public sealed class WebServiceDefinitionBuilderTests {
 	}
 
 	[Test]
+	[Description("A new method and its new request, response and nested parameters must carry the schema-name prefix, and every unprefixed code is reported in one answer.")]
+	public void BuildMethod_Should_Require_Prefix_On_New_Method_And_Parameter_Codes() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("GetOrders", "GET", "orders/{id}",
+			RequestParameters: [new WebServiceParameterArg("id", "path")],
+			ResponseParameters: [
+				new WebServiceParameterArg("UsrItems", Type: "Object", Array: true, Path: "$.items",
+					Items: [new WebServiceParameterArg("number")])
+			]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+
+		// Assert
+		errors.Should().HaveCount(3, because: "the method code, the path parameter and the nested item each lack the prefix");
+		errors.Should().Contain(e => e.Contains("'GetOrders'"), because: "the unprefixed method code is named");
+		errors.Should().Contain(e => e.Contains("'id'"), because: "the unprefixed request parameter is named");
+		errors.Should().Contain(e => e.Contains("'number'"), because: "a nested item is checked like a top-level parameter");
+		errors.Should().OnlyContain(e => e.Contains("'Usr'"), because: "each refusal names the prefix to add");
+	}
+
+	[Test]
+	[Description("Prefixed codes pass, and the wire names still come from uri and path, not from the codes.")]
+	public void BuildMethod_Should_Accept_Prefixed_Codes_And_Keep_Wire_Names() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("UsrGetOrders", "GET", "orders/{id}",
+			RequestParameters: [new WebServiceParameterArg("UsrId", "path", Path: "id")]);
+
+		// Act
+		ServiceMethodDto built = WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+
+		// Assert
+		errors.Should().BeEmpty(because: "every code carries the prefix");
+		built.Request.Parameters.Items.Values.Single().Path.Should().Be("id",
+			because: "the prefix is part of the code only; the request still fills {id}");
+	}
+
+	[Test]
+	[Description("Rebuilding an existing method keeps its unprefixed code and the unprefixed codes of parameters it keeps, but a parameter it adds needs the prefix.")]
+	public void BuildMethod_Should_Keep_Existing_Unprefixed_Codes_On_Rebuild() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [new WebServiceParameterArg("q", "query")]),
+			null, false, errors);
+		WebServiceMethodArg rebuilt = new("Search", "GET", "search", RequestParameters: [
+			new WebServiceParameterArg("q", "query"),
+			new WebServiceParameterArg("count", "query", Type: "Integer")
+		]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(rebuilt, existing, false, errors, "Usr");
+
+		// Assert
+		errors.Should().ContainSingle(because: "renaming kept codes would break the processes that call the method")
+			.Which.Should().Contain("'count'", because: "only the parameter this call introduces is checked");
+	}
+
+	[Test]
+	[Description("An environment without a schema-name prefix has no prefix rule, as in Studio.")]
+	public void BuildMethod_Should_Not_Require_Prefix_When_Environment_Has_None() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("GetOrders", "GET", "orders/{id}",
+			RequestParameters: [new WebServiceParameterArg("id", "path")]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, string.Empty);
+
+		// Assert
+		errors.Should().BeEmpty(because: "Studio checks the prefix only when SchemaNamePrefix is set");
+	}
+
+	[Test]
+	[Description("A new parameter whose code carries the prefix must name its wire name in path, or the API would see the prefixed code.")]
+	public void BuildMethod_Should_Require_Path_On_New_Prefixed_Parameter() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("UsrGetOrders", "GET", "orders",
+			RequestParameters: [new WebServiceParameterArg("UsrPage", "query")],
+			ResponseParameters: [new WebServiceParameterArg("UsrStatus")]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+
+		// Assert
+		errors.Should().HaveCount(2, because: "neither the query parameter nor the response value names its wire name");
+		errors.Should().OnlyContain(e => e.Contains("needs path"), because: "the refusal says what to add");
+	}
+
+	[Test]
+	[Description("The prefix check is case-sensitive like Studio's, and a case-only change of a kept method code is not exempt.")]
+	public void BuildMethod_Should_Check_Prefix_Case_Sensitively() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("UsrGetOrders", "GET", "orders"), null, false, errors, "Usr");
+		WebServiceMethodArg recased = new("usrGetOrders", "GET", "orders");
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(recased, existing, false, errors, "Usr");
+
+		// Assert
+		errors.Should().ContainSingle(because: "Studio's ^Usr check would refuse usrGetOrders")
+			.Which.Should().Contain("'usrGetOrders'", because: "the refusal names the re-cased code");
+	}
+
+	[Test]
+	[Description("Under a kept Object parameter the kept item keeps its unprefixed code and wire name, and a new item needs the prefix.")]
+	public void BuildMethod_Should_Check_Only_New_Nested_Items() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Orders", "GET", "orders",
+			ResponseParameters: [new WebServiceParameterArg("items", Type: "Object", Array: true, Path: "$.items",
+				Items: [new WebServiceParameterArg("number", Path: "num")])]), null, false, errors);
+		WebServiceMethodArg rebuilt = new("Orders", "GET", "orders", ResponseParameters: [
+			new WebServiceParameterArg("items", Type: "Object", Array: true,
+				Items: [new WebServiceParameterArg("number"), new WebServiceParameterArg("total")])
+		]);
+
+		// Act
+		ServiceMethodDto built = WebServiceDefinitionBuilder.BuildMethod(rebuilt, existing, false, errors, "Usr");
+
+		// Assert
+		errors.Should().ContainSingle(because: "only the added item is new")
+			.Which.Should().Contain("'total'", because: "the refusal names the new item");
+		built.Response.Parameters.Items.Values.Single().Path.Should().Be("$.items",
+			because: "a kept parameter sent without path keeps its stored wire name");
+	}
+
+	[Test]
+	[Description("A constant default is refused when the wire name looks like a credential even though the code does not.")]
+	public void BuildMethod_Should_Refuse_Constant_When_Wire_Name_Is_Credential_Like() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = new("UsrGetOrders", "GET", "orders", RequestParameters: [
+			new WebServiceParameterArg("UsrAccess", "query", Path: "api_key", DefaultValue: "sk-live-1")
+		]);
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors, "Usr");
+
+		// Assert
+		errors.Should().ContainSingle(because: "the API receives the constant as api_key")
+			.Which.Should().Contain("default-sys-setting", because: "the refusal names the allowed route");
+	}
+
+	[Test]
 	[Description("A service code without the environment prefix is refused.")]
 	public void ValidateServiceCode_Should_Require_Prefix() {
 		// Arrange

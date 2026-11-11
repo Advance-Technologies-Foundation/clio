@@ -27,7 +27,7 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 	[Description("""
 				 Registers a REST web service (base URI, methods, request and response parameters, authentication) in a package, exactly as Studio > Web services creates one, so a business process can call it with the Call web service element.
 
-				 Credentials are never values: basic/digest auth and every header, cookie, key or token parameter reference a SYSTEM SETTING code (it must exist), and the user fills its value; a constant there, or user:password@ in base-uri, is refused. The code must carry the environment's schema-name prefix and must not be used by another service (an existing service is changed with modify-web-service). The caller needs CanManageSolution. Returns the registered service with its parameter tree and the steps left to the user.
+				 Credentials are never values: basic/digest auth and every header, cookie, key or token parameter reference a SYSTEM SETTING code (it must exist), and the user fills its value; a constant there, or user:password@ in base-uri, is refused. The service code and every method and parameter code must carry the environment's schema-name prefix (Studio refuses to save a method without it; wire names go in uri and path), and the service code must not be used by another service (an existing service is changed with modify-web-service). The caller needs CanManageSolution. Returns the registered service with its parameter tree and the steps left to the user.
 				 """)]
 	public WebServiceToolResult RegisterWebService(
 		[Description("Parameters: environment-name, package-name, code, base-uri, methods (required); caption, retry-count, auth (optional)")]
@@ -105,7 +105,7 @@ public sealed class ModifyWebServiceTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
-				 Changes a registered REST web service by ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth. Credentials follow the register-web-service rules.
+				 Changes a registered REST web service by ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth. Credentials follow the register-web-service rules. Codes the service already has are kept as they are, prefix or not (never rename one to add it); a method or parameter this call adds follows the register-web-service prefix and path rules.
 
 				 BEFORE CALLING with setMethod or removeMethod: a process whose Call web service element calls that method loses its parameters on the next designer load and fails at run time, silently. The tool refuses such a change and lists the processes; show them to the user and repeat with acknowledge-usages naming them only after the user says yes. The caller needs CanManageSolution.
 				 """)]

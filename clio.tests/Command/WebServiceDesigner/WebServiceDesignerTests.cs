@@ -111,7 +111,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Act
 		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
-			[new WebServiceOperationArg("addMethod", new WebServiceMethodArg("Suggest", "GET", "suggest"))], null);
+			[new WebServiceOperationArg("addMethod", new WebServiceMethodArg("UsrSuggest", "GET", "suggest"))], null);
 
 		// Assert
 		result.Success.Should().BeTrue(because: "an added method breaks no caller");
@@ -128,7 +128,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Act
 		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null,
-			[new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+			[new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]);
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "an existing service must be changed with modify-web-service")
@@ -146,8 +146,9 @@ public sealed class WebServiceDesignerTests {
 
 		// Act
 		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null, [
-			new WebServiceMethodArg("GetOrders", "GET", "orders",
-				RequestParameters: [new WebServiceParameterArg("XApiKey", "header", DefaultSysSetting: "UsrErpApiKey")])
+			new WebServiceMethodArg("UsrGetOrders", "GET", "orders",
+				RequestParameters: [new WebServiceParameterArg("UsrApiKey", "header", Path: "X-Api-Key",
+					DefaultSysSetting: "UsrErpApiKey")])
 		]);
 
 		// Assert
@@ -172,7 +173,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Act
 		WebServiceToolResult result = _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null,
-			new WebServiceAuthArg("oauth20", OAuthApp: "Test1"), [new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+			new WebServiceAuthArg("oauth20", OAuthApp: "Test1"), [new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]);
 
 		// Assert
 		result.Success.Should().BeTrue(because: "the application exists");
@@ -193,7 +194,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Act
 		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null,
-			new WebServiceAuthArg("oauth20", OAuthApp: "NoSuchApp"), [new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+			new WebServiceAuthArg("oauth20", OAuthApp: "NoSuchApp"), [new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]);
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "a service cannot authenticate with a missing application")
@@ -244,6 +245,61 @@ public sealed class WebServiceDesignerTests {
 		result.ResponseBody.Should().Contain(WebServiceResponseMasker.Mask, because: "the reader sees where a value was hidden");
 		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
 		result.StatusCode.Should().Be(401, because: "masking changes the body only");
+	}
+
+	[Test]
+	[Description("Registering a method whose codes lack the environment prefix is refused before anything is saved.")]
+	public void Register_Should_Refuse_Unprefixed_Method_Codes() {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+
+		// Act
+		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "Studio refuses to save a method whose code lacks the prefix")
+			.WithMessage("*'GetOrders'*'Usr'*", because: "the message names the code and the prefix to add");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("modify-web-service checks the prefix on a method it adds, with the prefix resolved from the environment.")]
+	public void Modify_Should_Refuse_Adding_An_Unprefixed_Method() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("addMethod", new WebServiceMethodArg("Suggest", "GET", "suggest"))], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "an added method follows the same rule as a registered one")
+			.WithMessage("*'Suggest'*", because: "the message names the unprefixed code");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("setMethod keeps the existing unprefixed codes of a method and its parameters, and refuses an unprefixed parameter it adds.")]
+	public void Modify_SetMethod_Should_Keep_Existing_Codes_And_Check_New_Ones() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		GivenSelect("SysSchema");
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setMethod", new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
+				new WebServiceParameterArg("q", "query"), new WebServiceParameterArg("count", "query", Type: "Integer")
+			]))
+		], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the added parameter lacks the prefix")
+			.Which.Message.Should().Contain("'count'", because: "the added parameter is named")
+			.And.NotContain("method code 'Search'", because: "the kept method code is not renamed")
+			.And.NotContain("code 'q'", because: "the kept parameter code is not renamed");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 
 	[Test]
