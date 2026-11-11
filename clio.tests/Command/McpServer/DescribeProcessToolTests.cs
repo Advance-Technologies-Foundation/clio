@@ -529,7 +529,7 @@ public sealed class DescribeProcessToolTests {
 			because: "the contract must name the three groups a described element can carry");
 		toolText.Should().Contain("with the record scope in attachments.recordId or report.recordId rather than the filter",
 			because: "both groups lift the record scope out of the stored filter");
-		toolText.Should().Contain("the describe-only actionStored, outputs, issues, report.caption, report.convertToPdf, bindingLevels and each value source's display are removed before resubmitting (clio warns and ignores them if sent back)",
+		toolText.Should().Contain("the describe-only actionStored, outputs, issues, report.caption, report.convertToPdf, bindingLevels and each value source's display are removed before resubmitting (sent back, they are ignored with a warning)",
 			because: "those members are read-back only, so a resubmitted block must not carry them");
 		toolText.Should().Contain("get-guidance name=process-files owns the block",
 			because: "the contract must route the block to the guide that owns it");
@@ -543,7 +543,7 @@ public sealed class DescribeProcessToolTests {
 			because: "the prompt narrates the Generated report group");
 		prompt.Should().Contain("are named; `files` for Process parameter - which files it copies), plus `action` and `saveTo`.",
 			because: "the prompt narrates the Process parameter group");
-		prompt.Should().Contain("clio warns and ignores them if sent back.",
+		prompt.Should().Contain("sent back, they are ignored with a warning.",
 			because: "the prompt states the same fallback as the contract, so neither surface claims a resubmitted read-back member is refused or applied");
 		prompt.Should().Contain("`outerOnly` fails at run time, and with `none` the process cannot start.",
 			because: "a Process parameter element whose Files is bound to nothing is rejected by the platform's start-time validation, so the process never runs - it does not copy nothing and succeed");

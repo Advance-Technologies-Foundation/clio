@@ -20,8 +20,10 @@ check.
 **Why it is this way** — clio was the last side that saw the caller's keys. The package fix
 (`IExtensibleDataObject` on every request contract plus a refusal when `ExtensionData` is not empty) shipped in
 1.6.6.136, but the client check stays: it answers before anything is sent ("Nothing was sent") with where the
-key belongs, it covers an environment on an older package or on the other package line, and one whose host
-reports the server check unavailable. The client key lists are a copy of the
+key belongs, and it covers a host that reports the server check unavailable. Since ENG-92710's follow-up the
+write commands require 1.6.6.150, so an older package never receives these payloads, and clio no longer warns
+about describe read-back members itself: it tolerates them and the server names them. The floor compares numbers
+only, so the other package line is kept out only while it stamps lower numbers. The client key lists are a copy of the
 server contracts; `ProcessBlockKeyCheckTests` holds every list equal to the `[DataMember]` names of the
 bundled archive, and the read-back tolerance (describe-only fields such as `sourceSchemaUId`, `position`)
 to members the describe types really emit.

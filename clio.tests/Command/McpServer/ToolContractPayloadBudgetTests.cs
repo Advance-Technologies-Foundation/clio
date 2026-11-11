@@ -260,7 +260,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "because on create the UIds do not exist yet" in the formula paragraph (the flows[].condition clause it points
 	// to gives the same reason) and "accessRights by name=process-access-rights;" in the closing guide list (the
 	// accessRights? clause already routes there). Modify paid with headroom, also for naming ObjectFileProcessingUserTask
-	// among the tasks a generic userTask is refused for; describe gained "(clio warns and ignores them if sent back)".
+	// among the tasks a generic userTask is refused for; describe gained "(sent back, they are ignored with a warning)".
 	// Re-measured by lowering the ceiling: create-business-process 35051, modify-business-process 35045,
 	// describe-business-process 34647 - 21, 27 and 425 bytes of headroom (create leaves its never-emitted processFile
 	// alias out). The next sentence on either write contract needs a swap.

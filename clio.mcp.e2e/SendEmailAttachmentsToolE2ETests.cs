@@ -436,7 +436,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-06: describe, then send the described entries back VERBATIM in a setElement - read-back members included, which clio warns about and does not refuse - and the Send email element's stored node is byte-identical before and after, and so is every resource row except the template parameter captions of the inactive cultures, which the create writes in every culture and the platform's first re-save of the process drops; none is added.")]
+	[Description("TC-I-06: describe, then send the described entries back VERBATIM in a setElement - read-back members included, which the server names in its one warning and nobody refuses - and the Send email element's stored node is byte-identical before and after, and so is every resource row except the template parameter captions of the inactive cultures, which the create writes in every culture and the platform's first re-save of the process drops; none is added.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process changes no stored byte when the described list is sent back")]
 	public async Task ModifyBusinessProcess_Should_ChangeNoStoredByte_WhenTheDescribedListIsSentBack() {
@@ -462,8 +462,10 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 			// Assert
 			ShouldHaveLanded(echoed, "a described list fed back is a valid list");
-			WarningText(echoed).Should().Contain("read-back fields",
-				because: "clio names the describe-only members it ignored instead of refusing them");
+			WarningText(echoed).Should().Contain("Read-only fields copied from describe were ignored",
+				because: "the server names the describe-only members it ignored instead of refusing them");
+			WarningText(echoed).Should().NotContain("Ignored describe-business-process read-back fields",
+				because: "the server owns that warning, so clio does not repeat it about the same members");
 			WarningText(echoed).Should().NotContain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
 				because: "every described entry fed back matched its own row, so none is missing from the read-back");
 			OutputText(echoed).Should().NotContain(RemovalNotice,
