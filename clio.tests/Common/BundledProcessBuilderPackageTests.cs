@@ -70,12 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>d34d84b4</c>, to be tagged
-	/// <c>crtprocessbuilder-1.6.6.153</c>): branch <c>feature/ENG-103990-process-builder-signals-of-several</c>, rebased onto
-	/// <c>main</c> at 1.6.6.152 (<c>bf5e82d2</c>, the merge of the tagged <c>crtprocessbuilder-1.6.6.152</c> commit), so the
-	/// cut carries everything 1.6.6.152 shipped.
-	/// This cut is a HAND cut from the stamp commit: the producing commit carries the restamped descriptor itself, so
-	/// its descriptor reads 1.6.6.153 and every archive entry is byte-identical to that commit's blob.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>0eb62d89</c>, the
+	/// stamp commit <c>4e25c63c</c> to be tagged <c>crtprocessbuilder-1.6.6.154</c>): branch
+	/// <c>feature/ENG-105556-ai-toolkit-create-a-minimal</c> with <c>main</c> at 1.6.6.153 merged in (<c>03c31604</c>, the
+	/// merge of the 1.6.6.153 cut), so the cut carries everything 1.6.6.153 shipped.
+	/// This cut is made by <c>rebundle-process-builder.ps1</c>: every entry is that commit's blob except
+	/// <c>descriptor.json</c>, overlaid from the restamp the script wrote and committed right after as the stamp commit.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -88,19 +88,16 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.152 (ENG-103990): <c>mergeFrom</c> on a process parameter (build
-	/// <c>parameters[]</c>, <c>addParameter</c>, <c>setParameter</c>), bound to one canonical formula that takes the record Id
-	/// of whichever signal start on one object fired, always Internal and with no helper element; describe folds that
-	/// formula back into <c>mergeFrom</c>; a mapping onto a merged parameter, removing a source start and moving a source
-	/// start to another object are refused; and the naive-join (W1) and start-outside-the-merge (W2) warnings over the
-	/// finished graph, which follow each start's own runs and skip a source's plain flows on the runs of a start that a
-	/// flow there tests. The service surface is unchanged (8 operations, 6 design-gate call sites, counted in the
-	/// producing sources). The <c>[RequiresPackage]</c> floor of create, modify and modify-as-new-version moves to
-	/// 1.6.6.153. What earlier cuts carried is in this file's git history rather than here: it described archives that
-	/// are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.153 (ENG-105556): the ninth operation <c>BuildCase</c>, a minimal dynamic
+	/// case from an object's lookup column with its settings and link rows bound to the package, gated by
+	/// <c>EnsureCanManageDcm</c> (General user, <c>CanManageDcm</c>, <c>CanManageSolution</c>, append on both case settings
+	/// tables) rather than <c>EnsureCanManageProcessDesign</c>. The service surface grows to 9 operations; the design-gate
+	/// call sites stay 6 and the case gate adds one call site, pinned separately. <c>create-dynamic-case</c> declares
+	/// 1.6.6.154 as its floor; the other floors are unchanged. What earlier cuts carried is in this file's git history
+	/// rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6087 passed,
-	/// 0 failed, on <c>dev-nf</c>. <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
+	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6178 passed,
+	/// 0 failed, on <c>dev-nf</c> and on <c>dev-n8</c> (a 10.2 net-core reference set); the cut adds only the two stamps.
 	/// That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply not running it
 	/// on a hand cut) is the ONE path that can reach the coarse failure the two security counts below exist to catch.
 	/// </para>
@@ -181,7 +178,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"D099B9D3DB35986A0D6D17123FC5BC81B61644B48F76C700BBB63312691308C2";
+		"D07305029A568B5D6D66B2117F7CC545C36ACA8B54E9E682A97B4285D79FD7B2";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -209,7 +206,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.153";
+	private const string ExpectedArchiveVersion = "1.6.6.154";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -226,7 +223,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "d34d84b4bac31bbd3e71e072fdb3f3d62407cea5";
+	private const string ExpectedProducingCommit = "0eb62d8943d56a0d01b26cb0a70171552457bd9e";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -252,7 +249,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794390239000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794406163000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -267,13 +264,20 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794390238000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794406096000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
 	/// <c>BundledArchive_ShouldCarryTheAuthorizationGateOnTheServiceHandlers</c> for why clio pins it.
 	/// </summary>
 	private const string AuthorizationGateMethodName = "EnsureCanManageProcessDesign";
+
+	/// <summary>
+	/// The gate <c>BuildCase</c> applies instead of <see cref="AuthorizationGateMethodName"/>: the platform's own rights
+	/// for cases (<c>CanManageDcm</c>, <c>CanManageSolution</c>, append on both case settings tables, a General user).
+	/// One call site, in the case handler, before anything is read.
+	/// </summary>
+	private const string CaseGateMethodName = "EnsureCanManageDcm";
 
 	/// <summary>
 	/// EXACT number of call sites that must invoke <see cref="AuthorizationGateMethodName"/> in the shipped
@@ -283,7 +287,8 @@ public class BundledProcessBuilderPackageTests {
 	/// Six, NOT seven, and the difference is worth writing down because it is the first thing anyone
 	/// recomputing this number gets wrong: it is not one gate per gated operation. Of the
 	/// <see cref="ExpectedOperationContractCount"/> operations, one is ungated
-	/// (<see cref="UngatedOperations"/>) and the remaining seven are gated at six places, because
+	/// (<see cref="UngatedOperations"/>), <c>BuildCase</c> is gated by the case gate
+	/// (<see cref="CaseGateMethodName"/>, pinned separately), and the remaining seven are gated at six places, because
 	/// <c>ProcessDesigner.Execute</c> is a SHARED boundary for the two read operations — it applies the guard
 	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. The four write
 	/// operations and <c>CompileProcess</c> do not use it (they own their own error handling), so they gate in
@@ -354,7 +359,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 8;
+	private const int ExpectedOperationContractCount = 9;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.
@@ -700,6 +705,12 @@ public class BundledProcessBuilderPackageTests {
 				+ "required too, and that half is exactly what makes this gate stricter than CanManageSolution. "
 				+ "A rebundle that lost the connection-type check would install, pass every other pin here, and "
 				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
+		CountUncommentedOccurrences(archive, $"_guard.{CaseGateMethodName}()").Should().Be(1,
+			because: "BuildCase writes a case schema and two settings rows, and it is gated by the case gate rather "
+				+ "than the design gate, so the design-gate count below cannot see it; without this pin an archive "
+				+ "whose case handler lost its gate would pass every other check here");
+		archive.Should().Contain("\"CanManageDcm\"",
+			because: "the case gate's operation is the platform's own right for cases");
 		CountUncommentedOccurrences(archive, "_guard.EnsureCanCompileConfiguration()").Should().Be(1,
 			because: "CompileProcess reloads the runtime for every user, so its compile gate - a second gate the "
 				+ "count below does not scan - must be on the one handler that compiles");

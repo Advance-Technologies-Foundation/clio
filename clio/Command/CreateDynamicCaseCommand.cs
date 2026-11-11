@@ -20,12 +20,10 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 
 	/// <summary>The first CrtProcessBuilder archive that carries <c>BuildCase</c>.</summary>
 	/// <remarks>
-	/// The one place the floor is written. It must sit above every archive without the operation: the archive this
-	/// clio ships is 1.6.6.153 and has no <c>BuildCase</c>, so the first cut that can carry it is above 1.6.6.153, and
-	/// this number is provisional until that cut is claimed. Until the rebundle lands,
-	/// <c>BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement</c> reports that this clio demands a version it
-	/// does not ship, which is true; once it lands, <c>BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor</c>
-	/// checks the archive's content, not only its number. Move this constant to the claimed cut in the rebundle commit.
+	/// The one place the floor is written: 1.6.6.154, the cut this clio bundles. Every earlier archive, 1.6.6.153
+	/// included, has no <c>BuildCase</c>, so a lower floor would let the call reach a package that answers its route
+	/// with a 404. <c>BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor</c> ties the floor to the archive's
+	/// content, not only its number.
 	/// </remarks>
 	public const string MinimumProcessBuilderVersion = "1.6.6.154";
 
