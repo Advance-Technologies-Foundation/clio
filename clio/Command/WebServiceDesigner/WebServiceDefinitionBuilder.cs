@@ -346,7 +346,7 @@ public static partial class WebServiceDefinitionBuilder {
 		// parameter, a path that is not credential-like) the next reply would print it, and it would travel in the
 		// URL, so that move is refused instead.
 		bool clears = arg.DefaultValue is { Length: 0 };
-		if (!hasConstant && !clears && IsHiddenSecretConstant(previous)) {
+		if (previous is not null && !hasConstant && !clears && IsHiddenSecretConstant(previous)) {
 			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement)
 					&& !WebServiceSchemaView.IsSecretLike(wireName, placement)) {
 				errors.Add($"{owner}: it carries a secret constant default that describe hides, and the new placement "
