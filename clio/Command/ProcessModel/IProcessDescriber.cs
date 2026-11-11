@@ -832,8 +832,8 @@ public sealed class DescribedElement {
 	/// the identity checks (<c>source</c>, <c>storage</c>, <c>fileObject</c>, <c>attachments.linkColumn</c>,
 	/// <c>report.type</c>, <c>report.object</c>) are accepted back when equal. The describe-only members -
 	/// <c>actionStored</c>, <c>outputs</c>, <c>issues</c>, <c>bindingLevels</c>, <c>report.caption</c>,
-	/// <c>report.convertToPdf</c> and every value source's <c>display</c> - are removed before resubmitting; clio
-	/// warns and ignores them if sent back. A member the server could not read is ABSENT, not a value to resubmit: a
+	/// <c>report.convertToPdf</c> and every value source's <c>display</c> - are removed before resubmitting; sent
+	/// back, they are ignored with a warning (the server's). A member the server could not read is ABSENT, not a value to resubmit: a
 	/// bound or invalid action reports neither <c>action</c> nor <c>saveTo</c> (an entry of <c>issues</c> says why).
 	/// The record scope is reported as <c>attachments.recordId</c> or <c>report.recordId</c> and NOT repeated in
 	/// <see cref="Filter"/>. See <see cref="DescribedFileProcessing"/>.</para>
