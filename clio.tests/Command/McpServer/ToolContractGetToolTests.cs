@@ -3257,6 +3257,10 @@ public sealed class ToolContractGetToolTests {
 		contract.PreferredFlow.Notes.Should().ContainAll(
 			["SysSettings_<Code>", "SysSettingsValue_<Code>", "binding-name", "TextValue", "set the value first"],
 			because: "the notes must carry the binding names and the two rules whose omission makes the binding fail or ship an empty value");
+		contract.Description.Should().Contain("For SecureText, ship only SysSettings_<Code>",
+			because: "an agent that reads only the contract must not ship a value encrypted by the source environment");
+		contract.PreferredFlow.Notes.Should().Contain("re-run create-data-binding-db for SysSettingsValue_<Code>",
+			because: "the value binding is a snapshot, so a changed value ships only after it is bound again");
 	}
 
 	[Test]

@@ -7466,7 +7466,8 @@ internal static class ToolContractCatalog {
 			"Aliases: Currency = Money, Decimal = Float. Binary settings store opaque bytes: assign the value via update-sys-setting with value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required absolute file-name. No MIME type or extension is inferred. " +
 			"For Lookup type, reference-schema-name is required. " +
 			"The setting exists only on the target environment: when package code, a page or a process reads it, ship it with that package " +
-			"as the SysSettings_<Code> and SysSettingsValue_<Code> data bindings (see get-guidance name=sys-settings).",
+			"as the SysSettings_<Code> and SysSettingsValue_<Code> data bindings (see get-guidance name=sys-settings). " +
+			"For SecureText, ship only SysSettings_<Code> and set the value on each environment.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
 				[
@@ -7515,7 +7516,10 @@ internal static class ToolContractCatalog {
 				"To ship it with the package that reads it, set the value first (an existing row is bound as it is in the database), " +
 				"then call create-data-binding-db twice with explicit binding-name values: SysSettings_<Code> (schema SysSettings) and " +
 				"SysSettingsValue_<Code> (schema SysSettingsValue, All employees row, always including TextValue). " +
-				"Read both back with read-data-binding-db. get-guidance name=sys-settings owns the columns and the rules."),
+				"Bind SysSettings_<Code> first and check that its bound Id is the setting's own before binding the value. " +
+				"Read both back with read-data-binding-db. The value binding is a snapshot: after changing a shipped value, " +
+				"re-run create-data-binding-db for SysSettingsValue_<Code> and read it back. " +
+				"get-guidance name=sys-settings owns the columns and the rules."),
 			[],
 			[]);
 	}

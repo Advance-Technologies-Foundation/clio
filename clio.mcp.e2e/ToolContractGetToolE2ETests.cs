@@ -42,6 +42,36 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Over the real stdio server, the create-sys-setting contract routes a setting that package code reads to the SysSettings_<Code> / SysSettingsValue_<Code> binding pair and its read-back.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract create-sys-setting carries the package binding flow")]
+	[AllureDescription("Reads the full contract over stdio without executing any system-setting operation.")]
+	public async Task GetToolContracts_Should_RouteCreateSysSetting_ToThePackageBindingPair() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { SysSettingCreateTool.CreateSysSettingToolName },
+					["detail"] = "full"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		AllureApi.Step("Assert the binding pair survives the wire path", () =>
+			text.Should().Contain("SysSettingsValue_<Code>",
+				because: "an agent reading the contract over MCP must learn the value binding name"));
+		AllureApi.Step("Assert the flow reaches the binding read-back", () =>
+			text.Should().Contain(ReadDataBindingDbTool.ReadDataBindingDbToolName,
+				because: "the preferred flow must end with reading both bindings back"));
+	}
+
+	[Test]
 	[Description("Over the real stdio server, the text of a tool result is written with the relaxed encoder: an apostrophe and a quote in a contract arrive as themselves, not as six-character \\u escapes the agent pays for (ENG-99970).")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract result text is not HTML-escaped")]
