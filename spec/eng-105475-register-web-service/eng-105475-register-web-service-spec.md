@@ -45,11 +45,12 @@ and no cliogate endpoint (cliogate adds nothing but SQL, and is absent on many s
 
 ## Verification
 
-- `clio.tests` `WebServiceDesigner*Tests` (24 cases): validation, credential refusals, UId preservation,
+- `clio.tests` `WebServiceDesigner*Tests`: validation, the prefix and path rules, credential refusals, UId preservation,
   secret stripping over a designer-shaped fixture, the usage guard, rights.
-- `clio.mcp.e2e` `WebServiceToolsE2ETests` (Sandbox): register, list, describe, constant-header refusal and
-  setMethod on a throwaway service that teardown removes; the usage guard over the shipped
-  `BingSearchApiCall` / `BingSearchProcess` pair. Green on a 10.2.565 .NET Framework MSSQL stand.
+- `clio.mcp.e2e` `WebServiceToolsE2ETests` (Sandbox): register, list, describe, constant-header refusal,
+  unprefixed-code refusal and setMethod on a throwaway service that teardown removes; the usage guard over a
+  throwaway service and a process the test builds with a Call web service element (CrtProcessBuilder 1.6.6.150
+  or later, else Ignored), so it no longer depends on a shipped package being installed.
 
 ## Follow-ups
 

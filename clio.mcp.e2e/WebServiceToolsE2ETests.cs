@@ -2,6 +2,7 @@ using System.Text.Json;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.WebServiceDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -24,6 +25,12 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	private const string PackageName = "Custom";
 	private const string MethodCode = "UsrGetOrders";
+
+	/// <summary>The first CrtProcessBuilder that builds a Call web service element (ENG-92710).</summary>
+	private const string CallWebServiceElementPackageVersion = "1.6.6.150";
+
+	/// <summary>The Call web service element of the usage-guard process.</summary>
+	private const string CallerElement = "CallOrders";
 
 	private string? _environmentName;
 	private string? _serviceCode;
@@ -133,44 +140,72 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ModifyWebServiceTool.ToolName)]
 	[AllureName("modify-web-service refuses a change to a method that a process calls")]
-	[Description("Reads the shipped BingSearchApiCall service with usages, expects BingSearchProcess and its Call web service element among the callers, then asks to remove the called method without acknowledge-usages and expects a refusal that names the process and changes nothing.")]
+	[Description("Registers a throwaway service, builds a process whose Call web service element calls its method, expects describe-web-service usages to name that process and element, then asks to remove the called method without acknowledge-usages and expects a refusal that names the process and changes nothing.")]
 	public async Task ModifyWebService_Should_Refuse_Changing_A_Method_A_Process_Calls() {
 		// Arrange
-		const string ServiceCode = "BingSearchApiCall";
 		McpE2ESettings settings = TestConfiguration.Load();
-		string environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
-			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
-		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(10));
-		WebServiceListResult listed = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
-			new Dictionary<string, object?> { ["environment-name"] = environmentName }, cts.Token);
-		if (listed.Services?.Any(s => s.Code == ServiceCode) != true) {
-			Assert.Ignore($"{ServiceCode} (CrtCustomer360AI) is not installed on this stand.");
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
 		}
+		await using ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(
+			"Web service usage guard", CallWebServiceElementPackageVersion, TimeSpan.FromMinutes(10));
+		_environmentName = context.EnvironmentName;
+		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+		string processName = $"UsrE2eWsCaller{Guid.NewGuid():N}"[..24];
+		bool processCreated = false;
+		try {
+			WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = _environmentName,
+					["package-name"] = PackageName,
+					["code"] = _serviceCode,
+					["base-uri"] = "https://example.invalid/api",
+					["methods"] = new[] { OrdersMethod(withHeader: false) }
+				}, context.CancellationTokenSource.Token);
+			registered.Success.Should().BeTrue(because: $"the arrange step needs a service; error: {registered.Error}");
+			CallToolResult built = await ProcessDesignerE2EArrange.CallToolAsync(context,
+				CreateBusinessProcessTool.CreateBusinessProcessToolName, new Dictionary<string, object?> {
+					["environment-name"] = _environmentName,
+					["package-name"] = PackageName,
+					["descriptor"] = CallerDescriptor(processName, _serviceCode)
+				});
+			ProcessDesignerE2ESupport.IgnoreWhenProcessBuilderIsBehind(
+				ProcessDesignerE2ESupport.ToolText(built), CallWebServiceElementPackageVersion);
+			processCreated = true;
+			ProcessDesignerE2ESupport.ShouldHaveBuilt(built,
+				"the arrange step needs a process whose Call web service element calls the method");
 
-		// Act
-		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = environmentName, ["code"] = ServiceCode, ["usages"] = true
-			}, cts.Token);
-		WebServiceUsage usage = described.Usages!.First(u => u.Process == "BingSearchProcess");
-		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = environmentName, ["code"] = ServiceCode,
-				["operations"] = new[] {
-					new Dictionary<string, object?> { ["op"] = "removeMethod", ["method-code"] = usage.Method }
-				}
-			}, cts.Token);
-		WebServiceToolResult after = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
-			new Dictionary<string, object?> { ["environment-name"] = environmentName, ["code"] = ServiceCode },
-			cts.Token);
+			// Act
+			WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = _environmentName, ["code"] = _serviceCode, ["usages"] = true
+				}, context.CancellationTokenSource.Token);
+			WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = _environmentName, ["code"] = _serviceCode,
+					["operations"] = new[] {
+						new Dictionary<string, object?> { ["op"] = "removeMethod", ["method-code"] = MethodCode }
+					}
+				}, context.CancellationTokenSource.Token);
+			WebServiceToolResult after = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
+				new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode },
+				context.CancellationTokenSource.Token);
 
-		// Assert
-		usage.Element.Should().NotBeNullOrWhiteSpace(because: "a usage names the calling Call web service element");
-		refused.Success.Should().BeFalse(because: "removing a called method without acknowledge-usages must be refused");
-		refused.Usages.Should().Contain(u => u.Process == "BingSearchProcess",
-			because: "the refusal must name the processes the user has to approve breaking");
-		after.Service!.Methods.Should().Contain(m => m.Code == usage.Method,
-			because: "a refused modify must not have saved anything");
+			// Assert
+			described.Usages.Should().ContainSingle(because: "exactly one process calls the throwaway service")
+				.Which.Should().Match<WebServiceUsage>(u => u.Process == processName && u.Element == CallerElement
+					&& u.Method == MethodCode, because: "a usage names the calling process, its element and the method");
+			refused.Success.Should().BeFalse(because: "removing a called method without acknowledge-usages must be refused");
+			refused.Usages.Should().Contain(u => u.Process == processName,
+				because: "the refusal must name the processes the user has to approve breaking");
+			after.Service!.Methods.Should().Contain(m => m.Code == MethodCode,
+				because: "a refused modify must not have saved anything");
+		} finally {
+			if (processCreated) {
+				// The process goes first: the service teardown must not leave a caller of a removed service behind.
+				await ProcessDesignerE2ESupport.DeleteProcessAsync(_environmentName, processName);
+			}
+		}
 	}
 
 	[Test]
@@ -319,6 +354,22 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> { ["args"] = args }, token);
 		return EntitySchemaStructuredResultParser.Extract<T>(result);
 	}
+
+	/// <summary>A start - Call web service - end process whose element calls <see cref="MethodCode"/>.</summary>
+	private static string CallerDescriptor(string processName, string serviceCode) => JsonSerializer.Serialize(new {
+		name = processName,
+		caption = processName,
+		elements = new object[] {
+			new { name = "Start1", type = "startEvent" },
+			new { name = CallerElement, type = "webService", webService = new { service = serviceCode, method = MethodCode } },
+			new { name = "End1", type = "endEvent" }
+		},
+		flows = new[] {
+			new { source = "Start1", target = CallerElement },
+			new { source = CallerElement, target = "End1" }
+		},
+		mappings = new[] { new { elementName = CallerElement, elementParameter = "UsrId_In", value = "1" } }
+	});
 
 	private static Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null) {
 		var requestParameters = new List<Dictionary<string, object?>> {
