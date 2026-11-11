@@ -130,8 +130,9 @@ internal static class ProcessDigest {
 
 	/// <summary>
 	/// The summary: elements as name + type + caption, flows as <c>from -&gt; to</c> with their kind and
-	/// whether a condition is set, start signals, process parameters with their types, the version standing
-	/// and the checksum - within <see cref="SummaryBudgetBytes"/> where the process allows.
+	/// whether a condition is set, start signals, process parameters with their types (a merged one with its
+	/// <c>mergeFrom</c>), the version standing and the checksum - within <see cref="SummaryBudgetBytes"/> where the
+	/// process allows.
 	/// </summary>
 	/// <param name="result">The described process.</param>
 	/// <param name="checksum">Its <see cref="Checksum"/>.</param>
@@ -406,6 +407,11 @@ internal static class ProcessDigest {
 			["type"] = type
 		};
 		AddIfPresent(entry, "direction", parameter.Direction);
+		// A merged parameter is refused as a mapping target, so a summary that hid the merge would invite the
+		// addMapping the server then refuses; the list is short (one entry per merged start).
+		if (parameter.MergeFrom is { Count: > 0 } sources) {
+			entry["mergeFrom"] = new JsonArray(sources.Select(source => (JsonNode)JsonValue.Create(source)).ToArray());
+		}
 		return entry;
 	}
 
