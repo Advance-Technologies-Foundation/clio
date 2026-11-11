@@ -102,9 +102,9 @@ public static class WebServiceResponseMasker {
 
 	/// <summary>
 	/// Masks a response BODY. In a JSON body every value that carries a secret is masked - strings inside, numbers
-	/// and booleans whole - and a property NAME only when the secret is token-like (see <see cref="IsTokenLike"/>),
-	/// so a short login such as "user" next to a "user" key does not wipe the structure. Any other body, and any
-	/// JSON the parser or the walk rejects (duplicate keys among them), is masked as plain text.
+	/// and booleans whole - and so is every property NAME that carries one (fail closed: a secret an API echoes as a
+	/// key is still the secret); keys masked to the same text get a #n suffix so no value is lost. Any other body,
+	/// and any JSON the parser or the walk rejects (duplicate keys among them), is masked as plain text.
 	/// </summary>
 	/// <param name="body">The response body.</param>
 	/// <param name="secrets">Values from <see cref="SentSecrets"/>.</param>
@@ -133,13 +133,6 @@ public static class WebServiceResponseMasker {
 	private static readonly JsonSerializerOptions IndentedRelaxedJson =
 		new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
 
-	/// <summary>
-	/// A secret that looks like a key, token or password rather than a plain word: at least eight characters, or one
-	/// that contains a digit or a symbol. Only such a secret is masked in a JSON property name.
-	/// </summary>
-	private static bool IsTokenLike(string secret) =>
-		secret.Length >= 8 || secret.Any(c => !char.IsLetter(c));
-
 	private static JsonNode MaskNode(JsonNode node, IReadOnlyList<string> secrets, ref bool masked) {
 		switch (node) {
 			case JsonObject obj: {
@@ -147,7 +140,7 @@ public static class WebServiceResponseMasker {
 				List<KeyValuePair<string, JsonNode>> properties = obj.ToList();
 				obj.Clear();
 				foreach (KeyValuePair<string, JsonNode> property in properties) {
-					string key = Apply(property.Key, secrets.Where(IsTokenLike).ToList(), out bool keyMasked);
+					string key = Apply(property.Key, secrets, out bool keyMasked);
 					masked |= keyMasked;
 					JsonNode value = property.Value is null ? null : MaskNode(property.Value, secrets, ref masked);
 					// Two keys masked to the same text keep both values: a suffix keeps them apart.

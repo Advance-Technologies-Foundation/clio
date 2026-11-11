@@ -44,19 +44,21 @@ public sealed class WebServiceResponseMaskerTests {
 	}
 
 	[Test]
-	[Description("In a JSON body a secret is masked in string values only, so a secret equal to a property name keeps the structure.")]
-	public void ApplyToBody_Should_Mask_Json_Values_Not_Property_Names() {
+	[Description("In a JSON body a secret is masked in values and in property names, and keys masked to the same text keep both values.")]
+	public void ApplyToBody_Should_Mask_Values_And_Property_Names() {
 		// Arrange
-		const string body = """{"authenticated":true,"user":"user","nested":{"echo":"token user-77"}}""";
+		const string body = """{"authenticated":true,"user":"user","nested":{"echo":"token user-77","sk-1111":1}}""";
 
 		// Act
-		string result = WebServiceResponseMasker.ApplyToBody(body, ["user"], out bool masked);
+		string result = WebServiceResponseMasker.ApplyToBody(body, ["user", "sk-1111"], out bool masked);
 
 		// Assert
-		masked.Should().BeTrue(because: "the value carries the secret");
-		result.Should().Contain("\"user\": \"[masked]\"", because: "the property name stays and its value is masked");
+		masked.Should().BeTrue(because: "the secrets occur");
+		result.Should().NotContain("user", because: "a secret echoed as a key is still the secret, so masking fails closed");
+		result.Should().NotContain("sk-1111", because: "no form of a secret may survive");
+		result.Should().Contain("\"[masked]\": \"[masked]\"", because: "the key and the value carrying the secret are both masked");
 		result.Should().Contain("token [masked]-77", because: "a secret inside a longer string value is masked too");
-		result.Should().Contain("\"authenticated\": true", because: "the rest of the structure is unchanged");
+		result.Should().Contain("\"authenticated\": true", because: "values without a secret are unchanged");
 	}
 
 	[Test]
@@ -75,19 +77,18 @@ public sealed class WebServiceResponseMaskerTests {
 	}
 
 	[Test]
-	[Description("A token-like secret used as a property name is masked; a short plain word used as one is not.")]
-	public void ApplyToBody_Should_Mask_Token_Like_Property_Names_Only() {
+	[Description("Two keys masked to the same text both survive, so no echoed value is dropped.")]
+	public void ApplyToBody_Should_Keep_Both_Values_When_Masked_Keys_Collide() {
 		// Arrange
-		const string body = """{"sessions":{"tok_abcdef":{"ok":true}},"user":"user"}""";
+		const string body = """{"tok_a":"x","tok_b":"y"}""";
 
 		// Act
-		string result = WebServiceResponseMasker.ApplyToBody(body, ["tok_abcdef", "user"], out bool masked);
+		string result = WebServiceResponseMasker.ApplyToBody(body, ["tok_a", "tok_b"], out bool masked);
 
 		// Assert
-		masked.Should().BeTrue(because: "both secrets occur");
-		result.Should().NotContain("tok_abcdef", because: "a token echoed as a key is still a token");
-		result.Should().Contain("\"user\": \"[masked]\"",
-			because: "a short plain-word secret is masked in the value and the key stays readable");
+		masked.Should().BeTrue(because: "both keys carry a secret");
+		result.Should().Contain("\"[masked]\": \"x\"", because: "the first masked key keeps its value");
+		result.Should().Contain("\"[masked]#2\": \"y\"", because: "the second gets a suffix instead of overwriting the first");
 	}
 
 	[Test]
