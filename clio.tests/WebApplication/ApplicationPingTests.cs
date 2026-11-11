@@ -18,13 +18,13 @@ namespace Clio.Tests.WebApplication;
 public sealed class ApplicationPingTests {
 
 	[Test]
-	[Description("A rejected login is reported by TryPing with the client's own message, and Ping still answers false for the same environment.")]
+	[Description("A rejected login is reported by TryPing with the client's own message, in the CLI's readable rendering, and Ping still answers false for the same environment.")]
 	public void TryPing_ShouldReportTheLoginRejection_WhenTheEnvironmentRefusesTheCredentials() {
 		// Arrange
 		EnvironmentSettings environment = new() { Uri = "http://localhost:5000", IsNetCore = true };
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Throws(new InvalidOperationException("wrapper", new UnauthorizedAccessException("Unauthorized Supervisor for http://localhost:5000")));
+			.Throws(new InvalidOperationException("Unauthorized Supervisor for http://localhost:5000"));
 		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
 		factory.CreateOwnedClient(environment).Returns(client);
 		ApplicationPing ping = new(environment, factory, Substitute.For<IServiceUrlBuilder>());
@@ -35,8 +35,8 @@ public sealed class ApplicationPingTests {
 
 		// Assert
 		answered.Should().BeFalse(because: "the environment refused the login");
-		failureReason.Should().Be("Unauthorized Supervisor for http://localhost:5000",
-			because: "the reason is the inner-most message, the one that names the rejected user");
+		failureReason.Should().Contain("Unauthorized Supervisor for http://localhost:5000",
+			because: "the reason is the client's own rejection, the one ping-app prints, which names the rejected user");
 		pinged.Should().BeFalse(because: "Ping keeps its true/false contract for the callers that only branch on it");
 	}
 

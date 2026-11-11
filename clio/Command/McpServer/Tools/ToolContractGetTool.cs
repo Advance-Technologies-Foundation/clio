@@ -7148,7 +7148,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRestoreWorkspace() {
 		return new ToolContractDefinition(
 			RestoreWorkspaceTool.RestoreWorkspaceToolName,
-			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. When the environment does not answer - a rejected login, a stopped site - the call fails with the reason and restores nothing; check the environment with ping-app. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[

@@ -83,7 +83,8 @@
 				failureReason = null;
 				return true;
 			} catch (Exception exception) {
-				failureReason = SurfacedExceptionMessage.Resolve(exception);
+				// The CLI's readable rendering: it scrubs credentials and words a refused connection as such.
+				failureReason = exception.GetReadableMessageException();
 				return false;
 			}
 		}

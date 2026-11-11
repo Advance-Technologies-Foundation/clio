@@ -140,13 +140,6 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 
 	public void Restore(WorkspaceSettings workspaceSettings, EnvironmentSettings environmentSettings,
 		WorkspaceOptions restoreWorkspaceOptions) {
-		// Resolved up front so an unreachable SDK feed still fails BEFORE any package is written to disk, but
-		// only when the NuGet restore step will actually run: resolving it reaches api.nuget.org, and doing
-		// that unconditionally made a restore WITHOUT --IsNugetRestore - which downloads packages from the
-		// environment and touches no feed - fail on a host that cannot reach it (issue #1119).
-		Version creatioSdkVersion = restoreWorkspaceOptions.IsNugetRestore == true
-			? _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion)
-			: null;
 		IEnumerable<string> filteredPackages = _workspacePackageFilter
 			.FilterPackages(workspaceSettings.Packages, workspaceSettings) ?? [];
 		List<string> packagesToDownload = filteredPackages.ToList();
@@ -154,6 +147,18 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 		if (externalPackages != null && externalPackages.Any()) {
 			packagesToDownload = packagesToDownload.Where(p => !externalPackages.Contains(p)).ToList();
 		}
+		// The environment first: a wrong password or a stopped site is the failure to report, and checking it
+		// before the SDK lookup keeps a host that cannot reach api.nuget.org from answering it with a feed error.
+		if (packagesToDownload.Count > 0) {
+			_packageDownloader.EnsureEnvironmentAnswers(environmentSettings);
+		}
+		// Resolved before any package is written to disk, so an unreachable SDK feed still fails BEFORE the
+		// download, but only when the NuGet restore step will actually run: resolving it reaches api.nuget.org,
+		// and doing that unconditionally made a restore WITHOUT --IsNugetRestore - which downloads packages from
+		// the environment and touches no feed - fail on a host that cannot reach it (issue #1119).
+		Version creatioSdkVersion = restoreWorkspaceOptions.IsNugetRestore == true
+			? _creatioSdk.FindLatestSdkVersion(workspaceSettings.ApplicationVersion)
+			: null;
 		if (packagesToDownload.Count == 0) {
 			_logger.WriteWarning(NoPackagesEligibleMessage);
 		}

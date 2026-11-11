@@ -126,11 +126,7 @@ namespace Clio.Package
 			// The ping keeps an unreachable environment from touching the destination at all. It used to RETURN
 			// here, so restore-workspace logged "Done" and exited 0 for a wrong password or a stopped site while
 			// restoring nothing; the failure is now the caller's to report.
-			if (!_applicationPing.TryPing(environmentSettings, out string pingFailure)) {
-				throw new InvalidOperationException(
-					$"Packages were not downloaded: the environment did not answer ({pingFailure}). "
-					+ "Check that it is running and that its registered credentials are valid, for example with ping-app.");
-			}
+			EnsureEnvironmentAnswers(environmentSettings);
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				foreach (string packageName in packagesNames) {
@@ -150,6 +146,14 @@ namespace Clio.Package
 		public void DownloadPackage(string packageName, EnvironmentSettings environmentSettings = null,
 				string destinationPath = null) {
 			DownloadPackages(new [] { packageName }, environmentSettings, destinationPath);
+		}
+
+		public void EnsureEnvironmentAnswers(EnvironmentSettings environmentSettings = null) {
+			if (!_applicationPing.TryPing(environmentSettings ?? _environmentSettings, out string pingFailure)) {
+				throw new InvalidOperationException(
+					$"Packages were not downloaded: the environment did not answer ({pingFailure}). "
+					+ "Check that it is running and that its registered credentials are valid, for example with ping-app.");
+			}
 		}
 
 		#endregion

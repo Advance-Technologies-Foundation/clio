@@ -28,6 +28,7 @@ public sealed class RestoreWorkspaceToolE2ETests {
 	[Test]
 	[AllureTag(RestoreWorkspaceTool.RestoreWorkspaceToolName)]
 	[AllureName("restore-workspace fails with the reason when the environment does not answer")]
+	[AllureDescription("Registers an environment on a closed local port in a clio home of the fixture's own, writes a workspace that lists one package, calls restore-workspace through the real MCP server, and verifies a non-zero exit code, an error that says nothing was downloaded and why, no Done line, and no package directory.")]
 	[Description("Starts the real clio MCP server with an environment registered on a closed local port and a workspace that lists one package, calls restore-workspace, and verifies it fails with a non-zero exit code and an error naming why nothing was downloaded, instead of reporting Done with exit code 0 as it did when the ping failed silently.")]
 	public async Task RestoreWorkspace_ShouldFailWithTheReason_WhenTheEnvironmentDoesNotAnswer() {
 		// Arrange

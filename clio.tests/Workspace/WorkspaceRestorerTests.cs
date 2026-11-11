@@ -95,6 +95,30 @@ public class WorkspaceRestorerTests {
 	}
 
 	[Test]
+	[Description("Checks that the environment answers before the CreatioSDK lookup and before any download, so a wrong password or a stopped site is the failure the restore reports - also on a host that cannot reach api.nuget.org - and nothing else runs.")]
+	public void Restore_Should_FailOnTheEnvironment_BeforeTheSdkLookup_WhenTheEnvironmentDoesNotAnswer() {
+		// Arrange
+		WorkspaceSettings workspaceSettings = new() { Packages = ["PkgOne"] };
+		WorkspaceOptions options = new() {
+			IsNugetRestore = true, IsCreateSolution = true, AddBuildProps = false
+		};
+		_packageDownloader.When(downloader => downloader.EnsureEnvironmentAnswers(Arg.Any<EnvironmentSettings>()))
+			.Do(_ => throw new InvalidOperationException(
+				"Packages were not downloaded: the environment did not answer (Unauthorized Supervisor for http://localhost:5000)."));
+
+		// Act
+		Action act = () => _workspaceRestorer.Restore(workspaceSettings, new EnvironmentSettings(), options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a restore from an environment that does not answer cannot complete")
+			.WithMessage("*Unauthorized Supervisor*", because: "the environment's own failure is what the caller must see");
+		_creatioSdk.ReceivedCalls().Should().BeEmpty(
+			because: "the feed is not consulted for a restore that has already failed on the environment");
+		_packageDownloader.DidNotReceive().DownloadPackages(Arg.Any<IEnumerable<string>>(), Arg.Any<EnvironmentSettings>(),
+			Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Warns and skips package download when workspace settings contain no eligible packages, preventing a no-op restore from clearing local package content.")]
 	public void Restore_ShouldWarnAndSkipPackageDownload_WhenNoPackagesAreEligible() {
 		// Arrange
