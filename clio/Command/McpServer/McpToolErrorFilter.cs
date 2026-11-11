@@ -1045,8 +1045,8 @@ public static partial class McpToolErrorFilter
 		TryGetFirstDocumentedMember(parameterType, exception, out _, out int segmentCount) && segmentCount > 1;
 
 	private static string GetPreciseArgumentName(Type parameterType, string? argumentName, Exception exception) =>
-		TryGetFirstDocumentedMember(parameterType, exception, out string? memberName, out _)
-			? memberName!
+		TryGetFirstDocumentedMember(parameterType, exception, out string? memberName, out _) && memberName is not null
+			? memberName
 			: argumentName ?? string.Empty;
 
 	/// <summary>

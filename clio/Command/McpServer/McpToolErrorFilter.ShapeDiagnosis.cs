@@ -112,6 +112,19 @@ public static partial class McpToolErrorFilter
 		bool JsonTextExpected,
 		string? Example);
 
+	/// <summary>Where a finding sits and what describes it, worked out from the walk alone.</summary>
+	/// <param name="NamedArgument">The argument the lead sentence names.</param>
+	/// <param name="Location">The failing node, relative to that argument.</param>
+	/// <param name="IsNamedArgument">Whether the node IS the named argument.</param>
+	/// <param name="Example">The example documented on the named argument.</param>
+	/// <param name="MemberDescription">The failing member's own description, when the node is a member.</param>
+	private sealed record FindingContext(
+		string NamedArgument,
+		string Location,
+		bool IsNamedArgument,
+		string? Example,
+		string? MemberDescription);
+
 	/// <summary>
 	/// Builds the message for a binding failure <see cref="DiagnoseShape"/> could explain, or returns
 	/// <see langword="null"/> so the caller keeps the generic message.
@@ -122,31 +135,50 @@ public static partial class McpToolErrorFilter
 		string argumentName,
 		JsonElement argumentValue,
 		Exception exception) {
-		ShapeFinding? finding;
-		try {
-			finding = DiagnoseShape(parameterType, argumentName, argumentValue, exception);
-		}
-		catch (Exception diagnosticFailure) when (!McpExceptionPolicy.IsUnrecoverable(diagnosticFailure)) {
-			// The diagnosis explains a failure; it must never become one. On the direct path this runs outside the
-			// filter's redacted try, so a throw here would reach the SDK's default handler as raw text.
-			return null;
-		}
+		ShapeFinding? finding = TryDiagnoseShape(parameterType, argumentName, argumentValue, exception);
 		if (finding is null) {
 			return null;
 		}
 		StringBuilder message = new(
 			$"invalid-parameter-type: argument '{finding.NamedArgument}' for MCP tool '{toolLabel}' ");
+		AppendFailure(message, finding);
+		AppendDetails(message, finding);
+		return message.ToString();
+	}
+
+	/// <summary>
+	/// <see cref="DiagnoseShape"/>, with its own failure turned into "no finding": the diagnosis explains a
+	/// failure and must never become one. On the direct path it runs outside the filter's redacted try, so a
+	/// throw here would reach the SDK's default handler as raw text.
+	/// </summary>
+	private static ShapeFinding? TryDiagnoseShape(
+		Type parameterType, string argumentName, JsonElement argumentValue, Exception exception) {
+		try {
+			return DiagnoseShape(parameterType, argumentName, argumentValue, exception);
+		}
+		catch (Exception diagnosticFailure) when (!McpExceptionPolicy.IsUnrecoverable(diagnosticFailure)) {
+			return null;
+		}
+	}
+
+	/// <summary>The sentence that says what is wrong: about the named argument itself, or about a node inside it.</summary>
+	private static void AppendFailure(StringBuilder message, ShapeFinding finding) {
+		bool missing = finding.MissingRequired.Count > 0;
 		if (finding.IsNamedArgument) {
-			message.Append(finding.MissingRequired.Count > 0
+			message.Append(missing
 				? $"is missing required {DescribeMembers(finding.MissingRequired)}."
 				: $"must be {finding.Expected}. Received {finding.Received}.");
-		} else {
-			message.Append("contains a value that does not match the documented shape. ");
-			message.Append($"At {finding.Location}: ");
-			message.Append(finding.MissingRequired.Count > 0
-				? $"missing required {DescribeMembers(finding.MissingRequired)}."
-				: $"expected {finding.Expected}, received {finding.Received}.");
+			return;
 		}
+		message.Append("contains a value that does not match the documented shape. ");
+		message.Append($"At {finding.Location}: ");
+		message.Append(missing
+			? $"missing required {DescribeMembers(finding.MissingRequired)}."
+			: $"expected {finding.Expected}, received {finding.Received}.");
+	}
+
+	/// <summary>The sentences that help correct the call: unknown members, hints, the expected shape, an example.</summary>
+	private static void AppendDetails(StringBuilder message, ShapeFinding finding) {
 		if (finding.UnknownMemberCount > 0) {
 			int hidden = finding.UnknownMemberCount - finding.UnknownMembers.Count;
 			message.Append(finding.UnknownMemberCount == 1 ? " Unknown member " : " Unknown members ");
@@ -165,7 +197,6 @@ public static partial class McpToolErrorFilter
 		if (finding.Example is not null) {
 			message.Append($" Example {finding.NamedArgument}: {finding.Example}");
 		}
-		return message.ToString();
 	}
 
 	/// <summary>
@@ -185,50 +216,72 @@ public static partial class McpToolErrorFilter
 		JsonElement node = argumentValue;
 		List<WalkStep> steps = [];
 		foreach (PathSegment segment in segments) {
-			if (!TryStep(ref type, ref node, segment, out WalkStep? step)) {
+			WalkStep? step = Step(ref type, ref node, segment);
+			if (step is null) {
 				return null;
 			}
-			steps.Add(step!);
+			steps.Add(step);
 		}
-
-		// The argument a message names: the parameter's first member when the walk entered one (what
-		// GetPreciseArgumentName reports), otherwise the parameter itself - a flat array or dictionary parameter.
-		bool startsWithMember = steps.Count > 0 && steps[0].Member is not null;
-		string namedArgument = startsWithMember ? steps[0].Display : argumentName;
-		string location = FormatLocation(namedArgument, steps, startsWithMember);
-		bool isNamedArgument = steps.Count == 0 || (startsWithMember && steps.Count == 1);
-		string? example = startsWithMember
-			? ExtractExample(steps[0].Member!.GetCustomAttribute<DescriptionAttribute>()?.Description)
-			: null;
-		// Only a node that IS a member has a description of its own: an array element or a dictionary value is
-		// not described by its container's text.
-		string? memberDescription = steps.Count > 0
-			? steps[^1].Member?.GetCustomAttribute<DescriptionAttribute>()?.Description
-			: null;
-
 		string? expected = DescribeExpectedKind(type);
 		if (expected is null) {
 			return null;
 		}
+		FindingContext context = DescribeContext(argumentName, steps);
 		if (!KindMatches(type, node)) {
-			return new ShapeFinding(
-				NamedArgument: namedArgument,
-				Location: location,
-				IsNamedArgument: isNamedArgument,
-				Expected: expected,
-				Received: DescribeReceivedKind(node.ValueKind),
-				MissingRequired: [],
-				UnknownMembers: [],
-				UnknownMemberCount: 0,
-				ExpectedShape: DescribeShape(type),
-				MemberDescription: FirstSentence(memberDescription),
-				JsonTextExpected: type == typeof(string) && node.ValueKind is JsonValueKind.Object or JsonValueKind.Array
-					&& memberDescription is not null && JsonTextMember.IsMatch(memberDescription),
-				Example: example);
+			return KindMismatchFinding(context, type, node, expected);
 		}
-		if (node.ValueKind != JsonValueKind.Object || !IsCompositeRecord(type)) {
-			return null;
-		}
+		return node.ValueKind == JsonValueKind.Object && IsCompositeRecord(type)
+			? MissingMemberFinding(context, type, node)
+			: null;
+	}
+
+	/// <summary>
+	/// The argument a message names - the parameter's first member when the walk entered one (what
+	/// GetPreciseArgumentName reports), otherwise the parameter itself, a flat array or dictionary parameter -
+	/// and the texts that describe the failing node.
+	/// </summary>
+	private static FindingContext DescribeContext(string argumentName, IReadOnlyList<WalkStep> steps) {
+		PropertyInfo? firstMember = steps.Count > 0 ? steps[0].Member : null;
+		bool startsWithMember = firstMember is not null;
+		string namedArgument = startsWithMember ? steps[0].Display : argumentName;
+		// Only a node that IS a member has a description of its own: an array element or a dictionary value is
+		// not described by its container's text.
+		PropertyInfo? lastMember = steps.Count > 0 ? steps[^1].Member : null;
+		return new FindingContext(
+			NamedArgument: namedArgument,
+			Location: FormatLocation(namedArgument, steps, startsWithMember),
+			IsNamedArgument: steps.Count == 0 || (startsWithMember && steps.Count == 1),
+			Example: ExtractExample(firstMember?.GetCustomAttribute<DescriptionAttribute>()?.Description),
+			MemberDescription: lastMember?.GetCustomAttribute<DescriptionAttribute>()?.Description);
+	}
+
+	/// <summary>A node of the wrong JSON kind: both kinds, the expected shape and the member's own text.</summary>
+	private static ShapeFinding KindMismatchFinding(FindingContext context, Type type, JsonElement node, string expected) {
+		string? description = context.MemberDescription;
+		bool jsonTextExpected = type == typeof(string) && node.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+			&& description is not null && JsonTextMember.IsMatch(description);
+		return new ShapeFinding(
+			NamedArgument: context.NamedArgument,
+			Location: context.Location,
+			IsNamedArgument: context.IsNamedArgument,
+			Expected: expected,
+			Received: DescribeReceivedKind(node.ValueKind),
+			MissingRequired: [],
+			UnknownMembers: [],
+			UnknownMemberCount: 0,
+			ExpectedShape: DescribeShape(type),
+			MemberDescription: FirstSentence(description),
+			JsonTextExpected: jsonTextExpected,
+			Example: context.Example);
+	}
+
+	/// <summary>
+	/// An object that lacks a required member: the missing ones, the unknown keys it carries with suggestions,
+	/// and the expected shape. <see langword="null"/> when nothing is missing - the serializer refused the object
+	/// for a reason this cannot see (a converter, a member it binds differently), and naming nothing is better
+	/// than naming the wrong thing.
+	/// </summary>
+	private static ShapeFinding? MissingMemberFinding(FindingContext context, Type type, JsonElement node) {
 		IReadOnlyList<WireMember> members = GetWireMembers(type);
 		HashSet<string> memberNames = new(members.Select(candidate => candidate.Name), StringComparer.OrdinalIgnoreCase);
 		HashSet<string> supplied = new(StringComparer.OrdinalIgnoreCase);
@@ -243,15 +296,13 @@ public static partial class McpToolErrorFilter
 			.Where(candidate => candidate.Required && !supplied.Contains(candidate.Name))
 			.Select(candidate => candidate.Name)];
 		if (missing.Count == 0) {
-			// The serializer refused this object for a reason this cannot see (a converter, a member it binds
-			// differently): naming nothing is better than naming the wrong thing.
 			return null;
 		}
 		List<WireMember> unsupplied = [.. members.Where(candidate => !supplied.Contains(candidate.Name))];
 		return new ShapeFinding(
-			NamedArgument: namedArgument,
-			Location: location,
-			IsNamedArgument: isNamedArgument,
+			NamedArgument: context.NamedArgument,
+			Location: context.Location,
+			IsNamedArgument: context.IsNamedArgument,
 			Expected: null,
 			Received: null,
 			MissingRequired: missing,
@@ -261,54 +312,48 @@ public static partial class McpToolErrorFilter
 			ExpectedShape: DescribeShape(type),
 			MemberDescription: null,
 			JsonTextExpected: false,
-			Example: example);
+			Example: context.Example);
 	}
 
 	/// <summary>
-	/// Moves one path segment down, in the JSON and in the declared type together. False when the step does
-	/// not exist on either side, or leads into a member read through its own converter - the path then
-	/// describes something this cannot explain.
+	/// Moves one path segment down, in the JSON and in the declared type together. <see langword="null"/> when
+	/// the step does not exist on either side, or leads into a member read through its own converter - the
+	/// path then describes something this cannot explain.
 	/// </summary>
-	private static bool TryStep(ref Type type, ref JsonElement node, PathSegment segment, out WalkStep? step) {
-		step = null;
+	private static WalkStep? Step(ref Type type, ref JsonElement node, PathSegment segment) {
 		if (segment.Index is { } index) {
 			if (node.ValueKind != JsonValueKind.Array || index >= node.GetArrayLength()
 				|| GetEnumerableElementType(type) is not { } elementType) {
-				return false;
+				return null;
 			}
 			node = node[index];
 			type = UnwrapNullable(elementType);
-			step = new WalkStep($"[{index}]", null);
-			return true;
+			return new WalkStep($"[{index}]", null);
 		}
-		string name = segment.PropertyName!;
-		if (node.ValueKind != JsonValueKind.Object) {
-			return false;
+		if (segment.PropertyName is not { } name || node.ValueKind != JsonValueKind.Object) {
+			return null;
 		}
 		if (GetDictionaryValueType(type) is { } valueType) {
 			// A dictionary key is the caller's own text, matched exactly as the serializer stores it, and shown
 			// bracketed so it cannot read as the server's prose.
 			if (!TryGetProperty(node, name, StringComparison.Ordinal, out JsonElement value)) {
-				return false;
+				return null;
 			}
 			node = value;
 			type = UnwrapNullable(valueType);
-			step = new WalkStep($"['{McpToolArgumentSupport.DescribeCallerKey(name)}']", null);
-			return true;
+			return new WalkStep($"['{McpToolArgumentSupport.DescribeCallerKey(name)}']", null);
 		}
-		if (!IsCompositeRecord(type)) {
-			return false;
-		}
-		WireMember? member = GetWireMembers(type).FirstOrDefault(candidate =>
-			string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+		WireMember? member = IsCompositeRecord(type)
+			? GetWireMembers(type).FirstOrDefault(candidate =>
+				string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+			: null;
 		if (member is null || member.Property.GetCustomAttribute<JsonConverterAttribute>() is not null
 			|| !TryGetProperty(node, name, StringComparison.OrdinalIgnoreCase, out JsonElement child)) {
-			return false;
+			return null;
 		}
 		node = child;
 		type = UnwrapNullable(member.Property.PropertyType);
-		step = new WalkStep(member.Name, member.Property);
-		return true;
+		return new WalkStep(member.Name, member.Property);
 	}
 
 	/// <summary>
@@ -322,33 +367,59 @@ public static partial class McpToolErrorFilter
 		}
 		int position = 1;
 		while (position < path.Length) {
-			if (path[position] == '.') {
-				int end = path.IndexOfAny(['.', '['], position + 1);
-				end = end < 0 ? path.Length : end;
-				if (end == position + 1) {
-					return false;
-				}
-				segments.Add(new PathSegment(path[(position + 1)..end], null));
-				position = end;
-			} else if (path[position] == '[' && position + 1 < path.Length && path[position + 1] == '\'') {
-				int end = path.IndexOf("']", position + 2, StringComparison.Ordinal);
-				if (end < 0) {
-					return false;
-				}
-				segments.Add(new PathSegment(path[(position + 2)..end], null));
-				position = end + 2;
-			} else if (path[position] == '[') {
-				int end = path.IndexOf(']', position + 1);
-				if (end < 0 || !int.TryParse(path.AsSpan(position + 1, end - position - 1), out int index) || index < 0) {
-					return false;
-				}
-				segments.Add(new PathSegment(null, index));
-				position = end + 1;
-			} else {
+			PathSegment? segment = ReadSegment(path, ref position);
+			if (segment is null) {
 				return false;
 			}
+			segments.Add(segment);
 		}
 		return true;
+	}
+
+	/// <summary>One segment at <paramref name="position"/>, which moves past it; <see langword="null"/> for any other text.</summary>
+	private static PathSegment? ReadSegment(string path, ref int position) {
+		if (path[position] == '.') {
+			return ReadDottedName(path, ref position);
+		}
+		if (path[position] != '[') {
+			return null;
+		}
+		return position + 1 < path.Length && path[position + 1] == '\''
+			? ReadQuotedName(path, ref position)
+			: ReadIndex(path, ref position);
+	}
+
+	/// <summary><c>.name</c>, up to the next <c>.</c> or <c>[</c>.</summary>
+	private static PathSegment? ReadDottedName(string path, ref int position) {
+		int end = path.IndexOfAny(['.', '['], position + 1);
+		end = end < 0 ? path.Length : end;
+		if (end == position + 1) {
+			return null;
+		}
+		PathSegment segment = new(path[(position + 1)..end], null);
+		position = end;
+		return segment;
+	}
+
+	/// <summary><c>['name']</c>, the form the serializer uses for a name with special characters.</summary>
+	private static PathSegment? ReadQuotedName(string path, ref int position) {
+		int end = path.IndexOf("']", position + 2, StringComparison.Ordinal);
+		if (end < 0) {
+			return null;
+		}
+		PathSegment segment = new(path[(position + 2)..end], null);
+		position = end + 2;
+		return segment;
+	}
+
+	/// <summary><c>[0]</c>, an array index.</summary>
+	private static PathSegment? ReadIndex(string path, ref int position) {
+		int end = path.IndexOf(']', position + 1);
+		if (end < 0 || !int.TryParse(path.AsSpan(position + 1, end - position - 1), out int index) || index < 0) {
+			return null;
+		}
+		position = end + 1;
+		return new PathSegment(null, index);
 	}
 
 	/// <summary>
@@ -530,13 +601,16 @@ public static partial class McpToolErrorFilter
 	/// there is none or it is longer than <see cref="MaxQuotedExampleChars"/>: a cut example is a wrong one.
 	/// </summary>
 	private static string? ExtractExample(string? description) {
-		int marker = description?.IndexOf(ExampleMarker, StringComparison.Ordinal) ?? -1;
+		if (description is null) {
+			return null;
+		}
+		int marker = description.IndexOf(ExampleMarker, StringComparison.Ordinal);
 		if (marker < 0) {
 			return null;
 		}
 		int start = marker + ExampleMarker.Length;
-		int end = ToolContractCatalog.FindSentenceEnd(description!, start);
-		string example = description![start..(end < 0 ? description.Length : end + 1)].Trim();
+		int end = ToolContractCatalog.FindSentenceEnd(description, start);
+		string example = description[start..(end < 0 ? description.Length : end + 1)].Trim();
 		return example.Length is > 0 and <= MaxQuotedExampleChars ? example : null;
 	}
 
