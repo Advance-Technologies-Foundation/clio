@@ -38,21 +38,19 @@ internal sealed class StepperActiveStepAttributeSource : IComponentConditionAttr
 		JsonObject pageAttributes,
 		out string attributeName) {
 		attributeName = string.Empty;
-		JsonNode? binding = stepper[ActiveStepPropertyName];
-		string? text = null;
-		if (binding is not null && (binding is not JsonValue value || !value.TryGetValue(out text))) {
-			return false;
+		switch (stepper[ActiveStepPropertyName]) {
+			case null:
+			case JsonValue constant when constant.TryGetValue(out string? stepName) && !stepName.StartsWith('$'):
+				attributeName = stepperName.Replace('.', '_') + GeneratedSuffix;
+				return true;
+			case JsonValue value when value.TryGetValue(out string? text)
+				&& TryGetPlainAttributeBinding(text, out string boundName)
+				&& !IsModelBoundAttribute(pageAttributes, boundName):
+				attributeName = boundName;
+				return true;
+			default:
+				return false;
 		}
-		if (text is null || !text.StartsWith('$')) {
-			attributeName = stepperName.Replace('.', '_') + GeneratedSuffix;
-			return true;
-		}
-		if (!TryGetPlainAttributeBinding(text, out string boundName)
-			|| IsModelBoundAttribute(pageAttributes, boundName)) {
-			return false;
-		}
-		attributeName = boundName;
-		return true;
 	}
 
 	private static bool IsModelBoundAttribute(JsonObject pageAttributes, string attributeName) =>
