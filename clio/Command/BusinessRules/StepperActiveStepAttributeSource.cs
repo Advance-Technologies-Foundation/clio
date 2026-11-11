@@ -60,7 +60,7 @@ internal sealed class StepperActiveStepAttributeSource : IComponentConditionAttr
 
 	private static bool TryGetPlainAttributeBinding(string binding, out string attributeName) {
 		attributeName = string.Empty;
-		if (binding.Length < 2 || binding[0] != '$' || char.IsDigit(binding[1])) {
+		if (binding.Length < 2 || binding[0] != '$' || char.IsAsciiDigit(binding[1])) {
 			return false;
 		}
 		for (int i = 1; i < binding.Length; i++) {

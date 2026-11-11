@@ -12,8 +12,12 @@ internal interface IComponentConditionAttributeSource {
 
 	/// <summary>
 	/// Resolves the condition attribute a named element of <see cref="ComponentType"/> exposes.
-	/// Returns <c>false</c> when the element exposes none.
 	/// </summary>
+	/// <param name="element">The view-config element of <see cref="ComponentType"/>.</param>
+	/// <param name="elementName">The element's <c>name</c>.</param>
+	/// <param name="pageAttributes">The raw <c>bundle.viewModelConfig.attributes</c> object of the page.</param>
+	/// <param name="descriptor">The condition attribute the element exposes; <c>null</c> when it exposes none.</param>
+	/// <returns><c>true</c> when the element exposes a condition attribute; otherwise <c>false</c>.</returns>
 	bool TryResolve(
 		JsonObject element,
 		string elementName,

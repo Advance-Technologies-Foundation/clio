@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
+using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -592,7 +593,7 @@ public sealed class PageBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("On a stepper whose activeStep is bound to a plain page attribute, create saves a condition on that attribute and rejects the generated '<Stepper>_ActiveStep', listing the bound attribute in the hint.")]
+	[Description("On a stepper whose activeStep is bound to a plain page attribute, create saves a condition on that attribute and rejects the generated '<Stepper>_ActiveStep', listing the bound attribute first in the hint, ahead of data-source attributes that sort before it.")]
 	public void Create_Should_Use_Bound_Attribute_For_Stepper_With_Bound_Active_Step() {
 		// Arrange
 		const string viewConfig = """
@@ -602,8 +603,16 @@ public sealed class PageBusinessRuleServiceTests {
 				{ "type": "crt.Input", "name": "Input_One" }
 			]
 			""";
-		JsonObject attributes = new() { ["RentalStep"] = new JsonObject { ["value"] = null } };
-		PageBusinessRuleService service = BuildStepperService(viewConfig, attributes, out IBusinessRuleAddonService addonService);
+		JsonObject attributes = new() {
+			["AAA_Name"] = new JsonObject { ["modelConfig"] = new JsonObject { ["path"] = "PDS.Name" } },
+			["RentalStep"] = new JsonObject { ["value"] = null }
+		};
+		JsonObject modelConfig = new() {
+			["dataSources"] = new JsonObject {
+				["PDS"] = new JsonObject { ["config"] = new JsonObject { ["entitySchemaName"] = "Contact" } }
+			}
+		};
+		PageBusinessRuleService service = BuildStepperService(viewConfig, attributes, modelConfig, out IBusinessRuleAddonService addonService);
 		IReadOnlyList<BusinessRuleMetadataDto>? capturedMetadata = null;
 		BusinessRule rule = CreateStepperRule("RentalStep");
 		addonService.AppendRule(
@@ -627,8 +636,8 @@ public sealed class PageBusinessRuleServiceTests {
 		condition.LeftExpression.ScopeId.Should().BeNull(
 			because: "the bound attribute lives in the local view model scope");
 		generatedName.Should().Throw<ArgumentException>()
-			.WithMessage("*RentalStepper_ActiveStep*Available condition attributes: RentalStep*",
-				because: "the generated name has no effect on a bound stepper, so it is rejected and the bound attribute is offered");
+			.WithMessage("*RentalStepper_ActiveStep*Available condition attributes: RentalStep, AAA_Name*",
+				because: "the generated name has no effect on a bound stepper, so it is rejected and the bound attribute is offered ahead of the data-source attributes");
 	}
 
 	[Test]
@@ -683,7 +692,7 @@ public sealed class PageBusinessRuleServiceTests {
 			]
 			""";
 		JsonObject attributes = new() { ["RentalStep"] = new JsonObject { ["value"] = null } };
-		PageBusinessRuleService service = BuildStepperService(viewConfig, attributes, out IBusinessRuleAddonService addonService);
+		PageBusinessRuleService service = BuildStepperService(viewConfig, attributes, new JsonObject(), out IBusinessRuleAddonService addonService);
 		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
 			.Returns(BuildPageAddonSchema(("BusinessRule_pg", "pg-rule")));
 		AddonSchemaDto? saved = null;
@@ -712,9 +721,57 @@ public sealed class PageBusinessRuleServiceTests {
 			because: "the active step is addressed by step name");
 		left.TryGetProperty("scopeId", out _).Should().BeFalse(
 			because: "the bound attribute is unscoped");
-		generated.Should().ContainSingle().Which.Success.Should().BeFalse(
+		BusinessRuleBatchItemResult generatedResult = generated.Should().ContainSingle(
+			because: "one rule was sent").Subject;
+		generatedResult.Success.Should().BeFalse(
 			because: "the generated name has no effect on a bound stepper");
+		generatedResult.Error.Should().Contain("RentalStepper_ActiveStep",
+				because: "the failure names the rejected path")
+			.And.Contain("Available condition attributes: RentalStep",
+				because: "the failure offers the bound attribute instead");
 		saved.Should().BeNull(because: "a rejected update writes nothing");
+	}
+
+	[TestCase("$PDS_Stage", TestName = "Create_And_Update_Should_Reject_Generated_Active_Step_For_Stepper_Bound_Elsewhere(column)")]
+	[TestCase("$Stage.Value", TestName = "Create_And_Update_Should_Reject_Generated_Active_Step_For_Stepper_Bound_Elsewhere(nested)")]
+	[Category("Unit")]
+	[Description("On a stepper whose activeStep is bound to a record column or a nested path, create and update reject the generated '<Stepper>_ActiveStep' and persist nothing.")]
+	public void Create_And_Update_Should_Reject_Generated_Active_Step_For_Stepper_Bound_Elsewhere(string activeStepBinding) {
+		// Arrange
+		string viewConfig = $$"""
+			[
+				{ "type": "crt.Stepper", "name": "RentalStepper", "activeStep": "{{activeStepBinding}}",
+				  "items": [ { "type": "crt.StepperItem", "name": "DeliveryStep" } ] },
+				{ "type": "crt.Input", "name": "Input_One" }
+			]
+			""";
+		JsonObject attributes = new() {
+			["PDS_Stage"] = new JsonObject { ["modelConfig"] = new JsonObject { ["path"] = "PDS.Stage" } },
+			["Stage"] = new JsonObject { ["value"] = null }
+		};
+		PageBusinessRuleService service = BuildStepperService(viewConfig, attributes, new JsonObject(), out IBusinessRuleAddonService addonService);
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildPageAddonSchema(("BusinessRule_pg", "pg-rule")));
+
+		// Act
+		Action create = () => service.Create(
+			new BusinessRuleCreateRequest("UsrPkg", "UsrPage", CreateStepperRule("RentalStepper_ActiveStep")));
+		IReadOnlyList<BusinessRuleBatchItemResult> updated = service.Update(
+			new BusinessRulesBatchRequest("UsrPkg", "UsrPage",
+				[CreateStepperRule("RentalStepper_ActiveStep") with { Name = "BusinessRule_pg" }]));
+
+		// Assert
+		create.Should().Throw<ArgumentException>()
+			.WithMessage("*RentalStepper_ActiveStep*",
+				because: "a stepper bound to a column or a nested path exposes no active-step attribute");
+		BusinessRuleBatchItemResult updateResult = updated.Should().ContainSingle(
+			because: "one rule was sent").Subject;
+		updateResult.Success.Should().BeFalse(
+			because: "update applies the same rule as create");
+		updateResult.Error.Should().Contain("RentalStepper_ActiveStep",
+			because: "the failure names the rejected path");
+		addonService.DidNotReceiveWithAnyArgs().AppendRule(default!, default!, default!);
+		addonService.DidNotReceiveWithAnyArgs().SaveSchema(default!);
 	}
 
 	[Test]
@@ -811,19 +868,26 @@ public sealed class PageBusinessRuleServiceTests {
 			]
 			""",
 			new JsonObject(),
+			new JsonObject(),
 			out addonService);
 
 	private static PageBusinessRuleService BuildStepperService(
 		string viewConfigJson,
 		JsonObject attributes,
+		JsonObject modelConfig,
 		out IBusinessRuleAddonService addonService) {
 		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
 		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
 		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 		PageBundleInfo bundle = new() {
+			ModelConfig = modelConfig,
 			ViewModelConfig = new JsonObject { ["attributes"] = attributes },
 			ViewConfig = JsonNode.Parse(viewConfigJson)!.AsArray()
 		};
+		IEntityBusinessRuleAttributeProvider entityAttributeProvider = Substitute.For<IEntityBusinessRuleAttributeProvider>();
+		entityAttributeProvider.GetAttributes(Arg.Any<string>(), packageUId).Returns(new EntityBusinessRuleAttributeContext(
+			new EntityDesignSchemaDto(),
+			new Dictionary<string, BusinessRuleAttributeDescriptor> { ["Name"] = new("Name", "Text", null) }));
 		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
 		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -837,7 +901,7 @@ public sealed class PageBusinessRuleServiceTests {
 		return new PageBusinessRuleService(
 			packageResolver,
 			schemaProvider,
-			new PageBusinessRuleAttributeProvider(Substitute.For<IEntityBusinessRuleAttributeProvider>(), [new StepperActiveStepAttributeSource()]),
+			new PageBusinessRuleAttributeProvider(entityAttributeProvider, [new StepperActiveStepAttributeSource()]),
 			new PageBusinessRuleElementProvider(),
 			addonService,
 			new PageBusinessRuleValidator(new BusinessRuleValidator(Substitute.For<IBusinessRuleLookupReferenceValidator>())),
