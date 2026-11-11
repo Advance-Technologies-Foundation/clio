@@ -305,12 +305,12 @@ namespace Clio.Command;
 // for the advertisement: this clio's contract names the member, so the floor is the first archive that reads it, and
 // an older environment is refused up front with the install hint instead. 1.6.6.141, a second, different
 // 1.6.6.146 (ENG-92710 cut its own) and 1.6.6.151 were cuts of this work that were never released.
-// Raised to 1.6.6.156 by ENG-105557: `values` on a filter condition (several records of one lookup column, one In
+// Raised to 1.6.6.157 by ENG-105557: `values` on a filter condition (several records of one lookup column, one In
 // condition). For the same reason as mergeFrom: a 1.6.6.153 server refuses the undeclared FilterConditionDescriptor
 // key in a message that does not say an update cures it, and this clio's contract names it.
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.156",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.157",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

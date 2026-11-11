@@ -672,7 +672,7 @@ public sealed class DescribedElement {
 	/// <c>true</c> when nothing was left out or approximated, <c>false</c> when the stored filter holds what the
 	/// high-level shape cannot carry (an Exists or Between leaf, a disabled condition, a multi-item In that is not
 	/// all lookup records, an aggregation, ...). A list of lookup records is carried whole, as
-	/// <see cref="DescribedFilterCondition.Values"/>, from CrtProcessBuilder 1.6.6.156, which returns it because this
+	/// <see cref="DescribedFilterCondition.Values"/>, from CrtProcessBuilder 1.6.6.157, which returns it because this
 	/// clio asks (<c>readsFilterValues</c>); an older package reads it as its first record and says <c>false</c>. Null
 	/// when there is no filter, and always null from a <c>CrtProcessBuilder</c> older than 1.6.6.39, which does not
 	/// judge it (ENG-99970).

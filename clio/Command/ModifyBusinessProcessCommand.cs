@@ -230,9 +230,9 @@ namespace Clio.Command;
 // rationale is on CreateBusinessProcessOptions.
 // Raised to 1.6.6.153 by ENG-103990 for mergeFrom on addParameter / setParameter; the rationale is on
 // CreateBusinessProcessOptions.
-// Raised to 1.6.6.156 by ENG-105557 for `values` on a setFilter / setElement filter condition; the rationale is on
+// Raised to 1.6.6.157 by ENG-105557 for `values` on a setFilter / setElement filter condition; the rationale is on
 // CreateBusinessProcessOptions.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.156",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.157",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

@@ -492,7 +492,7 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Deserializes a filter condition's values (ENG-105557): CrtProcessBuilder 1.6.6.156 reads a condition over several lookup records back whole for a caller that asks for it, and DescribedFilterCondition has no extension-data bag, so without the typed property the records would be dropped here and describe -> setFilter would keep none of them.")]
+	[Description("Deserializes a filter condition's values (ENG-105557): CrtProcessBuilder 1.6.6.157 reads a condition over several lookup records back whole for a caller that asks for it, and DescribedFilterCondition has no extension-data bag, so without the typed property the records would be dropped here and describe -> setFilter would keep none of them.")]
 	public void Describe_ShouldReadFilterConditionValues_WhenServerReportsThem() {
 		// Arrange
 		IApplicationClient client = ClientReturning(
