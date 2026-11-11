@@ -208,7 +208,8 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		List<string> warnings) {
 		List<string> bound = [];
 		if (!_backgroundService.TryUsePackage(_packageDataBinder, packageName, out string package, out string error)
-			|| !TryBindGalleryImage(image, bound, warnings, out error)
+			|| !_backgroundService.TryBindGalleryImage(_packageDataBinder, image, ShellBackgroundBindingSuffix, bound,
+				warnings, out error)
 			|| !TryBindBackgroundConfig(bound, warnings, out error)
 			|| !_backgroundService.TryBindPanelIconOffState(_packageDataBinder, bound, warnings, out error)) {
 			string into = package is null ? string.Empty : $" into package '{package}'";
@@ -220,16 +221,6 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 				$"{error}{kept}", warnings, package, bound);
 		}
 		return SetBackgroundResult.Successful(image.ImageId, package, warnings, bound);
-	}
-
-	private bool TryBindGalleryImage(BackgroundGalleryImage image, List<string> bound, List<string> warnings,
-		out string error) {
-		GalleryImageBindingOutcome outcome =
-			_backgroundService.BindGalleryImage(_packageDataBinder, image, ShellBackgroundBindingSuffix);
-		bound.AddRange(outcome.Bound);
-		warnings.AddRange(outcome.Warnings);
-		error = outcome.Error;
-		return error is null;
 	}
 
 	private bool TryBindBackgroundConfig(List<string> bound, List<string> warnings, out string error) {

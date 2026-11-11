@@ -163,8 +163,8 @@ public sealed class ThemeBackgroundWriterTests {
 	public void BindBackgroundIntoThemePackage_Should_Bind_An_Image_Background_Into_The_Theme_Package() {
 		// Arrange
 		IBrandingBackgroundService service = ServiceWithThemePackage();
-		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(new GalleryImageBindingOutcome(
-			[BrandingBackgroundService.ImagePart, BrandingBackgroundService.GalleryMembershipPart], []));
+		StubGalleryImageBinding(service,
+			[BrandingBackgroundService.ImagePart, BrandingBackgroundService.GalleryMembershipPart], []);
 		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
 		ILogger logger = Substitute.For<ILogger>();
 
@@ -175,7 +175,8 @@ public sealed class ThemeBackgroundWriterTests {
 		// Assert
 		Received.InOrder(() => {
 			service.TryUsePackage(binder, "UsrThemes", out Arg.Any<string>(), out Arg.Any<string>());
-			service.BindGalleryImage(binder, GalleryImage, BindingSuffix);
+			service.TryBindGalleryImage(binder, GalleryImage, BindingSuffix, Arg.Any<List<string>>(),
+				Arg.Any<List<string>>(), out Arg.Any<string>());
 			service.TryBindPanelIconOffState(binder, Arg.Any<List<string>>(), Arg.Any<List<string>>(),
 				out Arg.Any<string>());
 		});
@@ -199,7 +200,7 @@ public sealed class ThemeBackgroundWriterTests {
 		// Assert
 		service.Received(1).TryBindPanelIconOffState(binder, Arg.Any<List<string>>(), Arg.Any<List<string>>(),
 			out Arg.Any<string>());
-		service.DidNotReceiveWithAnyArgs().BindGalleryImage(default, default, default);
+		service.DidNotReceiveWithAnyArgs().TryBindGalleryImage(default, default, default, default, default, out _);
 		outcome.Should().BeEquivalentTo(new ThemeBackgroundBindingOutcome(null, []),
 			because: "a color names no image, so no package holds one");
 	}
@@ -241,7 +242,7 @@ public sealed class ThemeBackgroundWriterTests {
 					"The theme background was applied, but binding it into the theme's package failed: refused by ")
 				&& !value.Warnings[0].Contains("hunter2"),
 			because: "a package that cannot be selected holds nothing, and the reason reaches the caller without a credential");
-		service.DidNotReceiveWithAnyArgs().BindGalleryImage(default, default, default);
+		service.DidNotReceiveWithAnyArgs().TryBindGalleryImage(default, default, default, default, default, out _);
 		service.DidNotReceiveWithAnyArgs().TryBindPanelIconOffState(default, default, default, out _);
 	}
 
@@ -250,8 +251,7 @@ public sealed class ThemeBackgroundWriterTests {
 	public void BindBackgroundIntoThemePackage_Should_Pass_On_The_Binding_Warnings_When_The_Image_Is_Not_Bound() {
 		// Arrange
 		IBrandingBackgroundService service = ServiceWithThemePackage();
-		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(
-			new GalleryImageBindingOutcome([], [MessageWithCredential]));
+		StubGalleryImageBinding(service, [], [MessageWithCredential]);
 
 		// Act
 		ThemeBackgroundBindingOutcome outcome = CreateWriter(service)
@@ -270,8 +270,7 @@ public sealed class ThemeBackgroundWriterTests {
 	public void BindBackgroundIntoThemePackage_Should_Name_What_Was_Bound_When_The_Binding_Stops_After_The_Image() {
 		// Arrange
 		IBrandingBackgroundService service = ServiceWithThemePackage();
-		service.BindGalleryImage(default, default, default).ReturnsForAnyArgs(new GalleryImageBindingOutcome(
-			[BrandingBackgroundService.ImagePart], [], MessageWithCredential));
+		StubGalleryImageBinding(service, [BrandingBackgroundService.ImagePart], [], MessageWithCredential);
 
 		// Act
 		ThemeBackgroundBindingOutcome outcome = CreateWriter(service)
@@ -313,6 +312,16 @@ public sealed class ThemeBackgroundWriterTests {
 			return true;
 		});
 		return service;
+	}
+
+	private static void StubGalleryImageBinding(IBrandingBackgroundService service, IReadOnlyList<string> bound,
+		IReadOnlyList<string> warnings, string error = null) {
+		service.TryBindGalleryImage(default, default, default, default, default, out _).ReturnsForAnyArgs(call => {
+			((List<string>)call[3]).AddRange(bound);
+			((List<string>)call[4]).AddRange(warnings);
+			call[5] = error;
+			return error is null;
+		});
 	}
 
 	private static ThemeBackgroundWriter CreateWriter(IBrandingBackgroundService service = null, ILogger logger = null,

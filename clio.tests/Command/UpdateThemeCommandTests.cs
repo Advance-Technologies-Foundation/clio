@@ -287,21 +287,25 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	}
 
 	[TestCase(false, 0, null, "GetAvailableThemes failed: catalog unavailable")]
-	[TestCase(true, 0, null, "No theme with id '" + ThemeId + "' is on the environment (see list-themes); nothing was changed. "
+	[TestCase(true, 0, null, "No theme with id '" + ThemeId + "' is on the environment; nothing was changed. "
 		+ ThemeCatalogMessages.EmptyCatalogLicenseCaveat)]
 	[TestCase(true, 1, "themes/" + ThemeId + "/theme.css", "Theme '" + ThemeId + "' has no package in its cssFilePath")]
 	[TestCase(true, 2, "Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/" + ThemeId + "/theme.css",
 		"Theme id '" + ThemeId + "' matches more than one theme")]
 	[Category("Unit")]
-	[Description("Refuses an image background before any write when the theme's package cannot be read from the catalog: the catalog read fails, the catalog is empty, the cssFilePath names no package, or the id matches more than one theme.")]
+	[Description("Refuses an image background before any write, the gallery registration included, when the theme's package cannot be read from the catalog: the catalog read fails, the catalog is empty, the cssFilePath names no package, or the id matches more than one theme.")]
 	public void Execute_ShouldNotPostUpdateTheme_WhenTheThemePackageCannotBeResolved(bool catalogRead, int listedCopies,
 		string cssFilePath, string expectedError) {
+		// Arrange
 		StubCatalog(catalogRead, Enumerable.Repeat(new ThemeDescriptor { Id = ThemeId, CssFilePath = cssFilePath },
 			listedCopies).ToArray());
 
+		// Act
 		int exitCode = _command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = ImageId });
 
+		// Assert
 		exitCode.Should().Be(1, because: "an image needs the theme's package, so the theme is not written without one");
+		_backgroundWriter.DidNotReceiveWithAnyArgs().TryAddImageToBackgroundGallery(default, out _, out _);
 		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m != null && m.StartsWith(expectedError)));
@@ -340,7 +344,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		exitCode.Should().Be(1, because: "a call carries at most one background argument, and null is one");
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 		_logger.Received(1).WriteError(
-			"background-image-id and background-color cannot be combined: pass at most one background argument.");
+			"background-image-id and background-color cannot be combined.");
 	}
 
 	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"Theme not found\"}}")]

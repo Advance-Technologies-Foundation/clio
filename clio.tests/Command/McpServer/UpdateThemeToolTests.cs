@@ -265,6 +265,38 @@ public class UpdateThemeToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[TestCase("backgroundImageId", "background-image-id")]
+	[TestCase("background_image_id", "background-image-id")]
+	[TestCase("backgroundColor", "background-color")]
+	[TestCase("background_color", "background-color")]
+	[TestCase("keepIconBackground", "keep-icon-background")]
+	[TestCase("keep_icon_background", "keep-icon-background")]
+	[Description("Returns the rename hint for a camelCase or snake_case spelling of a background argument instead of dropping it.")]
+	[Category("Unit")]
+	public void UpdateTheme_ShouldReturnRenameHint_WhenABackgroundArgumentAliasIsPassed(string alias, string argument) {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+		UpdateThemeArgs args = new(EnvironmentName: "docker_fix2", Id: "ocean-theme") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				[alias] = JsonSerializer.SerializeToElement("#1A2B3C")
+			}
+		};
+
+		// Act
+		CommandExecutionResult result = tool.UpdateTheme(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "a misspelled background argument must not turn into a full overwrite");
+		result.Output.Should().ContainSingle(message =>
+			message.GetType() == typeof(ErrorMessage) &&
+			message.Value.ToString().Contains($"'{alias}' -> '{argument}'"),
+			because: "the failure must tell the caller the exact rename that fixes the call");
+		commandResolver.DidNotReceive().Resolve<UpdateThemeCommand>(Arg.Any<UpdateThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	[Test]
 	[Description("Binds the update-theme argument record from kebab-case JSON using the real MCP serializer options, and routes camelCase spellings into the overflow bag — the exact JSON->record binding the MCP host performs, which direct method calls bypass.")]
 	[Category("Unit")]
@@ -341,13 +373,16 @@ public class UpdateThemeToolTests {
 	[Category("Unit")]
 	public async Task UpdateTheme_ShouldMapTheBackgroundArguments_WhenTheSdkBindsThem(string background,
 		string expectedImageId, string expectedColor, bool expectedKeepIconBackground) {
+		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
 		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
+		// Act
 		CallToolResult result = await InvokeThroughSdkAsync(tool,
 			$"{{\"environment-name\":\"docker_fix2\",\"id\":\"{BackgroundThemeId}\",{background}}}");
 
+		// Assert
 		result.IsError.Should().NotBe(true, because: "a background argument alone is a valid update");
 		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
 			options.Id == BackgroundThemeId &&
@@ -364,14 +399,17 @@ public class UpdateThemeToolTests {
 	[Description("Binds a full overwrite without background arguments through the MCP SDK and leaves both background options unset, so the stored background is kept.")]
 	[Category("Unit")]
 	public async Task UpdateTheme_ShouldKeepTheBackground_WhenTheSdkBindsNoBackgroundArgument() {
+		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
 		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
+		// Act
 		await InvokeThroughSdkAsync(tool,
 			$"{{\"environment-name\":\"docker_fix2\",\"id\":\"{BackgroundThemeId}\",\"caption\":\"Ocean\"," +
 			"\"css-class-name\":\"ocean-theme\",\"css-content\":\".ocean-theme{}\"}");
 
+		// Assert
 		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
 			options.Caption == "Ocean" &&
 			options.BackgroundImageId == null &&

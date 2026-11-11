@@ -310,6 +310,36 @@ public class CreateThemeToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[TestCase("backgroundImageId", "background-image-id")]
+	[TestCase("background_image_id", "background-image-id")]
+	[TestCase("backgroundColor", "background-color")]
+	[TestCase("background_color", "background-color")]
+	[TestCase("keepIconBackground", "keep-icon-background")]
+	[TestCase("keep_icon_background", "keep-icon-background")]
+	[Description("Returns the rename hint for a camelCase or snake_case spelling of a background argument instead of dropping it.")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldReturnRenameHint_WhenABackgroundArgumentAliasIsPassed(string alias, string argument) {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+		CreateThemeArgs args = new(EnvironmentName: "docker_fix2", CssContent: ".ocean-theme{}") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				[alias] = JsonSerializer.SerializeToElement("#1A2B3C")
+			}
+		};
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a misspelled background argument must not create a theme without it");
+		result.Error.Should().Contain($"'{alias}' -> '{argument}'",
+			because: "the failure must tell the caller the exact rename that fixes the call");
+		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	[Test]
 	[Description("Forwards a null caption when caption is omitted, leaving the command to derive it from cssClassName.")]
 	[Category("Unit")]

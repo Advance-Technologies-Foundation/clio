@@ -26,7 +26,13 @@ public class UpdateThemeTool(
 			["cssContent"] = "css-content",
 			["css_content"] = "css-content",
 			["cssClassName"] = "css-class-name",
-			["css_class_name"] = "css-class-name"
+			["css_class_name"] = "css-class-name",
+			["backgroundImageId"] = "background-image-id",
+			["background_image_id"] = "background-image-id",
+			["backgroundColor"] = "background-color",
+			["background_color"] = "background-color",
+			["keepIconBackground"] = "keep-icon-background",
+			["keep_icon_background"] = "keep-icon-background"
 		};
 
 	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content, or changes its background.</summary>
@@ -100,10 +106,10 @@ public class UpdateThemeTool(
 		if (imageIdRemoves && colorRemoves) {
 			return (null, null);
 		}
-		if (imageIdRemoves && ThemeBackground.IsGiven(null, color)) {
+		if (imageIdRemoves && !string.IsNullOrWhiteSpace(color)) {
 			return (null, color);
 		}
-		if (colorRemoves && ThemeBackground.IsGiven(imageId, null)) {
+		if (colorRemoves && !string.IsNullOrWhiteSpace(imageId)) {
 			return (imageId, null);
 		}
 		return (imageId, color);

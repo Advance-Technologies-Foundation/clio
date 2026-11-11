@@ -422,6 +422,28 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	}
 
 	[Test, Category("Unit")]
+	[Description("Leaves the background gallery alone when --package-name does not resolve, because the theme is not written.")]
+	public void TryCreateTheme_ShouldNotTouchTheGallery_WhenThePackageNameIsUnknown() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")), Arg.Any<string>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+		StubImageLookup(found: true);
+		CreateThemeOptions options = ValidOptions();
+		options.PackageName = "NoSuchPackage";
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out _, out _);
+
+		// Assert
+		created.Should().BeFalse(because: "an unresolvable --package-name fails the command");
+		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Is<string>(u => u.Contains("odata/SysImage")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("odata/SysImageInTag")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
 	[Description("Stops after a CreateTheme that does not confirm success, so neither the panel icon feature nor the package changes.")]
 	public void TryCreateTheme_ShouldChangeNothingElse_WhenTheCreateFails() {
 		// Arrange

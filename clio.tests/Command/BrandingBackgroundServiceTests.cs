@@ -179,14 +179,20 @@ public sealed class BrandingBackgroundServiceTests {
 
 	[Test]
 	[Description("Binds the image and then its gallery membership through the given binder under the given binding name, without selecting a package and without binding anything else.")]
-	public void BindGalleryImage_Should_Bind_The_Image_And_Then_Its_Membership() {
+	public void TryBindGalleryImage_Should_Bind_The_Image_And_Then_Its_Membership() {
+		// Arrange
+		List<string> bound = [];
+		List<string> warnings = [];
+
 		// Act
-		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
+		bool boundAll = _service.TryBindGalleryImage(_binder, GalleryImage, BindingSuffix, bound, warnings,
+			out string error);
 
 		// Assert
-		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome(
-				[BrandingBackgroundService.ImagePart, BrandingBackgroundService.GalleryMembershipPart], []),
+		boundAll.Should().BeTrue(because: $"every binding step succeeded (error: {error})");
+		bound.Should().Equal([BrandingBackgroundService.ImagePart, BrandingBackgroundService.GalleryMembershipPart],
 			because: "the image and its gallery membership are the parts every background delivers");
+		warnings.Should().BeEmpty(because: "the binder refused nothing");
 		Received.InOrder(() => {
 			_binder.BindRow("SysImage", BindingSuffix, Arg.Any<IReadOnlyList<string>>(), ImageId);
 			_binder.BindRow("SysImageInTag", BindingSuffix, Arg.Any<IReadOnlyList<string>>(), MembershipId);
@@ -198,19 +204,22 @@ public sealed class BrandingBackgroundServiceTests {
 
 	[Test]
 	[Description("Does not bind the gallery membership when the image is not bound, and passes on why.")]
-	public void BindGalleryImage_Should_Not_Bind_The_Membership_Of_An_Unbound_Image() {
+	public void TryBindGalleryImage_Should_Not_Bind_The_Membership_Of_An_Unbound_Image() {
 		// Arrange
 		_binder.BindRow("SysImage", Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<Guid>()).Returns(
 			PackageDataBindingOutcome.Refused(["SysImage_ShellBackground: row not found on this environment"]));
 		_binder.RemoveBinding(default, default).ReturnsForAnyArgs([]);
+		List<string> bound = [];
+		List<string> warnings = [];
 
 		// Act
-		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, "ShellBackground");
+		bool boundAll = _service.TryBindGalleryImage(_binder, GalleryImage, "ShellBackground", bound, warnings,
+			out string error);
 
 		// Assert
-		outcome.ImageBound.Should().BeFalse(because: "the binder refused the image row");
-		outcome.Bound.Should().BeEmpty(because: "a package must not ship a membership that names an image it does not carry");
-		outcome.Warnings.Should().HaveCount(2, because: "the caller must learn why the image and the membership are missing");
+		boundAll.Should().BeTrue(because: $"a refused row is a warning, not a failed binding (error: {error})");
+		bound.Should().BeEmpty(because: "a package must not ship a membership that names an image it does not carry");
+		warnings.Should().HaveCount(2, because: "the caller must learn why the image and the membership are missing");
 		_binder.DidNotReceive().BindRow("SysImageInTag", Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 			Arg.Any<Guid>());
 		_binder.Received(1).RemoveBinding("SysImageInTag_ShellBackground", "SysImageInTag");
@@ -218,28 +227,32 @@ public sealed class BrandingBackgroundServiceTests {
 
 	[Test]
 	[Description("Reports the parts already bound when a later binding step fails, a request timeout included.")]
-	public void BindGalleryImage_Should_Report_The_Parts_Bound_Before_A_Failure() {
+	public void TryBindGalleryImage_Should_Report_The_Parts_Bound_Before_A_Failure() {
 		// Arrange
 		_binder.BindRow("SysImageInTag", Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<Guid>())
 			.Throws(new AggregateException("package is locked", new TaskCanceledException()));
+		List<string> bound = [];
 
 		// Act
-		GalleryImageBindingOutcome outcome = _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
+		bool boundAll = _service.TryBindGalleryImage(_binder, GalleryImage, BindingSuffix, bound, [],
+			out string error);
 
 		// Assert
-		outcome.Should().BeEquivalentTo(new GalleryImageBindingOutcome([BrandingBackgroundService.ImagePart], [],
-				"package is locked (A task was canceled.)"),
+		boundAll.Should().BeFalse(because: "the membership binding threw");
+		error.Should().Be("package is locked (A task was canceled.)",
+			because: "a request timeout is a failed binding, and its reason reaches the caller");
+		bound.Should().Equal([BrandingBackgroundService.ImagePart],
 			because: "the parts that landed stay in the package, so the caller must learn which they are");
 	}
 
 	[Test]
 	[Description("Lets a cancelled binding through instead of reporting it as a failed binding.")]
-	public void BindGalleryImage_Should_Let_A_Cancellation_Through() {
+	public void TryBindGalleryImage_Should_Let_A_Cancellation_Through() {
 		// Arrange
 		_binder.BindRow(default, default, default, default).ThrowsForAnyArgs(new OperationCanceledException());
 
 		// Act
-		Action bind = () => _service.BindGalleryImage(_binder, GalleryImage, BindingSuffix);
+		Action bind = () => _service.TryBindGalleryImage(_binder, GalleryImage, BindingSuffix, [], [], out _);
 
 		// Assert
 		bind.Should().Throw<OperationCanceledException>(

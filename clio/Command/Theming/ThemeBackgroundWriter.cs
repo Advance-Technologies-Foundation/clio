@@ -100,15 +100,8 @@ internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroun
 	private bool TryBindGalleryImage(BackgroundGalleryImage image, string themeId, List<string> bound,
 		List<string> warnings, out string error) {
 		error = null;
-		if (image is null) {
-			return true;
-		}
-		GalleryImageBindingOutcome binding = backgroundService.BindGalleryImage(packageDataBinder, image,
-			ThemeBackgroundBindingPrefix + Guid.Parse(themeId).ToString("N"));
-		bound.AddRange(binding.Bound);
-		warnings.AddRange(binding.Warnings);
-		error = binding.Error;
-		return error is null;
+		return image is null || backgroundService.TryBindGalleryImage(packageDataBinder, image,
+			ThemeBackgroundBindingPrefix + Guid.Parse(themeId).ToString("N"), bound, warnings, out error);
 	}
 
 	private static string DescribeBindingFailure(string package, IReadOnlyList<string> bound, string error) {

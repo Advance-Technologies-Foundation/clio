@@ -48,15 +48,15 @@ public sealed record ThemeBackground
 		error = null;
 		bool hasImageId = !string.IsNullOrWhiteSpace(imageId);
 		if (hasImageId && !string.IsNullOrWhiteSpace(color)) {
-			error = $"{ImageIdArgument} and {ColorArgument} cannot be combined: pass at most one background argument.";
+			error = $"{ImageIdArgument} and {ColorArgument} cannot be combined.";
 			return false;
 		}
 		if (!IsGiven(imageId, color)) {
 			return true;
 		}
-		(string argument, string given, string kind, string expected) = hasImageId
-			? (ImageIdArgument, imageId, "a valid id", "the id printed by upload-image")
-			: (ColorArgument, color, "a hex color", "#RGB, #RRGGBB or #RRGGBBAA");
+		(string argument, string given, string expected) = hasImageId
+			? (ImageIdArgument, imageId, "a valid id. Pass the id printed by upload-image.")
+			: (ColorArgument, color, "a hex color (#RGB, #RRGGBB or #RRGGBBAA).");
 		string value = given.Trim();
 		if (string.Equals(value, RemovalValue, StringComparison.OrdinalIgnoreCase)) {
 			if (allowRemoval) {
@@ -68,7 +68,7 @@ public sealed record ThemeBackground
 		}
 		background = Parse(hasImageId, value);
 		if (background is null) {
-			error = $"{argument} '{TextUtilities.SanitizeForDisplay(given, MaxEchoLength)}' is not {kind}. Pass {expected}.";
+			error = $"{argument} '{TextUtilities.SanitizeForDisplay(given, MaxEchoLength)}' is not {expected}";
 		}
 		return background is not null;
 	}

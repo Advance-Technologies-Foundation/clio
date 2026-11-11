@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
@@ -8,18 +7,6 @@ using Clio.Common;
 namespace Clio.Command.Branding;
 
 public sealed record BackgroundGalleryImage(Guid ImageId, Guid MembershipId, Guid TagId);
-
-public sealed record GalleryImageBindingOutcome(
-	IReadOnlyList<string> Bound,
-	IReadOnlyList<string> Warnings,
-	string Error = null)
-{
-	public bool ImageBound {
-		get {
-			return Bound.Contains(BrandingBackgroundService.ImagePart);
-		}
-	}
-}
 
 public interface IBrandingBackgroundService
 {
@@ -31,8 +18,8 @@ public interface IBrandingBackgroundService
 
 	bool TryUsePackage(IPackageDataBinder binder, string packageName, out string package, out string error);
 
-	GalleryImageBindingOutcome BindGalleryImage(IPackageDataBinder binder, BackgroundGalleryImage image,
-		string bindingSuffix);
+	bool TryBindGalleryImage(IPackageDataBinder binder, BackgroundGalleryImage image, string bindingSuffix,
+		List<string> bound, List<string> warnings, out string error);
 
 	bool TryBindPanelIconOffState(IPackageDataBinder binder, List<string> bound, List<string> warnings,
 		out string error);
@@ -136,19 +123,19 @@ internal sealed class BrandingBackgroundService(IApplicationClient applicationCl
 		}
 	}
 
-	public GalleryImageBindingOutcome BindGalleryImage(IPackageDataBinder binder, BackgroundGalleryImage image,
-		string bindingSuffix) {
-		List<string> bound = [];
-		List<string> warnings = [];
+	public bool TryBindGalleryImage(IPackageDataBinder binder, BackgroundGalleryImage image, string bindingSuffix,
+		List<string> bound, List<string> warnings, out string error) {
+		error = null;
 		try {
 			PackageDataBindingOutcome imageRow = binder.BindRow(SysImageSchema, bindingSuffix, SysImageColumns,
 				image.ImageId);
 			imageRow.RecordInto(ImagePart, bound, warnings);
 			BindGalleryMembership(binder, imageRow.Bound, image, bindingSuffix)
 				.RecordInto(GalleryMembershipPart, bound, warnings);
-			return new GalleryImageBindingOutcome(bound, warnings);
+			return true;
 		} catch (Exception exception) when (exception is not OperationCanceledException) {
-			return new GalleryImageBindingOutcome(bound, warnings, exception.Message);
+			error = exception.Message;
+			return false;
 		}
 	}
 

@@ -169,7 +169,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 		}
 		if (matchingThemes.Count == 0) {
 			string caveat = themes.Count == 0 ? " " + ThemeCatalogMessages.EmptyCatalogLicenseCaveat : string.Empty;
-			error = $"No theme with id '{options.Id}' is on the environment (see list-themes); nothing was changed." + caveat;
+			error = $"No theme with id '{options.Id}' is on the environment; nothing was changed." + caveat;
 			return false;
 		}
 		Match match = ThemePackagePattern.Match(matchingThemes[0].CssFilePath ?? string.Empty);

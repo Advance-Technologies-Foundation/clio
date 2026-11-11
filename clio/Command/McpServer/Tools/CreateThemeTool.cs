@@ -55,7 +55,13 @@ public class CreateThemeTool(
 			["bodyFont"] = "body-font",
 			["body_font"] = "body-font",
 			["fontWeights"] = "font-weights",
-			["font_weights"] = "font-weights"
+			["font_weights"] = "font-weights",
+			["backgroundImageId"] = "background-image-id",
+			["background_image_id"] = "background-image-id",
+			["backgroundColor"] = "background-color",
+			["background_color"] = "background-color",
+			["keepIconBackground"] = "keep-icon-background",
+			["keep_icon_background"] = "keep-icon-background"
 		};
 
 	/// <summary>Creates the theme on the target environment and returns a structured result carrying the effective theme id.</summary>
@@ -268,10 +274,12 @@ public sealed record CreateThemeResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Id { get; init; }
 
+	/// <summary>The package that now ships the background image; omitted when no image was bound.</summary>
 	[JsonPropertyName("background-image-package")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string BackgroundImagePackage { get; init; }
 
+	/// <summary>The UsePanelIconBackground state after a background was set: <c>off</c> or <c>kept</c>; omitted when no background was set or the state is unknown.</summary>
 	[JsonPropertyName("panel-icon-background")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string PanelIconBackground { get; init; }
@@ -286,7 +294,7 @@ public sealed record CreateThemeResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
 
-	/// <summary>Creates a success result carrying the effective theme id and any non-fatal build advisories.</summary>
+	/// <summary>Creates a success result carrying the effective theme id, the background outcome, and any non-fatal advisories.</summary>
 	public static CreateThemeResult Successful(string id, IReadOnlyList<string> warnings = null,
 		ThemeBackgroundOutcome background = null) {
 		return new CreateThemeResult {

@@ -353,6 +353,34 @@ public sealed class ThemeBackgroundToolE2ETests {
 					because: "the floor is checked before any write");
 			});
 
+	[Test]
+	[AllureTag(UpdateThemeTool.ToolName)]
+	[AllureName("A theme background removal is refused below Creatio 10.2.96")]
+	[AllureDescription("Calls update-theme with the theme id and a JSON null in background-color alone through the real MCP server against a 10.2.95 stub, then checks the removal is refused with version-too-old and no UpdateTheme call reached the stub.")]
+	[Description("Refuses a background removal by a lone JSON null below 10.2.96 with version-too-old, before any theme write.")]
+	public Task UpdateTheme_Should_Refuse_A_Background_Removal_Below_The_Floor() =>
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.95.0"),
+			async (session, environmentName, stubServer, cancellationToken) => {
+				// Act
+				CallToolResult callResult = await session.CallToolAsync(UpdateThemeTool.ToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = environmentName,
+							["id"] = ThemeId,
+							["background-color"] = null
+						}
+					}, cancellationToken);
+				string refusal = string.Join(" ",
+					McpCommandExecutionParser.Extract(callResult).Output.Select(message => message.Value));
+				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);
+
+				// Assert
+				refusal.Should().Contain(CreatioVersionRequirementException.VersionTooOldCode,
+					because: "a lone null removes the background, which an older ThemeService cannot do");
+				requests.Should().NotContain(request => request.Url.EndsWith("/ThemeService.svc/UpdateTheme"),
+					because: "the floor is checked before any write");
+			});
+
 	private static string ThemeWriteBody(IReadOnlyList<RecordedStubRequest> requests, string operation) =>
 		requests.Should().ContainSingle(request => request.Url.EndsWith("/ThemeService.svc/" + operation),
 			because: $"exactly one {operation} call writes the theme").Which.Body ?? string.Empty;
