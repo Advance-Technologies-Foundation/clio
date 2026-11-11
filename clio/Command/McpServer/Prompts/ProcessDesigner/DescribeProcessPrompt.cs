@@ -57,7 +57,7 @@ public static class DescribeProcessPrompt {
 		   are named; `files` for Process parameter - which files it copies), plus `action` and `saveTo`. Narrate it
 		   in those terms. Its describe-only members (`actionStored`, `outputs`, `issues`, `report.caption`,
 		   `report.convertToPdf`, `bindingLevels`, and each value source's `display`) are removed before
-		   resubmitting; clio warns and ignores them if sent back. `bindingLevels` other than `both` or `itemOnly`
+		   resubmitting; sent back, they are ignored with a warning. `bindingLevels` other than `both` or `itemOnly`
 		   comes with an issue: `outerOnly` fails at run time, and with `none` the process cannot start.
 		   `get-guidance name=process-files` owns the block.
 		   A `webService` element (the designer's "Call web service") carries its `webService` block: the
@@ -68,8 +68,8 @@ public static class DescribeProcessPrompt {
 		   names are what a mapping addresses. `serviceResolved: false` means the call fails at run time, and so does
 		   `methodResolved: false` - unless an issue says the service could not be read: then nothing was checked and
 		   the outcome is unknown. Read `issues` for the rest. To resubmit, send the block back unchanged: `serviceUId`,
-		   `serviceResolved`, `methodResolved`, `issues` and `parameters` are describe-only, and clio warns and
-		   ignores them. Four blocks do not replay as they are: a fractional `timeoutSeconds` (a timeout stored in
+		   `serviceResolved`, `methodResolved`, `issues` and `parameters` are describe-only, ignored with a
+		   warning. Four blocks do not replay as they are: a fractional `timeoutSeconds` (a timeout stored in
 		   milliseconds) is refused - leave it out to keep the stored value, or send whole seconds; a block with no
 		   `service` (`serviceResolved: false`) needs a registered service named again; a block of `service`
 		   alone (nothing else stored) is refused as changing nothing; and a stored `method` whose letter case

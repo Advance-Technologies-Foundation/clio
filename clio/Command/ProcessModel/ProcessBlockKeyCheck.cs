@@ -33,8 +33,10 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// <c>filter</c> nested inside <c>readData</c> instead of beside it saved green, and every Read data read the first
 /// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
-/// and it covers a host whose server check reports itself unavailable (every caller requires 1.6.6.150, so an older
-/// package or the other package line never receives these payloads). It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
+/// and it covers a host whose server check reports itself unavailable. Every caller requires 1.6.6.150, which keeps
+/// out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
+/// only while that line stamps lower numbers - should it ever stamp 1.6.6.150 or above without the ENG-95244 check, a
+/// replayed read-back member would be dropped there with no word from either side. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
 /// payloads.</para>
 /// <para>The key sets mirror the server's request contracts one type per <see cref="KeySet"/> and are held equal
 /// to the bundled CrtProcessBuilder by <c>ProcessBlockKeyCheckTests</c>, so a new server member cannot be refused
