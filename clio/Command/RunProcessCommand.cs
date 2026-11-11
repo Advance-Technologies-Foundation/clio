@@ -174,7 +174,8 @@ public class RunProcessCommand(
 	IProcessRunLogReader processRunLogReader,
 	IProcessVersionLibReader versionLibReader,
 	ILogger logger,
-	IRunVerificationServices verification)
+	IRunVerificationServices verification,
+	EnvironmentSettings environmentSettings)
 	: Command<RunProcessOptions> {
 
 	private readonly IProcessRunMonitor runMonitor = verification.Monitor;
@@ -243,13 +244,39 @@ public class RunProcessCommand(
 	private const int LogReadMarginMs = 3_000;
 	private const int MinimumLogReadMs = 1_000;
 
-	internal static string BuildMissingCompiledMethodHint(string processCode) =>
-		$" This is most often a script task saved since '{processCode}' was last compiled, so the compiled code "
-		+ "does not have it "
-		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
-		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
-		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
-		+ $"process-name set to '{processCode}'.";
+	// The host comes from the environment's registration, not from the agent's memory of an earlier compile answer:
+	// only a .NET Framework host reloads after a compile, so only there can a short wait help, and a .NET (Core) host
+	// runs a compile's code only after the application restarts (ENG-105744).
+	internal static string BuildMissingCompiledMethodHint(string processCode, bool isNetCore) {
+		string cause = $" This is most often a script task saved since '{processCode}' was last compiled, so the "
+			+ "compiled code does not have it yet: the run stops when it reaches that element, and the elements before "
+			+ "it may already have run.";
+		if (!isNetCore) {
+			// The marker sentences stay on this branch: an environment registered without IsNetCore can still be a
+			// .NET (Core) host, and then only the compile's own warning tells - a real .NET Framework host never
+			// prints it, so they are safe there. The stop comes FIRST, as on the other branch.
+			return cause + " If that compile said the process "
+				+ $"{CompileBusinessProcessCommand.RestartRequiredMarker}, the application already restarted after it "
+				+ "and the process has not changed since, do not compile or restart again: tell the user that the "
+				+ "restart did not make the compiled code run. If that compile said so and no restart followed it, the "
+				+ "host is .NET (Core) whatever its registration says: do not compile again - ask the user, then run "
+				+ "restart-by-environment-name. If a process-name compile of it succeeded only minutes ago, the runtime "
+				+ "may still be reloading: run again in about two minutes before compiling again. Otherwise ask the "
+				+ $"user, then run compile-creatio with process-name set to '{processCode}'.";
+		}
+		// The FIRST sentence is the stop: a restart is necessary on this host but was not proven sufficient (two
+		// stands kept failing after one), and an agent that acts on the first case that matches must meet the stop
+		// before the compile, or it compiles once more on the way.
+		return cause + " This .NET (Core) host runs the configuration assembly it loaded at startup, so a compile "
+			+ "takes effect only after the application restarts. If the application already restarted after a "
+			+ "successful process-name compile of it and the process has not changed since, do not compile or "
+			+ "restart again: tell the user that the restart did not make the compiled code run. If a process-name "
+			+ "compile of it succeeded and no restart followed it (that compile said the process "
+			+ $"{CompileBusinessProcessCommand.RestartRequiredMarker}), do not compile again: ask the user, then run "
+			+ "restart-by-environment-name (it reloads the application for every user). If the process changed after "
+			+ "that compile, or it was never compiled, ask the user, then run compile-creatio with process-name set to "
+			+ $"'{processCode}', and restart after it.";
+	}
 
 	// ENG-101880: run-process launches exactly the version it is given, so a version that is not the active one
 	// runs as asked - and a caller who meant "the process" must hear that the environment itself runs another.
@@ -465,7 +492,8 @@ public class RunProcessCommand(
 		response.Status = ResolveStatusName(state.StatusValue.Value);
 		DropStaleResultValues(response, state.IsTerminal);
 		if (state.StatusValue == ErrorStatus) {
-			response.Error = DescribeFailure(null, state.ErrorSummary, response.VersionName);
+			// No errorCode, so no missing-compiled-method hint: the host does not change this answer.
+			response.Error = DescribeFailure(null, state.ErrorSummary, response.VersionName, isNetCore: false);
 			return;
 		}
 		if (state.StatusValue == CancelledStatus) {
@@ -713,7 +741,7 @@ public class RunProcessCommand(
 			return;
 		}
 
-		response = BuildResponse(platformResponse, model.Code);
+		response = BuildResponse(platformResponse, model.Code, environmentSettings.IsNetCore);
 		// The failure-cause log read first: it is worth more than the version facts, and both are paid for out of
 		// the same remaining response deadline. The version read has been in flight since the POST.
 		AddLoggedError(platformResponse, response, options.ResponseDeadline);
@@ -864,7 +892,8 @@ public class RunProcessCommand(
 	// A refusal, a background queueing and an inactive descriptor arrive with the SAME empty id and
 	// Inactive status; success and errorInfo are the only discriminators. See
 	// docs/knowledge/platform/runprocess-success-flag-is-not-the-run-verdict.md
-	internal static RunProcessResponse BuildResponse(ProcessStartResponse platformResponse, string processCode) {
+	internal static RunProcessResponse BuildResponse(ProcessStartResponse platformResponse, string processCode,
+			bool isNetCore) {
 		if (platformResponse is null) {
 			return new RunProcessResponse { Error = "The launch returned an empty response" };
 		}
@@ -880,7 +909,7 @@ public class RunProcessCommand(
 				&& IsMissingCompiledMethod(errorCode)) {
 			return new RunProcessResponse {
 				Status = StatusNames[ErrorStatus],
-				Error = DescribeFailure(errorCode, errorMessage, processCode)
+				Error = DescribeFailure(errorCode, errorMessage, processCode, isNetCore)
 			};
 		}
 
@@ -906,7 +935,7 @@ public class RunProcessCommand(
 		// A failed run can arrive with success=true: the platform only clears that flag while
 		// Feature-SetErrorInfoIfProcessHasFailedExecution is on. Both signals are read.
 		if (!platformResponse.Success || platformResponse.ProcessStatus == ErrorStatus) {
-			response.Error = DescribeFailure(errorCode, errorMessage, processCode);
+			response.Error = DescribeFailure(errorCode, errorMessage, processCode, isNetCore);
 		}
 		return response;
 	}
@@ -925,13 +954,14 @@ public class RunProcessCommand(
 			? member.GetString()
 			: null;
 
-	private static string DescribeFailure(string errorCode, string message, string processCode) {
+	private static string DescribeFailure(string errorCode, string message, string processCode,
+			bool isNetCore) {
 		// Fenced: the platform's wording reaches an agent through the MCP result, and it can quote stored text.
 		string detail = UntrustedText.Fenced(message) ?? "the platform returned no error details";
 		return $"The process run failed: {detail}."
 			+ DescribeErrorCode(errorCode)
 			+ (IsMissingCompiledMethod(errorCode)
-				? BuildMissingCompiledMethodHint(processCode)
+				? BuildMissingCompiledMethodHint(processCode, isNetCore)
 				: string.Empty);
 	}
 

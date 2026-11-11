@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
 
@@ -12,8 +12,11 @@ namespace Clio.Command.ProcessModel;
 /// write path ignores.
 /// </summary>
 /// <param name="Error">The refusal, or <c>null</c> when every key the caller sent is one the server reads.</param>
-/// <param name="Warnings">Describe-only fields that were sent back and will be ignored - reported, never refused.</param>
-public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<string> Warnings) {
+/// <param name="IgnoredReadBacks">
+/// Describe-only fields that were sent back and will be ignored, in one summary line - tolerated, never refused. Not
+/// written to the caller: the server names the same fields in its own warning (see <see cref="ProcessBlockKeyCheck"/>).
+/// </param>
+public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<string> IgnoredReadBacks) {
 
 	/// <summary>Nothing to say about this payload.</summary>
 	public static readonly ProcessBlockKeyCheckResult Clean = new(null, []);
@@ -30,14 +33,21 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// <c>filter</c> nested inside <c>readData</c> instead of beside it saved green, and every Read data read the first
 /// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
-/// and it covers a package before that version, the other package line, and a host whose server check reports itself
-/// unavailable. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
+/// and it covers a host whose server check reports itself unavailable. Every caller requires the create/modify floor
+/// (1.6.6.153 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
+/// only while that line stamps lower numbers - should it ever stamp that floor or above without the ENG-95244 check, a
+/// replayed read-back member would be dropped there with no word from either side. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
 /// payloads.</para>
 /// <para>The key sets mirror the server's request contracts one type per <see cref="KeySet"/> and are held equal
 /// to the bundled CrtProcessBuilder by <c>ProcessBlockKeyCheckTests</c>, so a new server member cannot be refused
 /// here by a stale list. Fields <c>describe-business-process</c> reports but the write path does not take
 /// (<c>sourceSchemaUId</c>, <c>outputs</c>, <c>position</c>, ...) are DERIVED read-backs: a described block fed
-/// back keeps building, and the ignored fields are named in a warning instead of vanishing.</para>
+/// back keeps building. clio tolerates them and says nothing: the server they reach (every caller requires
+/// the create/modify floor, 1.6.6.153 today) ignores them and names them in its own "Read-only fields copied from describe were
+/// ignored" warning, which names them and, where it can, the key that changes each. A second warning from clio about
+/// the same fields only doubled the noise of a describe -> setElement round trip. The accepted cost: on a host whose
+/// server check reports itself unavailable, the server's warning says the request was not checked and may name none of
+/// these fields, where clio used to name them.</para>
 /// </remarks>
 internal static class ProcessBlockKeyCheck {
 
@@ -59,7 +69,7 @@ internal static class ProcessBlockKeyCheck {
 		/// <param name="label">The caller-facing name of the block.</param>
 		/// <param name="describeType">The describe type whose extra members <paramref name="readBack"/> names.</param>
 		/// <param name="keys">The contract's keys, space-separated.</param>
-		/// <param name="readBack">Describe-only keys tolerated with a warning, space-separated.</param>
+		/// <param name="readBack">Describe-only keys tolerated (the server names them), space-separated.</param>
 		/// <param name="pointers">Where a commonly misplaced or misspelled key belongs.</param>
 		internal KeySet(string contractType, string label, string describeType, string keys, string readBack = null,
 				IReadOnlyDictionary<string, string> pointers = null) {
@@ -86,7 +96,7 @@ internal static class ProcessBlockKeyCheck {
 		/// <summary>Every key the server's contract declares.</summary>
 		internal IReadOnlyCollection<string> Keys => _keys;
 
-		/// <summary>Describe-only, derived keys: ignored by the write path, warned about, never refused.</summary>
+		/// <summary>Describe-only, derived keys: ignored by the write path, never refused; the server names them.</summary>
 		internal IReadOnlySet<string> ReadBack { get; }
 
 		/// <summary>Where a commonly misplaced or misspelled key belongs, keyed by that key.</summary>
@@ -185,7 +195,7 @@ internal static class ProcessBlockKeyCheck {
 		"DescribeUserTaskPerformerInfo", "type contact role showPage", "roleDisplay");
 
 	// One entry per attachment row. A described entry carries its stored row (slot), the levels bound and any
-	// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are warned about.
+	// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are tolerated.
 	// Named on its own because email.attachments is the one LIST of this walk whose wrong shape is refused before
 	// sending (see Walk.RefusesAttachmentsShape).
 	private static readonly KeySet EmailAttachment = new("SendEmailAttachmentDescriptor", "attachment",
@@ -308,6 +318,13 @@ internal static class ProcessBlockKeyCheck {
 				"object recordId linkColumn storage fileObject")
 			.With(RecordId, FileProcessingValueSource));
 
+	// The Call web service block. Describe reports every write member in its write shape ('service' is the name string
+	// on both sides, the raw UId sits in the describe-only 'serviceUId'), so a described block replays unchanged and its
+	// five describe-only members are tolerated, never refused - except a fractional 'timeoutSeconds', which the
+	// server cannot read (RefuseFractionalTimeout).
+	private static readonly KeySet WebServiceBlock = new KeySet("WebServiceDescriptor", "webService", "DescribeWebServiceInfo",
+		"service method timeoutSeconds ignoreErrors", "serviceUId serviceResolved methodResolved issues parameters");
+
 	/// <summary>
 	/// The element's configuration blocks, each linked under its own label into both the create element and the
 	/// <c>setElement</c> update; the drift test catches a block the server gained on either side only.
@@ -315,7 +332,7 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet[] Blocks = [
 		ReadDataBlock, ChangeDataBlock, AddDataBlock, DeleteDataBlock, EmailBlock, TaskPerformer, AccessRightsBlock,
 		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock,
-		FileProcessingBlock
+		FileProcessingBlock, WebServiceBlock
 	];
 
 	private static readonly string BlockKeys = string.Join(" ", Blocks.Select(block => block.Label));
@@ -404,21 +421,17 @@ internal static class ProcessBlockKeyCheck {
 	}
 
 	/// <summary>
-	/// Runs <see cref="Check"/> on a payload about to be sent: throws the refusal, so nothing is posted, and writes
-	/// the read-back warnings to <paramref name="logger"/>.
+	/// Runs <see cref="Check"/> on a payload about to be sent: throws the refusal, so nothing is posted. The ignored
+	/// read-back fields are not written: the server reports them itself.
 	/// </summary>
 	/// <param name="payload">A create descriptor object or a modify operations array.</param>
-	/// <param name="logger">Where the read-back warnings go.</param>
 	/// <exception cref="InvalidOperationException">
 	/// The payload carries a key the server does not read: a current package refuses or ignores it, an older one drops it.
 	/// </exception>
-	internal static void Enforce(JsonNode payload, ILogger logger) {
+	internal static void Enforce(JsonNode payload) {
 		ProcessBlockKeyCheckResult result = Check(payload);
 		if (!string.IsNullOrWhiteSpace(result.Error)) {
 			throw new InvalidOperationException(result.Error);
-		}
-		foreach (string warning in result.Warnings) {
-			logger.WriteWarning(warning);
 		}
 	}
 
@@ -547,6 +560,9 @@ internal static class ProcessBlockKeyCheck {
 			if (child == EmailAttachment && RefusesAttachmentsShape(value, where, prefix + key)) {
 				return;
 			}
+			if (child == WebServiceBlock && value is JsonObject webService) {
+				RefuseFractionalTimeout(webService, where, prefix + key);
+			}
 			if (value is JsonObject nested) {
 				Visit(nested, child, where, $"{prefix}{key}.", placement, depth + 1);
 				return;
@@ -592,6 +608,39 @@ internal static class ProcessBlockKeyCheck {
 				+ $"{entryShape}.");
 			// The object entries are still walked: a key the contract drops is reported in the same refusal.
 			return false;
+		}
+
+		// webService.timeoutSeconds is an Int32 on the server's write contract, while describe reports a timeout
+		// stored in milliseconds as fractional seconds (1500 ms reads back as 1.5) and a whole one as e.g. 7.0, which
+		// the server reads fine - so the VALUE is judged, not the spelling. A fraction or a value outside Int32 is not
+		// dropped: the serializer fails to read the WHOLE request, in a reply that does not name the member. Only a
+		// JSON number is judged here, and one too large for decimal (1e30) counts as beyond Int32; any other shape, and a
+		// whole value above the server's own maximum (2147483 seconds, whose milliseconds still fit), is left to the
+		// server's refusal, which names that bound - the one owner of it.
+		private void RefuseFractionalTimeout(JsonObject webService, string where, string path) {
+			JsonNode? timeout = null;
+			try {
+				if (!webService.TryGetPropertyValue("timeoutSeconds", out timeout)) {
+					return;
+				}
+			} catch (ArgumentException) {
+				return; // a repeated key, which the walk refuses on its own
+			}
+			if (timeout is not JsonValue number || number.GetValueKind() != JsonValueKind.Number) {
+				return;
+			}
+			string text = number.ToJsonString();
+			bool parsed = decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal value);
+			if (parsed && value == decimal.Truncate(value) && value >= int.MinValue && value <= int.MaxValue) {
+				return;
+			}
+			string problem = !parsed || value == decimal.Truncate(value)
+				? "beyond what the server can read"
+				: "a fraction, and the server takes whole seconds";
+			RefuseShape($"{where}: '{path}.timeoutSeconds' is {text}, {problem}, so the server fails the whole request. "
+				+ "On setElement leave timeoutSeconds out to keep the stored timeout (describe reports a timeout stored in "
+				+ "milliseconds as a fraction); otherwise send whole seconds (0 clears the timeout; the server refuses more "
+				+ "than 2147483).");
 		}
 
 		private static string Describe(KeySet set, int depth) =>
@@ -649,17 +698,17 @@ internal static class ProcessBlockKeyCheck {
 				string shapes = string.Join(" ", _shapeRefusals.Take(MaxReportedKeys)) + moreShapes;
 				error = error is null ? "Nothing was sent: " + shapes : error + " Also: " + shapes;
 			}
-			IReadOnlyList<string> warnings = [];
+			IReadOnlyList<string> readBacks = [];
 			if (_readBacks.Count > 0) {
 				string moreReadBacks = _readBacks.Count > MaxReportedKeys
 					? $" (and {_readBacks.Count - MaxReportedKeys} more)"
 					: string.Empty;
-				warnings = [
+				readBacks = [
 					"Ignored describe-business-process read-back fields (derived on read, never written): "
 					+ string.Join("; ", _readBacks.Take(MaxReportedKeys)) + moreReadBacks + "."
 				];
 			}
-			return new ProcessBlockKeyCheckResult(error, warnings);
+			return new ProcessBlockKeyCheckResult(error, readBacks);
 		}
 
 	}

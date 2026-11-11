@@ -29,6 +29,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	private IObjectRightsReader _reader;
 	private IObjectRightsWriter _writer;
 	private IGranteeLookup _granteeLookup;
+	private IObjectRightsPackageBinder _binder;
 	private IInteractiveConsole _console;
 	private ILogger _logger;
 	private ObjectRightsState _saved;
@@ -45,6 +46,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_reader.ClearReceivedCalls();
 		_writer.ClearReceivedCalls();
 		_granteeLookup.ClearReceivedCalls();
+		_binder.ClearReceivedCalls();
 		_console.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
@@ -70,6 +72,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		containerBuilder.AddTransient(_ => _reader);
 		containerBuilder.AddTransient(_ => _writer);
 		containerBuilder.AddTransient(_ => _granteeLookup);
+		_binder = ObjectRightsBinderStub.Binding();
+		containerBuilder.AddTransient(_ => _binder);
 		containerBuilder.AddTransient(_ => _console);
 		containerBuilder.AddTransient(_ => _logger);
 	}
@@ -1156,5 +1160,185 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		exitCode.Should().Be(1, because: "a save that started now could outlast the call");
 		ErrorContains("The save was not sent — nothing was changed", because: "the operator learns that nothing landed");
 		NothingSaved();
+	}
+
+	// ---- the package binding (ENG-105290) ----
+
+	[Test]
+	[Description("After a confirmed grant the stored rows are bound to the package the binder resolved, and the result names the package and the binding.")]
+	public void Execute_ShouldBindRows_AfterSuccessfulSave() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => o.Package = "UsrApp"));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the rows were saved, verified and bound");
+		_binder.Received(1).ResolveTarget("UsrFoo", Arg.Any<Guid>(), "UsrApp", Arg.Any<CreatioRequestOptions>());
+		_binder.Received(1).Bind(Arg.Is<ObjectRightsBindingTarget>(t => t.PackageName == "UsrApp"), "UsrFoo",
+			Arg.Any<Guid>());
+		_infos.Should().Contain(line => line.Contains("Bound to package 'UsrApp'")
+			&& line.Contains("SysEntitySchemaOperationRight_UsrFoo"), because: "the result names the binding it wrote");
+		_infos.Should().Contain(line => line.Contains("travels with the binding"),
+			because: "the result says whether the switch is in the binding's package");
+	}
+
+	[Test]
+	[Description("A refused binding target (locked package) fails the call before any write.")]
+	public void Execute_ShouldWriteNothing_WhenBindingTargetRefused() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+		_binder.ResolveTarget(default, default, default, default).ReturnsForAnyArgs(
+			ObjectRightsBindingTarget.Refuse("Package 'CrtBase' is locked. Pass package='Custom'. Nothing was changed."));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => o.Package = "CrtBase"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the rows could not be bound");
+		NothingSaved();
+		_binder.DidNotReceiveWithAnyArgs().Bind(default, default, default);
+		ErrorContains("package='Custom'", because: "the error names a package the caller can use");
+	}
+
+	[Test]
+	[Description("A preview names the package and the binding it would write, and writes neither rows nor binding.")]
+	public void Execute_ShouldNameBinding_WhenPreview() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.Confirm = false; o.Preview = true; }));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a preview succeeds without writing");
+		NothingSaved();
+		_binder.DidNotReceiveWithAnyArgs().Bind(default, default, default);
+		_infos.Should().Contain(line => line.Contains("would be bound to package 'UsrApp'")
+			&& line.Contains("SysEntitySchemaOperationRight_UsrFoo"), because: "the preview names the binding target");
+	}
+
+	[Test]
+	[Description("A call that changes no row still brings the binding in step, so re-running repairs a missed binding.")]
+	public void Execute_ShouldBind_WhenNoRowChanges() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(0, because: "nothing to change and the binding was written");
+		NothingSaved();
+		_binder.ReceivedWithAnyArgs(1).Bind(default, default, default);
+	}
+
+	[Test]
+	[Description("A failed binding after a saved change fails the call, says the rights are in place and names the re-run.")]
+	public void Execute_ShouldFail_WhenBindingFails() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+		_binder.Bind(default, default, default).ReturnsForAnyArgs(
+			new ObjectRightsBindingResult(ObjectRightsBindingStatus.Failed, Error: "SaveSchema failed"));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the rows are not bound to the package");
+		_saved.Should().NotBeNull(because: "the rows themselves were saved first");
+		ErrorContains("NOT bound to package 'UsrApp'", because: "the error says which part did not land");
+		ErrorContains("Run the same call again", because: "the error names how to complete the binding");
+	}
+
+	[Test]
+	[Description("Rows already bound elsewhere are reported as a warning, with no second binding and exit 0.")]
+	public void Execute_ShouldWarn_WhenRowsBoundElsewhere() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+		ObjectRightsBindingTarget target = ObjectRightsBinderStub.Target() with {
+			Existing = new ExistingObjectRightsBinding("ManualRights", "Custom")
+		};
+		_binder.ResolveTarget(default, default, default, default).ReturnsForAnyArgs(target);
+		_binder.Bind(default, default, default).ReturnsForAnyArgs(
+			new ObjectRightsBindingResult(ObjectRightsBindingStatus.LeftToExisting));
+
+		// Act
+		int exitCode = _command.Execute(Options("read"));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the rows are saved and already shipped by the existing binding");
+		_warnings.Should().Contain(line => line.Contains("'ManualRights' of package 'Custom'")
+			&& line.Contains("no second binding"), because: "the existing binding is named");
+	}
+
+	[Test]
+	[Description("A role other than All employees is named as one that must exist with the same id on another site.")]
+	public void Execute_ShouldNameLocalRoles_AfterBinding() {
+		// Arrange
+		Guid technicians = Guid.NewGuid();
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+		_granteeLookup.ResolveGranteeName(technicians, Arg.Any<CreatioRequestOptions>()).Returns("Technicians");
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => o.Grantee = technicians.ToString()));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the grant was saved and bound");
+		_infos.Should().Contain(line => line.Contains("exist with the same id") && line.Contains(technicians.ToString()),
+			because: "a role created on this site does not exist on another one unless it is shipped");
+		_infos.Should().NotContain(line => line.Contains("exist with the same id") && line.Contains(AllEmployees.ToString()),
+			because: "All employees has the same id on every site");
+	}
+
+	[Test]
+	[Description("Operation permissions OFF: the rows are bound, and the result says they decide nothing until turned on.")]
+	public void Execute_ShouldSayRowsDecideNothing_WhenSwitchOff() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R")));
+
+		// Act
+		int exitCode = _command.Execute(SwitchOptions(on: false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the switch was turned off and the rows were bound");
+		_binder.ReceivedWithAnyArgs(1).Bind(default, default, default);
+		_infos.Should().Contain(line => line.Contains("decide nothing until they are turned on"),
+			because: "bound rows of an object with the switch off decide nothing");
+	}
+
+	[Test]
+	[Description("A preview on an object whose package cannot receive the binding shows the plan and the refusal, and succeeds: a dry run writes nothing, so it has nothing to refuse.")]
+	public void Execute_ShouldShowRefusalAndSucceed_WhenPreviewTargetRefused() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+		_binder.ResolveTarget(default, default, default, default).ReturnsForAnyArgs(
+			ObjectRightsBindingTarget.Refuse("'UsrFoo' is in package 'CrtBase', which is locked. Nothing was changed."));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => { o.Confirm = false; o.Preview = true; }));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a preview writes nothing and still shows the plan");
+		NothingSaved();
+		_infos.Should().Contain(line => line.Contains("could not be bound") && line.Contains("CrtBase"),
+			because: "the preview says the real call would be refused and why");
+	}
+
+	[Test]
+	[Description("A call that changes no row and is not confirmed writes no binding; it names the binding a confirmed run would write.")]
+	public void Execute_ShouldNotBind_WhenNoChangeAndNotConfirmed() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R")));
+
+		// Act
+		int exitCode = _command.Execute(Options("read", o => o.Confirm = false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "nothing changes and nothing is written");
+		_binder.DidNotReceiveWithAnyArgs().Bind(default, default, default);
+		_infos.Should().Contain(line => line.Contains("--confirm") && line.Contains("SysEntitySchemaOperationRight_UsrFoo"),
+			because: "the result names the binding and how to write it");
 	}
 }

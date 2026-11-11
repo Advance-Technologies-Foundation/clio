@@ -101,7 +101,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Measured 48990 bytes with them registered (350 over 48640); next 256-byte step is 49152 (192).
 	// Re-pinned for ENG-104665: upload-file is one more long-tail tool. Measured 49214 bytes with it registered
 	// (62 over 49152); next 256-byte step is 49408 (193).
-	private const int MaxCompactIndexSerializedBytes = 193 * 256;
+	// Re-pinned for ENG-105681: get-page-modal-size and set-page-modal-size are two more long-tail tools. Measured
+	// 49486 bytes with them registered (78 over 49408), after shortening their first sentences so the line index
+	// below still fits; next 256-byte step is 49664 (194).
+	private const int MaxCompactIndexSerializedBytes = 194 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -251,7 +254,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "because on create the UIds do not exist yet" in the formula paragraph (the flows[].condition clause it points
 	// to gives the same reason) and "accessRights by name=process-access-rights;" in the closing guide list (the
 	// accessRights? clause already routes there). Modify paid with headroom, also for naming ObjectFileProcessingUserTask
-	// among the tasks a generic userTask is refused for; describe gained "(clio warns and ignores them if sent back)".
+	// among the tasks a generic userTask is refused for; describe gained "(sent back, they are ignored with a warning)".
 	// Re-measured by lowering the ceiling: create-business-process 35051, modify-business-process 35045,
 	// describe-business-process 34647 - 21, 27 and 425 bytes of headroom (create leaves its never-emitted processFile
 	// alias out). The next sentence on either write contract needs a swap.
@@ -326,6 +329,44 @@ public sealed class ToolContractPayloadBudgetTests {
 	// recipient Lookup, which is how a designer-retyped recipient is repaired; +46 bytes), paid by turning eleven
 	// em dashes of modify's email, approval and performer clauses into ':', ';' or ',' (each escapes to six bytes).
 	// Re-measured by lowering the ceiling: modify 35051, create 35056, describe 35029 - 21, 16 and 43 bytes of headroom.
+	//
+	// ENG-92710 (2026-11-04, the Call web service element) named the webService type and the webService block in
+	// create's element list, the block in modify's addElement and setElement lists with WebServiceUserTask among the
+	// generic-route refusals, describe's read-back clause, and the element in validate-process-graph's buildable list.
+	// Paid by SWAP, per owner decision Q15 (no ceiling raise): create dropped provenance - ", and .44 is simply the
+	// first archive carrying that AND the ENG-96325 lookup-constant contract" and "(Shared with
+	// modify-business-process.)"; modify dropped the specifics of how a quoted expression differs from what was
+	// written (a parameter reference by NAME, an 'm' suffix, a ((decimal)...) wrapper), which process-formulas owns
+	// verbatim; describe dropped the parenthesis about an older CrtProcessBuilder reporting ignoreEmailErrors: true on
+	// an unconfigured Approval, normally dead since clio refuses a package older than the one it ships. Re-measured by lowering
+	// the ceiling: before the change create 35033, modify 35069, describe 35029; as committed create 34999, modify
+	// 34979, describe 35006 - 73, 93 and 66 bytes of headroom. Each contract's pointer to process-web-service waits for
+	// the knowledge generation that publishes it (curated-knowledge-names.json); with the three pointers in place,
+	// measured on the branch, create 35053, modify 35026, describe 35060 - 19, 46 and 12 bytes of headroom.
+	// After merging master (ENG-105549 above) and raising the floor to 1.6.6.149 (later 1.6.6.150, the same length) - each of create's and modify's
+	// 'this clio requires' clauses now starts its list with 'webService, ' (+12 bytes) - re-measured by lowering the
+	// ceiling: create 35034, modify 34973, describe 35006 - 38, 99 and 66 bytes of headroom. With the three pointers
+	// applied on top, create 35088, modify 35020, describe 35060: create's pointer no longer fits by 16 bytes, so it has
+	// to be paid by a trim when it lands. The pointers landed with clio-knowledge 1.15.189, which publishes
+	// process-web-service; create paid by dropping 'usings[], methods' from its floor clause (they shipped with
+	// scriptTask, which the clause still names; -19 bytes). Re-measured by lowering the ceiling: create 35069, modify
+	// 35020, describe 35060 - 3, 52 and 12 bytes of headroom.
+	//
+	// ENG-103990 (2026-11-06, mergeFrom; the figures up to the rebase below predate ENG-92710) re-measured first by
+	// lowering the ceiling: create 35067, modify 35063, describe
+	// 35056 - 5, 9 and 16 bytes of headroom after the first cut named mergeFrom in both write contracts. Review fixes then
+	// stated the decision on both (signal starts on one object use mergeFrom, other branches a formulaTask each) and the
+	// direction hint (omit direction: a merged parameter is always Internal), and paid by SWAP, no ceiling raise: create
+	// dropped "Below .41 a refused formula still fails, with the package's own wording." and modify "(from CrtProcessBuilder
+	// 1.3.1.1)" - provenance for servers the 1.6.6.153 floor refuses up front - and modify turned ten em dashes of its
+	// parameter, filter and retarget clauses into ' - ' (five bytes each). Re-measured by lowering the ceiling: create
+	// 35062, describe 35056, modify 35054 - 10, 16 and 18 bytes of headroom. Rebased onto ENG-92710 (2026-11-10), the two
+	// features together measured create 35075, modify 35037 and describe 35087, so create was 3 bytes and describe 15
+	// bytes over. Paid by SWAP again, no ceiling raise: two em dashes of create's parameter clauses and four of
+	// describe's became ' - ' (five bytes each). Re-measured by lowering the ceiling: create 35065, modify 35037,
+	// describe 35067 - 7, 35 and 5 bytes of headroom. Rebased again onto ENG-92710's 1.6.6.152 follow-up (2026-11-11)
+	// and moved to the 1.6.6.153 floor (same length): re-measured by lowering the ceiling, create 35065, modify 35037,
+	// describe 35069 - 7, 35 and 3 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -350,6 +391,14 @@ public sealed class ToolContractPayloadBudgetTests {
 	// where it was), the bundle is 18815 bytes on the wire - 185 bytes under this guard. Re-measured on 2026-10-29
 	// (ENG-95985) by lowering this guard: 18832 bytes before the Send email attachments text and 18832 after it - the
 	// additions carry no safety marker, so no short form keeps them - 168 bytes under this guard.
+	//
+	// ENG-92710 (2026-11-04) re-measured by lowering this guard: 18832 bytes with its description text, which carries no
+	// safety marker; "webService" in the create call shape's block list landed with the rebundle that declares
+	// the block: re-measured then, 18845 bytes - 155 under this guard.
+	//
+	// ENG-103990 (2026-11-10, rebased onto ENG-92710) re-measured by lowering this guard: "mergeFrom?" in the create
+	// call shape's parameter shape, which is never cut, brings the bundle to 18855 bytes - 145 under this guard. Its
+	// description text carries no safety marker, so no short form keeps it. Unchanged on the 1.6.6.152 base (2026-11-11).
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

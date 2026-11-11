@@ -448,6 +448,26 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a process parameter's mergeFrom (ENG-103990). DescribedParameter has no extension-data bag, so without the declared property the list was dropped here and describe -> modify lost the merge.")]
+	public void Describe_ShouldReadProcessParameterMergeFrom_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"ContactId\",\"uid\":\"p1\",\"type\":\"Guid\",\"direction\":\"Internal\","
+			+ "\"mergeFrom\":[\"OnAdded.RecordId\",\"OnChanged.RecordId\"]}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Parameters[0].MergeFrom.Should().Equal(new[] { "OnAdded.RecordId", "OnChanged.RecordId" },
+			because: "DescribedParameter has no extension-data bag, so mergeFrom must be a typed property that keeps "
+				+ "the server's order, or describe -> modify loses the merge");
+	}
+
+	[Test]
 	[Description("Deserializes a collection parameter's provenance tag and its per-item shape (itemProperties, each a parameter with name/type/tag) into the DescribedParameter DTO - the design-time contract a consumer binds against - so the shape the server reports is not dropped by the client the way an untyped field would be (ENG-96230).")]
 	public void Describe_ShouldReadParameterTagAndItemProperties_WhenServerReportsThem() {
 		// Arrange — a process-level collection mirrored from a read element's shaped output, plus a scalar beside it
@@ -960,6 +980,125 @@ public sealed class ServerProcessDescriberTests {
 		// Assert
 		result.Value.Elements[0].FileProcessing.Should().BeNull(because: "an absent block must stay null");
 		JsonNode.Parse(reserialized)!["elements"]![0]!.AsObject().ContainsKey("fileProcessing").Should().BeFalse(
+			because: "a null block serializes away instead of appearing on every element of every other kind");
+	}
+
+	// A Call web service element's block as the server describes it: a fractional timeout, a scalar input, an
+	// unbound ObjectList with its item, a nested response collection and the four result parameters, with an
+	// undeclared key at every nesting level.
+	private const string WebServiceBlock =
+		"{\"service\":\"UsrWscEchoService\",\"serviceUId\":\"5d2c1f1e-0000-4000-8000-000000000001\","
+		+ "\"method\":\"UsrWscEcho\",\"timeoutSeconds\":1.5,\"ignoreErrors\":true,"
+		+ "\"serviceResolved\":true,\"methodResolved\":true,"
+		+ "\"parameters\":["
+		+ "{\"name\":\"title_In\",\"tag\":\"title\",\"direction\":\"in\",\"type\":\"MaxSizeText\",\"required\":true,"
+		+ "\"bound\":true,\"futureParameterFact\":\"p\"},"
+		+ "{\"name\":\"tags_In\",\"tag\":\"tags\",\"direction\":\"in\",\"type\":\"ObjectList\",\"bound\":false,"
+		+ "\"items\":[{\"name\":\"tagsItemValue_In\",\"tag\":\"tagsItemValue\",\"direction\":\"in\","
+		+ "\"type\":\"MaxSizeText\",\"required\":true,\"bound\":false,\"futureItemFact\":[2]}]},"
+		+ "{\"name\":\"rows_Out\",\"tag\":\"rows\",\"direction\":\"out\",\"type\":\"CompositeObjectList\","
+		+ "\"items\":[{\"name\":\"text_Out\",\"tag\":\"text\",\"direction\":\"out\",\"type\":\"MaxSizeText\"}]},"
+		+ "{\"name\":\"Success\",\"direction\":\"out\",\"type\":\"Boolean\",\"result\":true},"
+		+ "{\"name\":\"Response\",\"direction\":\"out\",\"type\":\"Text\",\"result\":true},"
+		+ "{\"name\":\"StatusCode\",\"direction\":\"out\",\"type\":\"Integer\",\"result\":true},"
+		+ "{\"name\":\"RequestBody\",\"direction\":\"in\",\"type\":\"Text\",\"bound\":false,\"result\":true}],"
+		+ "\"issues\":[\"'tags_In.tagsItemValue_In' is required and has no source\"],"
+		+ "\"futureWebServiceFact\":{\"nested\":\"kept\"}}";
+
+	private static IApplicationClient ClientReportingWebService(string block) =>
+		ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000004\",\"name\":\"CallEcho\","
+			+ "\"type\":\"ProcessSchemaWebService\",\"buildType\":\"webservice\","
+			+ $"\"webService\":{block},\"parameters\":[]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+
+	[Test]
+	[Description("Deserializes the webService member of a Call web service element by name (Q14): the service name and its stored UId, the method, a fractional timeout, the ignore-errors flag, both resolved flags, the issues and the whole stored parameter tree - tags, directions, types, the required, bound and result flags, nested items and unbound inputs - so the tree reaches the caller instead of falling into the element's overflow bag.")]
+	public void Describe_ShouldReadTheWebServiceMember_WhenServerReportsIt() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingWebService(WebServiceBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedElement element = result.Value.Elements[0];
+		DescribedWebService block = element.WebService;
+		block.Should().NotBeNull(because: "a null here is the silent-drop signature of an undeclared block");
+		element.AdditionalData.Should().BeNull(because: "webService is a declared member, not element-level overflow");
+		block.Service.Should().Be("UsrWscEchoService",
+			because: "the service reads back as the name string the write side takes");
+		block.ServiceUId.Should().Be("5d2c1f1e-0000-4000-8000-000000000001",
+			because: "the stored manager-item UId reads back in its own describe-only member");
+		block.Method.Should().Be("UsrWscEcho", because: "the stored method name reads back");
+		block.TimeoutSeconds.Should().Be(1.5m, because: "a timeout that is not whole seconds reads back as a fraction (Q8)");
+		block.IgnoreErrors.Should().BeTrue(because: "the stored ignore-errors flag reads back");
+		block.ServiceResolved.Should().BeTrue(because: "the describe-only service flag reads back");
+		block.MethodResolved.Should().BeTrue(because: "the describe-only method flag reads back");
+		block.Parameters.Select(parameter => parameter.Name).Should().Equal(
+			["title_In", "tags_In", "rows_Out", "Success", "Response", "StatusCode", "RequestBody"],
+			because: "every stored parameter is reported in stored order, the result parameters last");
+		DescribedWebServiceParameter title = block.Parameters[0];
+		title.Tag.Should().Be("title", because: "the tag names the service parameter");
+		title.Direction.Should().Be("in", because: "the direction reads back");
+		title.Type.Should().Be("MaxSizeText", because: "the stored data value type reads back");
+		title.Required.Should().BeTrue(because: "a required input is flagged");
+		title.Bound.Should().BeTrue(because: "a bound input is flagged");
+		title.Result.Should().BeNull(because: "a tagged parameter is not a result parameter");
+		DescribedWebServiceParameter tagsItem = block.Parameters[1].Items.Should().ContainSingle(
+			because: "an ObjectList carries its one item value child").Subject;
+		tagsItem.Name.Should().Be("tagsItemValue_In", because: "the nested item is addressed by its own name");
+		tagsItem.Bound.Should().BeFalse(because: "an unbound input is reported, unlike in the generic parameters");
+		block.Parameters[2].Items[0].Name.Should().Be("text_Out", because: "a response collection carries its items");
+		block.Parameters[3].Result.Should().BeTrue(because: "Success is a result parameter");
+		block.Parameters[6].Bound.Should().BeFalse(because: "an unbound RequestBody is reported too");
+		block.Issues.Should().ContainSingle(because: "the describe-only issues read back")
+			.Which.Should().Contain("tags_In.tagsItemValue_In", because: "the issue names the stored parameter path");
+	}
+
+	[Test]
+	[Description("Keeps every member the server reports inside the webService block but this model does not declare - on the block, a parameter and a nested item - in that type's own overflow bag, and forwards the block verbatim under the describe command's own options, so a newer CrtProcessBuilder field reaches the caller and no JsonPropertyName drifts from the server's DataMember unnoticed.")]
+	public void Describe_ShouldKeepUnknownWebServiceMembers_InTheBag() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingWebService(WebServiceBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		JsonNode forwarded = JsonNode.Parse(JsonSerializer.Serialize(result.Value,
+			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["webService"];
+
+		// Assert
+		DescribedWebService block = result.Value.Elements[0].WebService;
+		block.AdditionalData.Should().ContainKey("futureWebServiceFact",
+			because: "an undeclared block member lands in the block's overflow bag");
+		block.Parameters[0].AdditionalData.Should().ContainKey("futureParameterFact",
+			because: "an undeclared parameter member lands in the parameter's overflow bag");
+		block.Parameters[1].Items[0].AdditionalData.Should().ContainKey("futureItemFact",
+			because: "a nested item has the same overflow bag as a top-level parameter");
+		JsonNode.DeepEquals(forwarded, JsonNode.Parse(WebServiceBlock)).Should().BeTrue(
+			because: $"the block must reach the caller exactly as the server sent it, but came out as {forwarded?.ToJsonString()}");
+	}
+
+	[Test]
+	[Description("Leaves the webService member unset (null) on an element of another kind or from a server that predates the Call web service element, so it serializes away rather than surfacing as an empty block.")]
+	public void Describe_ShouldLeaveTheWebServiceMemberNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\","
+			+ "\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\",\"parameters\":[]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Elements[0].WebService.Should().BeNull(because: "an absent block must stay null");
+		JsonNode.Parse(reserialized)!["elements"]![0]!.AsObject().ContainsKey("webService").Should().BeFalse(
 			because: "a null block serializes away instead of appearing on every element of every other kind");
 	}
 

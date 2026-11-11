@@ -832,14 +832,29 @@ public sealed class DescribedElement {
 	/// the identity checks (<c>source</c>, <c>storage</c>, <c>fileObject</c>, <c>attachments.linkColumn</c>,
 	/// <c>report.type</c>, <c>report.object</c>) are accepted back when equal. The describe-only members -
 	/// <c>actionStored</c>, <c>outputs</c>, <c>issues</c>, <c>bindingLevels</c>, <c>report.caption</c>,
-	/// <c>report.convertToPdf</c> and every value source's <c>display</c> - are removed before resubmitting; clio
-	/// warns and ignores them if sent back. A member the server could not read is ABSENT, not a value to resubmit: a
+	/// <c>report.convertToPdf</c> and every value source's <c>display</c> - are removed before resubmitting; sent
+	/// back, they are ignored with a warning (the server's). A member the server could not read is ABSENT, not a value to resubmit: a
 	/// bound or invalid action reports neither <c>action</c> nor <c>saveTo</c> (an entry of <c>issues</c> says why).
 	/// The record scope is reported as <c>attachments.recordId</c> or <c>report.recordId</c> and NOT repeated in
 	/// <see cref="Filter"/>. See <see cref="DescribedFileProcessing"/>.</para>
 	/// </summary>
 	[JsonPropertyName("fileProcessing")]
 	public DescribedFileProcessing FileProcessing { get; set; }
+
+	/// <summary>
+	/// For a Call web service element (<c>ProcessSchemaWebService</c>, <c>buildType</c> <c>webservice</c>): its
+	/// <c>webService</c> block read from the element, and the element's whole stored parameter tree. <c>null</c> for
+	/// every other element and on a server that predates the element.
+	/// <para>Every write member keeps its write shape, so the block is sent back unchanged; the describe-only members -
+	/// <c>serviceUId</c>, <c>serviceResolved</c>, <c>methodResolved</c>, <c>parameters</c> and <c>issues</c> - draw a
+	/// warning there. Exceptions: a fractional <c>timeoutSeconds</c> (a timeout stored in milliseconds) is refused before
+	/// sending - leave it out to keep the stored value, or send whole seconds; a block with no <c>service</c> (the stored
+	/// service no longer resolves, so it is omitted) needs a registered service named again; and a block of
+	/// <c>service</c> alone is refused by the server as changing nothing.
+	/// See <see cref="DescribedWebService"/>.</para>
+	/// </summary>
+	[JsonPropertyName("webService")]
+	public DescribedWebService WebService { get; set; }
 
 	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
@@ -2195,6 +2210,17 @@ public sealed class DescribedParameter {
 	public string Tag { get; set; }
 
 	/// <summary>
+	/// For a PROCESS parameter that takes the record Id of whichever of several signal starts fired: the starts, as
+	/// <c>"&lt;StartName&gt;.RecordId"</c> in the order they appear in the process. <see cref="Source"/> and
+	/// <see cref="Value"/> are then null, so the list feeds straight back into <c>addParameter</c> /
+	/// <c>setParameter</c>. Declared here because this type carries no extension-data bag - without the property the
+	/// field is dropped on the way to the caller. Omitted when the server (a <c>CrtProcessBuilder</c> older than
+	/// 1.6.6.153) does not report it; such a server describes the merge as its raw formula.
+	/// </summary>
+	[JsonPropertyName("mergeFrom")]
+	public List<string> MergeFrom { get; set; }
+
+	/// <summary>
 	/// The per-item shape of a collection parameter (<c>CompositeObjectList</c>): one entry per member the
 	/// collection carries, each a parameter in its own right. This is the DESIGN-TIME contract a consumer binds
 	/// against — a collection without it is an opaque list. Null for a scalar and for a bare, shapeless
@@ -2616,6 +2642,118 @@ public sealed class DescribedFileProcessingOutput {
 	public string Item { get; set; }
 
 	/// <summary>Anything the server reports about an output that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// A Call web service element read back in the <c>webService</c> block vocabulary, with the element's stored parameter
+/// tree. Mirrors the server's <c>DescribeWebServiceInfo</c> field for field. Read from the element, never re-derived
+/// from the service, and never carrying a service parameter default.
+/// </summary>
+public sealed class DescribedWebService {
+
+	/// <summary>
+	/// The called service's code, canonically spelled - the string the write side's <c>service</c> takes. <c>null</c>
+	/// when the stored UId resolves to no service (<see cref="ServiceResolved"/> is then <c>false</c>).
+	/// </summary>
+	[JsonPropertyName("service")]
+	public string Service { get; set; }
+
+	/// <summary>Describe-only: the service's manager-item UId as stored on the element, also when it no longer resolves.</summary>
+	[JsonPropertyName("serviceUId")]
+	public string ServiceUId { get; set; }
+
+	/// <summary>The stored method name, as the write side's <c>method</c> takes it.</summary>
+	[JsonPropertyName("method")]
+	public string Method { get; set; }
+
+	/// <summary>
+	/// The stored timeout in seconds - the stored milliseconds divided by 1000, a fraction when they are not whole
+	/// seconds. <c>null</c> when no timeout is stored, so the method's own timeout applies.
+	/// </summary>
+	[JsonPropertyName("timeoutSeconds")]
+	public decimal? TimeoutSeconds { get; set; }
+
+	/// <summary>The stored ignore-errors flag; <c>null</c> when it is off.</summary>
+	[JsonPropertyName("ignoreErrors")]
+	public bool? IgnoreErrors { get; set; }
+
+	/// <summary>
+	/// Describe-only: whether the stored service UId resolves to a registered service - also when that service cannot be
+	/// read, which an issue then says.
+	/// </summary>
+	[JsonPropertyName("serviceResolved")]
+	public bool? ServiceResolved { get; set; }
+
+	/// <summary>
+	/// Describe-only: whether the stored method name is a method of that service, matched as run time matches it;
+	/// <c>false</c> also when the service does not resolve or cannot be read, so with a could-not-be-read issue it
+	/// means unchecked, not failing.
+	/// </summary>
+	[JsonPropertyName("methodResolved")]
+	public bool? MethodResolved { get; set; }
+
+	/// <summary>
+	/// Describe-only: every parameter of the element as stored, unbound inputs included, in stored order - the request
+	/// and response parameters, then <c>Success</c>, <c>Response</c>, <c>StatusCode</c> and <c>RequestBody</c>. The
+	/// names are what a mapping addresses. A bound input's value is reported by the element's generic
+	/// <c>parameters</c>, not here.
+	/// </summary>
+	[JsonPropertyName("parameters")]
+	public List<DescribedWebServiceParameter> Parameters { get; set; }
+
+	/// <summary>Describe-only: hazards of the stored shape at run time; an empty list when there are none.</summary>
+	[JsonPropertyName("issues")]
+	public List<string> Issues { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare, so a field a later
+	/// CrtProcessBuilder adds reaches the caller instead of being dropped on re-serialization.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// One stored parameter of a described Call web service element, nested items included. Mirrors
+/// <c>DescribeWebServiceParameter</c>; carries no value and no default.
+/// </summary>
+public sealed class DescribedWebServiceParameter {
+
+	/// <summary>The parameter name a mapping addresses (for example <c>title_In</c>, or <c>Success</c>).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>The service parameter the element parameter stands for; <c>null</c> for the four result parameters.</summary>
+	[JsonPropertyName("tag")]
+	public string Tag { get; set; }
+
+	/// <summary><c>in</c>, <c>out</c> or <c>variable</c>.</summary>
+	[JsonPropertyName("direction")]
+	public string Direction { get; set; }
+
+	/// <summary>The stored data value type name (for example <c>MaxSizeText</c>, <c>CompositeObjectList</c>).</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary><c>true</c> for a required input; absent otherwise.</summary>
+	[JsonPropertyName("required")]
+	public bool? Required { get; set; }
+
+	/// <summary>For an input: whether it, or one of its nested items, has a source; absent for an output.</summary>
+	[JsonPropertyName("bound")]
+	public bool? Bound { get; set; }
+
+	/// <summary><c>true</c> for <c>Success</c>, <c>Response</c>, <c>StatusCode</c> and <c>RequestBody</c>; absent otherwise.</summary>
+	[JsonPropertyName("result")]
+	public bool? Result { get; set; }
+
+	/// <summary>The nested items of a collection parameter, in stored order; <c>null</c> for a scalar.</summary>
+	[JsonPropertyName("items")]
+	public List<DescribedWebServiceParameter> Items { get; set; }
+
+	/// <summary>Anything the server reports about a parameter that this model does not declare.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }

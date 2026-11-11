@@ -28,7 +28,8 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.140 or later, one framework at a
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.153 or later (clio's create and
+/// modify floor; the fixture's own gate is 1.6.6.140), one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
 /// contract drops in silence when they are misspelled, each entry becomes a designer attachment row the platform's
@@ -53,8 +54,8 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	/// <summary>
 	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.140,
-	/// which is also the create and modify floor. 1.6.6.127 is the first that reads <c>email.attachments</c> and
-	/// 1.6.6.128 the first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.140 is the first
+	/// the create and modify floor when it was set (that floor is now 1.6.6.153). 1.6.6.127 is the first that reads
+	/// <c>email.attachments</c> and 1.6.6.128 the first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.140 is the first
 	/// released archive that reports a source running after the email, names the route of the same files through a
 	/// process parameter, expands a name in a performer contact, and stores a record id mapped onto a recipient that
 	/// references an object as the <c>[#Lookup...#]</c> formula of that object - the newest behaviour a case here
@@ -435,7 +436,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-06: describe, then send the described entries back VERBATIM in a setElement - read-back members included, which clio warns about and does not refuse - and the Send email element's stored node is byte-identical before and after, and so is every resource row except the template parameter captions of the inactive cultures, which the create writes in every culture and the platform's first re-save of the process drops; none is added.")]
+	[Description("TC-I-06: describe, then send the described entries back VERBATIM in a setElement - read-back members included, which the server names in its one warning and nobody refuses - and the Send email element's stored node is byte-identical before and after, and so is every resource row except the template parameter captions of the inactive cultures, which the create writes in every culture and the platform's first re-save of the process drops; none is added.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process changes no stored byte when the described list is sent back")]
 	public async Task ModifyBusinessProcess_Should_ChangeNoStoredByte_WhenTheDescribedListIsSentBack() {
@@ -461,8 +462,10 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 			// Assert
 			ShouldHaveLanded(echoed, "a described list fed back is a valid list");
-			WarningText(echoed).Should().Contain("read-back fields",
-				because: "clio names the describe-only members it ignored instead of refusing them");
+			WarningText(echoed).Should().Contain("Read-only fields copied from describe were ignored",
+				because: "the server names the describe-only members it ignored instead of refusing them");
+			WarningText(echoed).Should().NotContain("Ignored describe-business-process read-back fields",
+				because: "the server owns that warning, so clio does not repeat it about the same members");
 			WarningText(echoed).Should().NotContain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
 				because: "every described entry fed back matched its own row, so none is missing from the read-back");
 			OutputText(echoed).Should().NotContain(RemovalNotice,

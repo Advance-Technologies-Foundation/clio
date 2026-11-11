@@ -34,9 +34,11 @@ public static class DescribeProcessPrompt {
 		   configuration block for a configured element - `email`, `readData`, `changeData`, `addData`,
 		   `deleteData`, `openEditPage`),
 		   `flows` (name, source, target, kind, `label`, `geometry`, and on a branch its `condition` plus
-		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` — not raw
+		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` (a merged one
+		   reports `mergeFrom` instead of its formula, and replays as is) — not raw
 		   metadata. A graph whose reply would exceed 18000 bytes comes back as `mode: summary` (elements, flows as
-		   `from -> to`, start signals, parameters, version, checksum) unless you pass `mode: full`; ask
+		   `from -> to`, start signals, parameters - a merged one with its `mergeFrom` - version, checksum) unless you
+		   pass `mode: full`; ask
 		   `element: <name>` for one element in full, which is usually what a narration step needs.
 		   Each element also carries its diagram placement as `position` (the shape's TOP-LEFT corner) and
 		   `size`; each flow carries `geometry` - `start`, `points[]`, `end`, `exitSide`, `entrySide` - which
@@ -57,9 +59,25 @@ public static class DescribeProcessPrompt {
 		   are named; `files` for Process parameter - which files it copies), plus `action` and `saveTo`. Narrate it
 		   in those terms. Its describe-only members (`actionStored`, `outputs`, `issues`, `report.caption`,
 		   `report.convertToPdf`, `bindingLevels`, and each value source's `display`) are removed before
-		   resubmitting; clio warns and ignores them if sent back. `bindingLevels` other than `both` or `itemOnly`
+		   resubmitting; sent back, they are ignored with a warning. `bindingLevels` other than `both` or `itemOnly`
 		   comes with an issue: `outerOnly` fails at run time, and with `none` the process cannot start.
 		   `get-guidance name=process-files` owns the block.
+		   A `webService` element (the designer's "Call web service") carries its `webService` block: the
+		   `service` it calls (its name, the string the write side takes; `serviceUId` holds the stored UId), the
+		   `method`, `timeoutSeconds` and `ignoreErrors`, and
+		   `parameters` - every parameter the element stores, unbound inputs included, with its `tag` (the service
+		   parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags. Those
+		   names are what a mapping addresses. `serviceResolved: false` means the call fails at run time, and so does
+		   `methodResolved: false` - unless an issue says the service could not be read: then nothing was checked and
+		   the outcome is unknown. Read `issues` for the rest. To resubmit, send the block back unchanged: `serviceUId`,
+		   `serviceResolved`, `methodResolved`, `issues` and `parameters` are describe-only, ignored with a
+		   warning. Four blocks do not replay as they are: a fractional `timeoutSeconds` (a timeout stored in
+		   milliseconds) is refused - leave it out to keep the stored value, or send whole seconds; a block with no
+		   `service` (`serviceResolved: false`) needs a registered service named again; a block of `service`
+		   alone (nothing else stored) is refused as changing nothing; and a stored `method` whose letter case
+		   differs from the service's spelling makes the block a retarget, not a no-op: it regenerates the element's
+		   parameters and drops their input bindings, or is refused while anything reads them.
+		   `get-guidance name=process-web-service` owns the block.
 		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
 		   `email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each
 		   row attaches, and read its `issues`, which name a row that fails or surprises at run time.

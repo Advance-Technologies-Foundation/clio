@@ -10,8 +10,9 @@ OPTIONS:
   --package                  Target package name (required)
   --schema                   Entity schema name (required)
   --binding-name             Binding folder name (defaults to <schema>)
-  --rows                     JSON array of row objects, each with a 'values' key:
-                             [{"values":{"Col":"Value"}}]
+  --rows                     JSON array of row objects, each with a 'values' key and an
+                             optional 'localizations' key (culture -> column -> text):
+                             [{"values":{"Col":"Value"},"localizations":{"uk-UA":{"Col":"..."}}}]
   -H, --help                 Show this help
 
 BEHAVIOR:
@@ -25,6 +26,36 @@ BEHAVIOR:
   re-inserted - matched by Name when the schema has a Name column, otherwise by its Id. This
   lets you bind an existing keyed row (e.g. a SysSchemaAdminUnitRight grant) by passing its Id
   without creating a duplicate.
+  Translations: a row may carry 'localizations' next to 'values' - an object keyed by
+  culture (for example uk-UA), then column name, with string values (other JSON values
+  are refused); a value in the connected user's own culture must be present in 'values'
+  with the same value, or be left out of 'localizations':
+    {"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}
+  A plain insert writes a localizable column in the connected user's culture only; the
+  other cultures are written per record (DataService UpdateLocalizationQuery) before the
+  binding is saved, so the package carries every culture and an install elsewhere brings
+  them along. Before any write the command refuses the whole call when a culture is not
+  active on the site, a column is not localizable, a value is longer than its column
+  (ShortText 50, MediumText 250, LongText 500), or a value in the connected user's culture
+  is missing from 'values' or differs from it; the message names every failure. After the
+  write it reads each culture back and fails with "saved, but NOT verified" on any
+  difference; the rows and the binding are saved even then, so re-run the call to retry.
+  The site's default culture (PrimaryCulture) is read back from the entity table; when it
+  cannot be read, a culture without a stored translation row is a "written, but not
+  verified" warning (with the reason), not an error. A required column such as Name must
+  carry the connected user's culture in every translation write, so when that culture is
+  not the site's default and has no stored translation yet, translating any culture also
+  stores the value the user currently sees as that culture's own translation: a later
+  change of the default-culture value no longer reaches users of that culture.
+  A failure partway lists the records and cultures already translated. The output prints one "Localized row" line per record and culture.
+  To translate records that already exist, run the command again with the same rows: a row
+  matched by Name or Id is not rewritten, only its translations are added. Pass the record's
+  Id or its exact Name in the connected user's culture; a row that matches neither is inserted
+  as a new record. Its Id and its
+  other column values stay as they are. A record bound in another package (for example a base
+  lookup the app extends) stays in that package and is also added to this binding, so its
+  translations ship with this package; the other package's binding keeps its previous
+  translations until it is saved again.
   After remote mutation, read back from Creatio instead of treating the request payload
   or install log as proof.
   To sync the result to a local workspace, use restore-workspace separately.
@@ -44,3 +75,6 @@ EXAMPLES:
   clio create-data-binding-db -e dev --package Custom --schema SysSettings \
     --binding-name UsrMyBinding \
     --rows "[{\"values\":{\"Name\":\"Row\",\"Code\":\"UsrRow\"}}]"
+
+  clio create-data-binding-db -e dev --package UsrRepairJob --schema UsrRepairStatus \
+    --rows "[{\"values\":{\"Name\":\"New\"},\"localizations\":{\"uk-UA\":{\"Name\":\"Нове\"}}}]"

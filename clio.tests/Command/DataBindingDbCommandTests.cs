@@ -10,6 +10,7 @@ using Clio.Package;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 using NUnit.Framework;
 
 namespace Clio.Tests.Command;
@@ -31,11 +32,13 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private ILogger _logger = null!;
 	private IApplicationPackageListProvider _packageListProvider = null!;
 	private IFileDesignModeStateReader _fileDesignModeStateReader = null!;
+	private IDataBindingDbLocalizer _localizer = null!;
 	private string _bindingLookupResponseJson = string.Empty;
 	private string _boundSchemaDataItemsJson = "[]";
 	private string _existingEntityNamesJson = """{"rows":[],"success":true}""";
 	private string? _entityIdProbeResponseJson;
 	private string _schemaResponseJson = string.Empty;
+	private string _saveSchemaResponseJson = """{"success":true}""";
 
 	public override void Setup() {
 		base.Setup();
@@ -52,6 +55,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		});
 		_schemaResponseJson = SchemaResponseJson;
 		_entityIdProbeResponseJson = null;
+		_saveSchemaResponseJson = """{"success":true}""";
 		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(false);
 	}
 
@@ -61,6 +65,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_logger.ClearReceivedCalls();
 		_packageListProvider.ClearReceivedCalls();
 		_fileDesignModeStateReader.ClearReceivedCalls();
+		_localizer.ClearReceivedCalls();
 	}
 
 	protected override MockFileSystem CreateFs() {
@@ -108,6 +113,8 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => serviceUrlBuilder);
 		containerBuilder.AddTransient(_ => _fileDesignModeStateReader);
+		_localizer = Substitute.For<IDataBindingDbLocalizer>();
+		containerBuilder.AddTransient(_ => _localizer);
 	}
 
 	[Test]
@@ -965,6 +972,413 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("ENG-105291: writes each row's localizations after the rows are inserted or adopted and before the binding is saved, so the saved binding snapshots every culture; an adopted row is written under its existing Id.")]
+	public void CreateDataBindingDb_Should_Write_Localizations_Before_Saving_Binding() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"UsrRepairStatus",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("8b3f0e55-7a83-4b9e-9a77-5a8a0c3a2b11"), "Description", 28));
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_existingEntityNamesJson = $$"""{"rows":[{"Name":"Done","Id":"{{ExistingRowId}}"}],"success":true}""";
+		DataBindingLocalizationPlan plan = new("en-US");
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(plan);
+		_localizer.Write(default!, default!, default!).ReturnsForAnyArgs([
+			new DataBindingLocalizationWrite("new-id", "New", "uk-UA", ["Name", "Description"])
+		]);
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "UsrRepairStatus",
+			RowsJson = """
+				[
+				  {"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове","Description":"Новий"}}},
+				  {"values":{"Name":"Done"},"localizations":{"uk-UA":{"Name":"Готово"}}}
+				]
+				"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the rows, their translations and the binding were all saved");
+		_localizer.Received(1).Validate("UsrRepairStatus", PackageUId, Arg.Any<IReadOnlyList<DataBindingSchemaColumn>>(),
+			Arg.Is<IReadOnlyList<DataBindingRowLocalization>>(rows =>
+				rows.Count == 2
+				&& rows[0].RowLabel == "New" && rows[0].Cultures["uk-UA"]["Description"] == "Новий"
+				&& rows[1].RowLabel == "Done" && rows[1].Cultures["uk-UA"]["Name"] == "Готово"));
+		_localizer.Received(1).Write(plan, "UsrRepairStatus",
+			Arg.Is<IReadOnlyList<(string RowId, DataBindingRowLocalization Localization)>>(rows =>
+				rows.Count == 2
+				&& rows[1].RowId == ExistingRowId.ToString()
+				&& rows[0].RowId != ExistingRowId.ToString()));
+		Received.InOrder(() => {
+			_applicationClient.ExecutePostRequest(
+				"http://localhost/0/DataService/json/SyncReply/InsertQuery", Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			_localizer.Write(plan, "UsrRepairStatus",
+				Arg.Any<IReadOnlyList<(string RowId, DataBindingRowLocalization Localization)>>());
+			_applicationClient.ExecutePostRequest(
+				"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema", Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		});
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains("\"Description\"")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
+			message.Contains("Localized row: new-id (New) [uk-UA]: Name, Description")));
+	}
+
+	[Test]
+	[Description("ENG-105291: warns about a translation that was written but could not be read back, and names why the site's default culture could not be read.")]
+	public void CreateDataBindingDb_Should_Warn_With_Reason_When_Localization_Is_Not_Verified() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"UsrRepairStatus",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28));
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		_localizer.Write(default!, default!, default!).ReturnsForAnyArgs([
+			new DataBindingLocalizationWrite("new-id", "New", "uk-UA", ["Name"], Verified: false,
+				UnverifiedReason: "Access denied")
+		]);
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "UsrRepairStatus",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unverified translation is a warning, not a failure");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("[uk-UA] was written, but not verified")
+			&& message.Contains("default culture could not be read (Access denied)")));
+	}
+
+	[Test]
+	[Description("ENG-105291: writes nothing - no row, no translation, no binding - when the localizations are refused (ENG-105291 TC-04, TC-05, TC-07).")]
+	public void CreateDataBindingDb_Should_Write_Nothing_When_Localizations_Are_Refused() {
+		// Arrange
+		_localizer.Validate(default!, default, default!, default!).ThrowsForAnyArgs(
+			new InvalidOperationException("Localizations were refused and nothing was written: Culture 'de-DE' is not active."));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"de-DE":{"Name":"Neu"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a refused request is a failed call");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery") || url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_localizer.DidNotReceiveWithAnyArgs().Write(default!, default!, default!);
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("de-DE")));
+	}
+
+	[Test]
+	[Description("ENG-105291: still saves the binding when writing or verifying the translations fails after the rows were inserted, so no inserted row is left outside the package, and then fails the call naming the saved binding.")]
+	public void CreateDataBindingDb_Should_Save_Binding_Then_Fail_When_Localization_Write_Fails() {
+		// Arrange
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		_localizer.Write(default!, default!, default!).ThrowsForAnyArgs(
+			new InvalidOperationException("Localizations were saved, but NOT verified: 'New' Name [uk-UA]."));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrRemoteBinding",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a translation that did not land is a failed call");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema", Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("NOT verified")
+			&& message.Contains("binding 'UsrRemoteBinding'")
+			&& message.Contains("were saved")
+			&& message.Contains("Rows created by this call: ")));
+	}
+
+	[Test]
+	[Description("ENG-105291: still saves the binding when the translation write fails in transport, not only on a server refusal.")]
+	public void CreateDataBindingDb_Should_Save_Binding_When_Localization_Write_Fails_In_Transport() {
+		// Arrange
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		_localizer.Write(default!, default!, default!).ThrowsForAnyArgs(
+			new System.Net.Http.HttpRequestException("connection reset"));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrRemoteBinding",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the translations did not land");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema", Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("connection reset")));
+	}
+
+	[TestCase("""{"values":{"Name":"New"},"localizations":[]}""",
+		"Row 'New': 'localizations' must be a JSON object keyed by culture, then column name.")]
+	[TestCase("""{"values":{"Name":"New"},"localizations":{"uk-UA":"text"}}""",
+		"Row 'New': 'localizations' entry 'uk-UA' must be a JSON object keyed by column name.")]
+	[TestCase("""{"values":{"Name":"New"},"localizations":{" ":{"Name":"x"}}}""",
+		"Row 'New': 'localizations' entry ' ' must be a JSON object keyed by column name.")]
+	[Description("ENG-105291: rejects a malformed localizations shape - not an object, a culture entry that is not an object, a blank culture key - before anything is written.")]
+	public void CreateDataBindingDb_Should_Reject_Malformed_Localizations(string row, string expectedMessage) {
+		// Arrange
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = $"[{row}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the localizations shape is culture -> column -> text");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains(expectedMessage)));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery") || url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("ENG-105291: trims padding around a culture key, so ' uk-UA ' is validated and written as uk-UA.")]
+	public void CreateDataBindingDb_Should_Trim_Localization_Culture_Key() {
+		// Arrange
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{" uk-UA ":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		_createCommand.Execute(options);
+
+		// Assert
+		_localizer.Received(1).Validate(Arg.Any<string>(), Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyList<DataBindingSchemaColumn>>(),
+			Arg.Is<IReadOnlyList<DataBindingRowLocalization>>(rows =>
+				rows.Single().Cultures.Keys.Single() == "uk-UA"));
+	}
+
+	[Test]
+	[Description("ENG-105291: rejects a localizations value that is not a string before anything is written.")]
+	public void CreateDataBindingDb_Should_Reject_Non_String_Localization_Value() {
+		// Arrange
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":5}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a translation is text");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Row 'New'") && message.Contains("'uk-UA' value of column 'Name' must be a string")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("ENG-105291: refuses a profile-culture translation of a column missing from 'values' before anything is written, because on a row matched by Id it would rewrite the stored value instead of adding a culture.")]
+	public void CreateDataBindingDb_Should_Refuse_Profile_Culture_Translation_Of_Column_Missing_From_Values() {
+		// Arrange
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Id":"7c1c2f5a-6a4f-4c1e-9d1b-2b3c4d5e6f70"},"localizations":{"en-US":{"Name":"Renamed"},"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the profile culture takes its value from 'values', which has no Name");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("nothing was written") && message.Contains("[en-US] column 'Name'")
+			&& message.Contains("'values' has no 'Name'")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery") || url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_localizer.DidNotReceiveWithAnyArgs().Write(default!, default!, default!);
+	}
+
+	[Test]
+	[Description("ENG-105291: refuses a profile-culture translation that differs from the row's own value before anything is written, because it would rename the record and a re-run matching by Name would insert a duplicate (AC-5).")]
+	public void CreateDataBindingDb_Should_Refuse_Profile_Culture_Translation_That_Differs_From_Value() {
+		// Arrange
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"en-US":{"Name":"Fresh"},"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the two values of the profile culture contradict each other");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("nothing was written") && message.Contains("Row 'New' [en-US] column 'Name'")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery") || url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_localizer.DidNotReceiveWithAnyArgs().Write(default!, default!, default!);
+	}
+
+	[Test]
+	[Description("ENG-105291: accepts a profile-culture translation equal to the row's own value.")]
+	public void CreateDataBindingDb_Should_Accept_Profile_Culture_Translation_Equal_To_Value() {
+		// Arrange
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		_localizer.Write(default!, default!, default!).ReturnsForAnyArgs([]);
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"en-us":{"Name":"New"},"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the profile-culture translation repeats the row value and renames nothing");
+		_localizer.ReceivedWithAnyArgs(1).Write(default!, default!, default!);
+	}
+
+	[Test]
+	[Description("ENG-105291: translates an existing record adopted by Id without inserting or updating it, so its Id and other column values stay unchanged (AC-5).")]
+	public void CreateDataBindingDb_Should_Translate_Record_Adopted_By_Id_Without_Rewriting_It() {
+		// Arrange
+		const string existingRowId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_existingEntityNamesJson = $$"""{"rows":[{"Id":"{{existingRowId}}"}],"success":true}""";
+		DataBindingLocalizationPlan plan = new("en-US");
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(plan);
+		_localizer.Write(default!, default!, default!).ReturnsForAnyArgs([
+			new DataBindingLocalizationWrite(existingRowId, existingRowId, "uk-UA", ["Name"])
+		]);
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = "[{\"values\":{\"Id\":\"" + existingRowId + "\"},\"localizations\":{\"uk-UA\":{\"Name\":\"Нове\"}}}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the existing record is bound and translated");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery") || url.Contains("UpdateQuery")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_localizer.Received(1).Write(plan, "SysSettings",
+			Arg.Is<IReadOnlyList<(string RowId, DataBindingRowLocalization Localization)>>(rows =>
+				rows.Count == 1 && rows[0].RowId == existingRowId));
+	}
+
+	[Test]
+	[Description("ENG-105291: names the records and cultures already translated when the localization write fails partway (AC-6).")]
+	public void CreateDataBindingDb_Should_Report_Written_Translations_When_Write_Fails_Partway() {
+		// Arrange
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		_localizer.Write(default!, default!, default!).ThrowsForAnyArgs(new DataBindingLocalizationException(
+			"Localizing row 'Done' (row-2) failed: Update refused",
+			[new DataBindingLocalizationWrite("row-1", "New", "uk-UA", ["Name", "Description"])]));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrRemoteBinding",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a translation did not land");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Update refused")
+			&& message.Contains("Translations already written: row-1 (New) [uk-UA]: Name, Description")
+			&& message.Contains("were saved")));
+	}
+
+	[Test]
+	[Description("ENG-105291: reports both failures and says the binding was NOT saved when saving it fails after a localization failure.")]
+	public void CreateDataBindingDb_Should_Report_Both_Failures_When_Save_Fails_After_Localization_Failure() {
+		// Arrange
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_saveSchemaResponseJson = """{"success":false,"errorInfo":{"message":"Save refused"}}""";
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		_localizer.Write(default!, default!, default!).ThrowsForAnyArgs(
+			new InvalidOperationException("Localizations were saved, but NOT verified: 'New' Name [uk-UA]."));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrRemoteBinding",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "neither the translations nor the binding landed as requested");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("NOT verified")
+			&& message.Contains("binding was NOT saved")));
+	}
+
 	private string BuildApplicationClientResponse(string url, string requestBody) {
 		if (url.Contains("RuntimeEntitySchemaRequest", StringComparison.Ordinal)) {
 			return _schemaResponseJson;
@@ -1002,8 +1416,11 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			return $$"""{"success":true,"items":{{JsonSerializer.Serialize(_boundSchemaDataItemsJson)}}}""";
 		}
 
-		if (url.Contains("SaveSchema", StringComparison.Ordinal) ||
-			url.Contains("DeletePackageSchemaDataRequest", StringComparison.Ordinal)) {
+		if (url.Contains("SaveSchema", StringComparison.Ordinal)) {
+			return _saveSchemaResponseJson;
+		}
+
+		if (url.Contains("DeletePackageSchemaDataRequest", StringComparison.Ordinal)) {
 			return """{"success":true}""";
 		}
 
