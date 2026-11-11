@@ -116,7 +116,8 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	public static readonly IReadOnlyList<string> SchemaDesignerReadsWithheldNames = [
 		Tools.PageGetTool.ToolName,                // get-page
 		Tools.GetSchemaTool.ToolName,              // get-schema
-		Tools.GetRelatedPageAddonTool.ToolName     // get-related-page-addon
+		Tools.GetRelatedPageAddonTool.ToolName,    // get-related-page-addon
+		Tools.GetPageModalSizeTool.ToolName        // get-page-modal-size
 	];
 
 	/// <summary>

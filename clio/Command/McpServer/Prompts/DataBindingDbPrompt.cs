@@ -43,6 +43,9 @@ public static class DataBindingDbPrompt {
 		 Pass `environment-name` `{environmentName}` exactly as provided.
 		 Use `binding-name` `{bindingName ?? "<default: same as schema>"}` and provide `rows`
 		 `{rows ?? "<not provided>"}` as a JSON array of objects each with a `values` key.
+		 When the app is multilingual, ask the user for translations and put them in each row's optional
+		 `localizations` key, keyed by culture, then column (for example `uk-UA` → `Name` → text); only active cultures and
+		 localizable columns are accepted. To translate rows that already exist, call the tool again with the same rows.
 		 DB-first binding metadata is projected from the primary key plus the columns referenced by currently bound or requested rows.
 		 Unrelated runtime-only columns are not blockers, but explicitly requested unsupported runtime columns still fail.
 		 After the remote mutation, read back from Creatio instead of treating the request payload or install log as proof.

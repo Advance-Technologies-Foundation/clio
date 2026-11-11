@@ -329,6 +329,13 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.FileApiUploadFile,
 				"http://localhost/rest/FileApiService/UploadFile");
+			// ENG-105681: get-page-modal-size reads the runtime (merged) modal size of a page.
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.GetAppearanceSettings,
+				"http://localhost/0/ServiceModel/AppearanceSettingsService.svc/GetAppearanceSettings");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.GetAppearanceSettings,
+				"http://localhost/ServiceModel/AppearanceSettingsService.svc/GetAppearanceSettings");
 			// create-dynamic-case posts both of its passes here; a wrong path answers 404 and reads as a package
 			// that predates the operation.
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",

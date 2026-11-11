@@ -427,11 +427,18 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		FileApiUploadFile = 121,
 
 		/// <summary>
+		///     Reads the runtime appearance settings of a page (<c>AppearanceSettingsService.GetAppearanceSettings</c>):
+		///     the <c>AppearanceSettings</c> add-on merged across every package layer, as the window opens. The body is
+		///     <c>{"schemaName":"&lt;page&gt;"}</c>; the response is <c>{"value":{"modalSettings":{"size":N}}}</c>.
+		/// </summary>
+		GetAppearanceSettings = 122,
+
+		/// <summary>
 		///     Builds a minimal dynamic case (DCM) for an object from one of its lookup columns via the
 		///     ProcessDesignService package. The body is <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and
 		///     the answer is wrapped under <c>BuildCaseResult</c>; <c>validateOnly: true</c> plans without writing.
 		/// </summary>
-		BuildCase = 122
+		BuildCase = 123
 
 	}
 
@@ -550,6 +557,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
 		{KnownRoute.FileApiUploadFile, "/rest/FileApiService/UploadFile"},
+		{KnownRoute.GetAppearanceSettings, "/ServiceModel/AppearanceSettingsService.svc/GetAppearanceSettings"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 		{KnownRoute.GetClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema"},
 		{KnownRoute.SaveClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema"},
