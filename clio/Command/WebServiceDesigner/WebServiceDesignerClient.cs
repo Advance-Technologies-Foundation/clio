@@ -70,12 +70,14 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 		}
 		var filters = new JsonObject();
 		foreach ((string column, string value) in equalFilters ?? new Dictionary<string, string>()) {
+			// The primary key is a Guid column (DataValueType 0); every other filter here is on text.
+			int dataValueType = column == "Id" ? 0 : 1;
 			filters[column] = new JsonObject {
-				["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true, ["dataValueType"] = 1,
+				["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true, ["dataValueType"] = dataValueType,
 				["leftExpression"] = new JsonObject { ["expressionType"] = 0, ["columnPath"] = column },
 				["rightExpression"] = new JsonObject {
 					["expressionType"] = 2,
-					["parameter"] = new JsonObject { ["dataValueType"] = 1, ["value"] = value }
+					["parameter"] = new JsonObject { ["dataValueType"] = dataValueType, ["value"] = value }
 				}
 			};
 		}

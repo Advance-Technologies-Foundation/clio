@@ -331,8 +331,12 @@ public sealed class WebServiceDesigner(
 			|| string.IsNullOrWhiteSpace(auth.OAuthApp)) {
 			return null;
 		}
+		// describe-web-service reports the linked application as oauth-app-id, so a setAuth rebuilt from it passes
+		// the id; a person passes the name. Both resolve to the same row.
+		string value = auth.OAuthApp.Trim();
+		string column = Guid.TryParse(value, out Guid id) ? "Id" : "Name";
 		JsonObject row = client.Select("OAuthApplications", ["Id"],
-			new Dictionary<string, string> { ["Name"] = auth.OAuthApp }).FirstOrDefault();
+			new Dictionary<string, string> { [column] = column == "Id" ? id.ToString() : value }).FirstOrDefault();
 		return row is null ? null : Guid.Parse(Text(row, "Id"));
 	}
 

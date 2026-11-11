@@ -259,7 +259,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureName("register-web-service links an existing OAuth 2.0 application")]
-	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, and describe returning the same reference.")]
+	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, describe returning the same reference, and a setAuth rebuilt from that describe reply linking the same application.")]
 	public async Task RegisterWebService_Should_Link_An_Existing_OAuth_Application() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -290,6 +290,18 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
 			new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode },
 			cts.Token);
+		WebServiceToolResult restored = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode,
+				["operations"] = new[] {
+					new Dictionary<string, object?> {
+						["op"] = "setAuth",
+						["auth"] = new Dictionary<string, object?> {
+							["type"] = "oauth20", ["oauth-app"] = described.Service?.Auth?.OAuthAppId
+						}
+					}
+				}
+			}, cts.Token);
 
 		// Assert
 		registered.Success.Should().BeTrue(because: $"an existing OAuth application must be accepted; error: {registered.Error}");
@@ -300,6 +312,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "a method of a service with authentication sends it by default, as the designer does");
 		described.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(_oauthApplicationId,
 			because: "the reference survives a read through the platform's own contract");
+		restored.Success.Should().BeTrue(because: $"setAuth accepts the oauth-app-id describe reports; error: {restored.Error}");
+		restored.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(_oauthApplicationId,
+			because: "authentication rebuilt from a describe reply links the same application");
 	}
 
 	[Test]

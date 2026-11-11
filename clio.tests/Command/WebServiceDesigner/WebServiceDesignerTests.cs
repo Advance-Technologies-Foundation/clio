@@ -185,6 +185,33 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("setAuth accepts the oauth-app-id describe reports, so authentication can be restored from a describe reply.")]
+	public void Modify_SetAuth_Should_Resolve_OAuth_Application_By_Id() {
+		// Arrange
+		Guid applicationId = Guid.Parse("8695135d-1c0a-4b9e-9d3e-2f1f4f3e2a11");
+		GivenRegisteredService(BingSchema());
+		_client.Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(),
+				Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Id") && f["Id"] == applicationId.ToString()),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns([new JsonObject { ["Id"] = applicationId.ToString() }]);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("oauth20", OAuthApp: applicationId.ToString().ToUpperInvariant()))
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the id names an existing application");
+		saved.AuthInfo.Values.Items["applicationId"].Value.Should().Be(applicationId.ToString(),
+			because: "the id is looked up by the Id column and stored as the platform stores it");
+		_client.DidNotReceive().Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(),
+			Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Name")), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Registering with an OAuth application that does not exist is refused before anything is saved.")]
 	public void Register_Should_Refuse_Unknown_OAuth_Application() {
 		// Arrange

@@ -89,7 +89,7 @@ public static partial class WebServiceDefinitionBuilder {
 				return result;
 			default:
 				if (oauthAppId is null) {
-					errors.Add($"auth oauth20 needs oauth-app naming an existing OAuth application ('{auth.OAuthApp}' was not found).");
+					errors.Add($"auth oauth20 needs oauth-app with the name or id of an existing OAuth application ('{auth.OAuthApp}' was not found).");
 					return null;
 				}
 				result.Values.Items["applicationId"] = new ServiceParameterValueDto {

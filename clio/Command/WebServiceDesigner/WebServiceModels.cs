@@ -107,7 +107,7 @@ public sealed record WebServiceAuthArg(
 	string PasswordSysSetting = null,
 
 	[property: JsonPropertyName("oauth-app")]
-	[property: Description("oauth20: name of an existing OAuth application (OAuthApplications)")]
+	[property: Description("oauth20: name or id of an existing OAuth application (OAuthApplications); describe-web-service reports the id as oauth-app-id")]
 	string OAuthApp = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
