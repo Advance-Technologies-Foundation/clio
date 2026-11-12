@@ -1189,11 +1189,11 @@ internal static class ToolContractCatalog {
 	/// clio-run, not clio-run-destructive, is named as the executor because the latter is a deprecated alias of it.
 	/// </summary>
 	internal static readonly string ToolIndexLegend =
-		$"One line per tool: name (R)(D) [aka deprecated names]: purpose, cut to {MaxToolIndexPurposeLength} characters. "
+		$"One line per tool: name (R)(D) [aka deprecated names]: purpose, cut to {MaxToolIndexPurposeLength} chars. "
 		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
 		+ "A tool without (R) is called through clio-run {\"command\":\"<name>\",\"args\":{...}}. "
 		+ "(D) = destructive: it may delete or overwrite data; a line without (D) can still write. "
-		+ "Pass tool-names for contracts; detail=index-entries returns this index as objects.";
+		+ "Pass tool-names for contracts; detail=index-entries gives objects.";
 
 	/// <summary>
 	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the

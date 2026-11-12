@@ -153,6 +153,56 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 	}
 }
 
+/// <summary>Turns a SOAP WSDL into register-web-service arguments, as Studio's SOAP quick setup does; saves nothing.</summary>
+[McpServerToolType]
+public sealed class ReadWsdlTool(IToolCommandResolver commandResolver) {
+
+	internal const string ToolName = "read-wsdl";
+
+	private const string ValidHint = "Valid: environment-name, wsdl-url, wsdl-files, port, service-code, operations.";
+
+	/// <summary>Spellings agents use for the WSDL source, answered with a rename hint (never bound).</summary>
+	internal static readonly IReadOnlyDictionary<string, string> Aliases = WebServiceToolRunner.WithAliases(
+		McpToolArgumentSupport.EnvironmentNameAliases,
+		("url", "wsdl-url"), ("wsdl", "wsdl-url"), ("wsdl_url", "wsdl-url"), ("wsdlUrl", "wsdl-url"),
+		("files", "wsdl-files"), ("wsdl-path", "wsdl-files"), ("wsdl-file", "wsdl-files"), ("wsdl_files", "wsdl-files"),
+		("wsdlFiles", "wsdl-files"));
+
+	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[Description("""
+				 Reads a WSDL. It turns a SOAP WSDL 1.1 document into ready register-web-service arguments the way Studio's SOAP quick setup builds a service, and saves nothing.
+
+				 Returns one argument object per SOAP 1.1 and SOAP 1.2 port (studio-pick marks the port Studio would create: the SOAP 1.2 one when both exist; HTTP ports are dropped): type, base URI, namespaces, and methods with message-element, soap-action and parameters with element paths, soap-header and sequence-element. Codes are the environment's schema-name prefix plus the WSDL names, the same on every read. warnings list what was not read or needs a test call.
+
+				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return whole comes back as operation names: read it again with operations. The caller needs CanManageSolution.
+				 """)]
+	public WsdlReadResult ReadWsdl(
+		[Description("Parameters: environment-name, and wsdl-url or wsdl-files (required); port, service-code, operations (optional)")]
+		[Required]
+		ReadWsdlArgs args) {
+		try {
+			ArgumentNullException.ThrowIfNull(args);
+			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData, ValidHint, Aliases);
+			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+				throw new ArgumentException("environment-name is required.");
+			}
+			IWsdlReader reader = commandResolver.Resolve<IWsdlReader>(
+				new EnvironmentOptions { Environment = args.EnvironmentName });
+			return reader.Read(new WsdlReadRequest(args.EnvironmentName, args.WsdlUrl, args.WsdlFiles, args.Port,
+				args.ServiceCode, args.Operations));
+		} catch (Exception exception) {
+			return new WsdlReadResult(false, WebServiceToolRunner.Describe(exception));
+		}
+	}
+}
+
 internal static class WebServiceToolRunner {
 
 	public static IWebServiceDesigner Resolve(IToolCommandResolver resolver, string environmentName) {
@@ -177,7 +227,7 @@ internal static class WebServiceToolRunner {
 	public static readonly IReadOnlyDictionary<string, string> TestMethodAliases = WithAliases(ServiceCodeAliases,
 		("method-code", "method"), ("method_code", "method"), ("methodCode", "method"));
 
-	private static IReadOnlyDictionary<string, string> WithAliases(IReadOnlyDictionary<string, string> source,
+	internal static IReadOnlyDictionary<string, string> WithAliases(IReadOnlyDictionary<string, string> source,
 		params (string Alias, string Canonical)[] extra) {
 		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 		foreach ((string alias, string canonical) in source) {
@@ -336,6 +386,35 @@ public sealed record ModifyWebServiceArgs(
 	[property: JsonPropertyName("acknowledge-usages")]
 	[property: Description("Process codes the user agreed may break, exactly as the refusal listed them")]
 	IReadOnlyList<string> AcknowledgeUsages = null) {
+	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
+}
+
+
+public sealed record ReadWsdlArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("wsdl-url")]
+	[property: Description("WSDL URL the stand downloads, e.g. http://www.dneonline.com/calculator.asmx?WSDL; or give wsdl-files")]
+	string WsdlUrl = null,
+
+	[property: JsonPropertyName("wsdl-files")]
+	[property: Description("Absolute local paths of the WSDL and every schema it imports (an import is matched by its schemaLocation or file name); or give wsdl-url")]
+	IReadOnlyList<string> WsdlFiles = null,
+
+	[property: JsonPropertyName("port")]
+	[property: Description("One port name to return; every SOAP port when omitted")]
+	string Port = null,
+
+	[property: JsonPropertyName("service-code")]
+	[property: Description("An existing SOAP service the operations go into: methods that match keep their codes")]
+	string ServiceCode = null,
+
+	[property: JsonPropertyName("operations")]
+	[property: Description("Operation names to return, e.g. [\"Add\"]; all when omitted")]
+	IReadOnlyList<string> Operations = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

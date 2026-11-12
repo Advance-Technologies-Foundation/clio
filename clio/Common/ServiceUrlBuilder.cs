@@ -458,7 +458,15 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     (<c>CallServiceSchemaService.Execute</c> of the ServiceDesigner package; requires
 		///     <c>CanManageSolution</c>).
 		/// </summary>
-		CallServiceSchemaMethod = 126
+		CallServiceSchemaMethod = 126,
+
+		/// <summary>
+		///     Downloads a WSDL and the schemas it imports by <c>schemaLocation</c>, as Studio's SOAP quick setup does
+		///     (<c>DownloadWsdlEndpoint.GetXmlSchemaFilesContent</c> of the ServiceDesigner package; requires
+		///     <c>CanManageSolution</c>). The body is the URL array; the response is
+		///     <c>{"success","errorInfo":{"message","stackTrace"},"files":[{"Key":url,"Value":[ascii codes]}]}</c>.
+		/// </summary>
+		DownloadWsdlSchemaFiles = 127
 
 	}
 
@@ -581,6 +589,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ServiceSchemaSave, "DataService/json/SyncReply/ServiceDataContract"},
 		{KnownRoute.CheckUniqueSchemaName, "ServiceModel/EntitySchemaDesignerService.svc/CheckUniqueSchemaName"},
 		{KnownRoute.CallServiceSchemaMethod, "rest/CallServiceSchemaService/Execute"},
+		{KnownRoute.DownloadWsdlSchemaFiles, "rest/DownloadWsdlEndpoint/GetXmlSchemaFilesContent"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 		{KnownRoute.GetClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema"},
 		{KnownRoute.SaveClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema"},

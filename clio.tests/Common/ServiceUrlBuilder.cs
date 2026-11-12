@@ -230,6 +230,9 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CheckUniqueSchemaName, "https://localhost/ServiceModel/EntitySchemaDesignerService.svc/CheckUniqueSchemaName");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CallServiceSchemaMethod, "https://localhost/0/rest/CallServiceSchemaService/Execute");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CallServiceSchemaMethod, "https://localhost/rest/CallServiceSchemaService/Execute");
+			// read-wsdl: the platform's WSDL download (ServiceDesigner DownloadWsdlEndpoint), never a request clio sends itself.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.DownloadWsdlSchemaFiles, "https://localhost/0/rest/DownloadWsdlEndpoint/GetXmlSchemaFilesContent");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.DownloadWsdlSchemaFiles, "https://localhost/rest/DownloadWsdlEndpoint/GetXmlSchemaFilesContent");
 			// Registered WITHOUT a leading slash, unlike the /rest/... entries, so both prefix shapes are
 			// pinned here rather than left to CreateUrl's normalisation happening to be right.
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",

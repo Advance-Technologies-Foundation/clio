@@ -108,7 +108,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// more long-tail tools. Measured 50352 bytes with them registered (944 over 49408); next 256-byte step is 50432 (197).
 	// Merged with ENG-105681 on the ENG-105475 branch: with both sets registered and the web service tools'
 	// first sentences shortened for the line index, under 50176 (196).
-	private const int MaxCompactIndexSerializedBytes = 196 * 256;
+	// Re-pinned for ENG-105475 slice C: read-wsdl is one more long-tail tool. Measured 50250 bytes with it registered
+	// (74 over 50176); next 256-byte step is 50432 (197).
+	private const int MaxCompactIndexSerializedBytes = 197 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -138,6 +140,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// it has to shorten the legend or the purpose cut instead.
 	// Merged with ENG-105681 (two more lines): the web service tools' first sentences were shortened to stay
 	// within 18688 instead of raising it.
+	// ENG-105475 slice C (read-wsdl, one more line): measured 18709, 21 over. Paid by the legend as this comment asks,
+	// not by a raise: "characters" became "chars" and "returns this index as objects" became "gives objects" (ClioRing
+	// reads detail=index-entries, never the legend), and the tool's purpose is the short "Reads a WSDL.".
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

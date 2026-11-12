@@ -57,6 +57,19 @@ public interface IWebServiceDesignerClient {
 	/// <returns>The raw outcome, including what the platform reports as sent.</returns>
 	ServiceMethodCallResult CallMethod(string serviceName, string methodName,
 		IReadOnlyDictionary<string, string> parameterValues);
+
+	/// <summary>
+	/// Downloads a WSDL through the platform's <c>DownloadWsdlEndpoint.GetXmlSchemaFilesContent</c>, as Studio's SOAP quick
+	/// setup does: the stand fetches the URL and every schema an <c>import</c> or <c>include</c> names by
+	/// <c>schemaLocation</c> (at most 100 files of 10 MB), so clio itself never reaches the URL. Requires
+	/// <c>CanManageSolution</c>. The platform sends each file as ASCII codes, so a non-ASCII character arrives as <c>?</c>.
+	/// </summary>
+	/// <param name="url">The WSDL URL.</param>
+	/// <returns>The files keyed as the platform keys them: the URL, then each <c>schemaLocation</c> as written.</returns>
+	/// <exception cref="InvalidOperationException">
+	/// The platform refused or failed the download; the message is the platform's, redacted, without its stack trace.
+	/// </exception>
+	IReadOnlyList<WsdlSourceFile> DownloadWsdl(string url);
 }
 
 /// <summary>
@@ -187,6 +200,32 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 			result.ErrorInfo?.Message, result.RequestRawData, result.RequestBody, result.ParameterValuesText);
 	}
 
+	public IReadOnlyList<WsdlSourceFile> DownloadWsdl(string url) {
+		DownloadWsdlResponse response = EnsureSucceeded(PostAndDeserialize<DownloadWsdlResponse>(
+			ServiceUrlBuilder.KnownRoute.DownloadWsdlSchemaFiles, new[] { url }, RequestOptions), "download the WSDL");
+		var files = new List<WsdlSourceFile>();
+		long total = 0;
+		foreach (DownloadedFile file in response.Files ?? []) {
+			int[] codes = file.Value ?? [];
+			total += codes.Length;
+			if (total > MaxDownloadedBytes) {
+				throw new InvalidOperationException("The downloaded WSDL and its schemas are larger than "
+					+ $"{MaxDownloadedBytes / 1024 / 1024} MB; download them yourself and pass the files as wsdl-files.");
+			}
+			// Each value is a byte of the ASCII text; anything else is not what this endpoint sends.
+			files.Add(new WsdlSourceFile(file.Key, codes.Select(code => code is >= 0 and <= 255
+				? (byte)code
+				: throw new InvalidOperationException("The platform returned a WSDL file that is not text.")).ToArray(),
+				AsciiText: true));
+		}
+		return files.Count > 0
+			? files
+			: throw new InvalidOperationException("The platform downloaded no file from the WSDL URL.");
+	}
+
+	/// <summary>The most a download may carry in all; the platform's own cap is 100 files of 10 MB.</summary>
+	internal const long MaxDownloadedBytes = 50L * 1024 * 1024;
+
 	/// <summary>The row key a selected column comes back under: a column path without its dots.</summary>
 	public static string ColumnAlias(string columnPath) => columnPath.Replace(".", string.Empty);
 
@@ -220,6 +259,15 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 
 	private sealed class SelectResponse : PlatformResponse {
 		[JsonPropertyName("rows")] public JsonArray Rows { get; init; }
+	}
+
+	private sealed class DownloadedFile {
+		[JsonPropertyName("Key")] public string Key { get; init; }
+		[JsonPropertyName("Value")] public int[] Value { get; init; }
+	}
+
+	private sealed class DownloadWsdlResponse : PlatformResponse {
+		[JsonPropertyName("files")] public List<DownloadedFile> Files { get; init; }
 	}
 
 	private sealed class CallMethodEnvelope {

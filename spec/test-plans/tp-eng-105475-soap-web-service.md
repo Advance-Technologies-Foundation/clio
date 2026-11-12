@@ -108,12 +108,42 @@ answer was identical too; test calls after the save returned HTTP 200 with the e
 masked. The SysSchema `Checksum` changes on a Studio save while the designer's read stays identical: save
 bookkeeping, not a content change.
 
-## Slice C (story 3), outline
+## Slice C (story 3)
 
-TC-U-C: golden tests ported from Studio's wizard parser fixtures and expected outputs; warnings; local files mode;
-the platform download error without its stack trace. TC-I-C: `wsdl-files` mode with a fixture WSDL shipped in the
-test project (no internet); URL mode in a separate category that is Ignored when the stand has no internet; Studio vs
-clio diff of the saved services (manual stand check).
+Unit rows live in `clio.tests/Command/WebServiceDesigner/WsdlParserTests.cs` (parser), `WsdlRegistrationMapperTests.cs`
+(clio's rules), `WsdlReaderTests.cs` (sources and result), `WebServiceDesignerClientTests.cs` (download),
+`clio.tests/Command/McpServer/WebServiceToolsArgumentTests.cs` (tool) and
+`clio.tests/Common/ServiceUrlBuilder.cs` (route). The golden files are Studio's parser output (ADR D9).
+
+| Id | Level | Case | AC |
+| --- | --- | --- | --- |
+| TC-U-C01 | unit | The public calculator WSDL and a synthetic WSDL covering the wizard's fixture cases (by-ref, nested namespaces, flattened objects, wrapped scalar and object arrays, an object array in the response root, the type map, recursion, SOAP headers simple/complex/array/two, a long element name, dotted names, typed parts) give Studio's own output (golden) | 3 |
+| TC-U-C02 | unit | A WSDL whose types come from an imported (URL `schemaLocation`), an included and a nested imported schema merges as the wizard merges it (golden); a missing schema is named | 3 |
+| TC-U-C03 | unit | Every SOAP port is returned, the SOAP 1.2 one is Studio's pick, HTTP ports are dropped with a warning; with one SOAP 1.1 port that port is the pick | 2 |
+| TC-U-C04 | unit | The wizard's expectations hold: reference namespace, ns0/ns1 order, caption normalization, scalar and object arrays with item elements, array in root, type map, recursion cap with a warning, first SOAP header only with a warning, a 200-character code, the root element, typed parts | 3 |
+| TC-U-C05 | unit | The wizard's copies of nested elements are kept and marked by the parser and left out of the arguments with a warning | 2, 3 |
+| TC-U-C06 | unit | A complexContent extension adds its elements before the base type's; a simpleContent extension of base64Binary is Text | 3 |
+| TC-U-C07 | unit | An unmapped XSD built-in and an undefined type are Text with a warning (the wizard fails); rpc/encoded, wsdl:import, MIME/MTOM, xs:choice and XML attributes give warnings; WSDL 2.0, a schema alone and a DTD are refused | 2 |
+| TC-U-C08 | unit | A downloaded file is read as ASCII text whatever encoding its declaration names | 1 |
+| TC-U-C09 | unit | Codes are stable and prefixed (`UsrAdd`), the message element is `tem:Add`, collisions get 2, 3 case-insensitively, an empty prefix works, a long code keeps the prefix | 2 |
+| TC-U-C10 | unit | What register would refuse is left out with a warning: a copy, a dotted request element, a dotted root element (the method), an object without fields, a repeated element without a wrapper; SOAP members are written only where they apply | 2 |
+| TC-U-C11 | unit | An element of no namespace loses its prefix with a warning | 2 |
+| TC-U-C12 | unit | With a target service, a matched operation keeps its code and is listed in existing-methods, another is numbered past the service's codes, and the namespaces reuse the service's prefixes | 2 |
+| TC-U-C13 | unit | wsdl-files: one argument object per port, Studio's pick marked, no null members, no uri or verb on a SOAP method, nothing downloaded or saved | 1, 2 |
+| TC-U-C14 | unit | Every port of the calculator and of the synthetic WSDL, with package-name added, is accepted and saved by register-web-service; a header array and an object array are saved with the members the platform renders | 2 |
+| TC-U-C15 | unit | wsdl-url is downloaded through the platform as given; a non-http(s), relative or credential-carrying URL is refused before anything is sent; both or neither source is refused | 1 |
+| TC-U-C16 | unit | No CanManageSolution, or an unreadable prefix, refuses the call before any download | 1 |
+| TC-U-C17 | unit | wsdl-files: a relative path, a missing file, a file over 10 MB and more than 100 files are refused; local schema files merge, found by file name | 1 |
+| TC-U-C18 | unit | port and operations narrow the result (case-insensitive operation names); an unknown one is refused with the names there are | 2 |
+| TC-U-C19 | unit | A result over the size limit lists operation names per port with a notice; a filtered read returns arguments | 2 |
+| TC-U-C20 | unit | A service code in use gives one notice; a '?' in a downloaded name gives the wsdl-files warning; service-code on a REST service is refused | 2 |
+| TC-U-C21 | unit | The download client posts the URL array to the route, keys files by URL and schemaLocation, reports the platform's message redacted without its stack trace, and refuses non-text values and an empty download | 1 |
+| TC-U-C22 | unit | The route is `0/rest/DownloadWsdlEndpoint/GetXmlSchemaFilesContent` on .NET Framework and `rest/...` on .NET Core | 1 |
+| TC-U-C23 | unit | The tool answers guessed argument names with a rename hint, refuses unknown keys with the valid list, passes every argument to the environment's reader and returns a failure as an error | 1 |
+| TC-I-C01 | e2e (NoEnvironment) | read-wsdl is discoverable and answers a guessed `url` with `wsdl-url` | 1 |
+| TC-I-C02 | e2e | wsdl-files with a WSDL shipped in the test project: both SOAP ports, the SOAP 1.2 one picked, codes from the stand's prefix; the pick, trimmed to three operations, registers under a throwaway code and describe reads back the same namespaces, message elements, SOAP actions, header flags and item elements (no copy); a second read with service-code lists every method as existing; removed in the teardown | 1, 2 |
+| TC-I-C03 | e2e (manual, `[Explicit]`, McpE2E.Manual) | wsdl-url: the stand downloads the public calculator WSDL; two ports, `<prefix>Add`, `tem:Add`; ignored when the stand has no internet | 1 |
+| TC-M-C01 | manual | The calculator WSDL through Studio's SOAP quick setup and through read-wsdl + register-web-service gives equivalent saved services (stand `studio-16317520`) | 4 |
 
 ## Slice D (story 4), outline
 

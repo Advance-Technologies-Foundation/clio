@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
@@ -95,6 +97,84 @@ public sealed class WebServiceToolsArgumentTests {
 		result.Error.Should().Contain("Unknown args: 'method-code'",
 			because: "renaming it to method would be wrong for modify, whose methods sit inside operations");
 		result.Error.Should().NotContain("->", because: "no rename is suggested");
+	}
+
+	[TestCase("url", "wsdl-url")]
+	[TestCase("wsdl", "wsdl-url")]
+	[TestCase("wsdlUrl", "wsdl-url")]
+	[TestCase("files", "wsdl-files")]
+	[TestCase("wsdl-path", "wsdl-files")]
+	[TestCase("environment", "environment-name")]
+	[Description("read-wsdl answers a guessed source argument name with the canonical one, before touching any environment.")]
+	public void ReadWsdl_Should_Hint_The_Canonical_Argument(string guessed, string canonical) {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		var tool = new ReadWsdlTool(resolver);
+		var args = new ReadWsdlArgs("dev") { ExtensionData = Extra(guessed) };
+
+		// Act
+		WsdlReadResult result = tool.ReadWsdl(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a guessed argument name is refused, not bound");
+		result.Error.Should().Contain($"'{guessed}' -> '{canonical}'", because: "the refusal names the argument to use");
+		resolver.DidNotReceiveWithAnyArgs().Resolve<IWsdlReader>(default);
+	}
+
+	[Test]
+	[Description("read-wsdl refuses an unknown key with the valid argument list, and a bare code is not taken for service-code.")]
+	public void ReadWsdl_Should_Refuse_Unknown_Keys() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		var tool = new ReadWsdlTool(resolver);
+		var args = new ReadWsdlArgs("dev", "http://x/a?wsdl") { ExtensionData = Extra("code") };
+
+		// Act
+		WsdlReadResult result = tool.ReadWsdl(args);
+
+		// Assert
+		result.Error.Should().Contain("Unknown args: 'code'", because: "code could mean the new service's code, not a target");
+		result.Error.Should().Contain("Valid: environment-name, wsdl-url, wsdl-files, port, service-code, operations.",
+			because: "the valid fields are listed");
+	}
+
+	[Test]
+	[Description("read-wsdl resolves the reader for the environment of the call and passes every argument through.")]
+	public void ReadWsdl_Should_Pass_The_Request_To_The_Environment_Reader() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IWsdlReader reader = Substitute.For<IWsdlReader>();
+		resolver.Resolve<IWsdlReader>(Arg.Is<EnvironmentOptions>(o => o.Environment == "dev")).Returns(reader);
+		reader.Read(Arg.Any<WsdlReadRequest>()).Returns(new WsdlReadResult(true));
+		var tool = new ReadWsdlTool(resolver);
+
+		// Act
+		WsdlReadResult result = tool.ReadWsdl(new ReadWsdlArgs("dev", null, ["/tmp/a.wsdl"], "Soap", "UsrCalc", ["Add"]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the reader's result is returned");
+		reader.Received(1).Read(Arg.Is<WsdlReadRequest>(r => r.EnvironmentName == "dev" && r.WsdlUrl == null
+			&& r.WsdlFiles.Single() == "/tmp/a.wsdl" && r.Port == "Soap" && r.ServiceCode == "UsrCalc"
+			&& r.Operations.Single() == "Add"));
+	}
+
+	[Test]
+	[Description("A reader failure is returned as success false with the redacted message, not thrown.")]
+	public void ReadWsdl_Should_Return_A_Failure_As_An_Error() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IWsdlReader reader = Substitute.For<IWsdlReader>();
+		resolver.Resolve<IWsdlReader>(Arg.Any<EnvironmentOptions>()).Returns(reader);
+		reader.Read(Arg.Any<WsdlReadRequest>()).Returns(_ => throw new InvalidOperationException(
+			"The platform refused to download the WSDL: Error downloading schema http://x"));
+		var tool = new ReadWsdlTool(resolver);
+
+		// Act
+		WsdlReadResult result = tool.ReadWsdl(new ReadWsdlArgs("dev", "http://x"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the download failed");
+		result.Error.Should().Contain("Error downloading schema", because: "the platform's reason reaches the agent");
 	}
 
 	[Test]
