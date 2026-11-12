@@ -64,10 +64,10 @@ public sealed class ProcessFilterValuesToolE2ETests {
 		// Assert
 		built.Should().Contain("created (UId:", because: "a value list is a valid filter condition: {0}", built);
 		Warnings(buildCall).Should().BeEmpty(because: "nothing in this descriptor warns: {0}", built);
-		AssertOneValueListCondition(graph, "CountryChanged", "equal", 2);
-		AssertOneValueListCondition(graph, "ReadFromCountries", "equal", 3);
-		AssertOneValueListCondition(graph, "ReadOutsideCountries", "notEqual", 2);
-		AssertOneValueListCondition(graph, "TagFromCountries", "equal", 2);
+		AssertOneValueListCondition(graph, "CountryChanged", "equal", 2, storesRawFilter: false);
+		AssertOneValueListCondition(graph, "ReadFromCountries", "equal", 3, storesRawFilter: true);
+		AssertOneValueListCondition(graph, "ReadOutsideCountries", "notEqual", 2, storesRawFilter: true);
+		AssertOneValueListCondition(graph, "TagFromCountries", "equal", 2, storesRawFilter: true);
 	}
 
 	[Test]
@@ -87,6 +87,9 @@ public sealed class ProcessFilterValuesToolE2ETests {
 		built.Should().Contain("created (UId:", because: "the arrange step must have built the process: {0}", built);
 		JsonObject before = FilterOf(DescribedProcessGraph.Read(
 			await ProcessDesignerE2EArrange.DescribeAsync(context, processName)), "ReadFromCountries");
+		Values(before).Should().HaveCount(3,
+			because: "describe must return the three built records before they are re-sent, or the loop compares two "
+				+ "empty lists: {0}", before.ToJsonString());
 		JsonObject resent = JsonNode.Parse(before.ToJsonString())!.AsObject();
 		foreach (JsonObject condition in resent["conditions"]!.AsArray().OfType<JsonObject>()) {
 			condition.Remove("displayValue");
@@ -353,7 +356,7 @@ public sealed class ProcessFilterValuesToolE2ETests {
 			.Select(entry => entry!.GetValue<string>()).ToList() ?? [];
 
 	private static void AssertOneValueListCondition(JsonObject graph, string elementName, string comparison,
-			int records) {
+			int records, bool storesRawFilter) {
 		JsonObject element = ElementOf(graph, elementName);
 		JsonObject filter = FilterOf(graph, elementName);
 		JsonObject condition = filter["conditions"]!.AsArray().OfType<JsonObject>()
@@ -364,8 +367,19 @@ public sealed class ProcessFilterValuesToolE2ETests {
 			because: $"'{elementName}' reads back every record as one condition: {element.ToJsonString()}");
 		condition["value"].Should().BeNull(
 			because: $"'{elementName}' reads back one right-hand source, the list: {element.ToJsonString()}");
-		element["filterDecodedCompletely"]?.GetValue<bool>().Should().BeTrue(
+		element["filterDecodedCompletely"]!.GetValue<bool>().Should().BeTrue(
 			because: $"a value list is read whole, so nothing is left out: {element.ToJsonString()}");
+		if (!storesRawFilter) {
+			return;
+		}
+		JsonObject? raw = element["parameters"]?.AsArray().OfType<JsonObject>()
+			.SingleOrDefault(parameter => parameter["name"]?.GetValue<string>() == "DataSourceFilters");
+		raw.Should().NotBeNull(
+			because: $"'{elementName}' stores its filter in DataSourceFilters: {element.ToJsonString()}");
+		raw!["value"].Should().BeNull(
+			because: $"a completely decoded filter leaves the raw value out: {element.ToJsonString()}");
+		raw["valueOmitted"]!.GetValue<string>().Should().Be("decoded into the element's filter",
+			because: $"the left-out raw value says where its content went: {element.ToJsonString()}");
 	}
 
 	private static Dictionary<string, object> Condition(string column, string comparison, object? value = null,
