@@ -104,7 +104,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-pinned for ENG-105681: get-page-modal-size and set-page-modal-size are two more long-tail tools. Measured
 	// 49486 bytes with them registered (78 over 49408), after shortening their first sentences so the line index
 	// below still fits; next 256-byte step is 49664 (194).
-	private const int MaxCompactIndexSerializedBytes = 194 * 256;
+	// Re-pinned for ENG-105475: register-, list-, describe-, modify-web-service and test-web-service-method are five
+	// more long-tail tools. Measured 50352 bytes with them registered (944 over 49408); next 256-byte step is 50432 (197).
+	// Merged with ENG-105681 on the ENG-105475 branch: with both sets registered and the web service tools'
+	// first sentences shortened for the line index, under 50176 (196).
+	private const int MaxCompactIndexSerializedBytes = 196 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -128,7 +132,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	//
 	// Re-pinned for ENG-101678: get-entity-connections and update-entity-connections add two lines. Measured
 	// 18244 bytes (68 over 18176); next 256-byte step is 18432 (72), 568 bytes under the 19000-byte spill line.
-	private const int MaxToolIndexSerializedBytes = 72 * 256;
+	//
+	// Re-pinned for ENG-105475: the five web service tools add five lines. Measured 18688 bytes (256 over 18432),
+	// exactly the next 256-byte step 18688 (73), 312 bytes under the 19000-byte spill line: the next re-pin past
+	// it has to shorten the legend or the purpose cut instead.
+	// Merged with ENG-105681 (two more lines): the web service tools' first sentences were shortened to stay
+	// within 18688 instead of raising it.
+	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

@@ -315,7 +315,10 @@ internal class PackageCreatorTest : BaseClioModuleTests
 			.Where(path => FileSystem.File.ReadAllText(path).Contains("new LocalizableString("))
 			.ToArray();
 		string constructorPath = localizableStringConstructors.Should().ContainSingle().Which;
-		Path.GetFullPath(constructorPath).Should().Be(Path.GetFullPath(resolverPath),
+		// The mock file system's own path rules, not System.IO's: the paths live under the mock's Windows-style
+		// root (T:\\), which the real GetFullPath on macOS or Linux reads as a relative name under the current
+		// directory and renders differently for the two sides.
+		FileSystem.Path.GetFullPath(constructorPath).Should().Be(FileSystem.Path.GetFullPath(resolverPath),
 			because: "only the injectable adapter may construct Creatio's concrete localization primitive");
 		resolver.Should().Contain("LocalizableString localizableString = Create(",
 			because: "generated code must expose platform values to debugger breakpoints before returning");

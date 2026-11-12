@@ -299,6 +299,11 @@ internal static class PassthroughToolClassificationRegistry {
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
 			["uninstall-identity"] = PassthroughClassification.NotApplicable, // BaseTool with per-environment command resolver.
 			["describe-business-process"] = PassthroughClassification.NotApplicable,
+			["describe-web-service"] = PassthroughClassification.NotApplicable,
+			["list-web-services"] = PassthroughClassification.NotApplicable,
+			["modify-web-service"] = PassthroughClassification.NotApplicable,
+			["register-web-service"] = PassthroughClassification.NotApplicable,
+			["test-web-service-method"] = PassthroughClassification.NotApplicable,
 			["describe-environment"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-build"] = PassthroughClassification.NotApplicable,
 			["download-configuration-by-environment"] = PassthroughClassification.NotApplicable,
