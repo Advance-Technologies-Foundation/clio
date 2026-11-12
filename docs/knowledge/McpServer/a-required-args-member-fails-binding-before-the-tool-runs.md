@@ -1,46 +1,38 @@
 ---
-description: a `required` member on an MCP args record is enforced by the serializer, so a payload omitting it is answered with "argument 'args' ... must be an object" before the tool body runs - the message names the wrong thing and the tool's own guards never execute
+description: a `required` member on an MCP args record is enforced by the serializer, so a payload omitting it is refused with "argument 'args' ... is missing required member '<name>'" before the tool body runs - the tool's own guards (unknown-key, alias rename, environment) never execute for it
 applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/RunProcessTool.cs
   - clio/Command/McpServer/McpToolErrorFilter.cs
+  - clio/Command/McpServer/McpToolErrorFilter.ShapeDiagnosis.cs
+  - clio/Command/McpServer/Tools/ODataReadTool.cs
 ticket: ENG-98566
-date: 2026-09-17
+date: 2026-11-11
 ---
 
-**What is true** — C#'s `required` modifier on an args-record property is enforced by
-System.Text.Json at bind time. A `tools/call` payload that omits it fails to deserialize, and the
-argument preflight answers:
-
-```
-invalid-parameter-type: argument 'args' for MCP tool 'run-process' must be an object.
-Received an incompatible JSON value.
-```
-
-The payload **was** an object. The message describes the parameter's shape because that is the layer
-that refused it, and it names neither the missing member nor the word `required`. The tool body never
-runs, so none of the tool's own guards — null-args, unknown-key, environment — can contribute a better
-diagnosis.
-
-Measured on `run-process`, the only member of the process-designer family that declares one
-(`RunProcessArgs.ProcessName`, `public required string`). Every other args record in that family uses NON-`required`
-parameters, which System.Text.Json binds to their default when the key is absent, so a partial payload
-binds fine. (Several of them are positional with no default - `environment-name` is schema-required on
-four - which is exactly why `required` and schema-required must not be conflated: only the C# keyword
-fails the bind.)
+**What is true** — C#'s `required` modifier (or `[JsonRequired]`) on an args-record property is
+enforced by System.Text.Json at bind time. A payload that omits it fails to deserialize, and the
+argument preflight answers - on the direct path and through `clio-run` alike - with
+"invalid-parameter-type: argument 'args' for MCP tool '<tool>' is missing required member '<name>'",
+plus the unknown keys it found and the record's members. The tool body never runs, so none of its own
+guards contribute: not the null-args check, not the `[JsonExtensionData]` unknown-key check, not
+environment resolution. `run-process` (`process-name`) and `odata-read` (`entity`, `environment-name`,
+and `field` in a filter condition) declare such members. A positional parameter with no default is NOT
+one: the options leave RespectRequiredConstructorParameters off, so it binds to its default.
 
 **Why it is this way** — `required` is a language/serializer contract, not an MCP one. It sits below
-the tool and below `McpToolErrorFilter`'s per-tool checks, and the filter reports a binding failure in
-terms of the parameter it was binding.
+the tool and below `McpToolErrorFilter`'s per-tool checks; the filter can only report what the
+serializer refused (see [[system-text-json-reports-the-object-for-a-missing-member-and-the-value-for-a-wrong-kind]]).
 
-**What breaks if you ignore it** — two ways, both seen on ENG-98566:
+**What breaks if you ignore it** — two ways:
 
-- You write a test or a probe that sends a partial payload to exercise a tool-level guard, and it fails
-  with a message about the argument's shape. The obvious reading is that the guard is broken. It is not:
-  the call never reached it. Supply the `required` member to put the call on the path you meant to test.
-- You debug a caller's report of "must be an object" by inspecting their JSON for a shape problem and
-  find none, because there is none. Check the args record for a `required` member first.
+- A test or probe that sends a partial payload to exercise a tool-level guard fails with "is missing
+  required member". The guard is not broken: the call never reached it. Supply the `required` member.
+- A tool's alias table does not rename a misspelled REQUIRED member. `odata-read` lists
+  `environmentName` -> `environment-name`, but that rename runs in the tool body, which a payload
+  missing `environment-name` never reaches; the refusal's "did you mean" comes from the error filter's
+  own prefix and edit-distance match instead, so an alias that resembles nothing gets no suggestion there.
 
-Adding `required` to an args record is therefore a contract decision, not a nullability tidy-up: it
-moves a whole class of caller mistake from the tool's own, specific refusal to a generic binder message.
-See [[a-null-args-object-never-reaches-a-long-tail-tool]] for the sibling case, where the binder likewise
-answers before the tool for `{"args":null}`.
+Adding `required` to an args record is therefore a contract decision, not a nullability tidy-up. See
+[[a-null-args-object-never-reaches-a-long-tail-tool]] for the sibling case, `{"args":null}`.
+Which parts of the refusal's text callers may rely on - the code and the lead sentence, not the hints - is in
+[[a-binding-refusal-keeps-its-code-and-lead-sentence-stable-and-its-hints-free]].
