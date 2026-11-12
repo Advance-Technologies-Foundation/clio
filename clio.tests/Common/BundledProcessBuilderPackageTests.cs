@@ -71,7 +71,8 @@ public class BundledProcessBuilderPackageTests {
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
 	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>35e61293</c>, the
-	/// stamp commit <c>28aa90b0</c> to be tagged <c>crtprocessbuilder-1.6.6.165</c>): branch
+	/// stamp commit <c>28aa90b0</c>, tagged <c>crtprocessbuilder-1.6.6.165-ENG-105556</c> because another branch's
+	/// cut had already taken <c>crtprocessbuilder-1.6.6.165</c>): branch
 	/// <c>feature/ENG-105556-ai-toolkit-create-a-minimal</c> with <c>main</c> at 1.6.6.162 merged in (<c>a5103daf</c>), so
 	/// the cut carries everything 1.6.6.162 shipped. 1.6.6.154 and 1.6.6.160 were this branch's earlier cuts, never
 	/// shipped; 161, 163 and 164 are another branch's tagged cuts.

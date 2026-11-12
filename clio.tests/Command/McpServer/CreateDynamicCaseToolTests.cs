@@ -286,8 +286,8 @@ public sealed class CreateDynamicCaseToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The description is ASCII, its first sentence fits the compact index, and it names no guidance article the pinned library does not publish yet.")]
-	public void Description_ShouldBeAscii_AndNameNoUnpublishedGuide() {
+	[Description("The description is ASCII, its first sentence fits the compact index, and it points at the guidance article the pinned library publishes.")]
+	public void Description_ShouldBeAscii_AndPointAtItsGuide() {
 		// Arrange
 		string description = Description();
 
@@ -296,9 +296,8 @@ public sealed class CreateDynamicCaseToolTests {
 
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
-		description.Should().NotContain("process-dynamic-case",
-			because: "the article is not in the pinned curated library yet, so get-guidance would answer "
-				+ "guidance-not-found; the pointer comes with the curated re-pin that publishes it");
+		description.Should().Contain("Read get-guidance name=process-dynamic-case first.",
+			because: "the article owns the workflow, and clio-knowledge 1.15.210 (the pinned curated library) publishes it");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
 		firstSentence.Should().StartWith("Create a minimal dynamic case (DCM)", because: "the index line says what it does");
 		description.Should().Contain("not supported", because: "what the tool cannot do yet is stated");
