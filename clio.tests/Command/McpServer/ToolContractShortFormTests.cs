@@ -670,6 +670,10 @@ public sealed class ToolContractShortFormTests {
 		string filters = FieldDescription(shortForm, "filters");
 		filters.Should().Contain("op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq)",
 			because: "the short contract keeps the first sentence, and it names every operator the filter accepts");
+		filters.Should().Contain("{all?: [c], any?: [c]}",
+			because: "both groups may be sent together, which an either-or notation would hide");
+		filters.Should().Contain("groups with AND",
+			because: "a caller building A AND (B OR C) must learn from the short form that one filter object does it");
 		filters.Should().Contain("Example: {\"all\":[{\"field\":\"Account/Id\",\"op\":\"eq\",\"value\":\"8ecab4a1-0ca3-4515-9399-efe0a19390bd\"}]}",
 			because: "the field's own example shows the all/any group of {field, op, value} conditions and the Account/Id path for a lookup");
 	}
