@@ -318,6 +318,36 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("Routes from-environment through the environment-aware command, also for a templated schema and without schema-name, and passes the flag through (ENG-106290).")]
+	public void CreateDataBinding_ShouldResolveEnvironmentCommand_WhenFromEnvironmentIsTrue() {
+		// Arrange
+		CreateDataBindingCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingCommand>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		CreateDataBindingTool tool = new(
+			Container.GetRequiredService<CreateDataBindingCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver,
+			Container.GetRequiredService<IDataBindingTemplateCatalog>());
+
+		// Act
+		tool.CreateDataBinding(new CreateDataBindingArgs(
+			EnvironmentName: "dev",
+			PackageName: _packageName,
+			WorkspacePath: _workspaceRoot,
+			BindingName: "SysSettings_Custom",
+			FromEnvironment: true));
+
+		// Assert
+		commandResolver.Received(1).Resolve<CreateDataBindingCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"
+			&& ((CreateDataBindingOptions)options).FromEnvironment
+			&& ((CreateDataBindingOptions)options).BindingName == "SysSettings_Custom"
+			&& ((CreateDataBindingOptions)options).SchemaName == string.Empty));
+	}
+
+	[Test]
 	[Description("Adds a row through the MCP wrapper and generates the GUID primary key when the row payload omits it.")]
 	public void AddDataBindingRow_Should_Generate_Primary_Key_When_Missing() {
 		// Arrange
