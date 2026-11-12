@@ -153,6 +153,17 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WsdlParserTests.cs` (pa
 | TC-I-C03 | e2e (manual, `[Explicit]`, McpE2E.Manual) | wsdl-url: the stand downloads the public calculator WSDL; two ports, `<prefix>Add`, `tem:Add`; ignored when the stand has no internet | 1 |
 | TC-M-C01 | manual | The calculator WSDL through Studio's SOAP quick setup and through read-wsdl + register-web-service gives equivalent saved services (a Studio stand) | 4 |
 
+TC-M-C01 result, 2026-11-12, Creatio 10.2 Studio (.NET Framework, prefix `Usr`), clio at the slice C head: **PASS**. The
+public calculator WSDL (`http://www.dneonline.com/calculator.asmx?WSDL`) went once through Studio's SOAP quick setup
+(all methods and parameters kept; the wizard preselected `CalculatorSoap12 (SOAP 1.2)`, the port read-wsdl marks
+`studio-pick`) and once through read-wsdl in URL mode + register-web-service with the `studio-pick` arguments. Read back
+with describe-web-service, the two services are equal in type (SOAP 1.2), base URI, retry count, authentication,
+namespaces (`tem` = `http://tempuri.org/`, default), and per method in caption, verb, content type, timeout, SOAP action
+and every request and response parameter (code, caption, path, type, flags). The only differences are the ones ADR D9
+and D11 choose: Studio's method codes carry a random suffix (`UsrAdd_716f73f2`, clio `UsrAdd`), and Studio stores the
+message element bare (`Add`), clio with its prefix (`tem:Add`), the same element because `tem` is the default
+namespace. A test call of Add with 2 and 3 returned HTTP 200 and `UsrAResult` 5 through both.
+
 ## Slice D (story 4), outline
 
 TC-U-D: arrays and object arrays mapped to the platform's `nested` member; a single object refused; masking of

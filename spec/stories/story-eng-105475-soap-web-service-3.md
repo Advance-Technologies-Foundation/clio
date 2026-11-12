@@ -43,4 +43,5 @@ the way Studio's quick setup does, after the user trims the operations.
 - A 3-lens review and an automated security review found that a hostile WSDL could end the MCP host (type cycles,
   exponential expansion, deep nesting, a file imported under many names), that `wsdl-files` read network paths and
   devices, and that WSDL names reached the agent's warnings unfiltered; all are closed (ADR D9) with tests.
-- AC4: manual stand check, recorded in the test plan (TC-M-C01).
+- AC4: PASS on a Studio stand (TC-M-C01): the calculator through Studio's quick setup and through read-wsdl +
+  register are equal except for the method-code suffix (D11) and the prefixed message element (D9); both answer 2+3=5.
