@@ -268,8 +268,13 @@ public sealed class CuratedKnowledgeGitStartupE2ETests {
 	private static string? CreateRuntimeLocatingGitWrapper(string clioHome, string fixtureDirectory, string dotnetHost) {
 		if (OperatingSystem.IsWindows() || HasDefaultDotnetRuntime()
 				|| !Path.IsPathFullyQualified(dotnetHost)
-				|| Path.GetFileNameWithoutExtension(dotnetHost) != "dotnet"
-				|| Path.GetDirectoryName(dotnetHost) is not { Length: > 0 } dotnetRoot) {
+				|| Path.GetFileNameWithoutExtension(dotnetHost) != "dotnet") {
+			return null;
+		}
+		// The dotnet on PATH is often a link - Homebrew's /opt/homebrew/bin/dotnet points into
+		// Cellar/dotnet/<version>/libexec - and the runtime sits next to the file it points at, not next to the link.
+		string resolvedHost = File.ResolveLinkTarget(dotnetHost, returnFinalTarget: true)?.FullName ?? dotnetHost;
+		if (Path.GetDirectoryName(resolvedHost) is not { Length: > 0 } dotnetRoot) {
 			return null;
 		}
 		string wrapperDirectory = Path.Combine(clioHome, "git-wrapper");
