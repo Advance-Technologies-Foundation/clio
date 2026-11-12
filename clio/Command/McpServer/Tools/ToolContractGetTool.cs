@@ -1544,7 +1544,7 @@ internal static class ToolContractCatalog {
 			ToolContractGetTool.ToolName,
 			$"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools for cheap discovery - one tool-index line per tool (name, resident and destructive markers, a purpose cut to {MaxToolIndexPurposeLength} characters) explained by legend; pass detail=index-entries (with no tool-names) for the same index as objects (name, purpose, contract-available, resident, destructive); pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
 			+ "A named lookup is FITTED to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest are replaced by their SHORT form until it does. "
-			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence). "
+			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence; a cut object or array input field keeps one compact example of its value). "
 			+ "The short create-business-process and modify-business-process contracts also carry a SHAPE block: the descriptor fields and element blocks, or every operation with its fields. "
 			+ "Pass detail=full with tool-names to get every named contract complete, or detail=short to get them all short.",
 			new ToolInputSchemaContract(
@@ -2610,7 +2610,7 @@ internal static class ToolContractCatalog {
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(FiltersFieldName, ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. So A AND (B OR C) is one filter object. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Array of field names to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value. A comma-separated string (\"Id,Name\") is tolerated as input; an array element is always one column name and is never split on commas."),
 					Field("expand", ArrayType, "Array of navigation properties to expand. A comma-separated string (\"Account,Owner\") is tolerated as input; an array element is always one navigation name and is never split on commas."),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
@@ -2746,7 +2746,7 @@ internal static class ToolContractCatalog {
 					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(OutputFileFieldName, StringType, "Required path for the raw OData JSON response, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path."),
-					Field(FiltersFieldName, ObjectType, "Structured filter, identical to odata-read. all conditions join with AND; any conditions join with OR. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. Identical to odata-read; A AND (B OR C) is one filter object. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Fields to return. Narrowing the projection is the cheapest way to stay under the response limit."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
@@ -5040,7 +5040,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow. SaveSchema metadata is projected from the primary key plus columns referenced by currently bound or requested rows, so unrelated runtime-only columns are not blockers, while explicitly requested unsupported runtime columns still fail. For workflow selection, call get-guidance with name `data-bindings`.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow. SaveSchema metadata is projected from the primary key plus columns referenced by currently bound or requested rows, so unrelated runtime-only columns are not blockers, while explicitly requested unsupported runtime columns still fail. A `SysSettingsValue` binding always carries `SysSettings` and `TextValue` too, because the platform reads both while it saves that binding; a row of a SecureText setting is refused, so its secret never ships. For workflow selection, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(
@@ -7148,7 +7148,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRestoreWorkspace() {
 		return new ToolContractDefinition(
 			RestoreWorkspaceTool.RestoreWorkspaceToolName,
-			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. When the environment does not answer - a rejected login, a stopped site - the call fails with the reason and restores nothing; check the environment with ping-app. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[
@@ -7188,7 +7188,8 @@ internal static class ToolContractCatalog {
 			"A package that does not yet exist in the environment is created locked (InstallType 1, not editable) and registered as an installed application; this tool has no option to install it unlocked. To create a new editable package in the environment use create-package instead. " +
 			"Before installing, it emits one non-blocking warning message per Freedom UI page schema (web or mobile) whose user-visible text (caption, label, title, tooltip, placeholder) is an inline literal - the same text update-page rejects - naming the schema, its package, and the offending <node>.<property> elements; bind the text via $Resources.Strings.<Key> or #ResourceString(<Key>)# to clear it. " +
 			"A second warning names literal-only properties (e.g. crt.ImageInput.tooltip) bound to a localizable resource, which update-page also rejects because the text renders empty; set them as plain literals (see get-guidance page-schema-resources). " +
-			"Every package is packed before anything is installed: when a Schemas/<Name>/ or Data/<Name>/ folder has no descriptor.json the call fails with exit-code 1 and installs nothing, and the error names each such folder's local path. Creatio would otherwise reject the whole installation with 'Invalid descriptor' naming only the folder's last path segment. Each folder carries a verdict: 'only Localization files, delete the folder' is a deleted data binding's leftover, so delete it; 'element files, restore descriptor.json' means the element is still there, so restore its descriptor.json and do not delete it, because the next install can remove the element.",
+			"Every package is packed before anything is installed: when a Schemas/<Name>/ or Data/<Name>/ folder has no descriptor.json the call fails with exit-code 1 and installs nothing, and the error names each such folder's local path. Creatio would otherwise reject the whole installation with 'Invalid descriptor' naming only the folder's last path segment. Each folder carries a verdict: 'only Localization files, delete the folder' is a deleted data binding's leftover, so delete it; 'element files, restore descriptor.json' means the element is still there, so restore its descriptor.json and do not delete it, because the next install can remove the element. " +
+			"When Creatio reports the installation as failed, the call fails with exit-code 1: usually the installer's 'Package installation failed: <reason>' line is followed by one naming the packages that may not have been installed; an invalid package archive fails with the archive error alone.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[
@@ -7515,7 +7516,8 @@ internal static class ToolContractCatalog {
 				"Create the sys-setting once, then update the value as it changes. The setting exists only on this environment. " +
 				"To ship it with the package that reads it, set the value first (an existing row is bound as it is in the database), " +
 				"then call create-data-binding-db twice with explicit binding-name values: SysSettings_<Code> (schema SysSettings) and " +
-				"SysSettingsValue_<Code> (schema SysSettingsValue, All employees row, always including TextValue). " +
+				"SysSettingsValue_<Code> (schema SysSettingsValue, All employees row naming SysSettings, SysAdminUnit, IsDef and its value column; " +
+				"TextValue is added automatically, and a SecureText value is refused - ship only SysSettings_<Code> for it). " +
 				"Bind SysSettings_<Code> first and check that its bound Id is the setting's own before binding the value. " +
 				"Read both back with read-data-binding-db. The value binding is a snapshot: after changing a shipped value, " +
 				"re-run create-data-binding-db for SysSettingsValue_<Code> and read it back. " +

@@ -98,6 +98,20 @@ Empty folders and files excluded by `clioignore` are not packed, so they are not
 reported. Folders under `Assemblies/`, `Files/`, `Resources/` and `SqlScripts/`
 are not checked.
 
+### A failed installation
+
+When the installation fails - Creatio reports it as failed, or the backup before
+it cannot be created - the installer writes the reason and the command closes
+with the packages that may not have been installed, then exits with `1`:
+
+```text
+[ERR] - Package installation failed: <reason>
+[ERR] - Workspace packages may not have been installed: UsrApp, UsrAppData.
+```
+
+An invalid package archive is the exception: the command fails with the archive
+error alone, without the package list.
+
 ## See Also
 
 create-workspace - Create a workspace
