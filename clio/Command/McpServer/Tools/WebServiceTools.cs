@@ -111,7 +111,7 @@ public sealed class ModifyWebServiceTool(IToolCommandResolver commandResolver) {
 
 				 A SOAP service also takes setNamespaces (the whole list; a prefix a kept method uses must stay) and setType (soap11 or soap12; REST and SOAP cannot be switched); both change every call, so the usage guard treats them as changing every method. Its methods follow the register-web-service SOAP rules, and describe-web-service output is valid setMethod and setNamespaces input.
 
-				 BEFORE CALLING with setMethod or removeMethod: a process whose Call web service element calls that method loses its parameters on the next designer load and fails at run time, silently. setNamespaces and setType keep those parameters but change every call the processes make. The tool refuses all four while a process calls the service and lists the processes; show them to the user and repeat with acknowledge-usages naming them only after the user says yes. The caller needs CanManageSolution.
+				 BEFORE CALLING with setMethod or removeMethod: a process whose Call web service element calls that method loses its parameters on the next designer load and fails at run time, silently. setNamespaces and setType keep those parameters but change every call the processes make. The tool refuses these changes (setNamespaces and setType only when they really change the list or version) while a process calls the service and lists the processes; show them to the user and repeat with acknowledge-usages naming them only after the user says yes. The caller needs CanManageSolution.
 				 """)]
 	public WebServiceToolResult ModifyWebService(
 		[Description("Parameters: environment-name, code, operations (required); acknowledge-usages (optional)")]

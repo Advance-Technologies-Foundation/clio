@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace Clio.Command.WebServiceDesigner;
 
 /// <summary>
-/// Turns the agent's description of a REST service into the platform contract. The platform's save validates
+/// Turns the agent's description of a REST or SOAP service into the platform contract. The platform's save validates
 /// nothing (Studio checks names, URIs and duplicates in its client code only), so every rule Studio enforces
 /// is enforced here, and every rule about credentials is stricter than Studio's.
 /// </summary>
@@ -32,8 +32,15 @@ public static partial class WebServiceDefinitionBuilder {
 	[GeneratedRegex(@"^(?:([A-Za-z_][A-Za-z0-9_\-]*):)?([A-Za-z_][A-Za-z0-9_\-]*)$")]
 	private static partial Regex PrefixedElementPattern();
 
-	[GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_.\-]*$")]
+	// An unprefixed segment goes to the default namespace as written, and XmlDocument accepts Unicode letters in a name
+	// (a 1C service's ДатаНачала); only the prefixed form is ASCII, because the platform's prefix:name regex is.
+	[GeneratedRegex(@"^[\p{L}_][\p{L}\p{Mn}\p{Nd}_.\-]*$")]
 	private static partial Regex ElementNamePattern();
+
+	// The platform's own reading of a segment (Terrasoft.Services SoapBodyBuilder): unanchored, so it finds a prefix
+	// in a name clio would refuse; the prefixes a kept method needs are found the same way.
+	[GeneratedRegex(@"([a-zA-Z0-9_\-]+):([a-zA-Z0-9_\-]+)")]
+	private static partial Regex PlatformPrefixPattern();
 
 	/// <summary>
 	/// The platform service type for a <c>type</c> argument: rest (default), soap11 or soap12, or the names
@@ -116,7 +123,7 @@ public static partial class WebServiceDefinitionBuilder {
 		if (HasUserInfo(soapAction)) {
 			errors.Add($"method '{code}': soap-action must not carry credentials (user:password@).");
 		}
-		ValidateUriQuery(code, soapAction, errors);
+		ValidateUriQuery($"method '{code}': soap-action", soapAction, errors);
 	}
 
 	/// <summary>
@@ -164,9 +171,19 @@ public static partial class WebServiceDefinitionBuilder {
 		prefix.StartsWith("xml", StringComparison.OrdinalIgnoreCase)
 		|| string.Equals(prefix, "soapenv", StringComparison.OrdinalIgnoreCase);
 
-	/// <summary>Whether a value is an absolute URI carrying <c>user:password@</c>.</summary>
-	internal static bool HasUserInfo(string value) =>
-		Uri.TryCreate(value?.Trim(), UriKind.Absolute, out Uri uri) && !string.IsNullOrEmpty(uri.UserInfo);
+	/// <summary>
+	/// Whether a value may carry <c>user:password@</c>: an <c>@</c> anywhere after <c>://</c>. It fails closed, like
+	/// <see cref="WebServiceSchemaView.StripUserInfo"/>: a password may hold <c>/</c>, <c>?</c>, <c>#</c> or <c>@</c>,
+	/// which <see cref="Uri"/> cannot parse, so a parse would let exactly those through. A <c>urn:</c> value has no
+	/// <c>://</c> and is not affected.
+	/// </summary>
+	internal static bool HasUserInfo(string value) {
+		if (string.IsNullOrEmpty(value)) {
+			return false;
+		}
+		int scheme = value.IndexOf("://", StringComparison.Ordinal);
+		return scheme >= 0 && value.IndexOf('@', scheme + 3) >= 0;
+	}
 
 	/// <summary>
 	/// A comparable form of a namespace list (prefix, URI and default flag, by prefix), so a setNamespaces that sends
@@ -191,8 +208,8 @@ public static partial class WebServiceDefinitionBuilder {
 			.Concat(BodyParameters(method.Request?.Parameters).Select(p => p.Path))
 			.Concat(RequestItemElements(method).Select(p => p.SequenceElementName))
 			.SelectMany(path => (path ?? string.Empty).Split('/'))
-			.Select(segment => PrefixedElementPattern().Match(segment.Trim()))
-			.Where(match => match.Success && match.Groups[1].Success && match.Groups[1].Length > 0)
+			.Select(segment => PlatformPrefixPattern().Match(segment))
+			.Where(match => match.Success)
 			.Select(match => match.Groups[1].Value)
 			.ToHashSet(StringComparer.Ordinal);
 
@@ -206,14 +223,10 @@ public static partial class WebServiceDefinitionBuilder {
 	/// <summary>
 	/// Checks every prefixed element name a SOAP method uses against the declared prefixes: its message element, the
 	/// element paths of its body request parameters, nested items included, and the item element of each request array
-	/// (the platform builds it with the same <c>prefix:name</c> lookup). Used for a method the call builds and for a kept
-	/// method after the namespaces change.
+	/// (the platform builds it with the same <c>prefix:name</c> lookup). Used for a method the call builds; a kept
+	/// method is checked against new namespaces through <see cref="UsedPrefixes"/>.
 	/// </summary>
-	/// <param name="method">The method.</param>
-	/// <param name="soap">The declared prefixes.</param>
-	/// <param name="errors">Collected problems.</param>
-	/// <param name="includeMessageElement">False when the message element is missing and already reported.</param>
-	public static void ValidateSoapPrefixes(ServiceMethodDto method, SoapContext soap, Errors errors,
+	private static void ValidateSoapPrefixes(ServiceMethodDto method, SoapContext soap, Errors errors,
 		bool includeMessageElement = true) {
 		if (includeMessageElement) {
 			ValidateElementPath($"method '{method.Name}': message-element", method.Request?.Uri, soap, errors);
@@ -222,8 +235,7 @@ public static partial class WebServiceDefinitionBuilder {
 			ValidateElementPath($"method '{method.Name}' request parameter '{parameter.Name}': path", parameter.Path, soap,
 				errors);
 		}
-		// The item element's form is checked where the parameter is built; here only its prefix, so a kept method is
-		// checked against new namespaces too.
+		// The item element's form is checked where the parameter is built; here only its prefix.
 		foreach (ServiceParameterDto parameter in RequestItemElements(method)) {
 			Match match = PrefixedElementPattern().Match(parameter.SequenceElementName.Trim());
 			if (match.Success && match.Groups[1].Success && !soap.Prefixes.Contains(match.Groups[1].Value)) {
@@ -336,11 +348,18 @@ public static partial class WebServiceDefinitionBuilder {
 			errors.Add("base-uri must not carry credentials (user:password@); use auth with system settings.");
 			return baseUri;
 		}
-		if (baseUri.IndexOfAny(['?', '#']) >= 0) {
+		if (soap && baseUri.Contains('?') && !baseUri.Contains('#')) {
+			// A SOAP call goes to the base URI as stored, query included (ServiceClientRequest), and SOAP has no query
+			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here. A credential-like key with a
+			// constant value would be printed by list and describe, so that is refused.
+			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
+		} else if (baseUri.IndexOfAny(['?', '#']) >= 0) {
 			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
 			// method path, and a key in it would be a stored constant that list and describe print.
-			errors.Add("base-uri must not have a query or a fragment; give query values as query parameters "
-				+ "(a key or token with default-sys-setting).");
+			errors.Add(soap
+				? "base-uri must not have a fragment."
+				: "base-uri must not have a query or a fragment; give query values as query parameters "
+					+ "(a key or token with default-sys-setting).");
 			return baseUri;
 		}
 		string trimmed = baseUri.Trim();
@@ -450,7 +469,7 @@ public static partial class WebServiceDefinitionBuilder {
 			}
 		};
 		ValidatePathPlaceholders(code, uri, baseUri, method.Request.Parameters, errors);
-		ValidateUriQuery(code, uri, errors);
+		ValidateUriQuery($"method '{code}': uri", uri, errors);
 		ValidateBodyRules(code, verb, contentType, method, errors);
 		return method;
 	}
@@ -603,7 +622,7 @@ public static partial class WebServiceDefinitionBuilder {
 
 	/// <summary>Where a parameter list is built: request or response, its owner for messages, nesting and the SOAP rules.</summary>
 	private sealed record ParameterScope(bool IsRequest, string Owner, Errors Errors, string Prefix,
-		bool Nested = false, SoapContext Soap = null, bool InSoapHeader = false);
+		bool Nested = false, SoapContext Soap = null, bool InSoapHeader = false, bool PreviousInSoapHeader = false);
 
 	private static ServiceItemCollection<ServiceParameterDto> BuildParameters(
 		IReadOnlyList<WebServiceParameterArg> args, ServiceItemCollection<ServiceParameterDto> existing,
@@ -701,7 +720,9 @@ public static partial class WebServiceDefinitionBuilder {
 		}
 		string path = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path ?? arg.Code : arg.Path;
 		bool inHeader = ValidateSoapMembers(arg, placement, path, scope) || scope.InSoapHeader;
-		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors, inHeader);
+		bool previousInHeader = scope.PreviousInSoapHeader || previous?.IsSoapHeader == true;
+		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors, inHeader,
+			scope.PreviousInSoapHeader);
 		return new ServiceParameterDto {
 			UId = previous?.UId ?? Guid.NewGuid(),
 			Name = arg.Code,
@@ -719,7 +740,7 @@ public static partial class WebServiceDefinitionBuilder {
 			SequenceElementName = scope.Soap is not null ? SoapSequenceElement(arg) : previous?.SequenceElementName,
 			Extra = previous?.Extra,
 			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties,
-				scope with { Nested = true, InSoapHeader = inHeader })
+				scope with { Nested = true, InSoapHeader = inHeader, PreviousInSoapHeader = previousInHeader })
 		};
 	}
 
@@ -741,9 +762,13 @@ public static partial class WebServiceDefinitionBuilder {
 			: "must be prefix:name with letters, digits, '_' or '-' only (the platform cuts the name at any other character).";
 	}
 
-	/// <summary>The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given.</summary>
+	/// <summary>
+	/// The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given. An explicit
+	/// empty value is kept: a response array with it reads every child element (XmlResponseBodyParser), and describe
+	/// reports it so a round trip does not turn it into <c>item</c>, which would read nothing from such a response.
+	/// </summary>
 	private static string SoapSequenceElement(WebServiceParameterArg arg) =>
-		string.IsNullOrWhiteSpace(arg.SequenceElement) ? "item" : arg.SequenceElement.Trim();
+		arg.SequenceElement is null ? "item" : arg.SequenceElement.Trim();
 
 	/// <summary>
 	/// The SOAP-only parameter members and rules. <c>soap-header</c> goes on a top-level body request parameter only
@@ -833,21 +858,30 @@ public static partial class WebServiceDefinitionBuilder {
 				+ $"Studio refuses to save the method; keep the wire name in path, e.g. {example}.");
 		} else if (string.IsNullOrWhiteSpace(arg.Path)) {
 			errors.Add($"{owner} '{arg.Code}' needs path: its code carries the schema-name prefix, so it is not the "
-				+ "name the API sees; give the wire name (a JSONPath such as $.status for a response body value, the "
-				+ "header or cookie name for a response header or cookie).");
+				+ "name the API sees; give the wire name ("
+				+ (soap
+					? "an element path such as tem:intA for a request body value or AddResult for a response value"
+					: "a JSONPath such as $.status for a response body value")
+				+ ", the header or cookie name for a header or cookie).");
 		}
 	}
 
-	private static bool IsHiddenSecretConstant(ServiceParameterDto previous, bool inSoapHeader = false) =>
+	/// <summary>
+	/// Whether describe hid the previous constant: it is secret-like itself, or it travelled in a SOAP Header (its own
+	/// flag or its parent's). The NEW placement never decides it: a visible constant moved into the Header is not
+	/// carried, or a body constant could be turned into a stored Header constant in two calls.
+	/// </summary>
+	private static bool IsHiddenSecretConstant(ServiceParameterDto previous, bool previousInSoapHeader) =>
 		previous?.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst } value && !string.IsNullOrEmpty(value.Value)
-		&& (inSoapHeader || WebServiceSchemaView.IsSecretLike(previous));
+		&& (previousInSoapHeader || previous.IsSoapHeader == true || WebServiceSchemaView.IsSecretLike(previous));
 
 	/// <param name="soapHeader">
 	/// Whether the parameter travels in a SOAP Header (WS-Security and licence values): its constant default is treated
 	/// like a header constant and refused.
 	/// </param>
+	/// <param name="previousInSoapHeader">Whether the previous parameter's parent travelled in a SOAP Header.</param>
 	private static ServiceParameterValueDto BuildDefault(WebServiceParameterArg arg, ServiceParameterDto previous,
-		int placement, string owner, Errors errors, bool soapHeader = false) {
+		int placement, string owner, Errors errors, bool soapHeader = false, bool previousInSoapHeader = false) {
 		if (soapHeader) {
 			placement = ServiceSchemaCodes.Placements["header"];
 		}
@@ -873,7 +907,7 @@ public static partial class WebServiceDefinitionBuilder {
 		// parameter, a path that is not credential-like) the next reply would print it, and it would travel in the
 		// URL, so that move is refused instead.
 		bool clears = arg.DefaultValue is { Length: 0 };
-		if (previous is not null && !hasConstant && !clears && IsHiddenSecretConstant(previous, soapHeader)) {
+		if (previous is not null && !hasConstant && !clears && IsHiddenSecretConstant(previous, previousInSoapHeader)) {
 			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement)
 					&& !WebServiceSchemaView.IsSecretLike(wireName, placement)) {
 				errors.Add($"{owner}: it carries a secret constant default that describe hides, and the new placement "
@@ -892,7 +926,7 @@ public static partial class WebServiceDefinitionBuilder {
 	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a credential-like key there would be a
 	/// stored constant that describe prints and every reader of the schema sees.
 	/// </summary>
-	private static void ValidateUriQuery(string code, string uri, Errors errors) {
+	private static void ValidateUriQuery(string owner, string uri, Errors errors) {
 		int question = uri.IndexOf('?');
 		if (question < 0) {
 			return;
@@ -904,8 +938,8 @@ public static partial class WebServiceDefinitionBuilder {
 			string value = equals < 0 ? string.Empty : pair[(equals + 1)..];
 			if (value.Length > 0 && !PathPlaceholderPattern().IsMatch(value)
 					&& WebServiceSchemaView.IsSecretLike(key, ServiceSchemaCodes.Placements["query"])) {
-				errors.Add($"method '{code}': uri query '{key}' looks like a credential and has a constant value; "
-					+ "make it a query parameter with default-sys-setting instead.");
+				errors.Add($"{owner} query '{key}' looks like a credential and has a constant value; "
+					+ "make it a parameter with default-sys-setting instead.");
 			}
 		}
 	}

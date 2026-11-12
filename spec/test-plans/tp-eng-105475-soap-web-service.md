@@ -89,6 +89,12 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WebServiceSoapWriteTest
 | TC-U-B22 | unit | A namespace row's null uId / isDefault is left out on write, never sent as null | 5 |
 | TC-U-B23 | unit | The credential-name pattern matches licence/license, nonce and a name ending in pass (UsrPass, AdminPass, SmtpPass, tem:pass), not passport, compass or bypass. REST effect: a constant default on a REST parameter so named (e.g. `UsrLicenseType`) is now refused and hidden by describe as well | 2 |
 | TC-U-B24 | unit | A request array's sequence-element may be `prefix:name` with a declared prefix (`tem:Region`, as Studio's wizard writes it); an undeclared prefix or a name the platform would cut is refused, and setNamespaces cannot drop a prefix only a sequence-element uses | 2, 5 |
+| TC-U-B25 | unit | A visible body constant is not carried into the SOAP Header by a setMethod that adds soap-header without a default; a constant hidden by a SOAP-header parent is refused, not erased, when the parent leaves the Header (final-gate review) | 2, 5 |
+| TC-U-B26 | unit | User information is detected fail-closed (any `@` after `://`) in a soap-action and a namespace uri, also when the password makes the value unparseable as a URI | 2 |
+| TC-U-B27 | unit | setNamespaces counts a prefix the platform reads in a segment clio would refuse (`ns2:Api.Key`) | 4 |
+| TC-U-B28 | unit | A SOAP base URI keeps a fixed query (`?sap-client=100`); a credential-like key with a constant value there is refused; unprefixed Unicode element names are accepted | 2, 3 |
+| TC-U-B29 | unit | An empty response sequence-element survives describe → setMethod (it reads every child element; `item` would read nothing) | 5 |
+| TC-U-B30 | unit | register-web-service passes `type` and `namespaces` to the designer (MCP mapping) | 1 |
 | TC-I-B01 | e2e | Registers a SOAP 1.1 service through the tool (a SOAP-header object array with an item included), refuses one with an undeclared prefix, round-trips describe through modify unchanged, switches to SOAP 1.2, refuses dropping a namespace in use, and test-calls it against `http://localhost/<code>` without the response being withheld | 1-5 |
 | TC-M-B01 | manual | A service registered by clio opens and saves unchanged in Studio, SOAP 1.1 and 1.2 | 6 |
 

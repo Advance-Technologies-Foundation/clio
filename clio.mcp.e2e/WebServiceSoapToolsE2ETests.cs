@@ -14,8 +14,9 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage of the SOAP read side of the web service tools against a live stand:
 /// describe of SOAP 1.1 and 1.2 services, a SOAP test call whose envelope carries a setting-bound SOAP-header
-/// element, and the REST xml test-call message. Until register-web-service creates SOAP services, the SOAP fixtures are
-/// saved through the platform's own ServiceDataContract, the call Studio makes, and removed in the teardown.
+/// element, and the REST xml test-call message, plus registering and changing a SOAP service through the tools. The read
+/// fixtures are saved through the platform's own ServiceDataContract, the call Studio makes, so they have Studio's
+/// shape and not clio's; all of them are removed in the teardown.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.Sandbox")]

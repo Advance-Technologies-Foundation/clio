@@ -136,7 +136,7 @@ public sealed record WebServiceParameterArg(
 	bool? SoapHeader = null,
 
 	[property: JsonPropertyName("sequence-element")]
-	[property: Description("SOAP only, arrays: the element name of each item, e.g. string, or prefix:name with a declared prefix, e.g. tem:Region; default item")]
+	[property: Description("SOAP only, arrays: the element name of each item, e.g. string, or prefix:name with a declared prefix, e.g. tem:Region; default item. Empty on a response array reads every child element; send describe's value back to keep it")]
 	string SequenceElement = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
@@ -350,7 +350,7 @@ public sealed record WebServiceTestResult(
 /// </summary>
 public static partial class WebServiceSchemaView {
 
-	[GeneratedRegex(@"key|token|secret|passw|(?<!com|by|sur)pass\b|pwd|auth|credential|signature|session|cookie|licen[cs]e|nonce",
+	[GeneratedRegex(@"key|token|secret|passw|passphrase|passcode|(?<!com|by|sur)pass(?![a-z])|pwd|auth|credential|signature|session|cookie|licen[cs]e|nonce|bearer|jwt",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
 	private static partial Regex SecretNamePattern();
 
@@ -513,9 +513,8 @@ public static partial class WebServiceSchemaView {
 		// The platform stores isSoapHeader false and sequenceElementName "item" on every SOAP parameter, so only the
 		// values that change the envelope are reported: a SOAP-header flag, and the item name of a SOAP array.
 		bool? soapHeader = soap && parameter.IsSoapHeader == true ? true : null;
-		string sequenceElement = soap && parameter.IsArray && !string.IsNullOrEmpty(parameter.SequenceElementName)
-			? parameter.SequenceElementName
-			: null;
+		// An empty value is reported too: on a response array it means every child element, and setMethod keeps it.
+		string sequenceElement = soap && parameter.IsArray ? parameter.SequenceElementName : null;
 		return new WebServiceParameterView(parameter.Name, Localized(parameter.Caption),
 			ServiceSchemaCodes.Placements.FirstOrDefault(p => p.Value == parameter.Type).Key ?? "body",
 			parameter.Path, parameter.DataValueTypeName, parameter.IsArray, parameter.IsRequired,

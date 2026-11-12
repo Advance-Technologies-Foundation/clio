@@ -145,12 +145,12 @@ public sealed class WebServiceSoapWriteTests {
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 
-	[TestCase("none", Description = "no namespace")]
-	[TestCase("two-defaults", Description = "two defaults")]
-	[TestCase("duplicate", Description = "duplicate prefix")]
-	[TestCase("no-uri", Description = "namespace without uri")]
-	[Description("Namespaces Studio cannot save or the platform cannot call are refused.")]
-	public void Register_Should_Refuse_Broken_Namespaces(string variant) {
+	[TestCase("none", "*needs at least one namespace*", Description = "no namespace")]
+	[TestCase("two-defaults", "*at most one namespace as default*", Description = "two defaults")]
+	[TestCase("duplicate", "*'tem' is used twice*", Description = "duplicate prefix")]
+	[TestCase("no-uri", "*needs a uri*", Description = "namespace without uri")]
+	[Description("Namespaces Studio cannot save or the platform cannot call are refused, each with its own reason.")]
+	public void Register_Should_Refuse_Broken_Namespaces(string variant, string expected) {
 		// Arrange
 		WebServiceNamespaceArg[] namespaces = variant switch {
 			"none" => [],
@@ -164,7 +164,7 @@ public sealed class WebServiceSoapWriteTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: $"the namespaces are broken ({variant})")
-			.WithMessage("*namespace*", because: "the refusal names the namespaces");
+			.WithMessage(expected, because: "the refusal names the rule the namespaces break");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 
@@ -222,7 +222,7 @@ public sealed class WebServiceSoapWriteTests {
 		// Arrange
 		var security = new WebServiceParameterArg("UsrSecurity", Type: "Object", Array: true, Path: "wsse:Security",
 			SoapHeader: true, Items: [new WebServiceParameterArg("UsrPassword", Path: "wsse:Password", DefaultSysSetting: "UsrPass")]);
-		var constant = new WebServiceParameterArg("UsrLicence", Path: "tem:Licence", SoapHeader: true, DefaultValue: "lic-123");
+		var constant = new WebServiceParameterArg("UsrMode", Path: "tem:Mode", SoapHeader: true, DefaultValue: "mode-1");
 		WebServiceNamespaceArg[] namespaces = [new("tem", "http://tempuri.org/"), new("wsse", "http://wsse/")];
 
 		// Act
@@ -589,6 +589,186 @@ public sealed class WebServiceSoapWriteTests {
 				because: "an unknown type is not a REST to SOAP switch");
 	}
 
+	private static WebServiceMethodArg DescribedOp(ServiceSchemaDto schema) =>
+		JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single(m => m.Code == "UsrOp")));
+
+	[Test]
+	[Description("A visible body constant is not carried into the SOAP Header when setMethod turns the parameter into a soap-header parameter without a default: a Header constant cannot be made in two calls.")]
+	public void Modify_Should_Not_Carry_A_Visible_Constant_Into_The_Soap_Header() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		ServiceParameterDto plain = schema.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrA");
+		plain.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "LK-123" };
+		GivenRegistered(schema);
+		WebServiceMethodArg methodArg = DescribedOp(schema);
+		methodArg = methodArg with {
+			RequestParameters = methodArg.RequestParameters
+				.Select(p => p.Code == "UsrA" ? p with { SoapHeader = true, DefaultValue = null } : p).ToList()
+		};
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("UsrSoapProbe", [new WebServiceOperationArg("setMethod", methodArg)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "moving a parameter into the Header without a default is a valid change");
+		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrA").DefValue.Value
+			.Should().NotBe("LK-123", because: "describe showed the constant, so it was never hidden and is not carried into the Header");
+	}
+
+	[Test]
+	[Description("A constant hidden because its parent travelled in the SOAP Header is refused, not erased, when setMethod takes the parent out of the Header.")]
+	public void Modify_Should_Refuse_Showing_A_Constant_Hidden_By_A_Soap_Header_Parent() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		ServiceParameterDto lines = schema.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrLines");
+		lines.IsSoapHeader = true;
+		ServiceParameterDto item = lines.ItemProperties.Items.Values.Single();
+		item.Name = "UsrLineMode";
+		item.Path = "tem:Mode";
+		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "item-mode-1" };
+		GivenRegistered(schema);
+		WebServiceMethodArg methodArg = DescribedOp(schema);
+		methodArg = methodArg with {
+			RequestParameters = methodArg.RequestParameters
+				.Select(p => p.Code == "UsrLines"
+					? p with { SoapHeader = null, Items = p.Items.Select(i => i with { SoapHeader = null }).ToList() }
+					: p).ToList()
+		};
+
+		// Act
+		Action act = () => _sut.Modify("UsrSoapProbe", [new WebServiceOperationArg("setMethod", methodArg)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "out of the Header the next describe would print the constant")
+			.WithMessage("*would show it*", because: "the refusal says the constant would become visible");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("http://svc:p@ss@host/Add", Description = "a password with @")]
+	[TestCase("http://svc:p#ss@host/Add", Description = "a password with # that Uri cannot parse")]
+	[TestCase("http://svc:p/ss@host/Add", Description = "a password with /")]
+	[Description("A soap-action with user information is refused even when the password makes it unparseable as a URI.")]
+	public void Register_Should_Refuse_A_Soap_Action_With_Any_User_Info(string soapAction) {
+		// Arrange
+		WebServiceMethodArg method = AddMethod() with { SoapAction = soapAction };
+
+		// Act
+		Action act = Register(method);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "a soap-action is stored and printed by describe")
+			.Which.Message.Should().Contain("must not carry credentials", because: "the refusal names the rule")
+			.And.NotContain("p#ss", because: "a refused value is never echoed");
+	}
+
+	[Test]
+	[Description("describe hides user information in a namespace uri even when the password makes it unparseable as a URI.")]
+	public void Describe_Should_Hide_Unparseable_User_Info_In_A_Namespace() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		schema.Namespaces.Items.Values.Single(n => n.Prefix == "tem").Name = "http://svc:p#ss@host/ns";
+
+		// Act
+		string view = JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom"));
+
+		// Assert
+		view.Should().NotContain("p#ss", because: "the password must not reach the agent");
+		view.Should().Contain("[redacted]", because: "the user information is replaced, not dropped silently");
+	}
+
+	[Test]
+	[Description("setNamespaces cannot drop a prefix a kept method uses only in a segment the platform still reads with that prefix (tem:Api.Key renders as tem:Api).")]
+	public void Modify_SetNamespaces_Should_Count_A_Prefix_The_Platform_Reads_In_A_Cut_Segment() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		Guid ns2 = Guid.NewGuid();
+		schema.Namespaces.Items[ns2.ToString()] = new ServiceNamespaceDto {
+			UId = ns2, Prefix = "ns2", Name = "http://example.org/ns2", IsDefault = false
+		};
+		schema.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrA").Path = "ns2:Api.Key";
+		GivenRegistered(schema);
+		WebServiceNamespaceArg[] kept = [
+			new("tem", "http://example.org/UsrSoapR", true),
+			new("wsse", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd")
+		];
+
+		// Act
+		Action act = () => _sut.Modify("UsrSoapProbe", [new WebServiceOperationArg("setNamespaces", Namespaces: kept)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the platform still looks ns2 up for that element")
+			.WithMessage("*prefix 'ns2'*", because: "the refusal names the lost prefix");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("A SOAP base URI keeps a fixed query, as SAP endpoints need (?sap-client=100): the platform calls it as stored and SOAP has no query parameters.")]
+	public void Register_Should_Keep_A_Query_In_A_Soap_Base_Uri() {
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://sap.example:8000/sap/bc/srt/rfc/sap/zws/100/zws/zws?sap-client=100", null, null, [AddMethod()],
+			"soap11", Tem));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the query is the only place a SOAP endpoint can carry it");
+		_saved.BaseUri.Should().Be("http://sap.example:8000/sap/bc/srt/rfc/sap/zws/100/zws/zws?sap-client=100",
+			because: "a SOAP base URI is stored as given");
+	}
+
+	[Test]
+	[Description("A credential-like key with a constant value in a SOAP base URI query is refused without echoing the value.")]
+	public void Register_Should_Refuse_A_Credential_In_A_Soap_Base_Uri_Query() {
+		// Act
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://x.example/svc.asmx?api_key=s3cr3t-v", null, null, [AddMethod()], "soap11", Tem));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "list and describe would print the key")
+			.Which.Message.Should().Contain("looks like a credential", because: "the refusal names the rule")
+			.And.NotContain("s3cr3t-v", because: "a refused value is never echoed");
+	}
+
+	[Test]
+	[Description("An unprefixed element name with non-ASCII letters is accepted: it goes to the default namespace as written.")]
+	public void Register_Should_Accept_A_Unicode_Element_Name() {
+		// Arrange
+		WebServiceMethodArg method = new("UsrGet", null, null, MessageElement: "ПолучитьДанные",
+			RequestParameters: [new WebServiceParameterArg("UsrStart", Path: "ДатаНачала")],
+			ResponseParameters: [new WebServiceParameterArg("UsrResult", Path: "Результат")]);
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://x.example/ws/data.1cws", null, null, [method], "soap12", Tem));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "XmlDocument accepts Unicode letters in an unprefixed element name");
+	}
+
+	[Test]
+	[Description("An empty sequence-element on a response array survives a describe and setMethod round trip instead of becoming item.")]
+	public void Modify_Should_Keep_An_Empty_Response_Sequence_Element() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		var products = new ServiceParameterDto {
+			UId = Guid.NewGuid(), Type = ServiceSchemaCodes.Placements["body"], Name = "UsrProducts", Path = "Products",
+			DataValueTypeName = "Text", IsArray = true, SequenceElementName = "", IsSoapHeader = false,
+			DefValue = new ServiceParameterValueDto { Source = 0 },
+			Caption = new Dictionary<string, string> { ["en-US"] = "UsrProducts" },
+			ItemProperties = new ServiceItemCollection<ServiceParameterDto>()
+		};
+		schema.Methods.Items.Values.Single().Response.Parameters.Items[products.UId.ToString()] = products;
+		GivenRegistered(schema);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("UsrSoapProbe", [new WebServiceOperationArg("setMethod", DescribedOp(schema))], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "describe output is valid setMethod input");
+		_saved.Methods.Items.Values.Single().Response.Parameters.Items.Values.Single(p => p.Name == "UsrProducts")
+			.SequenceElementName.Should().Be("", because: "an empty item name reads every child element; item would read nothing");
+	}
+
 	[Test]
 	[Description("A constant on an item of a SOAP-header parameter is hidden by describe even when the item itself lacks the flag, as the platform renders it in the Header.")]
 	public void Describe_Should_Hide_A_Constant_Under_A_Soap_Header_Parent() {
@@ -598,13 +778,15 @@ public sealed class WebServiceSoapWriteTests {
 		lines.IsSoapHeader = true;
 		ServiceParameterDto item = lines.ItemProperties.Items.Values.Single();
 		item.IsSoapHeader = false;
-		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "item-licence-1" };
+		item.Name = "UsrLineMode";
+		item.Path = "tem:Mode";
+		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "item-mode-1" };
 
 		// Act
 		string view = JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom"));
 
 		// Assert
-		view.Should().NotContain("item-licence-1", because: "the item travels in the Header with its parent");
+		view.Should().NotContain("item-mode-1", because: "the item travels in the Header with its parent, whatever its name");
 	}
 
 	[Test]
@@ -650,10 +832,17 @@ public sealed class WebServiceSoapWriteTests {
 	[TestCase("AdminPass", true, Description = "an admin pass")]
 	[TestCase("SmtpPass", true, Description = "an SMTP pass")]
 	[TestCase("tem:AdminPass", true, Description = "a prefixed element ending in Pass")]
+	[TestCase("UsrPasscode", true, Description = "passcode")]
+	[TestCase("tem:PassPhrase", true, Description = "passphrase")]
+	[TestCase("tem:Pass_Word", true, Description = "pass followed by an underscore")]
+	[TestCase("tem:Pass1", true, Description = "pass followed by a digit")]
+	[TestCase("tem:Bearer", true, Description = "bearer")]
+	[TestCase("UsrJwt", true, Description = "jwt")]
 	[TestCase("UsrPassport", false, Description = "passport")]
+	[TestCase("UsrPassenger", false, Description = "passenger")]
 	[TestCase("UsrCompass", false, Description = "compass")]
 	[TestCase("UsrBypass", false, Description = "bypass")]
-	[Description("The credential-name pattern also catches licence, nonce and a name ending in pass, REST parameters included, and leaves passport, compass and bypass alone.")]
+	[Description("The credential-name pattern also catches licence, nonce, passcode, passphrase, bearer, jwt and pass not followed by a letter, REST parameters included, and leaves passport, passenger, compass and bypass alone.")]
 	public void IsSecretName_Should_Match_Credential_Words_Only(string name, bool expected) {
 		// Act
 		bool secret = WebServiceSchemaView.IsSecretName(name);

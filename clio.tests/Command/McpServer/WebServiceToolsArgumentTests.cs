@@ -38,6 +38,27 @@ public sealed class WebServiceToolsArgumentTests {
 	}
 
 	[Test]
+	[Description("register-web-service passes type and namespaces to the designer unchanged.")]
+	public void RegisterWebService_Should_Pass_Type_And_Namespaces() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
+		designer.Register(Arg.Any<string>(), Arg.Any<WebServiceRegistration>()).Returns(new WebServiceToolResult(true));
+		WebServiceNamespaceArg[] namespaces = [new("tem", "http://tempuri.org/")];
+		var args = new RegisterWebServiceArgs("dev", "Custom", "UsrCalc", "http://x.example/svc.asmx", [],
+			Type: "soap12", Namespaces: namespaces);
+		var tool = new RegisterWebServiceTool(resolver);
+
+		// Act
+		tool.RegisterWebService(args);
+
+		// Assert
+		designer.Received(1).Register("Custom", Arg.Is<WebServiceRegistration>(r =>
+			r.Type == "soap12" && ReferenceEquals(r.Namespaces, namespaces) && r.Code == "UsrCalc"));
+	}
+
+	[Test]
 	[Description("describe-web-service answers service-code with the canonical code argument and keeps listing a truly unknown key.")]
 	public void DescribeWebService_Should_Hint_Code_And_Keep_Unknown_Keys() {
 		// Arrange
