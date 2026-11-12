@@ -37,7 +37,7 @@ public sealed class WsdlRegistrationMapperTests {
 		WsdlParameter escaping = new("subs", "tem:order/tem:lines", "Object", true, false, "tem:subs",
 			[Parameter("code", "tem:code")], "Usrsubs", EscapesItem: true);
 		WsdlPort port = Port(Operation("Op", dottedItem, Parameter("id", "tem:id"), escaping));
-		var warnings = new List<string>();
+		var warnings = new WarningLog();
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
@@ -45,8 +45,8 @@ public sealed class WsdlRegistrationMapperTests {
 		// Assert
 		result.Arguments.Methods.Single().RequestParameters.Select(p => p.Path).Should().Equal(["tem:id"],
 			because: "only the parameter register accepts is kept");
-		warnings.Should().Contain(w => w.Contains("tem:tag.value"), because: "the item element is named");
-		warnings.Should().Contain(w => w.Contains("outer array's path"), because: "the misplaced array is explained");
+		warnings.Kept.Should().Contain(w => w.Contains("tem:tag.value"), because: "the item element is named");
+		warnings.Kept.Should().Contain(w => w.Contains("outer array's path"), because: "the misplaced array is explained");
 	}
 
 	[Test]
@@ -56,17 +56,17 @@ public sealed class WsdlRegistrationMapperTests {
 		var port = new WsdlPort("Soap", "Calc", 2, "REPLACE_WITH_ACTUAL_URL",
 			[new WsdlNamespace("tem", "http://example.org/t/")],
 			[new WsdlOperation("Op", "UsrOp", "urn:op\nnext", "Op", "http://example.org/t/", [Parameter("x", "tem:x")], [])]);
-		var warnings = new List<string>();
+		var warnings = new WarningLog();
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
 
 		// Assert
 		result.Arguments.BaseUri.Should().Be("REPLACE_WITH_ACTUAL_URL", because: "only the user can give the real endpoint");
-		warnings.Should().Contain(w => w.Contains("REPLACE_WITH_ACTUAL_URL") && w.Contains("base-uri"),
+		warnings.Kept.Should().Contain(w => w.Contains("REPLACE_WITH_ACTUAL_URL") && w.Contains("base-uri"),
 			because: "the agent is told to replace it");
 		result.Arguments.Methods.Single().SoapAction.Should().BeNull(because: "a header value cannot hold a line break");
-		warnings.Should().Contain(w => w.Contains("soapAction"), because: "the dropped action is reported");
+		warnings.Kept.Should().Contain(w => w.Contains("soapAction"), because: "the dropped action is reported");
 	}
 
 	[Test]
@@ -82,7 +82,7 @@ public sealed class WsdlRegistrationMapperTests {
 		]);
 
 		// Act
-		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, new List<string>());
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, new WarningLog());
 
 		// Assert
 		result.Arguments.Methods.Single().RequestParameters.Select(p => p.Code).Should().Equal(["UsrintA1", "UsrintB2"],
@@ -100,7 +100,7 @@ public sealed class WsdlRegistrationMapperTests {
 		], []);
 
 		// Act
-		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, new List<string>());
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, new WarningLog());
 
 		// Assert
 		result.Arguments.Namespaces.Select(n => (n.Prefix, n.Uri)).Should().Contain(("ns1", "http://example.org/x"),
@@ -124,11 +124,54 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
+	[Description("A warning common to two ports is listed once, warnings past the limit are counted, and a dropped parameter that matched a method of the target service keeps that code reserved.")]
+	public void Map_Should_Share_One_Warning_Log_And_Keep_Reused_Codes() {
+		// Arrange
+		WsdlParameter emptyMatched = Parameter("old", "tem:old", "Object", array: true);
+		WsdlPort port = Port(Operation("Add", emptyMatched, Parameter("other", "tem:other")),
+			Operation("Bad", Parameter("x", "tem:x.y")));
+		WebServiceParameterView View(string code, string path) =>
+			new(code, code, "body", path, "Text", false, false, null, null, false, []);
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 5000, "xml", false,
+				[View("Usrother", "tem:old")], [], "Add", "urn:Add")
+		]);
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlServiceArguments first = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, warnings);
+		WsdlRegistrationMapper.Map(port with { Name = "Soap12" }, false, "Usr", "dev", target, warnings);
+
+		// Assert
+		warnings.Kept.Count(w => w.Contains("tem:x.y")).Should().Be(1, because: "the same leave-out on both ports is listed once");
+		first.Arguments.Methods.Single(m => m.Code == "UsrAdd").RequestParameters.Single().Code.Should().Be("Usrother2",
+			because: "the dropped parameter's existing code stays reserved, so the new parameter does not take it");
+	}
+
+	[Test]
+	[Description("The warning log keeps the first hundred distinct messages and counts the rest, in linear time.")]
+	public void WarningLog_Should_Keep_The_First_Messages_And_Count_The_Rest() {
+		// Arrange
+		var log = new WarningLog();
+
+		// Act
+		for (int i = 0; i < 50_000; i++) {
+			log.Add($"warning {i % 30_000}");
+		}
+
+		// Assert
+		log.Kept.Should().HaveCount(WarningLog.MaxKept, because: "the list is capped");
+		log.ToList()[^1].Should().StartWith("...and ", because: "the rest are counted");
+		log.Dropped.Should().BeInRange(30_000 - WarningLog.MaxKept, 50_000,
+			because: "repeats are not counted while they are tracked, and are at most over-counted past that");
+	}
+
+	[Test]
 	[Description("Codes are the prefix plus the wizard's shortened name, without its random suffix, so every read gives the same codes; the message element gets the prefix of its namespace.")]
 	public void Map_Should_Give_Stable_Prefixed_Codes_And_A_Prefixed_Message_Element() {
 		// Arrange
 		WsdlDocument document = Fixture("calculator.wsdl");
-		var warnings = new List<string>();
+		var warnings = new WarningLog();
 
 		// Act
 		WsdlServiceArguments first = WsdlRegistrationMapper.Map(document.Ports[0], false, "Usr", "dev", null, warnings);
@@ -154,7 +197,7 @@ public sealed class WsdlRegistrationMapperTests {
 		WsdlPort port = Port(Operation("Add", Parameter("1st", "tem:first")));
 
 		// Act
-		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, string.Empty, "dev", null, new List<string>());
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, string.Empty, "dev", null, new WarningLog());
 
 		// Assert
 		WebServiceMethodArg method = result.Arguments.Methods.Single();
@@ -171,7 +214,7 @@ public sealed class WsdlRegistrationMapperTests {
 			Operation("add"), Operation("a-dd"));
 
 		// Act
-		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, new List<string>());
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, new WarningLog());
 
 		// Assert
 		result.Arguments.Methods.Select(m => m.Code).Should().Equal(["UsrAdd", "Usradd2", "Usradd3"],
@@ -187,7 +230,7 @@ public sealed class WsdlRegistrationMapperTests {
 		WsdlOperation ping = Fixture("wizard-features.wsdl").Ports[0].Operations.Single(o => o.Caption == "Ping");
 
 		// Act
-		WsdlServiceArguments result = WsdlRegistrationMapper.Map(Port(ping), true, "Usr", "dev", null, new List<string>());
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(Port(ping), true, "Usr", "dev", null, new WarningLog());
 
 		// Assert
 		string code = result.Arguments.Methods.Single().RequestParameters.Single().Code;
@@ -205,7 +248,7 @@ public sealed class WsdlRegistrationMapperTests {
 				Parameter("dotted", "tem:blz.parameter"), Parameter("empty", "tem:empty", "Object"),
 				Parameter(string.Empty, string.Empty, array: true)),
 			new WsdlOperation("get.Bank", "UsrBank", null, "getBank.Method", "http://example.org/t/", [], []));
-		var warnings = new List<string>();
+		var warnings = new WarningLog();
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
@@ -214,12 +257,12 @@ public sealed class WsdlRegistrationMapperTests {
 		result.Arguments.Methods.Should().ContainSingle(because: "the platform would send another root element for get.Bank")
 			.Which.RequestParameters.Select(p => p.Path).Should().Equal(["tem:order/tem:id"],
 				because: "only the element register-web-service accepts is kept");
-		warnings.Should().Contain(w => w.Contains("tem:order/tem:Tenant") && w.Contains("second time"),
+		warnings.Kept.Should().Contain(w => w.Contains("tem:order/tem:Tenant") && w.Contains("second time"),
 			because: "a copy is named and explained");
-		warnings.Should().Contain(w => w.Contains("tem:blz.parameter") && w.Contains("cuts"), because: "a cut name is named");
-		warnings.Should().Contain(w => w.Contains("tem:empty") && w.Contains("no readable fields"), because: "an empty object is named");
-		warnings.Should().Contain(w => w.Contains("without a wrapper"), because: "an empty path is explained");
-		warnings.Should().Contain(w => w.Contains("get.Bank") && w.Contains("left out"), because: "a dropped method is named");
+		warnings.Kept.Should().Contain(w => w.Contains("tem:blz.parameter") && w.Contains("cuts"), because: "a cut name is named");
+		warnings.Kept.Should().Contain(w => w.Contains("tem:empty") && w.Contains("no readable fields"), because: "an empty object is named");
+		warnings.Kept.Should().Contain(w => w.Contains("without a wrapper"), because: "an empty path is explained");
+		warnings.Kept.Should().Contain(w => w.Contains("get.Bank") && w.Contains("left out"), because: "a dropped method is named");
 	}
 
 	[Test]
@@ -232,7 +275,7 @@ public sealed class WsdlRegistrationMapperTests {
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(Port(secure, noAction), true, "Usr", "dev", null,
-			new List<string>());
+			new WarningLog());
 
 		// Assert
 		WebServiceParameterArg tags = result.Arguments.Methods[0].RequestParameters.Single();
@@ -251,7 +294,7 @@ public sealed class WsdlRegistrationMapperTests {
 		var port = new WsdlPort("Soap", "Calc", 2, "http://localhost/calc",
 			[new WsdlNamespace("tem", "http://example.org/t/"), new WsdlNamespace("ns0", string.Empty)],
 			[Operation("Op", Parameter("x", "tem:wrap/ns0:x"))]);
-		var warnings = new List<string>();
+		var warnings = new WarningLog();
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
@@ -260,7 +303,7 @@ public sealed class WsdlRegistrationMapperTests {
 		result.Arguments.Namespaces.Select(n => n.Prefix).Should().Equal(["tem"], because: "an empty namespace cannot be declared");
 		result.Arguments.Methods.Single().RequestParameters.Single().Path.Should().Be("tem:wrap/x",
 			because: "an unprefixed element is the closest the platform can send");
-		warnings.Should().Contain(w => w.Contains("no namespace"), because: "the agent is told to test a call");
+		warnings.Kept.Should().Contain(w => w.Contains("no namespace"), because: "the agent is told to test a call");
 	}
 
 	[Test]
@@ -279,7 +322,7 @@ public sealed class WsdlRegistrationMapperTests {
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(document.Ports[0], false, "Usr", "dev", target,
-			new List<string>());
+			new WarningLog());
 
 		// Assert
 		result.Arguments.Code.Should().Be("UsrCalcOld", because: "the operations go into the target service");

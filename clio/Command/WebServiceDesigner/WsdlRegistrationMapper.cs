@@ -22,6 +22,52 @@ public sealed record WsdlTargetService(string Code, IReadOnlyList<WebServiceName
 public sealed record WsdlServiceArguments(string Port, bool StudioPick, WsdlRegistrationArgs Arguments,
 	IReadOnlyList<string> ExistingMethods);
 
+/// <summary>
+/// The warnings of one read-wsdl call, across every port: each message once, the first <see cref="MaxKept"/> kept and the
+/// rest counted. Lookup and insertion are constant time, so a WSDL that yields a warning per element (up to the parser's
+/// element budget) costs linear time, and the messages remembered for deduplication are bounded too.
+/// </summary>
+public sealed class WarningLog {
+	/// <summary>The most warnings a result lists.</summary>
+	public const int MaxKept = 100;
+
+	/// <summary>The most distinct messages remembered to count the rest without repeats.</summary>
+	internal const int MaxTracked = 10_000;
+
+	private readonly HashSet<string> _seen = new(StringComparer.Ordinal);
+	private readonly List<string> _kept = [];
+
+	/// <summary>The warnings to list, in the order they were added.</summary>
+	public IReadOnlyList<string> Kept => _kept;
+
+	/// <summary>How many more distinct warnings there were (an upper bound once too many were seen to track).</summary>
+	public int Dropped { get; private set; }
+
+	/// <summary>Adds a warning unless the same message was added before.</summary>
+	/// <param name="message">The warning.</param>
+	public void Add(string message) {
+		if (_seen.Count < MaxTracked) {
+			if (!_seen.Add(message)) {
+				return;
+			}
+		} else if (_seen.Contains(message)) {
+			return;
+		}
+		if (_kept.Count < MaxKept) {
+			_kept.Add(message);
+		} else {
+			Dropped++;
+		}
+	}
+
+	/// <summary>Whether a message was added (among the tracked ones).</summary>
+	public bool Contains(string message) => _seen.Contains(message);
+
+	/// <summary>The warnings as a result lists them: the kept ones, then a count of the rest.</summary>
+	public IReadOnlyList<string> ToList() =>
+		Dropped == 0 ? _kept : [.. _kept, $"...and {Dropped} more warnings."];
+}
+
 /// <summary>What read-wsdl proposes for one port: register-web-service input without package-name.</summary>
 public sealed record WsdlRegistrationArgs(
 	[property: JsonPropertyName("environment-name")] string EnvironmentName,
@@ -53,10 +99,10 @@ public static partial class WsdlRegistrationMapper {
 	/// <param name="prefix">The environment's schema-name prefix; may be empty.</param>
 	/// <param name="environmentName">The environment the arguments are for.</param>
 	/// <param name="target">An existing service the operations go into, or null for a new service.</param>
-	/// <param name="warnings">Collected warnings.</param>
+	/// <param name="warnings">The warnings of the call, shared by every port so a message common to them is listed once.</param>
 	/// <returns>The arguments.</returns>
 	public static WsdlServiceArguments Map(WsdlPort port, bool studioPick, string prefix, string environmentName,
-		WsdlTargetService target, ICollection<string> warnings) {
+		WsdlTargetService target, WarningLog warnings) {
 		ArgumentNullException.ThrowIfNull(port);
 		prefix ??= string.Empty;
 		var context = new PortContext(port, prefix, target, warnings);
@@ -147,18 +193,13 @@ public static partial class WsdlRegistrationMapper {
 	}
 
 	/// <summary>The per-port mapping: the namespace prefixes and the warnings.</summary>
-	private sealed class PortContext(WsdlPort port, string prefix, WsdlTargetService target, ICollection<string> warnings) {
+	private sealed class PortContext(WsdlPort port, string prefix, WsdlTargetService target, WarningLog warnings) {
 		private readonly Dictionary<string, string> _prefixRename = new(StringComparer.Ordinal);
 		private readonly HashSet<string> _unqualified = new(StringComparer.Ordinal);
 		private readonly Dictionary<string, string> _prefixByUri = new(StringComparer.Ordinal);
-		private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
 		private string _operation;
 
-		private void Warn(string message) {
-			if (_warned.Add(message) && !warnings.Contains(message)) {
-				warnings.Add(message);
-			}
-		}
+		private void Warn(string message) => warnings.Add(message);
 
 		private static string Shown(string value) => WsdlParser.Shown(value);
 
@@ -314,7 +355,11 @@ public static partial class WsdlRegistrationMapper {
 				: [];
 			if (isObject && items.Count == 0) {
 				Warn($"{where}: none of its fields can be described, so neither can the object.");
-				codes.Remove(code);
+				// A code generated here is given back; one a matched method's parameter already has stays reserved, so no
+				// other parameter takes it and setMethod gives that parameter's UId to the wrong one.
+				if (previous is null) {
+					codes.Remove(code);
+				}
 				return null;
 			}
 			return new WebServiceParameterArg(code,

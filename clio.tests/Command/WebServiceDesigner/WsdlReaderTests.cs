@@ -304,6 +304,34 @@ public sealed class WsdlReaderTests {
 		filtered.Services.Single().Arguments.Should().NotBeNull(because: "a filtered read returns arguments");
 	}
 
+	[TestCase(System.IO.FileAttributes.Device)]
+	[TestCase(System.IO.FileAttributes.ReparsePoint)]
+	[Description("A device or a reparse point (a link) given as a WSDL file is refused before it is opened.")]
+	public void Read_Should_Refuse_A_Special_File(System.IO.FileAttributes attributes) {
+		// Arrange
+		string path = _fileSystem.Path.Combine(_fileSystem.Path.GetTempPath(), "wsdl", "special.wsdl");
+		_fileSystem.AddFile(path, new MockFileData(FixtureBytes("calculator.wsdl")) { Attributes = attributes });
+
+		// Act
+		Action act = () => _sut.Read(Files(path));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "only a regular file is read").WithMessage("*not a regular file*");
+	}
+
+	[Test]
+	[Description("An empty file is refused before it is opened: a FIFO or a character device looks like one, and opening a FIFO blocks.")]
+	public void Read_Should_Refuse_An_Empty_File() {
+		// Arrange
+		string path = GivenFile("fifo.wsdl", []);
+
+		// Act
+		Action act = () => _sut.Read(Files(path));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "nothing to read, and the open could block").WithMessage("*empty or not a regular file*");
+	}
+
 	[TestCase(@"\\host\share\x.wsdl")]
 	[TestCase("//host/share/x.wsdl")]
 	[Description("A network path is refused before any request: reading it would make the machine running clio connect to that host with the user's credentials.")]

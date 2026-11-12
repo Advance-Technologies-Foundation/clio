@@ -91,9 +91,6 @@ public sealed class WsdlReader(
 	internal const int MaxResultCharacters = 120_000;
 	/// <summary>The most operation names a too-large result lists per port.</summary>
 	internal const int MaxListedOperations = 500;
-	/// <summary>The most warnings a result carries; the rest are counted.</summary>
-	internal const int MaxWarnings = 100;
-
 	private const string ManageSolutionOperation = "CanManageSolution";
 
 	private static readonly JsonSerializerOptions ArgumentOptions = new() {
@@ -121,12 +118,14 @@ public sealed class WsdlReader(
 		string prefix = prefixReader.Read();
 		IReadOnlyList<WsdlSourceFile> files = fromUrl ? Download(url) : ReadFiles(request.WsdlFiles);
 		WsdlDocument document = parser.Parse(files, prefix);
-		var warnings = new List<string>();
+		var warnings = new WarningLog();
 		if (fromUrl && HasReplacementCharacter(document)) {
 			warnings.Add("Some names contain '?': the platform download turns every non-ASCII character into '?', so they "
 				+ "may be left out or wrong. Read the WSDL again with wsdl-files (a local copy) to keep them.");
 		}
-		warnings.AddRange(document.Warnings);
+		foreach (string warning in document.Warnings) {
+			warnings.Add(warning);
+		}
 		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document, request.Port), request.Operations);
 		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		var services = new List<WsdlServiceArguments>();
@@ -165,11 +164,9 @@ public sealed class WsdlReader(
 	private static IEnumerable<WsdlParameter> Flatten(IReadOnlyList<WsdlParameter> parameters) =>
 		(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
-	private static WsdlReadResult Result(IReadOnlyList<WsdlServiceArguments> services, List<string> warnings,
+	private static WsdlReadResult Result(IReadOnlyList<WsdlServiceArguments> services, WarningLog warnings,
 		List<string> notices) {
-		List<string> shownWarnings = warnings.Count <= MaxWarnings
-			? warnings
-			: [.. warnings.Take(MaxWarnings), $"...and {warnings.Count - MaxWarnings} more warnings."];
+		IReadOnlyList<string> shownWarnings = warnings.ToList();
 		List<WsdlServiceView> views = services.Select(s => new WsdlServiceView(s.Port, s.StudioPick,
 			JsonSerializer.SerializeToElement(s.Arguments, ArgumentOptions), s.ExistingMethods)).ToList();
 		var result = new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
@@ -268,6 +265,11 @@ public sealed class WsdlReader(
 			if ((attributes & (FileAttributes.Directory | FileAttributes.Device | FileAttributes.ReparsePoint)) != 0
 					|| info.LinkTarget is not null) {
 				throw new ArgumentException($"wsdl-files: '{shown}' is not a regular file.");
+			}
+			// A FIFO or a character device reports length 0 and no Device attribute on Unix, and opening a FIFO for reading
+			// blocks until something writes to it; an empty WSDL is useless anyway, so length 0 is refused before the open.
+			if (info.Length == 0) {
+				throw new ArgumentException($"wsdl-files: '{shown}' is empty or not a regular file.");
 			}
 			if (info.Length > MaxFileBytes) {
 				throw new ArgumentException($"wsdl-files: '{shown}' is larger than {MaxFileBytes / 1024 / 1024} MB.");
