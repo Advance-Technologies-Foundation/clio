@@ -1544,7 +1544,7 @@ internal static class ToolContractCatalog {
 			ToolContractGetTool.ToolName,
 			$"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools for cheap discovery - one tool-index line per tool (name, resident and destructive markers, a purpose cut to {MaxToolIndexPurposeLength} characters) explained by legend; pass detail=index-entries (with no tool-names) for the same index as objects (name, purpose, contract-available, resident, destructive); pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
 			+ "A named lookup is FITTED to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest are replaced by their SHORT form until it does. "
-			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence). "
+			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence; a cut object or array input field keeps one compact example of its value). "
 			+ "The short create-business-process and modify-business-process contracts also carry a SHAPE block: the descriptor fields and element blocks, or every operation with its fields. "
 			+ "Pass detail=full with tool-names to get every named contract complete, or detail=short to get them all short.",
 			new ToolInputSchemaContract(
@@ -2610,7 +2610,7 @@ internal static class ToolContractCatalog {
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(FiltersFieldName, ObjectType, "Structured filter. all conditions join with AND; any conditions join with OR. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. So A AND (B OR C) is one filter object. GUID values in Id-suffixed fields and navigation paths ending in Id are automatically unquoted. Use lookup traversal paths such as Account/Id when filtering records by lookup primary value. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Array of field names to return. Use [\"Id\", \"Name\"] when resolving lookup records by display value. A comma-separated string (\"Id,Name\") is tolerated as input; an array element is always one column name and is never split on commas."),
 					Field("expand", ArrayType, "Array of navigation properties to expand. A comma-separated string (\"Account,Owner\") is tolerated as input; an array element is always one navigation name and is never split on commas."),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
@@ -2746,7 +2746,7 @@ internal static class ToolContractCatalog {
 					Field(EntityFieldName, StringType, "Creatio OData entity set name, usually the referenced lookup schema name such as Contact, Account, or a custom lookup schema."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(OutputFileFieldName, StringType, "Required path for the raw OData JSON response, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path."),
-					Field(FiltersFieldName, ObjectType, "Structured filter, identical to odata-read. all conditions join with AND; any conditions join with OR. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
+					Field(FiltersFieldName, ObjectType, "Structured filter {all?: [c], any?: [c]}, c = {field, op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq), value | in: [...]}; all joins with AND, any with OR, groups with AND. Identical to odata-read; A AND (B OR C) is one filter object. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }] }."),
 					Field(SelectFieldName, ArrayType, "Fields to return. Narrowing the projection is the cheapest way to stay under the response limit."),
 					Field("expand", ArrayType, "Navigation properties to expand."),
 					Field(OrderByFieldName, StringType, "OData $orderby clause, for example CreatedOn desc or Name asc."),
@@ -7148,7 +7148,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildRestoreWorkspace() {
 		return new ToolContractDefinition(
 			RestoreWorkspaceTool.RestoreWorkspaceToolName,
-			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
+			"Restores packages listed in .clio/workspaceSettings.json at workspace-path from the specified Creatio environment. An empty eligible package list succeeds with a warning and does not clear or delete existing package directories. When the environment does not answer - a rejected login, a stopped site - the call fails with the reason and restores nothing; check the environment with ping-app. Requires the cliogate package on the target environment; when it is missing, install it with install-gate and retry.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[
