@@ -556,6 +556,40 @@ public sealed class WebServiceSoapWriteTests {
 	}
 
 	[Test]
+	[Description("A namespace row read with a null uId or isDefault is written back without those members, never as null.")]
+	public void Namespaces_Should_Leave_Null_Members_Out_On_Write() {
+		// Arrange
+		ServiceSchemaDto schema = JsonSerializer.Deserialize<ServiceSchemaDto>(SoapServiceFixture.PlatformRead
+			.Replace("{\"uId\": \"e34e5bd3-4afe-47a6-9d62-3a2ee09d05f7\",", "{\"uId\": null,")
+			.Replace("\"prefix\": \"tem\", \"isDefault\": true", "\"prefix\": \"tem\", \"isDefault\": null"));
+
+		// Act
+		string written = JsonSerializer.Serialize(schema.Namespaces.Items.Values.Single(n => n.Prefix == "tem"));
+
+		// Assert
+		written.Should().NotContain("uId", because: "the platform's contract has a non-null Guid there");
+		written.Should().NotContain("isDefault", because: "the platform's contract has a non-null boolean there");
+		written.Should().Contain("\"prefix\":\"tem\"", because: "the members that were read are kept");
+	}
+
+	[TestCase("UsrLicenseType", true, Description = "licence spelt with s")]
+	[TestCase("tem:Licence", true, Description = "licence spelt with c")]
+	[TestCase("UsrNonceLength", true, Description = "nonce")]
+	[TestCase("tem:pass", true, Description = "a pass element")]
+	[TestCase("pass", true, Description = "pass alone")]
+	[TestCase("UsrPassport", false, Description = "passport")]
+	[TestCase("UsrCompass", false, Description = "compass")]
+	[TestCase("UsrBypassCache", false, Description = "bypass")]
+	[Description("The credential-name pattern also catches licence, nonce and a pass element, REST parameters included, and leaves words that only contain pass alone.")]
+	public void IsSecretName_Should_Match_Credential_Words_Only(string name, bool expected) {
+		// Act
+		bool secret = WebServiceSchemaView.IsSecretName(name);
+
+		// Assert
+		secret.Should().Be(expected, because: "a constant on a credential-like parameter is refused and hidden; other words are not");
+	}
+
+	[Test]
 	[Description("A SOAP setBaseUri stores the URI as given, without adding a trailing slash.")]
 	public void Modify_SetBaseUri_Should_Keep_A_Soap_Uri_As_Given() {
 		// Arrange
