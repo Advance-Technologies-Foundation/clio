@@ -31,6 +31,8 @@ in the table it is UPDATED; a row present in neither the binding nor the table i
 create-data-binding-db first.
 SaveSchema metadata is rebuilt from the primary key plus the columns present in the
 existing bound rows and the requested upsert payload.
+A SysSettingsValue binding also carries SysSettings and TextValue, and a row of a
+SecureText setting is refused before anything is written, so its secret never ships.
 After remote mutation, read back from Creatio instead of treating the request payload
 or install log as proof.
 To sync the result to a local workspace, use restore-workspace separately.
