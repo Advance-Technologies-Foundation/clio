@@ -5,6 +5,7 @@ using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.WebServiceDesigner;
+using Microsoft.AspNetCore.Http;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -175,6 +176,24 @@ public sealed class WebServiceToolsArgumentTests {
 		// Assert
 		result.Success.Should().BeFalse(because: "the download failed");
 		result.Error.Should().Contain("Error downloading schema", because: "the platform's reason reaches the agent");
+	}
+
+	[Test]
+	[Description("Over HTTP, read-wsdl refuses wsdl-files, which would read files on the machine running clio.")]
+	public void ReadWsdl_Should_Refuse_Local_Files_Over_Http() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IHttpContextAccessor accessor = Substitute.For<IHttpContextAccessor>();
+		accessor.HttpContext.Returns(new DefaultHttpContext());
+		var tool = new ReadWsdlTool(resolver, accessor);
+
+		// Act
+		WsdlReadResult result = tool.ReadWsdl(new ReadWsdlArgs("dev", null, ["/etc/hosts"]));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "an HTTP client cannot point at the server's files");
+		result.Error.Should().Contain("wsdl-url", because: "the refusal names the way that works over HTTP");
+		resolver.DidNotReceiveWithAnyArgs().Resolve<IWsdlReader>(default);
 	}
 
 	[Test]

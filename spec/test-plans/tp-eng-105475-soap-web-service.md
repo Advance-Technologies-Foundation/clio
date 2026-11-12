@@ -140,10 +140,18 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WsdlParserTests.cs` (pa
 | TC-U-C21 | unit | The download client posts the URL array to the route, keys files by URL and schemaLocation, reports the platform's message redacted without its stack trace, and refuses non-text values and an empty download | 1 |
 | TC-U-C22 | unit | The route is `0/rest/DownloadWsdlEndpoint/GetXmlSchemaFilesContent` on .NET Framework and `rest/...` on .NET Core | 1 |
 | TC-U-C23 | unit | The tool answers guessed argument names with a rename hint, refuses unknown keys with the valid list, passes every argument to the environment's reader and returns a failure as an error | 1 |
+| TC-U-C25 | unit | A file nested past 256 levels is refused before it is copied; a chain of types past 64 levels stops with a warning; a base-type or type-reference cycle stops with a warning; an exponential expansion is refused past 200,000 elements | 2 |
+| TC-U-C26 | unit | A file imported under 200 spellings is merged once; a relative schemaLocation and a WCF `?xsd=xsd0` location are found; two given files of one name are refused as ambiguous | 1 |
+| TC-U-C27 | unit | Operation, port and element names that are not XML names are skipped; the service caption is flattened; no warning carries a line break or a long WSDL text; warnings stop at 100 with a count | 2 |
+| TC-U-C28 | unit | An array inside an array item is marked by the parser (Studio's path checked against Studio's parser) and left out of the arguments; an array whose item element register would refuse is left out | 2 |
+| TC-U-C29 | unit | The warning branches of D9: missing binding, no input, undefined message element, unresolved reference, missing base type, rpc style, several WSDL files, a message element type that extends another, a split input message | 2 |
+| TC-U-C30 | unit | A port address register would refuse is kept with a warning; a soapAction with a line break is left out; a target's parameter at the same path keeps its code; a prefix the target uses otherwise is renamed; a cut code without a prefix stays an identifier | 2 |
+| TC-U-C31 | unit | A network path and a key-carrying URL are refused before any request; files over 50 MB together are refused; a failed download points at wsdl-files; an endpoint on another host gives a notice; a filtered read over the size limit lists names; operations filter across ports; wsdl-files is refused over HTTP | 1, 2 |
+| TC-U-C32 | unit | A reply over the cap a caller sets is refused before it is deserialized | 1 |
 | TC-I-C01 | e2e (NoEnvironment) | read-wsdl is discoverable and answers a guessed `url` with `wsdl-url` | 1 |
 | TC-I-C02 | e2e | wsdl-files with a WSDL shipped in the test project: both SOAP ports, the SOAP 1.2 one picked, codes from the stand's prefix; the pick, trimmed to three operations, registers under a throwaway code and describe reads back the same namespaces, message elements, SOAP actions, header flags and item elements (no copy); a second read with service-code lists every method as existing; removed in the teardown | 1, 2 |
 | TC-I-C03 | e2e (manual, `[Explicit]`, McpE2E.Manual) | wsdl-url: the stand downloads the public calculator WSDL; two ports, `<prefix>Add`, `tem:Add`; ignored when the stand has no internet | 1 |
-| TC-M-C01 | manual | The calculator WSDL through Studio's SOAP quick setup and through read-wsdl + register-web-service gives equivalent saved services (stand `studio-16317520`) | 4 |
+| TC-M-C01 | manual | The calculator WSDL through Studio's SOAP quick setup and through read-wsdl + register-web-service gives equivalent saved services (a Studio stand) | 4 |
 
 ## Slice D (story 4), outline
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
@@ -23,7 +24,7 @@ public sealed record WsdlSourceFile(string Key, byte[] Content, bool AsciiText =
 
 /// <summary>A namespace a SOAP service declares, in the order the wizard adds them; the first is the default.</summary>
 /// <param name="Prefix">The prefix: <c>tem</c> for the target namespace, then <c>ns0</c>, <c>ns1</c>, ...</param>
-/// <param name="Uri">The namespace URI; empty or null for an element without a namespace.</param>
+/// <param name="Uri">The namespace URI; empty for an element without a namespace, null for a prefix the WSDL never declares.</param>
 public sealed record WsdlNamespace(string Prefix, string Uri);
 
 /// <summary>A request or response parameter as Studio's wizard builds it.</summary>
@@ -39,8 +40,13 @@ public sealed record WsdlNamespace(string Prefix, string Uri);
 /// Whether the wizard read it a second time one level too high: an element of an anonymous type nested inside another
 /// element of the same type (<c>Fault/faultNumber</c> next to <c>Fault/detail/faultNumber</c>).
 /// </param>
+/// <param name="EscapesItem">
+/// Whether it is an object array inside an item of another array, to which the wizard gives the outer array's path
+/// (<c>tem:order/tem:lines</c> for the <c>subs</c> of each <c>lines</c> item), so the platform would nest it wrongly.
+/// </param>
 public sealed record WsdlParameter(string Caption, string Path, string Type, bool IsArray, bool IsSoapHeader,
-	string SequenceElement, IReadOnlyList<WsdlParameter> Items, string StudioCode, bool IsCopy = false);
+	string SequenceElement, IReadOnlyList<WsdlParameter> Items, string StudioCode, bool IsCopy = false,
+	bool EscapesItem = false);
 
 /// <summary>An operation of a port as Studio's wizard builds it.</summary>
 /// <param name="Caption">The operation name.</param>
@@ -75,8 +81,8 @@ public sealed record WsdlDocument(IReadOnlyList<WsdlPort> Ports, string StudioPo
 /// <summary>
 /// Reads a WSDL 1.1 document with the rules of Studio's web service wizard (the creatio-ui web-service-wizard
 /// library: <c>SoapWebServiceBuilder</c>, <c>SoapWebServiceMethodBuilder</c>, <c>WsdlElement</c>,
-/// <c>XmlSchemaTypeUtils</c>, <c>WsdlMergeService</c> and the <c>xmlDataValueTypeNamesMap</c> type map), so a service
-/// registered from its output matches the one Studio's SOAP quick setup creates.
+/// <c>XmlSchemaTypeUtils</c>, <c>WsdlMergeService</c> and its XSD type map), so a service registered from its output
+/// matches the one Studio's SOAP quick setup creates.
 /// </summary>
 public interface IWsdlParser {
 	/// <summary>
@@ -114,7 +120,58 @@ public sealed partial class WsdlParser : IWsdlParser {
 	/// <summary>The deepest a type may name another type (<c>type=</c> on a type, or <c>extension base=</c>).</summary>
 	private const int MaxTypeChain = 32;
 
-	/// <summary>The wizard's XSD type map (<c>enums/types-map.ts</c>).</summary>
+	/// <summary>
+	/// The deepest XML nesting a file may have. Copying an <see cref="XDocument"/> recurses once per level, so a file
+	/// nested ten thousand deep would end the whole server with a stack overflow nothing can catch.
+	/// </summary>
+	internal const int MaxXmlDepth = 256;
+
+	/// <summary>The deepest an element may sit below a message part; deeper elements are not read.</summary>
+	internal const int MaxElementDepth = 64;
+
+	/// <summary>The most warnings one parse reports; the rest are counted.</summary>
+	internal const int MaxWarnings = 100;
+
+	/// <summary>
+	/// A name or value taken from the WSDL as it may appear in a warning or an error: line breaks and other control or
+	/// format characters become spaces and the text is cut, so a hostile WSDL cannot pass an instruction block to the
+	/// agent through a warning.
+	/// </summary>
+	/// <param name="value">The raw text.</param>
+	/// <returns>The text to show.</returns>
+	internal static string Shown(string value) {
+		if (string.IsNullOrEmpty(value)) {
+			return string.Empty;
+		}
+		var builder = new StringBuilder(Math.Min(value.Length, 101));
+		foreach (char c in value) {
+			bool blank = char.IsControl(c) || char.IsWhiteSpace(c)
+				|| char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format;
+			if (blank && (builder.Length == 0 || builder[^1] == ' ')) {
+				continue;
+			}
+			builder.Append(blank ? ' ' : c);
+			if (builder.Length >= 100) {
+				return builder.ToString().TrimEnd() + "…";
+			}
+		}
+		return builder.ToString().TrimEnd();
+	}
+
+	/// <summary>Whether a WSDL or XSD name is an NCName, the type WSDL 1.1 and XSD give every name.</summary>
+	internal static bool IsNCName(string value) {
+		if (string.IsNullOrEmpty(value) || !XmlConvert.IsStartNCNameChar(value[0])) {
+			return false;
+		}
+		for (int i = 1; i < value.Length; i++) {
+			if (!XmlConvert.IsNCNameChar(value[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// <summary>The wizard's XSD type map.</summary>
 	internal static readonly IReadOnlyDictionary<string, string> XsdTypes = new Dictionary<string, string>(StringComparer.Ordinal) {
 		["string"] = "Text", ["boolean"] = "Boolean", ["decimal"] = "Float", ["float"] = "Float", ["double"] = "Float",
 		["dateTime"] = "DateTime", ["time"] = "Time", ["date"] = "Date", ["hexBinary"] = "Text",
@@ -151,22 +208,43 @@ public sealed partial class WsdlParser : IWsdlParser {
 			IgnoreComments = true,
 			IgnoreProcessingInstructions = true
 		};
+		string name = Shown(FileNameOf(file.Key));
 		try {
-			using XmlReader reader = file.AsciiText
-				? XmlReader.Create(new StringReader(Encoding.ASCII.GetString(file.Content ?? [])), settings)
-				: XmlReader.Create(new MemoryStream(file.Content ?? []), settings);
+			// The depth is checked on a first, forward-only pass: loading is iterative, but copying the document later
+			// is recursive.
+			using (XmlReader probe = CreateReader(file, settings)) {
+				while (probe.Read()) {
+					if (probe.Depth > MaxXmlDepth) {
+						throw new ArgumentException($"'{name}' nests elements more than {MaxXmlDepth} levels deep; it is not a "
+							+ "WSDL clio can read.");
+					}
+				}
+			}
+			using XmlReader reader = CreateReader(file, settings);
 			return XDocument.Load(reader, LoadOptions.None);
 		} catch (XmlException exception) {
-			throw new ArgumentException($"'{file.Key}' is not a readable XML file (a DTD is not allowed): "
-				+ exception.Message);
+			bool dtd = exception.Message.Contains("DTD", StringComparison.OrdinalIgnoreCase);
+			throw new ArgumentException($"'{name}' is not a readable XML file"
+				+ (dtd ? " (a DTD is not allowed)." : $" ({Shown(exception.Message)})."));
 		}
+	}
+
+	private static XmlReader CreateReader(WsdlSourceFile file, XmlReaderSettings settings) =>
+		file.AsciiText
+			? XmlReader.Create(new StringReader(Encoding.ASCII.GetString(file.Content ?? [])), settings)
+			: XmlReader.Create(new MemoryStream(file.Content ?? []), settings);
+
+	/// <summary>The last segment of a path or URL, without its query: what a file is shown and matched by.</summary>
+	internal static string FileNameOf(string key) {
+		string path = (key ?? string.Empty).Split('?', '#')[0];
+		return path[(path.LastIndexOfAny(['/', '\\']) + 1)..];
 	}
 
 	// The wizard takes the file that holds definitions > service; a WSDL 2.0 description has no such element.
 	private static string FindWsdl(IReadOnlyDictionary<string, XDocument> documents, List<string> warnings) {
 		foreach ((string key, XDocument document) in documents) {
 			if (document.Root?.Name.NamespaceName == Wsdl20Namespace) {
-				throw new ArgumentException($"'{key}' is a WSDL 2.0 description, which Studio's wizard and the platform "
+				throw new ArgumentException($"'{Shown(FileNameOf(key))}' is a WSDL 2.0 description, which Studio's wizard and the platform "
 					+ "do not support; ask the API owner for a WSDL 1.1 document, or describe the service by hand.");
 			}
 		}
@@ -177,7 +255,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				+ "not only its schemas.");
 		}
 		if (wsdlKeys.Length > 1) {
-			warnings.Add($"Several files hold a WSDL service; '{wsdlKeys[0]}' was read.");
+			warnings.Add($"Several files hold a WSDL service; '{Shown(FileNameOf(wsdlKeys[0]))}' was read.");
 		}
 		return wsdlKeys[0];
 	}
@@ -192,13 +270,13 @@ public sealed partial class WsdlParser : IWsdlParser {
 	private static XElement FirstChild(XElement element, string localName) =>
 		element?.Elements().FirstOrDefault(e => Is(e, localName));
 
-	/// <summary><c>getLocalName</c>: the part after the first colon (the second piece), else the value.</summary>
+	/// <summary>The wizard's local name of a QName value: the part after the first colon (the second piece), else the value.</summary>
 	internal static string LocalPart(string value) =>
 		value is not null && value.Contains(':') ? value.Split(':')[1] : value;
 
 	/// <summary>
-	/// <c>getPrefix</c>: the namespace URI the value's prefix is bound to at the element, empty for a value without a
-	/// prefix, null for an undeclared prefix.
+	/// The wizard's namespace of a QName value: the URI the value's prefix is bound to at the element, empty for a value
+	/// without a prefix, null for an undeclared prefix.
 	/// </summary>
 	private static string NamespaceOf(string value, XElement context) {
 		if (context is null) {
@@ -211,25 +289,29 @@ public sealed partial class WsdlParser : IWsdlParser {
 	#endregion
 
 	/// <summary>
-	/// <c>WsdlMergeService.mergeWsdl</c>: every <c>types &gt; schema &gt; import</c> and <c>include</c> of the WSDL is
-	/// replaced by the schema elements of the file its <c>schemaLocation</c> names (that file's own imports first), each
-	/// file once, inserted before the importing schema.
+	/// <c>WsdlMergeService</c>: every <c>types &gt; schema &gt; import</c> and <c>include</c> of the WSDL is replaced by
+	/// the schema elements of the file its <c>schemaLocation</c> names (that file's own imports first), each file once,
+	/// inserted before the importing schema.
 	/// </summary>
 	private sealed class WsdlMerge(IReadOnlyDictionary<string, XDocument> documents) {
 		private readonly HashSet<string> _merged = new(StringComparer.Ordinal);
+		// Each file is merged once even when it is imported under several locations (a.xsd, ./a.xsd, a.xsd#x), which the
+		// file-name match would otherwise follow into a recursion as deep as the number of spellings.
+		private readonly HashSet<XDocument> _mergedDocuments = [];
 
 		public XDocument Merge(string wsdlKey) {
+			_mergedDocuments.Add(documents[wsdlKey]);
 			var wsdl = new XDocument(documents[wsdlKey]);
-			MergeSchemas(wsdl, "import");
-			MergeSchemas(wsdl, "include");
+			MergeSchemas(wsdl, "import", wsdlKey);
+			MergeSchemas(wsdl, "include", wsdlKey);
 			return wsdl;
 		}
 
-		private void MergeSchemas(XDocument wsdl, string directive) {
+		private void MergeSchemas(XDocument wsdl, string directive, string wsdlKey) {
 			XElement[] nodes = wsdl.Descendants().Where(e => Is(e, directive) && Is(e.Parent, "schema")
 				&& Is(e.Parent.Parent, "types") && Is(e.Parent.Parent.Parent, "definitions")).ToArray();
 			foreach (XElement node in nodes) {
-				IReadOnlyList<XElement> schemas = SchemaNodes(Attr(node, "schemaLocation"));
+				IReadOnlyList<XElement> schemas = SchemaNodes(Attr(node, "schemaLocation"), wsdlKey);
 				XElement parentSchema = node.Parent;
 				foreach (XElement schema in schemas) {
 					parentSchema.AddBeforeSelf(schema);
@@ -238,44 +320,87 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 		}
 
-		private List<XElement> SchemaNodes(string location) {
+		private List<XElement> SchemaNodes(string location, string importerKey) {
 			if (string.IsNullOrEmpty(location) || !_merged.Add(location)) {
 				return [];
 			}
-			if (!TryResolve(location, out XDocument source)) {
-				throw new ArgumentException($"The WSDL imports '{location}', which was not given. In wsdl-files mode, add "
-					+ "that schema file to wsdl-files (it is matched by its schemaLocation or its file name).");
+			(string key, XDocument source) = Resolve(location, importerKey);
+			if (!_mergedDocuments.Add(source)) {
+				return [];
 			}
 			var document = new XDocument(source);
 			var result = new List<XElement>();
-			result.AddRange(Inserted(document, "import"));
-			result.AddRange(Inserted(document, "include"));
+			result.AddRange(Inserted(document, "import", key));
+			result.AddRange(Inserted(document, "include", key));
 			result.AddRange(document.Descendants().Where(e => Is(e, "schema")).Select(Detached));
 			return result;
 		}
 
-		// The platform keys a downloaded schema by its schemaLocation as written; a local file is also found by its file
-		// name, so an import of http://host/types.xsd finds a given types.xsd.
-		private bool TryResolve(string location, out XDocument document) {
-			if (documents.TryGetValue(location, out document)) {
-				return true;
+		// The platform keys a downloaded schema by its schemaLocation as written. A local file is also found by the location
+		// resolved against the importing file's folder, by its file name (an import of http://host/types.xsd finds a given
+		// types.xsd), and, for a WCF-style location (Service.svc?xsd=xsd0), by the query value (xsd0.xsd).
+		private (string Key, XDocument Document) Resolve(string location, string importerKey) {
+			if (documents.TryGetValue(location, out XDocument exact)) {
+				return (location, exact);
 			}
-			string name = FileName(location);
-			XDocument[] matches = documents.Where(d => string.Equals(FileName(d.Key), name, StringComparison.OrdinalIgnoreCase))
-				.Select(d => d.Value).ToArray();
-			document = matches.Length == 1 ? matches[0] : null;
-			return document is not null;
+			if (TryRelative(location, importerKey, out string relativeKey)) {
+				return (relativeKey, documents[relativeKey]);
+			}
+			string query = location.Contains('?') ? location[(location.IndexOf('?') + 1)..].Split('#')[0] : string.Empty;
+			string queryName = query.Length == 0 ? null : query[(query.LastIndexOf('=') + 1)..];
+			string fileName = FileNameOf(location);
+			KeyValuePair<string, XDocument>[] matches = documents.Where(d => {
+				string name = FileNameOf(d.Key);
+				return queryName is null
+					? string.Equals(name, fileName, StringComparison.OrdinalIgnoreCase)
+					: string.Equals(name, queryName, StringComparison.OrdinalIgnoreCase)
+						|| string.Equals(name, queryName + ".xsd", StringComparison.OrdinalIgnoreCase);
+			}).ToArray();
+			if (matches.Length == 1) {
+				return (matches[0].Key, matches[0].Value);
+			}
+			string shown = Shown(location);
+			throw new ArgumentException(matches.Length == 0
+				? $"The WSDL imports '{shown}', which is not among the given files. Give that schema too: a local file is "
+					+ "found by the location relative to the importing file, by its file name"
+					+ (queryName is null ? "." : $", or as {Shown(queryName)}.xsd for this location.")
+				: $"The WSDL imports '{shown}', and several given files are named '{Shown(FileNameOf(matches[0].Key))}'; "
+					+ "give only the one it means.");
 		}
 
-		private static string FileName(string location) {
-			string path = location.Split('?', '#')[0];
-			return path[(path.LastIndexOfAny(['/', '\\']) + 1)..];
+		private bool TryRelative(string location, string importerKey, out string key) {
+			key = null;
+			if (location.Contains("://", StringComparison.Ordinal) || importerKey.Contains("://", StringComparison.Ordinal)) {
+				return false;
+			}
+			int slash = importerKey.LastIndexOfAny(['/', '\\']);
+			if (slash < 0) {
+				return false;
+			}
+			string combined = NormalizePath(importerKey[..(slash + 1)] + location.Split('?', '#')[0]);
+			key = documents.Keys.FirstOrDefault(k => string.Equals(NormalizePath(k), combined, StringComparison.OrdinalIgnoreCase));
+			return key is not null;
 		}
 
-		private List<XElement> Inserted(XDocument document, string directive) {
+		// Resolves . and .. segments without touching the file system.
+		private static string NormalizePath(string path) {
+			var segments = new List<string>();
+			foreach (string segment in path.Replace('\\', '/').Split('/')) {
+				if (segment == "..") {
+					if (segments.Count > 1) {
+						segments.RemoveAt(segments.Count - 1);
+					}
+				} else if (segment != "." && !(segment.Length == 0 && segments.Count > 0)) {
+					segments.Add(segment);
+				}
+			}
+			return string.Join('/', segments);
+		}
+
+		private List<XElement> Inserted(XDocument document, string directive, string importerKey) {
 			var result = new List<XElement>();
 			foreach (XElement node in document.Descendants().Where(e => Is(e, directive) && Is(e.Parent, "schema")).ToArray()) {
-				result.AddRange(SchemaNodes(Attr(node, "schemaLocation")));
+				result.AddRange(SchemaNodes(Attr(node, "schemaLocation"), importerKey));
 				node.Remove();
 			}
 			return result;
@@ -311,6 +436,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		public List<Node> Nested = [];
 		public Node Parent;
 		public bool IsCopy;
+		public bool EscapesItem;
 		public bool IsObject => Type == "Object";
 		public bool InCopy => IsCopy || (Parent?.InCopy ?? false);
 	}
@@ -326,9 +452,10 @@ public sealed partial class WsdlParser : IWsdlParser {
 		public List<Parameter> Items = [];
 		public string Code;
 		public bool IsCopy;
+		public bool EscapesItem;
 
 		public WsdlParameter ToResult() => new(Caption, Path, Type, IsArray, IsSoapHeader, SequenceElement,
-			Items.Select(i => i.ToResult()).ToList(), Code, IsCopy);
+			Items.Select(i => i.ToResult()).ToList(), Code, IsCopy, EscapesItem);
 	}
 
 	/// <summary>One parse of one merged document: indexes, the per-port namespace list and the warnings.</summary>
@@ -341,9 +468,12 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private readonly Dictionary<string, XElement> _complexTypes = new(StringComparer.Ordinal);
 		private readonly Dictionary<string, XElement> _simpleTypes = new(StringComparer.Ordinal);
 		private readonly Dictionary<string, List<XElement>> _definitionComplexTypes = new(StringComparer.Ordinal);
+		private readonly Dictionary<string, List<XElement>> _messages = new(StringComparer.Ordinal);
+		private Dictionary<string, List<XElement>> _bindingOperations = new(StringComparer.Ordinal);
 		private List<WsdlNamespace> _namespaces;
 		private string _operation;
 		private int _elementsRead;
+		private int _warningsDropped;
 
 		public Session(XDocument doc, string prefix, List<string> warnings) {
 			_doc = doc;
@@ -368,15 +498,24 @@ public sealed partial class WsdlParser : IWsdlParser {
 					_simpleTypes.TryAdd(name, element);
 				}
 			}
-		}
-
-		private void Warn(string message) {
-			if (_warningSet.Add(message)) {
-				_warnings.Add(message);
+			foreach (XElement message in doc.Root.Elements().Where(e => Is(e, "message"))) {
+				string name = Attr(message, "name") ?? string.Empty;
+				(_messages.TryGetValue(name, out List<XElement> list) ? list : _messages[name] = []).Add(message);
 			}
 		}
 
-		private string Where => _operation is null ? string.Empty : $"operation '{_operation}': ";
+		private void Warn(string message) {
+			if (!_warningSet.Add(message)) {
+				return;
+			}
+			if (_warnings.Count >= MaxWarnings) {
+				_warningsDropped++;
+				return;
+			}
+			_warnings.Add(message);
+		}
+
+		private string OperationPrefix => _operation is null ? string.Empty : $"operation '{Shown(_operation)}': ";
 
 		public WsdlDocument Build() {
 			XElement definitions = _doc.Root;
@@ -392,12 +531,15 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 			string studioPort = (ports.FirstOrDefault(p => p.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12)
 				?? ports.FirstOrDefault())?.Name;
+			if (_warningsDropped > 0) {
+				_warnings.Add($"...and {_warningsDropped} more warnings.");
+			}
 			return new WsdlDocument(ports, studioPort, _warnings);
 		}
 
 		private void ReportUnsupported(XElement definitions) {
 			foreach (XElement import in definitions.Elements().Where(e => Is(e, "import"))) {
-				Warn($"The WSDL imports another WSDL ('{Attr(import, "location") ?? Attr(import, "namespace")}'); Studio's "
+				Warn($"The WSDL imports another WSDL ('{Shown(Attr(import, "location") ?? Attr(import, "namespace"))}'); Studio's "
 					+ "wizard and the platform download do not follow a wsdl:import, so the messages, port types and "
 					+ "bindings it holds are not read.");
 			}
@@ -410,6 +552,10 @@ public sealed partial class WsdlParser : IWsdlParser {
 
 		private WsdlPort BuildPort(XElement definitions, XElement service, XElement port) {
 			string portName = Attr(port, "name");
+			if (!IsNCName(portName)) {
+				Warn($"A port named '{Shown(portName)}' was dropped: WSDL names are XML names (no spaces or punctuation).");
+				return null;
+			}
 			XElement address = port.Descendants().FirstOrDefault(e => Is(e, "address"));
 			int serviceType = address?.Name.NamespaceName switch {
 				Soap11BindingNamespace => ServiceSchemaCodes.ServiceTypeSoap11,
@@ -424,10 +570,16 @@ public sealed partial class WsdlParser : IWsdlParser {
 			string bindingName = LocalPart(Attr(port, "binding"));
 			XElement binding = definitions.Elements().FirstOrDefault(e => Is(e, "binding") && Attr(e, "name") == bindingName);
 			if (binding is null) {
-				Warn($"Port '{portName}': its binding '{bindingName}' is not in the WSDL; the port was dropped.");
+				Warn($"Port '{portName}': its binding '{Shown(bindingName)}' is not in the WSDL; the port was dropped.");
 				return null;
 			}
 			ReportBindingStyle(portName, binding);
+			_bindingOperations = new Dictionary<string, List<XElement>>(StringComparer.Ordinal);
+			foreach (XElement bindingOperation in binding.Elements().Where(e => Is(e, "operation"))) {
+				string name = Attr(bindingOperation, "name") ?? string.Empty;
+				(_bindingOperations.TryGetValue(name, out List<XElement> list) ? list : _bindingOperations[name] = [])
+					.Add(bindingOperation);
+			}
 			string portTypeName = LocalPart(Attr(binding, "type"));
 			XElement[] operations = definitions.Elements()
 				.Where(e => Is(e, "portType") && Attr(e, "name") == portTypeName)
@@ -436,7 +588,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			_namespaces = [new WsdlNamespace("tem", Attr(definitions, "targetNamespace") ?? "http://tempuri.org")];
 			var built = new List<(WsdlOperation Operation, string Namespace)>();
 			foreach (XElement operation in operations) {
-				WsdlOperation method = BuildOperation(binding, operation);
+				WsdlOperation method = BuildOperation(operation);
 				if (method is not null) {
 					built.Add((method, method.MessageElementNamespace));
 				}
@@ -450,6 +602,10 @@ public sealed partial class WsdlParser : IWsdlParser {
 				}
 			}
 			string caption = Attr(service, "name");
+			if (!IsNCName(caption)) {
+				Warn($"The WSDL service name '{Shown(caption)}' is not an XML name; it was cleaned up for the caption.");
+				caption = Shown(caption);
+			}
 			return new WsdlPort(portName, caption, serviceType, Attr(address, "location"), _namespaces.ToList(),
 				built.Select(b => b.Operation).ToList());
 		}
@@ -469,8 +625,13 @@ public sealed partial class WsdlParser : IWsdlParser {
 
 		#region Operation (SoapWebServiceMethodBuilder)
 
-		private WsdlOperation BuildOperation(XElement binding, XElement operation) {
+		private WsdlOperation BuildOperation(XElement operation) {
 			string caption = Attr(operation, "name");
+			_operation = null;
+			if (!IsNCName(caption)) {
+				Warn($"An operation named '{Shown(caption)}' was skipped: WSDL names are XML names (no spaces or punctuation).");
+				return null;
+			}
 			_operation = caption;
 			XElement input = FirstChild(operation, "input");
 			if (input is null) {
@@ -478,45 +639,65 @@ public sealed partial class WsdlParser : IWsdlParser {
 				return null;
 			}
 			string studioCode = PrefixedName(caption);
-			XElement bindingOperation = binding.Descendants()
-				.FirstOrDefault(e => Is(e, "operation") && Is(e.Parent, "operation") && Attr(e.Parent, "name") == caption);
-			string soapAction = Attr(bindingOperation, "soapAction");
-			(string rootElement, string rootNamespace) = RootElement(input, binding, caption);
+			List<XElement> bindingOperations = _bindingOperations.GetValueOrDefault(caption) ?? [];
+			XElement soapOperation = bindingOperations.SelectMany(o => o.Elements().Where(e => Is(e, "operation"))).FirstOrDefault();
+			string soapAction = Attr(soapOperation, "soapAction");
+			(string rootElement, string rootNamespace) = RootElement(input, bindingOperations);
+			ReportPartSelection(input, bindingOperations);
 			List<Parameter> body = ParametersForMessage(input, fromRoot: false);
-			List<Parameter> header = HeaderParameters(binding, caption);
+			List<Parameter> header = HeaderParameters(input, bindingOperations);
 			XElement output = FirstChild(operation, "output");
 			List<Parameter> response = output is null ? [] : ParametersForMessage(output, fromRoot: false);
 			return new WsdlOperation(caption, studioCode, soapAction, rootElement ?? caption, rootNamespace,
 				[.. body.Concat(header).Select(p => p.ToResult())], [.. response.Select(p => p.ToResult())]);
 		}
 
-		// _getRootElementCode: the local name of the first part's element. The namespace is clio's addition: Studio stores
+		// The wizard's root element: the local name of the first part's element. The namespace is clio's addition: Studio stores
 		// the bare name, which the platform qualifies with the default namespace.
-		private (string Name, string Namespace) RootElement(XElement input, XElement binding, string operation) {
+		private (string Name, string Namespace) RootElement(XElement input, List<XElement> bindingOperations) {
 			XElement part = MessageParts(LocalPart(Attr(input, "message"))).FirstOrDefault();
 			string element = Attr(part, "element");
 			if (element is not null) {
 				return (LocalPart(element), NamespaceOf(element, part));
 			}
 			// A typed part (rpc style): the wrapper is the operation name in the soap:body namespace.
-			XElement body = binding.Descendants().FirstOrDefault(e => Is(e, "body") && Is(e.Parent, "input")
-				&& Is(e.Parent.Parent, "operation") && Attr(e.Parent.Parent, "name") == operation);
+			XElement body = BindingInputs(bindingOperations).SelectMany(i => i.Elements().Where(e => Is(e, "body")))
+				.FirstOrDefault();
 			return (null, Attr(body, "namespace") ?? _namespaces[0].Uri);
 		}
 
+		private static IEnumerable<XElement> BindingInputs(List<XElement> bindingOperations) =>
+			bindingOperations.SelectMany(o => o.Elements().Where(e => Is(e, "input")));
+
 		private IEnumerable<XElement> MessageParts(string messageName) =>
-			_doc.Root.Elements().Where(e => Is(e, "message") && Attr(e, "name") == messageName)
+			(_messages.GetValueOrDefault(messageName ?? string.Empty) ?? [])
 				.SelectMany(m => m.Elements().Where(p => Is(p, "part")));
 
-		private List<Parameter> HeaderParameters(XElement binding, string operation) {
-			XElement[] headers = binding.Descendants().Where(e => Is(e, "header") && Is(e.Parent, "input")
-				&& Is(e.Parent.Parent, "operation") && Attr(e.Parent.Parent, "name") == operation).ToArray();
+		// The wizard reads every part of the input message into the body and every part of the header message into the
+		// Header; a binding that splits one message between them (soap:body parts=, a header part of the input message)
+		// therefore gets parameters in both places.
+		private void ReportPartSelection(XElement input, List<XElement> bindingOperations) {
+			string inputMessage = LocalPart(Attr(input, "message"));
+			IEnumerable<XElement> bindingInputs = BindingInputs(bindingOperations).ToArray();
+			bool bodyParts = bindingInputs.SelectMany(i => i.Elements()).Any(e => Is(e, "body") && Attr(e, "parts") is not null);
+			bool headerFromInput = bindingInputs.SelectMany(i => i.Elements())
+				.Any(e => Is(e, "header") && LocalPart(Attr(e, "message")) == inputMessage);
+			if (bodyParts || headerFromInput) {
+				Warn($"{OperationPrefix}its binding splits the input message between the body and the SOAP header (part/parts); "
+					+ "Studio's wizard reads every part into both, so remove the header elements from the body parameters and "
+					+ "the body elements from the soap-header ones.");
+			}
+		}
+
+		private List<Parameter> HeaderParameters(XElement input, List<XElement> bindingOperations) {
+			XElement[] headers = BindingInputs(bindingOperations).SelectMany(i => i.Elements().Where(e => Is(e, "header")))
+				.ToArray();
 			if (headers.Length == 0) {
 				return [];
 			}
 			if (headers.Length > 1) {
-				Warn($"{Where}its binding input has {headers.Length} SOAP headers; Studio's wizard reads only the first "
-					+ $"('{LocalPart(Attr(headers[0], "message"))}'). Add the others by hand if the API needs them.");
+				Warn($"{OperationPrefix}its binding input has {headers.Length} SOAP headers; Studio's wizard reads only the first "
+					+ $"('{Shown(LocalPart(Attr(headers[0], "message")))}'). Add the others by hand if the API needs them.");
 			}
 			List<Parameter> parameters = ParametersForMessage(headers[0], fromRoot: true);
 			MarkAsHeader(parameters);
@@ -549,8 +730,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 
 		private List<Parameter> ParametersByElementName(string elementName, string namespaceUri, bool fromRoot) {
 			if (!_globalElements.TryGetValue(elementName ?? string.Empty, out XElement elementNode)) {
-				Warn($"{Where}its message element '{elementName}' is not defined in the WSDL or its schemas; it has no "
-					+ "parameters.");
+				Warn($"{OperationPrefix}its message element '{Shown(elementName)}' is not defined in the WSDL or its schemas; it "
+					+ "has no parameters.");
 				return [];
 			}
 			if (fromRoot) {
@@ -565,10 +746,17 @@ public sealed partial class WsdlParser : IWsdlParser {
 					.SelectMany(t => t.Elements().Where(s => Is(s, "sequence")))
 					.SelectMany(s => s.Elements().Where(e => Is(e, "element")));
 				if (!sequence.Any() && XsdTypes.ContainsKey(LocalPart(complexTypeName))) {
-					Warn($"{Where}its message element '{elementName}' has the simple type '{complexTypeName}'; Studio's "
-						+ "wizard reads no parameter from it. Add one by hand if the value is needed.");
+					Warn($"{OperationPrefix}its message element '{Shown(elementName)}' has the simple type "
+						+ $"'{Shown(complexTypeName)}'; Studio's wizard reads no parameter from it. Add one by hand if the value is "
+						+ "needed.");
+				}
+				foreach (XElement type in types ?? []) {
+					ReportRootContent(elementName, type);
 				}
 			} else {
+				foreach (XElement type in elementNode.Elements().Where(c => Is(c, "complexType"))) {
+					ReportRootContent(elementName, type);
+				}
 				sequence = elementNode.Elements().Where(c => Is(c, "complexType"))
 					.SelectMany(c => c.Elements().Where(s => Is(s, "sequence")))
 					.SelectMany(s => s.Elements().Where(e => Is(e, "element")));
@@ -580,8 +768,17 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return parameters;
 		}
 
+		// The wizard reads a message element's own fields from the xs:sequence directly in its type only.
+		private void ReportRootContent(string elementName, XElement type) {
+			if (type.Elements().Any(e => Is(e, "complexContent") || Is(e, "simpleContent"))) {
+				Warn($"{OperationPrefix}the type of its message element '{Shown(elementName)}' extends another type; Studio's "
+					+ "wizard reads no parameter from an extension at that level, so add them by hand.");
+			}
+			ReportUnreadContent(elementName, type);
+		}
+
 		private List<Parameter> ParametersOf(XElement sequenceElement, string parentNamespace, string rootElementName = null) {
-			Node node = NodeOf(sequenceElement, parentNamespace, new Dictionary<string, int>(StringComparer.Ordinal));
+			Node node = NodeOf(sequenceElement, parentNamespace, new Dictionary<string, int>(StringComparer.Ordinal), 0);
 			return node is null ? [] : Flatten(node, rootElementName).Select(ToParameter).ToList();
 		}
 
@@ -589,8 +786,13 @@ public sealed partial class WsdlParser : IWsdlParser {
 
 		#region Elements and types (WsdlElement, XmlSchemaTypeUtils)
 
-		// _getWsdlElementFromSequenceElement
-		private Node NodeOf(XElement sequenceElement, string parentNamespace, Dictionary<string, int> nesting) {
+		// SoapWebServiceMethodBuilder: one element of a sequence, with its item element name.
+		private Node NodeOf(XElement sequenceElement, string parentNamespace, Dictionary<string, int> nesting, int depth) {
+			RuntimeHelpers.EnsureSufficientExecutionStack();
+			if (depth > MaxElementDepth) {
+				Warn($"{OperationPrefix}elements nested more than {MaxElementDepth} levels deep were not read.");
+				return null;
+			}
 			if (++_elementsRead > MaxElementsRead) {
 				throw new ArgumentException($"The WSDL's types expand to more than {MaxElementsRead} elements (types that "
 					+ "nest many fields of other types); it cannot be read. Describe the operations you need by hand.");
@@ -604,16 +806,16 @@ public sealed partial class WsdlParser : IWsdlParser {
 				node.Namespace = parentNamespace;
 				return node;
 			}
-			return ComplexType(node, parentNamespace, new Dictionary<string, int>(nesting, StringComparer.Ordinal));
+			return ComplexType(node, parentNamespace, new Dictionary<string, int>(nesting, StringComparer.Ordinal), depth);
 		}
 
-		// _getComplexType: a type may appear twice on one path; the third time the element is not read. Every anonymous
+		// SoapWebServiceMethodBuilder: a type may appear twice on one path; the third time the element is not read. Every anonymous
 		// type counts as one type, as in the wizard.
-		private Node ComplexType(Node node, string parentNamespace, Dictionary<string, int> nesting) {
+		private Node ComplexType(Node node, string parentNamespace, Dictionary<string, int> nesting, int depth) {
 			string key = node.ReferenceTypeName ?? "\0anonymous";
 			nesting.TryGetValue(key, out int count);
 			if (count == 2) {
-				Warn($"{Where}'{node.TypeName}' was not read: Studio's wizard stops after two levels of the same type "
+				Warn($"{OperationPrefix}'{Shown(node.TypeName)}' was not read: Studio's wizard stops after two levels of the same type "
 					+ "(a recursive type, or anonymous types nested three deep).");
 				return null;
 			}
@@ -621,7 +823,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			string ns = string.IsNullOrEmpty(node.Namespace) ? parentNamespace : node.Namespace;
 			HashSet<XElement> copies = node.Copies;
 			foreach (XElement element in node.Elements) {
-				Node child = NodeOf(element, ns, nesting);
+				Node child = NodeOf(element, ns, nesting, depth + 1);
 				if (child is not null) {
 					child.IsCopy = copies.Contains(element);
 					node.Nested.Add(child);
@@ -631,11 +833,16 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return node;
 		}
 
-		// WsdlElement.fromElement. A base type that extends itself, directly or through others, ends the chain with a
+		// WsdlElement: an element and its type. A base type that extends itself, directly or through others, ends the chain with a
 		// warning where the wizard would recurse until the stack runs out.
 		private Node FromElement(XElement elementRef, HashSet<XElement> resolvingBases = null) {
 			XElement definition = ElementDefinition(elementRef);
-			if (Attr(definition, "name") is null) {
+			string elementName = Attr(definition, "name");
+			if (elementName is null) {
+				return null;
+			}
+			if (!IsNCName(elementName)) {
+				Warn($"{OperationPrefix}an element named '{Shown(elementName)}' was not read: element names are XML names.");
 				return null;
 			}
 			string typeAttribute = Attr(definition, "type");
@@ -659,7 +866,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 					return node;
 				}
 				if (baseType is null) {
-					Warn($"{Where}the base type '{baseTypeName}' of '{node.TypeName}' is not defined in the WSDL or its "
+					Warn($"{OperationPrefix}the base type '{Shown(baseTypeName)}' of '{node.TypeName}' is not defined in the WSDL or its "
 						+ "schemas; only the elements the extension adds were read.");
 					node.Elements = elements;
 					node.Copies = Copies(elements, ExtensionOf(TypeDefinition(definition)));
@@ -667,7 +874,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				}
 				resolvingBases ??= [];
 				if (!resolvingBases.Add(baseType) || resolvingBases.Count > MaxTypeChain) {
-					Warn($"{Where}the base type '{baseTypeName}' of '{node.TypeName}' extends itself; only the elements read "
+					Warn($"{OperationPrefix}the base type '{Shown(baseTypeName)}' of '{node.TypeName}' extends itself; only the elements read "
 						+ "before the cycle were kept.");
 					node.Elements = elements;
 					node.Copies = Copies(elements, ExtensionOf(TypeDefinition(definition)));
@@ -683,21 +890,22 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return node;
 		}
 
-		// getElementDefinition: a ref resolves to the global element, which takes the referencing element's maxOccurs.
+		// XmlSchemaTypeUtils: a ref resolves to the global element, which takes the referencing element's maxOccurs.
 		private XElement ElementDefinition(XElement elementRef) {
 			string reference = Attr(elementRef, "ref");
 			if (reference is null) {
 				return elementRef;
 			}
 			if (!_globalElements.TryGetValue(LocalPart(reference), out XElement target)) {
-				Warn($"{Where}the element reference '{reference}' is not defined in the WSDL or its schemas; it was not read.");
+				Warn($"{OperationPrefix}the element reference '{Shown(reference)}' is not defined in the WSDL or its schemas; it was "
+					+ "not read.");
 				return elementRef;
 			}
 			target.SetAttributeValue("maxOccurs", Attr(elementRef, "maxOccurs"));
 			return target;
 		}
 
-		// getDataValeTypeName, plus a read of a type no schema defines: the wizard fails there; clio reads it as Text.
+		// XmlSchemaTypeUtils: the platform type of an element, plus a read of a type no schema defines: the wizard fails there; clio reads it as Text.
 		private string DataValueType(XElement element) {
 			string typeAttribute = Attr(element, "type");
 			string xmlTypeName = LocalPart(typeAttribute);
@@ -710,7 +918,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			XElement definition = TypeDefinition(element);
 			if (definition is null) {
 				if (!string.IsNullOrEmpty(typeAttribute)) {
-					Warn($"{Where}element '{Attr(element, "name")}' has the type '{typeAttribute}', which "
+					Warn($"{OperationPrefix}element '{Shown(Attr(element, "name"))}' has the type '{Shown(typeAttribute)}', which "
 						+ (NamespaceOf(typeAttribute, element) == XmlSchemaNamespace
 							? "Studio's wizard does not map"
 							: "is not defined in the WSDL or its schemas")
@@ -728,7 +936,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return XsdTypes.TryGetValue(xmlTypeName ?? string.Empty, out mapped) ? mapped : null;
 		}
 
-		// _getTypeDefinitionElement: an element with a type attribute resolves to that named complex or simple type. A type
+		// XmlSchemaTypeUtils: an element with a type attribute resolves to that named complex or simple type. A type
 		// that names a type (not valid XSD, but nothing stops it) is followed MaxTypeChain steps at most, so a cycle ends.
 		private XElement TypeDefinition(XElement element, int depth = 0) {
 			if (element is null || depth > MaxTypeChain) {
@@ -738,7 +946,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return string.IsNullOrEmpty(typeAttribute) ? element : TypeByName(LocalPart(typeAttribute), depth + 1);
 		}
 
-		// _getTypeElementByName: types > schema > complexType[name], else simpleType[name].
+		// XmlSchemaTypeUtils: types > schema > complexType[name], else simpleType[name].
 		private XElement TypeByName(string name, int depth = 0) {
 			if (name is null) {
 				return null;
@@ -747,7 +955,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return type is null ? null : TypeDefinition(type, depth);
 		}
 
-		// _getIsRestrictionElement
+		// XmlSchemaTypeUtils: whether the type is a simpleType restriction.
 		private static bool IsRestriction(XElement element) {
 			if (element is null) {
 				return false;
@@ -759,11 +967,11 @@ public sealed partial class WsdlParser : IWsdlParser {
 				&& !(Is(e.Parent, "simpleType") && Is(e.Parent.Parent, "element")));
 		}
 
-		// _isMixedTextElement
+		// XmlSchemaTypeUtils: a mixed complexType with attributes only reads as text.
 		private static bool IsMixedText(XElement complexType) =>
 			Attr(complexType, "mixed") == "true" && complexType.Elements().All(c => Is(c, "anyAttribute"));
 
-		// getSimpleTypeName: the restriction base of the first simpleType inside (or of the element itself when it is
+		// XmlSchemaTypeUtils: the restriction base of the first simpleType inside (or of the element itself when it is
 		// one), "string" for a simpleType without a restriction, empty when there is none.
 		private static string SimpleTypeName(XElement element) {
 			if (element is null) {
@@ -779,14 +987,14 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return restriction is null ? "string" : LocalPart(Attr(restriction, "base"));
 		}
 
-		// getIsExtensionType
+		// XmlSchemaTypeUtils: whether the type extends another.
 		private bool IsExtensionType(XElement element) {
 			XElement definition = TypeDefinition(element);
 			return definition is not null && definition.Descendants().Any(e => Is(e, "extension")
 				&& (Is(e.Parent, "complexContent") || Is(e.Parent, "simpleContent")) && Is(e.Parent.Parent, "complexType"));
 		}
 
-		// getExtensionInfo
+		// XmlSchemaTypeUtils: the base type and the elements an extension adds.
 		private (string BaseTypeName, XElement BaseType, List<XElement> Elements) ExtensionInfo(XElement element) {
 			XElement definition = TypeDefinition(element);
 			XElement extension = ExtensionOf(definition);
@@ -798,7 +1006,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return (string.IsNullOrEmpty(simpleTypeName) ? baseXmlTypeName : simpleTypeName, baseType, elements);
 		}
 
-		// getComplexTypeChildElements: every element under a sequence anywhere inside the type, as the wizard's
+		// XmlSchemaTypeUtils: every element under a sequence anywhere inside the type, as the wizard's
 		// querySelectorAll finds them. That includes the elements of an anonymous type nested inside, which so turn up a
 		// second time one level too high (Fault/faultNumber next to Fault/detail/faultNumber); they are kept for parity
 		// and marked, and WsdlRegistrationMapper leaves them out.
@@ -835,18 +1043,18 @@ public sealed partial class WsdlParser : IWsdlParser {
 		// The wizard reads the elements of an xs:sequence only; the platform sends no XML attribute.
 		private void ReportUnreadContent(string name, XElement definition) {
 			if (definition.Descendants().Any(e => Is(e, "choice") || Is(e, "all"))) {
-				Warn($"{Where}'{name}' uses xs:choice or xs:all; Studio's wizard reads only the elements of an xs:sequence, "
+				Warn($"{OperationPrefix}'{Shown(name)}' uses xs:choice or xs:all; Studio's wizard reads only the elements of an xs:sequence, "
 					+ "so the others are missing. Add them by hand if the API needs them.");
 			}
 			if (definition.Descendants().Any(e => Is(e, "attribute") || Is(e, "attributeGroup"))) {
-				Warn($"{Where}'{name}' has XML attributes; the platform sends and reads elements only, so they are not "
+				Warn($"{OperationPrefix}'{Shown(name)}' has XML attributes; the platform sends and reads elements only, so they are not "
 					+ "parameters.");
 			}
 		}
 
 		#endregion
 
-		#region Parameters (_flattenWsdlElement, toServiceParameter)
+		#region Parameters (SoapWebServiceMethodBuilder, WsdlElement)
 
 		private List<Node> Flatten(Node node, string rootElementName = null) {
 			if (node.Nested.Count == 0) {
@@ -854,6 +1062,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 			if (node.IsArray && node.IsObject) {
 				Node holder = node.Parent ?? node;
+				bool escapesItem = node.Parent is { IsArray: true };
 				var items = node.Nested.SelectMany(item => {
 					item.Parent = node;
 					return Flatten(item);
@@ -868,7 +1077,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 					Namespace = holder.Namespace,
 					Nested = items,
 					Parent = holder.Parent,
-					IsCopy = node.InCopy || holder.InCopy
+					IsCopy = node.InCopy || holder.InCopy,
+					EscapesItem = escapesItem
 				}];
 			}
 			return node.Nested.SelectMany(child => {
@@ -885,7 +1095,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 			IsSoapHeader = node.IsSoapHeader,
 			SequenceElement = node.SequenceElement,
 			Items = node.Nested.Select(ToParameter).ToList(),
-			IsCopy = node.InCopy
+			IsCopy = node.InCopy,
+			EscapesItem = node.EscapesItem
 		};
 
 		private string BuildPath(Node node) {
@@ -906,19 +1117,20 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return caption;
 		}
 
-		// WsdlElement.getPrefixForNamespace: an unknown namespace is added as the first free ns0..ns999.
+		// WsdlElement: an unknown namespace is added as the first free ns0..ns999.
 		private string PrefixFor(string ns) {
 			WsdlNamespace existing = _namespaces.FirstOrDefault(n => n.Uri == ns);
 			if (existing is not null) {
 				return existing.Prefix;
 			}
 			string prefix = Enumerable.Range(0, 1000).Select(i => "ns" + i)
-				.First(p => _namespaces.All(n => n.Prefix != p));
+				.FirstOrDefault(p => _namespaces.All(n => n.Prefix != p))
+				?? throw new ArgumentException("The WSDL uses more than 1000 namespaces; it is not a WSDL clio can read.");
 			_namespaces.Add(new WsdlNamespace(prefix, ns));
 			return prefix;
 		}
 
-		// _normalizeParametersCaption: when every top-level caption has two words or more and the same first word, the
+		// SoapWebServiceMethodBuilder: when every top-level caption has two words or more and the same first word, the
 		// first word goes.
 		private static void NormalizeCaptions(List<Parameter> parameters) {
 			if (parameters.Count == 0) {
@@ -961,7 +1173,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 	}
 
 	/// <summary>
-	/// The wizard's code shortening (<c>_reduceByUpperCaseChars</c>): the capitalized words of the name, every one but
+	/// The wizard's code shortening: the capitalized words of the name, every one but
 	/// the last cut to its first letter (<c>CustomerName</c> → <c>CName</c>); a name without one is kept.
 	/// </summary>
 	/// <param name="name">The name.</param>

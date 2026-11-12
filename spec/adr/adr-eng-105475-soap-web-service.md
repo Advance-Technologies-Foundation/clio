@@ -115,12 +115,23 @@ The REST rule "an xml method has no body parameters" applies to REST only.
 Read-only, `OpenWorld = true`. Inputs: `environment-name`, `wsdl-url` or `wsdl-files` (absolute local paths, for a WSDL
 the stand cannot reach or one with non-ASCII text, which the platform download turns into `?`; an import is matched by
 its `schemaLocation` or by that location's file name; at most 100 files of 10 MB, the platform endpoint's own caps),
-optional `port`, `service-code` (D11) and `operations` (names to return). The URL is fetched through
+optional `port`, `service-code` (D11) and `operations` (names to return; a port with none of them is left out). The URL is fetched through
 `GetXmlSchemaFilesContent` (CanManageSolution, as Studio; route `DownloadWsdlSchemaFiles`), never by clio itself, so
 clio adds no network reach of its own; only the URL the user gave is fetched (the platform follows the
-`schemaLocation`s), a URL with `user:password@` is refused, and the platform's error message is returned redacted and
-without its stack trace. Local files are read with DTD processing prohibited and no resolver; a downloaded file is read
-as the ASCII text it is.
+`schemaLocation`s), a URL with `user:password@` or a key or token in its query is refused, and the platform's error
+message is returned redacted, without its stack trace and with a pointer to `wsdl-files`. Local files are read with DTD
+processing prohibited and no resolver, through one handle each so the size checked is the size read; a network path
+(`\\host`, `//host`), a directory, a device, a link and over 50 MB in all are refused, and over HTTP (`mcp-http`)
+`wsdl-files` is refused because the caller is not on that machine. A downloaded file is read as the ASCII text it is.
+An import is found by its `schemaLocation`, by that location relative to the importing file, by its file name, or for a
+WCF location (`Service.svc?xsd=xsd0`) by the query value (`xsd0.xsd`); each file is merged once whatever the spelling.
+
+`read-wsdl` runs in the MCP host process (it is not in the worker cohort), so a WSDL must not be able to end it: a file
+nested deeper than 256 levels is refused before it is copied (copying recurses), elements deeper than 64 levels below a
+message part are not read, type chains (`type=` on a type, `extension base=`) stop at a cycle or 32 steps, a parse
+reads at most 200,000 elements, and at most 100 warnings are listed. Names from the WSDL reach the agent in warnings,
+so operation, port and element names must be XML names (NCName, as WSDL 1.1 and XSD type them; anything else is
+skipped with a warning) and every WSDL value in a warning or error is flattened and cut to 100 characters.
 
 The parser (`WsdlParser`) is a C# port of Studio's wizard parser (creatio-ui web-service-wizard:
 `SoapWebServiceBuilder`, `SoapWebServiceMethodBuilder`, `WsdlElement`, `XmlSchemaTypeUtils`, `WsdlMergeService`, the
@@ -137,17 +148,23 @@ output. Where the wizard fails or writes something the platform cannot call, the
 | a missing base type, message element or input: TypeError | what can be read is read, with a warning |
 | every port is named after the first `wsdl:service` | each port is named after its own service |
 | the message element is stored bare (`Add`; the platform qualifies it with the default namespace) | it carries the prefix of its own namespace (`tem:Add`) |
+| a name that is not an XML name (an operation, a port, an element) is used as written | it is skipped, with a warning |
 | an element of an anonymous type nested in another element is listed twice, once one level too high (`Fault/faultNumber` beside `Fault/detail/faultNumber`; Studio's own golden test expects the copy) | the parser keeps the copy for parity and marks it; the arguments leave it out, with a warning |
+| an object array inside an item of another array gets the outer array's path (`tem:order/tem:lines` for the `subs` of each `lines` item), so the platform would nest it wrongly | the parser keeps it for parity and marks it; the arguments leave it out, with a warning |
 
 The mapper (`WsdlRegistrationMapper`) then applies clio's rules: codes per D11, and nothing `register-web-service`
 would refuse - a request element or root element the platform's prefix regex would cut (`tem:blz.parameter`), an object
 with no readable field, a repeated element without a wrapper (the wizard gives it an empty path) - each left out with a
-warning; an element of no namespace loses its prefix, because an empty namespace cannot be declared. Output: per SOAP
+warning, and so is an array whose item element register would refuse; an element of no namespace loses its prefix,
+because an empty namespace cannot be declared; a port address or a namespace URI register would refuse is kept with a
+warning to replace it (only the user knows the real value), and a soapAction with a line break is left out. Output: per SOAP
 port one `register-web-service` argument object without `package-name` (the agent adds it), `studio-pick` (D12), and
-`existing-methods` with `service-code`; plus `warnings` (dropped HTTP ports, recursion cap, several SOAP headers, typed
-or RPC parts, RPC/encoded, `wsdl:import`, MIME/MTOM, `xs:choice`/`xs:all`, XML attributes, and the leave-outs) and
-`notices` (a service code already used on the environment). A result over 120,000 characters returns the operation
-names per port instead, and the agent reads again with `operations`. Every port's output is checked in unit tests by
+`existing-methods` with `service-code`; plus `warnings` (dropped HTTP ports, recursion cap, several SOAP headers, the
+rpc style, RPC/encoded, `wsdl:import`, MIME/MTOM, `xs:choice`/`xs:all`, XML attributes, a message element whose type
+extends another, a binding that splits the input message between body and header, and the leave-outs) and `notices` (a
+service code already used on the environment, an endpoint on another host than the WSDL URL). A result over 120,000
+characters, filtered or not, returns at most 500 operation names per port instead, and the agent reads again with
+`operations`. Every port's output is checked in unit tests by
 sending it through `register-web-service` itself.
 
 ### D10. Nested test values (slice D)
@@ -169,7 +186,9 @@ element, the SOAP action) go into `path`, `message-element` and `soap-action`, n
 
 The target service is optional: `service-code` names an existing SOAP service the operations go into. An operation
 whose root element (local name) and SOAP action match one of its methods takes that method's code and is listed in
-`existing-methods` (the agent replaces it with `modify-web-service` `setMethod` and adds the rest with `addMethod`);
+`existing-methods` (the agent replaces it with `modify-web-service` `setMethod` and adds the rest with `addMethod`), and
+each of its parameters at the path of one of that method's parameters keeps that parameter's code, so `setMethod` keeps
+its UId (a Studio-made method's codes are not always the ones clio would generate);
 the namespaces start with that service's own prefixes, and a WSDL namespace it lacks gets a free `nsN` (the agent sends
 the list with `setNamespaces`). Without it, a notice says when `<prefix><ServiceName>` already exists. Rejected:
 Studio's GUID suffix (a re-import creates new methods instead of matching the old ones).
@@ -180,15 +199,17 @@ Studio's GUID suffix (a re-import creates new methods instead of matching the ol
 the one Studio's quick setup would create: the first SOAP 1.2 port when there is one, else the first port. HTTP
 (GET/POST) ports are dropped with a warning. `port` narrows the result to one port.
 
-### D13. A SOAP item element is a `prefix:name` (slice C)
+### D13. A SOAP item element is a `prefix:name` (found in slice C, implemented in slice B)
 
 The platform names array items by `sequenceElementName` and reads it like a path segment (Terrasoft.Services
 `SoapRequestBodyBuilder.GetArrayElementNodeName`, `SoapBodyBuilder.ParseElementPath`: `prefix:name` with the prefix
 looked up in the namespaces, else the default namespace), and Studio's wizard writes it prefixed (`ns0:string`). The
 slice B validator accepted only a plain name, which refused every WSDL-made array and the describe → `setMethod` round
-trip of a Studio-made one. `sequence-element` now takes a plain name or `prefix:name`; on a request body item the
-prefix must be declared and the name must survive the platform's regex (checked with the paths), and it counts as a
-used prefix for `setNamespaces`; on a response item (matched by local name) only the form is checked.
+trip of a Studio-made one. Slice B took the fix (its commits "Accept a prefixed sequence-element and keep its prefix
+declared" and "Check a response array's sequence-element by local name only"): `sequence-element` takes a plain name or
+`prefix:name`; on a request array the prefix must be declared and the name must survive the platform's regex, and it
+counts as a used prefix for `setNamespaces`; on a response array only the local name is checked. `read-wsdl` leaves out
+an array whose item element would be refused.
 
 ## Consequences
 

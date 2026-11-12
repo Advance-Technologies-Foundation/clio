@@ -38,7 +38,7 @@ public sealed class WsdlParserTests {
 
 	private static JsonNode Golden(WsdlDocument document) =>
 		JsonSerializer.SerializeToNode(document.Ports.Select(port => new {
-			type = port.ServiceType == 3 ? "soap12" : "soap11",
+			type = port.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12 ? "soap12" : "soap11",
 			caption = port.ServiceName,
 			portName = port.Name,
 			baseUri = port.BaseUri,
@@ -122,7 +122,7 @@ public sealed class WsdlParserTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the types of the operations live in the missing schema")
-			.WithMessage("*orders-operations.xsd*wsdl-files*");
+			.WithMessage("*orders-operations.xsd*not among the given files*");
 	}
 
 	[Test]

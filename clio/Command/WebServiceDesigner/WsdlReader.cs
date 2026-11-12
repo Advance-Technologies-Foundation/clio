@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
+using System.IO.Abstractions;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -28,7 +30,7 @@ public sealed record WsdlServiceView(
 	bool StudioPick,
 
 	[property: JsonPropertyName("arguments")]
-	[property: Description("register-web-service arguments for this port; add package-name")]
+	[property: Description("register-web-service arguments for this port (add package-name); with service-code, the modify-web-service material")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	JsonElement? Arguments = null,
 
@@ -38,7 +40,7 @@ public sealed record WsdlServiceView(
 	IReadOnlyList<string> ExistingMethods = null,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("Operation names only, when the WSDL was too large to return whole")]
+	[property: Description("Operation names only, when the result was too large to return whole")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	IReadOnlyList<string> Operations = null);
 
@@ -67,7 +69,7 @@ public sealed record WsdlReadResult(
 public interface IWsdlReader {
 	/// <summary>Reads the WSDL and returns one argument object per SOAP port.</summary>
 	/// <param name="request">The request.</param>
-	/// <returns>The ports with warnings, or a summary when the result would be too large.</returns>
+	/// <returns>The ports with warnings, or operation names only when the result would be too large.</returns>
 	WsdlReadResult Read(WsdlReadRequest request);
 }
 
@@ -83,8 +85,16 @@ public sealed class WsdlReader(
 	/// <summary>The platform endpoint's own limits: 100 files, 10 MB each.</summary>
 	internal const int MaxFiles = 100;
 	internal const long MaxFileBytes = 10 * 1024 * 1024;
+	/// <summary>The most all local files may hold together, the same as a download.</summary>
+	internal const long MaxTotalBytes = WebServiceDesignerClient.MaxDownloadedBytes;
 	/// <summary>Above this the result lists operation names only; an agent reads it again with operations.</summary>
 	internal const int MaxResultCharacters = 120_000;
+	/// <summary>The most operation names a too-large result lists per port.</summary>
+	internal const int MaxListedOperations = 500;
+	/// <summary>The most warnings a result carries; the rest are counted.</summary>
+	internal const int MaxWarnings = 100;
+
+	private const string ManageSolutionOperation = "CanManageSolution";
 
 	private static readonly JsonSerializerOptions ArgumentOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -99,26 +109,35 @@ public sealed class WsdlReader(
 			throw new ArgumentException("Give wsdl-url (the stand downloads it) or wsdl-files (local absolute paths), not "
 				+ "both and not neither.");
 		}
-		if (!rights.GetCanExecuteOperation("CanManageSolution", new CreatioRequestOptions())) {
+		// The arguments are checked before anything is sent to the environment.
+		Uri url = fromUrl ? CheckUrl(request.WsdlUrl) : null;
+		if (fromFiles) {
+			CheckPaths(request.WsdlFiles);
+		}
+		if (!rights.GetCanExecuteOperation(ManageSolutionOperation, new CreatioRequestOptions())) {
 			throw new UnauthorizedAccessException(
 				"The environment user lacks CanManageSolution, which Studio > Web services requires.");
 		}
 		string prefix = prefixReader.Read();
-		IReadOnlyList<WsdlSourceFile> files = fromUrl ? Download(request.WsdlUrl) : ReadFiles(request.WsdlFiles);
+		IReadOnlyList<WsdlSourceFile> files = fromUrl ? Download(url) : ReadFiles(request.WsdlFiles);
 		WsdlDocument document = parser.Parse(files, prefix);
-		var warnings = document.Warnings.ToList();
-		IReadOnlyList<WsdlPort> ports = SelectPorts(document, request.Port);
+		var warnings = new List<string>();
+		if (fromUrl && HasReplacementCharacter(document)) {
+			warnings.Add("Some names contain '?': the platform download turns every non-ASCII character into '?', so they "
+				+ "may be left out or wrong. Read the WSDL again with wsdl-files (a local copy) to keep them.");
+		}
+		warnings.AddRange(document.Warnings);
+		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document, request.Port), request.Operations);
 		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		var services = new List<WsdlServiceArguments>();
 		foreach (WsdlPort port in ports) {
-			WsdlPort selected = SelectOperations(port, request.Operations);
-			services.Add(WsdlRegistrationMapper.Map(selected, port.Name == document.StudioPort, prefix,
+			services.Add(WsdlRegistrationMapper.Map(port, port.Name == document.StudioPort, prefix,
 				request.EnvironmentName, target, warnings));
 		}
-		if (fromUrl && services.Any(HasReplacementCharacter)) {
-			warnings.Add("Some names or captions contain '?': the platform download turns every non-ASCII character into "
-				+ "'?'. Read the WSDL again with wsdl-files (a local copy) to keep them.");
-		}
+		return Result(services, warnings, Notices(services, target, url));
+	}
+
+	private List<string> Notices(IReadOnlyList<WsdlServiceArguments> services, WsdlTargetService target, Uri url) {
 		var notices = new List<string>();
 		if (target is null) {
 			notices.AddRange(services.Select(s => s.Arguments.Code).Distinct(StringComparer.OrdinalIgnoreCase)
@@ -126,38 +145,53 @@ public sealed class WsdlReader(
 				.Select(code => $"The code '{code}' is already used by a web service: register under another code, or read "
 					+ $"the WSDL again with service-code '{code}' to change that service with modify-web-service."));
 		}
-		return Result(services, warnings, notices, request.Operations is { Count: > 0 });
+		// The WSDL names the endpoint the calls (and any credentials set up later) go to; tell the user when it is not the
+		// host the WSDL came from.
+		foreach (string host in services
+				.Select(s => Uri.TryCreate(s.Arguments.BaseUri, UriKind.Absolute, out Uri endpoint) ? endpoint.Host : null)
+				.Where(h => h is not null && url is not null && !string.Equals(h, url.Host, StringComparison.OrdinalIgnoreCase))
+				.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			notices.Add($"The WSDL sends the calls to {WsdlParser.Shown(host)}, not to {url!.Host} where it was downloaded "
+				+ "from; show the user the base-uri before registering.");
+		}
+		return notices;
 	}
 
-	// Names and captions only: a base URI or a SOAP action may hold a real '?'.
-	private static bool HasReplacementCharacter(WsdlServiceArguments service) =>
-		(service.Arguments.Caption ?? string.Empty).Contains('?')
-		|| service.Arguments.Methods.Any(m => (m.Caption + m.MessageElement).Contains('?')
-			|| Flatten(m.RequestParameters).Concat(Flatten(m.ResponseParameters))
-				.Any(p => (p.Caption + p.Path + p.SequenceElement).Contains('?')));
+	private static bool HasReplacementCharacter(WsdlDocument document) =>
+		document.Ports.Any(p => (p.ServiceName ?? string.Empty).Contains('?')
+			|| p.Operations.Any(o => (o.Caption + o.StudioMessageElement).Contains('?')
+				|| Flatten(o.Request).Concat(Flatten(o.Response)).Any(x => (x.Caption + x.Path + x.SequenceElement).Contains('?'))));
 
-	private static IEnumerable<WebServiceParameterArg> Flatten(IReadOnlyList<WebServiceParameterArg> parameters) =>
+	private static IEnumerable<WsdlParameter> Flatten(IReadOnlyList<WsdlParameter> parameters) =>
 		(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
 	private static WsdlReadResult Result(IReadOnlyList<WsdlServiceArguments> services, List<string> warnings,
-		List<string> notices, bool filtered) {
+		List<string> notices) {
+		List<string> shownWarnings = warnings.Count <= MaxWarnings
+			? warnings
+			: [.. warnings.Take(MaxWarnings), $"...and {warnings.Count - MaxWarnings} more warnings."];
 		List<WsdlServiceView> views = services.Select(s => new WsdlServiceView(s.Port, s.StudioPick,
 			JsonSerializer.SerializeToElement(s.Arguments, ArgumentOptions), s.ExistingMethods)).ToList();
-		var result = new WsdlReadResult(true, Services: views, Warnings: warnings.Count > 0 ? warnings : null,
+		var result = new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
 			Notices: notices.Count > 0 ? notices : null);
-		if (filtered || JsonSerializer.Serialize(result).Length <= MaxResultCharacters) {
+		if (JsonSerializer.Serialize(result).Length <= MaxResultCharacters) {
 			return result;
 		}
-		notices.Add($"The WSDL is too large to return whole (over {MaxResultCharacters} characters); only the operation "
-			+ "names are listed. Ask the user which operations they need, then read it again with operations (and port).");
+		var summaryNotices = new List<string>(notices) {
+			$"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names are "
+			+ "listed. Ask the user which operations they need, then read the WSDL again with operations (and port)."
+		};
 		return result with {
 			Services = services.Select(s => new WsdlServiceView(s.Port, s.StudioPick,
-				Operations: s.Arguments.Methods.Select(m => m.Caption).ToList())).ToList(),
-			Notices = notices
+				Operations: s.Arguments.Methods.Select(m => m.Caption).Take(MaxListedOperations)
+					.Concat(s.Arguments.Methods.Count > MaxListedOperations
+						? [$"...and {s.Arguments.Methods.Count - MaxListedOperations} more"]
+						: []).ToList())).ToList(),
+			Notices = summaryNotices
 		};
 	}
 
-	private IReadOnlyList<WsdlSourceFile> Download(string url) {
+	private static Uri CheckUrl(string url) {
 		string trimmed = url.Trim();
 		if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri parsed)
 				|| (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)) {
@@ -168,34 +202,93 @@ public sealed class WsdlReader(
 			throw new ArgumentException("wsdl-url must not carry credentials (user:password@); download the WSDL yourself "
 				+ "and pass it as wsdl-files.");
 		}
-		return client.DownloadWsdl(trimmed);
+		// The URL travels to the stand and back in its error messages, so a key or token in it is refused like one in a
+		// base URI.
+		foreach (string pair in parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)) {
+			int equals = pair.IndexOf('=');
+			if (equals > 0 && equals < pair.Length - 1
+					&& WebServiceSchemaView.IsSecretName(Uri.UnescapeDataString(pair[..equals]))) {
+				throw new ArgumentException("wsdl-url carries a key or token in its query; download the WSDL yourself and "
+					+ "pass it as wsdl-files.");
+			}
+		}
+		return parsed;
 	}
 
-	private IReadOnlyList<WsdlSourceFile> ReadFiles(IReadOnlyList<string> paths) {
+	private IReadOnlyList<WsdlSourceFile> Download(Uri url) {
+		try {
+			return client.DownloadWsdl(url.OriginalString);
+		} catch (InvalidOperationException exception) {
+			throw new InvalidOperationException(exception.Message + " If the stand cannot reach the URL, or the WSDL imports "
+				+ "schemas by a relative schemaLocation (which the platform cannot download), download the files yourself and "
+				+ "pass them as wsdl-files.");
+		}
+	}
+
+	private void CheckPaths(IReadOnlyList<string> paths) {
 		if (paths.Count > MaxFiles) {
 			throw new ArgumentException($"wsdl-files: at most {MaxFiles} files.");
 		}
-		var files = new List<WsdlSourceFile>();
 		foreach (string path in paths) {
-			if (string.IsNullOrWhiteSpace(path) || !fileSystem.Path.IsPathFullyQualified(path)) {
-				throw new ArgumentException($"wsdl-files: '{path}' must be an absolute path; the MCP server does not run in "
-					+ "the user's folder.");
+			// A UNC path (\\host\share, //host/share) would make the machine running clio open a network connection with
+			// the user's credentials.
+			if (string.IsNullOrWhiteSpace(path) || !fileSystem.Path.IsPathFullyQualified(path)
+					|| path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal)) {
+				throw new ArgumentException($"wsdl-files: '{WsdlParser.Shown(path)}' must be an absolute local path; the MCP "
+					+ "server does not run in the user's folder, and network paths are not read.");
 			}
-			if (!fileSystem.File.Exists(path)) {
-				throw new ArgumentException($"wsdl-files: '{path}' does not exist.");
+		}
+	}
+
+	private IReadOnlyList<WsdlSourceFile> ReadFiles(IReadOnlyList<string> paths) {
+		var files = new List<WsdlSourceFile>();
+		long total = 0;
+		foreach (string path in paths) {
+			string fullPath = fileSystem.Path.GetFullPath(path);
+			byte[] content = ReadFile(fullPath, path);
+			total += content.Length;
+			if (total > MaxTotalBytes) {
+				throw new ArgumentException($"wsdl-files: the files hold more than {MaxTotalBytes / 1024 / 1024} MB together.");
 			}
-			if (fileSystem.FileInfo.New(path).Length > MaxFileBytes) {
-				throw new ArgumentException($"wsdl-files: '{path}' is larger than {MaxFileBytes / 1024 / 1024} MB.");
-			}
-			files.Add(new WsdlSourceFile(fileSystem.Path.GetFullPath(path), fileSystem.File.ReadAllBytes(path)));
+			files.Add(new WsdlSourceFile(fullPath, content));
 		}
 		return files;
+	}
+
+	// One regular file, read through a single handle so the size checked is the size read; a directory, a device, a link
+	// or a FIFO is refused before it is opened.
+	private byte[] ReadFile(string fullPath, string given) {
+		string shown = WsdlParser.Shown(given);
+		try {
+			if (!fileSystem.File.Exists(fullPath)) {
+				throw new ArgumentException($"wsdl-files: '{shown}' does not exist.");
+			}
+			FileAttributes attributes = fileSystem.File.GetAttributes(fullPath);
+			IFileInfo info = fileSystem.FileInfo.New(fullPath);
+			if ((attributes & (FileAttributes.Directory | FileAttributes.Device | FileAttributes.ReparsePoint)) != 0
+					|| info.LinkTarget is not null) {
+				throw new ArgumentException($"wsdl-files: '{shown}' is not a regular file.");
+			}
+			if (info.Length > MaxFileBytes) {
+				throw new ArgumentException($"wsdl-files: '{shown}' is larger than {MaxFileBytes / 1024 / 1024} MB.");
+			}
+			using FileSystemStream stream = fileSystem.File.Open(fullPath, FileMode.Open, FileAccess.Read,
+				FileShare.Read | FileShare.Delete);
+			if (stream.Length > MaxFileBytes) {
+				throw new ArgumentException($"wsdl-files: '{shown}' is larger than {MaxFileBytes / 1024 / 1024} MB.");
+			}
+			byte[] content = new byte[stream.Length];
+			stream.ReadExactly(content);
+			return content;
+		} catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException) {
+			throw new ArgumentException($"wsdl-files: '{shown}' could not be read.");
+		}
 	}
 
 	private static IReadOnlyList<WsdlPort> SelectPorts(WsdlDocument document, string port) {
 		if (document.Ports.Count == 0) {
 			throw new ArgumentException("The WSDL has no SOAP 1.1 or SOAP 1.2 port, so there is nothing to register. "
-				+ string.Join(" ", document.Warnings));
+				+ string.Join(" ", document.Warnings.Take(10)));
 		}
 		if (string.IsNullOrWhiteSpace(port)) {
 			return document.Ports;
@@ -203,35 +296,39 @@ public sealed class WsdlReader(
 		WsdlPort selected = document.Ports.FirstOrDefault(p => string.Equals(p.Name, port.Trim(), StringComparison.Ordinal))
 			?? document.Ports.FirstOrDefault(p => string.Equals(p.Name, port.Trim(), StringComparison.OrdinalIgnoreCase));
 		return selected is null
-			? throw new ArgumentException($"port '{port}' is not a SOAP port of the WSDL; its SOAP ports: "
-				+ string.Join(", ", document.Ports.Select(p => p.Name)) + ".")
+			? throw new ArgumentException($"port '{WsdlParser.Shown(port)}' is not a SOAP port of the WSDL; its SOAP ports: "
+				+ string.Join(", ", document.Ports.Select(p => p.Name).Take(50)) + ".")
 			: [selected];
 	}
 
-	private static WsdlPort SelectOperations(WsdlPort port, IReadOnlyList<string> operations) {
+	// Each port keeps the named operations it has; a port with none of them is left out, and a name no port has is refused.
+	private static IReadOnlyList<WsdlPort> SelectOperations(IReadOnlyList<WsdlPort> ports, IReadOnlyList<string> operations) {
 		if (operations is not { Count: > 0 }) {
-			return port;
+			return ports;
 		}
 		var wanted = new HashSet<string>(operations.Where(o => !string.IsNullOrWhiteSpace(o)).Select(o => o.Trim()),
 			StringComparer.OrdinalIgnoreCase);
-		string[] unknown = wanted.Where(name => port.Operations.All(o => !string.Equals(o.Caption, name,
-			StringComparison.OrdinalIgnoreCase))).ToArray();
+		string[] unknown = wanted.Where(name => ports.All(p => p.Operations.All(o => !string.Equals(o.Caption, name,
+			StringComparison.OrdinalIgnoreCase)))).ToArray();
 		if (unknown.Length > 0) {
-			throw new ArgumentException($"operations: {string.Join(", ", unknown)} not found in port '{port.Name}'; its "
-				+ "operations: " + string.Join(", ", port.Operations.Select(o => o.Caption).Take(200)) + ".");
+			throw new ArgumentException($"operations: {string.Join(", ", unknown.Select(WsdlParser.Shown).Take(20))} not found; "
+				+ "the operations: " + string.Join(", ", ports.SelectMany(p => p.Operations).Select(o => o.Caption).Distinct()
+					.Take(200)) + ".");
 		}
-		return port with { Operations = port.Operations.Where(o => wanted.Contains(o.Caption)).ToList() };
+		return ports.Select(p => p with { Operations = p.Operations.Where(o => wanted.Contains(o.Caption)).ToList() })
+			.Where(p => p.Operations.Count > 0).ToList();
 	}
 
 	private WsdlTargetService ReadTarget(string serviceCode) {
 		if (string.IsNullOrWhiteSpace(serviceCode)) {
 			return null;
 		}
-		WebServiceToolResult described = designer.Describe(serviceCode.Trim(), false);
-		WebServiceView service = described.Service;
-		if (service is null || !service.Type.StartsWith("SOAP", StringComparison.Ordinal)) {
-			throw new ArgumentException($"service-code '{serviceCode}' is a {service?.Type ?? "unknown"} service; a WSDL's "
-				+ "operations go into a SOAP service.");
+		WebServiceView service = designer.Describe(serviceCode.Trim(), false).Service;
+		bool soap = service?.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap11)
+			|| service?.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap12);
+		if (!soap) {
+			throw new ArgumentException($"service-code '{serviceCode}' is a {service?.Type} service; a WSDL's operations go "
+				+ "into a SOAP service.");
 		}
 		return new WsdlTargetService(service.Code, service.Namespaces ?? [], service.Methods);
 	}

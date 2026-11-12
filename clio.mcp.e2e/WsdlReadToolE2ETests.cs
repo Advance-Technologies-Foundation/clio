@@ -5,6 +5,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.WebServiceDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -70,7 +71,7 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 		try {
 			if (_environmentName is not null && _serviceCodes.Count > 0) {
 				using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
-				await WsdlE2EStand.RemoveServicesAsync(TestConfiguration.Load(), _environmentName, _serviceCodes, cts.Token);
+				await WebServiceStand.RemoveServicesAsync(TestConfiguration.Load(), _environmentName, _serviceCodes, cts.Token);
 			}
 		} finally {
 			_serviceCodes.Clear();
@@ -92,7 +93,7 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run the read-wsdl E2E tests.");
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
-		_prefix = await WsdlE2EStand.ReadPrefixAsync(settings, _environmentName, cts.Token);
+		_prefix = await WebServiceStand.ReadPrefixAsync(settings, _environmentName, cts.Token);
 		string[] operations = ["TaggedCall", "GetByRoles", "SecureCall"];
 
 		// Act
@@ -100,6 +101,7 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 			["environment-name"] = _environmentName, ["wsdl-files"] = new[] { Asset("wizard-features.wsdl") },
 			["operations"] = operations
 		}, cts.Token);
+		read.Success.Should().BeTrue(because: $"the shipped WSDL is readable; error: {read.Error}");
 		WsdlServiceView pick = read.Services!.Single(s => s.StudioPick);
 		JsonObject arguments = JsonNode.Parse(pick.Arguments!.Value.GetRawText())!.AsObject();
 		string code = _prefix + "E2eWsdl" + Guid.NewGuid().ToString("N")[..12];
@@ -116,7 +118,6 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 		}, cts.Token);
 
 		// Assert
-		read.Success.Should().BeTrue(because: $"the shipped WSDL is readable; error: {read.Error}");
 		read.Services!.Select(s => s.Port).Should().Equal(["ClioWizardFeaturesSoap", "ClioWizardFeaturesSoap12"],
 			because: "every SOAP port is returned and the HTTP port is dropped");
 		pick.Port.Should().Be("ClioWizardFeaturesSoap12", because: "Studio's quick setup picks the SOAP 1.2 port");
@@ -180,7 +181,7 @@ public sealed class WsdlReadUrlToolE2ETests : McpContractFixtureBase {
 		string environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
 			"Configure McpE2E:Sandbox:EnvironmentName to run the read-wsdl E2E tests.");
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(3));
-		string prefix = await WsdlE2EStand.ReadPrefixAsync(settings, environmentName, cts.Token);
+		string prefix = await WebServiceStand.ReadPrefixAsync(settings, environmentName, cts.Token);
 
 		// Act
 		CallToolResult call = await Session.CallToolAsync(ReadWsdlTool.ToolName, new Dictionary<string, object?> {
@@ -200,61 +201,4 @@ public sealed class WsdlReadUrlToolE2ETests : McpContractFixtureBase {
 		add["code"]!.GetValue<string>().Should().Be(prefix + "Add", because: "the code is the stand's prefix and the operation name");
 		add["message-element"]!.GetValue<string>().Should().Be("tem:Add", because: "the root element is qualified");
 	}
-}
-
-/// <summary>Stand helpers for the read-wsdl E2E tests: the schema-name prefix and the removal of throwaway services.</summary>
-file static class WsdlE2EStand {
-
-	public static async Task<string> ReadPrefixAsync(McpE2ESettings settings, string environmentName, CancellationToken token) {
-		ClioCliCommandResult queried = await ClioCliCommandRunner.RunAsync(settings, [
-			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/QuerySysSettings",
-			"-b", JsonSerializer.Serialize(new { sysSettingsNameCollection = new[] { "SchemaNamePrefix" } })
-		], cancellationToken: token);
-		queried.ExitCode.Should().Be(0,
-			because: $"the codes are built from the stand's prefix; output: {queried.StandardOutput} {queried.StandardError}");
-		using JsonDocument answer = JsonDocument.Parse(queried.StandardOutput[queried.StandardOutput.IndexOf('{')..]);
-		return answer.RootElement.GetProperty("values").TryGetProperty("SchemaNamePrefix", out JsonElement setting)
-			&& setting.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.String
-				? value.GetString()!.Trim()
-				: string.Empty;
-	}
-
-	public static async Task RemoveServicesAsync(McpE2ESettings settings, string environmentName,
-		IEnumerable<string> codes, CancellationToken token) {
-		foreach (string code in codes) {
-			ClioCliCommandResult rows = await ClioCliCommandRunner.RunAsync(settings, [
-				"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
-				"-b", SelectByName(code)
-			], cancellationToken: token);
-			using JsonDocument answer = JsonDocument.Parse(rows.StandardOutput[rows.StandardOutput.IndexOf('{')..]);
-			foreach (JsonElement row in answer.RootElement.GetProperty("rows").EnumerateArray()) {
-				await ClioCliCommandRunner.RunAsync(settings, [
-					"call-service", "-e", environmentName, "--service-path",
-					"DataService/json/SyncReply/ServiceSchemaRemoveRequest", "-b", JsonSerializer.Serialize(new {
-						uId = row.GetProperty("UId").GetString(), packageUId = row.GetProperty("PackageUId").GetString()
-					})
-				], cancellationToken: token);
-			}
-		}
-	}
-
-	private static string SelectByName(string code) =>
-		JsonSerializer.Serialize(new {
-			rootSchemaName = "VwWebServiceV2",
-			operationType = 0,
-			columns = new {
-				items = new[] { "UId", "PackageUId" }.ToDictionary(c => c,
-					c => (object)new { expression = new { expressionType = 0, columnPath = c } })
-			},
-			filters = new {
-				rootSchemaName = "VwWebServiceV2", filterType = 6, logicalOperation = 0, isEnabled = true,
-				items = new Dictionary<string, object> {
-					["Name"] = new {
-						filterType = 1, comparisonType = 3, isEnabled = true, dataValueType = 1,
-						leftExpression = new { expressionType = 0, columnPath = "Name" },
-						rightExpression = new { expressionType = 2, parameter = new { dataValueType = 1, value = code } }
-					}
-				}
-			}
-		});
 }

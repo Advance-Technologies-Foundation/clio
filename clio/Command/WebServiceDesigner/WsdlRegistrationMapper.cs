@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace Clio.Command.WebServiceDesigner;
@@ -9,7 +10,7 @@ namespace Clio.Command.WebServiceDesigner;
 /// <summary>An existing service the WSDL's operations are read for: its methods keep their codes.</summary>
 /// <param name="Code">The service code.</param>
 /// <param name="Namespaces">Its namespaces, the default first.</param>
-/// <param name="Methods">Its methods with message element and SOAP action.</param>
+/// <param name="Methods">Its methods with message element, SOAP action and parameter trees.</param>
 public sealed record WsdlTargetService(string Code, IReadOnlyList<WebServiceNamespaceView> Namespaces,
 	IReadOnlyList<WebServiceMethodView> Methods);
 
@@ -23,29 +24,28 @@ public sealed record WsdlServiceArguments(string Port, bool StudioPick, WsdlRegi
 
 /// <summary>What read-wsdl proposes for one port: register-web-service input without package-name.</summary>
 public sealed record WsdlRegistrationArgs(
-	[property: System.Text.Json.Serialization.JsonPropertyName("environment-name")] string EnvironmentName,
-	[property: System.Text.Json.Serialization.JsonPropertyName("code")] string Code,
-	[property: System.Text.Json.Serialization.JsonPropertyName("caption")] string Caption,
-	[property: System.Text.Json.Serialization.JsonPropertyName("base-uri")] string BaseUri,
-	[property: System.Text.Json.Serialization.JsonPropertyName("type")] string Type,
-	[property: System.Text.Json.Serialization.JsonPropertyName("namespaces")] IReadOnlyList<WebServiceNamespaceArg> Namespaces,
-	[property: System.Text.Json.Serialization.JsonPropertyName("methods")] IReadOnlyList<WebServiceMethodArg> Methods);
+	[property: JsonPropertyName("environment-name")] string EnvironmentName,
+	[property: JsonPropertyName("code")] string Code,
+	[property: JsonPropertyName("caption")] string Caption,
+	[property: JsonPropertyName("base-uri")] string BaseUri,
+	[property: JsonPropertyName("type")] string Type,
+	[property: JsonPropertyName("namespaces")] IReadOnlyList<WebServiceNamespaceArg> Namespaces,
+	[property: JsonPropertyName("methods")] IReadOnlyList<WebServiceMethodArg> Methods);
 
 /// <summary>
 /// Turns a port read with Studio's wizard rules into register-web-service arguments with clio's rules (ADR D11): stable
 /// codes (the environment's schema-name prefix and the wizard's shortened name, a number only on a collision, never the
-/// wizard's random suffix), the message element with its namespace prefix, and nothing register-web-service would refuse:
-/// a parameter or method it would refuse is left out with a warning.
+/// wizard's random suffix), the message element with its namespace prefix, and nothing register-web-service would refuse
+/// in a parameter or a method: such a parameter or method is left out with a warning. A service-level value it would
+/// refuse (the base URI, a namespace URI) is kept with a warning, because the agent can only replace it, not drop it.
 /// </summary>
 public static partial class WsdlRegistrationMapper {
 
 	private const int MaxCodeLength = 200;
+	private const string ObjectType = "Object";
 
 	[GeneratedRegex("[^A-Za-z0-9_]")]
 	private static partial Regex NonIdentifierCharacter();
-
-	[GeneratedRegex(@"^(?:([A-Za-z_][A-Za-z0-9_\-]*):)?([A-Za-z_][A-Za-z0-9_\-]*)$")]
-	private static partial Regex PlatformElementName();
 
 	/// <summary>Maps one port.</summary>
 	/// <param name="port">The port as the parser read it.</param>
@@ -61,45 +61,44 @@ public static partial class WsdlRegistrationMapper {
 		prefix ??= string.Empty;
 		var context = new PortContext(port, prefix, target, warnings);
 		List<WebServiceNamespaceArg> namespaces = context.BuildNamespaces();
+		string baseUri = context.CheckBaseUri();
 		var methods = new List<WebServiceMethodArg>();
 		var existing = new List<string>();
-		var methodCodes = new HashSet<string>(
-			(target?.Methods ?? []).Select(m => m.Code), StringComparer.OrdinalIgnoreCase);
-		IReadOnlyDictionary<WsdlOperation, string> reused = ReusedCodes(port, context, target);
+		var methodCodes = new HashSet<string>((target?.Methods ?? []).Select(m => m.Code), StringComparer.OrdinalIgnoreCase);
+		IReadOnlyDictionary<WsdlOperation, WebServiceMethodView> reused = ReusedMethods(port, target);
 		foreach (WsdlOperation operation in port.Operations) {
-			WebServiceMethodArg method = context.BuildMethod(operation, reused.GetValueOrDefault(operation), methodCodes);
+			WebServiceMethodView match = reused.GetValueOrDefault(operation);
+			WebServiceMethodArg method = context.BuildMethod(operation, match, methodCodes);
 			if (method is null) {
 				continue;
 			}
 			methods.Add(method);
-			if (reused.ContainsKey(operation)) {
+			if (match is not null) {
 				existing.Add(method.Code);
 			}
 		}
 		string code = target?.Code ?? ServiceCode(prefix, port.ServiceName);
 		string type = port.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12 ? "soap12" : "soap11";
 		return new WsdlServiceArguments(port.Name, studioPick,
-			new WsdlRegistrationArgs(environmentName, code, port.ServiceName, port.BaseUri, type, namespaces, methods),
+			new WsdlRegistrationArgs(environmentName, code, port.ServiceName, baseUri, type, namespaces, methods),
 			target is null ? null : existing);
 	}
 
 	// A WSDL operation is the same as an existing method when the root element (local name) and the SOAP action match:
 	// that method keeps its code, so a re-read gives setMethod input for it.
-	private static Dictionary<WsdlOperation, string> ReusedCodes(WsdlPort port, PortContext context,
-		WsdlTargetService target) {
-		var result = new Dictionary<WsdlOperation, string>();
+	private static Dictionary<WsdlOperation, WebServiceMethodView> ReusedMethods(WsdlPort port, WsdlTargetService target) {
+		var result = new Dictionary<WsdlOperation, WebServiceMethodView>();
 		if (target is null) {
 			return result;
 		}
 		var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (WsdlOperation operation in port.Operations) {
-			string localName = LocalName(context.MessageElement(operation));
 			WebServiceMethodView match = target.Methods.FirstOrDefault(m => !claimed.Contains(m.Code)
-				&& string.Equals(LocalName(m.MessageElement), localName, StringComparison.Ordinal)
+				&& string.Equals(LocalName(m.MessageElement), operation.StudioMessageElement, StringComparison.Ordinal)
 				&& string.Equals(m.SoapAction ?? string.Empty, operation.SoapAction ?? string.Empty, StringComparison.Ordinal));
 			if (match is not null) {
 				claimed.Add(match.Code);
-				result[operation] = match.Code;
+				result[operation] = match;
 			}
 		}
 		return result;
@@ -113,14 +112,11 @@ public static partial class WsdlRegistrationMapper {
 
 	/// <summary>The service code: the prefix and the service name as a Latin identifier (the wizard does not shorten it).</summary>
 	internal static string ServiceCode(string prefix, string serviceName) =>
-		Capped(prefix, Identifier(serviceName ?? string.Empty, "Service", prefix));
+		Capped(prefix, Identifier(serviceName ?? string.Empty, "Service"));
 
-	private static string Identifier(string name, string fallback, string prefix) {
+	private static string Identifier(string name, string fallback) {
 		string tail = NonIdentifierCharacter().Replace(name, string.Empty);
-		if (tail.Length == 0) {
-			tail = fallback;
-		}
-		return prefix.Length == 0 && char.IsDigit(tail[0]) ? "_" + tail : tail;
+		return tail.Length == 0 ? fallback : tail;
 	}
 
 	/// <summary>
@@ -128,8 +124,7 @@ public static partial class WsdlRegistrationMapper {
 	/// keeping the end of the name as the wizard does but never the prefix; a number from 2 on a collision.
 	/// </summary>
 	internal static string UniqueCode(string prefix, string name, string fallback, ISet<string> taken) {
-		string tail = Identifier(WsdlParser.ShortenCaption((name ?? string.Empty).Replace(" ", string.Empty)), fallback,
-			prefix);
+		string tail = Identifier(WsdlParser.ShortenCaption((name ?? string.Empty).Replace(" ", string.Empty)), fallback);
 		string code = Capped(prefix, tail);
 		for (int index = 2; taken.Contains(code); index++) {
 			code = Capped(prefix, tail + index);
@@ -138,107 +133,158 @@ public static partial class WsdlRegistrationMapper {
 		return code;
 	}
 
+	// The end of a long name is kept, as the wizard keeps it; a code without a prefix must still start with a letter or
+	// an underscore, so a cut that leaves a digit first gets an underscore.
 	private static string Capped(string prefix, string tail) {
 		int room = Math.Max(MaxCodeLength - prefix.Length, 1);
-		return prefix + (tail.Length <= room ? tail : tail[^room..]);
+		string kept = tail.Length <= room ? tail : tail[^room..];
+		if (prefix.Length == 0 && char.IsDigit(kept[0])) {
+			kept = "_" + (kept.Length < MaxCodeLength ? kept : kept[1..]);
+		}
+		return prefix + kept;
 	}
 
 	/// <summary>The per-port mapping: the namespace prefixes and the warnings.</summary>
-	private sealed class PortContext {
-		private readonly WsdlPort _port;
-		private readonly string _prefix;
-		private readonly ICollection<string> _warnings;
+	private sealed class PortContext(WsdlPort port, string prefix, WsdlTargetService target, ICollection<string> warnings) {
 		private readonly Dictionary<string, string> _prefixRename = new(StringComparer.Ordinal);
 		private readonly HashSet<string> _unqualified = new(StringComparer.Ordinal);
 		private readonly Dictionary<string, string> _prefixByUri = new(StringComparer.Ordinal);
-		private readonly WsdlTargetService _target;
+		private readonly HashSet<string> _warned = new(StringComparer.Ordinal);
 		private string _operation;
 
-		public PortContext(WsdlPort port, string prefix, WsdlTargetService target, ICollection<string> warnings) {
-			_port = port;
-			_prefix = prefix;
-			_target = target;
-			_warnings = warnings;
-		}
-
 		private void Warn(string message) {
-			if (!_warnings.Contains(message)) {
-				_warnings.Add(message);
+			if (_warned.Add(message) && !warnings.Contains(message)) {
+				warnings.Add(message);
 			}
 		}
 
+		private static string Shown(string value) => WsdlParser.Shown(value);
+
 		/// <summary>
-		/// The namespaces to declare. A namespace with no URI (an element of no namespace) cannot be declared: its prefix is
-		/// dropped from the paths, so the platform puts those elements in the default namespace. With a target service its
-		/// namespaces come first and keep their prefixes; a WSDL namespace it lacks gets a free ns-prefix.
+		/// The namespaces to declare. A namespace with no URI (an element of no namespace, or a prefix the WSDL never
+		/// declares) cannot be declared: its prefix is dropped from the paths, so the platform puts those elements in the
+		/// default namespace. With a target service its namespaces come first and keep their prefixes; a WSDL namespace it
+		/// lacks gets a free ns-prefix.
 		/// </summary>
 		public List<WebServiceNamespaceArg> BuildNamespaces() {
 			var result = new List<WebServiceNamespaceArg>();
 			var prefixes = new HashSet<string>(StringComparer.Ordinal);
-			foreach (WebServiceNamespaceView existing in _target?.Namespaces ?? []) {
+			foreach (WebServiceNamespaceView existing in target?.Namespaces ?? []) {
 				result.Add(new WebServiceNamespaceArg(existing.Prefix, existing.Uri));
 				prefixes.Add(existing.Prefix);
 				_prefixByUri.TryAdd(existing.Uri ?? string.Empty, existing.Prefix);
 			}
-			foreach (WsdlNamespace ns in _port.Namespaces) {
+			foreach (WsdlNamespace ns in port.Namespaces) {
 				if (string.IsNullOrEmpty(ns.Uri)) {
 					_unqualified.Add(ns.Prefix);
-					Warn($"Port '{_port.Name}': some elements have no namespace ({ns.Prefix} in Studio's paths); the platform "
-						+ "puts an element without a prefix in the default namespace, so those elements were given none. Test a "
-						+ "call: an API that expects unqualified elements may refuse them.");
+					Warn(ns.Uri is null
+						? $"Port '{port.Name}': the WSDL uses a namespace prefix it never declares; those elements were given no "
+							+ "prefix, so the platform puts them in the default namespace. Check the WSDL with the API owner."
+						: $"Port '{port.Name}': some elements have no namespace; the platform puts an element without a prefix "
+							+ "in the default namespace, so those elements were given none. Test a call: an API that expects "
+							+ "unqualified elements may refuse them.");
 					continue;
 				}
 				if (_prefixByUri.TryGetValue(ns.Uri, out string kept)) {
 					_prefixRename[ns.Prefix] = kept;
 					continue;
 				}
-				string prefix = ns.Prefix;
-				for (int index = 0; prefixes.Contains(prefix); index++) {
-					prefix = "ns" + index;
+				string nsPrefix = ns.Prefix;
+				for (int index = 0; prefixes.Contains(nsPrefix); index++) {
+					nsPrefix = "ns" + index;
 				}
-				prefixes.Add(prefix);
-				_prefixRename[ns.Prefix] = prefix;
-				_prefixByUri[ns.Uri] = prefix;
-				result.Add(new WebServiceNamespaceArg(prefix, ns.Uri));
+				prefixes.Add(nsPrefix);
+				_prefixRename[ns.Prefix] = nsPrefix;
+				_prefixByUri[ns.Uri] = nsPrefix;
+				result.Add(new WebServiceNamespaceArg(nsPrefix, ns.Uri));
+				if (ns.Uri.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) {
+					Warn($"Port '{port.Name}': the namespace URI '{Shown(ns.Uri)}' has spaces, which register-web-service "
+						+ "refuses; ask the API owner for the right URI.");
+				}
 			}
 			return result;
 		}
 
+		/// <summary>The base URI as given; one register-web-service would refuse gets a warning, because only the user can replace it.</summary>
+		public string CheckBaseUri() {
+			var errors = new WebServiceDefinitionBuilder.Errors();
+			WebServiceDefinitionBuilder.NormalizeBaseUri(port.BaseUri, errors, soap: true);
+			if (errors.Count > 0) {
+				Warn($"Port '{port.Name}': its address '{Shown(WebServiceSchemaView.StripUserInfo(port.BaseUri))}' cannot be "
+					+ "the base-uri (" + Shown(errors[0]) + "); ask the user for the real endpoint and set base-uri before "
+					+ "registering.");
+			}
+			return port.BaseUri;
+		}
+
 		/// <summary>The message element with the prefix of its namespace (Studio stores the bare local name).</summary>
-		public string MessageElement(WsdlOperation operation) {
+		private string MessageElement(WsdlOperation operation) {
 			string ns = operation.MessageElementNamespace;
-			return !string.IsNullOrEmpty(ns) && _prefixByUri.TryGetValue(ns, out string prefix)
-				? $"{prefix}:{operation.StudioMessageElement}"
+			return !string.IsNullOrEmpty(ns) && _prefixByUri.TryGetValue(ns, out string nsPrefix)
+				? $"{nsPrefix}:{operation.StudioMessageElement}"
 				: operation.StudioMessageElement;
 		}
 
-		public WebServiceMethodArg BuildMethod(WsdlOperation operation, string reusedCode, ISet<string> methodCodes) {
+		public WebServiceMethodArg BuildMethod(WsdlOperation operation, WebServiceMethodView existing,
+			ISet<string> methodCodes) {
 			_operation = operation.Caption;
 			string messageElement = MessageElement(operation);
-			if (!PlatformElementName().IsMatch(messageElement)) {
-				Warn($"Operation '{operation.Caption}' was left out: its request element '{messageElement}' has a character "
-					+ "the platform cuts element names at (only letters, digits, '_' and '-' survive), so no call could reach "
-					+ "it. Describe it by hand only if the API accepts the cut name.");
+			if (!WebServiceDefinitionBuilder.IsSendableElementPath(messageElement) || messageElement.Contains('/')) {
+				Warn($"Operation '{Shown(operation.Caption)}' was left out: its request element '{Shown(messageElement)}' is not "
+					+ "an element name the platform can send (it cuts a prefixed name at any character other than letters, "
+					+ "digits, '_' and '-').");
 				return null;
 			}
-			string code = reusedCode ?? UniqueCode(_prefix, operation.Caption, "Method", methodCodes);
-			var requestCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			var responseCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-			List<WebServiceParameterArg> request = Parameters(operation.Request, true, string.Empty, requestCodes);
-			List<WebServiceParameterArg> response = Parameters(operation.Response, false, string.Empty, responseCodes);
-			return new WebServiceMethodArg(code, null, null,
+			string code = existing?.Code ?? UniqueCode(prefix, operation.Caption, "Method", methodCodes);
+			List<WebServiceParameterArg> request = Parameters(operation.Request, true, string.Empty,
+				CodeSet(existing?.RequestParameters), CodesByPath(existing?.RequestParameters));
+			List<WebServiceParameterArg> response = Parameters(operation.Response, false, string.Empty,
+				CodeSet(existing?.ResponseParameters), CodesByPath(existing?.ResponseParameters));
+			return new WebServiceMethodArg(code, HttpMethod: null, Uri: null,
 				Caption: operation.Caption,
 				RequestParameters: request.Count > 0 ? request : null,
 				ResponseParameters: response.Count > 0 ? response : null,
 				MessageElement: messageElement,
-				SoapAction: string.IsNullOrEmpty(operation.SoapAction) ? null : operation.SoapAction);
+				SoapAction: SoapAction(operation));
 		}
 
+		// A SOAP action is sent as a header value and stored like the base URI: a line break or credentials there would
+		// make register refuse the method, so such a value is dropped with a warning (register then names the missing
+		// action).
+		private string SoapAction(WsdlOperation operation) {
+			string action = operation.SoapAction;
+			if (string.IsNullOrEmpty(action)) {
+				return null;
+			}
+			if (action.Any(char.IsControl) || WebServiceDefinitionBuilder.HasUserInfo(action)) {
+				Warn($"Operation '{Shown(operation.Caption)}': its soapAction has a line break or credentials and was left "
+					+ "out; ask the API owner for the right value.");
+				return null;
+			}
+			return action;
+		}
+
+		// The codes a matched method's parameters already have, reserved so a new parameter cannot take one.
+		private static HashSet<string> CodeSet(IReadOnlyList<WebServiceParameterView> parameters) =>
+			new(Flatten(parameters).Select(p => p.Code), StringComparer.OrdinalIgnoreCase);
+
+		// A matched method's parameters by path, so a parameter at the same place keeps its code and setMethod keeps its UId.
+		private static Dictionary<string, WebServiceParameterView> CodesByPath(IReadOnlyList<WebServiceParameterView> parameters) {
+			var result = new Dictionary<string, WebServiceParameterView>(StringComparer.Ordinal);
+			foreach (WebServiceParameterView parameter in parameters ?? []) {
+				result.TryAdd(parameter.Path ?? string.Empty, parameter);
+			}
+			return result;
+		}
+
+		private static IEnumerable<WebServiceParameterView> Flatten(IReadOnlyList<WebServiceParameterView> parameters) =>
+			(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
+
 		private List<WebServiceParameterArg> Parameters(IReadOnlyList<WsdlParameter> parameters, bool isRequest,
-			string parentCaption, ISet<string> codes) {
+			string parentCaption, ISet<string> codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
 			var result = new List<WebServiceParameterArg>();
 			foreach (WsdlParameter parameter in parameters) {
-				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentCaption, codes);
+				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentCaption, codes, existing);
 				if (arg is not null) {
 					result.Add(arg);
 				}
@@ -247,34 +293,51 @@ public static partial class WsdlRegistrationMapper {
 		}
 
 		private WebServiceParameterArg Parameter(WsdlParameter parameter, bool isRequest, string parentCaption,
-			ISet<string> codes) {
+			ISet<string> codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
 			string side = isRequest ? "request" : "response";
 			string path = ElementPath(parameter.Path);
+			string where = $"Operation '{Shown(_operation)}': {side} element '{Shown(path)}' was left out";
 			if (parameter.IsCopy) {
-				Warn($"Operation '{_operation}': {side} element '{path}' was left out: Studio's wizard lists an element of a "
-					+ "nested anonymous type a second time one level too high, and no such element exists there.");
+				Warn($"{where}: Studio's wizard lists an element of a nested anonymous type a second time one level too high, "
+					+ "and no such element exists there.");
+				return null;
+			}
+			if (parameter.EscapesItem) {
+				Warn($"{where}: it is an array inside an item of another array, and Studio's wizard gives it the outer "
+					+ "array's path, which would nest it wrongly; describe it by hand if it is needed.");
 				return null;
 			}
 			if (path.Length == 0) {
-				Warn($"Operation '{_operation}': a repeated {side} element without a wrapper element was left out; Studio's "
-					+ "wizard gives it an empty path, which the platform cannot address.");
+				Warn($"Operation '{Shown(_operation)}': a repeated {side} element without a wrapper element was left out; "
+					+ "Studio's wizard gives it an empty path, which the platform cannot address.");
 				return null;
 			}
-			if (isRequest && !path.Split('/').All(segment => PlatformElementName().IsMatch(segment))) {
-				Warn($"Operation '{_operation}': request element '{path}' was left out: the platform cuts element names at "
-					+ "any character other than letters, digits, '_' and '-', so it would send another element.");
-				return null;
-			}
-			string code = UniqueCode(_prefix, parentCaption + parameter.Caption, "Param", codes);
-			List<WebServiceParameterArg> items = parameter.Type == "Object"
-				? Parameters(parameter.Items, isRequest, parameter.Caption, codes)
-				: [];
-			if (parameter.Type == "Object" && (!parameter.IsArray || items.Count == 0)) {
-				Warn($"Operation '{_operation}': {side} element '{path}' was left out: it is an object with no readable "
-					+ "fields, which a web service parameter cannot describe.");
+			if (isRequest && !WebServiceDefinitionBuilder.IsSendableElementPath(path)) {
+				Warn($"{where}: the platform cuts a prefixed element name at any character other than letters, digits, '_' "
+					+ "and '-', so it would send another element.");
 				return null;
 			}
 			string sequenceElement = parameter.IsArray ? ElementPath(parameter.SequenceElement) : null;
+			if (parameter.IsArray && !WebServiceDefinitionBuilder.IsSendableSequenceElement(sequenceElement, isRequest)) {
+				Warn($"{where}: its item element '{Shown(sequenceElement)}' is not a name the platform can "
+					+ (isRequest ? "send." : "read."));
+				return null;
+			}
+			bool isObject = parameter.Type == ObjectType;
+			if (isObject && (!parameter.IsArray || parameter.Items.Count == 0)) {
+				Warn($"{where}: it is an object with no readable fields, which a web service parameter cannot describe.");
+				return null;
+			}
+			WebServiceParameterView previous = existing.GetValueOrDefault(path);
+			string code = previous?.Code ?? UniqueCode(prefix, parentCaption + parameter.Caption, "Param", codes);
+			List<WebServiceParameterArg> items = isObject
+				? Parameters(parameter.Items, isRequest, parameter.Caption, codes, CodesByPath(previous?.Items))
+				: [];
+			if (isObject && items.Count == 0) {
+				Warn($"{where}: none of its fields can be described, so neither can the object.");
+				codes.Remove(code);
+				return null;
+			}
 			return new WebServiceParameterArg(code,
 				Type: parameter.Type,
 				Path: path,
@@ -297,12 +360,12 @@ public static partial class WsdlRegistrationMapper {
 					builder.Append('/');
 				}
 				int colon = segment.IndexOf(':');
-				string prefix = colon < 0 ? null : segment[..colon];
+				string segmentPrefix = colon < 0 ? null : segment[..colon];
 				string name = colon < 0 ? segment : segment[(colon + 1)..];
-				if (prefix is null || _unqualified.Contains(prefix)) {
+				if (segmentPrefix is null || _unqualified.Contains(segmentPrefix)) {
 					builder.Append(name);
 				} else {
-					builder.Append(_prefixRename.GetValueOrDefault(prefix, prefix)).Append(':').Append(name);
+					builder.Append(_prefixRename.GetValueOrDefault(segmentPrefix, segmentPrefix)).Append(':').Append(name);
 				}
 			}
 			return builder.ToString();

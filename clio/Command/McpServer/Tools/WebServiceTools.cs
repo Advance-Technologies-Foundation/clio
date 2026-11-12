@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.WebServiceDesigner;
 using Clio.Common;
+using Microsoft.AspNetCore.Http;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -155,7 +156,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 
 /// <summary>Turns a SOAP WSDL into register-web-service arguments, as Studio's SOAP quick setup does; saves nothing.</summary>
 [McpServerToolType]
-public sealed class ReadWsdlTool(IToolCommandResolver commandResolver) {
+public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpContextAccessor httpContextAccessor = null) {
 
 	internal const string ToolName = "read-wsdl";
 
@@ -179,7 +180,7 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver) {
 	[Description("""
 				 Reads a WSDL. It turns a SOAP WSDL 1.1 document into ready register-web-service arguments the way Studio's SOAP quick setup builds a service, and saves nothing.
 
-				 Returns one argument object per SOAP 1.1 and SOAP 1.2 port (studio-pick marks the port Studio would create: the SOAP 1.2 one when both exist; HTTP ports are dropped): type, base URI, namespaces, and methods with message-element, soap-action and parameters with element paths, soap-header and sequence-element. Codes are the environment's schema-name prefix plus the WSDL names, the same on every read. warnings list what was not read or needs a test call.
+				 Returns one argument object per SOAP 1.1 and SOAP 1.2 port (studio-pick marks the port Studio would create: the SOAP 1.2 one when both exist; HTTP ports are dropped): type, base URI, namespaces, and methods with message-element, soap-action and parameters with element paths, soap-header and sequence-element. Codes are the environment's schema-name prefix plus the WSDL names shortened as Studio shortens them (TaggedCall -> TCall), the same on every read. warnings list what was not read or needs a test call.
 
 				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return whole comes back as operation names: read it again with operations. The caller needs CanManageSolution.
 				 """)]
@@ -192,6 +193,11 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver) {
 			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData, ValidHint, Aliases);
 			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 				throw new ArgumentException("environment-name is required.");
+			}
+			// Over HTTP the caller is not on the machine whose files wsdl-files would read.
+			if (args.WsdlFiles is { Count: > 0 } && httpContextAccessor?.HttpContext is not null) {
+				throw new ArgumentException("wsdl-files reads files on the machine running clio, which an HTTP client cannot "
+					+ "point at; give wsdl-url instead.");
 			}
 			IWsdlReader reader = commandResolver.Resolve<IWsdlReader>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });

@@ -75,7 +75,7 @@ public sealed class WsdlReaderTests {
 		result.Services.Select(s => (s.Port, s.StudioPick)).Should().Equal([("CalculatorSoap", false), ("CalculatorSoap12", true)],
 			because: "every SOAP port is returned and Studio's pick is marked (D12)");
 		Arguments(result.Services[1]).Type.Should().Be("soap12", because: "the port's SOAP version is the service type");
-		result.Services[0].Arguments!.Value.GetRawText().Should().NotContain("null",
+		result.Services[0].Arguments!.Value.GetRawText().Should().NotContain(":null",
 			because: "members that do not apply are left out, not written as null");
 		JsonNode.Parse(result.Services[0].Arguments!.Value.GetRawText())!["methods"]!.AsArray()
 			.Should().OnlyContain(m => m!["uri"] == null && m["http-method"] == null, because: "a SOAP method has no uri or verb");
@@ -219,7 +219,7 @@ public sealed class WsdlReaderTests {
 
 		// Act / Assert
 		((Action)(() => _sut.Read(Files("relative.wsdl")))).Should().Throw<ArgumentException>(because: "the server's folder is not the user's")
-			.WithMessage("*absolute path*");
+			.WithMessage("*absolute local path*");
 		((Action)(() => _sut.Read(Files(missing)))).Should().Throw<ArgumentException>(because: "the file must exist")
 			.WithMessage("*does not exist*");
 		((Action)(() => _sut.Read(Files(big)))).Should().Throw<ArgumentException>(because: "the platform's own size cap applies")
@@ -304,6 +304,135 @@ public sealed class WsdlReaderTests {
 		filtered.Services.Single().Arguments.Should().NotBeNull(because: "a filtered read returns arguments");
 	}
 
+	[TestCase(@"\\host\share\x.wsdl")]
+	[TestCase("//host/share/x.wsdl")]
+	[Description("A network path is refused before any request: reading it would make the machine running clio connect to that host with the user's credentials.")]
+	public void Read_Should_Refuse_A_Network_Path(string path) {
+		// Arrange
+		WsdlReadRequest request = Files(path);
+
+		// Act
+		Action act = () => _sut.Read(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "only local files are read").WithMessage("*network paths are not read*");
+		_rights.DidNotReceiveWithAnyArgs().GetCanExecuteOperation(default, default);
+	}
+
+	[Test]
+	[Description("Files that are each under the size cap but together over the total cap are refused.")]
+	public void Read_Should_Cap_The_Total_Size_Of_Local_Files() {
+		// Arrange
+		long each = WsdlReader.MaxFileBytes - 1;
+		int count = (int)(WsdlReader.MaxTotalBytes / each) + 1;
+		string[] paths = Enumerable.Range(0, count).Select(i => GivenFile($"part{i}.xsd", new byte[each])).ToArray();
+
+		// Act
+		Action act = () => _sut.Read(Files(paths));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the files hold more than a download may").WithMessage("*together*");
+	}
+
+	[Test]
+	[Description("A wsdl-url with a key or token in its query is refused before anything is sent, because the URL travels to the stand and back in its messages.")]
+	public void Read_Should_Refuse_A_Url_Carrying_A_Key() {
+		// Arrange
+		var request = new WsdlReadRequest("dev", "http://example.org/svc?wsdl&apikey=s3cr3t", null);
+
+		// Act
+		Action act = () => _sut.Read(request);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the key would be echoed").WithMessage("*key or token*");
+		_rights.DidNotReceiveWithAnyArgs().GetCanExecuteOperation(default, default);
+	}
+
+	[Test]
+	[Description("A failed download passes on the platform's reason and points at wsdl-files.")]
+	public void Read_Should_Point_At_Local_Files_When_The_Download_Fails() {
+		// Arrange
+		const string url = "http://example.org/svc?wsdl";
+		_client.DownloadWsdl(url).Throws(
+			new InvalidOperationException("The platform refused to download the WSDL: Error downloading schema"));
+
+		// Act
+		Action act = () => _sut.Read(new WsdlReadRequest("dev", url, null));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the stand could not download it")
+			.WithMessage("*Error downloading schema*wsdl-files*");
+	}
+
+	[Test]
+	[Description("A WSDL whose endpoint is on another host than the URL it was downloaded from gives a notice to show the base URI.")]
+	public void Read_Should_Notice_An_Endpoint_On_Another_Host() {
+		// Arrange
+		const string url = "http://mirror.example.org/calc?wsdl";
+		_client.DownloadWsdl(url).Returns([new WsdlSourceFile(url, FixtureBytes("calculator.wsdl"), AsciiText: true)]);
+
+		// Act
+		WsdlReadResult result = _sut.Read(new WsdlReadRequest("dev", url, null));
+
+		// Assert
+		result.Notices.Should().ContainSingle(n => n.Contains("www.dneonline.com") && n.Contains("mirror.example.org"),
+			because: "the calls would go to the host the WSDL names");
+	}
+
+	[Test]
+	[Description("A filtered read that is still too large lists operation names too, up to the listing limit.")]
+	public void Read_Should_Apply_The_Size_Limit_To_A_Filtered_Read() {
+		// Arrange
+		string path = GivenFile("big.wsdl", Encoding.UTF8.GetBytes(BigWsdl(WsdlReader.MaxListedOperations + 10)));
+		string[] all = Enumerable.Range(0, WsdlReader.MaxListedOperations + 10).Select(i => $"Op{i}").ToArray();
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path) with { Operations = all });
+
+		// Assert
+		result.Services.Single().Arguments.Should().BeNull(because: "naming every operation does not lift the limit");
+		result.Services.Single().Operations.Should().HaveCount(WsdlReader.MaxListedOperations + 1,
+			because: "the names are listed up to the limit, plus a count line");
+	}
+
+	[Test]
+	[Description("operations without port keeps, in each port, the operations it has; a name no port has is refused.")]
+	public void Read_Should_Filter_Operations_Across_Ports() {
+		// Arrange
+		string path = GivenFixture("wizard-features.wsdl");
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path) with { Operations = ["GetByRef"] });
+
+		// Assert
+		result.Services.Should().HaveCount(2, because: "both SOAP ports have the operation");
+		result.Services.Should().OnlyContain(s => Arguments(s).Methods.Single().Caption == "GetByRef",
+			because: "each port keeps the named operation only");
+	}
+
+	private static string BigWsdl(int operationCount) {
+		var operations = new StringBuilder();
+		var messages = new StringBuilder();
+		var types = new StringBuilder();
+		var binding = new StringBuilder();
+		for (int i = 0; i < operationCount; i++) {
+			types.Append($"<xs:element name=\"Op{i}\"><xs:complexType><xs:sequence><xs:element name=\"firstValue\" type=\"xs:string\" /><xs:element name=\"secondValue\" type=\"xs:string\" /><xs:element name=\"thirdValue\" type=\"xs:int\" /></xs:sequence></xs:complexType></xs:element>");
+			types.Append($"<xs:element name=\"Op{i}Response\"><xs:complexType><xs:sequence><xs:element name=\"result\" type=\"xs:string\" /></xs:sequence></xs:complexType></xs:element>");
+			messages.Append($"<wsdl:message name=\"Op{i}In\"><wsdl:part name=\"p\" element=\"tns:Op{i}\" /></wsdl:message><wsdl:message name=\"Op{i}Out\"><wsdl:part name=\"p\" element=\"tns:Op{i}Response\" /></wsdl:message>");
+			operations.Append($"<wsdl:operation name=\"Op{i}\"><wsdl:input message=\"tns:Op{i}In\" /><wsdl:output message=\"tns:Op{i}Out\" /></wsdl:operation>");
+			binding.Append($"<wsdl:operation name=\"Op{i}\"><soap:operation soapAction=\"urn:op{i}\" /></wsdl:operation>");
+		}
+		return $"""
+			<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+				xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:big" targetNamespace="urn:big">
+				<wsdl:types><xs:schema targetNamespace="urn:big" elementFormDefault="qualified">{types}</xs:schema></wsdl:types>
+				{messages}<wsdl:portType name="P">{operations}</wsdl:portType>
+				<wsdl:binding name="B" type="tns:P"><soap:binding transport="http://schemas.xmlsoap.org/soap/http" />{binding}</wsdl:binding>
+				<wsdl:service name="Big"><wsdl:port name="Soap" binding="tns:B"><soap:address location="http://localhost/big" /></wsdl:port></wsdl:service>
+			</wsdl:definitions>
+			""";
+	}
+
 	[Test]
 	[Description("A service code already used on the environment gets a notice naming the two ways on: another code, or service-code to change that service.")]
 	public void Read_Should_Notice_A_Service_Code_In_Use() {
@@ -344,6 +473,7 @@ public sealed class WsdlReaderTests {
 			[new WebServiceMethodView("UsrAddOld", "Add", "POST", null, 5000, "xml", false, [], [], "tem:Add", "http://tempuri.org/Add")],
 			[new WebServiceNamespaceView("tem", "http://tempuri.org/", true)]);
 		_designer.Describe("UsrCalc", false).Returns(new WebServiceToolResult(true, Service: soap));
+		_client.IsSchemaNameUnique(Arg.Any<string>(), Arg.Any<string>()).Returns(false);
 		_designer.Describe("UsrRest", false).Returns(new WebServiceToolResult(true,
 			Service: soap with { Code = "UsrRest", Type = "REST" }));
 
@@ -354,6 +484,7 @@ public sealed class WsdlReaderTests {
 		// Assert
 		result.Services.Single().ExistingMethods.Should().Equal(["UsrAddOld"], because: "Add is already a method of the service");
 		result.Notices.Should().BeNull(because: "no new service code is proposed, so none is checked");
+		_client.DidNotReceiveWithAnyArgs().IsSchemaNameUnique(default, default);
 		rest.Should().Throw<ArgumentException>(because: "WSDL operations go into a SOAP service").WithMessage("*REST*");
 	}
 }

@@ -30,6 +30,100 @@ public sealed class WsdlRegistrationMapperTests {
 			[new WsdlNamespace("tem", "http://example.org/t/"), new WsdlNamespace("ns0", "http://example.org/x")], operations);
 
 	[Test]
+	[Description("An array whose item element the platform cannot name is left out, as is an array inside an array item (the wizard gives it the outer path); the rest of the method is kept.")]
+	public void Map_Should_Leave_Out_Arrays_Register_Would_Refuse() {
+		// Arrange
+		WsdlParameter dottedItem = Parameter("tags", "tem:tags", array: true, sequence: "tem:tag.value");
+		WsdlParameter escaping = new("subs", "tem:order/tem:lines", "Object", true, false, "tem:subs",
+			[Parameter("code", "tem:code")], "Usrsubs", EscapesItem: true);
+		WsdlPort port = Port(Operation("Op", dottedItem, Parameter("id", "tem:id"), escaping));
+		var warnings = new List<string>();
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
+
+		// Assert
+		result.Arguments.Methods.Single().RequestParameters.Select(p => p.Path).Should().Equal(["tem:id"],
+			because: "only the parameter register accepts is kept");
+		warnings.Should().Contain(w => w.Contains("tem:tag.value"), because: "the item element is named");
+		warnings.Should().Contain(w => w.Contains("outer array's path"), because: "the misplaced array is explained");
+	}
+
+	[Test]
+	[Description("A port address register would refuse is kept with a warning to replace it, and a soapAction with a line break is left out with a warning.")]
+	public void Map_Should_Warn_About_Service_Values_Register_Would_Refuse() {
+		// Arrange
+		var port = new WsdlPort("Soap", "Calc", 2, "REPLACE_WITH_ACTUAL_URL",
+			[new WsdlNamespace("tem", "http://example.org/t/")],
+			[new WsdlOperation("Op", "UsrOp", "urn:op\nnext", "Op", "http://example.org/t/", [Parameter("x", "tem:x")], [])]);
+		var warnings = new List<string>();
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
+
+		// Assert
+		result.Arguments.BaseUri.Should().Be("REPLACE_WITH_ACTUAL_URL", because: "only the user can give the real endpoint");
+		warnings.Should().Contain(w => w.Contains("REPLACE_WITH_ACTUAL_URL") && w.Contains("base-uri"),
+			because: "the agent is told to replace it");
+		result.Arguments.Methods.Single().SoapAction.Should().BeNull(because: "a header value cannot hold a line break");
+		warnings.Should().Contain(w => w.Contains("soapAction"), because: "the dropped action is reported");
+	}
+
+	[Test]
+	[Description("With a target service, a parameter at the same path as one of the matched method's keeps that code, so setMethod keeps its UId; a new parameter avoids the method's codes.")]
+	public void Map_Should_Reuse_Parameter_Codes_Of_A_Matched_Method() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add", Parameter("intA", "tem:intA"), Parameter("intB", "tem:intB")));
+		WebServiceParameterView View(string code, string path) =>
+			new(code, code, "body", path, "Text", false, false, null, null, false, []);
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd_1a2b3c4d", "Add", "POST", null, 5000, "xml", false,
+				[View("UsrintA1", "tem:intA"), View("UsrintB", "tem:other")], [], "Add", "urn:Add")
+		]);
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, new List<string>());
+
+		// Assert
+		result.Arguments.Methods.Single().RequestParameters.Select(p => p.Code).Should().Equal(["UsrintA1", "UsrintB2"],
+			because: "intA keeps the code it has at tem:intA, and intB avoids the code another parameter of the method holds");
+	}
+
+	[Test]
+	[Description("A WSDL prefix that a target service uses for another namespace gets the next free ns-prefix.")]
+	public void Map_Should_Rename_A_Prefix_The_Target_Uses_Otherwise() {
+		// Arrange
+		WsdlPort port = Port(Operation("Op", Parameter("x", "ns0:x")));
+		var target = new WsdlTargetService("UsrCalc", [
+			new WebServiceNamespaceView("tem", "http://example.org/t/", true),
+			new WebServiceNamespaceView("ns0", "http://example.org/elsewhere", false)
+		], []);
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, new List<string>());
+
+		// Assert
+		result.Arguments.Namespaces.Select(n => (n.Prefix, n.Uri)).Should().Contain(("ns1", "http://example.org/x"),
+			because: "ns0 is taken by another namespace of the service");
+		result.Arguments.Methods.Single().RequestParameters.Single().Path.Should().Be("ns1:x",
+			because: "the path follows the renamed prefix");
+	}
+
+	[Test]
+	[Description("Without a prefix, a code whose 200-character cut starts with a digit gets an underscore, so it stays an identifier.")]
+	public void Map_Should_Keep_A_Cut_Code_An_Identifier() {
+		// Arrange
+		string name = new string('a', 50) + "9" + new string('b', 199);
+
+		// Act
+		string code = WsdlRegistrationMapper.UniqueCode(string.Empty, name, "Param", new HashSet<string>());
+
+		// Assert
+		code.Should().MatchRegex("^_[A-Za-z0-9_]*$", because: "an identifier cannot start with a digit").And.HaveLength(200,
+			because: "the cap still holds");
+	}
+
+	[Test]
 	[Description("Codes are the prefix plus the wizard's shortened name, without its random suffix, so every read gives the same codes; the message element gets the prefix of its namespace.")]
 	public void Map_Should_Give_Stable_Prefixed_Codes_And_A_Prefixed_Message_Element() {
 		// Arrange

@@ -39,5 +39,8 @@ the way Studio's quick setup does, after the user trims the operations.
   committed). The wizard's own test expectations (calculator, arrays, headers simple/complex/array, nested namespaces,
   by-ref, recursion, extension, long caption, types) are restated in `WsdlParserTests`.
 - The output of every port is sent through `register-web-service` itself in unit tests and on stand `Creatio` (e2e).
-  That found a slice B gap: a prefixed `sequence-element` (Studio's form) was refused; ADR D13 fixes it.
+  That found a slice B gap: a prefixed `sequence-element` (Studio's form) was refused; ADR D13, fixed in slice B.
+- A 3-lens review and an automated security review found that a hostile WSDL could end the MCP host (type cycles,
+  exponential expansion, deep nesting, a file imported under many names), that `wsdl-files` read network paths and
+  devices, and that WSDL names reached the agent's warnings unfiltered; all are closed (ADR D9) with tests.
 - AC4: manual stand check, recorded in the test plan (TC-M-C01).

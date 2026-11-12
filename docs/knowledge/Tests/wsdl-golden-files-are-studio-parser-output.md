@@ -20,4 +20,6 @@ the wizard outputs; the wizard has no server-side parser to call.
 
 **What breaks if you ignore it** — editing a golden file to make a test pass turns a parity check into a check of
 clio against itself; regenerating one from a WSDL with a complexContent extension under jsdom pins the jsdom defect.
-Regenerate by running the wizard's parser on the changed WSDL and diffing against clio's parser output, as described.
+The harness is not in this repository (the wizard's source is not public): to regenerate, transpile the wizard's
+parser files from a creatio-ui checkout with TypeScript, run them under jsdom on the changed WSDL, and diff the result
+against clio's parser output before replacing the golden file.
