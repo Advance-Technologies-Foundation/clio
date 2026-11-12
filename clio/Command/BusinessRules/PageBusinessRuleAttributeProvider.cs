@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Common;
 
@@ -10,20 +11,14 @@ internal interface IPageBusinessRuleAttributeProvider {
 }
 
 internal sealed class PageBusinessRuleAttributeProvider(
-	IEntityBusinessRuleAttributeProvider entityAttributeProvider)
+	IEntityBusinessRuleAttributeProvider entityAttributeProvider,
+	IEnumerable<IComponentConditionAttributeSource> componentSources)
 	: IPageBusinessRuleAttributeProvider {
 
 	private const string PageParametersScopeName = "PageParameters";
 
-	// Attributes a view-config component generates at runtime. The page body never declares them, so
-	// they are absent from the view-model attributes; each rule exposes "<component name><suffix>" as an
-	// unscoped attribute of the given type for every named component of that type. Add a row to support
-	// another component that behaves the same way.
-	private static readonly ComponentRuntimeAttribute[] ComponentRuntimeAttributes = [
-		new("crt.Stepper", "_ActiveStep", "Text") // the open step's name, compared with a step name
-	];
-
-	private sealed record ComponentRuntimeAttribute(string ComponentType, string Suffix, string DataValueTypeName);
+	private readonly Dictionary<string, IComponentConditionAttributeSource> _componentSources =
+		componentSources.ToDictionary(source => source.ComponentType, StringComparer.Ordinal);
 
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
@@ -71,7 +66,7 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
 		AddPageParameterAttributes(result, parametersByName);
-		AddComponentRuntimeAttributes(result, bundle);
+		AddComponentAttributes(result, bundle, attributes);
 		return result;
 	}
 
@@ -95,20 +90,23 @@ internal sealed class PageBusinessRuleAttributeProvider(
 		}
 	}
 
-	private static void AddComponentRuntimeAttributes(
+	// Condition attributes that hold a view-config component's state, one per named element whose type
+	// has a source. A declared attribute of the same name keeps its own scoped, typed descriptor.
+	private void AddComponentAttributes(
 		IDictionary<string, BusinessRuleAttributeDescriptor> result,
-		PageBundleInfo bundle) {
-		foreach ((string? componentType, string componentName) in ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
-			foreach (ComponentRuntimeAttribute rule in ComponentRuntimeAttributes) {
-				if (!string.Equals(rule.ComponentType, componentType, StringComparison.Ordinal)) {
-					continue;
-				}
-				// A declared attribute of the same name keeps its own scoped, typed descriptor.
-				string attributeName = componentName + rule.Suffix;
-				result.TryAdd(attributeName, new BusinessRuleAttributeDescriptor(attributeName, rule.DataValueTypeName, null) {
-					IsRuntimeGenerated = true
-				});
+		PageBundleInfo bundle,
+		JsonObject attributes) {
+		if (_componentSources.Count == 0) {
+			return;
+		}
+		foreach ((string? componentType, string componentName, JsonObject element) in
+			ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
+			if (componentType is null
+				|| !_componentSources.TryGetValue(componentType, out IComponentConditionAttributeSource? source)
+				|| !source.TryResolve(element, componentName, attributes, out BusinessRuleAttributeDescriptor? descriptor)) {
+				continue;
 			}
+			result.TryAdd(descriptor.Path, descriptor);
 		}
 	}
 
