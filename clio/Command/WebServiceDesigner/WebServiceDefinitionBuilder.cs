@@ -191,11 +191,17 @@ public static partial class WebServiceDefinitionBuilder {
 	/// </summary>
 	/// <param name="namespaces">The namespaces.</param>
 	/// <returns>The signature text.</returns>
-	public static string NamespaceSignature(ServiceItemCollection<ServiceNamespaceDto> namespaces) =>
-		string.Join("|", (namespaces?.Items.Values ?? Enumerable.Empty<ServiceNamespaceDto>())
+	public static string NamespaceSignature(ServiceItemCollection<ServiceNamespaceDto> namespaces) {
+		List<ServiceNamespaceDto> ordered = (namespaces?.Items.Values ?? Enumerable.Empty<ServiceNamespaceDto>())
 			.Where(n => n is not null)
 			.OrderBy(n => n.Prefix, StringComparer.Ordinal)
-			.Select(n => $"{n.Prefix}={n.Name}:{n.IsDefault == true}"));
+			.ToList();
+		// A stored list with no default (Studio-made or old) is listed by describe in prefix order, and sent back it
+		// gets its first namespace as the default; read it the same way, or describe output sent back unchanged would
+		// count as a change of every call.
+		bool noDefault = !ordered.Any(n => n.IsDefault == true);
+		return string.Join("|", ordered.Select((n, i) => $"{n.Prefix}={n.Name}:{n.IsDefault == true || (noDefault && i == 0)}"));
+	}
 
 	/// <summary>
 	/// The prefixes a SOAP method uses in its message element and in its body request parameter paths and array item
@@ -353,6 +359,12 @@ public static partial class WebServiceDefinitionBuilder {
 			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here. A credential-like key with a
 			// constant value would be printed by list and describe, so that is refused.
 			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
+			if (WsdlQueryKey(baseUri) is { } wsdlKey) {
+				errors.Add($"base-uri: '?{wsdlKey}' is the address of the WSDL, not of the endpoint; every call would be "
+					+ "posted to it. Give the endpoint, the WSDL's soap:address location, usually the same URL without "
+					+ "the query.");
+				return baseUri;
+			}
 		} else if (baseUri.IndexOfAny(['?', '#']) >= 0) {
 			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
 			// method path, and a key in it would be a stored constant that list and describe print.
@@ -715,8 +727,11 @@ public static partial class WebServiceDefinitionBuilder {
 		// A parameter the service already has is kept, as with the prefix rule.
 		if (type == "Object" && arg.Array != true && !string.Equals(previous?.Name, arg.Code, StringComparison.Ordinal)) {
 			errors.Add($"{owner}: an Object parameter must be an array. Describe a single nested object by its fields as "
-				+ "separate parameters with a dotted path instead, e.g. path 'customer.name' for a request body field or "
-				+ "'$.customer.name' for a response value.");
+				+ (scope.Soap is not null
+					? "separate parameters with an element path instead, e.g. path 'tem:Customer/tem:Name' for a request "
+						+ "body field or 'Customer/Name' for a response value (a dot is part of an element name, not a level)."
+					: "separate parameters with a dotted path instead, e.g. path 'customer.name' for a request body field or "
+						+ "'$.customer.name' for a response value."));
 		}
 		string path = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path ?? arg.Code : arg.Path;
 		bool inHeader = ValidateSoapMembers(arg, placement, path, scope) || scope.InSoapHeader;
@@ -737,7 +752,7 @@ public static partial class WebServiceDefinitionBuilder {
 			// elements named "item"); a SOAP-header parameter passes the flag to its items, as Studio does. REST: the
 			// typed members the platform sent are carried like the extension bag, so a save keeps them as read.
 			IsSoapHeader = scope.Soap is not null ? inHeader : previous?.IsSoapHeader,
-			SequenceElementName = scope.Soap is not null ? SoapSequenceElement(arg) : previous?.SequenceElementName,
+			SequenceElementName = scope.Soap is not null ? SoapSequenceElement(arg, scope.IsRequest) : previous?.SequenceElementName,
 			Extra = previous?.Extra,
 			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties,
 				scope with { Nested = true, InSoapHeader = inHeader, PreviousInSoapHeader = previousInHeader })
@@ -764,11 +779,14 @@ public static partial class WebServiceDefinitionBuilder {
 
 	/// <summary>
 	/// The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given. An explicit
-	/// empty value is kept: a response array with it reads every child element (XmlResponseBodyParser), and describe
-	/// reports it so a round trip does not turn it into <c>item</c>, which would read nothing from such a response.
+	/// empty value is kept on a response array: it reads every child element (XmlResponseBodyParser), and describe
+	/// reports it so a round trip does not turn it into <c>item</c>, which would read nothing from such a response. On a
+	/// request array a blank one is <c>item</c>: the platform cannot create an element without a name.
 	/// </summary>
-	private static string SoapSequenceElement(WebServiceParameterArg arg) =>
-		arg.SequenceElement is null ? "item" : arg.SequenceElement.Trim();
+	private static string SoapSequenceElement(WebServiceParameterArg arg, bool isRequest) =>
+		arg.SequenceElement is null || (isRequest && string.IsNullOrWhiteSpace(arg.SequenceElement))
+			? "item"
+			: arg.SequenceElement.Trim();
 
 	/// <summary>
 	/// The SOAP-only parameter members and rules. <c>soap-header</c> goes on a top-level body request parameter only
@@ -926,6 +944,17 @@ public static partial class WebServiceDefinitionBuilder {
 	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a credential-like key there would be a
 	/// stored constant that describe prints and every reader of the schema sees.
 	/// </summary>
+	private static string WsdlQueryKey(string uri) {
+		int question = uri.IndexOf('?');
+		return question < 0
+			? null
+			: uri[(question + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries)
+				.Select(pair => pair.Split('=')[0])
+				.FirstOrDefault(key => key.Equals("wsdl", StringComparison.OrdinalIgnoreCase)
+					|| key.Equals("singleWsdl", StringComparison.OrdinalIgnoreCase)
+					|| key.Equals("xsd", StringComparison.OrdinalIgnoreCase));
+	}
+
 	private static void ValidateUriQuery(string owner, string uri, Errors errors) {
 		int question = uri.IndexOf('?');
 		if (question < 0) {

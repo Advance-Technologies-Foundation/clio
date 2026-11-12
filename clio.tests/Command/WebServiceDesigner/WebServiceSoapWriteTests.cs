@@ -770,6 +770,89 @@ public sealed class WebServiceSoapWriteTests {
 	}
 
 	[Test]
+	[Description("A SOAP 1.2 service gets no empty-soap-action notice; switching it to SOAP 1.1 gives one for every method without an action.")]
+	public void SoapActionNotice_Should_Follow_The_Soap_Version() {
+		// Arrange
+		WebServiceMethodArg method = AddMethod() with { SoapAction = null };
+
+		// Act
+		WebServiceToolResult registered = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://x.example/svc", null, null, [method], "soap12", Tem));
+		GivenRegistered(_saved);
+		WebServiceToolResult switched = _sut.Modify("UsrCalc", [new WebServiceOperationArg("setType", Type: "soap11")], null);
+
+		// Assert
+		(registered.Notices ?? []).Should().NotContain(n => n.Contains("no SOAPAction header"),
+			because: "the SOAPAction header is the SOAP 1.1 convention");
+		switched.Notices.Should().Contain(n => n.Contains("UsrAdd") && n.Contains("no SOAPAction header"),
+			because: "after the switch to SOAP 1.1 the missing action matters for a method this call did not build");
+	}
+
+	[Test]
+	[Description("A stored namespace list without a default, sent back from describe unchanged, is not a change of every call.")]
+	public void Modify_SetNamespaces_Should_Read_A_Stored_List_Without_Default_As_Unchanged() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		foreach (ServiceNamespaceDto ns in schema.Namespaces.Items.Values) {
+			ns.IsDefault = null;
+		}
+		GivenRegistered(schema);
+		GivenSelect("SysSchema", ProcessCalling(schema.UId, "UsrOp"));
+		WebServiceNamespaceArg[] described = WebServiceSchemaView.From(schema, "Custom").Namespaces
+			.Select(n => new WebServiceNamespaceArg(n.Prefix, n.Uri, n.Default ? true : null)).ToArray();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(schema.Name,
+			[new WebServiceOperationArg("setNamespaces", Namespaces: described)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the list the agent sent back is the one describe showed");
+		(result.Usages ?? []).Should().BeEmpty(because: "nothing changes the calls, so no caller is asked about");
+	}
+
+	[TestCase("?wsdl", Description = "the WSDL address")]
+	[TestCase("?singleWsdl", Description = "the single-file WSDL address")]
+	[Description("A SOAP base URI that is the WSDL address is refused: every call would be posted to it.")]
+	public void Register_Should_Refuse_A_Wsdl_Address_As_Base_Uri(string query) {
+		// Act
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://x.example/svc.asmx" + query, null, null, [AddMethod()], "soap11", Tem));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the WSDL URL is not the endpoint")
+			.WithMessage("*address of the WSDL*", because: "the refusal says to give the endpoint instead");
+	}
+
+	[Test]
+	[Description("A blank sequence-element on a request array is stored as item: the platform cannot create an element without a name.")]
+	public void Register_Should_Store_Item_For_A_Blank_Request_Sequence_Element() {
+		// Act
+		_sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null,
+			[AddMethod(new WebServiceParameterArg("UsrRegions", Array: true, Path: "tem:Regions", SequenceElement: " "))],
+			"soap11", Tem));
+
+		// Assert
+		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single().SequenceElementName
+			.Should().Be("item", because: "an empty request item name would fail every call");
+	}
+
+	[Test]
+	[Description("On a SOAP service the single-Object refusal advises an element path, not a dotted path, since a dot is part of an element name.")]
+	public void Register_Should_Advise_An_Element_Path_For_A_Single_Soap_Object() {
+		// Arrange
+		WebServiceMethodArg method = AddMethod(new WebServiceParameterArg("UsrCustomer", Type: "Object", Path: "tem:Customer",
+			Items: [new WebServiceParameterArg("UsrName", Path: "tem:Name")]));
+
+		// Act
+		Action act = Register(method);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "a single Object is refused")
+			.Which.Message.Should().Contain("tem:Customer/tem:Name", because: "SOAP nests by element path")
+			.And.NotContain("customer.name", because: "a dotted path would be one element named customer.name");
+	}
+
+	[Test]
 	[Description("A constant on an item of a SOAP-header parameter is hidden by describe even when the item itself lacks the flag, as the platform renders it in the Header.")]
 	public void Describe_Should_Hide_A_Constant_Under_A_Soap_Header_Parent() {
 		// Arrange
@@ -838,6 +921,8 @@ public sealed class WebServiceSoapWriteTests {
 	[TestCase("tem:Pass1", true, Description = "pass followed by a digit")]
 	[TestCase("tem:Bearer", true, Description = "bearer")]
 	[TestCase("UsrJwt", true, Description = "jwt")]
+	[TestCase("UsrSmtpPassValue", true, Description = "pass ending a camelCase word")]
+	[TestCase("ApiPassId", true, Description = "pass followed by a capital")]
 	[TestCase("UsrPassport", false, Description = "passport")]
 	[TestCase("UsrPassenger", false, Description = "passenger")]
 	[TestCase("UsrCompass", false, Description = "compass")]

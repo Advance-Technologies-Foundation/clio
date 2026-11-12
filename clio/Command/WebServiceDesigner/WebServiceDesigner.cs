@@ -170,15 +170,16 @@ public sealed class WebServiceDesigner(
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
-			Notices: [.. soap ? SoapActionNotices(schema.Methods.Items.Values) : [], .. Notices(settings, packageName)]);
+			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName)]);
 	}
 
 	/// <summary>
 	/// An empty SOAP action sends no SOAPAction header at all (measured); many SOAP 1.1 servers refuse such a call. The
 	/// notice is written to be passed on whole: an agent that relayed only its first half dropped the risk (isolated run).
+	/// Only a SOAP 1.1 service gets it: the header is the SOAP 1.1 dispatch convention.
 	/// </summary>
-	private static IEnumerable<string> SoapActionNotices(IEnumerable<ServiceMethodDto> methods) =>
-		methods.Where(m => m.SoapAction is { Length: 0 })
+	private static IEnumerable<string> SoapActionNotices(ServiceSchemaDto schema, IEnumerable<ServiceMethodDto> methods) =>
+		schema.Type != ServiceSchemaCodes.ServiceTypeSoap11 ? [] : methods.Where(m => m.SoapAction is { Length: 0 })
 			.Select(m => $"Tell the user: method '{m.Name}' has no soap-action, so no SOAPAction header is sent, and many "
 				+ "SOAP 1.1 servers refuse such a call. Ask them for the SOAP action (the WSDL's binding operation "
 				+ "soapAction); do not make one up.");
@@ -222,6 +223,7 @@ public sealed class WebServiceDesigner(
 		}
 		ServiceRow row = FindService(code);
 		ServiceSchemaDto schema = client.ReadSchema(row.UId, row.PackageUId);
+		int typeBefore = schema.Type;
 		bool soap = WebServiceSchemaView.IsSoap(schema);
 		if (!soap && schema.Type != ServiceSchemaCodes.ServiceTypeRest) {
 			throw new ArgumentException($"'{schema.Name}' is a {WebServiceSchemaView.TypeName(schema.Type)} service, "
@@ -264,8 +266,11 @@ public sealed class WebServiceDesigner(
 		}
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
+		// A switch to SOAP 1.1 makes every method's empty action matter, not only the methods this call built.
+		bool becameSoap11 = typeBefore != schema.Type;
 		IEnumerable<string> soapActionNotices = soap
-			? SoapActionNotices(schema.Methods.Items.Values.Where(m => builtMethods.Contains(m.Name ?? "")))
+			? SoapActionNotices(schema,
+				schema.Methods.Items.Values.Where(m => becameSoap11 || builtMethods.Contains(m.Name ?? "")))
 			: [];
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
 			Usages: affected, Notices: [.. soapActionNotices, .. Notices(settings, row.Package, missingKept)]);

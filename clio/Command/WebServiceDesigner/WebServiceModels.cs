@@ -350,7 +350,7 @@ public sealed record WebServiceTestResult(
 /// </summary>
 public static partial class WebServiceSchemaView {
 
-	[GeneratedRegex(@"key|token|secret|passw|passphrase|passcode|(?<!com|by|sur)pass(?![a-z])|pwd|auth|credential|signature|session|cookie|licen[cs]e|nonce|bearer|jwt",
+	[GeneratedRegex(@"key|token|secret|passw|passphrase|passcode|(?<!com|by|sur)pass(?-i:(?![a-z]))|pwd|auth|credential|signature|session|cookie|licen[cs]e|nonce|bearer|jwt",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
 	private static partial Regex SecretNamePattern();
 

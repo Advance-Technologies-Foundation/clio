@@ -95,6 +95,7 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WebServiceSoapWriteTest
 | TC-U-B28 | unit | A SOAP base URI keeps a fixed query (`?sap-client=100`); a credential-like key with a constant value there is refused; unprefixed Unicode element names are accepted | 2, 3 |
 | TC-U-B29 | unit | An empty response sequence-element survives describe → setMethod (it reads every child element; `item` would read nothing) | 5 |
 | TC-U-B30 | unit | register-web-service passes `type` and `namespaces` to the designer (MCP mapping) | 1 |
+| TC-U-B31 | unit | Review round (ArtemKulykov): the empty-soap-action notice is SOAP 1.1 only and follows a setType to 1.1 for every method; a stored namespace list without a default sent back from describe is not a change; a `?wsdl` / `?singleWsdl` base URI is refused; a blank request sequence-element is stored as `item`; the single-Object advice is an element path on SOAP; `pass` before a capital (`UsrSmtpPassValue`) is credential-like | 2, 3, 4 |
 | TC-I-B01 | e2e | Registers a SOAP 1.1 service through the tool (a SOAP-header object array with an item included), refuses one with an undeclared prefix, round-trips describe through modify unchanged, switches to SOAP 1.2, refuses dropping a namespace in use, and test-calls it against `http://localhost/<code>` without the response being withheld | 1-5 |
 | TC-M-B01 | manual | A service registered by clio opens and saves unchanged in Studio, SOAP 1.1 and 1.2 | 6 |
 
