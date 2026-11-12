@@ -91,6 +91,16 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WebServiceSoapWriteTest
 | TC-I-B01 | e2e | Registers a SOAP 1.1 service through the tool (a SOAP-header object array with an item included), refuses one with an undeclared prefix, round-trips describe through modify unchanged, switches to SOAP 1.2, refuses dropping a namespace in use, and test-calls it against `http://localhost/<code>` without the response being withheld | 1-5 |
 | TC-M-B01 | manual | A service registered by clio opens and saves unchanged in Studio, SOAP 1.1 and 1.2 | 6 |
 
+TC-M-B01 result, 2026-11-12, Creatio 10.2 (.NET Framework, prefix `Usr`), clio at `b2f878532`: **PASS**. Three services
+registered by clio were opened in Studio > Web services: SOAP 1.1 `UsrTcNoActionB`, SOAP 1.2 `UsrTcCalcB` (registered
+as 1.1 and switched by `setType`) and SOAP 1.2 `UsrTcSecureB` (a WS-Security `soap-header` parameter bound to a
+SecureText setting). A method and a parameter of each closed with OK and no validation message, and each card was
+saved (Studio offers Save only after an edit, so a reversible Description edit was used). `describe-web-service`
+before and after the save was byte-identical for all three, and for `UsrTcNoActionB` the raw `ServiceSchemaRequest`
+answer was identical too; test calls after the save returned HTTP 200 with the expected result and the header value
+masked. The SysSchema `Checksum` changes on a Studio save while the designer's read stays identical: save
+bookkeeping, not a content change.
+
 ## Slice C (story 3), outline
 
 TC-U-C: golden tests ported from Studio's wizard parser fixtures and expected outputs; warnings; local files mode;
