@@ -13,6 +13,10 @@ pull-pkg - download package to local file system from default a web application
 pull-pkg command can be used in CI/CD pipeline or in development
 when you need download package from a web application (website).
 
+When the download fails - the site is not running, or it rejects the login -
+the command prints `Download packages (<NAME>) not completed.` followed by an
+`[ERR]` line with the reason, and exits with `1`.
+
 ## Prerequisites
 
 The default download path uses the core PackageInstallerService and does **not** require cliogate.

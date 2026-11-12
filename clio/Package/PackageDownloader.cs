@@ -78,8 +78,10 @@ namespace Clio.Package
 			return _abstractionsFileSystem.Path.Combine(destinationPath, $"{safePackageName}.zip");
 		}
 
+		// A failed download always throws: the "not completed" line alone used to let DownloadZipPackages return
+		// normally, so a caller carried on with a missing archive - the defect class pull-pkg had.
 		private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,
-				string destinationPath, bool throwOnError = false) {
+				string destinationPath) {
 			string safePackageName = GetSafePackageName(packageName);
 			try {
 				_logger.WriteLine($"Start download packages ({safePackageName}).");
@@ -95,10 +97,7 @@ namespace Clio.Package
 				_logger.WriteError(e.Message+"\r\n"+e.StackTrace);
 #endif
 				_logger.WriteLine($"Download packages ({safePackageName}) not completed.");
-				if(throwOnError) {
-					throw;
-				}
-				
+				throw;
 			}
 		}
 
@@ -136,7 +135,7 @@ namespace Clio.Package
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				foreach (string packageName in packagesNames) {
-					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory, true);
+					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory);
 				}
 				// Each requested package directory is overwritten by PackageArchiver.Unpack. Clearing the shared
 				// destination root here would also delete ignored, external, and placeholder content.
