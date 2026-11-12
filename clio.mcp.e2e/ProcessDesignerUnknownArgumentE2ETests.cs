@@ -63,10 +63,10 @@ public sealed class ProcessDesignerUnknownArgumentE2ETests : McpContractFixtureB
 		yield return Case(GetProcessSignatureTool.ToolName);
 		// run-process is the ONE family member whose args record declares a `required` member
 		// (RunProcessArgs.ProcessName). A `required` property is enforced by the SERIALIZER, so a payload
-		// omitting it fails to bind and is answered with "argument 'args' ... must be an object" before the
-		// tool body - and therefore before its unknown-key guard - ever runs. Measured, not assumed: without
-		// process-name this case failed with exactly that message. Supplying it is what puts the call on the
-		// path under test rather than on the binder's.
+		// omitting it fails to bind and is answered with "argument 'args' ... is missing required member
+		// 'process-name'" before the tool body - and therefore before its unknown-key guard - ever runs.
+		// Measured, not assumed: without process-name this case failed at the binder (then with "must be an
+		// object"). Supplying it is what puts the call on the path under test rather than on the binder's.
 		yield return Case(RunProcessTool.ToolName, ("process-name", "UsrOrder_Handle"));
 		yield return Case(ValidateProcessGraphTool.ToolName);
 		yield return Case(ListUserTasksTool.ListUserTasksToolName);
