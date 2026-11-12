@@ -707,11 +707,15 @@ public sealed class WebServiceDefinitionBuilderTests {
 			null, false, refused);
 		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Search", "GET", "search?format=json"),
 			null, false, kept);
+		var encoded = new WebServiceDefinitionBuilder.Errors();
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Search", "GET", "search?api%5Fkey=abc123"),
+			null, false, encoded);
 
 		// Assert
 		refused.Should().ContainSingle(because: "a key in the URI is a stored constant every reader of the schema sees")
 			.Which.Should().Contain("default-sys-setting", because: "the refusal points at the setting route");
 		kept.Should().BeEmpty(because: "a fixed query value that is not a credential is fine");
+		encoded.Should().ContainSingle(because: "the platform sends api%5Fkey as api_key");
 	}
 
 	[Test]

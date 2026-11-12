@@ -592,6 +592,9 @@ public sealed class WebServiceDesignerTests {
 	public void TestMethod_Should_Withhold_An_Authenticated_Call_Without_Reported_Headers() {
 		// Arrange
 		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(
+			new WebServiceAuthArg("basic", UsernameSysSetting: "UsrUser", PasswordSysSetting: "UsrPassword"), null,
+			new WebServiceDefinitionBuilder.Errors());
 		GivenRegisteredService(schema);
 		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
 			.Returns(new ServiceMethodCallResult(false, 401, "bad credentials for admin:hunter2", null));
@@ -602,6 +605,54 @@ public sealed class WebServiceDesignerTests {
 		// Assert
 		result.ResponseBody.Should().BeNull(because: "an echoed Authorization value could not be found to mask");
 		result.StatusCode.Should().Be(401, because: "the status code carries no secret");
+	}
+
+	[Test]
+	[Description("A method that keeps use-auth after the service authentication was removed sends no Authorization, so nothing is withheld for it.")]
+	public void TestMethod_Should_Not_Withhold_When_The_Service_Has_No_Authentication() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true)));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, 404, "not found", null));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().Be("not found", because: "the platform sends no credentials when the service has none");
+	}
+
+	[Test]
+	[Description("setBaseUri re-checks the methods the call keeps against the placeholders of the new base URI, whatever the operation order.")]
+	public void Modify_SetBaseUri_Should_Recheck_Kept_Methods_Against_New_Placeholders() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.bing.example/{version}/")], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "no kept method has a path parameter for {version}")
+			.WithMessage("*{version}*", because: "the refusal names the placeholder");
+	}
+
+	[Test]
+	[Description("A method added in the call that reuses a missing setting another method already referenced is a new reference and is refused.")]
+	public void Modify_Should_Refuse_A_New_Reference_To_A_Missing_Setting_Another_Method_Had() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
+			new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrDeletedKey")])));
+		_client.FindExistingSysSettingCodes(Arg.Any<IReadOnlyCollection<string>>()).Returns(Array.Empty<string>());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("addMethod",
+			new WebServiceMethodArg("UsrSuggest", "GET", "suggest", RequestParameters: [
+				new WebServiceParameterArg("UsrKey", "header", Path: "X-Key", DefaultSysSetting: "UsrDeletedKey")]))], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the new method would go out without its key")
+			.WithMessage("*UsrDeletedKey*", because: "the refusal names the setting");
 	}
 
 	[Test]
@@ -642,6 +693,8 @@ public sealed class WebServiceDesignerTests {
 		unrelated.Success.Should().BeTrue(because: "a setting deleted since must not block an unrelated change");
 		unrelated.Notices.Should().Contain(n => n.Contains("UsrDeletedKey"),
 			because: "the user still learns the reference is broken");
+		unrelated.Notices.Should().NotContain(n => n.Contains("fills the values") && n.Contains("UsrDeletedKey"),
+			because: "the user is not told to fill a setting that does not exist");
 		adding.Should().Throw<ArgumentException>(because: "a new reference to a missing setting would be dropped at run time")
 			.WithMessage("*UsrNewKey*", because: "the refusal names the setting");
 	}

@@ -200,6 +200,42 @@ public static partial class WebServiceDefinitionBuilder {
 		return codes;
 	}
 
+	/// <summary>
+	/// Every system-setting reference with its owner (<c>auth</c> or <c>method:&lt;code&gt;</c>), so a reference a
+	/// call adds can be told apart from one the same owner already had.
+	/// </summary>
+	/// <param name="schema">The schema.</param>
+	/// <returns>Pairs of owner and setting code.</returns>
+	public static IReadOnlyCollection<(string Owner, string Code)> CollectSysSettingReferences(ServiceSchemaDto schema) {
+		var references = new HashSet<(string Owner, string Code)>();
+		var codes = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ServiceParameterValueDto value in schema.AuthInfo?.Values.Items.Values ?? Enumerable.Empty<ServiceParameterValueDto>()) {
+			AddSysSetting(codes, value);
+		}
+		foreach (string code in codes) {
+			references.Add(("auth", code.ToUpperInvariant()));
+		}
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+			codes.Clear();
+			CollectFromParameters(codes, method.Request?.Parameters);
+			foreach (string code in codes) {
+				references.Add(($"method:{method.Name?.ToUpperInvariant()}", code.ToUpperInvariant()));
+			}
+		}
+		return references;
+	}
+
+	/// <summary>
+	/// Re-checks a stored method's path parameters against the placeholders of its URI and of the base URI, for a
+	/// base URI the call changed after the method was built.
+	/// </summary>
+	/// <param name="method">The stored method.</param>
+	/// <param name="baseUri">The base URI after the call.</param>
+	/// <param name="errors">Collected problems.</param>
+	public static void ValidatePlaceholders(ServiceMethodDto method, string baseUri, Errors errors) =>
+		ValidatePathPlaceholders(method.Name, method.Request?.Uri ?? string.Empty, baseUri,
+			method.Request?.Parameters ?? new ServiceItemCollection<ServiceParameterDto>(), errors);
+
 	public static Dictionary<string, string> Caption(string text) => new() { ["en-US"] = text };
 
 	private static ServiceItemCollection<ServiceParameterDto> BuildParameters(
@@ -380,7 +416,8 @@ public static partial class WebServiceDefinitionBuilder {
 		}
 		foreach (string pair in uri[(question + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries)) {
 			int equals = pair.IndexOf('=');
-			string key = equals < 0 ? pair : pair[..equals];
+			// The platform sends the key unescaped, so api%5Fkey is api_key on the wire.
+			string key = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
 			string value = equals < 0 ? string.Empty : pair[(equals + 1)..];
 			if (value.Length > 0 && !PathPlaceholderPattern().IsMatch(value)
 					&& WebServiceSchemaView.IsSecretLike(key, ServiceSchemaCodes.Placements["query"])) {

@@ -61,7 +61,21 @@ public static partial class WebServiceResponseMasker {
 	/// </param>
 	/// <returns>Distinct values, longest first.</returns>
 	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
-		out bool secretUnlocated) {
+		out bool secretUnlocated) =>
+		SentSecrets(method, requestRawData, requestBody, true, out secretUnlocated);
+
+	/// <summary>
+	/// As <see cref="SentSecrets(ServiceMethodDto, string, string, out bool)"/>, for a service whose authentication
+	/// is known: a method keeps its use-auth flag after the service authentication is removed, and then sends none.
+	/// </summary>
+	/// <param name="method">The called method.</param>
+	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
+	/// <param name="requestBody">The request body the platform reports as sent.</param>
+	/// <param name="serviceHasAuth">Whether the service has authentication.</param>
+	/// <param name="secretUnlocated">See the four-argument overload.</param>
+	/// <returns>Distinct values, longest first.</returns>
+	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
+		bool serviceHasAuth, out bool secretUnlocated) {
 		secretUnlocated = false;
 		string[] lines = (requestRawData ?? string.Empty).Split(["\r\n", "\n"], StringSplitOptions.None);
 		Dictionary<string, List<string>> headers = Headers(lines);
@@ -72,7 +86,7 @@ public static partial class WebServiceResponseMasker {
 		bool rawReported = !string.IsNullOrWhiteSpace(requestRawData);
 		// The Authorization header carries the service credentials (from settings or typed in Studio); without the
 		// reported headers its value cannot be found, so it cannot be masked either.
-		secretUnlocated |= method?.UseAuthInfo == true && !rawReported;
+		secretUnlocated |= serviceHasAuth && method?.UseAuthInfo == true && !rawReported;
 		foreach (ServiceParameterDto parameter in SettingBound(method?.Request?.Parameters)) {
 			string name = string.IsNullOrEmpty(parameter.Path) ? parameter.Name : parameter.Path;
 			// Values are found in what the platform reports as sent; when that part is missing or is not JSON,
