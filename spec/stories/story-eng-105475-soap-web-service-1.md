@@ -5,8 +5,7 @@
 **Spec**: [spec-eng-105475-soap-web-service.md](../prd/spec-eng-105475-soap-web-service.md) - R1-R4
 **ADR**: [adr-eng-105475-soap-web-service.md](../adr/adr-eng-105475-soap-web-service.md) - D2-D6
 **Test plan**: [tp-eng-105475-soap-web-service.md](../test-plans/tp-eng-105475-soap-web-service.md) - TC-U-A*, TC-I-A*
-**Status**: in-progress (implementation started together with this BMAD set, branch
-`feature/ENG-105475-soap-read-side`)
+**Status**: review (clio PR #1925 opened 2026-11-12 from branch `feature/ENG-105475-soap-read-side`)
 **Size**: M
 **Depends on**: nothing (clio#1900 is merged)
 **Blocks**: stories 2 and 4

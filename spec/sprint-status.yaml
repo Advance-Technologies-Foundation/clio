@@ -5053,8 +5053,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: M
-    # in-progress set in the BMAD set: implementation starts on the same branch.
-    status: in-progress
+    # review: the clio PR (#1925) opened on 2026-11-12.
+    status: review
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-1.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
