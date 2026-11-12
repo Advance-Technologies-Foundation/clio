@@ -123,9 +123,16 @@ namespace Clio.Package
 		public void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
 				string destinationPath = null) {
 			environmentSettings ??= _environmentSettings;
-			if (!_applicationPing.Ping(environmentSettings)) {
-				return;
-			}
+			// The ping keeps an unreachable environment from touching the destination at all. It used to RETURN
+			// here, so restore-workspace logged "Done" and exited 0 for a wrong password or a stopped site while
+			// restoring nothing; the failure is now the caller's to report.
+			EnsureEnvironmentAnswers(environmentSettings);
+			DownloadPackagesFromAnsweredEnvironment(packagesNames, environmentSettings, destinationPath);
+		}
+
+		public void DownloadPackagesFromAnsweredEnvironment(IEnumerable<string> packagesNames,
+				EnvironmentSettings environmentSettings = null, string destinationPath = null) {
+			environmentSettings ??= _environmentSettings;
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				foreach (string packageName in packagesNames) {
@@ -146,6 +153,9 @@ namespace Clio.Package
 				string destinationPath = null) {
 			DownloadPackages(new [] { packageName }, environmentSettings, destinationPath);
 		}
+
+		public void EnsureEnvironmentAnswers(EnvironmentSettings environmentSettings = null) =>
+			_applicationPing.EnsureAnswers(environmentSettings ?? _environmentSettings, "Packages were not downloaded");
 
 		#endregion
 
