@@ -379,7 +379,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 	[AllureTag(CreateDbToolName)]
 	[AllureTag(ReadDbToolName)]
 	[AllureName("create-data-binding-db binds a SysSettingsValue row whose payload omits TextValue")]
-	[AllureDescription("Creates a uniquely-coded Float system setting with create-sys-setting, looks up its SysSettingsValue row through odata-read, binds that row with create-data-binding-db passing only its Id, and reads the binding back with read-data-binding-db. Proves the binding is saved and carries SysSettings and TextValue although the row never named them.")]
+	[AllureDescription("Creates a uniquely-coded Float system setting with create-sys-setting, looks up its SysSettings and SysSettingsValue rows through odata-read, binds the definition, then binds the value row with create-data-binding-db passing only its Id, and reads the binding back with read-data-binding-db. Proves the binding is saved and carries SysSettings and TextValue although the row never named them.")]
 	public async Task CreateDataBindingDb_Should_Bind_SysSettingsValue_Row_Without_TextValue_In_Payload() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
@@ -397,7 +397,22 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			});
 		AssertToolCallSucceeded(createSettingResult);
 		string settingId = await ReadSingleIdAsync(arrangeContext, "SysSettings", "Code", code);
-		string valueRowId = await ReadSingleIdAsync(arrangeContext, "SysSettingsValue", "SysSettingsId", settingId);
+		string valueRowId = await ReadSingleIdAsync(arrangeContext, "SysSettingsValue", "SysSettings/Id", settingId);
+		//SaveSchema refuses a value row whose SysSettings record no binding of the package ships ("Data is not
+		//bound for connected object"), so the definition is bound first, as a shipped setting needs anyway.
+		CommandExecutionActResult definitionBindingResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "SysSettings",
+				["binding-name"] = $"SysSettings_{code}",
+				["rows"] = $"[{{\"values\":{{\"Id\":\"{settingId}\",\"Code\":\"{code}\"}}}}]"
+			});
+		AssertToolCallSucceeded(definitionBindingResult);
+		AssertCommandExitCode(definitionBindingResult, 0,
+			"the SysSettings definition must be bound before the value row that references it");
 
 		// Act
 		CommandExecutionActResult createBindingResult = await ActCommandAsync(
