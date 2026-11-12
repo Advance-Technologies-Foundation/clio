@@ -1187,13 +1187,14 @@ internal static class ToolContractCatalog {
 	/// core-rules guidance tells agents that resident tools are the ones with <c>resident=true</c> in this index, and
 	/// that sentence is mirrored word for word in a separately released toolkit, so the legend keeps it true instead.
 	/// clio-run, not clio-run-destructive, is named as the executor because the latter is a deprecated alias of it.
+	/// It no longer repeats how to get contracts or the object form: get-tool-contract's own description says both,
+	/// and the line index had no room left under the spill line for a tool and the sentence together (ENG-105556).
 	/// </summary>
 	internal static readonly string ToolIndexLegend =
 		$"One line per tool: name (R)(D) [aka deprecated names]: purpose, cut to {MaxToolIndexPurposeLength} characters. "
 		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
 		+ "A tool without (R) is called through clio-run {\"command\":\"<name>\",\"args\":{...}}. "
-		+ "(D) = destructive: it may delete or overwrite data; a line without (D) can still write. "
-		+ "Pass tool-names for contracts; detail=index-entries returns this index as objects.";
+		+ "(D) = destructive: it may delete or overwrite data; a line without (D) can still write.";
 
 	/// <summary>
 	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the
@@ -6785,15 +6786,15 @@ internal static class ToolContractCatalog {
 				[
 					InstallProcessBuilderTool.InstallProcessBuilderToolName
 				],
-				"Once the user approves, install the package, then retry whichever process-designer tool sent you here - that retry IS the verification, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: any gated process tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, and compile-creatio with process-name) may have sent the caller here, and only the caller knows which call to retry. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
+				"Once the user approves, install the package, then retry whichever process-designer tool sent you here - that retry IS the verification, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: any gated process tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, and compile-creatio with process-name) may have sent the caller here, and only the caller knows which call to retry. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
 			[],
 			[],
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"The user approved this install on this environment after you warned them it builds the configuration and restarts the site for every connected user. A refusal, its hint, or an approval given earlier in the session is not that approval.",
-				"A process tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, and compile-creatio with process-name) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
+				"A process tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, and compile-creatio with process-name) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
 				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
-				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it."
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it. create-dynamic-case is gated differently: a General user with CanManageDcm, CanManageSolution and the right to add SysDcmSettings and SysDcmSchemaInSettings records; it does not need CanManageProcessDesign."
 			]);
 	}
 
