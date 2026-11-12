@@ -76,9 +76,8 @@ public class BundledProcessBuilderPackageTests {
 	/// everything 1.6.6.153 shipped.
 	/// This cut is a HAND cut from the stamp commit: the producing commit carries the restamped descriptor itself, so
 	/// its descriptor reads 1.6.6.159 and every archive entry is byte-identical to that commit's blob (all 369 checked).
-	/// 1.6.6.154, 1.6.6.155 and 1.6.6.157 are held by open branches (ENG-105556, issue 1896, ENG-105557); no number between 1.6.6.153 and
-	/// this one was free, so this cut sits above that global maximum and those branches restamp above it if they
-	/// land later.
+	/// The number is the next free one above the global maximum, taken after this branch's earlier cuts were superseded;
+	/// a branch that lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -103,7 +102,7 @@ public class BundledProcessBuilderPackageTests {
 	/// earlier cuts carried is in this file's git history rather than here: it described archives that are no
 	/// longer shipped.</para>
 	/// <para>
-	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6094 passed,
+	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6097 passed,
 	/// 0 failed, on <c>dev-nf</c>. <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
 	/// That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply not running it
 	/// on a hand cut) is the ONE path that can reach the coarse failure the two security counts below exist to catch.
