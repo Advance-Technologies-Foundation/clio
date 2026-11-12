@@ -34,6 +34,12 @@ the measurement is above. Keep the null guard anyway — it is what clears Sonar
 to be reachable at run time. Cover it with a unit test against the method, and do not claim wire coverage
 for it.
 
+Re-measured on 2026-11-12 on master, same server, same call: the answer is now clio's own explicit-null
+refusal, `invalid-parameter-type: argument 'args' for MCP tool 'validate-process-graph' must be an object.
+Received a JSON null, and the argument is required.` The durable path dispatches through
+`ClioRunExecutor.DispatchAsync`, whose shape check runs before the SDK binds. The conclusion stands: the
+tool body never runs, so its null guard is still unreachable over the wire.
+
 Scope of the measurement: the direct long-tail `tools/call` path, on the SDK version current at the date
 above. It says nothing about the `clio-run` nested dispatch, which owns its own wrapped/flat recovery, nor
 about a RESIDENT tool, where `McpToolErrorFilter`'s explicit-null guard does run.

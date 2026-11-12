@@ -198,7 +198,7 @@ internal static class McpToolRegistrySchemaContract {
 		element.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
 		NormalizeType(typeElement) == ObjectType;
 
-	private static List<string> ReadRequired(JsonElement schema) {
+	internal static List<string> ReadRequired(JsonElement schema) {
 		List<string> required = [];
 		if (schema.TryGetProperty(RequiredPropertyName, out JsonElement requiredElement) &&
 			requiredElement.ValueKind == JsonValueKind.Array) {
@@ -211,7 +211,7 @@ internal static class McpToolRegistrySchemaContract {
 		return required;
 	}
 
-	private static string ReadType(JsonElement propertyValue) {
+	internal static string ReadType(JsonElement propertyValue) {
 		if (IsUnconstrained(propertyValue)) {
 			return AnyType;
 		}
