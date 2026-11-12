@@ -27,7 +27,7 @@ public sealed class RestoreWorkspaceToolE2ETests {
 	private const string EnvironmentName = "restore-workspace-unreachable";
 	private const string PackageName = "UsrRestoreProbe";
 	private const string ReasonOpening = "the environment did not answer (";
-	private const string ReasonClosing = "). Check that";
+	private const string ReasonClosing = "). Check it with ping-app";
 
 	[Test]
 	[AllureTag(RestoreWorkspaceTool.RestoreWorkspaceToolName)]
@@ -40,7 +40,8 @@ public sealed class RestoreWorkspaceToolE2ETests {
 		string workspacePath = WriteWorkspaceWithOnePackage(tempHome);
 		try {
 			// Act
-			CommandExecutionEnvelope execution = await RestoreAsync(tempHome, workspacePath, ReserveClosedPort());
+			using Socket closedPort = HoldClosedPort(out int port);
+			CommandExecutionEnvelope execution = await RestoreAsync(tempHome, workspacePath, port);
 
 			// Assert
 			execution.ExitCode.Should().NotBe(0,
@@ -166,7 +167,7 @@ public sealed class RestoreWorkspaceToolE2ETests {
 		return errors[0];
 	}
 
-	/// <summary>The text between "did not answer (" and "). Check that" - the ping's own failure reason.</summary>
+	/// <summary>The text between "did not answer (" and "). Check it with ping-app" - the ping's own failure reason.</summary>
 	private static string? ReasonIn(string error) {
 		int start = error.IndexOf(ReasonOpening, StringComparison.Ordinal);
 		int end = error.LastIndexOf(ReasonClosing, StringComparison.Ordinal);
@@ -175,13 +176,16 @@ public sealed class RestoreWorkspaceToolE2ETests {
 			: error[(start + ReasonOpening.Length)..end];
 	}
 
-	/// <summary>A local port that was free a moment ago and has no listener now.</summary>
-	private static int ReserveClosedPort() {
-		TcpListener listener = new(IPAddress.Loopback, 0);
-		listener.Start();
-		int port = ((IPEndPoint)listener.LocalEndpoint).Port;
-		listener.Stop();
-		return port;
+	/// <summary>
+	/// A local port that refuses connections for as long as the returned socket lives: the socket is bound but
+	/// never listens, so no other process can take the port and a connection gets a refusal, not an answer or a
+	/// hang. Binding, reading and releasing the port would leave a window in which another process takes it.
+	/// </summary>
+	private static Socket HoldClosedPort(out int port) {
+		Socket socket = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+		socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+		port = ((IPEndPoint)socket.LocalEndPoint!).Port;
+		return socket;
 	}
 
 	private static string LocalEnvironmentSettings(int port) =>

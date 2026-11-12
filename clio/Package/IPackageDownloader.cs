@@ -27,6 +27,13 @@ namespace Clio.Package
 			string destinationPath = null);
 
 		/// <summary>
+		/// <see cref="DownloadPackages"/> without its ping, for a caller that has just called
+		/// <see cref="EnsureEnvironmentAnswers"/> for the same environment - so a restore logs in once, not twice.
+		/// </summary>
+		void DownloadPackagesFromAnsweredEnvironment(IEnumerable<string> packagesNames,
+			EnvironmentSettings environmentSettings = null, string destinationPath = null);
+
+		/// <summary>
 		/// Pings the environment packages would be downloaded from, so a caller can fail BEFORE work that does not
 		/// need the environment - for restore-workspace, the CreatioSDK lookup on api.nuget.org.
 		/// </summary>

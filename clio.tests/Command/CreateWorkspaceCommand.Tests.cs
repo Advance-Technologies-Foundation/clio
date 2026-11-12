@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Common;
 using Clio.Tests.Infrastructure;
@@ -7,6 +9,7 @@ using Clio.WebApplication;
 using Clio.Workspace;
 using Clio.Workspaces;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using NUnit.Framework;
 using System.IO;
@@ -50,7 +53,7 @@ public class CreateWorkspaceCommandTests
 		fileSystem.ExistsDirectory(rootPath).Returns(true);
 		fileSystem.ExistsDirectory(workspacePath).Returns(false);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem, settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
 			Empty = true
@@ -89,7 +92,7 @@ public class CreateWorkspaceCommandTests
 		string currentDirectory = GetRootedPath("temp", "new-workspace");
 		workingDirectoriesProvider.CurrentDirectory.Returns(currentDirectory);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem, settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			Environment = "dev",
 			Empty = false,
@@ -122,7 +125,7 @@ public class CreateWorkspaceCommandTests
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		workingDirectoriesProvider.CurrentDirectory.Returns(GetRootedPath("temp", "root"));
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem, settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
 			Empty = false
@@ -166,7 +169,7 @@ public class CreateWorkspaceCommandTests
 
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
 			Empty = true,
@@ -202,7 +205,7 @@ public class CreateWorkspaceCommandTests
 		fileSystem.ExistsDirectory(workspacePath).Returns(false);
 		CreateWorkspaceCommand command = new (workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		CreateWorkspaceCommandOptions options = new () {
 			WorkspaceName = "my-workspace",
 			Empty = true,
@@ -241,7 +244,7 @@ public class CreateWorkspaceCommandTests
 		fileSystem.ExistsDirectory(workspacePath).Returns(false);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
 			Empty = true
@@ -272,7 +275,7 @@ public class CreateWorkspaceCommandTests
 		settingsRepository.GetWorkspacesRoot().Returns(string.Empty);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
 			Empty = true
@@ -303,7 +306,7 @@ public class CreateWorkspaceCommandTests
 		fileSystem.ExistsDirectory(missingRoot).Returns(false);
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
 			Empty = true
@@ -331,7 +334,7 @@ public class CreateWorkspaceCommandTests
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			WorkspaceName = "my-workspace",
 			Empty = true,
@@ -360,7 +363,7 @@ public class CreateWorkspaceCommandTests
 		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
 		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
 			settingsRepository, workspacePathBuilder, workingDirectoriesProvider,
-			AnsweringPing(), new EnvironmentSettings());
+			AnsweringPing(), new EnvironmentSettings { Uri = "http://dev.example" });
 		var options = new CreateWorkspaceCommandOptions {
 			Directory = GetRootedPath("workspaces"),
 			Empty = false
@@ -372,90 +375,6 @@ public class CreateWorkspaceCommandTests
 		// Assert
 		result.Should().Be(1, because: "--directory is only valid for the empty-workspace flow");
 		logger.Received().WriteError(Arg.Is<string>(message => message.Contains("--directory")));
-	}
-
-	[Test]
-	[Description("When an environment is given and it does not answer (here a rejected login), create-workspace should fail with the reason before it writes anything, so no .clio skeleton is left behind.")]
-	public void Execute_ShouldNotWriteTheWorkspace_WhenTheEnvironmentDoesNotAnswer() {
-		// Arrange
-		var workspace = Substitute.For<IWorkspace>();
-		var logger = Substitute.For<ILogger>();
-		var installedApplication = Substitute.For<IInstalledApplication>();
-		var fileSystem = Substitute.For<IFileSystem>();
-		ConfigurePathOperations(fileSystem);
-		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.CurrentDirectory.Returns(GetRootedPath("temp", "new-workspace"));
-		var applicationPing = Substitute.For<IApplicationPing>();
-		var environmentSettings = new EnvironmentSettings { Uri = "http://dev.example" };
-		applicationPing.TryPing(environmentSettings, out Arg.Any<string>()).Returns(call => {
-			call[1] = "Unauthorized Supervisor for http://dev.example";
-			return false;
-		});
-		var command = new CreateWorkspaceCommand(workspace, logger, installedApplication, fileSystem,
-			Substitute.For<ISettingsRepository>(), Substitute.For<IWorkspacePathBuilder>(), workingDirectoriesProvider,
-			applicationPing, environmentSettings);
-		var options = new CreateWorkspaceCommandOptions { Environment = "dev", AppCode = "UsrApp" };
-
-		// Act
-		int result = command.Execute(options);
-
-		// Assert
-		result.Should().Be(1, because: "a workspace that cannot be filled from its environment must not be reported as created");
-		workspace.DidNotReceiveWithAnyArgs().Create(default, default, default);
-		workspace.DidNotReceiveWithAnyArgs().Restore(default);
-		installedApplication.DidNotReceiveWithAnyArgs().GetInstalledAppInfo(default);
-		logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.StartsWith("Workspace was not created: the environment did not answer (Unauthorized Supervisor for http://dev.example).", StringComparison.Ordinal)));
-		logger.DidNotReceive().WriteInfo("Done");
-	}
-
-	[Test]
-	[Description("When an environment is given, create-workspace should check that it answers before it creates the workspace from it.")]
-	public void Execute_ShouldCheckTheEnvironmentBeforeCreatingTheWorkspace_WhenEnvironmentProvided() {
-		// Arrange
-		var workspace = Substitute.For<IWorkspace>();
-		var fileSystem = Substitute.For<IFileSystem>();
-		ConfigurePathOperations(fileSystem);
-		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.CurrentDirectory.Returns(GetRootedPath("temp", "new-workspace"));
-		IApplicationPing applicationPing = AnsweringPing();
-		var environmentSettings = new EnvironmentSettings { Uri = "http://dev.example" };
-		var command = new CreateWorkspaceCommand(workspace, Substitute.For<ILogger>(),
-			Substitute.For<IInstalledApplication>(), fileSystem, Substitute.For<ISettingsRepository>(),
-			Substitute.For<IWorkspacePathBuilder>(), workingDirectoriesProvider, applicationPing, environmentSettings);
-		var options = new CreateWorkspaceCommandOptions { Environment = "dev" };
-
-		// Act
-		int result = command.Execute(options);
-
-		// Assert
-		result.Should().Be(0, because: "an environment that answers lets the workspace be created as before");
-		Received.InOrder(() => {
-			applicationPing.TryPing(environmentSettings, out Arg.Any<string>());
-			workspace.Create("dev", true, false);
-			workspace.Restore(options);
-		});
-	}
-
-	[Test]
-	[Description("Without an environment (plain or --empty), create-workspace should not ping anything: it never reads from an environment.")]
-	public void Execute_ShouldNotPing_WhenNoEnvironmentProvided() {
-		// Arrange
-		var fileSystem = Substitute.For<IFileSystem>();
-		ConfigurePathOperations(fileSystem);
-		var workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
-		workingDirectoriesProvider.CurrentDirectory.Returns(GetRootedPath("temp", "new-workspace"));
-		var applicationPing = Substitute.For<IApplicationPing>();
-		var command = new CreateWorkspaceCommand(Substitute.For<IWorkspace>(), Substitute.For<ILogger>(),
-			Substitute.For<IInstalledApplication>(), fileSystem, Substitute.For<ISettingsRepository>(),
-			Substitute.For<IWorkspacePathBuilder>(), workingDirectoriesProvider, applicationPing, new EnvironmentSettings());
-
-		// Act
-		int result = command.Execute(new CreateWorkspaceCommandOptions());
-
-		// Assert
-		result.Should().Be(0, because: "a workspace without an environment is created locally");
-		applicationPing.DidNotReceiveWithAnyArgs().TryPing(default, out Arg.Any<string>());
 	}
 
 	/// <summary>A ping that answers, for the tests whose subject is not the environment check.</summary>
@@ -478,4 +397,153 @@ public class CreateWorkspaceCommandTests
 	private static string GetRootedPath(params string[] segments) {
 		return TestFileSystem.GetRootedPath(segments);
 	}
+}
+
+/// <summary>
+/// The order create-workspace checks things in when an environment is given: the local checks, then the
+/// environment, then what is read from it - all before anything is written. The command is resolved from the
+/// container, as AGENTS.md "Command tests" asks.
+/// </summary>
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+public class CreateWorkspaceCommandEnvironmentCheckTests : BaseClioModuleTests
+{
+	private readonly List<string> _steps = [];
+	private IApplicationPing _applicationPing;
+	private CreateWorkspaceCommand _command;
+	private IInstalledApplication _installedApplication;
+	private ILogger _logger;
+	private IWorkspace _workspace;
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		_workspace = Substitute.For<IWorkspace>();
+		_applicationPing = Substitute.For<IApplicationPing>();
+		_installedApplication = Substitute.For<IInstalledApplication>();
+		_logger = Substitute.For<ILogger>();
+		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		workingDirectoriesProvider.CurrentDirectory.Returns(TestFileSystem.GetRootedPath("temp", "new-workspace"));
+		containerBuilder.AddSingleton(_workspace);
+		containerBuilder.AddSingleton(_applicationPing);
+		containerBuilder.AddSingleton(_installedApplication);
+		containerBuilder.AddSingleton(_logger);
+		containerBuilder.AddSingleton(workingDirectoriesProvider);
+	}
+
+	public override void Setup() {
+		// NUnit reuses the fixture instance, so a test that clears the URL must not leak into the next one.
+		EnvironmentSettings.Uri = "http://localhost";
+		base.Setup();
+		_steps.Clear();
+		_workspace.When(workspace => workspace.ValidateCanCreate(Arg.Any<bool>())).Do(_ => _steps.Add("validate"));
+		_applicationPing.TryPing(Arg.Any<EnvironmentSettings>(), out Arg.Any<string>()).Returns(_ => {
+			_steps.Add("ping");
+			return true;
+		});
+		_workspace.When(workspace => workspace.Create(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>()))
+			.Do(_ => _steps.Add("create"));
+		_workspace.When(workspace => workspace.Restore(Arg.Any<WorkspaceOptions>())).Do(_ => _steps.Add("restore"));
+		_command = Container.GetRequiredService<CreateWorkspaceCommand>();
+	}
+
+	[Test]
+	[Description("With an environment, create-workspace runs the local checks, then pings the environment, then creates and restores - in that order.")]
+	public void Execute_ShouldCheckLocallyThenTheEnvironmentThenWrite_WhenEnvironmentProvided() {
+		// Act
+		int result = _command.Execute(new CreateWorkspaceCommandOptions { Environment = "dev" });
+
+		// Assert
+		result.Should().Be(0, because: "an environment that answers lets the workspace be created as before");
+		_steps.Should().Equal(["validate", "ping", "create", "restore"],
+			because: "nothing is written before both the local checks and the environment check have passed");
+	}
+
+	[Test]
+	[Description("A folder that is already a workspace is reported as such, before the environment is pinged, so a stopped environment does not hide the local error.")]
+	public void Execute_ShouldShowTheLocalError_WhenTheFolderIsAlreadyAWorkspace() {
+		// Arrange
+		const string localError = "This operation can not execute inside existing workspace!";
+		_workspace.When(workspace => workspace.ValidateCanCreate(Arg.Any<bool>()))
+			.Do(_ => throw new InvalidOperationException(localError));
+
+		// Act
+		int result = _command.Execute(new CreateWorkspaceCommandOptions { Environment = "dev" });
+
+		// Assert
+		result.Should().Be(1, because: "a workspace cannot be created inside another one");
+		ErrorsLogged().Should().ContainSingle(message => message.StartsWith(localError, StringComparison.Ordinal),
+			because: "the local error is the one to fix, not a login against an environment that would not have been used");
+		_applicationPing.ReceivedCalls().Should().BeEmpty(because: "the environment is not pinged when a local check has already failed");
+	}
+
+	[Test]
+	[Description("An environment that does not answer (here a rejected login) fails the command with the reason before anything is written, so no .clio skeleton is left behind.")]
+	public void Execute_ShouldNotWriteTheWorkspace_WhenTheEnvironmentDoesNotAnswer() {
+		// Arrange
+		_applicationPing.TryPing(Arg.Any<EnvironmentSettings>(), out Arg.Any<string>()).Returns(call => {
+			call[1] = "Unauthorized Supervisor for http://localhost";
+			return false;
+		});
+
+		// Act
+		int result = _command.Execute(new CreateWorkspaceCommandOptions { Environment = "dev", AppCode = "UsrApp" });
+
+		// Assert
+		result.Should().Be(1, because: "a workspace that cannot be filled from its environment must not be reported as created");
+		ErrorsLogged().Should().ContainSingle(message => message.StartsWith(
+				"Workspace was not created: the environment did not answer (Unauthorized Supervisor for http://localhost).",
+				StringComparison.Ordinal),
+			because: "the caller must see why nothing was created");
+		_steps.Should().Equal(["validate"], because: "neither Create nor Restore runs after the ping fails");
+		_installedApplication.ReceivedCalls().Should().BeEmpty(because: "the application is not read from an environment that did not answer");
+	}
+
+	[Test]
+	[Description("An environment name that is not registered resolves to settings without a URL; the command says so instead of reporting a client-construction failure as a stopped site.")]
+	public void Execute_ShouldNameTheUnregisteredEnvironment_WhenItHasNoUrl() {
+		// Arrange
+		EnvironmentSettings.Uri = null;
+
+		// Act
+		int result = _command.Execute(new CreateWorkspaceCommandOptions { Environment = "dev" });
+
+		// Assert
+		result.Should().Be(1, because: "there is no environment to create the workspace from");
+		ErrorsLogged().Should().ContainSingle(message => message.StartsWith(
+				"Workspace was not created: environment 'dev' is not registered.", StringComparison.Ordinal),
+			because: "the fix is to register the environment, not to start it");
+		_applicationPing.ReceivedCalls().Should().BeEmpty(because: "there is no URL to ping");
+		_steps.Should().Equal(["validate"], because: "nothing is written for an environment that is not registered");
+	}
+
+	[Test]
+	[Description("With an application code, the application is read from the environment before the workspace is written, so a failure there leaves nothing behind.")]
+	public void Execute_ShouldReadTheApplicationBeforeWriting_WhenAppCodeProvided() {
+		// Arrange
+		_installedApplication.GetInstalledAppInfo("UsrApp")
+			.Returns(_ => throw new InvalidOperationException("no rights to read installed applications"));
+
+		// Act
+		int result = _command.Execute(new CreateWorkspaceCommandOptions { Environment = "dev", AppCode = "UsrApp" });
+
+		// Assert
+		result.Should().Be(1, because: "a workspace whose application cannot be read is not created");
+		_steps.Should().Equal(["validate", "ping"], because: "Create runs only after the application has been read");
+	}
+
+	[Test]
+	[Description("Without an environment (plain or --empty), create-workspace never pings: it reads nothing from an environment.")]
+	public void Execute_ShouldNotPing_WhenNoEnvironmentProvided() {
+		// Act
+		int result = _command.Execute(new CreateWorkspaceCommandOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a workspace without an environment is created locally");
+		_applicationPing.ReceivedCalls().Should().BeEmpty(because: "there is no environment to check");
+	}
+
+	private IEnumerable<string> ErrorsLogged() =>
+		_logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Select(call => (string)call.GetArguments()[0]);
 }

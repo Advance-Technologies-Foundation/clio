@@ -114,8 +114,27 @@ public class WorkspaceRestorerTests {
 			.WithMessage("*Unauthorized Supervisor*", because: "the environment's own failure is what the caller must see");
 		_creatioSdk.ReceivedCalls().Should().BeEmpty(
 			because: "the feed is not consulted for a restore that has already failed on the environment");
-		_packageDownloader.DidNotReceive().DownloadPackages(Arg.Any<IEnumerable<string>>(), Arg.Any<EnvironmentSettings>(),
-			Arg.Any<string>());
+		_packageDownloader.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name.StartsWith("DownloadPackages", StringComparison.Ordinal))
+			.Should().BeEmpty(because: "nothing is downloaded from an environment that did not answer");
+	}
+
+	[Test]
+	[Description("A restore with packages logs in once: it checks the environment before the SDK lookup and then downloads without a second ping.")]
+	public void Restore_ShouldPingOnce_WhenTheEnvironmentAnswers() {
+		// Arrange
+		WorkspaceSettings workspaceSettings = new() { Packages = ["PkgOne"] };
+		WorkspaceOptions options = new() { IsNugetRestore = false, IsCreateSolution = false, AddBuildProps = false };
+		EnvironmentSettings environment = new() { Uri = "http://localhost:5000" };
+
+		// Act
+		_workspaceRestorer.Restore(workspaceSettings, environment, options);
+
+		// Assert
+		string[] calls = _packageDownloader.ReceivedCalls().Select(call => call.GetMethodInfo().Name).ToArray();
+		calls.Should().Equal([nameof(IPackageDownloader.EnsureEnvironmentAnswers),
+				nameof(IPackageDownloader.DownloadPackagesFromAnsweredEnvironment)],
+			because: "the environment is checked once, before the SDK lookup, and the download does not ping it again");
 	}
 
 	[Test]

@@ -163,7 +163,8 @@ public class WorkspaceRestorer : IWorkspaceRestorer{
 			_logger.WriteWarning(NoPackagesEligibleMessage);
 		}
 		else {
-			_packageDownloader.DownloadPackages(packagesToDownload, environmentSettings,
+			// Checked above, before the SDK lookup; pinging again here would be a second login for the same answer.
+			_packageDownloader.DownloadPackagesFromAnsweredEnvironment(packagesToDownload, environmentSettings,
 				_workspacePathBuilder.PackagesFolderPath);
 		}
 		if (restoreWorkspaceOptions.IsNugetRestore == true) {

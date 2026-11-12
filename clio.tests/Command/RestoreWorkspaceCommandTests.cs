@@ -42,7 +42,7 @@ public sealed class RestoreWorkspaceCommandTests : BaseCommandTests<RestoreWorks
 	}
 
 	[Test]
-	[Description("When the package download refuses because the environment did not answer the ping (a rejected login), the command logs that reason as an error and exits 1 instead of logging Done and exiting 0.")]
+	[Description("The command half of the fix: when the restore throws because the environment did not answer (a rejected login), the command logs that reason as an error and exits 1. The restore throwing at all - instead of returning silently - is guarded by PackageDownloaderTests, WorkspaceRestorerTests and RestoreWorkspaceToolE2ETests; this test alone also passes on master.")]
 	public void Execute_ShouldFailWithTheReason_WhenTheEnvironmentDidNotAnswer() {
 		// Arrange
 		const string reason = "Packages were not downloaded: the environment did not answer "
