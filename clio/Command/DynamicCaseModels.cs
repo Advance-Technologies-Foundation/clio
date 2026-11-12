@@ -77,7 +77,10 @@ public static class DynamicCaseErrorCodes {
 	/// <summary>The page has no <c>MainContainer</c> flex container to put the bar in.</summary>
 	public const string PlacementUnsupported = "placement-unsupported";
 
-	/// <summary>The append dry run of the exact fragment failed one of the page save's own gates.</summary>
+	/// <summary>
+	/// The dry run of the exact page write (append, or replace for a full-form page) failed one of the page save's own
+	/// gates, or a full-form page could not take the bar.
+	/// </summary>
 	public const string PageAppendRejected = "page-append-rejected";
 }
 
@@ -418,7 +421,10 @@ public sealed class DynamicCasePageRetry {
 	[JsonPropertyName("tool")]
 	public string Tool { get; init; }
 
-	/// <summary>Its arguments, the marker-wrapped fragment included.</summary>
+	/// <summary>
+	/// Its arguments: the fragment with <c>mode: append</c>, or for a page stored in the full form the whole body with
+	/// <c>mode: replace</c> and the <c>checksum</c> it was built against.
+	/// </summary>
 	[JsonPropertyName("args")]
 	public Dictionary<string, string> Args { get; init; }
 }
@@ -456,7 +462,10 @@ public sealed class DynamicCasePageInfo {
 	[JsonPropertyName("template")]
 	public string Template { get; init; }
 
-	/// <summary>The marker-wrapped append body; the same text the write and the retry use.</summary>
+	/// <summary>
+	/// The marker-wrapped append body with the bar's two items, by the names the write gives them. A page stored in the
+	/// full form is written by a replace of its whole body instead; <c>page.retry</c> then carries that body.
+	/// </summary>
 	[JsonPropertyName("fragment")]
 	public string Fragment { get; init; }
 

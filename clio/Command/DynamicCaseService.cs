@@ -9,8 +9,8 @@ using Clio.UserEnvironment;
 namespace Clio.Command;
 
 /// <summary>
-/// Runs <c>create-dynamic-case</c>: a validate pass on the server, the record-page plan and its append dry run, the
-/// missing package dependencies, the build pass and the progress-bar append, in an order that writes nothing until
+/// Runs <c>create-dynamic-case</c>: a validate pass on the server, the record-page plan and its dry run, the
+/// missing package dependencies, the build pass and the progress-bar write, in an order that writes nothing until
 /// every check of the call has passed.
 /// </summary>
 public interface IDynamicCaseService {
@@ -95,7 +95,7 @@ public sealed class DynamicCaseService(
 				Dependencies(plan, missing, [], DependenciesStatusFor(missing), compilationRequired: false), NotReached(), []);
 		}
 
-		// C3: every page check, the append dry run of the exact fragment included, runs before anything is written.
+		// C3: every page check, the dry run of the exact page write included, runs before anything is written.
 		DynamicCasePagePlan pagePlan = null;
 		if (options.AddProgressBar) {
 			pagePlan = pageStep.Plan(options.Environment, options.PackageName, options.EntitySchemaName,
@@ -277,19 +277,27 @@ public sealed class DynamicCaseService(
 			Template = pagePlan.Template,
 			Fragment = pagePlan.Fragment,
 			Error = write.Error,
-			Retry = new DynamicCasePageRetry {
-				Tool = RetryTool,
-				Args = new Dictionary<string, string> {
-					["environment-name"] = options.Environment,
-					["schema-name"] = pagePlan.PageSchemaName,
-					["mode"] = "append",
-					["body"] = pagePlan.Fragment
-				}
-			}
+			Retry = new DynamicCasePageRetry { Tool = RetryTool, Args = RetryArgs(options, pagePlan) }
 		};
 		return Result(DynamicCaseOutcomes.CreatedPageFailed, options, built, designerUrl, dependencies, failedPage,
 			notes, warnings, pageWritten: false, DynamicCaseErrorCodes.PageAppendRejected,
 			$"The progress bar could not be added to '{pagePlan.PageSchemaName}': {write.Error}");
+	}
+
+	private static Dictionary<string, string> RetryArgs(CreateDynamicCaseOptions options, DynamicCasePagePlan pagePlan) {
+		string mode = pagePlan.WriteMode ?? DynamicCasePageStep.AppendMode;
+		Dictionary<string, string> args = new() {
+			["environment-name"] = options.Environment,
+			["schema-name"] = pagePlan.PageSchemaName,
+			["mode"] = mode,
+			["body"] = pagePlan.WriteBody ?? pagePlan.Fragment
+		};
+		if (mode == DynamicCasePageStep.ReplaceMode) {
+			// A replace body was built from one version of the page; pinned to it, a retry after a designer save is
+			// refused as a conflict instead of overwriting that save.
+			args["checksum"] = pagePlan.ExpectedChecksum;
+		}
+		return args;
 	}
 
 	/// <summary>

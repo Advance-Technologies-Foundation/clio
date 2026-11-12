@@ -295,6 +295,32 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
+	[Description("A full-form page whose write fails returns the exact replace that was planned: the whole body and the checksum it was made against, so the retry cannot overwrite a change made since.")]
+	public void Create_ShouldReturnTheReplaceRetry_WithTheChecksum_WhenAFullFormPageWriteFails() {
+		// Arrange
+		Passes(Envelope("planned"));
+		DynamicCasePagePlan planned = PlannedPage();
+		_pageStep.Plan(Env, Package, Entity, Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>()).Returns(
+			new DynamicCasePagePlan {
+				Status = planned.Status, PageSchemaName = planned.PageSchemaName, ResolvedBy = planned.ResolvedBy,
+				DesignPackageName = planned.DesignPackageName, Template = planned.Template, Fragment = planned.Fragment,
+				WriteMode = "replace", WriteBody = "the whole body", ExpectedChecksum = "abc123"
+			});
+		_pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>()).Returns(new DynamicCasePageWrite(false, "timeout", []));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseOutcomes.CreatedPageFailed, because: "the case exists, the bar does not");
+		result.Page.Fragment.Should().Be(planned.Fragment, because: "the fragment still names the two items for undo");
+		result.Page.Retry.Args.Should().Contain("mode", "replace", because: "the page takes the bar by replace");
+		result.Page.Retry.Args.Should().Contain("body", "the whole body", because: "the retry sends what was dry-run");
+		result.Page.Retry.Args.Should().Contain("checksum", "abc123",
+			because: "the replace is pinned to the page version its body was built from");
+	}
+
+	[Test]
 	[Description("A page write that fails outside the case package does not claim the bar was written to the design package.")]
 	public void Create_ShouldNotNoteTheDesignPackage_WhenThePageWriteFails() {
 		// Arrange

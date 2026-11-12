@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Command.BusinessRules;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Clio.Command;
 
@@ -106,6 +108,49 @@ public static class ProgressBarFragment {
 			+ "\t};\n"
 			+ "});";
 	}
+
+	/// <summary>
+	/// Adds the fragment's two inserts to the <c>viewConfigDiff</c> of a page body stored in the FULL form, the body
+	/// a replace then sends.
+	/// </summary>
+	/// <remarks>
+	/// The full form (every record page create-app makes, ENG-94422) keeps <c>viewConfigDiff</c> a diff array and
+	/// only stores <c>viewModelConfig</c> / <c>modelConfig</c> whole, so the bar, which needs nothing outside
+	/// <c>viewConfigDiff</c>, goes in exactly as append would put it there. Everything outside that marker pair is
+	/// kept as stored, which is why this edits the one section instead of converting the body: append's merger
+	/// refuses the form because a diff cannot be derived from a whole <c>viewModelConfig</c> (ENG-93090), and none
+	/// is needed here.
+	/// </remarks>
+	/// <param name="currentBody">The page's own stored body.</param>
+	/// <param name="entitySchemaName">See <see cref="BuildViewConfigDiff"/>.</param>
+	/// <param name="nameSuffix">See <see cref="BuildViewConfigDiff"/>.</param>
+	/// <param name="body">The body with the two inserts, or <see langword="null"/> on <see langword="false"/>.</param>
+	/// <param name="error">Why the stored body cannot take them, or <see langword="null"/>.</param>
+	public static bool TryInsertIntoFullBody(string currentBody, string entitySchemaName, string nameSuffix,
+		out string body, out string error) {
+		body = null;
+		if (!PageSchemaSectionReader.TryRead(currentBody ?? string.Empty, out string section, ViewConfigDiffMarker)) {
+			error = "the stored body has no viewConfigDiff marker pair to insert the bar into";
+			return false;
+		}
+		JArray items;
+		try {
+			// Parsed as append's merger parses the same section, so both paths accept the same stored bodies.
+			items = string.IsNullOrWhiteSpace(section) ? new JArray() : JArray.Parse(section.Trim());
+		} catch (JsonException exception) {
+			error = $"the stored viewConfigDiff is not a JSON array: {exception.Message}";
+			return false;
+		}
+		foreach (JsonNode insert in BuildViewConfigDiff(entitySchemaName, nameSuffix)) {
+			items.Add(JToken.Parse(insert!.ToJsonString()));
+		}
+		PageSchemaSectionReader.TryReplaceSection(currentBody, items.ToString(Formatting.Indented), out body,
+			ViewConfigDiffMarker);
+		error = null;
+		return true;
+	}
+
+	private const string ViewConfigDiffMarker = "SCHEMA_VIEW_CONFIG_DIFF";
 }
 
 /// <summary>What the merged record page says about adding the bar to it.</summary>

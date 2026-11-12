@@ -29,8 +29,23 @@ public sealed class DynamicCasePagePlan {
 	/// <summary>The nearest template in the page's schema chain.</summary>
 	public string Template { get; init; }
 
-	/// <summary>The marker-wrapped append body the write sends.</summary>
+	/// <summary>
+	/// The marker-wrapped append body with the bar's two items: what the dry run and the write send on append, and
+	/// on replace the record of the names the write added, which undo removes.
+	/// </summary>
 	public string Fragment { get; init; }
+
+	/// <summary>
+	/// <c>append</c>, or <c>replace</c> for a page stored in the full form (every record page create-app makes),
+	/// which append refuses to merge into.
+	/// </summary>
+	public string WriteMode { get; init; } = DynamicCasePageStep.AppendMode;
+
+	/// <summary>
+	/// The body the dry run checked and the write sends: <see cref="Fragment"/> on append; on replace the page's own
+	/// stored body with the two items added to its viewConfigDiff. A plan without it sends <see cref="Fragment"/>.
+	/// </summary>
+	public string WriteBody { get; init; }
 
 	/// <summary>
 	/// The editable schema's checksum the plan was made against; the write pins it, so a change made in the designer
@@ -58,8 +73,9 @@ public sealed record DynamicCasePageWrite(bool Inserted, string Error, IReadOnly
 /// <summary>The record-page half of <c>create-dynamic-case</c>.</summary>
 public interface IDynamicCasePageStep {
 	/// <summary>
-	/// Resolves the record page, runs the read-only checks on its merged bundle and an append DRY RUN of the exact
-	/// fragment, so every gate the save applies has run before the case is written. Writes nothing.
+	/// Resolves the record page, runs the read-only checks on its merged bundle and a DRY RUN of the exact write (an
+	/// append of the fragment, or for a page stored in the full form a replace of its body with the fragment's two
+	/// items added), so every gate the save applies has run before the case is written. Writes nothing.
 	/// </summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="packageName">The case's package; the add-on is read in its hierarchy.</param>
@@ -68,7 +84,7 @@ public interface IDynamicCasePageStep {
 	DynamicCasePagePlan Plan(string environmentName, string packageName, string entitySchemaName,
 		string explicitPageSchemaName, IReadOnlyList<string> fallbackPackageNames = null);
 
-	/// <summary>Appends the planned fragment to the page's design package.</summary>
+	/// <summary>Writes the planned body to the page's design package, in the planned mode.</summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
 	/// <param name="plan">A plan whose status is <c>planned</c>.</param>
 	DynamicCasePageWrite Write(string environmentName, DynamicCasePagePlan plan);
@@ -91,7 +107,11 @@ public sealed class DynamicCasePageStep(
 	/// <summary>The page cannot take the bar.</summary>
 	public const string StatusRefused = "refused";
 
-	private const string AppendMode = "append";
+	/// <summary>The write mode of a page stored in the diff form.</summary>
+	public const string AppendMode = "append";
+
+	/// <summary>The write mode of a page stored in the full form.</summary>
+	public const string ReplaceMode = "replace";
 
 	/// <inheritdoc />
 	public DynamicCasePagePlan Plan(string environmentName, string packageName, string entitySchemaName,
@@ -150,10 +170,29 @@ public sealed class DynamicCasePageStep(
 				$"The progress bar on '{pageSchemaName}' references data the page does not have: "
 				+ string.Join("; ", references.Errors));
 		}
-		if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, pageSchemaName, fragment, dryRun: true,
-				expectedChecksum), out PageUpdateResponse dryRun) || dryRun?.Success != true) {
+		string writeMode = AppendMode;
+		string writeBody = fragment;
+		// Raw is the body append would merge into: the design package's own schema, or an empty diff-form scaffold
+		// when that package has none yet, so only an existing full-form schema takes the replace path.
+		if (PageBodyMerger.UsesUnsupportedFullConfigForm(page.Raw?.Body, PageBodyMerger.PageBodyRole.Current, out _)) {
+			if (expectedChecksum is null) {
+				// A replace sends the body read here; unpinned, a designer save made before the write is lost.
+				return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
+					$"'{pageSchemaName}' is stored in the full form, so the bar is written by a replace of its body, "
+					+ "and the page's checksum could not be read to pin that replace against a concurrent change. "
+					+ "Retry the call.");
+			}
+			if (!ProgressBarFragment.TryInsertIntoFullBody(page.Raw.Body, entitySchemaName, suffix, out writeBody,
+					out string insertError)) {
+				return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
+					$"The progress bar cannot be added to '{pageSchemaName}', stored in the full form: {insertError}.");
+			}
+			writeMode = ReplaceMode;
+		}
+		if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, pageSchemaName, writeBody, writeMode,
+				dryRun: true, expectedChecksum), out PageUpdateResponse dryRun) || dryRun?.Success != true) {
 			return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
-				$"The append dry run of the progress bar on '{pageSchemaName}' was rejected: "
+				$"The {writeMode} dry run of the progress bar on '{pageSchemaName}' was rejected: "
 				+ $"{dryRun?.Error ?? "no answer"}");
 		}
 		return new DynamicCasePagePlan {
@@ -163,6 +202,8 @@ public sealed class DynamicCasePageStep(
 			DesignPackageName = designPackageName,
 			Template = check.Template,
 			Fragment = fragment,
+			WriteMode = writeMode,
+			WriteBody = writeBody,
 			ExpectedChecksum = expectedChecksum,
 			Notes = notes,
 			Warnings = dryRun.Warnings?.ToList() ?? []
@@ -173,8 +214,9 @@ public sealed class DynamicCasePageStep(
 	public DynamicCasePageWrite Write(string environmentName, DynamicCasePagePlan plan) {
 		ArgumentNullException.ThrowIfNull(plan);
 		try {
-			if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, plan.PageSchemaName, plan.Fragment,
-					dryRun: false, plan.ExpectedChecksum), out PageUpdateResponse saved) || saved?.Success != true) {
+			if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, plan.PageSchemaName,
+					plan.WriteBody ?? plan.Fragment, plan.WriteMode ?? AppendMode, dryRun: false, plan.ExpectedChecksum),
+					out PageUpdateResponse saved) || saved?.Success != true) {
 				return new DynamicCasePageWrite(false, saved?.Error ?? "The page save gave no answer.", []);
 			}
 			return new DynamicCasePageWrite(true, null, saved.Warnings?.ToList() ?? []);
@@ -194,13 +236,13 @@ public sealed class DynamicCasePageStep(
 			ResolvedBy = resolvedBy
 		};
 
-	private static PageUpdateOptions BuildOptions(string environmentName, string pageSchemaName, string fragment,
-		bool dryRun, string expectedChecksum) =>
+	private static PageUpdateOptions BuildOptions(string environmentName, string pageSchemaName, string body,
+		string mode, bool dryRun, string expectedChecksum) =>
 		new() {
 			Environment = environmentName,
 			SchemaName = pageSchemaName,
-			Body = fragment,
-			Mode = AppendMode,
+			Body = body,
+			Mode = mode,
 			DryRun = dryRun,
 			Validate = true,
 			ExpectedChecksum = expectedChecksum

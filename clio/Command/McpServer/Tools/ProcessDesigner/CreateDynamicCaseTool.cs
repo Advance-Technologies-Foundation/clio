@@ -72,7 +72,7 @@ public class CreateDynamicCaseTool(
 		 + "The default stage order comes from the lookup (an integer Position, StageOrder, Number or StageNumber "
 		 + "column, else the display value) and is reported in case.orderSource: pass stages (lookup value Ids or "
 		 + "exact display values, every value exactly once) when the business order matters. "
-		 + "dry-run=true runs every check, the page append included, and writes nothing. Nothing is written until "
+		 + "dry-run=true runs every check, the page write's dry run included, and writes nothing. Nothing is written until "
 		 + "every check passes, and a refusal answers outcome refused with a stable errorCode. An equivalent enabled "
 		 + "case answers already-present and writes nothing to it, so a re-run is safe; a different enabled case on "
 		 + "the object is refused (case-exists). When the case is created but the bar cannot be added, outcome "
@@ -307,7 +307,7 @@ public sealed record CreateDynamicCaseArgs(
 	bool? AddPackageDependencies = null,
 
 	[property: JsonPropertyName("dry-run")]
-	[property: Description("Run every check, the page append included, and write nothing; default false.")]
+	[property: Description("Run every check, the page write's dry run included, and write nothing; default false.")]
 	bool? DryRun = null) {
 
 	/// <summary>

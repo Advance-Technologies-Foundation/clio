@@ -250,12 +250,93 @@ public sealed class ProgressBarPlacementTests {
 		tabbed.Should().Be(expected, because: "the note about the layout is raised for any other template");
 	}
 
-	internal static List<string> NamesIn(string fragment) {
-		int start = fragment.IndexOf("/**SCHEMA_VIEW_CONFIG_DIFF*/", System.StringComparison.Ordinal)
-			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/".Length;
-		int end = fragment.IndexOf("/**SCHEMA_VIEW_CONFIG_DIFF*/", start, System.StringComparison.Ordinal);
-		return JsonNode.Parse(fragment[start..end])!.AsArray()
+	[Test]
+	[Description("A body stored in the full form (create-app's pages) gets the two inserts appended to its viewConfigDiff, and everything outside that marker pair, the full viewModelConfig and modelConfig included, is kept exactly as stored.")]
+	public void TryInsertIntoFullBody_ShouldAppendTheTwoInserts_AndKeepTheRestOfTheBody() {
+		// Arrange
+		string body = FullFormBody(Entity);
+
+		// Act
+		bool inserted = ProgressBarFragment.TryInsertIntoFullBody(body, Entity, string.Empty, out string updated,
+			out string error);
+
+		// Assert
+		inserted.Should().BeTrue(because: "the body has a viewConfigDiff array to insert into");
+		error.Should().BeNull(because: "nothing went wrong");
+		NamesIn(updated).Should().Equal(["UsrName", "ProgressBarContainer", "ProgressBar"],
+			because: "the stored items stay first and the two inserts follow, as append would place them");
+		JsonNode.Parse(SectionOf(updated, "SCHEMA_VIEW_CONFIG_DIFF"))!.AsArray().Skip(1).Select(node => node!.ToJsonString())
+			.Should().Equal(ProgressBarFragment.BuildViewConfigDiff(Entity, string.Empty).Select(node => node!.ToJsonString()),
+				because: "the inserts are exactly the fragment's, so page.fragment names what was written");
+		WithoutSection(updated, "SCHEMA_VIEW_CONFIG_DIFF").Should().Be(WithoutSection(body, "SCHEMA_VIEW_CONFIG_DIFF"),
+			because: "a replace must not change anything the bar does not need");
+	}
+
+	[Test]
+	[Description("A suffixed pair is inserted under the suffixed names, the same ones the fragment carries.")]
+	public void TryInsertIntoFullBody_ShouldUseTheSuffixedNames_WhenASuffixIsGiven() {
+		// Arrange
+		string body = FullFormBody(Entity);
+
+		// Act
+		ProgressBarFragment.TryInsertIntoFullBody(body, Entity, "_0a1b2c3d", out string updated, out _);
+
+		// Assert
+		NamesIn(updated).Should().Equal(["UsrName", "ProgressBarContainer_0a1b2c3d", "ProgressBar_0a1b2c3d"],
+			because: "both names carry the suffix the plan chose");
+	}
+
+	[Test]
+	[Description("A body with no viewConfigDiff marker pair, or one whose viewConfigDiff is not a JSON array, is not touched and the reason is returned.")]
+	[TestCase("define(\"P\", function() { return { viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/ }; });", "no viewConfigDiff")]
+	[TestCase("define(\"P\", function() { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/{ \"a\": 1 }/**SCHEMA_VIEW_CONFIG_DIFF*/ }; });", "not a JSON array")]
+	public void TryInsertIntoFullBody_ShouldRefuse_WhenTheViewConfigDiffCannotTakeTheInserts(string body, string reason) {
+		// Arrange & Act
+		bool inserted = ProgressBarFragment.TryInsertIntoFullBody(body, Entity, string.Empty, out string updated,
+			out string error);
+
+		// Assert
+		inserted.Should().BeFalse(because: "there is no array to insert into");
+		updated.Should().BeNull(because: "no body is offered for a write");
+		error.Should().Contain(reason, because: "the refusal names what is wrong with the stored body");
+	}
+
+	/// <summary>A record page as create-app stores it: a viewConfigDiff array next to a FULL viewModelConfig and
+	/// modelConfig, the form append cannot merge into (measured on dcm-nf, UsrProjFx_FormPage, 2026-11-12).</summary>
+	internal static string FullFormBody(string entity) =>
+		"define(\"UsrOrders_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n"
+		+ "\treturn {\n"
+		+ "\t\tviewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[\n"
+		+ "\t\t\t{\n\t\t\t\t\"operation\": \"insert\",\n\t\t\t\t\"name\": \"UsrName\",\n"
+		+ "\t\t\t\t\"values\": { \"type\": \"crt.Input\", \"control\": \"$UsrName\" },\n"
+		+ "\t\t\t\t\"parentName\": \"SideAreaProfileContainer\",\n\t\t\t\t\"propertyName\": \"items\",\n\t\t\t\t\"index\": 0\n\t\t\t}\n"
+		+ "\t\t]/**SCHEMA_VIEW_CONFIG_DIFF*/,\n"
+		+ "\t\tviewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{\n"
+		+ "\t\t\t\"attributes\": { \"UsrName\": { \"modelConfig\": { \"path\": \"PDS.UsrName\" } } }\n"
+		+ "\t\t}/**SCHEMA_VIEW_MODEL_CONFIG*/,\n"
+		+ "\t\tmodelConfig: /**SCHEMA_MODEL_CONFIG*/{\n"
+		+ "\t\t\t\"dataSources\": { \"PDS\": { \"type\": \"crt.EntityDataSource\", \"config\": { \"entitySchemaName\": \""
+		+ entity + "\" }, \"scope\": \"page\" } },\n"
+		+ "\t\t\t\"primaryDataSourceName\": \"PDS\"\n"
+		+ "\t\t}/**SCHEMA_MODEL_CONFIG*/,\n"
+		+ "\t\thandlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,\n"
+		+ "\t\tconverters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,\n"
+		+ "\t\tvalidators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/\n"
+		+ "\t};\n"
+		+ "});";
+
+	internal static List<string> NamesIn(string fragment) =>
+		JsonNode.Parse(SectionOf(fragment, "SCHEMA_VIEW_CONFIG_DIFF"))!.AsArray()
 			.Select(node => node!["name"]!.GetValue<string>())
 			.ToList();
+
+	internal static string SectionOf(string body, string marker) {
+		string pair = "/**" + marker + "*/";
+		int start = body.IndexOf(pair, System.StringComparison.Ordinal) + pair.Length;
+		int end = body.IndexOf(pair, start, System.StringComparison.Ordinal);
+		return body[start..end];
 	}
+
+	internal static string WithoutSection(string body, string marker) =>
+		body.Replace(SectionOf(body, marker), string.Empty, System.StringComparison.Ordinal);
 }

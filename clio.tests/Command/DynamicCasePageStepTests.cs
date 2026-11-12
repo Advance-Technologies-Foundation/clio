@@ -51,7 +51,7 @@ public sealed class DynamicCasePageStepTests {
 	}
 
 	private void PageReads(PageBundleInfo bundle, string schemaType = "web", string designPackage = Package,
-		PageEditableSchemaInfo editable = null) {
+		PageEditableSchemaInfo editable = null, string rawBody = null) {
 		_pageReader.TryGetPage(Arg.Any<PageGetOptions>(), out Arg.Any<PageGetResponse>())
 			.Returns(call => {
 				call[1] = new PageGetResponse {
@@ -60,10 +60,134 @@ public sealed class DynamicCasePageStepTests {
 						SchemaName = Page, SchemaType = schemaType, DesignPackageName = designPackage
 					},
 					Bundle = bundle,
+					Raw = rawBody is null ? null : new PageRawInfo { Body = rawBody },
 					Editable = editable
 				};
 				return true;
 			});
+	}
+
+	private static PageEditableSchemaInfo Editable(string checksum = "abc123") =>
+		new() { EditableSchemaExists = true, Checksum = checksum };
+
+	[Test]
+	[Description("A page stored in the full form, as create-app makes every record page, is planned as a REPLACE of its own body with the two inserts added to its viewConfigDiff, dry-run against the page with the checksum pinned, so it takes the bar in one call instead of being refused page-append-rejected.")]
+	public void Plan_ShouldPlanAReplaceOfTheFullBody_WhenThePageIsStoredInTheFullForm() {
+		// Arrange
+		string stored = ProgressBarPlacementTests.FullFormBody(Entity);
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()), editable: Editable(),
+			rawBody: stored);
+		Saves();
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
+
+		// Assert
+		plan.Status.Should().Be(DynamicCasePageStep.StatusPlanned, because: "a full-form page can take the bar");
+		plan.WriteMode.Should().Be("replace", because: "append cannot merge into a full-form body");
+		plan.Fragment.Should().Be(ProgressBarFragment.BuildBody(Page, Entity, string.Empty),
+			because: "page.fragment still names the two items, which undo step 4 removes");
+		ProgressBarFragment.TryInsertIntoFullBody(stored, Entity, string.Empty, out string expected, out _);
+		plan.WriteBody.Should().Be(expected, because: "the write sends the stored body with exactly the two inserts added");
+		_writer.Received(1).TryUpdatePage(Arg.Is<PageUpdateOptions>(options =>
+				options.DryRun && options.Mode == "replace" && options.Body == plan.WriteBody
+				&& options.ExpectedChecksum == "abc123" && options.Validate && options.SchemaName == Page),
+			out Arg.Any<PageUpdateResponse>());
+		_writer.DidNotReceive().TryUpdatePage(Arg.Is<PageUpdateOptions>(options => options.Mode == "append"),
+			out Arg.Any<PageUpdateResponse>());
+		_writer.DidNotReceive().TryUpdatePage(Arg.Is<PageUpdateOptions>(options => !options.DryRun),
+			out Arg.Any<PageUpdateResponse>());
+	}
+
+	[Test]
+	[Description("A diff-form stored body keeps the append path: replace is only for the form append cannot merge into.")]
+	public void Plan_ShouldKeepTheAppend_WhenTheStoredBodyIsInTheDiffForm() {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()), editable: Editable(),
+			rawBody: ProgressBarFragment.BuildBody(Page, "UsrOther", "_x"));
+		Saves();
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
+
+		// Assert
+		plan.WriteMode.Should().Be("append", because: "a diff-form body is what append merges into");
+		plan.WriteBody.Should().Be(plan.Fragment, because: "append sends the fragment itself");
+	}
+
+	[Test]
+	[Description("A full-form page whose checksum could not be read is refused before anything is written: a replace sends the body read at plan time, so without a pin a designer save between the plan and the write would be overwritten.")]
+	public void Plan_ShouldRefuse_WhenAFullFormPageHasNoChecksumToPin() {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()), editable: null,
+			rawBody: ProgressBarPlacementTests.FullFormBody(Entity));
+		Saves();
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
+
+		// Assert
+		plan.Status.Should().Be(DynamicCasePageStep.StatusRefused, because: "an unpinned replace could lose a change");
+		plan.ErrorCode.Should().Be(DynamicCaseErrorCodes.PageAppendRejected, because: "it is a page-write refusal");
+		plan.ErrorMessage.Should().Contain("checksum", because: "the refusal says what is missing");
+		_writer.DidNotReceiveWithAnyArgs().TryUpdatePage(default!, out _);
+	}
+
+	[Test]
+	[Description("A full-form page whose replace dry run fails is page-append-rejected with the save's own reason, before the case is written.")]
+	public void Plan_ShouldRefuse_WhenTheReplaceDryRunIsRejected() {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()), editable: Editable(),
+			rawBody: ProgressBarPlacementTests.FullFormBody(Entity));
+		Saves(dryRunSucceeds: false, error: "duplicate element name");
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
+
+		// Assert
+		plan.Status.Should().Be(DynamicCasePageStep.StatusRefused, because: "the save would refuse the same body");
+		plan.ErrorCode.Should().Be(DynamicCaseErrorCodes.PageAppendRejected, because: "that is the dry-run refusal code");
+		plan.ErrorMessage.Should().Contain("replace dry run").And.Contain("duplicate element name",
+			because: "the message names the write that was tried and relays the save's reason");
+	}
+
+	[Test]
+	[Description("A full-form page whose stored viewConfigDiff cannot take the inserts is refused with the reason, and no dry run is sent.")]
+	public void Plan_ShouldRefuse_WhenTheFullBodyHasNoViewConfigDiffArray() {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()), editable: Editable(),
+			rawBody: "define(\"P\", function() { return { modelConfig: /**SCHEMA_MODEL_CONFIG*/{}/**SCHEMA_MODEL_CONFIG*/ }; });");
+		Saves();
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
+
+		// Assert
+		plan.ErrorCode.Should().Be(DynamicCaseErrorCodes.PageAppendRejected, because: "the bar cannot be placed");
+		plan.ErrorMessage.Should().Contain("no viewConfigDiff", because: "the reason is relayed");
+		_writer.DidNotReceiveWithAnyArgs().TryUpdatePage(default!, out _);
+	}
+
+	[Test]
+	[Description("Write sends a full-form plan as the planned replace body with the plan's checksum, not as an append of the fragment.")]
+	public void Write_ShouldSaveTheReplaceBody_WhenThePlanIsAReplace() {
+		// Arrange
+		Saves();
+		DynamicCasePagePlan plan = new() {
+			Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page,
+			Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty),
+			WriteMode = "replace", WriteBody = "the whole body", ExpectedChecksum = "abc123"
+		};
+
+		// Act
+		DynamicCasePageWrite write = _step.Write(Env, plan);
+
+		// Assert
+		write.Inserted.Should().BeTrue(because: "the save succeeded");
+		_writer.Received(1).TryUpdatePage(Arg.Is<PageUpdateOptions>(options =>
+				!options.DryRun && options.Mode == "replace" && options.Body == "the whole body"
+				&& options.ExpectedChecksum == "abc123"),
+			out Arg.Any<PageUpdateResponse>());
 	}
 
 	private void Saves(bool dryRunSucceeds = true, bool writeSucceeds = true, string error = "rejected") {
