@@ -497,6 +497,208 @@ public sealed class ToolContractShortFormTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A cut object input field gets its value from the first contract example back as one compact JSON line, so a caller reading only the short contract learns the field's shape.")]
+	public void Shorten_Should_AppendTheContractExample_ToACutObjectInputField() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("filters", "object", "Structured filter. All conditions join with AND; any join with OR."),
+			new Dictionary<string, object?> {
+				["filters"] = new Dictionary<string, object?> {
+					["all"] = new[] { new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "eq", ["value"] = "x" } }
+				}
+			});
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "filters");
+
+		// Assert
+		trimmed.Should().Be("Structured filter. Example: {\"all\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"x\"}]}",
+			because: "the first sentence names the field and the example shows its shape in the fewest bytes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A cut array input field takes the Example sentence of its own description, read as one JSON value.")]
+	public void Shorten_Should_UseTheFieldsOwnExampleSentence_WhenNoContractExampleCarriesTheField() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("select", "array", "Fields to return. Include every field the filter uses. Example: [\"Id\",\"Name\"]."),
+			new Dictionary<string, object?> { ["environment-name"] = "dev" });
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "select");
+
+		// Assert
+		trimmed.Should().Be("Fields to return. Example: [\"Id\",\"Name\"]",
+			because: "the field's own documented example is the first source of its shape, read as one JSON value");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The field's own Example wins over a contract example: it was written for the field, while a contract example is written for a call scenario and its order is incidental.")]
+	public void Shorten_Should_PreferTheFieldsOwnExample_OverAContractExample() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("filters", "object",
+				"Structured filter. Use Account/Id for a lookup. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"1\" }] }."),
+			new Dictionary<string, object?> {
+				["filters"] = new Dictionary<string, object?> {
+					["all"] = new[] { new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "eq", ["value"] = "x" } }
+				}
+			});
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "filters");
+
+		// Assert
+		trimmed.Should().Be("Structured filter. Example: {\"all\":[{\"field\":\"Account/Id\",\"op\":\"eq\",\"value\":\"1\"}]}",
+			because: "the example written for the field teaches what it was written to teach, whatever order the call examples are in");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A field whose own Example is over the bound falls back to the first contract example that fits.")]
+	public void Shorten_Should_UseAContractExample_WhenTheFieldsOwnExampleIsTooLong() {
+		// Arrange
+		string longValue = new('v', ToolContractShortForm.MaxFieldExampleChars);
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("filters", "object", $"Structured filter. Example: {{ \"all\": [{{ \"field\": \"{longValue}\" }}] }}."),
+			new Dictionary<string, object?> {
+				["filters"] = new Dictionary<string, object?> {
+					["all"] = new[] { new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "eq", ["value"] = "x" } }
+				}
+			});
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "filters");
+
+		// Assert
+		trimmed.Should().Be("Structured filter. Example: {\"all\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"x\"}]}",
+			because: "an own example over the bound is left out rather than cut, and a contract example that fits is next");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The description's own example is read as one JSON value, so a period inside a string value does not cut it and the prose after it is not carried along.")]
+	public void Shorten_Should_ReadTheDescriptionExampleAsOneJsonValue_WhenAStringValueHoldsAPeriod() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("data", "object",
+				"Fields to change. Example: { \"Name\": \"Acme Inc. Ltd\" } Exactly one of data or rows-file is required."),
+			new Dictionary<string, object?> { ["environment-name"] = "dev" });
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "data");
+
+		// Assert
+		trimmed.Should().Be("Fields to change. Example: {\"Name\":\"Acme Inc. Ltd\"}",
+			because: "a cut example is a wrong one, and the sentence after the example is not part of it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A first contract example whose value is over the bound is skipped for the next example that carries the field.")]
+	public void Shorten_Should_UseTheNextContractExample_WhenTheFirstIsTooLong() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("rows", "array", "Rows to insert. Each row is one record."),
+			new Dictionary<string, object?> {
+				["rows"] = new[] { new Dictionary<string, object?> { ["Name"] = new string('n', ToolContractShortForm.MaxFieldExampleChars) } }
+			});
+		full = full with {
+			Examples = [.. full.Examples, new ToolContractExample("short", new Dictionary<string, object?> {
+				["rows"] = new[] { new Dictionary<string, object?> { ["Name"] = "Jane" } }
+			})]
+		};
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "rows");
+
+		// Assert
+		trimmed.Should().Be("Rows to insert. Example: [{\"Name\":\"Jane\"}]",
+			because: "an example over the bound is left out, and the next one that fits is used instead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("No example is appended to a scalar field, to an example longer than the bound, or to a field the short form keeps whole.")]
+	public void Shorten_Should_NotAppendAnExample_WhenTheFieldIsScalarTheExampleIsTooLongOrNothingWasCut() {
+		// Arrange
+		string longValue = new('v', ToolContractShortForm.MaxFieldExampleChars);
+		ToolContractDefinition baseline = BuildContract("probe-tool", descriptionSentences: 200, examples: 0);
+		ToolContractDefinition full = baseline with {
+			InputSchema = baseline.InputSchema with {
+				Properties = [
+					new ToolContractField("top", "number", "Page size. Between one and a hundred."),
+					new ToolContractField("payload", "object", "Payload to send. It is long and has more sentences."),
+					new ToolContractField("rows", "array", "Rows to insert.")
+				]
+			},
+			Examples = [
+				new ToolContractExample("probe", new Dictionary<string, object?> {
+					["top"] = 5,
+					["payload"] = new Dictionary<string, object?> { ["value"] = longValue },
+					["rows"] = new[] { new Dictionary<string, object?> { ["Name"] = "x" } }
+				})
+			]
+		};
+
+		// Act
+		ToolContractDefinition shortForm = ToolContractShortForm.Shorten(full, destructive: false);
+
+		// Assert
+		FieldDescription(shortForm, "top").Should().Be("Page size.",
+			because: "a scalar field's type already says what its value looks like");
+		FieldDescription(shortForm, "payload").Should().Be("Payload to send.",
+			because: "a cut example is a wrong one, so an example over the bound is left out");
+		FieldDescription(shortForm, "rows").Should().Be("Rows to insert.",
+			because: "a field the short form keeps whole lost nothing an example would stand in for");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Over the real catalog at detail=short, odata-read's filters field carries the structured-filter shape through its example - the call an agent got wrong when the short form said only 'Structured filter.'.")]
+	public void ShortLookup_Should_ShowTheFiltersShape_OfODataRead() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition shortForm = tool.GetToolContracts(
+			new ToolContractGetArgs([ODataReadTool.ToolName], ToolContractShortForm.ShortDetail)).Tools!.Single();
+
+		// Assert
+		string filters = FieldDescription(shortForm, "filters");
+		filters.Should().Contain("op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq)",
+			because: "the short contract keeps the first sentence, and it names every operator the filter accepts");
+		filters.Should().Contain("{all?: [c], any?: [c]}",
+			because: "both groups may be sent together, which an either-or notation would hide");
+		filters.Should().Contain("groups with AND",
+			because: "a caller building A AND (B OR C) must learn from the short form that one filter object does it");
+		filters.Should().Contain("Example: {\"all\":[{\"field\":\"Account/Id\",\"op\":\"eq\",\"value\":\"8ecab4a1-0ca3-4515-9399-efe0a19390bd\"}]}",
+			because: "the field's own example shows the all/any group of {field, op, value} conditions and the Account/Id path for a lookup");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A tool whose short form carries a call shape gets no field example: the shape block already describes every nested field, and the seven process contracts that carry it are where the inline budget is nearly spent.")]
+	public void Shorten_Should_NotAppendAnExample_ForAToolWithACallShape() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("operations", "array", "Operations to apply in order. Each one is an object with op."),
+			new Dictionary<string, object?> {
+				["operations"] = new[] { new Dictionary<string, object?> { ["op"] = "setTracing", ["enabled"] = true } }
+			}) with { Name = ModifyBusinessProcessTool.ModifyBusinessProcessToolName };
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "operations");
+
+		// Assert
+		trimmed.Should().Be("Operations to apply in order.",
+			because: "the call shape, not a field example, is what describes a process write tool's nested fields");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Over the real catalog, detail=full still returns the complete create-business-process contract, marked as neither short nor sized.")]
 	public void FullLookup_Should_ReturnTheCompleteContract() {
 		// Arrange
@@ -731,6 +933,17 @@ public sealed class ToolContractShortFormTests {
 			[],
 			Preconditions: ["The environment must be registered."]);
 	}
+
+	private static ToolContractDefinition WithInputField(ToolContractField field, IReadOnlyDictionary<string, object?> exampleArguments) {
+		ToolContractDefinition baseline = BuildContract("probe-tool", descriptionSentences: 200, examples: 0);
+		return baseline with {
+			InputSchema = baseline.InputSchema with { Properties = [field] },
+			Examples = [new ToolContractExample("probe", exampleArguments)]
+		};
+	}
+
+	private static string FieldDescription(ToolContractDefinition contract, string fieldName) =>
+		contract.InputSchema.Properties.Single(field => field.Name == fieldName).Description;
 
 	private static ToolContractGetTool BuildToolWithRegistry() {
 		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
