@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Clio.Common;
 using Clio.UserEnvironment;
+using Clio.WebApplication;
 using Clio.Workspaces;
 using CommandLine;
 
@@ -48,6 +49,8 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private readonly IApplicationPing _applicationPing;
+	private readonly EnvironmentSettings _environmentSettings;
 
 	private readonly IWorkspace _workspace;
 
@@ -57,8 +60,10 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 
 	public CreateWorkspaceCommand(IWorkspace workspace, ILogger logger, IInstalledApplication installedApplication,
 		IFileSystem fileSystem, ISettingsRepository settingsRepository, IWorkspacePathBuilder workspacePathBuilder,
-		IWorkingDirectoriesProvider workingDirectoriesProvider) {
+		IWorkingDirectoriesProvider workingDirectoriesProvider, IApplicationPing applicationPing,
+		EnvironmentSettings environmentSettings) {
 		workspace.CheckArgumentNull(nameof(workspace));
+		applicationPing.CheckArgumentNull(nameof(applicationPing));
 		_workspace = workspace;
 		_logger = logger;
 		_installedApplication = installedApplication;
@@ -66,6 +71,8 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 		_settingsRepository = settingsRepository;
 		_workspacePathBuilder = workspacePathBuilder;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
+		_applicationPing = applicationPing;
+		_environmentSettings = environmentSettings;
 	}
 
 	#endregion
@@ -136,6 +143,11 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 			return 0;
 		}
 
+		// The environment first: this branch reads the package list or the application from it, and the restore
+		// below downloads from it. Checking it before Create means an environment that does not answer (a wrong
+		// password, a stopped site) fails the command with nothing written, instead of leaving a .clio skeleton
+		// behind - the same rule WorkspaceRestorer keeps (#1119): nothing is written before the checks pass.
+		EnsureEnvironmentAnswers();
 		bool appCodeNotExists = options.AppCode == null;
 		_workspace.Create(options.Environment, appCodeNotExists, options.Force);
 		if (!appCodeNotExists) {
@@ -151,6 +163,14 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 		_logger.WriteInfo($"Workspace created at: {currentDirectory}");
 		_logger.WriteInfo("Done");
 		return 0;
+	}
+
+	private void EnsureEnvironmentAnswers() {
+		if (!_applicationPing.TryPing(_environmentSettings, out string failureReason)) {
+			throw new InvalidOperationException(
+				$"Workspace was not created: the environment did not answer ({failureReason}). "
+				+ "Check that it is running and that its registered credentials are valid, for example with ping-app.");
+		}
 	}
 
 	private string ResolveEmptyWorkspaceBaseDirectory(CreateWorkspaceCommandOptions options) {

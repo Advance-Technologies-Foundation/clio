@@ -15,6 +15,12 @@ create-workspace scaffolds a new workspace in the current directory.
 By default, the command can connect to a Creatio environment (via -e/--uri)
 to download editable packages and populate workspace settings.
 
+With an environment, the command first checks that it answers. When it does
+not (a rejected login, a stopped site), the command writes nothing, prints
+"Workspace was not created: the environment did not answer (<reason>)" and
+exits with a non-zero code. Check the environment with ping-app and correct
+its registered credentials with reg-web-app.
+
 Use --empty to create a new workspace in a subfolder without connecting to
 any environment (no credentials required).
 

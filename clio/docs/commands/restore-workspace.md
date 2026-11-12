@@ -183,7 +183,8 @@ clio restore-workspace -e dev --app-code MyApp
 
 - Use 'restore-workspace' to refresh an existing workspace or when workspace
 configuration exists
-- If no workspace exists, the command automatically calls 'create-workspace'
+- If no workspace exists, the command automatically calls 'create-workspace',
+  which checks the environment first and writes nothing when it does not answer
 - The 'restorew' alias provides a shorter command for frequent use
 - MainSolution.slnx and .build-props are key updates that improve the
 development experience
