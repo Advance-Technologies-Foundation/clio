@@ -1187,13 +1187,14 @@ internal static class ToolContractCatalog {
 	/// core-rules guidance tells agents that resident tools are the ones with <c>resident=true</c> in this index, and
 	/// that sentence is mirrored word for word in a separately released toolkit, so the legend keeps it true instead.
 	/// clio-run, not clio-run-destructive, is named as the executor because the latter is a deprecated alias of it.
+	/// It no longer repeats how to get contracts or the object form: get-tool-contract's own description says both,
+	/// and the line index had no room left under the spill line for a tool and the sentence together (ENG-105556).
 	/// </summary>
 	internal static readonly string ToolIndexLegend =
 		$"One line per tool: name (R)(D) [aka deprecated names]: purpose, cut to {MaxToolIndexPurposeLength} characters. "
 		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
 		+ "A tool without (R) is called through clio-run {\"command\":\"<name>\",\"args\":{...}}. "
-		+ "(D) = destructive: it may delete or overwrite data; a line without (D) can still write. "
-		+ "Pass tool-names for contracts; detail=index-entries returns this index as objects.";
+		+ "(D) = destructive: it may delete or overwrite data; a line without (D) can still write.";
 
 	/// <summary>
 	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the

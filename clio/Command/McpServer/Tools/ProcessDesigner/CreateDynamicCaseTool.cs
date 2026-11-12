@@ -65,8 +65,8 @@ public class CreateDynamicCaseTool(
 		 + "record-page progress bar. "
 		 + "One call writes the case into package-name (one stage per lookup value, every stage reachable from every "
 		 + "other, enabled), its SysDcmSettings and SysDcmSchemaInSettings rows with their package bindings, the "
-		 + "package dependencies the case needs (add-package-dependencies=false refuses instead and names the "
-		 + "add-package-dependency calls), and appends a crt.EntityStageProgressBar to the object's Freedom UI record "
+		 + "package dependencies the case needs (add-package-dependencies=false refuses instead, listing them in "
+		 + "dependencies.missing), and appends a crt.EntityStageProgressBar to the object's Freedom UI record "
 		 + "page in that page's design package (add-progress-bar=false skips it; page-schema-name names the page, "
 		 + "required when the object opens a different page per record type). "
 		 + "The default stage order comes from the lookup (an integer Position, StageOrder, Number or StageNumber "
@@ -302,8 +302,8 @@ public sealed record CreateDynamicCaseArgs(
 	string PageSchemaName = null,
 
 	[property: JsonPropertyName("add-package-dependencies")]
-	[property: Description("Add the package dependencies the case needs; default true. false refuses instead and "
-		+ "names the add-package-dependency calls.")]
+	[property: Description("Add the package dependencies the case needs; default true. false refuses instead, "
+		+ "listing them in dependencies.missing.")]
 	bool? AddPackageDependencies = null,
 
 	[property: JsonPropertyName("dry-run")]

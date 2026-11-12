@@ -47,7 +47,7 @@ public static class DynamicCaseOutcomes {
 /// clio can observe. A code is never renamed, only added, because the guidance names each with its remedy.
 /// </summary>
 public static class DynamicCaseErrorCodes {
-	/// <summary>The environment answered the route with a 404 or a body that is not the <c>BuildCase</c> envelope.</summary>
+	/// <summary>The environment answered the route with a 404: the installed package has no <c>BuildCase</c>.</summary>
 	public const string ProcessBuilderWithoutBuildCase = "process-builder-without-build-case";
 
 	/// <summary>
@@ -388,8 +388,9 @@ public sealed class DynamicCaseInfo {
 /// <summary>The package dependencies the case needs and what this call did about them.</summary>
 public sealed class DynamicCaseDependencies {
 	/// <summary>
-	/// <c>none-missing</c>, <c>added</c>, <c>planned</c>, <c>removed-after-failure</c>, <c>left-after-failure</c> or
-	/// <c>missing</c> (missing and not added because of <c>add-package-dependencies=false</c>).
+	/// <c>none-missing</c>, <c>added</c>, <c>planned</c>, <c>removed-after-failure</c>, <c>left-after-failure</c>,
+	/// <c>kept-for-leftovers</c> (the build failed with leftovers that still need them) or <c>missing</c> (not
+	/// declared: <c>add-package-dependencies=false</c>, or the add was refused or undone).
 	/// </summary>
 	[JsonPropertyName("status")]
 	public string Status { get; init; }

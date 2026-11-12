@@ -58,18 +58,24 @@ public sealed class DynamicCaseRecordPageResolver(
 			return Found(explicitPageSchemaName.Trim(), ResolvedByExplicit);
 		}
 		string addonFailure = null;
-		IReadOnlyList<RelatedPageEntry> pages = [];
+		bool addonRead = false;
+		List<RelatedPageEntry> defaults = [];
 		// The case package reaches the object only after the missing dependencies are added, which happens after
-		// these checks; the packages that own the object already reach it, so the add-on is read there instead.
+		// these checks; the packages that own the object already reach it, so the add-on is read there instead. An
+		// answer without an employee default does not stop the walk either: the case package may see an add-on that
+		// does not carry the object's own entries yet.
 		foreach (string readPackage in new[] { packageName }.Concat(fallbackPackageNames ?? [])
 					.Where(name => !string.IsNullOrWhiteSpace(name))
 					.Distinct(StringComparer.OrdinalIgnoreCase)) {
 			try {
-				pages = relatedPageAddonService
+				IReadOnlyList<RelatedPageEntry> pages = relatedPageAddonService
 					.Get(new RelatedPageAddonReadRequest(readPackage, entitySchemaName, RelatedPageSchemaType.Web))
 					?.Pages ?? [];
-				addonFailure = null;
-				break;
+				addonRead = true;
+				defaults = pages.Where(IsEmployeeDefault).ToList();
+				if (defaults.Count > 0) {
+					break;
+				}
 			} catch (Exception exception) {
 				addonFailure ??= exception.Message;
 			}
@@ -77,11 +83,10 @@ public sealed class DynamicCaseRecordPageResolver(
 		// An add-on that could not be read is not an empty one: the card registrations would then decorate a page
 		// the object does not open, or call a Freedom object Classic. The read fails, for example, when the case
 		// package does not reach the object yet (its dependencies are added only after these checks).
-		if (addonFailure is not null) {
+		if (!addonRead) {
 			return NotFound($"The RelatedPage add-on of '{entitySchemaName}' could not be read in '{packageName}', so "
 				+ $"the record page the object opens is unknown: {addonFailure}" + RemedyNamePage);
 		}
-		List<RelatedPageEntry> defaults = pages.Where(IsEmployeeDefault).ToList();
 		if (defaults.Count > 0) {
 			return FromAddon(entitySchemaName, defaults);
 		}

@@ -233,6 +233,8 @@ public sealed class CreateDynamicCaseCommandTests : BaseClioModuleTests {
 		// Assert
 		exitCode.Should().Be(1, because: "the case was not created");
 		Verdict().Should().Contain("rolled back").And.Contain("[write-failed]", because: "the code and the undo are named");
+		Verdict().Should().NotContain("Nothing was written",
+			because: "the server's message names what the platform's save may have left, and the verdict must not contradict it");
 	}
 
 	[Test]

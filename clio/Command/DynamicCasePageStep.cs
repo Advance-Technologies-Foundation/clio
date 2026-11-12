@@ -34,7 +34,8 @@ public sealed class DynamicCasePagePlan {
 
 	/// <summary>
 	/// The editable schema's checksum the plan was made against; the write pins it, so a change made in the designer
-	/// between the plan and the write is refused instead of being merged over. Null when no replacing schema exists.
+	/// between the plan and the write is refused instead of being merged over. Null when no replacing schema exists
+	/// at plan time: then nothing is pinned, and a designer save that creates one in between is not caught.
 	/// </summary>
 	public string ExpectedChecksum { get; init; }
 

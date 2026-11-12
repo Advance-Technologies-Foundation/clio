@@ -120,8 +120,10 @@ public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 				+ "to it." + PageClause(result),
 			DynamicCaseOutcomes.CreatedPageFailed => $"Dynamic case '{name}' was CREATED and kept, but the progress bar "
 				+ $"was NOT added to '{page}': {result.Page?.Error} Add it with the update-page call in page.retry.",
+			// The server's own message says what its rollback could not reach (the platform's start-event row and
+			// flow schema), so "nothing was written" would contradict it; only dependencies left behind are named.
 			DynamicCaseOutcomes.FailedRolledBack => $"The build failed and was rolled back [{result.ErrorCode}]: "
-				+ $"{result.ErrorMessage}{nothingWritten}",
+				+ result.ErrorMessage + (dependenciesLeft ? nothingWritten : string.Empty),
 			DynamicCaseOutcomes.FailedLeftover => $"The build failed [{result.ErrorCode}] and could not undo everything "
 				+ $"it wrote: {result.ErrorMessage} Remove, in this order: {string.Join("; ", result.Leftovers ?? [])}.",
 			DynamicCaseOutcomes.Unknown => result.ErrorMessage,

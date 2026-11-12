@@ -34,7 +34,7 @@ public sealed class DynamicCaseService(
 	/// <summary>Nothing was missing.</summary>
 	public const string DependenciesNoneMissing = "none-missing";
 
-	/// <summary>This call added the missing dependencies and the case was built.</summary>
+	/// <summary>This call added the missing dependencies: the case was built, or the build's outcome is unknown.</summary>
 	public const string DependenciesAdded = "added";
 
 	/// <summary>A dry run: the missing dependencies would be added.</summary>
@@ -91,8 +91,8 @@ public sealed class DynamicCaseService(
 		BuildCaseResponse plan = validate.Response;
 		List<string> missing = plan.MissingDependencies ?? [];
 		if (!plan.Success) {
-			return FromServer(options, plan, Dependencies(plan, missing, [], DependenciesStatusFor(missing)),
-				NotReached(), []);
+			return FromServer(options, plan,
+				Dependencies(plan, missing, [], DependenciesStatusFor(missing), compilationRequired: false), NotReached(), []);
 		}
 
 		// C3: every page check, the append dry run of the exact fragment included, runs before anything is written.
@@ -124,7 +124,7 @@ public sealed class DynamicCaseService(
 		BuildCaseReply build = buildCaseClient.Send(options.Environment,
 			request with { ValidateOnly = false, AllowMissingDependencies = false });
 		if (build.Kind != BuildCaseReplyKind.Envelope) {
-			return BuildPassUnknown(options, plan, missing, added, build);
+			return BuildPassUnknown(options, plan, missing, added, compilationRequired, build);
 		}
 		BuildCaseResponse built = build.Response;
 		if (!IsCaseInPlace(built)) {
@@ -139,8 +139,10 @@ public sealed class DynamicCaseService(
 					]);
 			}
 			(string status, List<string> warnings) = UndoDependencies(options.PackageName, added);
+			// Dependencies that could not be removed still wait for the compilation their add asked for.
 			return FromServer(options, built,
-				Dependencies(built, missing, added, added.Count > 0 ? status : DependenciesStatusFor(missing)),
+				Dependencies(built, missing, added, added.Count > 0 ? status : DependenciesStatusFor(missing),
+					compilationRequired && status == DependenciesLeftAfterFailure),
 				NotReached(), warnings);
 		}
 
@@ -175,10 +177,17 @@ public sealed class DynamicCaseService(
 				missing.Select(name => new PackageDependencySpec(name))).CompilationRequired;
 			return null;
 		} catch (Exception exception) {
-			// SavePackageProperties applies the whole list in one save, so a refused save added nothing; the
-			// storage's validation errors are what a dependency cycle comes back as.
-			bool validation = exception.Message.Contains(PackageDependencyManager.ValidationErrorsMarker,
+			// The manager answers what it or the storage refused with InvalidOperationException, and
+			// SavePackageProperties applies the whole list in one save, so a refusal added nothing; the storage's
+			// validation errors are what a dependency cycle comes back as. Anything else is a transport failure that
+			// may have come after the save took, so the dependencies are removed again rather than reported as
+			// never added.
+			bool refused = exception is InvalidOperationException;
+			bool validation = refused && exception.Message.Contains(PackageDependencyManager.ValidationErrorsMarker,
 				StringComparison.Ordinal);
+			(string status, List<string> warnings) = refused
+				? (DependenciesMissing, [])
+				: RemoveAfterUncertainAdd(options.PackageName, missing, exception);
 			return new DynamicCaseResult {
 				Success = false,
 				Outcome = DynamicCaseOutcomes.Refused,
@@ -191,11 +200,28 @@ public sealed class DynamicCaseService(
 						: string.Empty),
 				Case = CaseInfo(options, plan.Case, designerUrl: null),
 				Settings = plan.Settings,
-				Dependencies = Dependencies(plan, missing, [], DependenciesMissing),
+				Dependencies = Dependencies(plan, missing, status == DependenciesLeftAfterFailure ? missing : [], status,
+					compilationRequired: false),
 				Page = PageInfo(pagePlan, PageNotReached),
 				Notes = [],
-				Warnings = plan.Warnings ?? []
+				Warnings = [.. plan.Warnings ?? [], .. warnings]
 			};
+		}
+	}
+
+	private (string Status, List<string> Warnings) RemoveAfterUncertainAdd(string packageName, List<string> missing,
+		Exception failure) {
+		try {
+			// A no-op for each one the save did not apply: the removal saves only when something is declared.
+			packageDependencyManager.RemoveDependencies(packageName, missing);
+			return (DependenciesMissing, []);
+		} catch (Exception exception) {
+			return (DependenciesLeftAfterFailure, [
+				$"Adding the package dependencies to '{packageName}' failed without the storage's answer "
+				+ $"({failure.Message}), so the save may have applied them, and removing them again failed too: "
+				+ $"{exception.Message} Read the package's dependencies and remove any of {string.Join(", ", missing)} "
+				+ "that are declared with remove-package-dependency."
+			]);
 		}
 	}
 
@@ -219,15 +245,8 @@ public sealed class DynamicCaseService(
 		DynamicCaseDependencies dependencies, DynamicCasePagePlan pagePlan) {
 		List<string> notes = [.. built.Notes ?? []];
 		List<string> warnings = [.. built.Warnings ?? []];
-		if (dependencies.CompilationRequired) {
-			// The server's "no compile" note speaks for the case alone; the dependency change it does not know about
-			// asked for a compilation, and the wording carries the marker that keeps the tool's own note off.
-			notes.RemoveAll(note => note.StartsWith("No compile or restart is needed", StringComparison.Ordinal));
-			warnings.Add($"The package dependencies this call added to '{options.PackageName}' cannot take effect "
-				+ "until the configuration is compiled: the server asked for a configuration compilation after the "
-				+ "change. Run compile-creatio without package-name (a configuration compile); the case and the "
-				+ "progress bar themselves need no compile.");
-		}
+		AddCompilationNotice(options, dependencies, notes, warnings,
+			" The case and the progress bar themselves need no compile.");
 		string designerUrl = DesignerUrl(options.Environment, built.Case?.SchemaUId);
 		bool alreadyPresent = built.Outcome == ServerAlreadyPresent;
 		if (!options.AddProgressBar) {
@@ -271,6 +290,24 @@ public sealed class DynamicCaseService(
 		return Result(DynamicCaseOutcomes.CreatedPageFailed, options, built, designerUrl, dependencies, failedPage,
 			notes, warnings, pageWritten: false, DynamicCaseErrorCodes.PageAppendRejected,
 			$"The progress bar could not be added to '{pagePlan.PageSchemaName}': {write.Error}");
+	}
+
+	/// <summary>
+	/// Tells a caller that the dependencies this call left declared need a configuration compile. Every path that
+	/// leaves them declared calls it together with <see cref="WithPageArtifact"/>, so the obligations and the words
+	/// agree.
+	/// </summary>
+	private static void AddCompilationNotice(CreateDynamicCaseOptions options, DynamicCaseDependencies dependencies,
+		List<string> notes, List<string> warnings, string tail = "") {
+		if (dependencies?.CompilationRequired != true) {
+			return;
+		}
+		// The server's "no compile" note speaks for the case alone; the dependency change it does not know about
+		// asked for a compilation, and the wording carries the marker that keeps the tool's own note off.
+		notes.RemoveAll(note => note.StartsWith("No compile or restart is needed", StringComparison.Ordinal));
+		warnings.Add($"The package dependencies this call added to '{options.PackageName}' cannot take effect "
+			+ "until the configuration is compiled: the server asked for a configuration compilation after the "
+			+ "change. Run compile-creatio without package-name (a configuration compile)." + tail);
 	}
 
 	private static void AddPackageNote(CreateDynamicCaseOptions options, DynamicCasePagePlan pagePlan,
@@ -319,7 +356,7 @@ public sealed class DynamicCaseService(
 			Outcome = DynamicCaseOutcomes.Planned,
 			Case = CaseInfo(options, plan.Case, designerUrl: null),
 			Settings = plan.Settings,
-			Dependencies = Dependencies(plan, missing, [], dependencyStatus),
+			Dependencies = Dependencies(plan, missing, [], dependencyStatus, compilationRequired: false),
 			Page = pagePlan is null
 				? new DynamicCasePageInfo { Status = PageSkipped }
 				: PageInfo(pagePlan, pagePlan.Status),
@@ -339,7 +376,8 @@ public sealed class DynamicCaseService(
 			ErrorMessage = pagePlan.ErrorMessage,
 			Case = CaseInfo(options, plan.Case, designerUrl: null),
 			Settings = plan.Settings,
-			Dependencies = Dependencies(plan, missing, [], missing.Count == 0 ? DependenciesNoneMissing : DependenciesMissing),
+			Dependencies = Dependencies(plan, missing, [], missing.Count == 0 ? DependenciesNoneMissing : DependenciesMissing,
+				compilationRequired: false),
 			Page = PageInfo(pagePlan, DynamicCasePageStep.StatusRefused),
 			Leftovers = [],
 			Notes = [],
@@ -351,6 +389,9 @@ public sealed class DynamicCaseService(
 		string outcome = response.Outcome is DynamicCaseOutcomes.FailedRolledBack or DynamicCaseOutcomes.FailedLeftover
 			? response.Outcome
 			: DynamicCaseOutcomes.Refused;
+		List<string> notes = [.. response.Notes ?? []];
+		List<string> warnings = [.. response.Warnings ?? [], .. extraWarnings];
+		AddCompilationNotice(options, dependencies, notes, warnings);
 		return new DynamicCaseResult {
 			Success = false,
 			Outcome = outcome,
@@ -360,10 +401,10 @@ public sealed class DynamicCaseService(
 			Settings = response.Settings,
 			Dependencies = dependencies,
 			Page = page,
-			Obligations = response.Obligations,
+			Obligations = WithPageArtifact(response.Obligations, page: false, dependencies?.CompilationRequired == true),
 			Leftovers = response.Leftovers ?? [],
-			Notes = response.Notes ?? [],
-			Warnings = [.. response.Warnings ?? [], .. extraWarnings]
+			Notes = notes,
+			Warnings = warnings
 		};
 	}
 
@@ -399,8 +440,17 @@ public sealed class DynamicCaseService(
 	}
 
 	private static DynamicCaseResult BuildPassUnknown(CreateDynamicCaseOptions options, BuildCaseResponse plan,
-		List<string> missing, List<string> added, BuildCaseReply reply) =>
-		new() {
+		List<string> missing, List<string> added, bool compilationRequired, BuildCaseReply reply) {
+		// Left in place: if the case WAS written it needs them, and a dry-run re-run tells which.
+		DynamicCaseDependencies dependencies = Dependencies(plan, missing, added,
+			added.Count > 0 ? DependenciesAdded : DependenciesNoneMissing, compilationRequired);
+		List<string> notes = [];
+		List<string> warnings = added.Count > 0
+			? [$"The package dependencies this call added to '{options.PackageName}' ({string.Join(", ", added)}) "
+				+ "were left in place because the build outcome is unknown."]
+			: [];
+		AddCompilationNotice(options, dependencies, notes, warnings);
+		return new DynamicCaseResult {
 			Success = false,
 			Outcome = DynamicCaseOutcomes.Unknown,
 			ErrorCode = DynamicCaseErrorCodes.RequestFailed,
@@ -410,22 +460,22 @@ public sealed class DynamicCaseService(
 				+ $"The server said: {reply.Detail}",
 			Case = CaseInfo(options, plan.Case, designerUrl: null),
 			Settings = plan.Settings,
-			// Left in place: if the case WAS written it needs them, and a dry-run re-run tells which.
-			Dependencies = Dependencies(plan, missing, added, added.Count > 0 ? DependenciesAdded : DependenciesNoneMissing),
+			Dependencies = dependencies,
 			Page = NotReached(),
+			Obligations = WithPageArtifact(plan.Obligations, page: false, compilationRequired),
 			Leftovers = [],
-			Notes = [],
-			Warnings = added.Count > 0
-				? [$"The package dependencies this call added to '{options.PackageName}' ({string.Join(", ", added)}) "
-					+ "were left in place because the build outcome is unknown."]
-				: []
+			Notes = notes,
+			Warnings = warnings
 		};
+	}
 
 	private static string DependenciesStatusFor(List<string> missing) =>
 		missing.Count == 0 ? DependenciesNoneMissing : DependenciesMissing;
 
+	// compilationRequired has no default on purpose: every path that leaves added dependencies declared must say
+	// whether they wait for a compile, or the obligations would drop it silently.
 	private static DynamicCaseDependencies Dependencies(BuildCaseResponse response, List<string> missing,
-		List<string> added, string status, bool compilationRequired = false) =>
+		List<string> added, string status, bool compilationRequired) =>
 		new() {
 			Status = status,
 			Required = response.RequiredPackages ?? [],

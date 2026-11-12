@@ -499,6 +499,128 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
+	[Description("Dependencies kept for the leftovers still wait for the compilation their add asked for: the obligations say so, not only dependencies.compilationRequired.")]
+	public void Create_ShouldCarryTheCompilationIntoTheObligations_WhenTheDependenciesAreKeptForLeftovers() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]),
+			Envelope("failed-leftover", success: false, errorCode: "write-failed",
+				leftovers: ["delete-schema UsrOrderCase"]));
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Returns(new PackageDependencyAddResult(["CrtBase"], true));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesKeptForLeftovers,
+			because: "the leftovers still need them");
+		result.Obligations.CompileRequired.Should().BeTrue(because: "an agent that reads only obligations must compile");
+		result.Obligations.Artifacts.Should().ContainSingle(artifact =>
+				artifact.Kind == DynamicCaseService.DependenciesArtifact && artifact.Compile == true,
+			because: "the obligation names what needs the compile");
+		result.Warnings.Should().Contain(warning => warning.Contains("until the configuration is compiled"),
+			because: "the words agree with the obligation");
+	}
+
+	[Test]
+	[Description("After an unknown build outcome the dependencies stay declared, so the compilation their add asked for reaches the obligations.")]
+	public void Create_ShouldCarryTheCompilationIntoTheObligations_WhenTheBuildOutcomeIsUnknown() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]),
+			new BuildCaseReply(BuildCaseReplyKind.NotAnEnvelope, null, "<html>"));
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Returns(new PackageDependencyAddResult(["CrtBase"], true));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseOutcomes.Unknown, because: "the build reply could not be read");
+		result.Dependencies.CompilationRequired.Should().BeTrue(because: "the dependencies were left in place");
+		result.Obligations.CompileRequired.Should().BeTrue(because: "an agent that reads only obligations must compile");
+		result.Warnings.Should().Contain(warning => warning.Contains("compile-creatio without package-name"),
+			because: "the compile is named");
+	}
+
+	[Test]
+	[Description("Dependencies the undo removed after a failed build need no compile, and the obligations stay the server's.")]
+	public void Create_ShouldNotAskForACompile_WhenTheAddedDependenciesWereRemovedAfterTheFailure() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]),
+			Envelope("failed-rolled-back", success: false, errorCode: "write-failed"));
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Returns(new PackageDependencyAddResult(["CrtBase"], true));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesRemovedAfterFailure,
+			because: "the undo removed them");
+		result.Dependencies.CompilationRequired.Should().BeFalse(because: "nothing this call added is declared any more");
+		result.Obligations?.CompileRequired.Should().NotBe(true, because: "no dependency waits for a compile");
+	}
+
+	[Test]
+	[Description("A transport failure while adding the dependencies may come after the save took, so they are removed again; the answer is then the refusal with nothing of them declared.")]
+	public void Create_ShouldRemoveTheDependenciesAgain_WhenTheAddFailsInTransport() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]));
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Throws(new System.Net.Http.HttpRequestException("connection reset"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		_dependencies.Received(1).RemoveDependencies(Package,
+			Arg.Is<IEnumerable<string>>(names => names.SequenceEqual(new[] { "CrtBase" })));
+		result.Outcome.Should().Be(DynamicCaseOutcomes.Refused, because: "the case was not built");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.DependencyAddFailed, because: "the add failed");
+		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesMissing,
+			because: "after the removal none of them is declared");
+		result.Dependencies.Added.Should().BeEmpty(because: "nothing this call added is left");
+		_client.ReceivedWithAnyArgs(1).Send(default!, default!);
+	}
+
+	[Test]
+	[Description("When the removal after a transport failure fails too, the dependencies may be declared: they are reported as left, never as not added.")]
+	public void Create_ShouldReportTheDependenciesLeft_WhenTheAddFailsInTransportAndTheRemovalFails() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]));
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Throws(new System.Net.Http.HttpRequestException("connection reset"));
+		_dependencies.RemoveDependencies(Package, Arg.Any<IEnumerable<string>>())
+			.Throws(new System.Net.Http.HttpRequestException("still down"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesLeftAfterFailure,
+			because: "the save may have applied them and they could not be removed");
+		result.Dependencies.Added.Should().Equal(["CrtBase"], because: "the ones that may be declared are named");
+		result.Warnings.Should().Contain(warning => warning.Contains("CrtBase") && warning.Contains("remove-package-dependency"),
+			because: "the caller is told how to check and remove them");
+	}
+
+	[Test]
+	[Description("A dependency add the storage refused applied nothing, so nothing is removed afterwards.")]
+	public void Create_ShouldNotRemoveAnything_WhenTheDependencyAddIsRefused() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]));
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Throws(new InvalidOperationException("Failed to save package dependencies."));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		_dependencies.DidNotReceiveWithAnyArgs().RemoveDependencies(default!, default!);
+		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesMissing, because: "the refused save added none");
+	}
+
+	[Test]
 	[Description("add-progress-bar=false never touches the page and answers created-page-skipped.")]
 	public void Create_ShouldSkipThePage_WhenTheBarIsNotWanted() {
 		// Arrange

@@ -207,6 +207,26 @@ public sealed class DynamicCaseRecordPageResolverTests {
 	}
 
 	[Test]
+	[Description("An add-on the case package reads without an employee default does not stop the walk: a fallback package that carries the object's entries is read too.")]
+	public void Resolve_ShouldReadAFallback_WhenTheCasePackageAnswersWithoutADefault() {
+		// Arrange
+		_addons.Get(Arg.Is<RelatedPageAddonReadRequest>(request => request.PackageName == Package))
+			.Returns(new RelatedPageAddonReadResult("UsrOrder", Guid.NewGuid().ToString(), Package, Guid.NewGuid().ToString(),
+				"RelatedPage", null, 0, []));
+		_addons.Get(Arg.Is<RelatedPageAddonReadRequest>(request => request.PackageName == "UsrOrdersApp"))
+			.Returns(new RelatedPageAddonReadResult("UsrOrder", Guid.NewGuid().ToString(), "UsrOrdersApp",
+				Guid.NewGuid().ToString(), "RelatedPage", null, 1, [Entry("UsrOrders_FormPage")]));
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "UsrOrder", null, ["UsrOrdersApp"]);
+
+		// Assert
+		resolution.ErrorCode.Should().BeNull(because: "the fallback carries the default page");
+		resolution.PageSchemaNames.Should().Equal(["UsrOrders_FormPage"], because: "the object's own default is used");
+		_cards.DidNotReceiveWithAnyArgs().TryResolve(default!, out _);
+	}
+
+	[Test]
 	[Description("When no package can read the add-on the refusal names the case package's failure and the remedy, and no card is consulted.")]
 	public void Resolve_ShouldReportNotFound_WhenNoFallbackCanReadTheAddon() {
 		// Arrange
