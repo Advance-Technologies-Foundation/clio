@@ -723,19 +723,23 @@ public static partial class WebServiceDefinitionBuilder {
 		};
 	}
 
-	/// <summary>The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given.</summary>
 	/// <summary>
 	/// The item element of an array is one element name, <c>prefix:name</c> (as Studio's wizard writes it, e.g.
-	/// <c>tem:Region</c>) or a plain name. Its prefix is checked against the namespaces with the method's other names.
+	/// <c>tem:Region</c>) or a plain name. A request item is built with the platform's unanchored <c>prefix:name</c>
+	/// match, so the whole name must fit it, and its prefix is checked against the namespaces with the method's other
+	/// names. A response item is matched by local name only, so there only the part after the prefix matters.
 	/// </summary>
-	private static string SequenceElementProblem(string name) =>
-		name.Contains(':')
+	private static string SequenceElementProblem(string name, bool isRequest) =>
+		!isRequest
+			? ElementNamePattern().IsMatch(name[(name.IndexOf(':') + 1)..]) ? null : "is not an XML element name."
+			: name.Contains(':')
 			? PrefixedElementPattern().IsMatch(name)
 				? null
 				: "must be prefix:name with letters, digits, '_' or '-' only (the platform cuts the name at any other "
 					+ "character)."
 			: ElementNamePattern().IsMatch(name) ? null : "is not an XML element name.";
 
+	/// <summary>The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given.</summary>
 	private static string SoapSequenceElement(WebServiceParameterArg arg) =>
 		string.IsNullOrWhiteSpace(arg.SequenceElement) ? "item" : arg.SequenceElement.Trim();
 
@@ -759,7 +763,7 @@ public static partial class WebServiceDefinitionBuilder {
 		if (!string.IsNullOrWhiteSpace(arg.SequenceElement)) {
 			if (arg.Array != true) {
 				errors.Add($"{owner}: sequence-element names the items of an array; this parameter is not one.");
-			} else if (SequenceElementProblem(arg.SequenceElement.Trim()) is { } problem) {
+			} else if (SequenceElementProblem(arg.SequenceElement.Trim(), scope.IsRequest) is { } problem) {
 				errors.Add($"{owner}: sequence-element '{arg.SequenceElement}' {problem}");
 			}
 		}

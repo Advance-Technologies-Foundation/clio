@@ -377,6 +377,22 @@ public sealed class WebServiceSoapWriteTests {
 			.Should().Be(sequenceElement, because: "the item element is stored as given");
 	}
 
+	[Test]
+	[Description("A response array's sequence-element is read by local name only, so a prefixed name the request side would refuse is accepted there.")]
+	public void Register_Should_Accept_A_Response_Sequence_Element_By_Local_Name() {
+		// Arrange
+		WebServiceMethodArg method = AddMethod() with {
+			ResponseParameters = [new WebServiceParameterArg("UsrRegions", Array: true, Path: "Regions", SequenceElement: "tem:Re.gion")]
+		};
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://www.dneonline.com/calculator.asmx", null, null, [method], "soap11", Tem));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the platform compares only the local name Re.gion of each response item");
+	}
+
 	[TestCase("zz:Region", "prefix 'zz'", Description = "an undeclared prefix")]
 	[TestCase("tem:Re.gion", "cuts the name", Description = "a name the platform would cut")]
 	[TestCase("tem:Region/tem:Item", "cuts the name", Description = "a path where one element is expected")]
