@@ -679,4 +679,65 @@ public sealed class WebServiceDefinitionBuilderTests {
 		act.Should().Throw<ArgumentException>(because: "there are errors")
 			.WithMessage("first. second.", because: "both problems are reported together");
 	}
+
+	[TestCase("https://api.example.com/v1?api_key=SECRET")]
+	[TestCase("https://api.example.com/v1/#part")]
+	[Description("A base URI with a query or a fragment is refused, since it would precede every method path and could store a key.")]
+	public void NormalizeBaseUri_Should_Refuse_A_Query_Or_Fragment(string baseUri) {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors);
+
+		// Assert
+		errors.Should().ContainSingle(because: "query values belong in query parameters")
+			.Which.Should().Contain("query parameters", because: "the refusal names the alternative");
+	}
+
+	[Test]
+	[Description("A credential-like key with a constant value in a method URI query is refused; an ordinary fixed query is kept.")]
+	public void BuildMethod_Should_Refuse_A_Constant_Credential_In_The_Uri_Query() {
+		// Arrange
+		var refused = new WebServiceDefinitionBuilder.Errors();
+		var kept = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Search", "GET", "search?api_key=abc123"),
+			null, false, refused);
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Search", "GET", "search?format=json"),
+			null, false, kept);
+
+		// Assert
+		refused.Should().ContainSingle(because: "a key in the URI is a stored constant every reader of the schema sees")
+			.Which.Should().Contain("default-sys-setting", because: "the refusal points at the setting route");
+		kept.Should().BeEmpty(because: "a fixed query value that is not a credential is fine");
+	}
+
+	[Test]
+	[Description("A path parameter may fill a placeholder in the base URI, as the platform substitutes those too.")]
+	public void BuildMethod_Should_Accept_A_Placeholder_In_The_Base_Uri() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Orders", "GET", "orders",
+				RequestParameters: [new WebServiceParameterArg("version", "path")]),
+			null, false, errors, null, "https://api.example.com/{version}/");
+
+		// Assert
+		errors.Should().BeEmpty(because: "{version} in the base URI is filled from the path parameter");
+	}
+
+	[Test]
+	[Description("Items read from JSON keep the case-insensitive key comparison, so a remove by another letter case still finds the item.")]
+	public void ServiceItemCollection_Should_Keep_Its_Comparer_After_Deserialization() {
+		// Act
+		var collection = System.Text.Json.JsonSerializer.Deserialize<ServiceItemCollection<int>>(
+			"{\"Items\":{\"AB12CD34-0000-0000-0000-000000000001\":1}}");
+
+		// Assert
+		collection!.Items.Remove("ab12cd34-0000-0000-0000-000000000001").Should().BeTrue(
+			because: "the platform's key case must not decide whether setMethod replaces or duplicates a method");
+	}
 }

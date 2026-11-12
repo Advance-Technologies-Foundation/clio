@@ -21,16 +21,16 @@ public sealed class WebServiceDesignerTests {
 
 	private IWebServiceDesignerClient _client;
 	private ICreatioRightsClient _rights;
-	private ISchemaNamePrefixResolver _prefix;
+	private IWebServicePrefixReader _prefix;
 	private Clio.Command.WebServiceDesigner.WebServiceDesigner _sut;
 
 	[SetUp]
 	public void SetUp() {
 		_client = Substitute.For<IWebServiceDesignerClient>();
 		_rights = Substitute.For<ICreatioRightsClient>();
-		_prefix = Substitute.For<ISchemaNamePrefixResolver>();
+		_prefix = Substitute.For<IWebServicePrefixReader>();
 		_rights.GetCanExecuteOperation("CanManageSolution", Arg.Any<CreatioRequestOptions>()).Returns(true);
-		_prefix.Resolve(null).Returns("Usr");
+		_prefix.Read().Returns("Usr");
 		_sut = new Clio.Command.WebServiceDesigner.WebServiceDesigner(_client, _rights, _prefix);
 	}
 
@@ -543,5 +543,122 @@ public sealed class WebServiceDesignerTests {
 			because: "the new method follows the service's authentication as it is after the call, not before setAuth ran");
 		saved.Methods.Items.Values.Single(m => m.Name == "Search").UseAuthInfo.Should().BeFalse(
 			because: "setAuth leaves the methods the call does not touch as they were");
+	}
+
+	private ServiceSchemaDto SchemaWithMethod(WebServiceMethodArg arg) {
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, false, errors);
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Clear();
+		schema.Methods.Items[method.UId.ToString()] = method;
+		return schema;
+	}
+
+	[Test]
+	[Description("A test-call value for a code the method does not have is refused with the valid codes, before any request.")]
+	public void TestMethod_Should_Refuse_An_Unknown_Parameter_Code() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.TestMethod("BingSearchApiCall", "Search", new Dictionary<string, string> { ["qq"] = "x" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the platform would drop the value silently")
+			.WithMessage("*'qq'*valid codes: q*", because: "the refusal lists the codes the method has");
+		_client.DidNotReceive().CallMethod(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<IReadOnlyDictionary<string, string>>());
+	}
+
+	[Test]
+	[Description("When the platform reports no request line and headers, a setting-bound header cannot be masked, so the body is withheld.")]
+	public void TestMethod_Should_Withhold_When_The_Sent_Headers_Are_Not_Reported() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
+			new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")])));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, null, "echo sk-live-0042", "timeout"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "the key may have been sent and cannot be found to mask");
+		result.Error.Should().Contain("withheld", because: "the agent is told why there is no body");
+	}
+
+	[Test]
+	[Description("A method that sends the service authentication is withheld when the platform reports no headers, since the Authorization value cannot be masked.")]
+	public void TestMethod_Should_Withhold_An_Authenticated_Call_Without_Reported_Headers() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, 401, "bad credentials for admin:hunter2", null));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "an echoed Authorization value could not be found to mask");
+		result.StatusCode.Should().Be(401, because: "the status code carries no secret");
+	}
+
+	[Test]
+	[Description("A setting-bound body value in a body that is not JSON (a SOAP envelope) cannot be located, so the body is withheld.")]
+	public void TestMethod_Should_Withhold_When_The_Sent_Body_Is_Not_Json() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", RequestParameters: [
+			new WebServiceParameterArg("UsrToken", Path: "token", DefaultSysSetting: "UsrBingToken")])));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, 500, "<fault>bad token tok-secret-9</fault>", null,
+				"POST https://api.bing.example/search HTTPS/1.1\r\nHost: api.bing.example",
+				"<soap:Envelope><soap:Body><token>tok-secret-9</token></soap:Body></soap:Envelope>"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "a fault that echoes the envelope would carry the token");
+		result.StatusCode.Should().Be(500, because: "the status code carries no secret");
+	}
+
+	[Test]
+	[Description("A missing setting the service already referenced becomes a notice; one the call adds is refused.")]
+	public void Modify_Should_Refuse_Only_Missing_Settings_The_Call_Adds() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
+			new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrDeletedKey")])));
+		_client.FindExistingSysSettingCodes(Arg.Any<IReadOnlyCollection<string>>()).Returns(Array.Empty<string>());
+
+		// Act
+		WebServiceToolResult unrelated = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setRetryCount", RetryCount: 2)], null);
+		Action adding = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("addMethod",
+			new WebServiceMethodArg("UsrSuggest", "GET", "suggest", RequestParameters: [
+				new WebServiceParameterArg("UsrKey", "header", Path: "X-Key", DefaultSysSetting: "UsrNewKey")]))], null);
+
+		// Assert
+		unrelated.Success.Should().BeTrue(because: "a setting deleted since must not block an unrelated change");
+		unrelated.Notices.Should().Contain(n => n.Contains("UsrDeletedKey"),
+			because: "the user still learns the reference is broken");
+		adding.Should().Throw<ArgumentException>(because: "a new reference to a missing setting would be dropped at run time")
+			.WithMessage("*UsrNewKey*", because: "the refusal names the setting");
+	}
+
+	[Test]
+	[Description("When the SchemaNamePrefix setting cannot be read, register refuses instead of saving without the prefix rule.")]
+	public void Register_Should_Refuse_When_The_Prefix_Cannot_Be_Read() {
+		// Arrange
+		_prefix.Read().Returns(_ => throw new InvalidOperationException("The SchemaNamePrefix system setting could not be read"));
+
+		// Act
+		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "an unread prefix must not switch the rule off")
+			.WithMessage("*SchemaNamePrefix*", because: "the message names what failed");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 }

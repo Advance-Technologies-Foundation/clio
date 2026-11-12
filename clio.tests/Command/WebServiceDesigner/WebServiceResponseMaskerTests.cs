@@ -87,7 +87,7 @@ public sealed class WebServiceResponseMaskerTests {
 
 	[Test]
 	[Description("A setting-bound path value that spans segments is located; one that cannot be located is reported so the response is withheld.")]
-	public void HasUnlocatedPathSecret_Should_Fail_Closed() {
+	public void HasUnlocatedSecret_Should_Fail_Closed_For_A_Path_Value() {
 		// Arrange
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
@@ -97,9 +97,9 @@ public sealed class WebServiceResponseMaskerTests {
 		const string unrelated = "GET https://erp.example/elsewhere HTTPS/1.1";
 
 		// Act
-		bool spanningUnlocated = WebServiceResponseMasker.HasUnlocatedPathSecret(method, spanning);
+		bool spanningUnlocated = WebServiceResponseMasker.HasUnlocatedSecret(method, spanning);
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, spanning, null);
-		bool unrelatedUnlocated = WebServiceResponseMasker.HasUnlocatedPathSecret(method, unrelated);
+		bool unrelatedUnlocated = WebServiceResponseMasker.HasUnlocatedSecret(method, unrelated);
 
 		// Assert
 		spanningUnlocated.Should().BeFalse(because: "the literal template text anchors a value that contains a slash");

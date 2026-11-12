@@ -62,6 +62,13 @@ public static partial class WebServiceDefinitionBuilder {
 			errors.Add("base-uri must not carry credentials (user:password@); use auth with system settings.");
 			return baseUri;
 		}
+		if (baseUri.IndexOfAny(['?', '#']) >= 0) {
+			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
+			// method path, and a key in it would be a stored constant that list and describe print.
+			errors.Add("base-uri must not have a query or a fragment; give query values as query parameters "
+				+ "(a key or token with default-sys-setting).");
+			return baseUri;
+		}
 		string trimmed = baseUri.Trim();
 		return trimmed.EndsWith('/') ? trimmed : trimmed + "/";
 	}
@@ -113,7 +120,7 @@ public static partial class WebServiceDefinitionBuilder {
 	/// what breaks the processes that call the method. Null or empty: no prefix rule, as in Studio.
 	/// </param>
 	public static ServiceMethodDto BuildMethod(WebServiceMethodArg arg, ServiceMethodDto existing,
-		bool serviceHasAuth, Errors errors, string prefix = null) {
+		bool serviceHasAuth, Errors errors, string prefix = null, string baseUri = null) {
 		string code = arg?.Code;
 		if (string.IsNullOrWhiteSpace(code) || !IdentifierPattern().IsMatch(code)) {
 			errors.Add($"method code '{code}' must be a Latin identifier.");
@@ -154,7 +161,8 @@ public static partial class WebServiceDefinitionBuilder {
 					$"method '{code}' response", errors, prefix)
 			}
 		};
-		ValidatePathPlaceholders(code, uri, method.Request.Parameters, errors);
+		ValidatePathPlaceholders(code, uri, baseUri, method.Request.Parameters, errors);
+		ValidateUriQuery(code, uri, errors);
 		ValidateBodyRules(code, verb, contentType, method, errors);
 		return method;
 	}
@@ -361,11 +369,33 @@ public static partial class WebServiceDefinitionBuilder {
 			: Empty();
 	}
 
-	private static void ValidatePathPlaceholders(string code, string uri,
+	/// <summary>
+	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a credential-like key there would be a
+	/// stored constant that describe prints and every reader of the schema sees.
+	/// </summary>
+	private static void ValidateUriQuery(string code, string uri, Errors errors) {
+		int question = uri.IndexOf('?');
+		if (question < 0) {
+			return;
+		}
+		foreach (string pair in uri[(question + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries)) {
+			int equals = pair.IndexOf('=');
+			string key = equals < 0 ? pair : pair[..equals];
+			string value = equals < 0 ? string.Empty : pair[(equals + 1)..];
+			if (value.Length > 0 && !PathPlaceholderPattern().IsMatch(value)
+					&& WebServiceSchemaView.IsSecretLike(key, ServiceSchemaCodes.Placements["query"])) {
+				errors.Add($"method '{code}': uri query '{key}' looks like a credential and has a constant value; "
+					+ "make it a query parameter with default-sys-setting instead.");
+			}
+		}
+	}
+
+	private static void ValidatePathPlaceholders(string code, string uri, string baseUri,
 		ServiceItemCollection<ServiceParameterDto> parameters, Errors errors) {
 		// Ordinal: the platform substitutes "{" + Path + "}" with a case-sensitive Replace, so {Id} is never
-		// filled from a parameter whose path is "id".
+		// filled from a parameter whose path is "id". It fills placeholders in the base URI too.
 		var placeholders = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value)
+			.Concat(PathPlaceholderPattern().Matches(baseUri ?? string.Empty).Select(m => m.Groups[1].Value))
 			.ToHashSet(StringComparer.Ordinal);
 		var pathParameters = parameters.Items.Values
 			.Where(p => p.Type == ServiceSchemaCodes.Placements["path"])

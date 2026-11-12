@@ -54,19 +54,30 @@ public static partial class WebServiceResponseMasker {
 	/// <param name="method">The called method.</param>
 	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
 	/// <param name="requestBody">The request body the platform reports as sent.</param>
-	/// <param name="pathSecretUnlocated">Whether a setting-bound path value could not be located.</param>
+	/// <param name="secretUnlocated">
+	/// Whether a setting-bound value may have been sent but cannot be located: a path value not found in the URL,
+	/// a header, query or cookie value with no request line and headers reported, or a body value when the
+	/// reported body is missing or is not JSON (a SOAP envelope, an XML body).
+	/// </param>
 	/// <returns>Distinct values, longest first.</returns>
 	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
-		out bool pathSecretUnlocated) {
-		pathSecretUnlocated = false;
+		out bool secretUnlocated) {
+		secretUnlocated = false;
 		string[] lines = (requestRawData ?? string.Empty).Split(["\r\n", "\n"], StringSplitOptions.None);
 		Dictionary<string, List<string>> headers = Headers(lines);
 		Dictionary<string, List<string>> query = Query(lines.FirstOrDefault());
 		Dictionary<string, List<string>> cookies = Cookies(headers);
 		JsonNode body = ParseBody(requestBody);
 		var secrets = new List<string>();
+		bool rawReported = !string.IsNullOrWhiteSpace(requestRawData);
+		// The Authorization header carries the service credentials (from settings or typed in Studio); without the
+		// reported headers its value cannot be found, so it cannot be masked either.
+		secretUnlocated |= method?.UseAuthInfo == true && !rawReported;
 		foreach (ServiceParameterDto parameter in SettingBound(method?.Request?.Parameters)) {
 			string name = string.IsNullOrEmpty(parameter.Path) ? parameter.Name : parameter.Path;
+			// Values are found in what the platform reports as sent; when that part is missing or is not JSON,
+			// a value that went out cannot be found, so the caller withholds the response instead.
+			secretUnlocated |= parameter.Type == PlacementBody ? body is null : !rawReported;
 			switch (parameter.Type) {
 				case PlacementHeader:
 					secrets.AddRange(Lookup(headers, name));
@@ -84,7 +95,7 @@ public static partial class WebServiceResponseMasker {
 					break;
 				case PlacementPath:
 					List<string> located = PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name);
-					pathSecretUnlocated |= located is null;
+					secretUnlocated |= located is null;
 					secrets.AddRange(located ?? []);
 					break;
 			}
@@ -233,15 +244,16 @@ public static partial class WebServiceResponseMasker {
 	}
 
 	/// <summary>
-	/// Whether a request parameter filled from a system setting sits in the URL path and its value cannot be
-	/// located in the sent request line. The value is then unknown and cannot be masked, so the caller withholds
-	/// the response instead of returning it unmasked.
+	/// Whether a request parameter filled from a system setting may have been sent but its value cannot be
+	/// located in what the platform reports as sent. The value is then unknown and cannot be masked, so the caller
+	/// withholds the response instead of returning it unmasked.
 	/// </summary>
 	/// <param name="method">The called method.</param>
 	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
+	/// <param name="requestBody">The request body the platform reports as sent.</param>
 	/// <returns><c>true</c> when such a value could not be located.</returns>
-	public static bool HasUnlocatedPathSecret(ServiceMethodDto method, string requestRawData) {
-		SentSecrets(method, requestRawData, null, out bool unlocated);
+	public static bool HasUnlocatedSecret(ServiceMethodDto method, string requestRawData, string requestBody = null) {
+		SentSecrets(method, requestRawData, requestBody, out bool unlocated);
 		return unlocated;
 	}
 

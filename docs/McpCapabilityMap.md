@@ -994,7 +994,7 @@ because the platform's save and read paths do not.
 - `list-web-services` (`ReadOnly=true`) — the registered services (code, caption, REST or SOAP, package, base URI), read from `VwWebServiceV2`; the base URI is taken from the schema metadata with any user information removed, and nothing else from the metadata is returned.
 - `describe-web-service` (`ReadOnly=true`) — one service with its parameter trees; authentication values and constant defaults of header, cookie or credential-like parameters are masked. `usages: true` scans process metadata for the service UId and lists the calling processes and Call web service elements; a process that names the service but cannot be parsed is listed as calling every method.
 - `modify-web-service` (`ReadOnly=false`, `Destructive=true`) — ordered `addMethod` / `setMethod` / `removeMethod` / `setBaseUri` / `setRetryCount` / `setAuth`; existing UIds are kept. A change to a method that a process calls is refused, naming the processes, unless `acknowledge-usages` repeats them after the user agreed.
-- `test-web-service-method` (`ReadOnly=false`, `OpenWorld=true`) — one real request through a method; returns the status and body, never headers.
+- `test-web-service-method` (`ReadOnly=false`, `Destructive=true`, `OpenWorld=true`) — one real request through a method (a POST, PUT, PATCH or DELETE changes data on the API's side); returns the status and body, never headers. Values sent from system settings, `Authorization` and secret constants are masked; when such a value cannot be located in what the platform reports as sent, or the body is not JSON, only the status comes back. A parameter code the method does not have is refused.
 
 ## Prompt Layer: What The AI Gets Beyond Raw Tools
 

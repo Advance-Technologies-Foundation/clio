@@ -124,7 +124,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 
 	internal const string ToolName = "test-web-service-method";
 
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true)]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,

@@ -11,8 +11,19 @@ namespace Clio.Command.WebServiceDesigner;
 
 /// <summary>The platform's <c>ObjectCollection</c>: items keyed by their UId string.</summary>
 public sealed class ServiceItemCollection<T> {
+	private Dictionary<string, T> _items = new(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Items by UId string, compared ignoring case. System.Text.Json assigns a new dictionary on read, so the
+	/// setter re-wraps it: a key written in another case must still be found by a remove or a replace.
+	/// </summary>
 	[JsonPropertyName("Items")]
-	public Dictionary<string, T> Items { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+	public Dictionary<string, T> Items {
+		get => _items;
+		set => _items = value is null
+			? new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase)
+			: new Dictionary<string, T>(value, StringComparer.OrdinalIgnoreCase);
+	}
 }
 
 /// <summary>A web service schema as <c>ServiceSchemaRequest</c> returns it and <c>ServiceDataContract</c> saves it.</summary>

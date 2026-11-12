@@ -45,6 +45,11 @@ public interface IWebServiceDesignerClient {
 		IReadOnlyDictionary<string, string> equalFilters, int rowCount = -1, int rowsOffset = 0,
 		string orderColumn = null);
 
+	/// <summary>Returns which of the system-setting codes exist, in one DataService read.</summary>
+	/// <param name="codes">Codes to look up.</param>
+	/// <returns>The codes that exist, as the platform spells them.</returns>
+	IReadOnlyCollection<string> FindExistingSysSettingCodes(IReadOnlyCollection<string> codes);
+
 	/// <summary>Calls one method through <c>CallServiceSchemaService.Execute</c>, as Studio's test request does.</summary>
 	/// <param name="serviceName">The service code.</param>
 	/// <param name="methodName">The method code.</param>
@@ -123,9 +128,46 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 				["isEnabled"] = true, ["items"] = filters
 			}
 		};
-		SelectResponse response = EnsureSucceeded(PostAndDeserialize<SelectResponse>(
-			ServiceUrlBuilder.KnownRoute.Select, query, RequestOptions), $"read {rootSchemaName}");
-		return response.Rows?.OfType<JsonObject>().ToList() ?? [];
+		return Read(query, rootSchemaName);
+	}
+
+	public IReadOnlyCollection<string> FindExistingSysSettingCodes(IReadOnlyCollection<string> codes) {
+		if (codes is not { Count: > 0 }) {
+			return [];
+		}
+		var query = new JsonObject {
+			["rootSchemaName"] = "SysSettings", ["operationType"] = 0, ["allColumns"] = false, ["rowCount"] = -1,
+			["columns"] = new JsonObject { ["items"] = new JsonObject {
+				["Code"] = new JsonObject { ["expression"] = new JsonObject { ["expressionType"] = 0, ["columnPath"] = "Code" } }
+			} },
+			["filters"] = new JsonObject {
+				["rootSchemaName"] = "SysSettings", ["filterType"] = 6, ["logicalOperation"] = 0, ["isEnabled"] = true,
+				["items"] = new JsonObject {
+					["codes"] = new JsonObject {
+						["filterType"] = 4, ["comparisonType"] = 3, ["isEnabled"] = true,
+						["leftExpression"] = new JsonObject { ["expressionType"] = 0, ["columnPath"] = "Code" },
+						["rightExpressions"] = new JsonArray(codes.Select(code => (JsonNode)new JsonObject {
+							["expressionType"] = 2,
+							["parameter"] = new JsonObject { ["dataValueType"] = 1, ["value"] = code }
+						}).ToArray())
+					}
+				}
+			}
+		};
+		return Read(query, "SysSettings").Select(row => row[ColumnAlias("Code")]?.ToString())
+			.Where(code => code is not null).ToList();
+	}
+
+	/// <summary>
+	/// Sends a read and re-sends it while the server answers with a transient failure, the same budget the shared
+	/// DataService reads use; a read has no side effect to repeat.
+	/// </summary>
+	private List<JsonObject> Read(JsonObject query, string rootSchemaName) {
+		SelectResponse response = Clio.Package.SelectQueryHelper.SendWithTransientRetry(
+			() => PostAndDeserialize<SelectResponse>(ServiceUrlBuilder.KnownRoute.Select, query, RequestOptions),
+			answer => answer is { Success: false }
+				&& Clio.Package.SelectQueryHelper.IsTransientServerFailure(answer.ErrorInfo?.Message, string.Empty));
+		return EnsureSucceeded(response, $"read {rootSchemaName}").Rows?.OfType<JsonObject>().ToList() ?? [];
 	}
 
 	public ServiceMethodCallResult CallMethod(string serviceName, string methodName,

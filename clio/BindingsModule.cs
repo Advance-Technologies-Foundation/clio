@@ -1094,6 +1094,7 @@ public class BindingsModule {
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
 		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServiceDesignerClient, Clio.Command.WebServiceDesigner.WebServiceDesignerClient>();
 		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServiceDesigner, Clio.Command.WebServiceDesigner.WebServiceDesigner>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServicePrefixReader, Clio.Command.WebServiceDesigner.WebServicePrefixReader>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReader, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IGranteeLookup, Clio.Common.ObjectRights.RightManagementServiceClient>();

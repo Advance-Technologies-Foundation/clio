@@ -66,7 +66,7 @@ public interface IWebServiceDesigner {
 public sealed class WebServiceDesigner(
 	IWebServiceDesignerClient client,
 	ICreatioRightsClient rights,
-	ISchemaNamePrefixResolver prefixResolver) : IWebServiceDesigner {
+	IWebServicePrefixReader prefixReader) : IWebServiceDesigner {
 
 	internal const int UsageScanPageSize = 50;
 	internal const int MaxResponseBodyLength = 20_000;
@@ -118,7 +118,7 @@ public sealed class WebServiceDesigner(
 		int? retryCount, WebServiceAuthArg auth, IReadOnlyList<WebServiceMethodArg> methods) {
 		RequireManageSolution();
 		var errors = new WebServiceDefinitionBuilder.Errors();
-		string prefix = prefixResolver.Resolve(null);
+		string prefix = prefixReader.Read();
 		WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, errors);
 		if (errors.Count == 0 && !client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, code)) {
 			// The platform's save looks an existing schema up by name first, so a duplicate code would
@@ -142,7 +142,7 @@ public sealed class WebServiceDesigner(
 		foreach (WebServiceMethodArg method in methods ?? []) {
 			AddMethod(schema, method, prefix, HasAuth(schema), errors);
 		}
-		IReadOnlyCollection<string> settings = RequireSysSettings(schema, errors);
+		(IReadOnlyCollection<string> settings, _) = RequireSysSettings(schema, [], errors);
 		errors.ThrowIfAny();
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
@@ -164,7 +164,8 @@ public sealed class WebServiceDesigner(
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		// Only a method definition carries codes the prefix rule applies to; skip the read otherwise.
-		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixResolver.Resolve(null) : null;
+		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixReader.Read() : null;
+		IReadOnlyCollection<string> settingsBefore = WebServiceDefinitionBuilder.CollectSysSettingCodes(schema);
 		// A method sent without use-auth follows the service's authentication as it is after this call, so
 		// [addMethod, setAuth] gives the new method authentication just like [setAuth, addMethod] does.
 		WebServiceOperationArg lastSetAuth = operations.LastOrDefault(o => o?.Op == "setAuth");
@@ -175,7 +176,8 @@ public sealed class WebServiceDesigner(
 		foreach (WebServiceOperationArg operation in operations) {
 			Apply(schema, operation, prefix, methodsUseAuth, changedMethods, errors);
 		}
-		IReadOnlyCollection<string> settings = RequireSysSettings(schema, errors);
+		(IReadOnlyCollection<string> settings, IReadOnlyList<string> missingKept) =
+			RequireSysSettings(schema, settingsBefore, errors);
 		errors.ThrowIfAny();
 		IReadOnlyList<WebServiceUsage> affected = changedMethods.Count == 0
 			? []
@@ -192,7 +194,7 @@ public sealed class WebServiceDesigner(
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
-			Usages: affected, Notices: Notices(settings, row.Package));
+			Usages: affected, Notices: Notices(settings, row.Package, missingKept));
 	}
 
 	public WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, string> values) {
@@ -202,14 +204,16 @@ public sealed class WebServiceDesigner(
 		ServiceMethodDto method = FindMethod(schema, methodCode)
 			?? throw new ArgumentException(
 				$"method '{methodCode}' not found; methods: {string.Join(", ", schema.Methods.Items.Values.Select(m => m.Name))}.");
+		RequireKnownParameterCodes(method, values);
 		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, values);
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, result.RequestRawData,
-			result.RequestBody, out bool pathSecretUnlocated);
-		if (pathSecretUnlocated) {
+			result.RequestBody, out bool secretUnlocated);
+		if (secretUnlocated) {
 			// The value is unknown, so it cannot be masked: fail closed and return the status only.
 			return new WebServiceTestResult(result.Success,
-				"The response is withheld: a path parameter filled from a system setting could not be located in "
-				+ "the sent URL, so it could not be masked.", result.StatusCode, null, false, true);
+				"The response is withheld: a value filled from a system setting could not be located in what the "
+				+ "platform reports as sent (or the request body is not JSON), so it could not be masked.",
+				result.StatusCode, null, false, true);
 		}
 		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
 		string body = WebServiceResponseMasker.ApplyToBody(result.ResponseBody, secrets, out bool bodyMasked);
@@ -219,6 +223,18 @@ public sealed class WebServiceDesigner(
 			error is null ? null : SensitiveErrorTextRedactor.Redact(error),
 			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
 			bodyMasked || errorMasked);
+	}
+
+	/// <summary>A value for a code the method does not have would be dropped silently by the platform.</summary>
+	private static void RequireKnownParameterCodes(ServiceMethodDto method, IReadOnlyDictionary<string, string> values) {
+		var known = new HashSet<string>(
+			method.Request?.Parameters?.Items.Values.Select(p => p.Name) ?? [], StringComparer.Ordinal);
+		List<string> unknown = (values ?? new Dictionary<string, string>()).Keys.Where(k => !known.Contains(k)).ToList();
+		if (unknown.Count > 0) {
+			throw new ArgumentException($"parameters: {string.Join(", ", unknown.Select(u => $"'{u}'"))} is not a "
+				+ $"top-level request parameter of method '{method.Name}'; valid codes: "
+				+ (known.Count == 0 ? "none" : string.Join(", ", known.Order(StringComparer.Ordinal))) + ".");
+		}
 	}
 
 	internal IReadOnlyList<WebServiceUsage> FindUsages(Guid serviceUId) {
@@ -300,7 +316,7 @@ public sealed class WebServiceDesigner(
 					break;
 				}
 				ServiceMethodDto replacement = WebServiceDefinitionBuilder.BuildMethod(operation.Method, existing,
-					methodsUseAuth, errors, prefix);
+					methodsUseAuth, errors, prefix, schema.BaseUri);
 				if (replacement is not null) {
 					schema.Methods.Items.Remove(existing.UId.ToString());
 					schema.Methods.Items[replacement.UId.ToString()] = replacement;
@@ -337,7 +353,8 @@ public sealed class WebServiceDesigner(
 			errors.Add($"method code '{arg?.Code}' is used twice.");
 			return;
 		}
-		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, useAuth, errors, prefix);
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, useAuth, errors, prefix,
+			schema.BaseUri);
 		if (method is not null) {
 			schema.Methods.Items[method.UId.ToString()] = method;
 		}
@@ -427,13 +444,21 @@ public sealed class WebServiceDesigner(
 		return row is null ? null : Guid.Parse(Text(row, "Id"));
 	}
 
-	private IReadOnlyCollection<string> RequireSysSettings(ServiceSchemaDto schema,
-		WebServiceDefinitionBuilder.Errors errors) {
+	/// <summary>
+	/// Refuses references this call adds to system settings that do not exist; references the service already had
+	/// are reported as a notice instead, so a setting deleted since does not block an unrelated change.
+	/// </summary>
+	private (IReadOnlyCollection<string> Codes, IReadOnlyList<string> MissingKept) RequireSysSettings(
+		ServiceSchemaDto schema, IReadOnlyCollection<string> codesBefore, WebServiceDefinitionBuilder.Errors errors) {
 		IReadOnlyCollection<string> codes = WebServiceDefinitionBuilder.CollectSysSettingCodes(schema);
-		foreach (string code in codes) {
-			bool exists = client.Select("SysSettings", ["Code"], new Dictionary<string, string> { ["Code"] = code })
-				.Count > 0;
-			if (!exists) {
+		var existing = new HashSet<string>(client.FindExistingSysSettingCodes(codes) ?? [],
+			StringComparer.OrdinalIgnoreCase);
+		var before = new HashSet<string>(codesBefore, StringComparer.OrdinalIgnoreCase);
+		var missingKept = new List<string>();
+		foreach (string code in codes.Where(c => !existing.Contains(c))) {
+			if (before.Contains(code)) {
+				missingKept.Add(code);
+			} else {
 				// A default bound to a missing setting is dropped from the request without any error at
 				// run time (measured on 10.2.565), so the reference is refused here instead.
 				errors.Add($"system setting '{code}' does not exist; create it with create-sys-setting and no value "
@@ -441,11 +466,17 @@ public sealed class WebServiceDesigner(
 					+ "The agent never sets its value.");
 			}
 		}
-		return codes;
+		return (codes, missingKept);
 	}
 
-	private static IReadOnlyList<string> Notices(IReadOnlyCollection<string> settings, string packageName) {
+	private static IReadOnlyList<string> Notices(IReadOnlyCollection<string> settings, string packageName,
+		IReadOnlyList<string> missingKept = null) {
 		var notices = new List<string>();
+		if (missingKept is { Count: > 0 }) {
+			notices.Add($"The service already referenced system settings that do not exist: "
+				+ $"{string.Join(", ", missingKept)}. At run time those values are not sent at all; create the "
+				+ "settings with create-sys-setting and ask the user to fill them, or change the references.");
+		}
 		if (settings.Count > 0) {
 			notices.Add($"The user fills the values of system settings {string.Join(", ", settings)} in "
 				+ "System settings; an empty value is sent as nothing. Before shipping the package, bind those "
