@@ -104,7 +104,8 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver,
 	             "Boolean, DateTime, Date, Time, Integer, Money (Currency), Float (Decimal), Lookup, Binary. " +
 	             "Aliases accepted: Currency = Money, Decimal = Float. " +
 	             "For a Binary setting (e.g. the logo), set the value via update-sys-setting value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required file-name. " +
-	             "For Lookup type, reference-schema-name is required.")]
+	             "For Lookup type, reference-schema-name is required. " +
+	             "The setting exists only on the target environment; to ship it with a package, see get-guidance name=sys-settings.")]
 	public SysSettingCreateResult CreateSysSetting(
 		[Description("Parameters: environment-name, code, name, value-type-name (required); value, description, is-cacheable, is-personal (optional)")]
 		[Required]

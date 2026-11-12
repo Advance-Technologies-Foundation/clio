@@ -42,6 +42,36 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Over the real stdio server, the create-sys-setting contract routes a setting that package code reads to the SysSettings_<Code> / SysSettingsValue_<Code> binding pair and its read-back.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract create-sys-setting carries the package binding flow")]
+	[AllureDescription("Reads the full contract over stdio without executing any system-setting operation.")]
+	public async Task GetToolContracts_Should_RouteCreateSysSetting_ToThePackageBindingPair() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { SysSettingCreateTool.CreateSysSettingToolName },
+					["detail"] = "full"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		AllureApi.Step("Assert the binding pair survives the wire path", () =>
+			text.Should().Contain("SysSettingsValue_<Code>",
+				because: "an agent reading the contract over MCP must learn the value binding name"));
+		AllureApi.Step("Assert the flow reaches the binding read-back", () =>
+			text.Should().Contain(ReadDataBindingDbTool.ReadDataBindingDbToolName,
+				because: "the preferred flow must end with reading both bindings back"));
+	}
+
+	[Test]
 	[Description("Over the real stdio server, the text of a tool result is written with the relaxed encoder: an apostrophe and a quote in a contract arrive as themselves, not as six-character \\u escapes the agent pays for (ENG-99970).")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract result text is not HTML-escaped")]
@@ -1168,6 +1198,20 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				validator.Field == "rules[*].condition.conditions[*].rightExpression.value" &&
 				validator.Context!.Contains(ODataReadTool.ToolName, StringComparison.Ordinal),
 			because: "the page contract should advertise odata-read lookup validation for condition constants");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "page-attribute" &&
+				validator.Field == "rules[*].condition.conditions[*].leftExpression.path" &&
+				validator.Context!.Contains("'$RentalStep' gives 'RentalStep'", StringComparison.Ordinal) &&
+				validator.Context.Contains("'<StepperName>_ActiveStep' when activeStep is unbound or a constant step name", StringComparison.Ordinal) &&
+				validator.Context.Contains("a '.' in the stepper name becomes '_'", StringComparison.Ordinal) &&
+				validator.Context.Contains("any other activeStep binding", StringComparison.Ordinal),
+			because: "the contract should name both stepper active-step forms, the bound attribute and the generated name with dots in the stepper name turned into underscores");
+		contract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "page-attribute" &&
+				validator.Field == "rules[*].condition.conditions[*].rightExpression.path" &&
+				validator.Context!.Contains("its bound attribute or '<StepperName>_ActiveStep'", StringComparison.Ordinal) &&
+				validator.Context.Contains("a '.' in the stepper name becoming '_'", StringComparison.Ordinal),
+			because: "the right-side path accepts the same stepper active-step forms, including the dot-to-underscore rule");
 		contract.PreferredFlow.Tools.Should().Equal(
 			[
 				PageListTool.ToolName,

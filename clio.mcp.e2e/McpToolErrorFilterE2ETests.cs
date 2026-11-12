@@ -496,6 +496,128 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 				+ "clio/AGENTS.md forbids logging secret-bearing configuration");
 	}
 
+	[Test]
+	[AllureTag("clio-run")]
+	[AllureTag("odata-read")]
+	[AllureName("A misspelled required odata-read member is named, with the member it most likely meant")]
+	[Description("Sends odata-read through clio-run with entity-set instead of entity and verifies the real server names the missing required member and suggests it for the unknown key, instead of answering 'args must be an object' for an object.")]
+	public async Task ClioRun_ShouldNameMissingRequiredMember_WhenODataReadSendsEntitySet()
+	{
+		// Arrange
+		await using ArrangeContext arrangeContext = Arrange();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ODataReadTool.ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = $"missing-env-{Guid.NewGuid():N}",
+					["entity-set"] = "Contact"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		string responseText = string.Join("\n",
+			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		callResult.IsError.Should().BeTrue(
+			because: "a payload that omits a required member is refused before odata-read runs");
+		responseText.Should().Contain("is missing required member 'entity'",
+			because: "the refusal must name the member the payload omitted");
+		responseText.Should().Contain("'entity-set' (did you mean 'entity'?)",
+			because: "the unknown key is named with the member it most likely meant");
+		responseText.Should().NotContain("must be an object",
+			because: "the args payload was an object, so that advice names nothing the caller can fix");
+	}
+
+	[Test]
+	[AllureTag("clio-run")]
+	[AllureTag("odata-read")]
+	[AllureName("A filter condition in the wrong shape is refused at the condition, with the expected shape and an example")]
+	[Description("Sends odata-read through clio-run with a {column, operator, value} filter condition and verifies the real server names filters.all[0], the missing field member, the unknown keys, the condition's shape and the documented filters example.")]
+	public async Task ClioRun_ShouldShowConditionShape_WhenODataReadFilterConditionUsesUnknownMembers()
+	{
+		// Arrange
+		await using ArrangeContext arrangeContext = Arrange();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = ODataReadTool.ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = $"missing-env-{Guid.NewGuid():N}",
+					["entity"] = "Contact",
+					["filters"] = new Dictionary<string, object?> {
+						["all"] = new object[] {
+							new Dictionary<string, object?> {
+								["column"] = "Name",
+								["operator"] = "eq",
+								["value"] = "x"
+							}
+						}
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		string responseText = string.Join("\n",
+			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		callResult.IsError.Should().BeTrue(
+			because: "a condition without its required field member does not bind");
+		responseText.Should().Contain("At filters.all[0]: missing required member 'field'.",
+			because: "the refusal must point at the condition that failed and the member it lacks");
+		responseText.Should().Contain("'operator' (did you mean 'op'?)",
+			because: "the unknown keys are named back with the member they most likely meant");
+		responseText.Should().Contain("an object with field (required), op, value, in",
+			because: "the caller must learn the condition's members without reading the full contract");
+		responseText.Should().Contain("Example filters:",
+			because: "the example documented on the filters argument travels with the refusal");
+	}
+
+	[Test]
+	[AllureTag("clio-run")]
+	[AllureTag("sync-pages")]
+	[AllureName("sync-pages resources sent as an object is refused at the member, as JSON text")]
+	[Description("Sends sync-pages through clio-run with resources as a JSON object and verifies the real server names pages[0].resources, the expected string kind and the JSON-text hint, before any environment is touched.")]
+	public async Task ClioRun_ShouldNameResourcesMember_WhenSyncPagesResourcesIsAnObject()
+	{
+		// Arrange
+		await using ArrangeContext arrangeContext = Arrange();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = PageSyncTool.ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = $"missing-env-{Guid.NewGuid():N}",
+					["pages"] = new object[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = "UsrE2EShape_FormPage",
+							["body"] = "define()",
+							["resources"] = new Dictionary<string, object?> {
+								["UsrDetailsTab_caption"] = "Details"
+							}
+						}
+					}
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		string responseText = string.Join("\n",
+			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		callResult.IsError.Should().BeTrue(
+			because: "resources is a JSON string member, so an object does not bind");
+		responseText.Should().Contain("At pages[0].resources: expected a string, received an object.",
+			because: "the refusal must name the nested member and the JSON kind it takes");
+		responseText.Should().Contain("send it as one JSON string",
+			because: "the member takes its JSON document as text");
+	}
+
 	/// <summary>
 	/// Collects the advisory shape lines from the child's standard error, waiting until
 	/// <paramref name="expected"/> have arrived or the harness gives up.

@@ -5,6 +5,7 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
@@ -85,7 +86,7 @@ public sealed class CuratedKnowledgeArtifactStartupE2ETests
         {
             McpE2ESettings settings = TestConfiguration.Load();
             settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-            string clioHome = Path.Combine(Path.GetTempPath(), $"clio-mcp-artifact-startup-{Guid.NewGuid():N}");
+            string clioHome = Path.Combine(PhysicalPath.Resolve(Path.GetTempPath()), $"clio-mcp-artifact-startup-{Guid.NewGuid():N}");
             string knowledgeRoot = Path.Combine(clioHome, "knowledge");
             try
             {
