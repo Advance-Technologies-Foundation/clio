@@ -20,12 +20,13 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 
 	/// <summary>The first CrtProcessBuilder archive that carries <c>BuildCase</c>.</summary>
 	/// <remarks>
-	/// The one place the floor is written: 1.6.6.160, the cut this clio bundles. Every earlier archive has no
-	/// <c>BuildCase</c>: 1.6.6.153 and below, and 1.6.6.155, 1.6.6.157 and 1.6.6.159, cut on other branches at the same
-	/// time, so a lower floor would let the call reach a package that answers its route with a 404. <c>BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor</c> ties the floor to the archive's
+	/// The one place the floor is written: 1.6.6.165, the cut this clio bundles. Every earlier archive has no
+	/// <c>BuildCase</c>: 1.6.6.162 and below, and 1.6.6.163 and 1.6.6.164, cut on another branch at the same time
+	/// (1.6.6.154 and 1.6.6.160 were this branch's own cuts and never shipped), so a lower floor would let the call
+	/// reach a package that answers its route with a 404. <c>BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor</c> ties the floor to the archive's
 	/// content, not only its number.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.160";
+	public const string MinimumProcessBuilderVersion = "1.6.6.165";
 
 	/// <summary>The editable package that receives the case and both settings bindings.</summary>
 	public string PackageName { get; set; } = string.Empty;
