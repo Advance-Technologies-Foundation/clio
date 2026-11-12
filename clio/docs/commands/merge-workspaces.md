@@ -8,6 +8,8 @@ merge-workspaces - Merge workspaces
 
 Combines multiple workspaces into a single resulting workspace structure.
 
+With `--install`, when the environment reports the installation as failed, the installer writes `Package installation failed: <reason>`, the command closes with `Merged workspace packages may not have been installed: <packages>.`, and it exits with `1`.
+
 ## Synopsis
 
 ```bash

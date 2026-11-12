@@ -112,6 +112,11 @@ public sealed class ServerProcessDescriber(
 		if (!string.IsNullOrWhiteSpace(culture)) {
 			requestObject["culture"] = culture;
 		}
+		// This clio reads a condition over several lookup records as `values` (DescribedFilterCondition.Values), so it
+		// asks for them. CrtProcessBuilder returns the list only on request: a clio that predates `values` drops the
+		// member it does not know and would show a condition with no value, so without the flag the package describes
+		// it as before - its first record, marked, with an incomplete decode. An older package ignores the flag.
+		requestObject["readsFilterValues"] = true;
 
 		string body = new JsonObject { ["request"] = requestObject }.ToJsonString();
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeProcess);
@@ -665,9 +670,12 @@ public sealed class DescribedElement {
 	/// <summary>
 	/// Whether <see cref="Filter"/> says everything the stored filter says, as the server judged the decode:
 	/// <c>true</c> when nothing was left out or approximated, <c>false</c> when the stored filter holds what the
-	/// high-level shape cannot carry (an Exists or Between leaf, a disabled condition, a multi-value lookup, an
-	/// aggregation, ...). Null when there is no filter, and always null from a <c>CrtProcessBuilder</c> older than
-	/// 1.6.6.39, which does not judge it (ENG-99970).
+	/// high-level shape cannot carry (an Exists or Between leaf, a disabled condition, a multi-item In that is not
+	/// all lookup records, an aggregation, ...). A list of lookup records is carried whole, as
+	/// <see cref="DescribedFilterCondition.Values"/>, from CrtProcessBuilder 1.6.6.162, which returns it because this
+	/// clio asks (<c>readsFilterValues</c>); an older package reads it as its first record and says <c>false</c>. Null
+	/// when there is no filter, and always null from a <c>CrtProcessBuilder</c> older than 1.6.6.39, which does not
+	/// judge it (ENG-99970).
 	/// </summary>
 	[JsonPropertyName("filterDecodedCompletely")]
 	public bool? FilterDecodedCompletely { get; set; }
@@ -1846,9 +1854,20 @@ public sealed class DescribedFilterCondition {
 	[JsonPropertyName("comparison")]
 	public string Comparison { get; set; }
 
-	/// <summary>Constant value (string form); null for a reference or a null check.</summary>
+	/// <summary>Constant value (string form); null for a reference, a null check or a value list.</summary>
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	/// <summary>
+	/// The records of ONE condition over several records of a lookup column - equal: the record is any of them,
+	/// notEqual: it is none of them - in stored order, their captions joined by "; " in <see cref="DisplayValue"/>
+	/// (ENG-105557). The designer's multi-select reads back here too. Null for any other condition; sent back with
+	/// setFilter as read, it keeps every record. CrtProcessBuilder fills it only for a describe that asks for it
+	/// (<c>readsFilterValues</c>, sent by <see cref="ServerProcessDescriber"/>), because a clio without this property
+	/// would drop the list; this type has no overflow bag to catch it.
+	/// </summary>
+	[JsonPropertyName("values")]
+	public List<string> Values { get; set; }
 
 	/// <summary>
 	/// Human-readable caption of the value on read-back (never sent on write). For a lookup constant this is the

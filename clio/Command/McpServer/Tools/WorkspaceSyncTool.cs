@@ -126,7 +126,7 @@ public sealed class PushWorkspaceTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Pushes the local workspace at `workspace-path` to the specified Creatio environment. Warns, non-blocking, per Freedom UI page schema whose text update-page rejects (inline literal, or resource binding on a literal-only property), naming the elements. Fails before installing anything (exit-code 1) when a package holds a Schemas/<Name>/ or Data/<Name>/ folder without descriptor.json, naming each folder's local path with a verdict: a folder with only Localization files is a deleted binding's leftover, delete it; a folder with other files lost its descriptor, restore descriptor.json and do not delete it, or the next install can remove the element. Installs through the application installer: a package that does not yet exist in the environment is created locked (InstallType 1, not editable) and registered as an installed application; this tool has no option to install it unlocked. To create a new editable package in the environment use create-package instead.")]
+	[Description("Pushes the local workspace at `workspace-path` to the specified Creatio environment. Warns, non-blocking, per Freedom UI page schema whose text update-page rejects (inline literal, or resource binding on a literal-only property), naming the elements. Fails before installing anything (exit-code 1) when a package holds a Schemas/<Name>/ or Data/<Name>/ folder without descriptor.json, naming each folder's local path with a verdict: a folder with only Localization files is a deleted binding's leftover, delete it; a folder with other files lost its descriptor, restore descriptor.json and do not delete it, or the next install can remove the element. A failed installation fails the call (exit-code 1): usually the installer's 'Package installation failed: <reason>' line is followed by one naming the packages not installed; an invalid package archive fails with the archive error alone. Installs through the application installer: a package that does not yet exist in the environment is created locked (InstallType 1, not editable) and registered as an installed application; this tool has no option to install it unlocked. To create a new editable package in the environment use create-package instead.")]
 	public CommandExecutionResult PushWorkspace(
 		[Description("Push-workspace parameters")] [Required] PushWorkspaceArgs args
 	) {
@@ -165,7 +165,7 @@ public sealed class RestoreWorkspaceTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Restores packages listed in `.clio/workspaceSettings.json` at `workspace-path` from the specified Creatio environment. When no packages are eligible, returns success with a warning and does not clear or delete existing package directories.")]
+	[Description("Restores packages listed in `.clio/workspaceSettings.json` at `workspace-path` from the specified Creatio environment. When no packages are eligible, returns success with a warning and does not clear or delete existing package directories. When the environment does not answer - a rejected login, a stopped site - the call fails with the reason and restores nothing.")]
 	public CommandExecutionResult RestoreWorkspace(
 		[Description("Restore-workspace parameters")] [Required] RestoreWorkspaceArgs args
 	) {
