@@ -180,12 +180,16 @@ public static partial class WebServiceDefinitionBuilder {
 			.OrderBy(n => n.Prefix, StringComparer.Ordinal)
 			.Select(n => $"{n.Prefix}={n.Name}:{n.IsDefault == true}"));
 
-	/// <summary>The prefixes a SOAP method uses in its message element and in its body request parameter paths.</summary>
+	/// <summary>
+	/// The prefixes a SOAP method uses in its message element and in its body request parameter paths and array item
+	/// elements.
+	/// </summary>
 	/// <param name="method">The method.</param>
 	/// <returns>The prefixes.</returns>
 	public static IReadOnlySet<string> UsedPrefixes(ServiceMethodDto method) =>
 		new[] { method.Request?.Uri }
 			.Concat(BodyParameters(method.Request?.Parameters).Select(p => p.Path))
+			.Concat(RequestItemElements(method).Select(p => p.SequenceElementName))
 			.SelectMany(path => (path ?? string.Empty).Split('/'))
 			.Select(segment => PrefixedElementPattern().Match(segment.Trim()))
 			.Where(match => match.Success && match.Groups[1].Success && match.Groups[1].Length > 0)
@@ -200,9 +204,10 @@ public static partial class WebServiceDefinitionBuilder {
 			.Select(n => n?.Prefix).Where(p => !string.IsNullOrEmpty(p)).ToHashSet(StringComparer.Ordinal));
 
 	/// <summary>
-	/// Checks every prefixed element name a SOAP method uses against the declared prefixes: its message element and
-	/// the element paths of its body request parameters, nested items included. Used for a method the call builds and
-	/// for a kept method after the namespaces change.
+	/// Checks every prefixed element name a SOAP method uses against the declared prefixes: its message element, the
+	/// element paths of its body request parameters, nested items included, and the item element of each request array
+	/// (the platform builds it with the same <c>prefix:name</c> lookup). Used for a method the call builds and for a kept
+	/// method after the namespaces change.
 	/// </summary>
 	/// <param name="method">The method.</param>
 	/// <param name="soap">The declared prefixes.</param>
@@ -217,7 +222,22 @@ public static partial class WebServiceDefinitionBuilder {
 			ValidateElementPath($"method '{method.Name}' request parameter '{parameter.Name}': path", parameter.Path, soap,
 				errors);
 		}
+		// The item element's form is checked where the parameter is built; here only its prefix, so a kept method is
+		// checked against new namespaces too.
+		foreach (ServiceParameterDto parameter in RequestItemElements(method)) {
+			Match match = PrefixedElementPattern().Match(parameter.SequenceElementName.Trim());
+			if (match.Success && match.Groups[1].Success && !soap.Prefixes.Contains(match.Groups[1].Value)) {
+				errors.Add($"method '{method.Name}' request parameter '{parameter.Name}': sequence-element "
+					+ $"'{parameter.SequenceElementName}': prefix '{match.Groups[1].Value}' is not a namespace of the service; "
+					+ "the platform would save it and then fail every call before sending it.");
+			}
+		}
 	}
+
+	/// <summary>Body request arrays that name their item element; a response array is read by local name only.</summary>
+	private static IEnumerable<ServiceParameterDto> RequestItemElements(ServiceMethodDto method) =>
+		BodyParameters(method.Request?.Parameters)
+			.Where(p => p.IsArray && !string.IsNullOrWhiteSpace(p.SequenceElementName));
 
 	private static IEnumerable<ServiceParameterDto> BodyParameters(ServiceItemCollection<ServiceParameterDto> parameters) =>
 		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
@@ -704,6 +724,18 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	/// <summary>The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given.</summary>
+	/// <summary>
+	/// The item element of an array is one element name, <c>prefix:name</c> (as Studio's wizard writes it, e.g.
+	/// <c>tem:Region</c>) or a plain name. Its prefix is checked against the namespaces with the method's other names.
+	/// </summary>
+	private static string SequenceElementProblem(string name) =>
+		name.Contains(':')
+			? PrefixedElementPattern().IsMatch(name)
+				? null
+				: "must be prefix:name with letters, digits, '_' or '-' only (the platform cuts the name at any other "
+					+ "character)."
+			: ElementNamePattern().IsMatch(name) ? null : "is not an XML element name.";
+
 	private static string SoapSequenceElement(WebServiceParameterArg arg) =>
 		string.IsNullOrWhiteSpace(arg.SequenceElement) ? "item" : arg.SequenceElement.Trim();
 
@@ -727,8 +759,8 @@ public static partial class WebServiceDefinitionBuilder {
 		if (!string.IsNullOrWhiteSpace(arg.SequenceElement)) {
 			if (arg.Array != true) {
 				errors.Add($"{owner}: sequence-element names the items of an array; this parameter is not one.");
-			} else if (!ElementNamePattern().IsMatch(arg.SequenceElement.Trim())) {
-				errors.Add($"{owner}: sequence-element '{arg.SequenceElement}' is not an XML element name.");
+			} else if (SequenceElementProblem(arg.SequenceElement.Trim()) is { } problem) {
+				errors.Add($"{owner}: sequence-element '{arg.SequenceElement}' {problem}");
 			}
 		}
 		if (!scope.IsRequest && placement == ServiceSchemaCodes.Placements["body"] && path.TrimStart().StartsWith('$')) {

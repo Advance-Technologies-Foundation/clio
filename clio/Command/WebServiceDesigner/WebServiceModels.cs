@@ -136,7 +136,7 @@ public sealed record WebServiceParameterArg(
 	bool? SoapHeader = null,
 
 	[property: JsonPropertyName("sequence-element")]
-	[property: Description("SOAP only, arrays: the element name of each item, e.g. string; default item")]
+	[property: Description("SOAP only, arrays: the element name of each item, e.g. string, or prefix:name with a declared prefix, e.g. tem:Region; default item")]
 	string SequenceElement = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }

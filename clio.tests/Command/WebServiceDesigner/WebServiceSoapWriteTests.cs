@@ -356,6 +356,59 @@ public sealed class WebServiceSoapWriteTests {
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 
+	private static readonly WebServiceNamespaceArg[] TemAndNs0 =
+		[new("tem", "http://tempuri.org/"), new("ns0", "http://example.org/types")];
+
+	private static WebServiceMethodArg RegionsMethod(string sequenceElement) =>
+		AddMethod(new WebServiceParameterArg("UsrRegions", Array: true, Path: "tem:Regions", SequenceElement: sequenceElement));
+
+	[TestCase("tem:Region", Description = "a prefixed item element, as Studio's wizard writes it")]
+	[TestCase("ns0:string", Description = "an item element in a second declared namespace")]
+	[TestCase("Region", Description = "a plain item element")]
+	[Description("A request array's sequence-element may be prefix:name with a declared prefix, as Studio writes it, and is stored as given.")]
+	public void Register_Should_Accept_A_Prefixed_Sequence_Element(string sequenceElement) {
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://www.dneonline.com/calculator.asmx", null, null, [RegionsMethod(sequenceElement)], "soap11", TemAndNs0));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the platform builds the item element with its declared prefix");
+		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single().SequenceElementName
+			.Should().Be(sequenceElement, because: "the item element is stored as given");
+	}
+
+	[TestCase("zz:Region", "prefix 'zz'", Description = "an undeclared prefix")]
+	[TestCase("tem:Re.gion", "cuts the name", Description = "a name the platform would cut")]
+	[TestCase("tem:Region/tem:Item", "cuts the name", Description = "a path where one element is expected")]
+	[Description("A request array's sequence-element with an undeclared prefix or a name the platform would cut is refused.")]
+	public void Register_Should_Refuse_A_Broken_Sequence_Element(string sequenceElement, string expected) {
+		// Act
+		Action act = Register(RegionsMethod(sequenceElement), TemAndNs0);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the platform would fail or send another element")
+			.Which.Message.Should().Contain(expected, because: "the refusal says what is wrong with the item element");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("setNamespaces that drops a prefix only a request array's sequence-element uses is refused, naming the prefix.")]
+	public void Modify_SetNamespaces_Should_Refuse_Dropping_A_Sequence_Element_Prefix() {
+		// Arrange
+		_sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://www.dneonline.com/calculator.asmx",
+			null, null, [RegionsMethod("ns0:string")], "soap11", TemAndNs0));
+		GivenRegistered(_saved);
+		_client.ClearReceivedCalls();
+
+		// Act
+		Action act = () => _sut.Modify("UsrCalc", [new WebServiceOperationArg("setNamespaces", Namespaces: Tem)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the array items are built in the ns0 namespace")
+			.WithMessage("*prefix 'ns0'*", because: "the refusal names the lost prefix");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
 	[Test]
 	[Description("setNamespaces that drops a prefix a kept method still uses is refused, naming the method and the prefix.")]
 	public void Modify_SetNamespaces_Should_Refuse_Dropping_A_Prefix_In_Use() {
