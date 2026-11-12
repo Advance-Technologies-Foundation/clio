@@ -1119,7 +1119,7 @@ internal sealed class DataBindingDbService(
 			return;
 		}
 
-		List<Dictionary<string, JsonNode?>> rows = rowSets.Where(set => set is not null).SelectMany(set => set!).ToList();
+		List<Dictionary<string, JsonNode?>> rows = rowSets.Where(set => set is not null).SelectMany(set => set).ToList();
 		List<string> valueRowIds = ReadGuidValues(rows, "Id");
 		List<string> settingIds = ReadGuidValues(rows, "SysSettings");
 		HashSet<string> secretCodes = new(StringComparer.OrdinalIgnoreCase);
@@ -1166,7 +1166,6 @@ internal sealed class DataBindingDbService(
 				? raw?.ToString()
 				: node?.ToString())
 			.Where(value => Guid.TryParse(value, out _))
-			.Select(value => value!)
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
 
