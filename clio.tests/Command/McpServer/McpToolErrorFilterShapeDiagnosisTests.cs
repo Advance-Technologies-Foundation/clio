@@ -298,6 +298,29 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The correction the unknown-enum refusal names works: a name it lists (\"Red\") binds with the MCP server's own serializer options, and the same tool created with them runs with that value.")]
+	public async Task McpSerializerOptions_ShouldBindTheEnumByName_WhenTheValueIsOneTheRefusalLists() {
+		// Arrange
+		JsonElement arguments = JsonDocument.Parse("{\"color\":\"Red\"}").RootElement;
+		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
+			"fake-tool", new Dictionary<string, JsonElement> { ["args"] = arguments });
+		McpServerTool tool = McpServerTool.Create(typeof(FakeColorTool).GetMethod("Execute")!, new FakeColorTool(),
+			new McpServerToolCreateOptions { SerializerOptions = BindingsModule.CreateMcpSerializerOptions() });
+
+		// Act
+		FakeColorArgs? bound = arguments.Deserialize<FakeColorArgs>(BindingsModule.CreateMcpSerializerOptions());
+		CallToolResult result = await tool.InvokeAsync(context, CancellationToken.None);
+
+		// Assert
+		bound!.Color.Should().Be(FakeColor.Red,
+			because: "the MCP serializer options bind an enum from its C# name, which is what 'a string naming one of Red, Blue' tells the caller to send");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		result.IsError.Should().NotBe(true, because: $"the tool binds the named value and runs (got: {text})");
+		text.Should().Contain("Red", because: "the tool body ran with the value the caller named");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("An explicit JSON null for a required GUID parameter is refused as 'must be a GUID string', the format the member takes, not as 'an object'.")]
 	public async Task HandleCallToolErrors_ShouldWordTheGuidFormat_WhenARequiredGuidParameterIsNull() {
 		// Arrange
@@ -431,7 +454,7 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		FakeColor Color);
 
 	public sealed class FakeColorTool {
-		public string Execute(FakeColorArgs args) => "ok";
+		public string Execute(FakeColorArgs args) => args.Color.ToString();
 	}
 
 	public sealed class FakeGuidTool {
