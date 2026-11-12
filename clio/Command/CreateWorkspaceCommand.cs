@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Clio.Common;
 using Clio.UserEnvironment;
 using Clio.WebApplication;
@@ -58,6 +59,12 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 
 	#region Constructors: Public
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes independent DI collaborators (workspace, logger, installed-application "
+			+ "reader, file system, settings, path builder, working directories); the ping and its environment "
+			+ "settings joined them so an environment that does not answer fails the command before anything is "
+			+ "written. Grouping them into a parameter object would hide the injected contract without changing "
+			+ "behaviour, which is how the other multi-collaborator commands in this assembly are handled.")]
 	public CreateWorkspaceCommand(IWorkspace workspace, ILogger logger, IInstalledApplication installedApplication,
 		IFileSystem fileSystem, ISettingsRepository settingsRepository, IWorkspacePathBuilder workspacePathBuilder,
 		IWorkingDirectoriesProvider workingDirectoriesProvider, IApplicationPing applicationPing,
