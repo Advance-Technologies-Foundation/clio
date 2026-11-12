@@ -786,7 +786,7 @@ public sealed class WebServiceDesignerTests {
 		notice.Should().Contain("UsrResult", because: "the notice names the parameter");
 		notice.Should().Contain("$.UsrOpResult", because: "the notice quotes the path that reads nothing");
 		notice.Should().Contain("element path", because: "the notice names the path dialect the platform reads");
-		notice.Should().Contain("Studio", because: "a SOAP service's path is changed in Studio");
+		notice.Should().Contain("modify-web-service setMethod", because: "a SOAP service's path is changed through modify-web-service");
 		tested.Notices.Should().ContainSingle(because: "the null in response-values must not read like a failure of the call")
 			.Which.Should().Contain("UsrResult", because: "the notice names the parameter that read nothing");
 	}

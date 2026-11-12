@@ -20,7 +20,7 @@ public sealed record WebServiceMethodArg(
 	string HttpMethod,
 
 	[property: JsonPropertyName("uri")]
-	[property: Description("Method address relative to the base URI; a path parameter as {path}, its wire name, e.g. orders/{id}")]
+	[property: Description("REST: method address relative to the base URI; a path parameter as {path}, its wire name, e.g. orders/{id}. Not for SOAP (use message-element)")]
 	string Uri,
 
 	[property: JsonPropertyName("caption")]
@@ -32,7 +32,7 @@ public sealed record WebServiceMethodArg(
 	int? TimeoutMs = null,
 
 	[property: JsonPropertyName("content-type")]
-	[property: Description("json (default) or xml. An xml method has no body parameters in request or response (Studio refuses them); a process sends the XML body through the element's RequestBody and reads Response")]
+	[property: Description("REST: json (default) or xml. An xml REST method has no body parameters in request or response (Studio refuses them); a process sends the XML body through the element's RequestBody and reads Response. A SOAP method is always xml")]
 	string ContentType = null,
 
 	[property: JsonPropertyName("use-auth")]
@@ -40,12 +40,37 @@ public sealed record WebServiceMethodArg(
 	bool? UseAuth = null,
 
 	[property: JsonPropertyName("request-parameters")]
-	[property: Description("Request parameters; each has in = path, query, header, body or cookie")]
+	[property: Description("Request parameters; each has in = path, query, header, body or cookie (SOAP: body, header or cookie)")]
 	IReadOnlyList<WebServiceParameterArg> RequestParameters = null,
 
 	[property: JsonPropertyName("response-parameters")]
-	[property: Description("Response parameters read from the JSON body; path is a JSONPath such as $.items")]
-	IReadOnlyList<WebServiceParameterArg> ResponseParameters = null
+	[property: Description("Response parameters; path is a JSONPath such as $.items for a JSON response, an element path such as AddResult or AddResponse/AddResult for a SOAP (XML) response")]
+	IReadOnlyList<WebServiceParameterArg> ResponseParameters = null,
+
+	[property: JsonPropertyName("message-element")]
+	[property: Description("SOAP only, required there: the root element of the request body with its namespace prefix, e.g. tem:Add; a SOAP method has no uri (its URL is the base URI) and is always POST with xml")]
+	string MessageElement = null,
+
+	[property: JsonPropertyName("soap-action")]
+	[property: Description("SOAP only: the SOAPAction header value, e.g. http://tempuri.org/Add; empty sends no SOAPAction header, which many SOAP 1.1 servers refuse")]
+	string SoapAction = null
+) {
+	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
+}
+
+/// <summary>A SOAP namespace the envelope declares; exactly one is the default.</summary>
+public sealed record WebServiceNamespaceArg(
+	[property: JsonPropertyName("prefix")]
+	[property: Description("Namespace prefix used in message-element and parameter paths, e.g. tem")]
+	string Prefix,
+
+	[property: JsonPropertyName("uri")]
+	[property: Description("Namespace URI, e.g. http://tempuri.org/")]
+	string Uri,
+
+	[property: JsonPropertyName("default")]
+	[property: Description("Whether this is the default namespace; when none is marked, the first one is")]
+	bool? Default = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
@@ -65,7 +90,7 @@ public sealed record WebServiceParameterArg(
 	string Type = null,
 
 	[property: JsonPropertyName("path")]
-	[property: Description("Wire name (query, header, cookie or body key; the {placeholder} of a path parameter) or the JSONPath of a response value, e.g. $.status. Required for a new parameter when the environment has a schema-name prefix; otherwise it defaults to the code, and a kept parameter keeps its own.")]
+	[property: Description("Wire name (query, header, cookie or body key; the {placeholder} of a path parameter) or the JSONPath of a JSON response value, e.g. $.status. SOAP: the element path with declared prefixes, e.g. tem:intA or wsse:Security/wsse:Password for a request, AddResult for a response. Required for a new parameter when the environment has a schema-name prefix; otherwise it defaults to the code, and a kept parameter keeps its own.")]
 	string Path = null,
 
 	[property: JsonPropertyName("caption")]
@@ -78,7 +103,7 @@ public sealed record WebServiceParameterArg(
 	bool? Required = null,
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Optional constant default. Refused on header and cookie parameters and on any key, token, secret or password parameter: use default-sys-setting there.")]
+	[property: Description("Optional constant default. Refused on header, cookie and soap-header parameters and on any key, token, secret or password parameter: use default-sys-setting there.")]
 	string DefaultValue = null,
 
 	[property: JsonPropertyName("default-sys-setting")]
@@ -91,7 +116,15 @@ public sealed record WebServiceParameterArg(
 
 	[property: JsonPropertyName("default-masked")]
 	[property: Description("Read-only, from describe-web-service; accepted and ignored. A kept parameter whose secret constant default describe hid keeps that default when no default is sent.")]
-	bool? DefaultMasked = null
+	bool? DefaultMasked = null,
+
+	[property: JsonPropertyName("soap-header")]
+	[property: Description("SOAP only: send this top-level body request parameter in the envelope's Header (WS-Security and similar); its items follow it")]
+	bool? SoapHeader = null,
+
+	[property: JsonPropertyName("sequence-element")]
+	[property: Description("SOAP only, arrays: the element name of each item, e.g. string; default item")]
+	string SequenceElement = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
@@ -132,7 +165,7 @@ public sealed record WebServiceAuthArg(
 
 public sealed record WebServiceOperationArg(
 	[property: JsonPropertyName("op")]
-	[property: Description("addMethod, setMethod, removeMethod, setBaseUri, setRetryCount or setAuth")]
+	[property: Description("addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, setAuth; for a SOAP service also setNamespaces and setType")]
 	string Op,
 
 	[property: JsonPropertyName("method")]
@@ -150,7 +183,15 @@ public sealed record WebServiceOperationArg(
 	int? RetryCount = null,
 
 	[property: JsonPropertyName("auth")]
-	WebServiceAuthArg Auth = null
+	WebServiceAuthArg Auth = null,
+
+	[property: JsonPropertyName("namespaces")]
+	[property: Description("setNamespaces: the whole namespace list, replacing the old one; a prefix a method still uses must stay")]
+	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null,
+
+	[property: JsonPropertyName("type")]
+	[property: Description("setType: soap11 or soap12 (SOAP 1.1 / SOAP 1.2); a REST service cannot become SOAP or back")]
+	string Type = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
@@ -296,7 +337,7 @@ public sealed record WebServiceTestResult(
 /// </summary>
 public static partial class WebServiceSchemaView {
 
-	[GeneratedRegex("key|token|secret|passw|pwd|auth|credential|signature|session|cookie",
+	[GeneratedRegex(@"key|token|secret|passw|pass\b|pwd|auth|credential|signature|session|cookie|licen[cs]e|nonce",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
 	private static partial Regex SecretNamePattern();
 
@@ -342,7 +383,7 @@ public static partial class WebServiceSchemaView {
 				+ "which the platform reads by element path (local names joined by '/', e.g. 'AddResult' or "
 				+ "'AddResponse/AddResult'); this path reads nothing. "
 				+ (soap
-					? "Change the path in Studio > Web services."
+					? "Give it an element path with modify-web-service setMethod."
 					: "A REST xml method reads no body parameters at all: read the raw Response in the process, or "
 						+ "make the method json with modify-web-service.")))
 			.ToList();
@@ -368,9 +409,10 @@ public static partial class WebServiceSchemaView {
 
 	private static IReadOnlyList<WebServiceNamespaceView> Namespaces(ServiceItemCollection<ServiceNamespaceDto> namespaces) =>
 		(namespaces?.Items.Values ?? Enumerable.Empty<ServiceNamespaceDto>())
-			.OrderByDescending(n => n.IsDefault)
+			.Where(n => n is not null)
+			.OrderByDescending(n => n.IsDefault == true)
 			.ThenBy(n => n.Prefix, StringComparer.Ordinal)
-			.Select(n => new WebServiceNamespaceView(n.Prefix, StripUserInfo(n.Name), n.IsDefault))
+			.Select(n => new WebServiceNamespaceView(n.Prefix, StripUriUserInfo(n.Name), n.IsDefault == true))
 			.ToList();
 
 	/// <summary>
@@ -431,19 +473,30 @@ public static partial class WebServiceSchemaView {
 			Parameters(method.Request.Parameters, soap),
 			Parameters(method.Response.Parameters, soap),
 			soap ? method.Request.Uri ?? string.Empty : null,
-			soap ? StripUserInfo(method.SoapAction ?? string.Empty) : null);
+			soap ? StripUriUserInfo(method.SoapAction ?? string.Empty) : null);
+
+	/// <summary>
+	/// Hides <c>user:password@</c> in a namespace URI or a SOAP action only when the value is an absolute URI that
+	/// carries one: <see cref="StripUserInfo"/> hides up to the last <c>@</c> of any text, which would change an
+	/// <c>urn:</c> value or a SOAP action with an <c>@</c> and make describe output differ from what is stored.
+	/// </summary>
+	private static string StripUriUserInfo(string value) =>
+		WebServiceDefinitionBuilder.HasUserInfo(value) ? StripUserInfo(value) : value;
 
 	private static IReadOnlyList<WebServiceParameterView> Parameters(
-		ServiceItemCollection<ServiceParameterDto> parameters, bool soap) =>
+		ServiceItemCollection<ServiceParameterDto> parameters, bool soap, bool inSoapHeader = false) =>
 		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
 			.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-			.Select(p => Parameter(p, soap))
+			.Select(p => Parameter(p, soap, inSoapHeader))
 			.ToList();
 
-	private static WebServiceParameterView Parameter(ServiceParameterDto parameter, bool soap) {
+	// The platform renders the items of a SOAP-header parameter under the Header whatever their own flag says, so a
+	// constant there is hidden like a header constant even when an item lacks the flag.
+	private static WebServiceParameterView Parameter(ServiceParameterDto parameter, bool soap, bool inSoapHeader) {
 		ServiceParameterValueDto value = parameter.DefValue;
 		bool isConstant = IsConstant(value);
-		bool masked = isConstant && IsSecretLike(parameter);
+		bool header = inSoapHeader || (soap && parameter.IsSoapHeader == true);
+		bool masked = isConstant && (header || IsSecretLike(parameter));
 		// The platform stores isSoapHeader false and sequenceElementName "item" on every SOAP parameter, so only the
 		// values that change the envelope are reported: a SOAP-header flag, and the item name of a SOAP array.
 		bool? soapHeader = soap && parameter.IsSoapHeader == true ? true : null;
@@ -454,6 +507,6 @@ public static partial class WebServiceSchemaView {
 			ServiceSchemaCodes.Placements.FirstOrDefault(p => p.Value == parameter.Type).Key ?? "body",
 			parameter.Path, parameter.DataValueTypeName, parameter.IsArray, parameter.IsRequired,
 			SysSettingCode(value), isConstant && !masked ? value.Value : null, masked,
-			Parameters(parameter.ItemProperties, soap), soapHeader, sequenceElement);
+			Parameters(parameter.ItemProperties, soap, header), soapHeader, sequenceElement);
 	}
 }

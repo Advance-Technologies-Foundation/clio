@@ -131,6 +131,129 @@ public sealed class WebServiceSoapToolsE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureTag(ModifyWebServiceTool.ToolName)]
+	[AllureName("register and modify a SOAP web service")]
+	[Description("Registers a SOAP 1.1 service through register-web-service (namespaces, message element, SOAP action, a SOAP-header element bound to a system setting, an array with a sequence element, a SOAP-header object array with an item), refuses one with an undeclared prefix, sends describe's method and namespaces back through modify-web-service and expects describe unchanged, switches it to SOAP 1.2, refuses dropping a namespace a method uses, and test-calls it against the stand's own host.")]
+	public async Task RegisterAndModify_Should_Manage_A_Soap_Service() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(settings, cts.Token);
+		string code = UniqueCode("E2eSoapReg");
+		string refusedCode = UniqueCode("E2eSoapBad");
+		_serviceCodes.Add(code);
+		_serviceCodes.Add(refusedCode);
+		object[] namespaces = [
+			new Dictionary<string, object?> { ["prefix"] = "tem", ["uri"] = TemNamespace },
+			new Dictionary<string, object?> { ["prefix"] = "wsse", ["uri"] = WsseNamespace }
+		];
+
+		// Act
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			RegisterArgs(code, namespaces, "tem:Op"), cts.Token);
+		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			RegisterArgs(refusedCode, namespaces, "zz:Op"), cts.Token);
+		WebServiceToolResult described = await DescribeAsync(code, cts.Token);
+		WebServiceToolResult roundTrip = await ModifyAsync(code, [
+			new Dictionary<string, object?> {
+				["op"] = "setNamespaces", ["namespaces"] = JsonSerializer.SerializeToElement(described.Service!.Namespaces)
+			},
+			new Dictionary<string, object?> {
+				["op"] = "setMethod", ["method"] = JsonSerializer.SerializeToElement(described.Service.Methods.Single())
+			}
+		], cts.Token);
+		WebServiceToolResult afterRoundTrip = await DescribeAsync(code, cts.Token);
+		WebServiceToolResult switched = await ModifyAsync(code, [
+			new Dictionary<string, object?> { ["op"] = "setType", ["type"] = "soap12" }
+		], cts.Token);
+		WebServiceToolResult dropped = await ModifyAsync(code, [
+			new Dictionary<string, object?> {
+				["op"] = "setNamespaces",
+				["namespaces"] = new object[] { new Dictionary<string, object?> { ["prefix"] = "tem", ["uri"] = TemNamespace } }
+			}
+		], cts.Token);
+		WebServiceTestResult testCall = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = code, ["method"] = Prefixed("Op"),
+				["parameters"] = new Dictionary<string, object?> { [Prefixed("A")] = "a1" }
+			}, cts.Token);
+
+		// Assert
+		registered.Success.Should().BeTrue(because: $"a valid SOAP service registers; error: {registered.Error}");
+		registered.Service!.Type.Should().Be("SOAP 1.1", because: "soap11 registers a SOAP 1.1 service");
+		registered.Service.BaseUri.Should().Be($"http://localhost/{code}",
+			because: "a SOAP base URI is stored as given, without a trailing slash");
+		WebServiceMethodView method = registered.Service.Methods.Single();
+		method.MessageElement.Should().Be("tem:Op", because: "the message element round-trips through the platform");
+		method.SoapAction.Should().Be("http://example.org/clio-e2e-soap/Op", because: "the SOAP action round-trips");
+		method.RequestParameters.Single(p => p.Code == Prefixed("Password")).SoapHeader.Should().BeTrue(
+			because: "the WS-Security element is saved as a SOAP header");
+		method.RequestParameters.Single(p => p.Code == Prefixed("Tags")).SequenceElement.Should().Be(Prefixed("Tag"),
+			because: "the item element name of the array is saved");
+		refused.Success.Should().BeFalse(because: "an undeclared prefix would fail every call before sending it");
+		refused.Error.Should().Contain("prefix 'zz'", because: "the refusal names the undeclared prefix");
+		roundTrip.Success.Should().BeTrue(because: $"describe output is valid modify input; error: {roundTrip.Error}");
+		JsonSerializer.Serialize(afterRoundTrip.Service).Should().Be(JsonSerializer.Serialize(described.Service),
+			because: "sending describe's own output back changes nothing describe shows");
+		switched.Success.Should().BeTrue(because: $"SOAP 1.1 switches to 1.2; error: {switched.Error}");
+		switched.Service!.Type.Should().Be("SOAP 1.2", because: "setType changed the version");
+		dropped.Success.Should().BeFalse(because: "the method still uses the wsse prefix");
+		dropped.Error.Should().Contain("wsse", because: "the refusal names the prefix in use");
+		(testCall.Error ?? string.Empty).Should().NotContain("withheld",
+			because: "the SOAP-header element bound to a setting is located in the envelope");
+		testCall.ResponseValues.Should().NotBeNull(because: "the platform built and sent the envelope of the registered service");
+	}
+
+	private Dictionary<string, object?> RegisterArgs(string code, object[] namespaces, string messageElement) => new() {
+		["environment-name"] = _environmentName,
+		["package-name"] = PackageName,
+		["code"] = code,
+		["type"] = "soap11",
+		["base-uri"] = $"http://localhost/{code}",
+		["namespaces"] = namespaces,
+		["methods"] = new[] {
+			new Dictionary<string, object?> {
+				["code"] = Prefixed("Op"),
+				["message-element"] = messageElement,
+				["soap-action"] = "http://example.org/clio-e2e-soap/Op",
+				["request-parameters"] = new object[] {
+					new Dictionary<string, object?> { ["code"] = Prefixed("A"), ["path"] = "tem:A" },
+					new Dictionary<string, object?> {
+						["code"] = Prefixed("Password"), ["path"] = "wsse:Security/wsse:UsernameToken/wsse:Password",
+						["soap-header"] = true, ["default-sys-setting"] = "SchemaNamePrefix"
+					},
+					new Dictionary<string, object?> {
+						["code"] = Prefixed("Tags"), ["path"] = "tem:Tags", ["array"] = true, ["sequence-element"] = Prefixed("Tag")
+					},
+					// A SOAP-header object array: describe reports the flag on its items too, and the round trip
+					// below must accept it back there.
+					new Dictionary<string, object?> {
+						["code"] = Prefixed("Tokens"), ["path"] = "wsse:Tokens", ["type"] = "Object", ["array"] = true,
+						["soap-header"] = true,
+						["items"] = new object[] {
+							new Dictionary<string, object?> { ["code"] = Prefixed("Nonce"), ["path"] = "wsse:Nonce" }
+						}
+					}
+				},
+				["response-parameters"] = new object[] {
+					new Dictionary<string, object?> { ["code"] = Prefixed("Result"), ["path"] = "OpResponse/OpResult" }
+				}
+			}
+		}
+	};
+
+	private async Task<WebServiceToolResult> ModifyAsync(string code, object[] operations, CancellationToken token) =>
+		await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName, new Dictionary<string, object?> {
+			["environment-name"] = _environmentName, ["code"] = code, ["operations"] = operations
+		}, token);
+
+	[Test]
 	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("test-call a REST xml method")]
 	[Description("Registers a REST service with an xml method, test-calls it and expects the platform's Rest:Xml refusal to come with the RequestBody route.")]

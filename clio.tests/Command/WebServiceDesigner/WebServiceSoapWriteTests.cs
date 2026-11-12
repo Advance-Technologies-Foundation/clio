@@ -1,0 +1,515 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Clio.Command.WebServiceDesigner;
+using Clio.Common;
+using FluentAssertions;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.WebServiceDesigner;
+
+/// <summary>Registering and changing SOAP services: the SOAP input, the validator and the SOAP operations.</summary>
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Command")]
+public sealed class WebServiceSoapWriteTests {
+
+	private static readonly Guid PackageUId = Guid.Parse("6d7929ef-24da-1079-a4e8-dfb3c988735c");
+
+	private IWebServiceDesignerClient _client;
+	private Clio.Command.WebServiceDesigner.WebServiceDesigner _sut;
+	private ServiceSchemaDto _saved;
+
+	[SetUp]
+	public void SetUp() {
+		_client = Substitute.For<IWebServiceDesignerClient>();
+		ICreatioRightsClient rights = Substitute.For<ICreatioRightsClient>();
+		IWebServicePrefixReader prefix = Substitute.For<IWebServicePrefixReader>();
+		rights.GetCanExecuteOperation("CanManageSolution", Arg.Any<CreatioRequestOptions>()).Returns(true);
+		prefix.Read().Returns("Usr");
+		_client.IsSchemaNameUnique(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+		_client.FindExistingSysSettingCodes(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(call => call.Arg<IReadOnlyCollection<string>>());
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		GivenSelect("SysSchema");
+		// The read after a save returns what was saved, as the platform does.
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => _saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => _saved);
+		_sut = new Clio.Command.WebServiceDesigner.WebServiceDesigner(_client, rights, prefix);
+	}
+
+	private void GivenSelect(string root, params JsonObject[] rows) =>
+		_client.Select(root, Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyDictionary<string, string>>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>()).Returns(rows);
+
+	private void GivenRegistered(ServiceSchemaDto schema) {
+		_saved = schema;
+		GivenSelect("VwWebServiceV2", new JsonObject {
+			["UId"] = schema.UId.ToString(), ["PackageUId"] = schema.PackageUId.ToString(), ["Name"] = schema.Name,
+			["Caption"] = schema.Name, ["TypeName"] = WebServiceSchemaView.TypeName(schema.Type), ["SysPackageName"] = "Custom"
+		});
+	}
+
+	private static JsonObject ProcessCalling(Guid serviceUId, string method) => new() {
+		["Name"] = "UsrCallerProcess", ["Caption"] = "Caller", ["SysPackageName"] = "Custom",
+		["MetaData"] = JsonSerializer.Serialize(new {
+			MetaData = new { Schema = new { BK4 = new object[] {
+				new { A2 = "CallIt", IX1 = serviceUId.ToString(), IX2 = method }
+			} } }
+		})
+	};
+
+	private static readonly WebServiceNamespaceArg[] Tem = [new("tem", "http://tempuri.org/")];
+
+	private static WebServiceMethodArg AddMethod(params WebServiceParameterArg[] request) =>
+		new("UsrAdd", null, null, MessageElement: "tem:Add", SoapAction: "http://tempuri.org/Add",
+			RequestParameters: request.Length > 0 ? request : [
+				new WebServiceParameterArg("UsrIntA", Type: "Integer", Path: "tem:intA"),
+				new WebServiceParameterArg("UsrIntB", Type: "Integer", Path: "tem:intB")
+			],
+			ResponseParameters: [new WebServiceParameterArg("UsrAddResult", Type: "Integer", Path: "AddResult")]);
+
+	private Action Register(WebServiceMethodArg method, IReadOnlyList<WebServiceNamespaceArg> namespaces = null,
+		string type = "soap11") =>
+		() => _sut.Register("Custom", "UsrCalc", null, "http://www.dneonline.com/calculator.asmx", null, null, [method],
+			type, namespaces ?? Tem);
+
+	[Test]
+	[Description("A SOAP 1.1 service is saved with its namespace as the default, the message element as the request uri, POST and xml, the SOAP action, Studio's parameter defaults, and the base URI as given.")]
+	public void Register_Should_Save_A_Soap_Service_As_Studio_Does() {
+		// Arrange
+		WebServiceMethodArg methodArg = AddMethod();
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", "UsrCalc", null,
+			"http://www.dneonline.com/calculator.asmx", null, null, [methodArg], "soap11", Tem);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "a valid SOAP service registers");
+		_saved.Type.Should().Be(ServiceSchemaCodes.ServiceTypeSoap11, because: "soap11 is SOAP 1.1");
+		_saved.BaseUri.Should().Be("http://www.dneonline.com/calculator.asmx",
+			because: "a trailing slash would make the .asmx endpoint answer 500");
+		ServiceNamespaceDto ns = _saved.Namespaces.Items.Values.Should().ContainSingle(because: "one namespace was given").Subject;
+		ns.IsDefault.Should().BeTrue(because: "the first namespace is the default");
+		ServiceMethodDto method = _saved.Methods.Items.Values.Single();
+		method.Request.Uri.Should().Be("tem:Add", because: "a SOAP method stores its message element where REST keeps the address");
+		method.Request.HttpMethodType.Should().Be(ServiceSchemaCodes.HttpMethods["POST"], because: "SOAP is always POST");
+		method.Request.ContentType.Should().Be(ServiceSchemaCodes.ContentTypeXml, because: "a SOAP request is XML");
+		method.Response.ContentType.Should().Be(ServiceSchemaCodes.ContentTypeXml, because: "a SOAP response is XML");
+		method.SoapAction.Should().Be("http://tempuri.org/Add", because: "the SOAP action is stored");
+		method.Request.Parameters.Items.Values.Should().OnlyContain(p => p.IsSoapHeader == false && p.SequenceElementName == "item",
+			because: "Studio writes these defaults on every SOAP parameter");
+		result.Service.Type.Should().Be("SOAP 1.1", because: "the reply is the saved service as describe shows it");
+	}
+
+	[Test]
+	[Description("Every SOAP rule the platform would accept and then fail at call time is refused, all in one answer, and nothing is saved.")]
+	public void Register_Should_Refuse_Every_Broken_Soap_Rule_At_Once() {
+		// Arrange
+		var method = new WebServiceMethodArg("UsrBad", "GET", "calc", ContentType: "json", MessageElement: "zz:Add",
+			RequestParameters: [
+				new WebServiceParameterArg("UsrQ", "query", Path: "q"),
+				new WebServiceParameterArg("UsrUndeclared", Path: "ns9:Value"),
+				new WebServiceParameterArg("UsrCut", Path: "tem:Api.Key"),
+				new WebServiceParameterArg("UsrScalar", Path: "tem:S", SequenceElement: "item2"),
+				new WebServiceParameterArg("UsrList", Type: "Object", Array: true, Path: "tem:List", Items: [
+					new WebServiceParameterArg("UsrField", Path: "tem:Field", SoapHeader: true)
+				])
+			],
+			ResponseParameters: [
+				new WebServiceParameterArg("UsrJson", Path: "$.AddResult"),
+				new WebServiceParameterArg("UsrHead", Path: "AddResult", SoapHeader: true)
+			]);
+
+		// Act
+		Action act = Register(method);
+
+		// Assert
+		string message = act.Should().Throw<ArgumentException>(because: "the definition breaks SOAP rules").Which.Message;
+		message.Should().Contain("has no uri", because: "a SOAP URL is the base URI");
+		message.Should().Contain("always POST", because: "Studio fixes the verb");
+		message.Should().Contain("always xml", because: "Studio fixes the content type");
+		message.Should().Contain("prefix 'zz'", because: "an undeclared message-element prefix fails every call");
+		message.Should().Contain("prefix 'ns9'", because: "an undeclared path prefix fails every call");
+		message.Should().Contain("not in 'query'", because: "Studio offers body, header and cookie for SOAP");
+		message.Should().Contain("tem:Api.Key", because: "the platform would cut the name at the dot");
+		message.Should().Contain("not one", because: "sequence-element belongs to an array");
+		message.Should().Contain("soap-header on a field of an array item follows its parent",
+			because: "a field under a non-header parent cannot be a SOAP header");
+		message.Should().Contain("a response parameter cannot be a soap-header",
+			because: "a response value is never sent in the request Header");
+		message.Should().Contain("'$.AddResult' is a JSONPath", because: "a SOAP response is read by element path");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("none", Description = "no namespace")]
+	[TestCase("two-defaults", Description = "two defaults")]
+	[TestCase("duplicate", Description = "duplicate prefix")]
+	[TestCase("no-uri", Description = "namespace without uri")]
+	[Description("Namespaces Studio cannot save or the platform cannot call are refused.")]
+	public void Register_Should_Refuse_Broken_Namespaces(string variant) {
+		// Arrange
+		WebServiceNamespaceArg[] namespaces = variant switch {
+			"none" => [],
+			"two-defaults" => [new("tem", "http://tempuri.org/", true), new("ns1", "http://x/", true)],
+			"duplicate" => [new("tem", "http://tempuri.org/"), new("tem", "http://x/")],
+			_ => [new("tem", " ")]
+		};
+
+		// Act
+		Action act = Register(AddMethod(), namespaces);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: $"the namespaces are broken ({variant})")
+			.WithMessage("*namespace*", because: "the refusal names the namespaces");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("When one namespace is marked default it is the default, whatever its position.")]
+	public void Register_Should_Keep_The_Marked_Default_Namespace() {
+		// Arrange
+		WebServiceNamespaceArg[] namespaces = [new("ns1", "http://other/"), new("tem", "http://tempuri.org/", true)];
+
+		// Act
+		_sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null, [AddMethod()], "soap12", namespaces);
+
+		// Assert
+		_saved.Type.Should().Be(ServiceSchemaCodes.ServiceTypeSoap12, because: "soap12 is SOAP 1.2");
+		_saved.Namespaces.Items.Values.Single(n => n.IsDefault == true).Prefix.Should().Be("tem",
+			because: "the namespace marked default wins over the first one");
+	}
+
+	[Test]
+	[Description("SOAP members on a REST service are refused: namespaces, message-element, soap-action, soap-header and sequence-element.")]
+	public void Register_Should_Refuse_Soap_Members_On_A_Rest_Service() {
+		// Arrange
+		var method = new WebServiceMethodArg("UsrGet", "GET", "orders", MessageElement: "tem:Get", SoapAction: "x",
+			RequestParameters: [new WebServiceParameterArg("UsrQ", "query", Path: "q", SoapHeader: true, SequenceElement: "i")]);
+
+		// Act
+		Action act = Register(method, Tem, type: null);
+
+		// Assert
+		string message = act.Should().Throw<ArgumentException>(because: "a REST service has no SOAP members").Which.Message;
+		message.Should().Contain("namespaces belong to a SOAP service", because: "namespaces are SOAP only");
+		message.Should().Contain("message-element and soap-action belong to a SOAP service", because: "they are SOAP only");
+		message.Should().Contain("soap-header and sequence-element belong to a SOAP service", because: "they are SOAP only");
+	}
+
+	[Test]
+	[Description("An empty soap-action is saved but the reply says that no SOAPAction header is sent.")]
+	public void Register_Should_Notice_An_Empty_Soap_Action() {
+		// Arrange
+		WebServiceMethodArg method = AddMethod() with { SoapAction = null };
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null,
+			[method], "soap11", Tem);
+
+		// Assert
+		result.Notices.Should().Contain(n => n.Contains("UsrAdd") && n.Contains("no SOAPAction header"),
+			because: "many SOAP 1.1 servers refuse a call without the header");
+	}
+
+	[Test]
+	[Description("A SOAP-header parameter passes the flag to its items, and a constant default on it is refused like a header constant.")]
+	public void Register_Should_Copy_The_Soap_Header_Flag_And_Refuse_A_Header_Constant() {
+		// Arrange
+		var security = new WebServiceParameterArg("UsrSecurity", Type: "Object", Array: true, Path: "wsse:Security",
+			SoapHeader: true, Items: [new WebServiceParameterArg("UsrPassword", Path: "wsse:Password", DefaultSysSetting: "UsrPass")]);
+		var constant = new WebServiceParameterArg("UsrLicence", Path: "tem:Licence", SoapHeader: true, DefaultValue: "lic-123");
+		WebServiceNamespaceArg[] namespaces = [new("tem", "http://tempuri.org/"), new("wsse", "http://wsse/")];
+
+		// Act
+		WebServiceToolResult registered = _sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null,
+			[AddMethod(security)], "soap11", namespaces);
+		ServiceParameterDto saved = _saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single();
+		Action refused = Register(AddMethod(constant), namespaces);
+
+		// Assert
+		registered.Success.Should().BeTrue(because: "a SOAP-header object array with a setting-bound field registers");
+		saved.IsSoapHeader.Should().BeTrue(because: "the parameter goes in the envelope's Header");
+		saved.ItemProperties.Items.Values.Single().IsSoapHeader.Should().BeTrue(because: "Studio copies the flag to items");
+		refused.Should().Throw<ArgumentException>(because: "a SOAP-header constant would be a stored credential")
+			.WithMessage("*constant default is refused*", because: "the refusal points at default-sys-setting");
+	}
+
+	[Test]
+	[Description("A describe-web-service reply of a SOAP service sent back as setMethod and setNamespaces changes nothing the describe shows, and keeps every UId.")]
+	public void Modify_Should_Round_Trip_A_Soap_Service_From_Describe() {
+		// Arrange
+		ServiceSchemaDto original = SoapServiceFixture.Schema();
+		GivenRegistered(SoapServiceFixture.Schema());
+		WebServiceView before = WebServiceSchemaView.From(original, "Custom");
+		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(before.Methods.Single()));
+		WebServiceNamespaceArg[] namespaceArgs = JsonSerializer.Deserialize<WebServiceNamespaceArg[]>(
+			JsonSerializer.Serialize(before.Namespaces));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(original.Name, [
+			new WebServiceOperationArg("setNamespaces", Namespaces: namespaceArgs),
+			new WebServiceOperationArg("setMethod", methodArg)
+		], ["UsrCallerProcess"]);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"describe output is valid modify input; error: {result.Error}");
+		JsonSerializer.Serialize(WebServiceSchemaView.From(_saved, "Custom")).Should().Be(JsonSerializer.Serialize(before),
+			because: "describe reads the service exactly as before");
+		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Keys
+			.Should().BeEquivalentTo(original.Methods.Items.Values.Single().Request.Parameters.Items.Keys,
+				because: "kept parameters keep their UIds, so calling processes still resolve them");
+		_saved.Namespaces.Items.Keys.Should().BeEquivalentTo(original.Namespaces.Items.Keys,
+			because: "a namespace keeps its UId by prefix");
+		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrUser").DefValue.Value
+			.Should().Be("bob", because: "a SOAP-header constant describe hid is kept when no default is sent");
+	}
+
+	[Test]
+	[Description("setType switches SOAP 1.2 to 1.1 and counts as changing every method, so a process calling any method must be acknowledged.")]
+	public void Modify_SetType_Should_Switch_Version_And_Count_As_Changing_Every_Method() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		GivenRegistered(schema);
+		GivenSelect("SysSchema", ProcessCalling(schema.UId, "UsrOp"));
+
+		// Act
+		WebServiceToolResult refused = _sut.Modify(schema.Name, [new WebServiceOperationArg("setType", Type: "soap11")], null);
+		WebServiceToolResult acknowledged = _sut.Modify(schema.Name, [new WebServiceOperationArg("setType", Type: "soap11")],
+			["UsrCallerProcess"]);
+
+		// Assert
+		refused.Success.Should().BeFalse(because: "the version changes every call of the service");
+		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
+		acknowledged.Success.Should().BeTrue(because: "the user agreed");
+		_saved.Type.Should().Be(ServiceSchemaCodes.ServiceTypeSoap11, because: "the service is now SOAP 1.1");
+	}
+
+	[TestCase("rest", Description = "SOAP to REST")]
+	[TestCase("soap13", Description = "unknown type")]
+	[Description("setType refuses a SOAP service becoming REST and an unknown type.")]
+	public void Modify_SetType_Should_Refuse_Leaving_Soap(string type) {
+		// Arrange
+		GivenRegistered(SoapServiceFixture.Schema());
+
+		// Act
+		Action act = () => _sut.Modify("UsrSoapProbe", [new WebServiceOperationArg("setType", Type: type)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "only 1.1 and 1.2 can be switched");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("setNamespaces that drops a prefix a kept method still uses is refused, naming the method and the prefix.")]
+	public void Modify_SetNamespaces_Should_Refuse_Dropping_A_Prefix_In_Use() {
+		// Arrange
+		GivenRegistered(SoapServiceFixture.Schema());
+
+		// Act
+		Action act = () => _sut.Modify("UsrSoapProbe",
+			[new WebServiceOperationArg("setNamespaces", Namespaces: [new("tem", "http://example.org/UsrSoapR")])], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the WS-Security elements use the wsse prefix")
+			.WithMessage("*prefix 'wsse'*", because: "the refusal names the lost prefix");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("setNamespaces")]
+	[TestCase("setType")]
+	[Description("The SOAP-only operations are refused on a REST service.")]
+	public void Modify_Should_Refuse_Soap_Operations_On_A_Rest_Service(string op) {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("UsrGet", "GET", "orders"), null, false, errors);
+		var schema = new ServiceSchemaDto {
+			UId = Guid.NewGuid(), Name = "UsrRest", PackageUId = PackageUId, Type = ServiceSchemaCodes.ServiceTypeRest,
+			BaseUri = "https://erp.example/"
+		};
+		schema.Methods.Items[method.UId.ToString()] = method;
+		GivenRegistered(schema);
+
+		// Act
+		Action act = () => _sut.Modify("UsrRest",
+			[new WebServiceOperationArg(op, Namespaces: Tem, Type: "soap11")], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: $"{op} does not apply to a REST service")
+			.WithMessage(op == "setType" ? "*REST service cannot become SOAP*" : "*REST service has no namespaces*",
+				because: "the refusal says why");
+	}
+
+	[Test]
+	[Description("A namespace row with a null uId or isDefault, or a null row, does not fail the schema read, and setNamespaces keeps the row's collection key as its UId.")]
+	public void Namespaces_Should_Tolerate_Null_Members_And_Keep_The_Collection_Key() {
+		// Arrange
+		const string key = "e34e5bd3-4afe-47a6-9d62-3a2ee09d05f7";
+		string json = SoapServiceFixture.PlatformRead
+			.Replace($"{{\"uId\": \"{key}\",", "{\"uId\": null,")
+			.Replace("\"prefix\": \"tem\", \"isDefault\": true", "\"prefix\": \"tem\", \"isDefault\": null");
+		json.Should().Contain("\"uId\": null", because: "the arrange step must really null the namespace members");
+
+		// Act
+		ServiceSchemaDto schema = JsonSerializer.Deserialize<ServiceSchemaDto>(json);
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+		ServiceItemCollection<ServiceNamespaceDto> rebuilt = WebServiceDefinitionBuilder.BuildNamespaces(
+			[new("tem", "http://example.org/UsrSoapR"), new("wsse", "http://wsse/")], schema.Namespaces,
+			new WebServiceDefinitionBuilder.Errors());
+
+		// Assert
+		view.Namespaces.Should().Contain(n => n.Prefix == "tem" && !n.Default,
+			because: "a null isDefault reads as not default instead of failing the read");
+		rebuilt.Items.Values.Single(n => n.Prefix == "tem").UId.Should().Be(Guid.Parse(key),
+			because: "a row without a uId keeps its identity through the collection key");
+	}
+
+	[Test]
+	[Description("A SOAP-header parameter with items read back from describe and sent as setMethod saves unchanged: the items carry the flag in describe and it is accepted back there.")]
+	public void Modify_Should_Round_Trip_A_Soap_Header_With_Items() {
+		// Arrange
+		var security = new WebServiceParameterArg("UsrSecurity", Type: "Object", Array: true, Path: "wsse:Security",
+			SoapHeader: true, Items: [new WebServiceParameterArg("UsrPassword", Path: "wsse:Password", DefaultSysSetting: "UsrPass")]);
+		_sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null, [AddMethod(security)], "soap11",
+			[new("tem", "http://tempuri.org/"), new("wsse", "http://wsse/")]);
+		GivenRegistered(_saved);
+		WebServiceView before = WebServiceSchemaView.From(_saved, "Custom");
+		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(before.Methods.Single()));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("UsrCalc", [new WebServiceOperationArg("setMethod", methodArg)], null);
+
+		// Assert
+		before.Methods.Single().RequestParameters.Single().Items.Single().SoapHeader.Should().BeTrue(
+			because: "describe reports the flag Studio stores on the items");
+		result.Success.Should().BeTrue(because: $"describe output is valid setMethod input; error: {result.Error}");
+		JsonSerializer.Serialize(WebServiceSchemaView.From(_saved, "Custom")).Should().Be(JsonSerializer.Serialize(before),
+			because: "the header and its item are saved as they were");
+	}
+
+	[Test]
+	[Description("setNamespaces that really changes the list counts as changing every method for the usage guard; the same list sent back does not.")]
+	public void Modify_SetNamespaces_Should_Count_Only_A_Real_Change_For_The_Usage_Guard() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		GivenRegistered(schema);
+		GivenSelect("SysSchema", ProcessCalling(schema.UId, "UsrOp"));
+		WebServiceNamespaceArg[] same = JsonSerializer.Deserialize<WebServiceNamespaceArg[]>(
+			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Namespaces));
+		WebServiceNamespaceArg[] changed = [.. same, new("ns9", "http://added/")];
+
+		// Act
+		WebServiceToolResult unchanged = _sut.Modify(schema.Name, [new WebServiceOperationArg("setNamespaces", Namespaces: same)], null);
+		WebServiceToolResult refused = _sut.Modify(schema.Name, [new WebServiceOperationArg("setNamespaces", Namespaces: changed)], null);
+
+		// Assert
+		unchanged.Success.Should().BeTrue(because: "describe's own list sent back changes no call");
+		refused.Success.Should().BeFalse(because: "a new namespace changes every envelope the service sends");
+		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
+	}
+
+	[TestCase("xmlns", Description = "XML reserved prefix")]
+	[TestCase("soapenv", Description = "the platform's envelope prefix")]
+	[Description("A reserved namespace prefix is refused.")]
+	public void Register_Should_Refuse_A_Reserved_Prefix(string prefix) {
+		// Arrange
+		WebServiceNamespaceArg[] namespaces = [new(prefix, "http://x/"), new("tem", "http://tempuri.org/")];
+
+		// Act
+		Action act = Register(AddMethod(), namespaces);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the envelope would declare the prefix twice")
+			.WithMessage($"*prefix '{prefix}' is reserved*", because: "the refusal names the prefix");
+	}
+
+	[Test]
+	[Description("A soap-action with a line break or credentials, a namespace uri with credentials, a message element with a path and a SOAP base URI placeholder are refused; none of the refused values is echoed.")]
+	public void Register_Should_Refuse_Unsafe_Soap_Values() {
+		// Arrange
+		WebServiceMethodArg method = AddMethod() with { SoapAction = "http://u:pw-123@x/Add\r\n", MessageElement = "tem:Add/tem:X" };
+		WebServiceNamespaceArg[] namespaces = [new("tem", "http://user:ns-pass@tempuri.org/")];
+
+		// Act
+		Action act = () => _sut.Register("Custom", "UsrCalc", null, "http://x.example/{version}/svc", null, null,
+			[method], "soap11", namespaces);
+
+		// Assert
+		string message = act.Should().Throw<ArgumentException>(because: "every value is unsafe").Which.Message;
+		message.Should().Contain("soap-action must be one line", because: "a line break would fail every call");
+		message.Should().Contain("soap-action must not carry credentials", because: "it is stored and shown");
+		message.Should().Contain("the uri must not carry credentials", because: "a namespace uri is stored and shown");
+		message.Should().Contain("is one element", because: "the platform reads only the first element of a path");
+		message.Should().Contain("{placeholder}", because: "a SOAP method has no path parameter to fill it");
+		message.Should().NotContainAny(["pw-123", "ns-pass"], because: "a refused credential is never echoed");
+	}
+
+	[Test]
+	[Description("A setType with an unknown type reports that error alone.")]
+	public void Modify_SetType_Should_Report_An_Unknown_Type_Once() {
+		// Arrange
+		GivenRegistered(SoapServiceFixture.Schema());
+
+		// Act
+		Action act = () => _sut.Modify("UsrSoapProbe", [new WebServiceOperationArg("setType", Type: "soap13")], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "soap13 is not a type")
+			.Which.Message.Should().NotContain("REST service cannot become SOAP",
+				because: "an unknown type is not a REST to SOAP switch");
+	}
+
+	[Test]
+	[Description("A constant on an item of a SOAP-header parameter is hidden by describe even when the item itself lacks the flag, as the platform renders it in the Header.")]
+	public void Describe_Should_Hide_A_Constant_Under_A_Soap_Header_Parent() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		ServiceParameterDto lines = schema.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrLines");
+		lines.IsSoapHeader = true;
+		ServiceParameterDto item = lines.ItemProperties.Items.Values.Single();
+		item.IsSoapHeader = false;
+		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "item-licence-1" };
+
+		// Act
+		string view = JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom"));
+
+		// Assert
+		view.Should().NotContain("item-licence-1", because: "the item travels in the Header with its parent");
+	}
+
+	[Test]
+	[Description("A refusal lists at most the cap of problems and says how many more there are.")]
+	public void Errors_Should_Cap_The_Refusal() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		errors.AddRange(Enumerable.Range(1, WebServiceDefinitionBuilder.Errors.MaxReported + 7).Select(i => $"problem {i}."));
+
+		// Act
+		Action act = errors.ThrowIfAny;
+
+		// Assert
+		string message = act.Should().Throw<ArgumentException>(because: "there are problems").Which.Message;
+		message.Should().EndWith("...and 7 more problems.", because: "the extra problems are counted, not listed");
+		message.Should().NotContain($"problem {WebServiceDefinitionBuilder.Errors.MaxReported + 1}.",
+			because: "a huge definition must not make the refusal huge");
+	}
+
+	[Test]
+	[Description("A SOAP setBaseUri stores the URI as given, without adding a trailing slash.")]
+	public void Modify_SetBaseUri_Should_Keep_A_Soap_Uri_As_Given() {
+		// Arrange
+		GivenRegistered(SoapServiceFixture.Schema());
+
+		// Act
+		_sut.Modify("UsrSoapProbe", [new WebServiceOperationArg("setBaseUri", BaseUri: "http://x.example/service.asmx")], null);
+
+		// Assert
+		_saved.BaseUri.Should().Be("http://x.example/service.asmx", because: "a SOAP call goes to the base URI as given");
+	}
+}
