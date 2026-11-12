@@ -255,23 +255,26 @@ public sealed class WebServiceDesigner(
 	/// byte-order mark, which <c>JsonNode.Parse</c> rejects.
 	/// </remarks>
 	internal static IReadOnlyList<(string Element, string Method)> FindElements(string metadata, string uid) {
-		var found = new List<(string Element, string Method)>();
+		IReadOnlyList<(string Element, string Method)> unreadable = [(null, null)];
+		List<(string Element, string Method)> found;
 		try {
-			var pending = new Stack<JsonNode>();
-			pending.Push(JsonNode.Parse(metadata.TrimStart('\uFEFF')));
-			while (pending.Count > 0) {
-				JsonNode current = pending.Pop();
-				if (current is JsonObject node && IsElementOf(node, uid)) {
-					found.Add((node["A2"]?.ToString(), node["IX2"]?.ToString()));
-				}
-				foreach (JsonNode child in Children(current)) {
-					pending.Push(child);
-				}
-			}
+			found = Walk(JsonNode.Parse(metadata.TrimStart('\uFEFF')), uid);
 		} catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException) {
-			found.Clear();
+			return unreadable;
 		}
-		return found.Count > 0 ? found : [(null, null)];
+		return found.Count > 0 ? found : unreadable;
+	}
+
+	private static List<(string Element, string Method)> Walk(JsonNode root, string uid) {
+		var found = new List<(string Element, string Method)>();
+		var nodes = new List<JsonNode> { root };
+		for (int i = 0; i < nodes.Count; i++) {
+			if (nodes[i] is JsonObject node && IsElementOf(node, uid)) {
+				found.Add((node["A2"]?.ToString(), node["IX2"]?.ToString()));
+			}
+			nodes.AddRange(Children(nodes[i]));
+		}
+		return found;
 	}
 
 	private static bool IsElementOf(JsonObject node, string uid) =>
