@@ -267,7 +267,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794486759000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794490459000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
