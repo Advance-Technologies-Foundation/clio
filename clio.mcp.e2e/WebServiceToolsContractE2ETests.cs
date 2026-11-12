@@ -60,4 +60,28 @@ public sealed class WebServiceToolsContractE2ETests : McpContractFixtureBase {
 		result.Error.Should().Contain("base-url", because: "the refusal names the unknown key");
 		result.Error.Should().Contain("base-uri", because: "the refusal lists the valid fields");
 	}
+
+	[Test]
+	[AllureName("test-web-service-method names the argument an agent guessed")]
+	[Description("A test call sent with method-code instead of method is refused with a rename hint naming method, before touching any environment.")]
+	public async Task TestWebServiceMethod_Should_Hint_Method_For_Method_Code() {
+		// Arrange
+		await using ArrangeContext context = Arrange();
+
+		// Act
+		CallToolResult call = await context.Session.CallToolAsync(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = $"missing-{Guid.NewGuid():N}",
+					["code"] = "UsrErp",
+					["method-code"] = "UsrGetOrders"
+				}
+			}, context.CancellationTokenSource.Token);
+		WebServiceTestResult result = EntitySchemaStructuredResultParser.Extract<WebServiceTestResult>(call);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "method-code is not an argument of test-web-service-method");
+		result.Error.Should().Contain("'method-code' -> 'method'",
+			because: "the refusal names the argument to use, so the retry is right the first time");
+	}
 }

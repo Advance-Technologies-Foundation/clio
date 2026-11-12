@@ -147,6 +147,7 @@ public static partial class WebServiceDefinitionBuilder {
 			RequestTimeout = arg.TimeoutMs is > 0 ? arg.TimeoutMs.Value : existing?.RequestTimeout ?? DefaultTimeoutMs,
 			Caption = Caption(arg.Caption ?? code),
 			UseAuthInfo = arg.UseAuth ?? serviceHasAuth,
+			SoapAction = existing?.SoapAction,
 			Extra = existing?.Extra,
 			Request = new ServiceMethodRequestDto {
 				Uri = uri, ContentType = contentType, HttpMethodType = verb,
@@ -346,6 +347,9 @@ public static partial class WebServiceDefinitionBuilder {
 			IsRequired = arg.Required ?? placement == ServiceSchemaCodes.Placements["path"],
 			DefValue = defValue,
 			Caption = Caption(arg.Caption ?? arg.Code),
+			// Typed members the platform sent are carried like the extension bag, so a save keeps them as read.
+			IsSoapHeader = previous?.IsSoapHeader,
+			SequenceElementName = previous?.SequenceElementName,
 			Extra = previous?.Extra,
 			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties, isRequest, owner, errors, prefix,
 				nested: true)

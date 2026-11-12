@@ -59,9 +59,12 @@ public interface IWebServiceDesignerClient {
 		IReadOnlyDictionary<string, string> parameterValues);
 }
 
-/// <summary>The outcome of a test call. The request fields stay inside clio: they are read only to mask secrets.</summary>
+/// <summary>
+/// The outcome of a test call. The request fields stay inside clio: they are read only to mask secrets.
+/// <see cref="ParameterValues"/> is the platform's JSON text of the parsed response parameters by code.
+/// </summary>
 public sealed record ServiceMethodCallResult(bool Success, int? StatusCode, string ResponseBody, string Error,
-	string RequestRawData = null, string RequestBody = null);
+	string RequestRawData = null, string RequestBody = null, string ParameterValues = null);
 
 public sealed class WebServiceDesignerClient(IApplicationClient applicationClient, IServiceUrlBuilder urlBuilder)
 	: CreatioServiceClient(applicationClient, urlBuilder), IWebServiceDesignerClient {
@@ -181,7 +184,7 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 		CallMethodResponse result = envelope?.Result
 			?? throw new InvalidOperationException("The test call returned no result.");
 		return new ServiceMethodCallResult(result.Success, result.StatusCode, result.ResponseBody,
-			result.ErrorInfo?.Message, result.RequestRawData, result.RequestBody);
+			result.ErrorInfo?.Message, result.RequestRawData, result.RequestBody, result.ParameterValuesText);
 	}
 
 	/// <summary>The row key a selected column comes back under: a column path without its dots.</summary>
@@ -230,5 +233,16 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 		[JsonPropertyName("ResponseBody")] public string ResponseBody { get; init; }
 		[JsonPropertyName("RequestRawData")] public string RequestRawData { get; init; }
 		[JsonPropertyName("RequestBody")] public string RequestBody { get; init; }
+		// A JSON text on the stands measured; an object is accepted too, so a platform that sends one does not
+		// fail the whole call.
+		[JsonPropertyName("ParameterValues")] public JsonElement? ParameterValues { get; init; }
+
+		public string ParameterValuesText => ParameterValues is not JsonElement value
+			? null
+			: value.ValueKind switch {
+				JsonValueKind.String => value.GetString(),
+				JsonValueKind.Object or JsonValueKind.Array => value.GetRawText(),
+				_ => null
+			};
 	}
 }
