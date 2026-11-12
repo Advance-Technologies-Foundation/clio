@@ -36,7 +36,7 @@ public sealed class DynamicCasePageStepTests {
 		_validator = Substitute.For<IPageDataSourceReferenceValidator>();
 		_validator.Validate(Arg.Any<string>(), Arg.Any<Func<string>>())
 			.Returns(new SchemaValidationResult { IsValid = true });
-		_resolver.Resolve(Package, Entity, Arg.Any<string>())
+		_resolver.Resolve(Package, Entity, Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
 			.Returns(new RecordPageResolution([Page], DynamicCaseRecordPageResolver.ResolvedByRelatedPageAddon, null,
 				null, []));
 		_step = new DynamicCasePageStep(_resolver, _pageReader, _writer, _validator);
@@ -50,7 +50,8 @@ public sealed class DynamicCasePageStepTests {
 		_validator.ClearReceivedCalls();
 	}
 
-	private void PageReads(PageBundleInfo bundle, string schemaType = "web", string designPackage = Package) {
+	private void PageReads(PageBundleInfo bundle, string schemaType = "web", string designPackage = Package,
+		PageEditableSchemaInfo editable = null) {
 		_pageReader.TryGetPage(Arg.Any<PageGetOptions>(), out Arg.Any<PageGetResponse>())
 			.Returns(call => {
 				call[1] = new PageGetResponse {
@@ -58,7 +59,8 @@ public sealed class DynamicCasePageStepTests {
 					Page = new PageMetadataInfo {
 						SchemaName = Page, SchemaType = schemaType, DesignPackageName = designPackage
 					},
-					Bundle = bundle
+					Bundle = bundle,
+					Editable = editable
 				};
 				return true;
 			});
@@ -224,6 +226,61 @@ public sealed class DynamicCasePageStepTests {
 		plan.Status.Should().Be(DynamicCasePageStep.StatusPlanned, because: "the template alone does not refuse the bar");
 		plan.Notes.Should().ContainSingle(note => note.Contains("PageWithAreaFreedomTemplate") && note.Contains("tabbed"),
 			because: "the product adds the bar only to tabbed pages, so the caller is told to check");
+	}
+
+	[Test]
+	[Description("The plan pins the editable schema's checksum it read, on the dry run and in the plan the write sends, so a designer save between the plan and the write is refused instead of merged over.")]
+	public void Plan_ShouldPinTheEditableChecksum_OnTheDryRunAndInThePlan() {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()),
+			editable: new PageEditableSchemaInfo { EditableSchemaExists = true, Checksum = "abc123" });
+		Saves();
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
+		_step.Write(Env, plan);
+
+		// Assert
+		plan.ExpectedChecksum.Should().Be("abc123", because: "the plan carries the checksum it was made against");
+		_writer.Received(1).TryUpdatePage(Arg.Is<PageUpdateOptions>(options =>
+				options.DryRun && options.ExpectedChecksum == "abc123"),
+			out Arg.Any<PageUpdateResponse>());
+		_writer.Received(1).TryUpdatePage(Arg.Is<PageUpdateOptions>(options =>
+				!options.DryRun && options.ExpectedChecksum == "abc123"),
+			out Arg.Any<PageUpdateResponse>());
+	}
+
+	[Test]
+	[Description("With no replacing schema in the design package there is no checksum to pin, and the save is not asked for one.")]
+	public void Plan_ShouldPinNoChecksum_WhenNoEditableSchemaExists() {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()),
+			editable: new PageEditableSchemaInfo { EditableSchemaExists = false, Checksum = "ignored" });
+		Saves();
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null);
+
+		// Assert
+		plan.ExpectedChecksum.Should().BeNull(because: "there is no editable schema to pin");
+		_writer.Received(1).TryUpdatePage(Arg.Is<PageUpdateOptions>(options =>
+				options.DryRun && options.ExpectedChecksum == null),
+			out Arg.Any<PageUpdateResponse>());
+	}
+
+	[Test]
+	[Description("The fallback packages are passed to the resolver unchanged.")]
+	public void Plan_ShouldPassTheFallbackPackages_ToTheResolver() {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()));
+		Saves();
+		IReadOnlyList<string> fallbacks = ["UsrOrdersApp"];
+
+		// Act
+		_step.Plan(Env, Package, Entity, null, fallbacks);
+
+		// Assert
+		_resolver.Received(1).Resolve(Package, Entity, null, fallbacks);
 	}
 
 	[Test]

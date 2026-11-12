@@ -47,6 +47,11 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 
 	/// <inheritdoc cref="IPackageDependencyManager.AddDependencies"/>
 	public IReadOnlyList<string> AddDependencies(string packageName,
+		IEnumerable<PackageDependencySpec> dependencies) =>
+		AddDependenciesReportingCompilation(packageName, dependencies).Dependencies;
+
+	/// <inheritdoc cref="IPackageDependencyManager.AddDependenciesReportingCompilation"/>
+	public PackageDependencyAddResult AddDependenciesReportingCompilation(string packageName,
 		IEnumerable<PackageDependencySpec> dependencies) {
 		packageName.CheckArgumentNullOrWhiteSpace(nameof(packageName));
 		dependencies.CheckArgumentNull(nameof(dependencies));
@@ -77,9 +82,9 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 			});
 		}
 
-		SavePackageProperties(package);
+		bool compilationRequired = SavePackageProperties(package);
 
-		return ToDependencyNames(package.DependsOnPackages);
+		return new PackageDependencyAddResult(ToDependencyNames(package.DependsOnPackages), compilationRequired);
 	}
 
 	/// <inheritdoc cref="IPackageDependencyManager.GetDependencies(string)"/>
@@ -180,7 +185,7 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 		return response.Package ?? throw new InvalidOperationException(couldNotReadMessage);
 	}
 
-	private void SavePackageProperties(WorkspacePackageDto package) {
+	private bool SavePackageProperties(WorkspacePackageDto package) {
 		SavePackagePropertiesResponse response =
 			SendRequest<WorkspacePackageDto, SavePackagePropertiesResponse>(
 				PackageServiceUrl, "SavePackageProperties", package);
@@ -196,6 +201,7 @@ internal sealed class PackageDependencyManager : BasePackageOperation, IPackageD
 			_logger.WriteInfo(
 				"The dependency change requires a configuration compilation. Run compile-configuration to apply.");
 		}
+		return response.CompilationRequired;
 	}
 
 	/// <summary>Opens the storage's validation errors in a failed save's message; callers classify on it.</summary>

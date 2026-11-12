@@ -28,7 +28,10 @@ public interface IDynamicCaseRecordPageResolver {
 	/// <param name="packageName">The package whose hierarchy the add-on is read in.</param>
 	/// <param name="entitySchemaName">The case object.</param>
 	/// <param name="explicitPageSchemaName">A page the caller named; it wins over any registration.</param>
-	RecordPageResolution Resolve(string packageName, string entitySchemaName, string explicitPageSchemaName);
+	/// <param name="fallbackPackageNames">Packages to read the add-on in when <paramref name="packageName"/> cannot,
+	/// for example the object's own packages while the case package does not depend on them yet.</param>
+	RecordPageResolution Resolve(string packageName, string entitySchemaName, string explicitPageSchemaName,
+		IReadOnlyList<string> fallbackPackageNames = null);
 }
 
 /// <inheritdoc />
@@ -49,18 +52,27 @@ public sealed class DynamicCaseRecordPageResolver(
 	private const string RemedyNamePage = " Pass page-schema-name with the Freedom UI record page to decorate.";
 
 	/// <inheritdoc />
-	public RecordPageResolution Resolve(string packageName, string entitySchemaName, string explicitPageSchemaName) {
+	public RecordPageResolution Resolve(string packageName, string entitySchemaName, string explicitPageSchemaName,
+		IReadOnlyList<string> fallbackPackageNames = null) {
 		if (!string.IsNullOrWhiteSpace(explicitPageSchemaName)) {
 			return Found(explicitPageSchemaName.Trim(), ResolvedByExplicit);
 		}
 		string addonFailure = null;
 		IReadOnlyList<RelatedPageEntry> pages = [];
-		try {
-			pages = relatedPageAddonService
-				.Get(new RelatedPageAddonReadRequest(packageName, entitySchemaName, RelatedPageSchemaType.Web))
-				?.Pages ?? [];
-		} catch (Exception exception) {
-			addonFailure = exception.Message;
+		// The case package reaches the object only after the missing dependencies are added, which happens after
+		// these checks; the packages that own the object already reach it, so the add-on is read there instead.
+		foreach (string readPackage in new[] { packageName }.Concat(fallbackPackageNames ?? [])
+					.Where(name => !string.IsNullOrWhiteSpace(name))
+					.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			try {
+				pages = relatedPageAddonService
+					.Get(new RelatedPageAddonReadRequest(readPackage, entitySchemaName, RelatedPageSchemaType.Web))
+					?.Pages ?? [];
+				addonFailure = null;
+				break;
+			} catch (Exception exception) {
+				addonFailure ??= exception.Message;
+			}
 		}
 		// An add-on that could not be read is not an empty one: the card registrations would then decorate a page
 		// the object does not open, or call a Freedom object Classic. The read fails, for example, when the case

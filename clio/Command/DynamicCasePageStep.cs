@@ -32,6 +32,12 @@ public sealed class DynamicCasePagePlan {
 	/// <summary>The marker-wrapped append body the write sends.</summary>
 	public string Fragment { get; init; }
 
+	/// <summary>
+	/// The editable schema's checksum the plan was made against; the write pins it, so a change made in the designer
+	/// between the plan and the write is refused instead of being merged over. Null when no replacing schema exists.
+	/// </summary>
+	public string ExpectedChecksum { get; init; }
+
 	/// <summary>The typed pages to choose from, on <c>record-page-ambiguous</c>.</summary>
 	public IReadOnlyList<DynamicCasePageCandidate> Candidates { get; init; } = [];
 
@@ -59,7 +65,7 @@ public interface IDynamicCasePageStep {
 	/// <param name="entitySchemaName">The case object.</param>
 	/// <param name="explicitPageSchemaName">A page the caller named, or <see langword="null"/>.</param>
 	DynamicCasePagePlan Plan(string environmentName, string packageName, string entitySchemaName,
-		string explicitPageSchemaName);
+		string explicitPageSchemaName, IReadOnlyList<string> fallbackPackageNames = null);
 
 	/// <summary>Appends the planned fragment to the page's design package.</summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
@@ -88,8 +94,9 @@ public sealed class DynamicCasePageStep(
 
 	/// <inheritdoc />
 	public DynamicCasePagePlan Plan(string environmentName, string packageName, string entitySchemaName,
-		string explicitPageSchemaName) {
-		RecordPageResolution resolution = recordPageResolver.Resolve(packageName, entitySchemaName, explicitPageSchemaName);
+		string explicitPageSchemaName, IReadOnlyList<string> fallbackPackageNames = null) {
+		RecordPageResolution resolution = recordPageResolver.Resolve(packageName, entitySchemaName, explicitPageSchemaName,
+			fallbackPackageNames);
 		if (resolution.ErrorCode is not null) {
 			return new DynamicCasePagePlan {
 				Status = StatusRefused,
@@ -121,6 +128,7 @@ public sealed class DynamicCasePageStep(
 				+ "page is reloaded.");
 		}
 		string designPackageName = page.Page?.DesignPackageName;
+		string expectedChecksum = page.Editable is { EditableSchemaExists: true } ? page.Editable.Checksum : null;
 		if (check.BarAlreadyPresent) {
 			return new DynamicCasePagePlan {
 				Status = StatusAlreadyPresent,
@@ -141,8 +149,8 @@ public sealed class DynamicCasePageStep(
 				$"The progress bar on '{pageSchemaName}' references data the page does not have: "
 				+ string.Join("; ", references.Errors));
 		}
-		if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, pageSchemaName, fragment, dryRun: true),
-				out PageUpdateResponse dryRun) || dryRun?.Success != true) {
+		if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, pageSchemaName, fragment, dryRun: true,
+				expectedChecksum), out PageUpdateResponse dryRun) || dryRun?.Success != true) {
 			return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
 				$"The append dry run of the progress bar on '{pageSchemaName}' was rejected: "
 				+ $"{dryRun?.Error ?? "no answer"}");
@@ -154,6 +162,7 @@ public sealed class DynamicCasePageStep(
 			DesignPackageName = designPackageName,
 			Template = check.Template,
 			Fragment = fragment,
+			ExpectedChecksum = expectedChecksum,
 			Notes = notes,
 			Warnings = dryRun.Warnings?.ToList() ?? []
 		};
@@ -164,7 +173,7 @@ public sealed class DynamicCasePageStep(
 		ArgumentNullException.ThrowIfNull(plan);
 		try {
 			if (!pageBodyWriter.TryUpdatePage(BuildOptions(environmentName, plan.PageSchemaName, plan.Fragment,
-					dryRun: false), out PageUpdateResponse saved) || saved?.Success != true) {
+					dryRun: false, plan.ExpectedChecksum), out PageUpdateResponse saved) || saved?.Success != true) {
 				return new DynamicCasePageWrite(false, saved?.Error ?? "The page save gave no answer.", []);
 			}
 			return new DynamicCasePageWrite(true, null, saved.Warnings?.ToList() ?? []);
@@ -185,13 +194,14 @@ public sealed class DynamicCasePageStep(
 		};
 
 	private static PageUpdateOptions BuildOptions(string environmentName, string pageSchemaName, string fragment,
-		bool dryRun) =>
+		bool dryRun, string expectedChecksum) =>
 		new() {
 			Environment = environmentName,
 			SchemaName = pageSchemaName,
 			Body = fragment,
 			Mode = AppendMode,
 			DryRun = dryRun,
-			Validate = true
+			Validate = true,
+			ExpectedChecksum = expectedChecksum
 		};
 }

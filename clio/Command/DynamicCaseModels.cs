@@ -405,6 +405,10 @@ public sealed class DynamicCaseDependencies {
 	/// <summary>The dependencies this call added; on <c>left-after-failure</c> they are still there.</summary>
 	[JsonPropertyName("added")]
 	public List<string> Added { get; init; }
+
+	/// <summary>The server asked for a configuration compilation after this call added the dependencies.</summary>
+	[JsonPropertyName("compilationRequired")]
+	public bool CompilationRequired { get; init; }
 }
 
 /// <summary>The exact call that adds the progress bar when this call could not.</summary>

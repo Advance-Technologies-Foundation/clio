@@ -173,6 +173,58 @@ public sealed class DynamicCaseRecordPageResolverTests {
 			because: "a silent add-on failure would read as an object that has no record page");
 	}
 
+	[Test]
+	[Description("When the case package cannot read the add-on yet (it does not depend on the object's packages until they are added), the add-on is read in a fallback package and its default wins.")]
+	public void Resolve_ShouldReadTheAddonInAFallbackPackage_WhenTheCasePackageCannotReadIt() {
+		// Arrange
+		_addons.Get(Arg.Is<RelatedPageAddonReadRequest>(request => request.PackageName == Package))
+			.Throws(new InvalidOperationException("schema is not available"));
+		_addons.Get(Arg.Is<RelatedPageAddonReadRequest>(request => request.PackageName == "UsrOrdersApp"))
+			.Returns(new RelatedPageAddonReadResult("UsrOrder", Guid.NewGuid().ToString(), "UsrOrdersApp",
+				Guid.NewGuid().ToString(), "RelatedPage", null, 1, [Entry("UsrOrders_FormPage")]));
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "UsrOrder", null, ["UsrOrdersApp"]);
+
+		// Assert
+		resolution.ErrorCode.Should().BeNull(because: "the fallback package read the add-on");
+		resolution.PageSchemaNames.Should().Equal(["UsrOrders_FormPage"], because: "the add-on default is the page");
+		_cards.DidNotReceiveWithAnyArgs().TryResolve(default!, out _);
+	}
+
+	[Test]
+	[Description("The case package is read first; a fallback is not read when the case package already answers.")]
+	public void Resolve_ShouldNotReadAFallback_WhenTheCasePackageReadsTheAddon() {
+		// Arrange
+		AddonLists("UsrOrder", Entry("UsrOrders_FormPage"));
+
+		// Act
+		_resolver.Resolve(Package, "UsrOrder", null, ["UsrOrdersApp"]);
+
+		// Assert
+		_addons.Received(1).Get(Arg.Any<RelatedPageAddonReadRequest>());
+		_addons.Received(1).Get(Arg.Is<RelatedPageAddonReadRequest>(request => request.PackageName == Package));
+	}
+
+	[Test]
+	[Description("When no package can read the add-on the refusal names the case package's failure and the remedy, and no card is consulted.")]
+	public void Resolve_ShouldReportNotFound_WhenNoFallbackCanReadTheAddon() {
+		// Arrange
+		_addons.Get(Arg.Any<RelatedPageAddonReadRequest>()).Throws(new InvalidOperationException("schema is not available"));
+		CardsAre("UsrOrder", new MigrationEditPageInfo {
+			CardSchema = "UsrOrderPage", Kind = ListEntityClientSchemasCommand.KindFreedom
+		});
+
+		// Act
+		RecordPageResolution resolution = _resolver.Resolve(Package, "UsrOrder", null, ["UsrOrdersApp"]);
+
+		// Assert
+		resolution.ErrorCode.Should().Be(DynamicCaseErrorCodes.RecordPageNotFound, because: "no package read the add-on");
+		resolution.ErrorMessage.Should().Contain("page-schema-name", because: "the remedy is named");
+		_addons.Received(2).Get(Arg.Any<RelatedPageAddonReadRequest>());
+		_cards.DidNotReceiveWithAnyArgs().TryResolve(default!, out _);
+	}
+
 	[TestCase(ListEntityClientSchemasCommand.KindClassic)]
 	[TestCase(ListEntityClientSchemasCommand.KindFreedom)]
 	[Description("An add-on that cannot be read is not an empty one: the card registration is not consulted, so a Classic card cannot be blamed and another Freedom card cannot get the bar.")]

@@ -42,7 +42,10 @@ public sealed class DynamicCaseServiceTests {
 		_urlBuilder.Build(Arg.Any<string>(), env)
 			.Returns(call => "http://sandbox/0/" + call.ArgAt<string>(0));
 		_service = new DynamicCaseService(_client, _pageStep, _dependencies, _settings, _urlBuilder);
-		_pageStep.Plan(Env, Package, Entity, Arg.Any<string>()).Returns(PlannedPage());
+		_pageStep.Plan(Env, Package, Entity, Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>()).Returns(PlannedPage());
+		_dependencies.AddDependenciesReportingCompilation(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Returns(call => new PackageDependencyAddResult(
+				[.. call.Arg<IEnumerable<PackageDependencySpec>>().Select(spec => spec.Name)], false));
 		_pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>()).Returns(new DynamicCasePageWrite(true, null, []));
 	}
 
@@ -107,7 +110,7 @@ public sealed class DynamicCaseServiceTests {
 		result.Outcome.Should().Be(DynamicCaseOutcomes.Created, because: "both passes and the page succeeded");
 		Received.InOrder(() => {
 			_client.Send(Env, Arg.Is<BuildCaseRequest>(request => request.ValidateOnly && request.AllowMissingDependencies));
-			_pageStep.Plan(Env, Package, Entity, null);
+			_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>());
 			_client.Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly && !request.AllowMissingDependencies));
 			_pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>());
 		});
@@ -128,7 +131,7 @@ public sealed class DynamicCaseServiceTests {
 		result.ErrorCode.Should().Be("dependencies-missing", because: "the server's refusal is passed through");
 		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesMissing,
 			because: "the missing dependencies were not added");
-		_dependencies.DidNotReceiveWithAnyArgs().AddDependencies(default!, default!);
+		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
 	}
 
 	[Test]
@@ -144,9 +147,9 @@ public sealed class DynamicCaseServiceTests {
 		result.Outcome.Should().Be(DynamicCaseOutcomes.Refused, because: "the server refused");
 		result.ErrorCode.Should().Be("rights-missing", because: "the server's code is the contract");
 		result.Success.Should().BeFalse(because: "a refusal is not a success");
-		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!);
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
 		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
-		_dependencies.DidNotReceiveWithAnyArgs().AddDependencies(default!, default!);
+		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
 	}
 
 	[Test]
@@ -154,7 +157,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldNeverCallTheBuildPass_WhenThePageIsRefused() {
 		// Arrange
 		Passes(Envelope("planned", missing: ["CrtBase"]));
-		_pageStep.Plan(Env, Package, Entity, null).Returns(new DynamicCasePagePlan {
+		_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>()).Returns(new DynamicCasePagePlan {
 			Status = DynamicCasePageStep.StatusRefused, ErrorCode = DynamicCaseErrorCodes.PageAppendRejected,
 			ErrorMessage = "rejected", PageSchemaName = Page
 		});
@@ -166,7 +169,7 @@ public sealed class DynamicCaseServiceTests {
 		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.PageAppendRejected, because: "the page refusal is the answer");
 		result.Outcome.Should().Be(DynamicCaseOutcomes.Refused, because: "nothing was written");
 		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
-		_dependencies.DidNotReceiveWithAnyArgs().AddDependencies(default!, default!);
+		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
 	}
 
 	[Test]
@@ -185,8 +188,8 @@ public sealed class DynamicCaseServiceTests {
 			because: "the dependency would be added by a real run");
 		result.Page.Status.Should().Be(DynamicCasePageStep.StatusPlanned, because: "the page step was planned");
 		result.Page.Fragment.Should().NotBeNullOrWhiteSpace(because: "the plan shows the fragment it would write");
-		_pageStep.Received(1).Plan(Env, Package, Entity, null);
-		_dependencies.DidNotReceiveWithAnyArgs().AddDependencies(default!, default!);
+		_pageStep.Received(1).Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>());
+		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
 		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		_pageStep.DidNotReceiveWithAnyArgs().Write(default!, default!);
 	}
@@ -202,7 +205,7 @@ public sealed class DynamicCaseServiceTests {
 
 		// Assert
 		Received.InOrder(() => {
-			_dependencies.AddDependencies(Package, Arg.Is<IEnumerable<PackageDependencySpec>>(specs =>
+			_dependencies.AddDependenciesReportingCompilation(Package, Arg.Is<IEnumerable<PackageDependencySpec>>(specs =>
 				specs.Select(spec => spec.Name).SequenceEqual(new[] { "CrtBase", "CrtCoreBase" })));
 			_client.Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		});
@@ -215,7 +218,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldRefuseWithDependencyCycle_WhenTheStorageRefusesTheAdd() {
 		// Arrange
 		Passes(Envelope("planned", missing: ["CrtBase"]));
-		_dependencies.AddDependencies(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
 			.Throws(new InvalidOperationException("Failed to save. Validation errors: CrtBase/x: cycle"));
 
 		// Act
@@ -296,7 +299,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldNotNoteTheDesignPackage_WhenThePageWriteFails() {
 		// Arrange
 		Passes(Envelope("planned"));
-		_pageStep.Plan(Env, Package, Entity, null).Returns(PlannedPage(designPackage: "Custom"));
+		_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>()).Returns(PlannedPage(designPackage: "Custom"));
 		_pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>()).Returns(new DynamicCasePageWrite(false, "conflict", []));
 
 		// Act
@@ -321,7 +324,7 @@ public sealed class DynamicCaseServiceTests {
 		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed,
 			because: "a timeout says nothing about the package, so no reinstall is advised");
 		result.ErrorMessage.Should().NotContain("install-process-builder", because: "a reinstall would not help");
-		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!);
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
 	}
 
 	[Test]
@@ -344,7 +347,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldRefuseWithDependencyAddFailed_WhenTheAddFailsOtherwise() {
 		// Arrange
 		Passes(Envelope("planned", missing: ["CrtBase"]));
-		_dependencies.AddDependencies(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
 			.Throws(new InvalidOperationException("Failed to save package dependencies."));
 
 		// Act
@@ -382,13 +385,11 @@ public sealed class DynamicCaseServiceTests {
 		result.Page.Status.Should().Be(DynamicCaseService.PageInserted, because: "the bar was written");
 	}
 
-	[TestCase(BuildCaseReplyKind.RouteMissing)]
-	[TestCase(BuildCaseReplyKind.NotAnEnvelope)]
-	[Description("A 404 or a non-envelope reply on the validate pass is process-builder-without-build-case: the installed package passed the floor and still has no BuildCase.")]
-	public void Create_ShouldReportProcessBuilderWithoutBuildCase_WhenTheValidatePassFindsNoOperation(
-		BuildCaseReplyKind kind) {
+	[Test]
+	[Description("A 404 on the validate pass is process-builder-without-build-case: the installed package passed the floor and still has no BuildCase.")]
+	public void Create_ShouldReportProcessBuilderWithoutBuildCase_WhenTheValidatePassFindsNoOperation() {
 		// Arrange
-		Passes(new BuildCaseReply(kind, null, "Endpoint not found."));
+		Passes(new BuildCaseReply(BuildCaseReplyKind.RouteMissing, null, "Endpoint not found."));
 
 		// Act
 		DynamicCaseResult result = _service.Create(Options());
@@ -398,7 +399,85 @@ public sealed class DynamicCaseServiceTests {
 			because: "the package that answered does not carry the operation");
 		result.ErrorMessage.Should().Contain("install-process-builder", because: "the remedy is named");
 		result.ErrorMessage.Should().Contain("Nothing was written", because: "the validate pass writes nothing");
-		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!);
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
+	}
+
+	[Test]
+	[Description("A validate-pass body that is not the envelope (a fault from inside BuildCase, an HTML error or login page) is request-failed: only a 404 proves the operation is missing, and a reinstall would restart the site for nothing.")]
+	public void Create_ShouldReportRequestFailed_WhenTheValidatePassAnswersWithSomethingElse() {
+		// Arrange
+		Passes(new BuildCaseReply(BuildCaseReplyKind.NotAnEnvelope, null, "<html>Login</html>"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed,
+			because: "a body that is not the envelope does not prove the package lacks BuildCase");
+		result.ErrorMessage.Should().NotContain("install-process-builder", because: "a reinstall would not help");
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
+	}
+
+	[Test]
+	[Description("The record page is resolved with the missing packages as fallbacks for the add-on read: the case package does not reach the object until they are added, which happens after the plan.")]
+	public void Create_ShouldPassTheMissingPackages_ToThePagePlan() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase", "UsrOrdersApp"]));
+
+		// Act
+		_service.Create(Options(dryRun: true));
+
+		// Assert
+		_pageStep.Received(1).Plan(Env, Package, Entity, null,
+			Arg.Is<IReadOnlyList<string>>(names => names.SequenceEqual(new[] { "CrtBase", "UsrOrdersApp" })));
+	}
+
+	[Test]
+	[Description("A build pass that fails with leftovers keeps the dependencies this call added: the case schema or settings row it could not undo still references them.")]
+	public void Create_ShouldKeepTheAddedDependencies_WhenTheBuildPassLeavesLeftovers() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]),
+			Envelope("failed-leftover", success: false, errorCode: "write-failed",
+				leftovers: ["delete-schema UsrOrderCase"]));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		_dependencies.DidNotReceiveWithAnyArgs().RemoveDependencies(default!, default!);
+		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesKeptForLeftovers,
+			because: "the leftovers still need the added dependencies");
+		result.Dependencies.Added.Should().Equal(["CrtBase"], because: "what was added is reported");
+		result.Warnings.Should().Contain(warning => warning.Contains("CrtBase") && warning.Contains("remove-package-dependency"),
+			because: "the caller removes them by hand after the leftovers");
+		result.Leftovers.Should().ContainSingle(because: "the server's leftovers are passed on");
+	}
+
+	[Test]
+	[Description("When the dependency save asks for a configuration compilation the result says so: the server's no-compile note is dropped, a compile obligation and a warning are added, and the case and page themselves still need none.")]
+	public void Create_ShouldReportTheCompilation_WhenTheDependencyAddAsksForOne() {
+		// Arrange
+		Passes(Envelope("planned", missing: ["CrtBase"]));
+		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
+			.Returns(new PackageDependencyAddResult(["CrtBase"], true));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseOutcomes.Created, because: "the case and the bar were written");
+		result.Dependencies.CompilationRequired.Should().BeTrue(because: "the server asked for a compilation");
+		result.Obligations.CompileRequired.Should().BeTrue(because: "the added dependencies need a compilation");
+		result.Obligations.Artifacts.Should().ContainSingle(artifact =>
+				artifact.Kind == DynamicCaseService.DependenciesArtifact && artifact.Compile == true,
+			because: "the obligation names what needs the compile");
+		result.Obligations.Artifacts.Single(artifact => artifact.Kind == "page").Compile.Should().BeFalse(
+			because: "the page itself is still served as saved");
+		result.Notes.Should().NotContain(note => note.StartsWith("No compile or restart is needed"),
+			because: "the server's note speaks for the case alone and would contradict the obligation");
+		result.Warnings.Should().Contain(warning => warning.Contains("compile-creatio without package-name")
+				&& warning.Contains("until the configuration is compiled"),
+			because: "the wording carries the marker that keeps the tool's own no-compile note off");
 	}
 
 	[Test]
@@ -431,7 +510,7 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.Outcome.Should().Be(DynamicCaseOutcomes.CreatedPageSkipped, because: "only the case was asked for");
 		result.Page.Status.Should().Be(DynamicCaseService.PageSkipped, because: "the page step was skipped");
-		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!);
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
 	}
 
 	[Test]
@@ -439,7 +518,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldAnswerAlreadyPresent_WhenTheCaseAndTheBarExist() {
 		// Arrange
 		Passes(Envelope("already-present"), Envelope("already-present"));
-		_pageStep.Plan(Env, Package, Entity, null).Returns(new DynamicCasePagePlan {
+		_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>()).Returns(new DynamicCasePagePlan {
 			Status = DynamicCasePageStep.StatusAlreadyPresent, PageSchemaName = Page
 		});
 
@@ -458,7 +537,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldNoteTheSecondPackage_WhenThePageIsWrittenOutsideTheCasePackage() {
 		// Arrange
 		Passes(Envelope("planned"));
-		_pageStep.Plan(Env, Package, Entity, null).Returns(PlannedPage(designPackage: "Custom"));
+		_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>()).Returns(PlannedPage(designPackage: "Custom"));
 
 		// Act
 		DynamicCaseResult result = _service.Create(Options());

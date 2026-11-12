@@ -146,7 +146,8 @@ public static class ProgressBarPlacement {
 				$"The record page {found}, not for '{entitySchemaName}'. Pass page-schema-name with a record page of "
 				+ $"'{entitySchemaName}'.", template);
 		}
-		List<(string Type, string Name)> elements = [.. ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)];
+		List<(string Type, string Name)> elements = [.. ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)
+			.Select(element => (element.Type, element.Name))];
 		if (elements.Any(element => string.Equals(element.Type, ProgressBarFragment.BarType, StringComparison.Ordinal))) {
 			return new ProgressBarPlacementCheck(null, null, true, false, template);
 		}

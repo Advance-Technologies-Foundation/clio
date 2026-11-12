@@ -46,6 +46,9 @@ public sealed class DynamicCaseService(
 	/// <summary>The build did not create the case, and removing the dependencies this call added failed.</summary>
 	public const string DependenciesLeftAfterFailure = "left-after-failure";
 
+	/// <summary>The build failed with leftovers, so the dependencies this call added were kept for them.</summary>
+	public const string DependenciesKeptForLeftovers = "kept-for-leftovers";
+
 	/// <summary>Dependencies are missing and the caller asked not to add them.</summary>
 	public const string DependenciesMissing = "missing";
 
@@ -63,6 +66,9 @@ public sealed class DynamicCaseService(
 
 	/// <summary>The obligation kind clio adds for the record page.</summary>
 	public const string PageArtifact = "page";
+
+	/// <summary>The package dependencies this call added, when the server asked for a compilation after them.</summary>
+	public const string DependenciesArtifact = "package-dependencies";
 
 	/// <summary>The tool a failed page write is retried with.</summary>
 	public const string RetryTool = "update-page";
@@ -93,7 +99,7 @@ public sealed class DynamicCaseService(
 		DynamicCasePagePlan pagePlan = null;
 		if (options.AddProgressBar) {
 			pagePlan = pageStep.Plan(options.Environment, options.PackageName, options.EntitySchemaName,
-				options.PageSchemaName);
+				options.PageSchemaName, missing);
 			if (pagePlan.Status == DynamicCasePageStep.StatusRefused) {
 				return PageRefusal(options, plan, missing, pagePlan);
 			}
@@ -104,8 +110,9 @@ public sealed class DynamicCaseService(
 		}
 
 		List<string> added = [];
+		bool compilationRequired = false;
 		if (missing.Count > 0 && options.AddPackageDependencies) {
-			DynamicCaseResult refusal = TryAddDependencies(options, plan, missing, pagePlan);
+			DynamicCaseResult refusal = TryAddDependencies(options, plan, missing, pagePlan, out compilationRequired);
 			if (refusal is not null) {
 				return refusal;
 			}
@@ -121,6 +128,16 @@ public sealed class DynamicCaseService(
 		}
 		BuildCaseResponse built = build.Response;
 		if (!IsCaseInPlace(built)) {
+			if (added.Count > 0 && built.Leftovers is { Count: > 0 }) {
+				// What the server could not undo (the case schema, a settings row) still references the packages this
+				// call added, so removing them now would leave those artifacts unresolvable.
+				return FromServer(options, built,
+					Dependencies(built, missing, added, DependenciesKeptForLeftovers, compilationRequired), NotReached(), [
+						$"The package dependencies this call added to '{options.PackageName}' ({string.Join(", ", added)}) "
+						+ "were kept: the leftovers the server lists still need them. Remove them with "
+						+ "remove-package-dependency only after the leftovers are gone."
+					]);
+			}
 			(string status, List<string> warnings) = UndoDependencies(options.PackageName, added);
 			return FromServer(options, built,
 				Dependencies(built, missing, added, added.Count > 0 ? status : DependenciesStatusFor(missing)),
@@ -128,7 +145,7 @@ public sealed class DynamicCaseService(
 		}
 
 		DynamicCaseDependencies dependencies = Dependencies(built, missing, added,
-			added.Count > 0 ? DependenciesAdded : DependenciesNoneMissing);
+			added.Count > 0 ? DependenciesAdded : DependenciesNoneMissing, compilationRequired);
 		return WithPage(options, built, dependencies, pagePlan);
 	}
 
@@ -151,10 +168,11 @@ public sealed class DynamicCaseService(
 		response.Success && response.Outcome is ServerCreated or ServerAlreadyPresent;
 
 	private DynamicCaseResult TryAddDependencies(CreateDynamicCaseOptions options, BuildCaseResponse plan,
-		List<string> missing, DynamicCasePagePlan pagePlan) {
+		List<string> missing, DynamicCasePagePlan pagePlan, out bool compilationRequired) {
+		compilationRequired = false;
 		try {
-			packageDependencyManager.AddDependencies(options.PackageName,
-				missing.Select(name => new PackageDependencySpec(name)));
+			compilationRequired = packageDependencyManager.AddDependenciesReportingCompilation(options.PackageName,
+				missing.Select(name => new PackageDependencySpec(name))).CompilationRequired;
 			return null;
 		} catch (Exception exception) {
 			// SavePackageProperties applies the whole list in one save, so a refused save added nothing; the
@@ -201,6 +219,15 @@ public sealed class DynamicCaseService(
 		DynamicCaseDependencies dependencies, DynamicCasePagePlan pagePlan) {
 		List<string> notes = [.. built.Notes ?? []];
 		List<string> warnings = [.. built.Warnings ?? []];
+		if (dependencies.CompilationRequired) {
+			// The server's "no compile" note speaks for the case alone; the dependency change it does not know about
+			// asked for a compilation, and the wording carries the marker that keeps the tool's own note off.
+			notes.RemoveAll(note => note.StartsWith("No compile or restart is needed", StringComparison.Ordinal));
+			warnings.Add($"The package dependencies this call added to '{options.PackageName}' cannot take effect "
+				+ "until the configuration is compiled: the server asked for a configuration compilation after the "
+				+ "change. Run compile-creatio without package-name (a configuration compile); the case and the "
+				+ "progress bar themselves need no compile.");
+		}
 		string designerUrl = DesignerUrl(options.Environment, built.Case?.SchemaUId);
 		bool alreadyPresent = built.Outcome == ServerAlreadyPresent;
 		if (!options.AddProgressBar) {
@@ -269,7 +296,7 @@ public sealed class DynamicCaseService(
 			Settings = built.Settings,
 			Dependencies = dependencies,
 			Page = page,
-			Obligations = WithPageArtifact(built.Obligations, pageWritten),
+			Obligations = WithPageArtifact(built.Obligations, pageWritten, dependencies?.CompilationRequired == true),
 			Leftovers = built.Leftovers ?? [],
 			Notes = notes,
 			Warnings = warnings
@@ -345,15 +372,15 @@ public sealed class DynamicCaseService(
 		// restart the site and change nothing.
 		bool unreadable = reply.Kind == BuildCaseReplyKind.NotAnEnvelope
 			&& ProcessDesignServerFault.IsUnreadableRequest(reply.Detail);
-		bool missingOperation = !unreadable
-			&& reply.Kind is BuildCaseReplyKind.RouteMissing or BuildCaseReplyKind.NotAnEnvelope;
+		// Only a 404 proves the operation is missing. A body that is not the envelope can be a fault from inside
+		// BuildCase, an HTML error page or a login page, which a reinstall restarting the site would not fix.
+		bool missingOperation = !unreadable && reply.Kind == BuildCaseReplyKind.RouteMissing;
 		string message = unreadable
 			? "BuildCase could not read the request, so nothing was written; check the arguments against "
 				+ $"get-tool-contract create-dynamic-case. The server said: {reply.Detail}"
 			: missingOperation
-			? "The environment's CrtProcessBuilder answered BuildCase with "
-				+ (reply.Kind == BuildCaseReplyKind.RouteMissing ? "a 404" : "a body that is not its result")
-				+ ", so the installed package does not carry the dynamic-case operation although it passed the "
+			? "The environment's CrtProcessBuilder answered BuildCase with a 404, so the installed package does not "
+				+ "carry the dynamic-case operation although it passed the "
 				+ "version check. Nothing was written. Ask the user, then run install-process-builder to bring the "
 				+ $"package up to the version this clio ships. The server said: {reply.Detail}"
 			: $"BuildCase could not be called, so nothing was written: {reply.Detail}";
@@ -398,12 +425,13 @@ public sealed class DynamicCaseService(
 		missing.Count == 0 ? DependenciesNoneMissing : DependenciesMissing;
 
 	private static DynamicCaseDependencies Dependencies(BuildCaseResponse response, List<string> missing,
-		List<string> added, string status) =>
+		List<string> added, string status, bool compilationRequired = false) =>
 		new() {
 			Status = status,
 			Required = response.RequiredPackages ?? [],
 			Missing = missing,
-			Added = added
+			Added = added,
+			CompilationRequired = compilationRequired
 		};
 
 	private static DynamicCaseInfo CaseInfo(CreateDynamicCaseOptions options, BuildCaseCaseInfo info,
@@ -445,17 +473,25 @@ public sealed class DynamicCaseService(
 
 	private static DynamicCasePageInfo NotReached() => new() { Status = PageNotReached };
 
-	private static DynamicCaseObligations WithPageArtifact(DynamicCaseObligations obligations, bool page) {
-		if (!page) {
+	private static DynamicCaseObligations WithPageArtifact(DynamicCaseObligations obligations, bool page,
+		bool dependenciesNeedCompile = false) {
+		if (!page && !dependenciesNeedCompile) {
 			return obligations;
 		}
 		List<DynamicCaseArtifactObligation> artifacts = [.. obligations?.Artifacts ?? []];
-		// A Freedom UI page is a client schema: it is served as saved, with no compile and no restart.
-		artifacts.Add(new DynamicCaseArtifactObligation { Kind = PageArtifact, Compile = false, Restart = false });
+		if (page) {
+			// A Freedom UI page is a client schema: it is served as saved, with no compile and no restart.
+			artifacts.Add(new DynamicCaseArtifactObligation { Kind = PageArtifact, Compile = false, Restart = false });
+		}
+		if (dependenciesNeedCompile) {
+			artifacts.Add(new DynamicCaseArtifactObligation {
+				Kind = DependenciesArtifact, Compile = true, Restart = false
+			});
+		}
 		return new DynamicCaseObligations {
-			CompileRequired = obligations?.CompileRequired ?? false,
+			CompileRequired = (obligations?.CompileRequired ?? false) || dependenciesNeedCompile,
 			RestartRequired = obligations?.RestartRequired ?? false,
-			ReloadOpenPages = true,
+			ReloadOpenPages = page || (obligations?.ReloadOpenPages ?? false),
 			Artifacts = artifacts
 		};
 	}
