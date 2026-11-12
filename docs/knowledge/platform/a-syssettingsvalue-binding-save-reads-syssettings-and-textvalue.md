@@ -14,7 +14,7 @@ loads the bound rows with only the binding's columns and, while `ReEncryptSecure
 and `GetIsColumnValueLoaded("TextValue")`, and the string overload resolves the value with `ColumnValues.GetByName`,
 which throws `ItemNotFoundException` ("Value \"{0}\" was not found.") for a column the query never selected,
 instead of answering false. clio therefore always projects `SysSettings` and `TextValue` into a `SysSettingsValue`
-binding (`PlatformRequiredBindingColumns`). Install is not affected: deserialization builds full entities.
+binding (`PlatformRequiredBindingColumns`). Install is not affected: deserialization builds full entities. Because the forced `TextValue` would carry a SecureText secret into the package, `RefuseSecretSettingValueRows` refuses any row of a SecureText setting before create, upsert or remove writes anything, as `PackageDataBinder` does.
 
 **Why it is this way** — the guard was written as "skip when not loaded", but the overload it calls cannot see an
 absent column. Fixing it is a platform change; clio has to work on the stands that exist today.

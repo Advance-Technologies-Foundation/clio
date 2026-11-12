@@ -24,7 +24,6 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("data-binding-db")]
 [NonParallelizable]
 public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
-	private const string AllEmployeesRoleId = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 
 	[Test]
 	[Description("Exposes every DB-first data-binding MCP tool via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
@@ -426,7 +425,7 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 				["binding-name"] = bindingName,
 				["rows"] =
 					$"[{{\"values\":{{\"Id\":\"{valueRowId}\",\"SysSettings\":\"{settingId}\","
-					+ $"\"SysAdminUnit\":\"{AllEmployeesRoleId}\",\"IsDef\":false,\"FloatValue\":100000}}}}]"
+					+ $"\"SysAdminUnit\":\"{SysAdminUnitIds.AllEmployees}\",\"IsDef\":false,\"FloatValue\":100000}}}}]"
 			});
 		CommandExecutionActResult readResult = await ActCommandAsync(
 			arrangeContext,
@@ -447,6 +446,60 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"the binding must carry TextValue, the column the platform reads while it saves a SysSettingsValue binding");
 		AssertOutputContains(readResult, "FloatValue=",
 			"the binding must carry the value column the row named");
+	}
+
+	[Test]
+	[Description("Refuses create-data-binding-db on the SysSettingsValue row of a SecureText setting and leaves no binding behind, because the projected TextValue would otherwise ship the secret in the package.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureTag(ReadDbToolName)]
+	[AllureName("create-data-binding-db refuses a SecureText setting value")]
+	[AllureDescription("Creates a uniquely-coded SecureText system setting with create-sys-setting, looks up its SysSettingsValue row through odata-read, asks create-data-binding-db to bind it, and verifies the call fails naming SecureText and that read-data-binding-db finds no such binding in the package.")]
+	public async Task CreateDataBindingDb_Should_Refuse_SecureText_SysSettingsValue_Row() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string code = $"UsrE2ESecret{System.Guid.NewGuid():N}"[..32];
+		string bindingName = $"SysSettingsValue_{code}";
+		CommandExecutionActResult createSettingResult = await ActCommandAsync(
+			arrangeContext,
+			SysSettingCreateTool.CreateSysSettingToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "SecureText",
+				["value"] = "e2e-not-a-real-secret"
+			});
+		AssertToolCallSucceeded(createSettingResult);
+		string settingId = await ReadSingleIdAsync(arrangeContext, "SysSettings", "Code", code);
+		string valueRowId = await ReadSingleIdAsync(arrangeContext, "SysSettingsValue", "SysSettings/Id", settingId);
+
+		// Act
+		CommandExecutionActResult createBindingResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "SysSettingsValue",
+				["binding-name"] = bindingName,
+				["rows"] = $"[{{\"values\":{{\"Id\":\"{valueRowId}\",\"SysSettings\":\"{settingId}\"}}}}]"
+			});
+		CommandExecutionActResult readResult = await ActCommandAsync(
+			arrangeContext,
+			ReadDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = bindingName
+			});
+
+		// Assert
+		AssertCommandExitCode(createBindingResult, 1,
+			"a SecureText setting's value must be refused rather than bound into the package");
+		AssertOutputContains(createBindingResult, "SecureText",
+			"the refusal must say the setting is SecureText so the caller ships only its definition");
+		AssertCommandExitCode(readResult, 1,
+			"the refused call must not leave a SysSettingsValue binding behind in the package");
 	}
 
 	private static async Task<string> ReadSingleIdAsync(
