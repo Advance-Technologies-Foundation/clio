@@ -181,12 +181,13 @@ public sealed class WebServiceDesigner(
 			? HasAuth(schema)
 			: ServiceSchemaCodes.AuthTypes.TryGetValue(lastSetAuth.Auth?.Type ?? string.Empty, out int authType)
 				&& authType != ServiceSchemaCodes.AuthNone;
+		string baseUriBefore = schema.BaseUri;
 		foreach (WebServiceOperationArg operation in operations) {
 			Apply(schema, operation, prefix, methodsUseAuth, finalBaseUri, builtMethods, changedMethods, errors);
 		}
 		if (lastSetBaseUri is not null) {
 			foreach (ServiceMethodDto kept in schema.Methods.Items.Values.Where(m => !builtMethods.Contains(m.Name ?? ""))) {
-				WebServiceDefinitionBuilder.ValidatePlaceholders(kept, schema.BaseUri, errors);
+				WebServiceDefinitionBuilder.ValidateBaseUriChange(kept, baseUriBefore, schema.BaseUri, errors);
 			}
 		}
 		(IReadOnlyCollection<string> settings, IReadOnlyList<string> missingKept) =

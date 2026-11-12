@@ -226,15 +226,35 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	/// <summary>
-	/// Re-checks a stored method's path parameters against the placeholders of its URI and of the base URI, for a
-	/// base URI the call changed after the method was built.
+	/// Checks a method the call keeps against only the base-URI placeholders the call adds or removes: an added one
+	/// needs a path parameter, and a path parameter must not lose the placeholder it filled. The method's own URI is
+	/// not re-checked, so a Studio-made method whose placeholder case differs from its parameter does not block an
+	/// unrelated base-URI change.
 	/// </summary>
 	/// <param name="method">The stored method.</param>
-	/// <param name="baseUri">The base URI after the call.</param>
+	/// <param name="baseUriBefore">The base URI before the call.</param>
+	/// <param name="baseUriAfter">The base URI after the call.</param>
 	/// <param name="errors">Collected problems.</param>
-	public static void ValidatePlaceholders(ServiceMethodDto method, string baseUri, Errors errors) =>
-		ValidatePathPlaceholders(method.Name, method.Request?.Uri ?? string.Empty, baseUri,
-			method.Request?.Parameters ?? new ServiceItemCollection<ServiceParameterDto>(), errors);
+	public static void ValidateBaseUriChange(ServiceMethodDto method, string baseUriBefore, string baseUriAfter,
+		Errors errors) {
+		HashSet<string> before = Placeholders(baseUriBefore);
+		HashSet<string> after = Placeholders(baseUriAfter);
+		HashSet<string> own = Placeholders(method.Request?.Uri);
+		var pathParameters = (method.Request?.Parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
+			.Where(p => p.Type == ServiceSchemaCodes.Placements["path"]).Select(p => p.Path)
+			.ToHashSet(StringComparer.Ordinal);
+		foreach (string added in after.Except(before).Where(p => !pathParameters.Contains(p))) {
+			errors.Add($"method '{method.Name}': base-uri placeholder {{{added}}} has no path parameter.");
+		}
+		foreach (string removed in before.Except(after).Where(p => pathParameters.Contains(p) && !own.Contains(p))) {
+			errors.Add($"method '{method.Name}': path parameter '{removed}' loses its {{{removed}}} placeholder in "
+				+ "the new base-uri.");
+		}
+	}
+
+	private static HashSet<string> Placeholders(string uri) =>
+		PathPlaceholderPattern().Matches(uri ?? string.Empty).Select(m => m.Groups[1].Value)
+			.ToHashSet(StringComparer.Ordinal);
 
 	public static Dictionary<string, string> Caption(string text) => new() { ["en-US"] = text };
 

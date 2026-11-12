@@ -638,6 +638,24 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("A kept method whose own placeholder differs in case from its path parameter does not block a setBaseUri that adds no placeholder.")]
+	public void Modify_SetBaseUri_Should_Not_Recheck_A_Kept_Methods_Own_Uri() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "orders/{id}",
+			RequestParameters: [new WebServiceParameterArg("id", "path")]));
+		ServiceMethodDto legacy = schema.Methods.Items.Values.Single();
+		legacy.Request.Uri = "orders/{Id}";
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.bing.example/v2/")], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "only placeholders the base-URI change adds or removes are checked");
+	}
+
+	[Test]
 	[Description("A method added in the call that reuses a missing setting another method already referenced is a new reference and is refused.")]
 	public void Modify_Should_Refuse_A_New_Reference_To_A_Missing_Setting_Another_Method_Had() {
 		// Arrange
