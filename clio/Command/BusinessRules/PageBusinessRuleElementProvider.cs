@@ -14,7 +14,7 @@ internal sealed class PageBusinessRuleElementProvider : IPageBusinessRuleElement
 		ArgumentNullException.ThrowIfNull(bundle);
 
 		HashSet<string> result = new(StringComparer.Ordinal);
-		foreach ((string? _, string name) in ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
+		foreach ((_, string name, _) in ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
 			result.Add(name);
 		}
 		return result;

@@ -3650,9 +3650,9 @@ internal static class ToolContractCatalog {
 	private static ToolContractValidator[] PageBusinessRuleActionValidators() =>
 		[
 			new ToolContractValidator("page-attribute", "unsupported-condition-attribute", "rules[*].condition.conditions[*].leftExpression.path",
-				Context: "leftExpression.path accepts: (1) a declared page attribute name from bundle.viewModelConfig.attributes (e.g. PDS_Priority); (2) a data source column NOT surfaced on the page, addressed as '<dataSource>.<column>' (e.g. ContactDS.Account) with data source names from bundle.modelConfig.dataSources; (3) a page parameter, addressed as 'PageParameters.<ParameterName>' (parameter list from bundle.parameters[]); (4) the active step of a stepper, addressed as '<StepperName>_ActiveStep' for a named crt.Stepper in the page view config (compare it with a step name). See guidance business-rules."),
+				Context: "leftExpression.path accepts: (1) a declared page attribute name from bundle.viewModelConfig.attributes (e.g. PDS_Priority); (2) a data source column NOT surfaced on the page, addressed as '<dataSource>.<column>' (e.g. ContactDS.Account) with data source names from bundle.modelConfig.dataSources; (3) a page parameter, addressed as 'PageParameters.<ParameterName>' (parameter list from bundle.parameters[]); (4) the active step of a named crt.Stepper in the page view config (compare it with a step name): the attribute its activeStep binds when bound to a plain '$Attr' ('$RentalStep' gives 'RentalStep') that the page declares in bundle.viewModelConfig.attributes without a data source, or the generated '<StepperName>_ActiveStep' when activeStep is unbound or a constant step name (a '.' in the stepper name becomes '_', so 'Quote.Stepper' gives 'Quote_Stepper_ActiveStep'); any other activeStep binding (a nested path, a converter, a property binding such as '$Attr:prop', an undeclared attribute or one bound to a record column) gives the stepper no active-step attribute. See guidance business-rules."),
 			new ToolContractValidator("page-attribute", "unsupported-right-attribute", "rules[*].condition.conditions[*].rightExpression.path",
-				Context: "Right-side AttributeValue accepts the same path forms as leftExpression.path (a declared page attribute name, a '<dataSource>.<column>' path, 'PageParameters.<ParameterName>', or a stepper's '<StepperName>_ActiveStep') and must resolve to the same data value type as the left attribute."),
+				Context: "Right-side AttributeValue accepts the same path forms as leftExpression.path (a declared page attribute name, a '<dataSource>.<column>' path, 'PageParameters.<ParameterName>', or a stepper's active step: its bound attribute or '<StepperName>_ActiveStep', a '.' in the stepper name becoming '_') and must resolve to the same data value type as the left attribute."),
 			new ToolContractValidator("enum", "unsupported-action", "rules[*].actions[*].type",
 				Context: $"Supported values: {BusinessRuleConstants.SupportedPageActionTypesDescription}."),
 			new ToolContractValidator("page-element", "unknown-page-element", "rules[*].actions[*].items",
@@ -7464,7 +7464,10 @@ internal static class ToolContractCatalog {
 			"Allowed value-type-name values match Creatio internal names: Text, ShortText, MediumText, LongText, SecureText, MaxSizeText, " +
 			"Boolean, DateTime, Date, Time, Integer, Money, Float, Lookup, Binary. " +
 			"Aliases: Currency = Money, Decimal = Float. Binary settings store opaque bytes: assign the value via update-sys-setting with value-file-path; download exact bytes via clio-run command=download-sys-setting-file with a required absolute file-name. No MIME type or extension is inferred. " +
-			"For Lookup type, reference-schema-name is required.",
+			"For Lookup type, reference-schema-name is required. " +
+			"The setting exists only on the target environment: when package code, a page or a process reads it, ship it with that package " +
+			"as the SysSettings_<Code> and SysSettingsValue_<Code> data bindings (see get-guidance name=sys-settings). " +
+			"For SecureText, ship only SysSettings_<Code> and set the value on each environment.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, SysSettingCodeFieldName, "name", SysSettingValueTypeFieldName],
 				[
@@ -7505,9 +7508,18 @@ internal static class ToolContractCatalog {
 			Flow(
 				[
 					SysSettingCreateTool.CreateSysSettingToolName,
-					SysSettingUpdateTool.UpdateSysSettingToolName
+					SysSettingUpdateTool.UpdateSysSettingToolName,
+					CreateDataBindingDbTool.CreateDataBindingDbToolName,
+					ReadDataBindingDbTool.ReadDataBindingDbToolName
 				],
-				"Create the sys-setting once, then update the value as it changes."),
+				"Create the sys-setting once, then update the value as it changes. The setting exists only on this environment. " +
+				"To ship it with the package that reads it, set the value first (an existing row is bound as it is in the database), " +
+				"then call create-data-binding-db twice with explicit binding-name values: SysSettings_<Code> (schema SysSettings) and " +
+				"SysSettingsValue_<Code> (schema SysSettingsValue, All employees row, always including TextValue). " +
+				"Bind SysSettings_<Code> first and check that its bound Id is the setting's own before binding the value. " +
+				"Read both back with read-data-binding-db. The value binding is a snapshot: after changing a shipped value, " +
+				"re-run create-data-binding-db for SysSettingsValue_<Code> and read it back. " +
+				"get-guidance name=sys-settings owns the columns and the rules."),
 			[],
 			[]);
 	}
