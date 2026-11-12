@@ -66,11 +66,13 @@ stored path, and a SOAP-header element sits under `Header`).
 `test-web-service-method` returns `response-values`: the platform's `ParameterValues` parsed as JSON and masked with
 the same secrets as the body (values and property names, numbers and booleans whole). Besides, the value of every
 response parameter that may carry a credential is masked by its code whatever it holds: a default from a system
-setting or a secret constant (the platform fills the default when the API did not send the value, traced in
-Terrasoft.Services `ServiceParameterValueProvider` and the response parsers), a cookie, and a header whose code or
+setting or a secret constant (the platform fills the default when the API did not send the value: Terrasoft.Services
+`ServiceParameterValueProvider` and the response parsers, measured on a .NET Framework stand on 2026-11-12), a cookie, and a header whose code or
 name looks like a credential. They are withheld together with the body, and omitted
 (`response-values-omitted: true`) past the body length limit. This is the only way an agent can see that a response
-path reads nothing (an XML response read with `$.x` is null, measured). The same defaults are converted to the
+path reads nothing (an XML response read with `$.x` is null, measured); describe and the test call add a notice for
+every response parameter of an XML response whose path is a JSONPath, because an isolated agent read that null as a
+clio failure. The same defaults are converted to the
 parameter type after the call; a conversion failure ends the call with an error that can quote the value and with
 nothing reported as sent, so such an error is withheld when the method has a setting or secret response default. Rejected: withholding the values whenever any
 response parameter has a default (it would hide them for most designer-made services).

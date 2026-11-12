@@ -10,7 +10,9 @@ date: 2026-11-12
 **What is true** — when a response path, header or cookie reads nothing, the platform fills that response parameter
 with its default before it reports `ParameterValues`; a system-setting default is read with `SysSettings.GetValue`
 (Terrasoft.Services `ServiceParameterValueProvider`, `XmlResponseBodyParser`, `JsonResponseBodyParser`,
-`ServiceClientResponse` header and cookie filling). Traced from the platform source, not yet measured on a stand.
+`ServiceClientResponse` header and cookie filling). Measured 2026-11-12 on a .NET Framework stand (core 10.2.1122):
+a REST response header parameter bound to a SecureText setting came back filled with the setting value when the API
+did not send the header (clio returned it as `[masked]`).
 
 **Why it is this way** — the default is meant to keep a process running when an API omits an optional value.
 

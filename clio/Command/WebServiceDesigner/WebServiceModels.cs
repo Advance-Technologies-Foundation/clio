@@ -280,7 +280,12 @@ public sealed record WebServiceTestResult(
 	[property: JsonPropertyName("response-values-omitted")]
 	[property: Description("True when the parsed response values were longer than the response-body limit and are not returned")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	bool? ResponseValuesOmitted = null);
+	bool? ResponseValuesOmitted = null,
+
+	[property: JsonPropertyName("notices")]
+	[property: Description("Problems in the method definition the call surfaced, e.g. a JSONPath on an XML response that reads nothing")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<string> Notices = null);
 
 #endregion
 
@@ -320,6 +325,34 @@ public static partial class WebServiceSchemaView {
 				.Select(m => Method(m, soap)).ToList(),
 			soap ? Namespaces(schema.Namespaces) : null);
 	}
+
+	/// <summary>
+	/// One notice per response parameter of an XML response whose path is a JSONPath (<c>$.AddResult</c>). The
+	/// platform reads an XML response by element path (local names joined by <c>/</c>) and a JSONPath there reads
+	/// nothing (measured: null in the parsed values, 0 in a process), with no error anywhere.
+	/// </summary>
+	/// <param name="methods">The methods to check.</param>
+	/// <param name="soap">Whether the service is SOAP; it decides where the path can be changed.</param>
+	/// <returns>The notices; empty when every path fits its response.</returns>
+	public static IReadOnlyList<string> XmlResponsePathNotices(IEnumerable<ServiceMethodDto> methods, bool soap) =>
+		(methods ?? [])
+			.Where(m => m?.Response?.ContentType == ServiceSchemaCodes.ContentTypeXml)
+			.SelectMany(m => JsonPathParameters(m.Response.Parameters).Select(p =>
+				$"method '{m.Name}': response parameter '{p.Name}' has the JSONPath '{p.Path}', but the response is XML, "
+				+ "which the platform reads by element path (local names joined by '/', e.g. 'AddResult' or "
+				+ "'AddResponse/AddResult'); this path reads nothing. "
+				+ (soap
+					? "Change the path in Studio > Web services."
+					: "A REST xml method reads no body parameters at all: read the raw Response in the process, or "
+						+ "make the method json with modify-web-service.")))
+			.ToList();
+
+	// Body parameters only: a header or cookie path is a name, never a JSONPath.
+	private static IEnumerable<ServiceParameterDto> JsonPathParameters(ServiceItemCollection<ServiceParameterDto> parameters) =>
+		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
+			.Where(p => p.Type == ServiceSchemaCodes.Placements["body"])
+			.SelectMany(p => JsonPathParameters(p.ItemProperties).Prepend(p))
+			.Where(p => p.Path?.TrimStart().StartsWith('$') == true);
 
 	/// <summary>Whether the service is SOAP 1.1 or 1.2.</summary>
 	public static bool IsSoap(ServiceSchemaDto schema) =>

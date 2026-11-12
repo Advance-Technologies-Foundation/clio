@@ -69,7 +69,7 @@ public sealed class WebServiceSoapToolsE2ETests : McpContractFixtureBase {
 	[AllureTag(DescribeWebServiceTool.ToolName)]
 	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("describe and test-call SOAP 1.1 and SOAP 1.2 web services")]
-	[Description("Saves a SOAP 1.1 and a SOAP 1.2 service through the platform's designer save (namespaces, a SOAP action, a SOAP-header element bound to a system setting, a body element, a scalar array with a sequence element), expects describe-web-service to report each version and every SOAP member with no uri, then test-calls the SOAP 1.1 method against the stand's own host and expects the platform's reply instead of a withheld response.")]
+	[Description("Saves a SOAP 1.1 and a SOAP 1.2 service through the platform's designer save (namespaces, a SOAP action, a SOAP-header element bound to a system setting, a body element, a scalar array with a sequence element, a response parameter with a JSONPath), expects describe-web-service to report each version and every SOAP member with no uri and a notice for the JSONPath, then test-calls the SOAP 1.1 method against the stand's own host and expects the platform's reply instead of a withheld response, with the same notice.")]
 	public async Task DescribeAndTest_Should_Report_Soap_Services_And_Mask_Instead_Of_Withholding() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -117,8 +117,12 @@ public sealed class WebServiceSoapToolsE2ETests : McpContractFixtureBase {
 			because: "the item element name of a SOAP array round-trips");
 		method.RequestParameters.Single(p => p.Code == Prefixed("A")).SoapHeader.Should().BeNull(
 			because: "a body element is not flagged");
+		described11.Notices.Should().ContainSingle(n => n.Contains(Prefixed("JsonPathResult")),
+			because: "a JSONPath on an XML response reads nothing, and describe says so");
 		(testCall.Error ?? string.Empty).Should().NotContain("withheld",
 			because: "the setting-bound SOAP-header element is located in the envelope, so nothing forces the response to be withheld");
+		testCall.Notices.Should().ContainSingle(n => n.Contains(Prefixed("JsonPathResult")),
+			because: $"the test call names the response parameter that cannot read anything; error: {testCall.Error}");
 		testCall.ResponseValues.Should().NotBeNull(
 			because: "the platform built and sent the envelope and reported its parsed outputs, which are returned with the body");
 		if (testCall.StatusCode is not null) {
@@ -201,7 +205,8 @@ public sealed class WebServiceSoapToolsE2ETests : McpContractFixtureBase {
 					soapAction = "http://example.org/clio-e2e-soap/Op",
 					request = new { uri = "tem:Op", contentType = 2, httpMethodType = 2, parameters = new { Items = parameters } },
 					response = new { contentType = 2, parameters = new { Items = new Dictionary<string, object> {
-						[Guid.NewGuid().ToString()] = Parameter(Prefixed("Result"), "OpResponse/OpResult")
+						[Guid.NewGuid().ToString()] = Parameter(Prefixed("Result"), "OpResponse/OpResult"),
+						[Guid.NewGuid().ToString()] = Parameter(Prefixed("JsonPathResult"), "$.OpResult")
 					} } }
 				}
 			} },

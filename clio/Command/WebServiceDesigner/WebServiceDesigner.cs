@@ -118,7 +118,10 @@ public sealed class WebServiceDesigner(
 		ServiceRow row = FindService(code);
 		ServiceSchemaDto schema = client.ReadSchema(row.UId, row.PackageUId);
 		IReadOnlyList<WebServiceUsage> usages = includeUsages ? FindUsages(schema.UId) : null;
-		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(schema, row.Package), Usages: usages);
+		IReadOnlyList<string> notices = WebServiceSchemaView.XmlResponsePathNotices(schema.Methods.Items.Values,
+			WebServiceSchemaView.IsSoap(schema));
+		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(schema, row.Package), Usages: usages,
+			Notices: notices.Count > 0 ? notices : null);
 	}
 
 	public WebServiceToolResult Register(string packageName, string code, string caption, string baseUri,
@@ -259,10 +262,13 @@ public sealed class WebServiceDesigner(
 		JsonElement? responseValues = ResponseValues(result.ParameterValues, method, secrets, out bool valuesMasked,
 			out bool valuesOmitted);
 		bool truncated = body is { Length: > MaxResponseBodyLength };
+		// An XML response read through a JSONPath gives null with no error, which reads like a failure of the call.
+		IReadOnlyList<string> notices = WebServiceSchemaView.XmlResponsePathNotices([method], WebServiceSchemaView.IsSoap(schema));
 		return new WebServiceTestResult(result.Success,
 			error is null ? null : SensitiveErrorTextRedactor.Redact(error),
 			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
-			bodyMasked || errorMasked || valuesMasked, responseValues, valuesOmitted ? true : null);
+			bodyMasked || errorMasked || valuesMasked, responseValues, valuesOmitted ? true : null,
+			notices.Count > 0 ? notices : null);
 	}
 
 	/// <summary>

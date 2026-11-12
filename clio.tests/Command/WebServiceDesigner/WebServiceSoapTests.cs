@@ -297,6 +297,31 @@ public sealed class WebServiceSoapTests {
 	}
 
 	[Test]
+	[Description("Every JSONPath body parameter of an XML response gets one notice at any depth, and a header parameter none.")]
+	public void XmlResponsePathNotices_Should_Name_Every_JsonPath_Body_Parameter_Once() {
+		// Arrange
+		ServiceMethodDto method = SoapServiceFixture.Method();
+		ServiceParameterDto lines = method.Request.Parameters.Items.Values.Single(p => p.Name == "UsrLines");
+		lines.Path = "$.Lines";
+		lines.ItemProperties.Items.Values.Single().Path = "$.Token";
+		method.Response.Parameters.Items.Clear();
+		method.Response.Parameters.Items[lines.UId.ToString()] = lines;
+		var header = new ServiceParameterDto {
+			UId = System.Guid.NewGuid(), Name = "UsrHeader", Path = "$weird", Type = ServiceSchemaCodes.Placements["header"]
+		};
+		method.Response.Parameters.Items[header.UId.ToString()] = header;
+
+		// Act
+		IReadOnlyList<string> notices = WebServiceSchemaView.XmlResponsePathNotices([method], soap: true);
+
+		// Assert
+		notices.Should().HaveCount(2, because: "the array and its item field each read nothing, and each is named once");
+		notices.Should().Contain(n => n.Contains("'UsrLines'"), because: "the array parameter is named");
+		notices.Should().Contain(n => n.Contains("'UsrLineToken'"), because: "the item field is named");
+		notices.Should().NotContain(n => n.Contains("UsrHeader"), because: "a header path is a name, not a JSONPath");
+	}
+
+	[Test]
 	[Description("A constant default on a SOAP-header element is hidden by describe like a header constant.")]
 	public void From_Should_Hide_A_Soap_Header_Constant() {
 		// Arrange

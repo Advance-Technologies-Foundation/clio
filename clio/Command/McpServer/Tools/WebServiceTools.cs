@@ -306,11 +306,12 @@ public sealed record TestWebServiceMethodArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("code")]
+	[property: Description("Web service code (its schema name), e.g. UsrErpOrders; the argument is code, not service-code")]
 	[property: Required]
 	string Code,
 
 	[property: JsonPropertyName("method")]
-	[property: Description("Method code")]
+	[property: Description("Method code, e.g. UsrGetOrders; the argument is method, not method-code")]
 	[property: Required]
 	string Method,
 

@@ -766,6 +766,46 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("A JSONPath on a response parameter of an XML response is named in a notice by describe and by the test call, since it reads nothing.")]
+	public void DescribeAndTest_Should_Notice_A_JsonPath_On_An_Xml_Response() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		schema.Methods.Items.Values.Single().Response.Parameters.Items.Values.Single().Path = "$.UsrOpResult";
+		GivenRegisteredService(schema, "UsrSoapProbe");
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "<UsrOpResult>5</UsrOpResult>", null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, "{\"UsrResult\":null}"));
+
+		// Act
+		WebServiceToolResult described = _sut.Describe("UsrSoapProbe", false);
+		WebServiceTestResult tested = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+
+		// Assert
+		string notice = described.Notices.Should().ContainSingle(because: "one response path does not fit its XML response")
+			.Subject;
+		notice.Should().Contain("UsrResult", because: "the notice names the parameter");
+		notice.Should().Contain("$.UsrOpResult", because: "the notice quotes the path that reads nothing");
+		notice.Should().Contain("element path", because: "the notice names the path dialect the platform reads");
+		notice.Should().Contain("Studio", because: "a SOAP service's path is changed in Studio");
+		tested.Notices.Should().ContainSingle(because: "the null in response-values must not read like a failure of the call")
+			.Which.Should().Contain("UsrResult", because: "the notice names the parameter that read nothing");
+	}
+
+	[Test]
+	[Description("A JSONPath on a JSON response gets no notice.")]
+	public void Describe_Should_Not_Notice_A_JsonPath_On_A_Json_Response() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
+			new WebServiceParameterArg("UsrStatus", Path: "$.status")])));
+
+		// Act
+		WebServiceToolResult described = _sut.Describe("BingSearchApiCall", false);
+
+		// Assert
+		described.Notices.Should().BeNull(because: "a JSON response is read by JSONPath");
+	}
+
+	[Test]
 	[Description("Parsed response values longer than the response-body limit are not returned and the result says so.")]
 	public void TestMethod_Should_Omit_Response_Values_Over_The_Limit() {
 		// Arrange
