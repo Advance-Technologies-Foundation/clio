@@ -16,6 +16,9 @@ DESCRIPTION
     - create-business-process / modify-business-process
     - modify-business-process-as-new-version
     - set-active-business-process-version
+    - create-dynamic-case, which creates a minimal dynamic case (DCM) from a
+      lookup column and adds the stage progress bar to the record page (it
+      needs a CrtProcessBuilder that carries the BuildCase operation)
     - describe-business-process
     - list-user-tasks
     - validate-process-graph
