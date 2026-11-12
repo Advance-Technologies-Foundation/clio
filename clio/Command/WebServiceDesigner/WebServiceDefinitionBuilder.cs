@@ -81,30 +81,7 @@ public static partial class WebServiceDefinitionBuilder {
 		}
 		for (int i = 0; i < args.Count; i++) {
 			WebServiceNamespaceArg arg = args[i];
-			if (arg is null) {
-				errors.Add("namespaces: an item is empty.");
-				continue;
-			}
-			RejectUnknownFields(arg.ExtensionData, $"namespace '{arg.Prefix}'", errors);
-			if (string.IsNullOrWhiteSpace(arg.Prefix) || !PrefixedElementPattern().IsMatch(arg.Prefix) || arg.Prefix.Contains(':')) {
-				errors.Add($"namespace prefix '{arg.Prefix}' must be a name of letters, digits, '_' or '-', e.g. tem.");
-				continue;
-			}
-			if (IsReservedPrefix(arg.Prefix)) {
-				errors.Add($"namespace prefix '{arg.Prefix}' is reserved (XML reserves xml*, and the platform declares "
-					+ "soapenv for the envelope itself); choose another, e.g. tem.");
-				continue;
-			}
-			if (!prefixes.Add(arg.Prefix)) {
-				errors.Add($"namespace prefix '{arg.Prefix}' is used twice.");
-				continue;
-			}
-			if (string.IsNullOrWhiteSpace(arg.Uri) || arg.Uri.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) {
-				errors.Add($"namespace '{arg.Prefix}' needs a uri without spaces, e.g. http://tempuri.org/.");
-				continue;
-			}
-			if (HasUserInfo(arg.Uri)) {
-				errors.Add($"namespace '{arg.Prefix}': the uri must not carry credentials (user:password@).");
+			if (!IsValidNamespace(arg, prefixes, errors)) {
 				continue;
 			}
 			KeyValuePair<string, ServiceNamespaceDto> previousEntry = existing?.Items.FirstOrDefault(
@@ -140,6 +117,43 @@ public static partial class WebServiceDefinitionBuilder {
 			errors.Add($"method '{code}': soap-action must not carry credentials (user:password@).");
 		}
 		ValidateUriQuery(code, soapAction, errors);
+	}
+
+	/// <summary>
+	/// Checks one namespace as given: a plain prefix, not reserved, not used twice, and a URI without spaces, control
+	/// characters or credentials. Reports the first problem and adds a valid prefix to <paramref name="prefixes"/>.
+	/// </summary>
+	private static bool IsValidNamespace(WebServiceNamespaceArg arg, ISet<string> prefixes, Errors errors) {
+		if (arg is null) {
+			errors.Add("namespaces: an item is empty.");
+			return false;
+		}
+		RejectUnknownFields(arg.ExtensionData, $"namespace '{arg.Prefix}'", errors);
+		string problem = NamespacePrefixProblem(arg.Prefix, prefixes) ?? NamespaceUriProblem(arg);
+		if (problem is not null) {
+			errors.Add(problem);
+			return false;
+		}
+		prefixes.Add(arg.Prefix);
+		return true;
+	}
+
+	private static string NamespacePrefixProblem(string prefix, ISet<string> prefixes) {
+		if (string.IsNullOrWhiteSpace(prefix) || !PrefixedElementPattern().IsMatch(prefix) || prefix.Contains(':')) {
+			return $"namespace prefix '{prefix}' must be a name of letters, digits, '_' or '-', e.g. tem.";
+		}
+		if (IsReservedPrefix(prefix)) {
+			return $"namespace prefix '{prefix}' is reserved (XML reserves xml*, and the platform declares soapenv for "
+				+ "the envelope itself); choose another, e.g. tem.";
+		}
+		return prefixes.Contains(prefix) ? $"namespace prefix '{prefix}' is used twice." : null;
+	}
+
+	private static string NamespaceUriProblem(WebServiceNamespaceArg arg) {
+		if (string.IsNullOrWhiteSpace(arg.Uri) || arg.Uri.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) {
+			return $"namespace '{arg.Prefix}' needs a uri without spaces, e.g. http://tempuri.org/.";
+		}
+		return HasUserInfo(arg.Uri) ? $"namespace '{arg.Prefix}': the uri must not carry credentials (user:password@)." : null;
 	}
 
 	/// <summary>
@@ -567,35 +581,44 @@ public static partial class WebServiceDefinitionBuilder {
 
 	public static Dictionary<string, string> Caption(string text) => new() { ["en-US"] = text };
 
+	/// <summary>Where a parameter list is built: request or response, its owner for messages, nesting and the SOAP rules.</summary>
+	private sealed record ParameterScope(bool IsRequest, string Owner, Errors Errors, string Prefix,
+		bool Nested = false, SoapContext Soap = null, bool InSoapHeader = false);
+
 	private static ServiceItemCollection<ServiceParameterDto> BuildParameters(
 		IReadOnlyList<WebServiceParameterArg> args, ServiceItemCollection<ServiceParameterDto> existing,
-		bool isRequest, string owner, Errors errors, string prefix, bool nested = false, SoapContext soap = null,
-		bool inSoapHeader = false) {
+		bool isRequest, string owner, Errors errors, string prefix, SoapContext soap = null) =>
+		BuildParameters(args, existing, new ParameterScope(isRequest, owner, errors, prefix, Soap: soap));
+
+	private static ServiceItemCollection<ServiceParameterDto> BuildParameters(
+		IReadOnlyList<WebServiceParameterArg> args, ServiceItemCollection<ServiceParameterDto> existing, ParameterScope scope) {
 		var result = new ServiceItemCollection<ServiceParameterDto>();
 		var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		Errors errors = scope.Errors;
 		foreach (WebServiceParameterArg arg in args ?? []) {
 			if (string.IsNullOrWhiteSpace(arg?.Code)) {
-				errors.Add($"{owner}: every parameter needs a code.");
+				errors.Add($"{scope.Owner}: every parameter needs a code.");
 				continue;
 			}
 			if (!seen.Add(arg.Code)) {
-				errors.Add($"{owner}: parameter code '{arg.Code}' is used twice.");
+				errors.Add($"{scope.Owner}: parameter code '{arg.Code}' is used twice.");
 				continue;
 			}
 			ServiceParameterDto previous = existing?.Items.Values
 				.FirstOrDefault(p => string.Equals(p.Name, arg.Code, StringComparison.OrdinalIgnoreCase));
 			if (!string.Equals(previous?.Name, arg.Code, StringComparison.Ordinal)) {
-				RequireNewParameterNames($"{owner} parameter", arg, prefix, isRequest, errors, soap is not null);
+				RequireNewParameterNames($"{scope.Owner} parameter", arg, scope.Prefix, scope.IsRequest, errors,
+					scope.Soap is not null);
 			}
-			if (nested && arg.In is not null && !string.Equals(arg.In, "body", StringComparison.OrdinalIgnoreCase)) {
+			if (scope.Nested && arg.In is not null && !string.Equals(arg.In, "body", StringComparison.OrdinalIgnoreCase)) {
 				// A field of an Object array element is read from that element; the platform fills header and cookie
 				// values for top-level parameters only.
-				errors.Add($"{owner} parameter '{arg.Code}': a field inside an Object array has no placement of its own; "
-					+ "omit in.");
+				errors.Add($"{scope.Owner} parameter '{arg.Code}': a field inside an Object array has no placement of its "
+					+ "own; omit in.");
 				continue;
 			}
-			ServiceParameterDto parameter = BuildParameter(arg, previous, isRequest, $"{owner} parameter '{arg.Code}'",
-				errors, prefix, nested, soap, inSoapHeader);
+			ServiceParameterDto parameter = BuildParameter(arg, previous,
+				scope with { Owner = $"{scope.Owner} parameter '{arg.Code}'" });
 			if (parameter is not null) {
 				result.Items[parameter.UId.ToString()] = parameter;
 			}
@@ -603,8 +626,12 @@ public static partial class WebServiceDefinitionBuilder {
 		return result;
 	}
 
+	/// <param name="scope">The scope; its owner names this parameter in messages.</param>
 	private static ServiceParameterDto BuildParameter(WebServiceParameterArg arg, ServiceParameterDto previous,
-		bool isRequest, string owner, Errors errors, string prefix, bool nested, SoapContext soap, bool inSoapHeader) {
+		ParameterScope scope) {
+		string owner = scope.Owner;
+		Errors errors = scope.Errors;
+		bool isRequest = scope.IsRequest;
 		RejectUnknownFields(arg.ExtensionData, owner, errors);
 		int placement = ServiceSchemaCodes.Placements["body"];
 		if (isRequest && arg.In is not null && !ServiceSchemaCodes.Placements.TryGetValue(arg.In, out placement)) {
@@ -613,7 +640,7 @@ public static partial class WebServiceDefinitionBuilder {
 		}
 		// Studio's SOAP parameter page offers body, HTTP header and cookie only: the SOAP URL is the base URI, so
 		// there is no method address to carry a path or query value.
-		if (soap is not null && isRequest && (placement == ServiceSchemaCodes.Placements["path"]
+		if (scope.Soap is not null && isRequest && (placement == ServiceSchemaCodes.Placements["path"]
 				|| placement == ServiceSchemaCodes.Placements["query"])) {
 			errors.Add($"{owner}: a SOAP request parameter goes in the body, a header or a cookie, not in '{arg.In}'.");
 			return null;
@@ -653,9 +680,8 @@ public static partial class WebServiceDefinitionBuilder {
 				+ "'$.customer.name' for a response value.");
 		}
 		string path = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path ?? arg.Code : arg.Path;
-		bool soapHeader = ValidateSoapMembers(arg, isRequest, nested, placement, path, soap, owner, errors, inSoapHeader);
-		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors,
-			soapHeader || inSoapHeader);
+		bool inHeader = ValidateSoapMembers(arg, placement, path, scope) || scope.InSoapHeader;
+		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors, inHeader);
 		return new ServiceParameterDto {
 			UId = previous?.UId ?? Guid.NewGuid(),
 			Name = arg.Code,
@@ -669,15 +695,17 @@ public static partial class WebServiceDefinitionBuilder {
 			// SOAP: the parameter is rebuilt as given, with the defaults Studio writes (not a SOAP header, item
 			// elements named "item"); a SOAP-header parameter passes the flag to its items, as Studio does. REST: the
 			// typed members the platform sent are carried like the extension bag, so a save keeps them as read.
-			IsSoapHeader = soap is not null ? soapHeader || inSoapHeader : previous?.IsSoapHeader,
-			SequenceElementName = soap is not null
-				? string.IsNullOrWhiteSpace(arg.SequenceElement) ? "item" : arg.SequenceElement.Trim()
-				: previous?.SequenceElementName,
+			IsSoapHeader = scope.Soap is not null ? inHeader : previous?.IsSoapHeader,
+			SequenceElementName = scope.Soap is not null ? SoapSequenceElement(arg) : previous?.SequenceElementName,
 			Extra = previous?.Extra,
-			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties, isRequest, owner, errors, prefix,
-				nested: true, soap: soap, inSoapHeader: soapHeader || inSoapHeader)
+			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties,
+				scope with { Nested = true, InSoapHeader = inHeader })
 		};
 	}
+
+	/// <summary>The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given.</summary>
+	private static string SoapSequenceElement(WebServiceParameterArg arg) =>
+		string.IsNullOrWhiteSpace(arg.SequenceElement) ? "item" : arg.SequenceElement.Trim();
 
 	/// <summary>
 	/// The SOAP-only parameter members and rules. <c>soap-header</c> goes on a top-level body request parameter only
@@ -686,33 +714,16 @@ public static partial class WebServiceDefinitionBuilder {
 	/// service has none of these members.
 	/// </summary>
 	/// <returns>Whether this parameter is itself marked as a SOAP header.</returns>
-	private static bool ValidateSoapMembers(WebServiceParameterArg arg, bool isRequest, bool nested, int placement,
-		string path, SoapContext soap, string owner, Errors errors, bool inSoapHeader) {
-		if (soap is null) {
+	private static bool ValidateSoapMembers(WebServiceParameterArg arg, int placement, string path, ParameterScope scope) {
+		string owner = scope.Owner;
+		Errors errors = scope.Errors;
+		if (scope.Soap is null) {
 			if (arg.SoapHeader is not null || arg.SequenceElement is not null) {
 				errors.Add($"{owner}: soap-header and sequence-element belong to a SOAP service.");
 			}
 			return false;
 		}
-		bool soapHeader = arg.SoapHeader == true;
-		// describe reports the flag on the items of a SOAP-header parameter too (Studio stores it there), so it is
-		// accepted back there; anywhere else it is refused.
-		if (soapHeader && nested && inSoapHeader) {
-			return false;
-		}
-		if (soapHeader && !isRequest) {
-			errors.Add($"{owner}: a response parameter cannot be a soap-header; soap-header goes on a top-level body "
-				+ "request parameter.");
-			soapHeader = false;
-		} else if (soapHeader && nested) {
-			errors.Add($"{owner}: soap-header on a field of an array item follows its parent; mark the top-level body "
-				+ "request parameter instead.");
-			soapHeader = false;
-		} else if (soapHeader && placement != ServiceSchemaCodes.Placements["body"]) {
-			errors.Add($"{owner}: an HTTP header or cookie parameter cannot be a soap-header; soap-header goes on a "
-				+ "top-level body request parameter.");
-			soapHeader = false;
-		}
+		bool soapHeader = ValidateSoapHeader(arg, placement, scope);
 		if (!string.IsNullOrWhiteSpace(arg.SequenceElement)) {
 			if (arg.Array != true) {
 				errors.Add($"{owner}: sequence-element names the items of an array; this parameter is not one.");
@@ -720,11 +731,42 @@ public static partial class WebServiceDefinitionBuilder {
 				errors.Add($"{owner}: sequence-element '{arg.SequenceElement}' is not an XML element name.");
 			}
 		}
-		if (!isRequest && placement == ServiceSchemaCodes.Placements["body"] && path.TrimStart().StartsWith('$')) {
+		if (!scope.IsRequest && placement == ServiceSchemaCodes.Placements["body"] && path.TrimStart().StartsWith('$')) {
 			errors.Add($"{owner}: path '{path}' is a JSONPath, but a SOAP response is XML, read by element path (local "
 				+ "names joined by '/', e.g. AddResult or AddResponse/AddResult); a JSONPath reads nothing.");
 		}
 		return soapHeader;
+	}
+
+	/// <summary>
+	/// Whether a SOAP parameter is itself a SOAP header. describe reports the flag on the items of a SOAP-header
+	/// parameter too (Studio stores it there), so it is accepted back there; anywhere else off a top-level body request
+	/// parameter it is refused.
+	/// </summary>
+	private static bool ValidateSoapHeader(WebServiceParameterArg arg, int placement, ParameterScope scope) {
+		if (arg.SoapHeader != true || (scope.Nested && scope.InSoapHeader)) {
+			return false;
+		}
+		string problem = SoapHeaderProblem(placement, scope);
+		if (problem is null) {
+			return true;
+		}
+		scope.Errors.Add($"{scope.Owner}: {problem}");
+		return false;
+	}
+
+	private static string SoapHeaderProblem(int placement, ParameterScope scope) {
+		if (!scope.IsRequest) {
+			return "a response parameter cannot be a soap-header; soap-header goes on a top-level body request parameter.";
+		}
+		if (scope.Nested) {
+			return "soap-header on a field of an array item follows its parent; mark the top-level body request "
+				+ "parameter instead.";
+		}
+		return placement != ServiceSchemaCodes.Placements["body"]
+			? "an HTTP header or cookie parameter cannot be a soap-header; soap-header goes on a top-level body request "
+				+ "parameter."
+			: null;
 	}
 
 	private static void RequirePrefix(string what, string code, string prefix, Errors errors) {

@@ -74,8 +74,8 @@ public sealed class WebServiceSoapWriteTests {
 
 	private Action Register(WebServiceMethodArg method, IReadOnlyList<WebServiceNamespaceArg> namespaces = null,
 		string type = "soap11") =>
-		() => _sut.Register("Custom", "UsrCalc", null, "http://www.dneonline.com/calculator.asmx", null, null, [method],
-			type, namespaces ?? Tem);
+		() => _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://www.dneonline.com/calculator.asmx", null, null, [method],
+			type, namespaces ?? Tem));
 
 	[Test]
 	[Description("A SOAP 1.1 service is saved with its namespace as the default, the message element as the request uri, POST and xml, the SOAP action, Studio's parameter defaults, and the base URI as given.")]
@@ -84,8 +84,8 @@ public sealed class WebServiceSoapWriteTests {
 		WebServiceMethodArg methodArg = AddMethod();
 
 		// Act
-		WebServiceToolResult result = _sut.Register("Custom", "UsrCalc", null,
-			"http://www.dneonline.com/calculator.asmx", null, null, [methodArg], "soap11", Tem);
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://www.dneonline.com/calculator.asmx", null, null, [methodArg], "soap11", Tem));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "a valid SOAP service registers");
@@ -175,7 +175,7 @@ public sealed class WebServiceSoapWriteTests {
 		WebServiceNamespaceArg[] namespaces = [new("ns1", "http://other/"), new("tem", "http://tempuri.org/", true)];
 
 		// Act
-		_sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null, [AddMethod()], "soap12", namespaces);
+		_sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null, [AddMethod()], "soap12", namespaces));
 
 		// Assert
 		_saved.Type.Should().Be(ServiceSchemaCodes.ServiceTypeSoap12, because: "soap12 is SOAP 1.2");
@@ -207,8 +207,8 @@ public sealed class WebServiceSoapWriteTests {
 		WebServiceMethodArg method = AddMethod() with { SoapAction = null };
 
 		// Act
-		WebServiceToolResult result = _sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null,
-			[method], "soap11", Tem);
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null,
+			[method], "soap11", Tem));
 
 		// Assert
 		result.Notices.Should().Contain(n => n.Contains("UsrAdd") && n.Contains("no SOAPAction header"),
@@ -225,8 +225,8 @@ public sealed class WebServiceSoapWriteTests {
 		WebServiceNamespaceArg[] namespaces = [new("tem", "http://tempuri.org/"), new("wsse", "http://wsse/")];
 
 		// Act
-		WebServiceToolResult registered = _sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null,
-			[AddMethod(security)], "soap11", namespaces);
+		WebServiceToolResult registered = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null,
+			[AddMethod(security)], "soap11", namespaces));
 		ServiceParameterDto saved = _saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single();
 		Action refused = Register(AddMethod(constant), namespaces);
 
@@ -375,8 +375,8 @@ public sealed class WebServiceSoapWriteTests {
 		// Arrange
 		var security = new WebServiceParameterArg("UsrSecurity", Type: "Object", Array: true, Path: "wsse:Security",
 			SoapHeader: true, Items: [new WebServiceParameterArg("UsrPassword", Path: "wsse:Password", DefaultSysSetting: "UsrPass")]);
-		_sut.Register("Custom", "UsrCalc", null, "http://x.example/svc", null, null, [AddMethod(security)], "soap11",
-			[new("tem", "http://tempuri.org/"), new("wsse", "http://wsse/")]);
+		_sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null, [AddMethod(security)], "soap11",
+			[new("tem", "http://tempuri.org/"), new("wsse", "http://wsse/")]));
 		GivenRegistered(_saved);
 		WebServiceView before = WebServiceSchemaView.From(_saved, "Custom");
 		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(
@@ -437,8 +437,8 @@ public sealed class WebServiceSoapWriteTests {
 		WebServiceNamespaceArg[] namespaces = [new("tem", "http://user:ns-pass@tempuri.org/")];
 
 		// Act
-		Action act = () => _sut.Register("Custom", "UsrCalc", null, "http://x.example/{version}/svc", null, null,
-			[method], "soap11", namespaces);
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/{version}/svc", null, null,
+			[method], "soap11", namespaces));
 
 		// Assert
 		string message = act.Should().Throw<ArgumentException>(because: "every value is unsafe").Which.Message;

@@ -34,18 +34,9 @@ public interface IWebServiceDesigner {
 	/// namespace); all problems are reported in one refusal, and nothing is saved unless everything passes.
 	/// </summary>
 	/// <param name="packageName">The package that will own the service.</param>
-	/// <param name="code">The service code; must carry the schema-name prefix and be unused.</param>
-	/// <param name="caption">The caption; the code when empty.</param>
-	/// <param name="baseUri">An absolute http(s) URI without user information.</param>
-	/// <param name="retryCount">How many times the platform retries a failed call.</param>
-	/// <param name="auth">The authentication, by system-setting codes or an OAuth application only.</param>
-	/// <param name="methods">At least one method.</param>
-	/// <param name="type">rest (default), soap11 or soap12.</param>
-	/// <param name="namespaces">SOAP only, at least one: the namespaces the envelope declares.</param>
+	/// <param name="registration">The service as the agent describes it.</param>
 	/// <returns>The saved service as the platform stores it, with notices for the user.</returns>
-	WebServiceToolResult Register(string packageName, string code, string caption, string baseUri, int? retryCount,
-		WebServiceAuthArg auth, IReadOnlyList<WebServiceMethodArg> methods, string type = null,
-		IReadOnlyList<WebServiceNamespaceArg> namespaces = null);
+	WebServiceToolResult Register(string packageName, WebServiceRegistration registration);
 
 	/// <summary>
 	/// Applies operations to a REST or SOAP service in order, all or nothing. Changing or removing a method a process
@@ -131,9 +122,11 @@ public sealed class WebServiceDesigner(
 			Notices: notices.Count > 0 ? notices : null);
 	}
 
-	public WebServiceToolResult Register(string packageName, string code, string caption, string baseUri,
-		int? retryCount, WebServiceAuthArg auth, IReadOnlyList<WebServiceMethodArg> methods, string type = null,
-		IReadOnlyList<WebServiceNamespaceArg> namespaces = null) {
+	public WebServiceToolResult Register(string packageName, WebServiceRegistration registration) {
+		ArgumentNullException.ThrowIfNull(registration);
+		(string code, string caption, string baseUri, int? retryCount, WebServiceAuthArg auth,
+			IReadOnlyList<WebServiceMethodArg> methods, string type, IReadOnlyList<WebServiceNamespaceArg> namespaces) =
+			registration;
 		RequireManageSolution();
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		int serviceType = WebServiceDefinitionBuilder.ParseServiceType(type, errors);
@@ -207,48 +200,24 @@ public sealed class WebServiceDesigner(
 		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixReader.Read() : null;
 		IReadOnlyCollection<(string Owner, string Code)> referencesBefore =
 			WebServiceDefinitionBuilder.CollectSysSettingReferences(schema);
-		// Methods are checked against the base URI as it is after the whole call, so the order of setBaseUri and
-		// addMethod or setMethod does not change the result.
+		// Methods are checked against the base URI, the namespaces and the authentication as they are after the whole
+		// call, so the order of the operations does not change the result.
 		WebServiceOperationArg lastSetBaseUri = operations.LastOrDefault(o => o?.Op == "setBaseUri");
+		WebServiceOperationArg lastSetNamespaces = operations.LastOrDefault(o => o?.Op == "setNamespaces");
 		string finalBaseUri = lastSetBaseUri is null
 			? schema.BaseUri
 			: WebServiceDefinitionBuilder.NormalizeBaseUri(lastSetBaseUri.BaseUri, new WebServiceDefinitionBuilder.Errors(),
 				soap);
-		// Likewise, methods are checked against the namespaces as they are after the whole call.
-		WebServiceOperationArg lastSetNamespaces = operations.LastOrDefault(o => o?.Op == "setNamespaces");
 		WebServiceDefinitionBuilder.SoapContext soapContext = soap ? FinalSoapContext(schema, lastSetNamespaces) : null;
-		IReadOnlySet<string> prefixesBefore = WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces).Prefixes;
+		bool methodsUseAuth = MethodsUseAuth(schema, operations.LastOrDefault(o => o?.Op == "setAuth"));
+		var before = new KeptMethodBaseline(WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces).Prefixes,
+			lastSetBaseUri is null ? null : schema.BaseUri, soap && lastSetNamespaces is not null);
 		var builtMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		// A method sent without use-auth follows the service's authentication as it is after this call, so
-		// [addMethod, setAuth] gives the new method authentication just like [setAuth, addMethod] does.
-		WebServiceOperationArg lastSetAuth = operations.LastOrDefault(o => o?.Op == "setAuth");
-		bool methodsUseAuth = lastSetAuth is null
-			? HasAuth(schema)
-			: ServiceSchemaCodes.AuthTypes.TryGetValue(lastSetAuth.Auth?.Type ?? string.Empty, out int authType)
-				&& authType != ServiceSchemaCodes.AuthNone;
-		string baseUriBefore = schema.BaseUri;
 		foreach (WebServiceOperationArg operation in operations) {
 			Apply(schema, operation, prefix, methodsUseAuth, finalBaseUri, builtMethods, changedMethods, errors,
 				soapContext);
 		}
-		if (lastSetNamespaces is not null && soap) {
-			// A method the call keeps must not lose a prefix it uses: the platform would save the service and then
-			// fail every call of that method before sending it. Only prefixes the call removes are checked, so a
-			// Studio-made method the stricter rules would refuse does not block adding a namespace.
-			IReadOnlySet<string> declared = WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces).Prefixes;
-			var removed = prefixesBefore.Where(p => !declared.Contains(p)).ToHashSet(StringComparer.Ordinal);
-			foreach (ServiceMethodDto kept in schema.Methods.Items.Values.Where(m => !builtMethods.Contains(m.Name ?? ""))) {
-				foreach (string lostPrefix in WebServiceDefinitionBuilder.UsedPrefixes(kept).Where(removed.Contains)) {
-					errors.Add($"setNamespaces: method '{kept.Name}' still uses prefix '{lostPrefix}', which this call removes; "
-						+ "keep the namespace or change the method in the same call.");
-				}
-			}
-		}
-		if (lastSetBaseUri is not null) {
-			foreach (ServiceMethodDto kept in schema.Methods.Items.Values.Where(m => !builtMethods.Contains(m.Name ?? ""))) {
-				WebServiceDefinitionBuilder.ValidateBaseUriChange(kept, baseUriBefore, schema.BaseUri, errors);
-			}
-		}
+		ValidateKeptMethods(schema, builtMethods, before, errors);
 		(IReadOnlyCollection<string> settings, IReadOnlyList<string> missingKept) =
 			RequireSysSettings(schema, referencesBefore, errors);
 		errors.ThrowIfAny();
@@ -508,6 +477,45 @@ public sealed class WebServiceDesigner(
 				errors.Add($"op '{operation?.Op}' must be addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, "
 					+ "setAuth, setNamespaces or setType.");
 				break;
+		}
+	}
+
+	/// <summary>
+	/// Whether a method sent without use-auth sends the service authentication: it follows the authentication as it is
+	/// after this call, so [addMethod, setAuth] gives the new method authentication just like [setAuth, addMethod].
+	/// </summary>
+	private static bool MethodsUseAuth(ServiceSchemaDto schema, WebServiceOperationArg lastSetAuth) =>
+		lastSetAuth is null
+			? HasAuth(schema)
+			: ServiceSchemaCodes.AuthTypes.TryGetValue(lastSetAuth.Auth?.Type ?? string.Empty, out int authType)
+				&& authType != ServiceSchemaCodes.AuthNone;
+
+	/// <summary>What a kept method is checked against after the call: the service as it was before it.</summary>
+	/// <param name="Prefixes">The namespace prefixes before the call.</param>
+	/// <param name="BaseUri">The base URI before the call, when the call sets a new one; otherwise null.</param>
+	/// <param name="NamespacesSet">Whether the call sets the namespaces of a SOAP service.</param>
+	private sealed record KeptMethodBaseline(IReadOnlySet<string> Prefixes, string BaseUri, bool NamespacesSet);
+
+	/// <summary>
+	/// Checks the methods the call keeps against only what the call changed. A kept SOAP method must not lose a prefix
+	/// it uses (the platform would save the service and then fail every call of that method before sending it); a kept
+	/// method's path parameters must keep the base-URI placeholders they fill. Nothing else of a kept method is
+	/// re-validated, so a Studio-made method the stricter rules would refuse does not block an unrelated change.
+	/// </summary>
+	private static void ValidateKeptMethods(ServiceSchemaDto schema, ISet<string> builtMethods, KeptMethodBaseline before,
+		WebServiceDefinitionBuilder.Errors errors) {
+		IReadOnlySet<string> declared = WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces).Prefixes;
+		var removed = before.Prefixes.Where(p => !declared.Contains(p)).ToHashSet(StringComparer.Ordinal);
+		foreach (ServiceMethodDto kept in schema.Methods.Items.Values.Where(m => !builtMethods.Contains(m.Name ?? ""))) {
+			if (before.NamespacesSet) {
+				foreach (string lostPrefix in WebServiceDefinitionBuilder.UsedPrefixes(kept).Where(removed.Contains)) {
+					errors.Add($"setNamespaces: method '{kept.Name}' still uses prefix '{lostPrefix}', which this call removes; "
+						+ "keep the namespace or change the method in the same call.");
+				}
+			}
+			if (before.BaseUri is not null) {
+				WebServiceDefinitionBuilder.ValidateBaseUriChange(kept, before.BaseUri, schema.BaseUri, errors);
+			}
 		}
 	}
 

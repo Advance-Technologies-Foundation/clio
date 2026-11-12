@@ -58,6 +58,19 @@ public sealed record WebServiceMethodArg(
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 
+/// <summary>A web service to register: what register-web-service takes besides the environment and the package.</summary>
+/// <param name="Code">The service code; must carry the schema-name prefix and be unused.</param>
+/// <param name="Caption">The caption; the code when empty.</param>
+/// <param name="BaseUri">An absolute http(s) URI without user information.</param>
+/// <param name="RetryCount">How many times the platform retries a failed call.</param>
+/// <param name="Auth">The authentication, by system-setting codes or an OAuth application only.</param>
+/// <param name="Methods">At least one method.</param>
+/// <param name="Type">rest (default), soap11 or soap12.</param>
+/// <param name="Namespaces">SOAP only, at least one: the namespaces the envelope declares.</param>
+public sealed record WebServiceRegistration(string Code, string Caption, string BaseUri, int? RetryCount,
+	WebServiceAuthArg Auth, IReadOnlyList<WebServiceMethodArg> Methods, string Type = null,
+	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null);
+
 /// <summary>A SOAP namespace the envelope declares; exactly one is the default.</summary>
 public sealed record WebServiceNamespaceArg(
 	[property: JsonPropertyName("prefix")]

@@ -37,9 +37,8 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 		RegisterWebServiceArgs args) =>
 		WebServiceToolRunner.Run(commandResolver, args?.EnvironmentName, args?.ExtensionData,
 			"Valid: environment-name, package-name, code, base-uri, methods, caption, retry-count, auth, type, namespaces.",
-			designer => designer.Register(
-			args.PackageName, args.Code, args.Caption, args.BaseUri, args.RetryCount, args.Auth, args.Methods, args.Type,
-			args.Namespaces));
+			designer => designer.Register(args.PackageName, new WebServiceRegistration(
+				args.Code, args.Caption, args.BaseUri, args.RetryCount, args.Auth, args.Methods, args.Type, args.Namespaces)));
 }
 
 /// <summary>Lists registered web services with code, caption, type, package and base URI; method trees come from describe-web-service.</summary>
