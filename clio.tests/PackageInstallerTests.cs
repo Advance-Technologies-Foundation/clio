@@ -242,6 +242,24 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		substitute.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == methodName);
 
+	[Test]
+	[Description("A backup that cannot be created stops the installation with an [ERR] line that says so, so the caller's closing error is not the only line - one that names no reason.")]
+	public void Install_ShouldLogWhyItStopped_WhenTheBackupCannotBeCreated() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(installResponse: "{\"success\":true}");
+		arrangement.Session.ExecutePostRequest(Arg.Is<string>(url => url.Contains("Backup")), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException("backup refused by the server"));
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse(because: "the installation does not run without the backup it was asked to create");
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.StartsWith("Package installation failed: the backup could not be created: ", StringComparison.Ordinal)
+			&& line.Contains("backup refused by the server", StringComparison.Ordinal)));
+	}
+
 	private InstallerArrangement ArrangeInstaller(string installResponse) {
 		string packagePath = "T:\\Package.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));

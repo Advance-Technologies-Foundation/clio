@@ -1,9 +1,9 @@
 ---
-description: this record OWNS which Described* types in IProcessDescriber.cs carry a [JsonExtensionData] overflow bag and which drop an undeclared field in silence - the filter types, DescribedConnection, DescribedSignal, DescribedParameter and DescribedProcessTracing have none, the membership MOVES (DescribedFlow left the bagless set) and this record has been wrong about that twice, so recount it against the file rather than trusting a list
+description: this record OWNS which Described* types in IProcessDescriber.cs carry a [JsonExtensionData] overflow bag and which drop an undeclared field in silence - the filter types, DescribedConnection, DescribedSignal, DescribedParameter and DescribedProcessTracing have none, the membership MOVES (DescribedFlow left the bagless set) and this record has been wrong about that twice, so recount it against the file rather than trusting a list; a new filter member that RELEASED clios would drop is returned only on request (readsFilterValues)
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
-date: 2026-10-29
+date: 2026-11-11
 ---
 
 **What is true** — `describe-business-process` deserializes the server payload into the
@@ -62,3 +62,13 @@ dropped member, so the condition simply reads back incomplete — which looks li
 to persist it. This already happened live to macro read-back with green unit tests on both sides; the
 same property was added pre-emptively for `datePart`. A DTO change also needs clio rebuilt and the
 MCP server restarted, or a stale process keeps serving the old shape.
+
+The property here fixes only the clio that carries it. Every RELEASED clio keeps dropping the new member,
+and it still talks to a newer package, because convergence refuses a package BEHIND the bundled one, never
+one ahead. That is harmless for a member that only adds detail, and harmful for one that changes what a
+condition MEANS. ENG-105557's `values` replaced `value` with a list and came with
+`filterDecodedCompletely: true`, on which clio leaves out the raw filter. A released clio would have shown
+a condition with no value at all, and the raw filter would have been gone. So the package returns `values`
+only to a describe that sends `readsFilterValues` (`ServerProcessDescriber` sends it). Any other caller gets
+the old read-back: the first record, the multi-value marker and `false`. The next filter member of that
+kind needs the same opt-in, not only a property here.
