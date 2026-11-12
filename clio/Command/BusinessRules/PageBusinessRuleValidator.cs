@@ -80,14 +80,14 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 		return result;
 	}
 
-	// Runtime-generated attributes (e.g. a stepper's active step) are few and easy to miss among the many
+	// Component attributes are few and easy to miss among the many
 	// data-source columns, so they are listed first and never fall behind the cap.
 	private static string FormatAttributeCandidates(
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap) =>
 		FormatCandidates(
-			attributeMap.Where(pair => pair.Value.IsRuntimeGenerated).Select(pair => pair.Key)
+			attributeMap.Where(pair => pair.Value.IsComponentAttribute).Select(pair => pair.Key)
 				.OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
-				.Concat(attributeMap.Where(pair => !pair.Value.IsRuntimeGenerated).Select(pair => pair.Key)
+				.Concat(attributeMap.Where(pair => !pair.Value.IsComponentAttribute).Select(pair => pair.Key)
 					.OrderBy(key => key, StringComparer.OrdinalIgnoreCase)),
 			keepOrder: true);
 
