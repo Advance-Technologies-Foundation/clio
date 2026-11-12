@@ -34,3 +34,5 @@ serializer refused (see [[system-text-json-reports-the-object-for-a-missing-memb
 
 Adding `required` to an args record is therefore a contract decision, not a nullability tidy-up. See
 [[a-null-args-object-never-reaches-a-long-tail-tool]] for the sibling case, `{"args":null}`.
+Which parts of the refusal's text callers may rely on - the code and the lead sentence, not the hints - is in
+[[a-binding-refusal-keeps-its-code-and-lead-sentence-stable-and-its-hints-free]].
