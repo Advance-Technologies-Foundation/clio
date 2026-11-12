@@ -236,8 +236,11 @@ public sealed class WebServiceDesigner(
 			return new WebServiceTestResult(false, SensitiveErrorTextRedactor.Redact(ExplainRestXml(result.Error)),
 				result.StatusCode);
 		}
+		// The codes the call gave a value tell an array the platform skipped from one the lookup missed.
+		IReadOnlyCollection<string> sentCodes = values?.Where(p => p.Value is not null).Select(p => p.Key).ToList()
+			?? (IReadOnlyCollection<string>)[];
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, result.RequestRawData,
-			result.RequestBody, HasAuth(schema), out bool secretUnlocated);
+			result.RequestBody, HasAuth(schema), sentCodes, out bool secretUnlocated);
 		if (!string.IsNullOrEmpty(result.Error) && string.IsNullOrEmpty(result.RequestRawData)
 			&& string.IsNullOrEmpty(result.RequestBody) && WebServiceResponseMasker.HasCredentialResponseDefault(method)) {
 			// A failure with nothing reported as sent may come from converting a response default after the call (a

@@ -79,7 +79,24 @@ public static partial class WebServiceResponseMasker {
 	/// <param name="secretUnlocated">See the four-argument overload.</param>
 	/// <returns>Distinct values, longest first.</returns>
 	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
-		bool serviceHasAuth, out bool secretUnlocated) {
+		bool serviceHasAuth, out bool secretUnlocated) =>
+		SentSecrets(method, requestRawData, requestBody, serviceHasAuth, null, out secretUnlocated);
+
+	/// <summary>
+	/// As <see cref="SentSecrets(ServiceMethodDto, string, string, bool, out bool)"/>, knowing which top-level request
+	/// parameters the call gave a value. A field of an array item whose array element is not in an XML body was not
+	/// sent only when its top-level parameter had no value: no value from the call and no default. Unknown (null), or
+	/// with a value, the missing element is a lookup miss and fails closed.
+	/// </summary>
+	/// <param name="method">The called method.</param>
+	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
+	/// <param name="requestBody">The request body the platform reports as sent.</param>
+	/// <param name="serviceHasAuth">Whether the service has authentication.</param>
+	/// <param name="sentCodes">The top-level request parameter codes the call gave a value, or null when unknown.</param>
+	/// <param name="secretUnlocated">See the four-argument overload.</param>
+	/// <returns>Distinct values, longest first.</returns>
+	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
+		bool serviceHasAuth, IReadOnlyCollection<string> sentCodes, out bool secretUnlocated) {
 		secretUnlocated = false;
 		string[] lines = (requestRawData ?? string.Empty).Split(["\r\n", "\n"], StringSplitOptions.None);
 		Dictionary<string, List<string>> headers = Headers(lines);
@@ -93,18 +110,15 @@ public static partial class WebServiceResponseMasker {
 		// The Authorization header carries the service credentials (from settings or typed in Studio); without the
 		// reported headers its value cannot be found, so it cannot be masked either.
 		secretUnlocated |= serviceHasAuth && method?.UseAuthInfo == true && !rawReported;
-		foreach ((ServiceParameterDto parameter, ServiceParameterDto parent) in SettingBound(method?.Request?.Parameters, null)) {
+		foreach ((ServiceParameterDto parameter, ServiceParameterDto parent, ServiceParameterDto root)
+				in SettingBound(method?.Request?.Parameters, null, null)) {
 			string name = WireName(parameter);
 			// Values are found in what the platform reports as sent; when that part is missing or is neither JSON nor
 			// XML, a value that went out cannot be found, so the caller withholds the response instead.
 			secretUnlocated |= parameter.Type == PlacementBody ? body is null && xmlBody is null : !rawReported;
 			if (parameter.Type == PlacementBody && xmlBody is not null) {
 				List<string> found = XmlBodyValues(xmlBody, name);
-				// A top-level element is always rendered, and so is every field of a parent the platform rendered; a
-				// parent with no value is skipped whole. So a field missing while its parent carries content means the
-				// lookup missed it: fail closed.
-				secretUnlocated |= found.Count == 0
-					&& (parent is null || XmlElements(xmlBody, WireName(parent)).Any(e => e.HasElements));
+				secretUnlocated |= found.Count == 0 && XmlFieldMayHaveBeenSent(xmlBody, parent, root, sentCodes);
 				secrets.AddRange(found);
 				continue;
 			}
@@ -234,7 +248,7 @@ public static partial class WebServiceResponseMasker {
 	/// </summary>
 	private static string ApplyXmlOrText(string body, IReadOnlyList<string> secrets, IReadOnlyList<string> forms,
 		out bool masked) {
-		XDocument document = ParseXmlBody(body);
+		XDocument document = ParseXmlResponse(body);
 		if (document is null) {
 			return ApplyForms(body, forms, out masked);
 		}
@@ -540,16 +554,40 @@ public static partial class WebServiceResponseMasker {
 	[GeneratedRegex(@"\{([^{}]+)\}", RegexOptions.CultureInvariant)]
 	private static partial Regex PlaceholderPattern();
 
-	private static IEnumerable<(ServiceParameterDto Parameter, ServiceParameterDto Parent)> SettingBound(
-		ServiceItemCollection<ServiceParameterDto> parameters, ServiceParameterDto parent) {
+	private static IEnumerable<(ServiceParameterDto Parameter, ServiceParameterDto Parent, ServiceParameterDto Root)>
+		SettingBound(ServiceItemCollection<ServiceParameterDto> parameters, ServiceParameterDto parent,
+			ServiceParameterDto root) {
 		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
 			if (parameter.DefValue?.Source == ServiceSchemaCodes.ValueSourceSysSetting) {
-				yield return (parameter, parent);
+				yield return (parameter, parent, root);
 			}
-			foreach ((ServiceParameterDto, ServiceParameterDto) item in SettingBound(parameter.ItemProperties, parameter)) {
+			foreach ((ServiceParameterDto, ServiceParameterDto, ServiceParameterDto) item
+					in SettingBound(parameter.ItemProperties, parameter, root ?? parameter)) {
 				yield return item;
 			}
 		}
+	}
+
+	/// <summary>
+	/// Whether a setting-bound element missing from an XML body may still have been sent, so its absence means the lookup
+	/// missed it. A top-level element is always rendered. A field of an array item is rendered whenever its parent is:
+	/// a parent element with content and no such field is a miss, an empty parent is an array sent empty. A parent
+	/// element that is missing too is either an array the platform skipped (its top-level parameter had no value) or a
+	/// parent the lookup also missed; only a top-level parameter known to have had no value tells them apart.
+	/// </summary>
+	private static bool XmlFieldMayHaveBeenSent(XDocument body, ServiceParameterDto parent, ServiceParameterDto root,
+		IReadOnlyCollection<string> sentCodes) {
+		if (parent is null) {
+			return true;
+		}
+		List<XElement> parents = XmlElements(body, WireName(parent)).ToList();
+		if (parents.Count > 0) {
+			return parents.Any(e => e.HasElements);
+		}
+		bool rootHasDefault = root?.DefValue is { Source: not ServiceSchemaCodes.ValueSourceNone } value
+			&& (value.Source == ServiceSchemaCodes.ValueSourceSysSetting || !string.IsNullOrEmpty(value.Value));
+		return sentCodes is null || rootHasDefault
+			|| sentCodes.Contains(root?.Name ?? string.Empty, StringComparer.Ordinal);
 	}
 
 	private static string WireName(ServiceParameterDto parameter) =>
@@ -559,14 +597,22 @@ public static partial class WebServiceResponseMasker {
 	/// Parses a request body as XML with DTD processing prohibited and no resolver, so a body can neither expand
 	/// entities nor make clio read a file or a URL. Returns <c>null</c> when the body is not XML.
 	/// </summary>
-	private static XDocument ParseXmlBody(string requestBody) {
-		if (string.IsNullOrWhiteSpace(requestBody)) {
+	private static XDocument ParseXmlBody(string requestBody) => ParseXml(requestBody, DtdProcessing.Prohibit);
+
+	/// <summary>
+	/// Parses a RESPONSE body as XML. A DOCTYPE is skipped instead of refused, so a response that carries one is still
+	/// masked by its decoded values (a secret written as character references would pass the text masking); with no
+	/// resolver nothing external is read, and an entity the skipped DTD declared fails the parse and falls back to text.
+	/// </summary>
+	private static XDocument ParseXmlResponse(string responseBody) => ParseXml(responseBody, DtdProcessing.Ignore);
+
+	private static XDocument ParseXml(string text, DtdProcessing dtdProcessing) {
+		if (string.IsNullOrWhiteSpace(text)) {
 			return null;
 		}
-		var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+		var settings = new XmlReaderSettings { DtdProcessing = dtdProcessing, XmlResolver = null };
 		try {
-			using var text = new StringReader(requestBody);
-			using var reader = XmlReader.Create(text, settings);
+			using var reader = XmlReader.Create(new StringReader(text), settings);
 			return XDocument.Load(reader);
 		} catch (XmlException) {
 			return null;

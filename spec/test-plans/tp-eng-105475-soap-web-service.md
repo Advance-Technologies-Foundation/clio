@@ -51,6 +51,8 @@
 | TC-U-A23 | unit | A response value filled from a setting default is masked in `response-values` | 6 |
 | TC-U-A24 | unit | An error with nothing reported as sent is withheld when a response default comes from a setting | 6 |
 | TC-U-A25 | unit | A JSONPath on an XML response parameter gets a notice in describe and in the test call; a JSON response gets none | 6 |
+| TC-U-A26 | unit | An array item field whose array element is missing too fails closed unless the call gave the array no value and it has no default | 5 |
+| TC-U-A27 | unit | An XML response with a DOCTYPE is masked by its decoded values (character references) | 4 |
 | TC-I-A01 | e2e | Saves a SOAP 1.1 and a SOAP 1.2 service through `ServiceDataContract` (namespaces, SOAP action, a SOAP-header element bound to a system setting, a body element, a scalar array with a sequence element, a response parameter with a JSONPath), expects describe to report both versions, every SOAP member and a notice for the JSONPath, then test-calls the 1.1 method and expects the platform's reply (status, body) instead of a withheld response | 1, 2, 4, 6 |
 | TC-I-A02 | e2e | Registers a REST service with an xml method, test-calls it and expects the error to name the `RequestBody` route | 7 |
 | TC-I-A03 | e2e (existing) | The clio#1900 REST e2e suite stays green: REST describe and test output are unchanged | 2, 3 |

@@ -55,7 +55,7 @@ I can map a Call web service element correctly and check its response paths with
 - `WebServiceDesignerClient`: read `ParameterValues`.
 - `WebServiceDesigner.TestMethod`: response values, REST XML message, stopgap removed.
 - `WebServiceTools.cs`: descriptions.
-- Tests: TC-U-A01..A25 and TC-I-A01..A02 of the test plan.
+- Tests: TC-U-A01..A27 and TC-I-A01..A02 of the test plan.
 
 ## Definition of Done
 

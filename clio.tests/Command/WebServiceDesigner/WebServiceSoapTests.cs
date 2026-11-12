@@ -214,6 +214,38 @@ public sealed class WebServiceSoapTests {
 	}
 
 	[Test]
+	[Description("An array item field whose array element is missing too fails closed unless the array is known to have had no value.")]
+	public void SentSecrets_Should_Fail_Closed_When_The_Item_Parent_Is_Missing_Unless_It_Had_No_Value() {
+		// Arrange
+		ServiceMethodDto method = SoapServiceFixture.Method();
+		string body = SoapServiceFixture.SentEnvelope.Replace("<tem:Lines arrayType=\"xsd:array[]\"/>", string.Empty);
+
+		// Act
+		WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw, body, false, null, out bool unknown);
+		WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw, body, false, ["UsrLines"], out bool given);
+		WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw, body, false, ["UsrA"], out bool notGiven);
+
+		// Assert
+		unknown.Should().BeTrue(because: "without knowing what the call sent, a missing parent may be a lookup miss");
+		given.Should().BeTrue(because: "an array the call gave a value is rendered, so a missing element is a lookup miss");
+		notGiven.Should().BeFalse(because: "an array with no value and no default is skipped by the platform, so nothing was sent");
+	}
+
+	[Test]
+	[Description("An XML response that carries a DOCTYPE is still masked by its decoded values, so a character-reference form is found.")]
+	public void ApplyToBody_Should_Mask_An_Xml_Response_With_A_Doctype() {
+		// Arrange
+		const string response = "<!DOCTYPE r><r>&#112;w-s3cret-77</r>";
+
+		// Act
+		string masked = WebServiceResponseMasker.ApplyToBody(response, ["pw-s3cret-77"], out bool changed);
+
+		// Assert
+		changed.Should().BeTrue(because: "the decoded text carries the secret");
+		masked.Should().NotContain("s3cret-77", because: "the character-reference form must not survive");
+	}
+
+	[Test]
 	[Description("A path segment with a dot after its prefix is matched the way the platform renders it: by the name up to the dot.")]
 	public void SentSecrets_Should_Match_The_Element_Name_The_Platform_Renders() {
 		// Arrange
