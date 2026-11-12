@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for ENG-105557 over the real MCP path: several records of one lookup column are ONE filter
 /// condition (<c>values</c>), built the way the process designer stores its multi-select and read back whole by
 /// describe, on a signal start, Read data and Modify data alike. NOT in CI - run manually against a stand carrying
-/// CrtProcessBuilder 1.6.6.157 or newer (the cut that reads <c>values</c>, and the create and modify floor). The
+/// CrtProcessBuilder 1.6.6.162 or newer (the cut that reads <c>values</c>, and the create and modify floor). The
 /// records are the platform's own Country rows (Algeria, Andorra, Armenia), named by display name; the run check
 /// takes the two countries that hold the most contacts on the stand instead, so it counts real records.
 /// </summary>
@@ -36,7 +36,7 @@ public sealed class ProcessFilterValuesToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 
 	/// <summary>The cut that reads <c>values</c>; named in the skip message.</summary>
-	private const string MinimumPackageVersion = "1.6.6.157";
+	private const string MinimumPackageVersion = "1.6.6.162";
 
 	private const string Subject = "Process filter values";
 
@@ -71,7 +71,7 @@ public sealed class ProcessFilterValuesToolE2ETests {
 	}
 
 	[Test]
-	[Description("The describe -> setFilter loop keeps every record: the filter describe returns for a Read data with 'values' is sent back through setFilter as read, and the second describe reports the same records - the loop that silently kept one record of several before CrtProcessBuilder 1.6.6.157.")]
+	[Description("The describe -> setFilter loop keeps every record: the filter describe returns for a Read data with 'values' is sent back through setFilter as read, and the second describe reports the same records - the loop that silently kept one record of several before CrtProcessBuilder 1.6.6.162.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("describe -> setFilter keeps every record of a value list")]
 	public async Task DescribeThenSetFilter_Should_KeepEveryRecordOfTheValueList() {

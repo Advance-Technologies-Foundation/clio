@@ -206,7 +206,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 	[TestCase("create")]
 	[TestCase("setFilter")]
-	[Description("ENG-105557: a filter condition over several lookup records - 'values' with equal - is a key the server declares from CrtProcessBuilder 1.6.6.157, so it passes clean on create and on setFilter.")]
+	[Description("ENG-105557: a filter condition over several lookup records - 'values' with equal - is a key the server declares from CrtProcessBuilder 1.6.6.162, so it passes clean on create and on setFilter.")]
 	public void Check_Should_AcceptAValueList_OnCreateAndSetFilter(string route) {
 		// Act
 		ProcessBlockKeyCheckResult result = CheckFilterCondition(route,

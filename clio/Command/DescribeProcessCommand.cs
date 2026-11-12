@@ -219,7 +219,7 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	/// complete - a duplicate of the ~300-character <c>filter</c> beside it. No measured agent read it.
 	/// <para>A non-null <c>Filter</c> is NOT enough: the server's reader is best-effort and returns a filter while
 	/// reading an Exists or Between leaf as <c>equal</c>, keeping one value of a multi-item In that is not all lookup
-	/// records (from CrtProcessBuilder 1.6.6.157 a list of lookup records reads back whole, as <c>values</c>, to a
+	/// records (from CrtProcessBuilder 1.6.6.162 a list of lookup records reads back whole, as <c>values</c>, to a
 	/// describe that asks for it, as this clio's does), or reading a
 	/// disabled condition as active - and the raw value is then the only full record, which an agent resending
 	/// <c>filter</c> to <c>setFilter</c> would otherwise overwrite without knowing. So the value is left out only on
