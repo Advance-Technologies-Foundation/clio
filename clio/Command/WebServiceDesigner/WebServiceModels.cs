@@ -52,7 +52,7 @@ public sealed record WebServiceMethodArg(
 	string MessageElement = null,
 
 	[property: JsonPropertyName("soap-action")]
-	[property: Description("SOAP only: the SOAPAction header value, e.g. http://tempuri.org/Add; empty sends no SOAPAction header, which many SOAP 1.1 servers refuse")]
+	[property: Description("SOAP only, optional: the SOAPAction header value, e.g. http://tempuri.org/Add. Take it from the WSDL (binding operation soapAction) or ask the user; never make one up. Left out, no SOAPAction header is sent, which many SOAP 1.1 servers refuse; setMethod replaces the method, so send describe's soap-action back to keep it")]
 	string SoapAction = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }

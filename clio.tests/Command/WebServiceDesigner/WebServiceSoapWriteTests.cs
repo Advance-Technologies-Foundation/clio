@@ -211,8 +211,9 @@ public sealed class WebServiceSoapWriteTests {
 			[method], "soap11", Tem));
 
 		// Assert
-		result.Notices.Should().Contain(n => n.Contains("UsrAdd") && n.Contains("no SOAPAction header"),
-			because: "many SOAP 1.1 servers refuse a call without the header");
+		result.Notices.Should().Contain(n => n.StartsWith("Tell the user") && n.Contains("UsrAdd")
+				&& n.Contains("no SOAPAction header") && n.Contains("refuse such a call"),
+			because: "the notice is passed on whole, risk included: many SOAP 1.1 servers refuse a call without the header");
 	}
 
 	[Test]
@@ -285,8 +286,59 @@ public sealed class WebServiceSoapWriteTests {
 		// Assert
 		refused.Success.Should().BeFalse(because: "the version changes every call of the service");
 		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
+		refused.Error.Should().Contain("change every call", because: "the version or namespaces change every call the caller makes");
+		refused.Error.Should().NotContain("lose their parameters",
+			because: "the caller's element keeps its parameters (measured), so the refusal does not claim it breaks");
 		acknowledged.Success.Should().BeTrue(because: "the user agreed");
 		_saved.Type.Should().Be(ServiceSchemaCodes.ServiceTypeSoap11, because: "the service is now SOAP 1.1");
+	}
+
+	[Test]
+	[Description("A call that changes one method and the SOAP version names both consequences: the caller of the changed method breaks, the other caller's calls change.")]
+	public void Modify_Should_Give_Both_Reasons_For_A_Mixed_Change() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		ServiceMethodDto second = SoapServiceFixture.Method();
+		second.UId = Guid.NewGuid();
+		second.Name = "UsrOther";
+		schema.Methods.Items[second.UId.ToString()] = second;
+		GivenRegistered(schema);
+		JsonObject otherCaller = ProcessCalling(schema.UId, "UsrOther");
+		otherCaller["Name"] = "UsrOtherCaller";
+		GivenSelect("SysSchema", ProcessCalling(schema.UId, "UsrOp"), otherCaller);
+		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single(m => m.Code == "UsrOp")));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(schema.Name, [
+			new WebServiceOperationArg("setMethod", methodArg),
+			new WebServiceOperationArg("setType", Type: "soap11")
+		], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "both callers need the user's yes");
+		result.Error.Should().Contain("lose their parameters", because: "the caller of the changed method may break");
+		result.Error.Should().Contain("change every call", because: "the other caller keeps its element but every call changes");
+	}
+
+	[Test]
+	[Description("A caller whose metadata cannot be read is not said to break when the call only switches the SOAP version.")]
+	public void Modify_SetType_Should_Not_Claim_An_Unreadable_Caller_Breaks() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		GivenRegistered(schema);
+		GivenSelect("SysSchema", new JsonObject {
+			["Name"] = "UsrUnreadable", ["Caption"] = "Unreadable", ["SysPackageName"] = "Custom",
+			["MetaData"] = $"not json {schema.UId}"
+		});
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(schema.Name, [new WebServiceOperationArg("setType", Type: "soap11")], null);
+
+		// Assert
+		result.Usages.Should().ContainSingle(u => u.Process == "UsrUnreadable" && u.Method == null,
+			because: "a process that names the service but cannot be read counts as calling every method");
+		result.Error.Should().NotContain("lose their parameters", because: "no method is changed or removed");
 	}
 
 	[TestCase("rest", Description = "SOAP to REST")]
@@ -412,6 +464,9 @@ public sealed class WebServiceSoapWriteTests {
 		unchanged.Success.Should().BeTrue(because: "describe's own list sent back changes no call");
 		refused.Success.Should().BeFalse(because: "a new namespace changes every envelope the service sends");
 		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
+		refused.Error.Should().Contain("change every call", because: "the version or namespaces change every call the caller makes");
+		refused.Error.Should().NotContain("lose their parameters",
+			because: "the caller's element keeps its parameters (measured), so the refusal does not claim it breaks");
 	}
 
 	[TestCase("xmlns", Description = "XML reserved prefix")]

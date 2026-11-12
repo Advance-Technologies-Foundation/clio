@@ -83,6 +83,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the change would break BingSearchProcess silently");
+		result.Error.Should().Contain("lose their parameters", because: "a removed method leaves the element unbound");
 		result.Usages.Should().ContainSingle(u => u.Process == "BingSearchProcess" && u.Element == "WebService1",
 			because: "the refusal names the process and its element");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());

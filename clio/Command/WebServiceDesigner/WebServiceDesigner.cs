@@ -174,12 +174,45 @@ public sealed class WebServiceDesigner(
 	}
 
 	/// <summary>
-	/// An empty SOAP action sends no SOAPAction header at all (measured); many SOAP 1.1 servers refuse such a call.
+	/// An empty SOAP action sends no SOAPAction header at all (measured); many SOAP 1.1 servers refuse such a call. The
+	/// notice is written to be passed on whole: an agent that relayed only its first half dropped the risk (isolated run).
 	/// </summary>
 	private static IEnumerable<string> SoapActionNotices(IEnumerable<ServiceMethodDto> methods) =>
 		methods.Where(m => m.SoapAction is { Length: 0 })
-			.Select(m => $"Method '{m.Name}' has no soap-action, so no SOAPAction header is sent; many SOAP 1.1 servers "
-				+ "refuse such a call. Take it from the WSDL (binding operation soapAction) if the API has one.");
+			.Select(m => $"Tell the user: method '{m.Name}' has no soap-action, so no SOAPAction header is sent, and many "
+				+ "SOAP 1.1 servers refuse such a call. Ask them for the SOAP action (the WSDL's binding operation "
+				+ "soapAction); do not make one up.");
+
+	/// <summary>
+	/// The refusal of the usage guard. A changed or removed method leaves its callers' elements with mappings that point
+	/// at nothing; a new SOAP version or new namespaces leave the elements as they are (measured: element unchanged in the
+	/// designer, the run returned the result) but change every call they make. Both need the user's yes.
+	/// </summary>
+	private static string UsageRefusal(IReadOnlyList<WebServiceOperationArg> operations,
+		IReadOnlyList<WebServiceUsage> unacknowledged) {
+		var restructured = new HashSet<string>(operations
+			.Select(o => o?.Op switch {
+				"setMethod" => o.Method?.Code,
+				"removeMethod" => o.MethodCode,
+				_ => null
+			})
+			.Where(c => !string.IsNullOrWhiteSpace(c)), StringComparer.OrdinalIgnoreCase);
+		// A caller whose metadata could not be read (no method) counts as calling every method, so it breaks only when
+		// the call changes or removes a method at all.
+		bool Breaks(WebServiceUsage usage) =>
+			usage.Method is null ? restructured.Count > 0 : restructured.Contains(usage.Method);
+		var reasons = new List<string>();
+		if (unacknowledged.Any(Breaks)) {
+			reasons.Add("the changed or removed methods are called by processes that would break silently (their "
+				+ "elements lose their parameters on the next designer load and fail at run time)");
+		}
+		if (unacknowledged.Any(u => !Breaks(u))) {
+			reasons.Add("the new SOAP version or namespaces change every call the other listed processes make (their "
+				+ "elements keep their parameters); re-run those processes afterwards to check them");
+		}
+		return $"Refused: {string.Join("; and ", reasons)}. Show these processes to the user and, only on their yes, "
+			+ "repeat the call with acknowledge-usages naming them.";
+	}
 
 	public WebServiceToolResult Modify(string code, IReadOnlyList<WebServiceOperationArg> operations,
 		IReadOnlyList<string> acknowledgedProcesses) {
@@ -227,11 +260,7 @@ public sealed class WebServiceDesigner(
 		var acknowledged = new HashSet<string>(acknowledgedProcesses ?? [], StringComparer.OrdinalIgnoreCase);
 		List<WebServiceUsage> unacknowledged = affected.Where(u => !acknowledged.Contains(u.Process)).ToList();
 		if (unacknowledged.Count > 0) {
-			return new WebServiceToolResult(false,
-				"Refused: the changed or removed methods are called by processes that would break silently (their "
-				+ "elements lose their parameters on the next designer load and fail at run time). Show these "
-				+ "processes to the user and, only on their yes, repeat the call with acknowledge-usages naming them.",
-				Usages: unacknowledged);
+			return new WebServiceToolResult(false, UsageRefusal(operations, unacknowledged), Usages: unacknowledged);
 		}
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
