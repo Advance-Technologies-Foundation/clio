@@ -70,12 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>a7bb2e7b</c>, the
-	/// stamp commit <c>babc712e</c> to be tagged <c>crtprocessbuilder-1.6.6.160</c>): branch
-	/// <c>feature/ENG-105556-ai-toolkit-create-a-minimal</c> with <c>main</c> at 1.6.6.153 merged in (<c>03c31604</c>, the
-	/// merge of the 1.6.6.153 cut), so the cut carries everything 1.6.6.153 shipped. 1.6.6.154 was this branch's
-	/// earlier cut, never merged; 160 is above the 155, 157 and 159 other open branches hold, none of which carries
-	/// this cut's changes or each other's.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>3a5597e1</c>, the
+	/// stamp commit <c>6945446a</c> to be tagged <c>crtprocessbuilder-1.6.6.160</c>): branch
+	/// <c>feature/ENG-105556-ai-toolkit-create-a-minimal</c> with <c>main</c> at 1.6.6.159 merged in (<c>51315bd6</c>), so
+	/// the cut carries everything 1.6.6.159 shipped. 1.6.6.154 and an earlier 1.6.6.160 (<c>babc712e</c>, before 159
+	/// merged) were this branch's earlier cuts, never shipped; the version stayed 160 because no environment carries
+	/// it yet. 161 and 162 are held by other open branches.
 	/// This cut is made by <c>rebundle-process-builder.ps1</c>: every entry is that commit's blob except
 	/// <c>descriptor.json</c>, overlaid from the restamp the script wrote and committed right after as the stamp commit.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -90,7 +90,7 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.153 (ENG-105556): the ninth operation <c>BuildCase</c>, a minimal dynamic
+	/// <para>What this cut carries over 1.6.6.159 (ENG-105556): the ninth operation <c>BuildCase</c>, a minimal dynamic
 	/// case from an object's lookup column with its settings and link rows bound to the package, gated by
 	/// <c>EnsureCanManageDcm</c> (General user, <c>CanManageDcm</c>, <c>CanManageSolution</c>, append on both case settings
 	/// tables) rather than <c>EnsureCanManageProcessDesign</c>. The service surface grows to 9 operations; the design-gate
@@ -98,7 +98,7 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.160 as its floor; the other floors are unchanged. What earlier cuts carried is in this file's git history
 	/// rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6183 passed,
+	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6197 passed,
 	/// 0 failed, on <c>dev-nf</c> and on <c>dev-n8</c> (a 10.2 net-core reference set); the cut adds only the two stamps.
 	/// That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply not running it
 	/// on a hand cut) is the ONE path that can reach the coarse failure the two security counts below exist to catch.
@@ -180,7 +180,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"0FE019FEB2094A03BF057ABB4117EF43DB85F0FF2579255652CBC5CD6478CF04";
+		"34CC4CBEB8E6DD46A8D6C7AAF0D2B73EB91E84FB617EA606435452A34CF2C587";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -226,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "a7bb2e7bb51515aa808d243cf7f4eb0aae21bef0";
+	private const string ExpectedProducingCommit = "3a5597e19de795a5ca85be1f78b3fcf97ce98239";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -252,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794478712000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794486786000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -267,7 +267,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794478401000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794486759000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
