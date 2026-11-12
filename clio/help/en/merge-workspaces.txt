@@ -6,8 +6,8 @@ DESCRIPTION
 
     With --install, when the environment reports the installation as
     failed, the installer writes "Package installation failed: <reason>",
-    the command closes with "Merged workspace packages were not installed:
-    <packages>.", and it exits with 1.
+    the command closes with "Merged workspace packages may not have been
+    installed: <packages>.", and it exits with 1.
 
 SYNOPSIS
     clio merge-workspaces [OPTIONS]

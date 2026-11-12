@@ -87,7 +87,7 @@ namespace Clio.Command
 			// application that was not installed in the destination.
 			if (!_applicationInstallerserviceUrlBuilder.Install(archivePath, destinationEnvironment)) {
 				throw new InvalidOperationException(
-					$"Application {name} was not installed in {destinationEnvironmentCode}.");
+					$"Application {name} may not have been installed in {destinationEnvironmentCode}.");
 			}
 		}
 	}

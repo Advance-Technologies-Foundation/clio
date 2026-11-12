@@ -126,7 +126,12 @@ namespace Clio.Command
 					Environment = options.Target,
 					Name = commonPackagesZipPath
 				};
-				pushPackageCommand.Execute(pushPackageOptions);
+				// push-pkg reports a failed installation on the target through its exit code and its own [ERR] lines,
+				// like pull-pkg above; ignoring it reported a clone that installed nothing as a success.
+				if (pushPackageCommand.Execute(pushPackageOptions) != 0) {
+					throw new InvalidOperationException(
+						$"Packages from {options.Source} may not have been installed in {options.Target}, so the environment was not cloned.");
+				}
 				var pingCommandOptions = new PingAppOptions() {
 					Environment = options.Target
 				};

@@ -66,7 +66,7 @@ public sealed class WorkspaceInstallerFailureTests : BaseClioModuleTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "the environment reported the installation as failed")
-			.WithMessage("Workspace packages were not installed: UsrA, UsrB.",
+			.WithMessage("Workspace packages may not have been installed: UsrA, UsrB.",
 				because: "the closing error names what was not installed; the installer has already logged why");
 	}
 

@@ -104,7 +104,7 @@ internal class WorkspaceMergerTest {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "the installer reported the installation as failed")
-			.WithMessage("Merged workspace packages were not installed: UsrA, UsrB.",
+			.WithMessage("Merged workspace packages may not have been installed: UsrA, UsrB.",
 				because: "the closing error names what was not installed; the installer has already logged why");
 		_logger.DidNotReceive().WriteInfo("Installation completed successfully.");
 	}

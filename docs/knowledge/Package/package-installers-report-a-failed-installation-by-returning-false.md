@@ -10,6 +10,7 @@ applies-to:
   - clio/Workspace/WorkspaceMerger.cs
   - clio/Command/ApplicationManager.cs
   - clio/Package/NuGet/InstallNugetPackage.cs
+  - clio/Command/CloneEnvironmentCommand.cs
 date: 2026-11-11
 ---
 
@@ -24,7 +25,9 @@ with `PushPackageCommand.BuildFailureMessage`, `apply-environment-manifest` reco
 `WorkspaceInstaller` (push-workspace), `WorkspaceMerger` (merge-workspaces), `ApplicationManager.Install`
 (deploy-app) and `InstallNugetPackage` (install-nuget-pkg) throw an `InvalidOperationException` naming what
 was not installed - through `InstallFailureMessages.NotInstalled`, or the application and the destination for
-deploy-app - which their commands turn into exit code 1.
+deploy-app - which their commands turn into exit code 1. That line says "may not have been installed": a failure
+part-way through a multi-package archive can leave some of its packages installed, and the caller cannot tell which.
+`clone-env` checks the exit codes of the pull-pkg and push-pkg it runs and stops on either.
 
 **Why it is this way** — the installer writes the reason, together with the install log, at the moment it
 sees it; the caller only adds what failed and decides how to end.

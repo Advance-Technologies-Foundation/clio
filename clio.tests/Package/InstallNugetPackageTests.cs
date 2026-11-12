@@ -37,7 +37,7 @@ public sealed class InstallNugetPackageTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "the environment reported the installation as failed")
-			.WithMessage("NuGet packages were not installed: UsrNuget*",
+			.WithMessage("NuGet packages may not have been installed: UsrNuget*",
 				because: "the closing error names what was not installed; the installer has already logged why");
 	}
 }

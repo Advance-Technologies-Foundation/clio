@@ -102,11 +102,11 @@ are not checked.
 
 When the installation fails - Creatio reports it as failed, or the backup before
 it cannot be created - the installer writes the reason and the command closes
-with the packages that were not installed, then exits with `1`:
+with the packages that may not have been installed, then exits with `1`:
 
 ```text
 [ERR] - Package installation failed: <reason>
-[ERR] - Workspace packages were not installed: UsrApp, UsrAppData.
+[ERR] - Workspace packages may not have been installed: UsrApp, UsrAppData.
 ```
 
 ## See Also

@@ -36,7 +36,7 @@ public sealed class ApplicationManagerInstallTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "the destination reported the installation as failed")
-			.WithMessage("Application UsrApp was not installed in target.",
+			.WithMessage("Application UsrApp may not have been installed in target.",
 				because: "the closing error names what was not installed and where; the installer has already logged why");
 		installer.Received(1).Install("app.zip", destination, Arg.Any<string>(), Arg.Any<bool?>(), Arg.Any<bool>());
 	}
