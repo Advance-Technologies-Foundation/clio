@@ -342,6 +342,45 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("clio#1785/#1901: projects SysSettings and TextValue into a SysSettingsValue binding even when the row omits them, because the platform's SecureText check reads both while it saves the binding and fails with 'Value \"TextValue\" was not found.' otherwise.")]
+	public void CreateDataBindingDb_Should_Project_Platform_Required_Columns_When_Schema_Is_SysSettingsValue() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"SysSettingsValue",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e01"), "SysSettings", 10),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e02"), "TextValue", 28),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e03"), "FloatValue", 5),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e04"), "IntegerValue", 4));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettingsValue", "SysSettingsValue_UsrLimit");
+		_boundSchemaDataItemsJson = "[]";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettingsValue",
+			BindingName = "SysSettingsValue_UsrLimit",
+			RowsJson = $$$"""[{"values":{"Id":"{{{ExistingRowId}}}","FloatValue":100000}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a SysSettingsValue binding whose row omits TextValue must still be saved");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body =>
+				body.Contains("\"SysSettings\"") &&
+				body.Contains("\"TextValue\"") &&
+				body.Contains("\"FloatValue\"") &&
+				!body.Contains("IntegerValue")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Fails create-data-binding-db before remote writes when the requested row values explicitly reference a runtime column with an unsupported dataValueType.")]
 	public void CreateDataBindingDb_Should_Fail_When_Rows_Reference_Unsupported_Runtime_Column() {
 		// Arrange

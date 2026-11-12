@@ -33,6 +33,9 @@ update the binding schema data record in the DB.
 SaveSchema metadata is projected to the primary key plus the columns referenced by
 currently bound or requested rows, so unrelated runtime-only columns do not block
 Account-like schemas. Explicitly requested unsupported runtime columns still fail.
+A `SysSettingsValue` binding always carries `SysSettings` and `TextValue` as well, even when
+the rows omit them: the platform reads both while it saves that binding and fails with
+`Value "TextValue" was not found.` without them. The bound row's stored values are shipped.
 A requested row that already exists in the table is adopted into the binding instead of
 re-inserted — matched by Name when the schema has a Name column, otherwise by its Id. This
 lets you bind an existing keyed row (e.g. a `SysSchemaAdminUnitRight` grant) by passing its Id

@@ -375,6 +375,84 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 	}
 
 	[Test]
+	[Description("clio#1785/#1901: binds the SysSettingsValue row of a new Float system setting by Id alone and reads the binding back with SysSettings and TextValue among its columns, because the platform reads both while it saves a SysSettingsValue binding and refused it with 'Value \"TextValue\" was not found.' when the row omitted them.")]
+	[AllureTag(CreateDbToolName)]
+	[AllureTag(ReadDbToolName)]
+	[AllureName("create-data-binding-db binds a SysSettingsValue row whose payload omits TextValue")]
+	[AllureDescription("Creates a uniquely-coded Float system setting with create-sys-setting, looks up its SysSettingsValue row through odata-read, binds that row with create-data-binding-db passing only its Id, and reads the binding back with read-data-binding-db. Proves the binding is saved and carries SysSettings and TextValue although the row never named them.")]
+	public async Task CreateDataBindingDb_Should_Bind_SysSettingsValue_Row_Without_TextValue_In_Payload() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string code = $"UsrE2EBind{System.Guid.NewGuid():N}"[..32];
+		string bindingName = $"SysSettingsValue_{code}";
+		CommandExecutionActResult createSettingResult = await ActCommandAsync(
+			arrangeContext,
+			SysSettingCreateTool.CreateSysSettingToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "Float",
+				["value"] = "100000"
+			});
+		AssertToolCallSucceeded(createSettingResult);
+		string settingId = await ReadSingleIdAsync(arrangeContext, "SysSettings", "Code", code);
+		string valueRowId = await ReadSingleIdAsync(arrangeContext, "SysSettingsValue", "SysSettingsId", settingId);
+
+		// Act
+		CommandExecutionActResult createBindingResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "SysSettingsValue",
+				["binding-name"] = bindingName,
+				["rows"] = $"[{{\"values\":{{\"Id\":\"{valueRowId}\"}}}}]"
+			});
+		CommandExecutionActResult readResult = await ActCommandAsync(
+			arrangeContext,
+			ReadDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = bindingName
+			});
+
+		// Assert
+		AssertToolCallSucceeded(createBindingResult);
+		AssertCommandExitCode(createBindingResult, 0,
+			"a SysSettingsValue binding whose row omits TextValue must be saved, not refused by the platform's SecureText check");
+		AssertToolCallSucceeded(readResult);
+		AssertCommandExitCode(readResult, 0, "the saved SysSettingsValue binding must read back");
+		AssertOutputContains(readResult, "TextValue",
+			"the binding must carry TextValue, the column the platform reads while it saves a SysSettingsValue binding");
+		AssertOutputContains(readResult, "SysSettings",
+			"the binding must carry SysSettings, the other column that save reads");
+	}
+
+	private static async Task<string> ReadSingleIdAsync(
+		DataBindingDbArrangeContext arrangeContext, string entity, string field, string value) {
+		CommandExecutionActResult readResult = await ActCommandAsync(
+			arrangeContext,
+			ODataReadToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["entity"] = entity,
+				["select"] = new[] { "Id" },
+				["filters"] = new { all = new[] { new { field, op = "eq", value } } },
+				["top"] = 2
+			});
+		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(readResult.CallResult);
+		response.Success.Should().BeTrue(
+			because: $"odata-read of {entity} by {field} must succeed. Error: {response.Error}");
+		System.Text.Json.JsonElement rows = response.Value!.Value;
+		rows.GetArrayLength().Should().Be(1,
+			because: $"exactly one {entity} record must match {field} = {value}");
+		return rows[0].GetProperty("Id").GetString()!;
+	}
+
+	[Test]
 	[Description("Upserts a row whose Id exists in the table but is not yet bound to the target binding, and verifies the row is UPDATED (exit 0) instead of failing with the insert-required-field error, proving the live-but-unbound adoption path over the real MCP wire.")]
 	[AllureTag(UpsertRowDbToolName)]
 	[AllureName("upsert-data-binding-row-db adopts and updates a live-but-unbound row")]

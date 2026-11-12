@@ -5040,7 +5040,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow. SaveSchema metadata is projected from the primary key plus columns referenced by currently bound or requested rows, so unrelated runtime-only columns are not blockers, while explicitly requested unsupported runtime columns still fail. For workflow selection, call get-guidance with name `data-bindings`.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow. SaveSchema metadata is projected from the primary key plus columns referenced by currently bound or requested rows, so unrelated runtime-only columns are not blockers, while explicitly requested unsupported runtime columns still fail. A `SysSettingsValue` binding always carries `SysSettings` and `TextValue` too, because the platform reads both while it saves that binding. For workflow selection, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(

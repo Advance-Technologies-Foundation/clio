@@ -1086,10 +1086,25 @@ internal sealed class DataBindingDbService(
 		}
 	}
 
+	/// <summary>
+	/// Columns the platform reads while it saves a binding of the given schema, whether or not a row references them.
+	/// Saving a <c>SysSettingsValue</c> binding runs <c>PackageSchemaDataUtilities.GetIsSecureSettings</c> (the
+	/// SecureText re-encryption, on by default through <c>ReEncryptSecureSettingsValuesInPackageData</c>), which calls
+	/// <c>GetIsColumnValueLoaded("SysSettingsId")</c> and <c>GetIsColumnValueLoaded("TextValue")</c>. Both throw
+	/// <c>Value "..." was not found.</c> when the column is not in the binding, so they are always projected.
+	/// </summary>
+	private static readonly Dictionary<string, string[]> PlatformRequiredBindingColumns =
+		new(StringComparer.OrdinalIgnoreCase) {
+			["SysSettingsValue"] = ["SysSettings", "TextValue"]
+		};
+
 	private static DataBindingDbSchema BuildBindingSchemaProjection(
 		DataBindingDbSchema runtimeSchema,
 		params IEnumerable<Dictionary<string, JsonNode?>>?[] rowSets) {
 		HashSet<string> referencedColumns = CollectReferencedColumnNames(rowSets);
+		if (PlatformRequiredBindingColumns.TryGetValue(runtimeSchema.SchemaName, out string[]? requiredColumns)) {
+			referencedColumns.UnionWith(requiredColumns);
+		}
 		List<DataBindingSchemaColumn> projectedColumns = SelectBindingSchemaColumns(runtimeSchema.SchemaColumns, referencedColumns);
 		ValidateBindingSchemaColumnsSupported(projectedColumns);
 		return new DataBindingDbSchema(
