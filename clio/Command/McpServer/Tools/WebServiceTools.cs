@@ -140,7 +140,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		try {
 			ArgumentNullException.ThrowIfNull(args);
 			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData,
-				"Valid: environment-name, code, method, parameters.");
+				"Valid: environment-name, code, method, parameters.", WebServiceToolRunner.TestMethodAliases);
 			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args.EnvironmentName);
 			return designer.TestMethod(args.Code, args.Method, WebServiceToolRunner.ToWireValues(args.Parameters));
 		} catch (Exception exception) {
@@ -158,10 +158,39 @@ internal static class WebServiceToolRunner {
 		return resolver.Resolve<IWebServiceDesigner>(new EnvironmentOptions { Environment = environmentName });
 	}
 
+	/// <summary>
+	/// Spellings agents use for the service code, answered with a rename hint (never bound): agents that skip the
+	/// contract send service-code or method-code, measured in isolated runs. Built on the shared environment-name
+	/// aliases and case-insensitive like them, because the binder matches names case-insensitively. Only spellings that
+	/// can mean nothing but the code are listed: a bare <c>service</c> may wrap a whole object and a <c>service-name</c>
+	/// may be a caption, so those stay unknown keys.
+	/// </summary>
+	public static readonly IReadOnlyDictionary<string, string> ServiceCodeAliases = WithAliases(
+		McpToolArgumentSupport.EnvironmentNameAliases,
+		("service-code", "code"), ("service_code", "code"), ("serviceCode", "code"));
+
+	/// <summary><see cref="ServiceCodeAliases"/> plus the method-code spellings of test-web-service-method.</summary>
+	public static readonly IReadOnlyDictionary<string, string> TestMethodAliases = WithAliases(ServiceCodeAliases,
+		("method-code", "method"), ("method_code", "method"), ("methodCode", "method"));
+
+	private static IReadOnlyDictionary<string, string> WithAliases(IReadOnlyDictionary<string, string> source,
+		params (string Alias, string Canonical)[] extra) {
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string alias, string canonical) in source) {
+			map[alias] = canonical;
+		}
+		foreach ((string alias, string canonical) in extra) {
+			map[alias] = canonical;
+		}
+		return map;
+	}
+
 	// Non-resident tools get no flat-argument classification upstream, so a misspelled key would otherwise
 	// be dropped at bind time and the call would succeed without it.
-	public static void RejectUnknownArguments(IReadOnlyDictionary<string, JsonElement> extensionData, string validHint) {
-		string error = McpToolArgumentSupport.BuildUnknownArgumentError(extensionData, validHint);
+	public static void RejectUnknownArguments(IReadOnlyDictionary<string, JsonElement> extensionData, string validHint,
+		IReadOnlyDictionary<string, string> aliases = null) {
+		string error = McpToolArgumentSupport.BuildLegacyAliasError(extensionData,
+			aliases ?? McpToolArgumentSupport.EnvironmentNameAliases, ".", validHint);
 		if (error is not null) {
 			throw new ArgumentException(error);
 		}
@@ -171,7 +200,7 @@ internal static class WebServiceToolRunner {
 		IReadOnlyDictionary<string, JsonElement> extensionData, string validHint,
 		Func<IWebServiceDesigner, WebServiceToolResult> action) {
 		try {
-			RejectUnknownArguments(extensionData, validHint);
+			RejectUnknownArguments(extensionData, validHint, ServiceCodeAliases);
 			return action(Resolve(resolver, environmentName));
 		} catch (Exception exception) {
 			return new WebServiceToolResult(false, Describe(exception));
