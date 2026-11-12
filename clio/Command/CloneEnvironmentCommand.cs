@@ -87,28 +87,12 @@ namespace Clio.Command
 				var diffManifest = environmentManager.LoadEnvironmentManifestFromFile(options.FileName);
 				string sourceZipPackagePath = Path.Combine(workingDirectoryPath, "SourceZipPackages");
 				_fileSystem.CreateDirectory(sourceZipPackagePath);
-				int number = 1;
 				int packagesCount = diffManifest.Packages.Count;
 				var diffPackages = diffManifest.Packages.Where(p => selectedMaintainers == null ? true : selectedMaintainers.Contains(p.Maintainer))
 					.Where(p => excludedMaintainers == null ? true : !excludedMaintainers.Contains(p.Maintainer));
-				foreach (var package in diffPackages) {
-					var pullPkgOptions = new PullPkgOptions() {
-						Environment = options.Source
-					};
-					pullPkgOptions.Name = package.Name;
-					pullPkgOptions.DestPath = sourceZipPackagePath;
-					string progress = $"({number++} from {packagesCount})";
-					Logger.WriteInfo($"Start pull package: {package.Name} {progress}");
-					// pull-pkg reports a failed download through its exit code and its own [ERR] line; going on would
-					// fail later at the unzip with a missing archive, or clone an incomplete set of packages.
-					if (pullPkgCommand.Execute(pullPkgOptions) != 0) {
-						throw new InvalidOperationException(
-							$"Package {package.Name} was not pulled from {options.Source}, so the environment was not cloned.");
-					}
-					Logger.WriteInfo($"Done pull package: {package.Name} {progress}");
-				}
+				PullPackages(options, diffPackages, packagesCount, sourceZipPackagePath);
 				string sourceGzPackages = Path.Combine(workingDirectoryPath, "SourceGzPackages");
-				number = 1;
+				int number = 1;
 				foreach (var package in diffPackages) {
 					string packageZipPath = Path.Combine(sourceZipPackagePath, $"{package.Name}.zip");
 					string progress = $"({number++} from {packagesCount})";
@@ -122,16 +106,7 @@ namespace Clio.Command
 					$"from_{options.Source}_to_{options.Target}.zip");
 				_compressionUtilities.Zip(sourceGzPackages, commonPackagesZipPath);
 				Logger.WriteInfo($"Done zip packages");
-				var pushPackageOptions = new PushPkgOptions() {
-					Environment = options.Target,
-					Name = commonPackagesZipPath
-				};
-				// push-pkg reports a failed installation on the target through its exit code and its own [ERR] lines,
-				// like pull-pkg above; ignoring it reported a clone that installed nothing as a success.
-				if (pushPackageCommand.Execute(pushPackageOptions) != 0) {
-					throw new InvalidOperationException(
-						$"Packages from {options.Source} may not have been installed in {options.Target}, so the environment was not cloned.");
-				}
+				PushPackages(options, commonPackagesZipPath);
 				var pingCommandOptions = new PingAppOptions() {
 					Environment = options.Target
 				};
@@ -148,6 +123,42 @@ namespace Clio.Command
 			}
 			Logger.WriteInfo("Done");
 			return 0;
+		}
+
+		/// <summary>Pulls each package from the source into <paramref name="destinationPath"/>, stopping at the first that fails.</summary>
+		private void PullPackages(CloneEnvironmentOptions options, IEnumerable<CreatioManifestPackage> packages,
+			int packagesCount, string destinationPath) {
+			int number = 1;
+			foreach (CreatioManifestPackage package in packages) {
+				PullPkgOptions pullPkgOptions = new() {
+					Environment = options.Source,
+					Name = package.Name,
+					DestPath = destinationPath
+				};
+				string progress = $"({number++} from {packagesCount})";
+				Logger.WriteInfo($"Start pull package: {package.Name} {progress}");
+				// pull-pkg reports a failed download through its exit code and its own [ERR] line; going on would
+				// fail later at the unzip with a missing archive, or clone an incomplete set of packages.
+				if (pullPkgCommand.Execute(pullPkgOptions) != 0) {
+					throw new InvalidOperationException(
+						$"Package {package.Name} was not pulled from {options.Source}, so the environment was not cloned.");
+				}
+				Logger.WriteInfo($"Done pull package: {package.Name} {progress}");
+			}
+		}
+
+		/// <summary>Installs the combined archive on the target, and stops the clone when push-pkg reports a failure.</summary>
+		private void PushPackages(CloneEnvironmentOptions options, string packagesZipPath) {
+			PushPkgOptions pushPackageOptions = new() {
+				Environment = options.Target,
+				Name = packagesZipPath
+			};
+			// push-pkg reports a failed installation on the target through its exit code and its own [ERR] lines,
+			// like pull-pkg; ignoring it reported a clone that installed nothing as a success.
+			if (pushPackageCommand.Execute(pushPackageOptions) != 0) {
+				throw new InvalidOperationException(
+					$"Packages from {options.Source} may not have been installed in {options.Target}, so the environment was not cloned.");
+			}
 		}
 
 	}
