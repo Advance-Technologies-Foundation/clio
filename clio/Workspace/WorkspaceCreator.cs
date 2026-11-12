@@ -17,6 +17,7 @@ namespace Clio.Workspaces
 		#region Methods: Public
 
 		void Create(string environmentName, bool isAddingPackageNames = false, bool force = false);
+		void ValidateCanCreate(bool force = false);
 
 		void SaveWorkspaceEnvironmentSettings(string environmentName);
 
@@ -119,13 +120,13 @@ namespace Clio.Workspaces
 			}
 		}
 
-		private void CreateWorkspaceSettingsFile(bool isAddingPackageNames = false) {
-			string[] packages = new string[] { };
-			if (isAddingPackageNames) {
-				IEnumerable<PackageInfo> packagesInfo =
-					_applicationPackageListProvider.GetPackages("{\"isCustomer\": \"true\"}");
-				packages = packagesInfo.Select(s => s.Descriptor.Name).ToArray();
-			}
+		private string[] ReadCustomerPackageNames() {
+			IEnumerable<PackageInfo> packagesInfo =
+				_applicationPackageListProvider.GetPackages("{\"isCustomer\": \"true\"}");
+			return packagesInfo.Select(s => s.Descriptor.Name).ToArray();
+		}
+
+		private void WriteWorkspaceSettingsFile(string[] packages) {
 			WorkspaceSettings defaultWorkspaceSettings = CreateDefaultWorkspaceSettings(packages);
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceSettingsPath);
 		}
@@ -191,13 +192,23 @@ namespace Clio.Workspaces
 			_jsonConverter.SerializeObjectToFile(defaultWorkspaceSettings, WorkspaceEnvironmentSettingsPath);
 		}
 
-		public void Create(string environmentName, bool isAddingPackageNames = false, bool force = false) {
+		public void ValidateCanCreate(bool force = false) {
 			ValidateNotExistingWorkspace(force);
 			ValidateDirectory(force);
+		}
+
+		public void Create(string environmentName, bool isAddingPackageNames = false, bool force = false) {
+			ValidateCanCreate(force);
+			// The package list is read from the environment BEFORE the template is copied: a login that passes but
+			// a list that cannot be read (no cliogate, no rights) used to leave a .clio skeleton behind, after which
+			// restore-workspace no longer falls back to create-workspace. The template holds no settings file, so
+			// whether one exists is the same before and after the copy.
+			bool writeSettings = !ExistsWorkspaceSettingsFile;
+			string[] packages = writeSettings && isAddingPackageNames ? ReadCustomerPackageNames() : [];
 			_templateProvider.CopyTemplateFolder("workspace", RootPath, "", "", false);
 			NormalizeWorkspaceGitIgnore();
-			if (!ExistsWorkspaceSettingsFile) {
-				CreateWorkspaceSettingsFile(isAddingPackageNames);
+			if (writeSettings) {
+				WriteWorkspaceSettingsFile(packages);
 				SaveWorkspaceEnvironmentSettings(environmentName);
 			}
 			if (_osPlatformChecker.IsWindowsEnvironment) {

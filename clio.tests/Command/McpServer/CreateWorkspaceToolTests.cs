@@ -111,7 +111,9 @@ public class CreateWorkspaceToolTests {
 				Substitute.For<Clio.Common.IFileSystem>(),
 				Substitute.For<Clio.UserEnvironment.ISettingsRepository>(),
 				Substitute.For<Clio.Workspaces.IWorkspacePathBuilder>(),
-				Substitute.For<Clio.Common.IWorkingDirectoriesProvider>()) {
+				Substitute.For<Clio.Common.IWorkingDirectoriesProvider>(),
+				Substitute.For<Clio.WebApplication.IApplicationPing>(),
+				new EnvironmentSettings()) {
 		}
 
 		public override int Execute(CreateWorkspaceCommandOptions options) {
