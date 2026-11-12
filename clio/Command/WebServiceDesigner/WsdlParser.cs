@@ -104,6 +104,16 @@ public sealed partial class WsdlParser : IWsdlParser {
 	private const int MaxCharactersInDocument = 20_000_000;
 	private const int MaxCodeLength = 200;
 
+	/// <summary>
+	/// The most elements one parse reads. The wizard's recursion cap bounds each type to two levels per path, but a chain of
+	/// distinct types that each hold several fields of the next one still grows exponentially; past this the WSDL is
+	/// refused instead of exhausting the worker.
+	/// </summary>
+	internal const int MaxElementsRead = 200_000;
+
+	/// <summary>The deepest a type may name another type (<c>type=</c> on a type, or <c>extension base=</c>).</summary>
+	private const int MaxTypeChain = 32;
+
 	/// <summary>The wizard's XSD type map (<c>enums/types-map.ts</c>).</summary>
 	internal static readonly IReadOnlyDictionary<string, string> XsdTypes = new Dictionary<string, string>(StringComparer.Ordinal) {
 		["string"] = "Text", ["boolean"] = "Boolean", ["decimal"] = "Float", ["float"] = "Float", ["double"] = "Float",
@@ -333,6 +343,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private readonly Dictionary<string, List<XElement>> _definitionComplexTypes = new(StringComparer.Ordinal);
 		private List<WsdlNamespace> _namespaces;
 		private string _operation;
+		private int _elementsRead;
 
 		public Session(XDocument doc, string prefix, List<string> warnings) {
 			_doc = doc;
@@ -580,6 +591,10 @@ public sealed partial class WsdlParser : IWsdlParser {
 
 		// _getWsdlElementFromSequenceElement
 		private Node NodeOf(XElement sequenceElement, string parentNamespace, Dictionary<string, int> nesting) {
+			if (++_elementsRead > MaxElementsRead) {
+				throw new ArgumentException($"The WSDL's types expand to more than {MaxElementsRead} elements (types that "
+					+ "nest many fields of other types); it cannot be read. Describe the operations you need by hand.");
+			}
 			Node node = FromElement(sequenceElement);
 			if (node is null) {
 				return null;
@@ -616,8 +631,9 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return node;
 		}
 
-		// WsdlElement.fromElement
-		private Node FromElement(XElement elementRef) {
+		// WsdlElement.fromElement. A base type that extends itself, directly or through others, ends the chain with a
+		// warning where the wizard would recurse until the stack runs out.
+		private Node FromElement(XElement elementRef, HashSet<XElement> resolvingBases = null) {
 			XElement definition = ElementDefinition(elementRef);
 			if (Attr(definition, "name") is null) {
 				return null;
@@ -649,7 +665,15 @@ public sealed partial class WsdlParser : IWsdlParser {
 					node.Copies = Copies(elements, ExtensionOf(TypeDefinition(definition)));
 					return node;
 				}
-				Node baseNode = FromElement(baseType);
+				resolvingBases ??= [];
+				if (!resolvingBases.Add(baseType) || resolvingBases.Count > MaxTypeChain) {
+					Warn($"{Where}the base type '{baseTypeName}' of '{node.TypeName}' extends itself; only the elements read "
+						+ "before the cycle were kept.");
+					node.Elements = elements;
+					node.Copies = Copies(elements, ExtensionOf(TypeDefinition(definition)));
+					return node;
+				}
+				Node baseNode = FromElement(baseType, resolvingBases);
 				node.Elements = [.. elements, .. baseNode?.Elements ?? []];
 				node.Copies = [.. Copies(elements, ExtensionOf(TypeDefinition(definition))), .. baseNode?.Copies ?? []];
 			} else {
@@ -704,22 +728,23 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return XsdTypes.TryGetValue(xmlTypeName ?? string.Empty, out mapped) ? mapped : null;
 		}
 
-		// _getTypeDefinitionElement: an element with a type attribute resolves to that named complex or simple type.
-		private XElement TypeDefinition(XElement element) {
-			if (element is null) {
+		// _getTypeDefinitionElement: an element with a type attribute resolves to that named complex or simple type. A type
+		// that names a type (not valid XSD, but nothing stops it) is followed MaxTypeChain steps at most, so a cycle ends.
+		private XElement TypeDefinition(XElement element, int depth = 0) {
+			if (element is null || depth > MaxTypeChain) {
 				return null;
 			}
 			string typeAttribute = Attr(element, "type");
-			return string.IsNullOrEmpty(typeAttribute) ? element : TypeByName(LocalPart(typeAttribute));
+			return string.IsNullOrEmpty(typeAttribute) ? element : TypeByName(LocalPart(typeAttribute), depth + 1);
 		}
 
 		// _getTypeElementByName: types > schema > complexType[name], else simpleType[name].
-		private XElement TypeByName(string name) {
+		private XElement TypeByName(string name, int depth = 0) {
 			if (name is null) {
 				return null;
 			}
 			XElement type = _complexTypes.GetValueOrDefault(name) ?? _simpleTypes.GetValueOrDefault(name);
-			return type is null ? null : TypeDefinition(type);
+			return type is null ? null : TypeDefinition(type, depth);
 		}
 
 		// _getIsRestrictionElement

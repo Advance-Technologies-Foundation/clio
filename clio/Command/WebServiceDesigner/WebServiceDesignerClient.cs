@@ -201,16 +201,17 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 	}
 
 	public IReadOnlyList<WsdlSourceFile> DownloadWsdl(string url) {
+		// The reply is checked before it is parsed, so the byte arrays of an oversized download are never built.
 		DownloadWsdlResponse response = EnsureSucceeded(PostAndDeserialize<DownloadWsdlResponse>(
-			ServiceUrlBuilder.KnownRoute.DownloadWsdlSchemaFiles, new[] { url }, RequestOptions), "download the WSDL");
+			ServiceUrlBuilder.KnownRoute.DownloadWsdlSchemaFiles, new[] { url }, RequestOptions,
+			MaxDownloadReplyCharacters, TooLargeDownload), "download the WSDL");
 		var files = new List<WsdlSourceFile>();
 		long total = 0;
 		foreach (DownloadedFile file in response.Files ?? []) {
 			int[] codes = file.Value ?? [];
 			total += codes.Length;
 			if (total > MaxDownloadedBytes) {
-				throw new InvalidOperationException("The downloaded WSDL and its schemas are larger than "
-					+ $"{MaxDownloadedBytes / 1024 / 1024} MB; download them yourself and pass the files as wsdl-files.");
+				throw new InvalidOperationException(TooLargeDownload);
 			}
 			// Each value is a byte of the ASCII text; anything else is not what this endpoint sends.
 			files.Add(new WsdlSourceFile(file.Key, codes.Select(code => code is >= 0 and <= 255
@@ -225,6 +226,12 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 
 	/// <summary>The most a download may carry in all; the platform's own cap is 100 files of 10 MB.</summary>
 	internal const long MaxDownloadedBytes = 50L * 1024 * 1024;
+
+	/// <summary>The reply text that can hold <see cref="MaxDownloadedBytes"/>: each byte is up to three digits and a comma.</summary>
+	internal const long MaxDownloadReplyCharacters = MaxDownloadedBytes * 4 + 1024 * 1024;
+
+	private const string TooLargeDownload = "The downloaded WSDL and its schemas are larger than 50 MB; download them "
+		+ "yourself and pass the files as wsdl-files.";
 
 	/// <summary>The row key a selected column comes back under: a column path without its dots.</summary>
 	public static string ColumnAlias(string columnPath) => columnPath.Replace(".", string.Empty);

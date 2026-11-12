@@ -385,6 +385,51 @@ public sealed class WsdlParserTests {
 	}
 
 	[Test]
+	[Description("A base type that extends itself through another, and a type that names itself through another, end with a warning instead of exhausting the stack.")]
+	public void Parse_Should_Stop_At_Type_Cycles() {
+		// Arrange
+		string types = """
+			<xs:complexType name="A"><xs:complexContent><xs:extension base="tns:B"><xs:sequence><xs:element name="a" type="xs:string" /></xs:sequence></xs:extension></xs:complexContent></xs:complexType>
+			<xs:complexType name="B"><xs:complexContent><xs:extension base="tns:A"><xs:sequence><xs:element name="b" type="xs:string" /></xs:sequence></xs:extension></xs:complexContent></xs:complexType>
+			<xs:complexType name="C" type="tns:D" /><xs:complexType name="D" type="tns:C" />
+			<xs:element name="Op"><xs:complexType><xs:sequence><xs:element name="x" type="tns:A" /><xs:element name="y" type="tns:C" /></xs:sequence></xs:complexType></xs:element>
+			<xs:element name="OpResponse"><xs:complexType><xs:sequence /></xs:complexType></xs:element>
+			""";
+		string xml = Wsdl(types, Messages("Op", "Op", "OpResponse"), SimpleOperation("Op"),
+			"<wsdl:operation name=\"Op\"><soap:operation soapAction=\"urn:op\" /></wsdl:operation>");
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(xml)], "Usr");
+
+		// Assert
+		Operation(document, "Op").Request.Select(p => p.Path).Should().Contain(["tem:x/tem:a", "tem:x/tem:b"],
+			because: "the elements read before the cycle are kept");
+		document.Warnings.Should().Contain(w => w.Contains("extends itself"), because: "the cycle is reported");
+	}
+
+	[Test]
+	[Description("A WSDL whose types expand past the element budget (distinct types that each nest several fields of the next) is refused instead of exhausting the worker.")]
+	public void Parse_Should_Refuse_An_Exponential_Expansion() {
+		// Arrange
+		var types = new StringBuilder();
+		for (int level = 0; level < 12; level++) {
+			string fields = string.Concat(Enumerable.Range(0, 5).Select(i =>
+				$"<xs:element name=\"f{i}\" type=\"{(level == 11 ? "xs:string" : $"tns:T{level + 1}")}\" />"));
+			types.Append($"<xs:complexType name=\"T{level}\"><xs:sequence>{fields}</xs:sequence></xs:complexType>");
+		}
+		types.Append("<xs:element name=\"Op\"><xs:complexType><xs:sequence><xs:element name=\"root\" type=\"tns:T0\" /></xs:sequence></xs:complexType></xs:element>");
+		types.Append("<xs:element name=\"OpResponse\"><xs:complexType><xs:sequence /></xs:complexType></xs:element>");
+		string xml = Wsdl(types.ToString(), Messages("Op", "Op", "OpResponse"), SimpleOperation("Op"),
+			"<wsdl:operation name=\"Op\"><soap:operation soapAction=\"urn:op\" /></wsdl:operation>");
+
+		// Act
+		Action act = () => _sut.Parse([Inline(xml)], "Usr");
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "5^12 elements cannot be read").WithMessage("*more than 200000 elements*");
+	}
+
+	[Test]
 	[Description("The wizard's code shortening keeps the last capitalized word whole and the first letter of the others; a name without one is kept.")]
 	public void ShortenCaption_Should_Shorten_As_The_Wizard() {
 		// Arrange / Act / Assert

@@ -89,6 +89,29 @@ public sealed class WebServiceDesignerClientTests {
 		error.Message.Should().NotContain("hunter2", because: "the platform's text is redacted");
 	}
 
+	private sealed class CappedClient(IApplicationClient applicationClient, IServiceUrlBuilder urlBuilder)
+		: CreatioServiceClient(applicationClient, urlBuilder) {
+		public object Post(long? max) => PostAndDeserialize<object>(ServiceUrlBuilder.KnownRoute.DownloadWsdlSchemaFiles,
+			new { }, new CreatioRequestOptions(), max, "too large");
+	}
+
+	[Test]
+	[Description("A reply longer than the cap a caller sets is refused before it is deserialized; without a cap nothing changes.")]
+	public void PostAndDeserialize_Should_Refuse_A_Reply_Over_The_Cap() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("http://stand/x");
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>()).Returns("{\"value\":\"0123456789\"}");
+		var client = new CappedClient(applicationClient, urlBuilder);
+
+		// Act / Assert
+		((Action)(() => client.Post(10))).Should().Throw<InvalidOperationException>(because: "the reply is over the cap")
+			.WithMessage("too large");
+		client.Post(null).Should().NotBeNull(because: "no cap leaves the reply as it was");
+	}
+
 	[Test]
 	[Description("A file value outside byte range, or a download with no file, is refused.")]
 	public void DownloadWsdl_Should_Refuse_What_Is_Not_A_Text_File() {
