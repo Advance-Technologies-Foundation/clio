@@ -5324,7 +5324,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[PackageNameFieldName, WorkspacePathFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
+					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings, and always with from-environment, because the MCP tool does not expose a uri fallback."),
 						Field(PackageNameFieldName, StringType, PackageNameDescription),
 						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings. Required unless `from-environment` is true; with it, it must match the binding's schema."),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),

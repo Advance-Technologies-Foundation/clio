@@ -495,8 +495,11 @@ internal sealed class DataBindingDbService(
 	/// <summary>Creatio runtime <c>dataValueType</c> of a native Color column.</summary>
 	private const int ColorRuntimeDataValueType = 18;
 
-	/// <summary>Creatio runtime <c>dataValueType</c> every text subtype is normalized to for a query parameter.</summary>
-	private const int TextRuntimeDataValueType = 1;
+	/// <summary>
+	/// Creatio runtime <c>dataValueType</c>s of text columns: Text, the sized text types 26-30 (normalized to Text for
+	/// a query parameter), SecureText, HashText, DbObjectName, PhoneText, RichText, WebText and EmailText.
+	/// </summary>
+	private static readonly HashSet<int> TextRuntimeDataValueTypes = [1, 26, 27, 28, 29, 30, 31, 32, 33, 42, 43, 44, 45];
 
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -978,7 +981,7 @@ internal sealed class DataBindingDbService(
 		dataValueType switch {
 			ColorRuntimeDataValueType => ConvertColorValue(columnName, value),
 			_ when value is not null => value.ToString(),
-			TextRuntimeDataValueType => "",
+			_ when TextRuntimeDataValueTypes.Contains(dataValueType) => "",
 			_ => null
 		};
 

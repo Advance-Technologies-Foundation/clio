@@ -303,12 +303,16 @@ internal sealed class DataBindingService(
 		ValidateFromEnvironmentOptions(options);
 		string workspaceRoot = ResolveWorkspaceRoot(options.WorkspacePath);
 		string packagePath = ResolvePackagePath(workspaceRoot, options.PackageName);
-		string bindingName = string.IsNullOrWhiteSpace(options.BindingName)
+		string requestedBindingName = string.IsNullOrWhiteSpace(options.BindingName)
 			? options.SchemaName.Trim()
 			: options.BindingName.Trim();
-		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
 
-		DataBindingSnapshot snapshot = snapshotReader.Read(options.PackageName, bindingName);
+		DataBindingSnapshot snapshot = snapshotReader.Read(options.PackageName, requestedBindingName);
+		// The folder is named after the stored registration, as the export names it: the name lookup is not case
+		// sensitive, and a folder named in the caller's casing would sit next to the export's on a case-sensitive
+		// file system instead of replacing it.
+		string bindingName = snapshot.Descriptor.Descriptor.Name;
+		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
 		string schemaName = snapshot.Descriptor.Descriptor.Schema.Name;
 		if (!string.IsNullOrWhiteSpace(options.SchemaName) &&
 			!string.Equals(options.SchemaName.Trim(), schemaName, StringComparison.OrdinalIgnoreCase)) {

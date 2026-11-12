@@ -2601,6 +2601,11 @@ public sealed class ToolContractGetToolTests {
 				&& validator.Fields != null
 				&& validator.Fields.SequenceEqual(new[] { "schema-name", "from-environment" }),
 			because: "the conditional schema-name requirement must stay machine-readable (ENG-106290)");
+		createContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "from-environment-requires-environment-and-binding"
+				&& validator.Fields != null
+				&& validator.Fields.SequenceEqual(new[] { "from-environment", "environment-name", "binding-name" }),
+			because: "from-environment reads the binding from the environment, so it needs both (ENG-106290)");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "from-environment" && field.Type == "boolean"
 				&& field.Description.Contains("platform package export", StringComparison.Ordinal),

@@ -612,16 +612,18 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>());
 	}
 
-	[Test]
+	[TestCase(29)]
+	[TestCase(45)]
+	[TestCase(43)]
 	[Category("Unit")]
-	[Description("Keeps writing a null text value as an empty string: text columns store \"\" for no value, so only non-text types change (ENG-106290).")]
-	public void CreateDataBindingDb_ShouldSendNullTextAsEmptyString_WhenRowValueIsNull() {
+	[Description("Keeps writing a null text value as an empty string for every text type (sized text, EmailText, RichText): text columns store \"\" for no value, so only non-text types change (ENG-106290).")]
+	public void CreateDataBindingDb_ShouldSendNullTextAsEmptyString_WhenRowValueIsNull(int textDataValueType) {
 		// Arrange
 		_schemaResponseJson = BuildSchemaResponseJson(
 			"Account",
 			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
 			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
-			(Guid.Parse("33333333-4444-5555-6666-777777777777"), "Notes", 29));
+			(Guid.Parse("33333333-4444-5555-6666-777777777777"), "Notes", textDataValueType));
 		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
 		CreateDataBindingDbOptions options = new() {
 			Environment = "dev",
@@ -639,6 +641,38 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_applicationClient.Received().ExecutePostRequest(
 			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
 			Arg.Is<string>(body => ParameterValue(body, "Notes") == ""),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Sends a null integer as a JSON null: like a lookup, a non-text type has no empty-string value (ENG-106290).")]
+	public void CreateDataBindingDb_ShouldSendNullIntegerAsNull_WhenRowValueIsNull() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("44444444-5555-6666-7777-888888888888"), "Owner", 4));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = """[{"values":{"Name":"Account","Owner":null}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an empty integer is a valid row value");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => OwnerParameterValueIsNull(body)),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());

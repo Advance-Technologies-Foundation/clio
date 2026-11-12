@@ -43,6 +43,8 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 	private ILogger _logger = null!;
 	private string _registrationRowsJson = string.Empty;
 	private string _localizationRowsJson = string.Empty;
+	private string _columnRowsJson = string.Empty;
+	private string _modifiedOnResponseJson = string.Empty;
 
 	public override void Setup() {
 		base.Setup();
@@ -63,6 +65,15 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 			new Dictionary<string, object> { ["CultureName"] = "uk-UA", ["Data"] = StoredUkrainian },
 			new Dictionary<string, object> { ["CultureName"] = "de-DE", ["Data"] = "{\"PackageData\":[]}" }
 		});
+		_columnRowsJson = JsonSerializer.Serialize(new[] {
+			ColumnRow("ae0e45ca-c495-4fe7-a39d-3ab7278e1617", "Id", isKey: true, isForceUpdate: false,
+				"23018567-a13c-4320-8687-fd6f9e3699bd"),
+			ColumnRow("8585929c-62ae-4673-ae8d-bb37f87e5144", "DetailSchemaUId", isKey: false, isForceUpdate: true,
+				"b295071f-7ea9-4e62-8d1a-919bf3732ff2"),
+			ColumnRow("49ad8ee2-65a6-4cdd-b8f6-85c2f10a54dc", "Caption", isKey: false, isForceUpdate: false,
+				"ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd")
+		});
+		_modifiedOnResponseJson = """{"@odata.context":"x","ModifiedOn":"2026-11-10T12:50:57Z"}""";
 	}
 
 	public override void TearDown() {
@@ -85,7 +96,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(callInfo => BuildSelectResponse(callInfo.ArgAt<string>(1)));
 		_applicationClient.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("""{"@odata.context":"x","ModifiedOn":"2026-11-10T12:50:57Z"}""");
+			.Returns(_ => _modifiedOnResponseJson);
 		_logger = Substitute.For<ILogger>();
 		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
 		workspacePathBuilder.RootPath.Returns(WorkspaceRoot);
@@ -102,25 +113,29 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 	[Test]
 	[Description("Writes the stored registration as descriptor.json: the DB UId, name, ModifiedOn in UTC, install type, schema and columns with their IsForceUpdate and IsKey flags.")]
 	public void Execute_ShouldWriteDescriptorFromStoredRegistration_WhenFromEnvironment() {
+		// Arrange
+		CreateDataBindingOptions options = FromEnvironmentOptions();
+
 		// Act
-		int result = _command.Execute(FromEnvironmentOptions());
+		int result = _command.Execute(options);
 
 		// Assert
 		result.Should().Be(0, because: "the binding exists on the environment");
 		JsonNode descriptor = JsonNode.Parse(ReadBindingFile("descriptor.json"))!["Descriptor"]!;
 		descriptor["UId"]!.GetValue<string>().Should().Be(BindingUId,
 			because: "the folder must describe the DB binding, not a new one");
-		descriptor["Name"]!.GetValue<string>().Should().Be(BindingName);
+		descriptor["Name"]!.GetValue<string>().Should().Be(BindingName, because: "the descriptor keeps the stored binding name");
 		descriptor["ModifiedOnUtc"]!.GetValue<string>().Should().Be("/Date(1794315057000)/",
 			because: "the export writes the registration's ModifiedOn in UTC milliseconds");
 		descriptor["InstallType"]!.GetValue<int>().Should().Be(1, because: "the stored install type wins");
-		descriptor["Schema"]!["Name"]!.GetValue<string>().Should().Be("SysDetail");
-		descriptor["Schema"]!["UId"]!.GetValue<string>().Should().Be("363c2008-c733-407d-9b01-9e6a7cd9a77a");
+		descriptor["Schema"]!["Name"]!.GetValue<string>().Should().Be("SysDetail", because: "the schema comes from the registration");
+		descriptor["Schema"]!["UId"]!.GetValue<string>().Should().Be("363c2008-c733-407d-9b01-9e6a7cd9a77a",
+			because: "the schema UId comes from the registration");
 		JsonArray columns = descriptor["Columns"]!.AsArray();
 		columns.Select(column => column!["ColumnName"]!.GetValue<string>()).Should().Equal(
 			["Caption", "DetailSchemaUId", "Id"], because: "the stored columns are written, ordered by name");
 		columns.Single(column => column!["ColumnName"]!.GetValue<string>() == "Id")!["IsKey"]!.GetValue<bool>()
-			.Should().BeTrue();
+			.Should().BeTrue(because: "the stored key flag must survive");
 		columns.Single(column => column!["ColumnName"]!.GetValue<string>() == "DetailSchemaUId")!["IsForceUpdate"]!
 			.GetValue<bool>().Should().BeTrue(because: "the stored IsForceUpdate flag must survive");
 	}
@@ -128,18 +143,23 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 	[Test]
 	[Description("Writes data.json and each culture's Localization file verbatim from the stored snapshots, skips a culture whose snapshot has no rows, and writes an empty filter.json.")]
 	public void Execute_ShouldWriteStoredSnapshotsVerbatim_WhenFromEnvironment() {
+		// Arrange
+		CreateDataBindingOptions options = FromEnvironmentOptions();
+
 		// Act
-		int result = _command.Execute(FromEnvironmentOptions());
+		int result = _command.Execute(options);
 
 		// Assert
 		result.Should().Be(0, because: "the binding exists on the environment");
 		ReadBindingFile("data.json").Should().Be(StoredData,
 			because: "the stored snapshot keeps the export's shapes, such as an empty lookup as \"null\"");
-		ReadBindingFile("Localization", "data.en-US.json").Should().Be(StoredEnglish);
-		ReadBindingFile("Localization", "data.uk-UA.json").Should().Be(StoredUkrainian);
+		ReadBindingFile("Localization", "data.en-US.json").Should().Be(StoredEnglish,
+			because: "each culture snapshot is written verbatim");
+		ReadBindingFile("Localization", "data.uk-UA.json").Should().Be(StoredUkrainian,
+			because: "each culture snapshot is written verbatim");
 		FileSystem.File.Exists(BindingPath("Localization", "data.de-DE.json")).Should().BeFalse(
 			because: "a culture without stored rows gets no file");
-		ReadBindingFile("filter.json").Should().BeEmpty();
+		ReadBindingFile("filter.json").Should().BeEmpty(because: "the export writes an empty filter.json");
 	}
 
 	[Test]
@@ -159,7 +179,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		result.Should().Be(0, because: "an existing folder of the same schema is replaced");
 		JsonNode.Parse(ReadBindingFile("descriptor.json"))!["Descriptor"]!["UId"]!.GetValue<string>()
 			.Should().Be(BindingUId, because: "the descriptor is rewritten with the DB UId");
-		ReadBindingFile("data.json").Should().Be(StoredData);
+		ReadBindingFile("data.json").Should().Be(StoredData, because: "data.json is rewritten from the stored snapshot");
 		FileSystem.Directory.Exists(BindingPath("Localization")).Should().BeFalse(
 			because: "the export has no Localization folder for a binding without culture snapshots");
 		FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "SysModule_TestPkg", "data.json"))
@@ -182,12 +202,17 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a failed read writes nothing");
 	}
 
-	[Test]
+	[TestCase("--values")]
+	[TestCase("--localizations")]
 	[Description("Refuses --values or --localizations together with --from-environment before any request is sent.")]
-	public void Execute_ShouldFailBeforeAnyRequest_WhenValuesAreCombinedWithFromEnvironment() {
+	public void Execute_ShouldFailBeforeAnyRequest_WhenValuesAreCombinedWithFromEnvironment(string optionName) {
 		// Arrange
 		CreateDataBindingOptions options = FromEnvironmentOptions();
-		options.ValuesJson = """{"Caption":"x"}""";
+		if (optionName == "--values") {
+			options.ValuesJson = """{"Caption":"x"}""";
+		} else {
+			options.LocalizationsJson = """{"en-US":{"Caption":"x"}}""";
+		}
 
 		// Act
 		int result = _command.Execute(options);
@@ -195,9 +220,9 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		// Assert
 		result.Should().Be(1, because: "the stored rows and explicit values cannot both be written");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
-			message.Contains("--values") && message.Contains("--from-environment")));
+			message.Contains(optionName) && message.Contains("--from-environment")));
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
-		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse();
+		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
 	}
 
 	[Test]
@@ -230,7 +255,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		result.Should().Be(1, because: "the requested schema does not match the binding");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("'SysDetail'") && message.Contains("'SysModule'")));
-		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse();
+		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
 	}
 
 	[Test]
@@ -246,7 +271,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		// Assert
 		result.Should().Be(1, because: "the folder on disk belongs to a binding of another schema");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("already exists for schema 'SysModule'")));
-		ReadBindingFile("descriptor.json").Should().Be(otherDescriptor);
+		ReadBindingFile("descriptor.json").Should().Be(otherDescriptor, because: "the other binding's folder is kept");
 	}
 
 	[Test]
@@ -264,7 +289,86 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		result.Should().Be(1, because: "a corrupt snapshot must not reach the package folder");
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("data.json") && message.Contains("not package data JSON")));
-		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse();
+		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
+	}
+
+	[Test]
+	[Description("Accepts --uri in place of --environment and reads the binding.")]
+	public void Execute_ShouldReadBinding_WhenUriIsGivenInsteadOfEnvironment() {
+		// Arrange
+		CreateDataBindingOptions options = FromEnvironmentOptions();
+		options.Environment = null;
+		options.Uri = "http://localhost";
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "--uri names the environment as well as --environment does");
+		FileSystem.File.Exists(BindingPath("descriptor.json")).Should().BeTrue(because: "the binding is written");
+	}
+
+	[Test]
+	[Description("Names the folder after the stored registration, not after the casing of --binding-name, so it replaces the export's folder on a case-sensitive file system.")]
+	public void Execute_ShouldNameFolderAfterStoredBinding_WhenBindingNameCasingDiffers() {
+		// Arrange
+		CreateDataBindingOptions options = FromEnvironmentOptions();
+		options.BindingName = BindingName.ToLowerInvariant();
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the name lookup is not case sensitive");
+		FileSystem.Directory.GetDirectories(WorkspacePath("packages", PackageName, "Data"))
+			.Select(Path.GetFileName).Should().Contain(BindingName,
+				because: "the folder carries the stored binding name, as the export writes it");
+	}
+
+	[Test]
+	[Description("Writes an empty package data file when the binding stores no data snapshot.")]
+	public void Execute_ShouldWriteEmptyPackageData_WhenStoredDataIsEmpty() {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_registrationRowsJson)!.AsArray();
+		rows[0]!["Data"] = null;
+		_registrationRowsJson = rows.ToJsonString();
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a binding without stored rows is still a binding");
+		JsonNode.Parse(ReadBindingFile("data.json"))!["PackageData"]!.AsArray().Should().BeEmpty(
+			because: "no stored snapshot means no rows");
+	}
+
+	[TestCase("several registrations", "registrations")]
+	[TestCase("no columns", "no columns")]
+	[TestCase("unreadable ModifiedOn", "ModifiedOn")]
+	[Description("Refuses a binding name with several registrations in the package, a binding without columns and an unreadable ModifiedOn, and writes nothing.")]
+	public void Execute_ShouldFailAndWriteNothing_WhenStoredRegistrationIsUnusable(string condition, string expectedMessage) {
+		// Arrange
+		switch (condition) {
+			case "several registrations":
+				JsonArray rows = JsonNode.Parse(_registrationRowsJson)!.AsArray();
+				rows.Add(rows[0]!.DeepClone());
+				_registrationRowsJson = rows.ToJsonString();
+				break;
+			case "no columns":
+				_columnRowsJson = "[]";
+				break;
+			default:
+				_modifiedOnResponseJson = """{"ModifiedOn":null}""";
+				break;
+		}
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(1, because: $"a binding with {condition} cannot be written as the export would");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains(expectedMessage)));
+		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
 	}
 
 	private static CreateDataBindingOptions FromEnvironmentOptions() => new() {
@@ -278,14 +382,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		string? rootSchemaName = JsonNode.Parse(body)?["rootSchemaName"]?.GetValue<string>();
 		string rows = rootSchemaName switch {
 			"SysPackageSchemaData" => _registrationRowsJson,
-			"SysPackageSchemaDataColumn" => JsonSerializer.Serialize(new[] {
-				ColumnRow("ae0e45ca-c495-4fe7-a39d-3ab7278e1617", "Id", isKey: true, isForceUpdate: false,
-					"23018567-a13c-4320-8687-fd6f9e3699bd"),
-				ColumnRow("8585929c-62ae-4673-ae8d-bb37f87e5144", "DetailSchemaUId", isKey: false, isForceUpdate: true,
-					"b295071f-7ea9-4e62-8d1a-919bf3732ff2"),
-				ColumnRow("49ad8ee2-65a6-4cdd-b8f6-85c2f10a54dc", "Caption", isKey: false, isForceUpdate: false,
-					"ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd")
-			}),
+			"SysPackageSchemaDataColumn" => _columnRowsJson,
 			"SysPackageDataLcz" => _localizationRowsJson,
 			_ => "[]"
 		};

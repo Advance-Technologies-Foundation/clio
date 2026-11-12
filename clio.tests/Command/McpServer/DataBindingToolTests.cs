@@ -317,10 +317,11 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		_applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
-	[Test]
+	[TestCase("SysSettings")]
+	[TestCase(null)]
 	[Category("Unit")]
-	[Description("Routes from-environment through the environment-aware command, also for a templated schema and without schema-name, and passes the flag through (ENG-106290).")]
-	public void CreateDataBinding_ShouldResolveEnvironmentCommand_WhenFromEnvironmentIsTrue() {
+	[Description("Routes from-environment through the environment-aware command for a templated schema and without schema-name, and passes the flag and the schema through (ENG-106290).")]
+	public void CreateDataBinding_ShouldResolveEnvironmentCommand_WhenFromEnvironmentIsTrue(string? schemaName) {
 		// Arrange
 		CreateDataBindingCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingCommand>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -336,6 +337,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			EnvironmentName: "dev",
 			PackageName: _packageName,
 			WorkspacePath: _workspaceRoot,
+			SchemaName: schemaName,
 			BindingName: "SysSettings_Custom",
 			FromEnvironment: true));
 
@@ -344,7 +346,9 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 			options.Environment == "dev"
 			&& ((CreateDataBindingOptions)options).FromEnvironment
 			&& ((CreateDataBindingOptions)options).BindingName == "SysSettings_Custom"
-			&& ((CreateDataBindingOptions)options).SchemaName == string.Empty));
+			&& ((CreateDataBindingOptions)options).SchemaName == (schemaName ?? string.Empty)));
+		// The offline path never resolves an environment; reaching the resolver proves from-environment skipped the
+		// built-in SysSettings template.
 	}
 
 	[Test]
