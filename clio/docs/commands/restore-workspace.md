@@ -183,7 +183,8 @@ clio restore-workspace -e dev --app-code MyApp
 
 - Use 'restore-workspace' to refresh an existing workspace or when workspace
 configuration exists
-- If no workspace exists, the command automatically calls 'create-workspace'
+- If no workspace exists, the command automatically calls 'create-workspace',
+  which checks the environment first and writes nothing when it does not answer
 - The 'restorew' alias provides a shorter command for frequent use
 - MainSolution.slnx and .build-props are key updates that improve the
 development experience
@@ -203,6 +204,13 @@ development experience
     Build errors after restore:
         Ensure build props were created:
             clio restore-workspace -e dev --add-build-props true
+
+    Error: "Packages were not downloaded: the environment did not answer (...)"
+        The environment rejected the login or is not running, so nothing was restored
+        and the command exits with a non-zero code. The text in parentheses is the reason.
+        Check the environment with:
+            clio ping-app -e <ENVIRONMENT_NAME>
+        and correct its registered credentials with reg-web-app if the login is rejected.
 
     Missing packages:
         Check workspace settings filter in .clio/workspaceSettings.json
