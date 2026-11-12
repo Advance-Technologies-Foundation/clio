@@ -122,11 +122,14 @@ public static partial class McpToolErrorFilter
 					.Select(key => DescribeUnknownArgument(key, unsupplied))))
 				.Append(hidden > 0 ? $" and {hidden} more." : ".");
 		}
+		// The name is quoted on purpose. On the durable long-tail path the refusal passes through
+		// RedactFailureContent, whose credential rule reads "password: Creatio instance Password" as a secret
+		// pair and turns the hint into "password=[redacted] instance Password". A quoted name is not that shape.
 		if (FirstSentence(arguments.FirstOrDefault(argument => argument.Name == first)?.Description) is { } about) {
-			message.Append($" About {first}: {about}");
+			message.Append($" About '{first}': {about}");
 		}
 		if (DescribeArgumentShape(context, first) is { } shape) {
-			message.Append($" Expected {first}: {shape}.");
+			message.Append($" Expected '{first}': {shape}.");
 		}
 		message.Append($" {toolLabel} takes: {DescribeArgumentList(arguments)}.")
 			.Append(" Argument names are matched exactly, case included. Nothing ran.");

@@ -62,6 +62,52 @@ public sealed class FsmModeContractToolE2ETests : McpContractFixtureBase
 		AssertFailureMentionsEnvironment(actResult, invalidEnvironmentName);
 	}
 
+	[Test]
+	[AllureTag(GetToolName)]
+	[AllureDescription("Starts the real clio MCP server and calls get-fsm-mode directly with environment-name, the spelling its args-record siblings use, instead of its flat environmentName. The call is refused before any environment is read: the refusal names environmentName and points environment-name at it.")]
+	[AllureName("Get FSM mode names environmentName when called with environment-name")]
+	[Description("A direct get-fsm-mode call that sends environment-name is refused over the real MCP server with environmentName named as missing and a did-you-mean for the key that was sent, not with the SDK's binder text.")]
+	public async Task GetFsmMode_Should_Name_The_Missing_Argument_When_Called_With_Environment_Name()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step("Act by calling get-fsm-mode directly with environment-name", async () =>
+			await arrangeContext.Session.CallToolAsync(
+				GetToolName,
+				new Dictionary<string, object?> { ["environment-name"] = "any-environment" },
+				arrangeContext.CancellationTokenSource.Token));
+
+		// Assert
+		AssertMissingEnvironmentNameRefusal(callResult);
+	}
+
+	[Test]
+	[AllureTag(GetToolName)]
+	[AllureTag(ClioRunTool.ToolName)]
+	[AllureDescription("Starts the real clio MCP server and dispatches get-fsm-mode through clio-run with args {\"environment-name\": ...}. The nested dispatch is refused before any environment is read, with the same refusal as the direct call.")]
+	[AllureName("clio-run get-fsm-mode names environmentName when args use environment-name")]
+	[Description("get-fsm-mode dispatched through clio-run with environment-name is refused over the real MCP server with environmentName named as missing and a did-you-mean, not with 'tool failed' and the SDK's binder text.")]
+	public async Task ClioRun_GetFsmMode_Should_Name_The_Missing_Argument_When_Args_Use_Environment_Name()
+	{
+		// Arrange
+		await using var arrangeContext = Arrange();
+
+		// Act
+		CallToolResult callResult = await AllureApi.Step("Act by dispatching get-fsm-mode through clio-run with environment-name", async () =>
+			await arrangeContext.Session.CallToolAsync(
+				ClioRunTool.ToolName,
+				new Dictionary<string, object?> {
+					["command"] = GetToolName,
+					["args"] = new Dictionary<string, object?> { ["environment-name"] = "any-environment" }
+				},
+				arrangeContext.CancellationTokenSource.Token));
+
+		// Assert
+		AssertMissingEnvironmentNameRefusal(callResult);
+	}
+
 	private static async Task<CallToolResult> ActGetAsync(ArrangeContext arrangeContext, string environmentName)
 	{
 		return await AllureApi.Step("Act by invoking get-fsm-mode through MCP", async () =>
@@ -123,6 +169,21 @@ public sealed class FsmModeContractToolE2ETests : McpContractFixtureBase
 		text.Should().MatchRegex(
 			$"(?is)({Regex.Escape(invalidEnvironmentName)}|environment.*not.*found|not found|not registered|error occurred invoking.*{Regex.Escape(GetToolName)}|tool '{Regex.Escape(GetToolName)}' failed)",
 			because: "the failure should either identify the requested environment or clearly identify the failed MCP tool invocation");
+	}
+
+	[AllureStep("Assert the call is refused with environmentName named and environment-name pointed at it")]
+	private static void AssertMissingEnvironmentNameRefusal(CallToolResult callResult)
+	{
+		string text = string.Join(" ", callResult.Content?.OfType<TextContentBlock>().Select(block => block.Text) ?? []);
+		callResult.IsError.Should().BeTrue(
+			because: "a call that leaves out get-fsm-mode's required argument must not run");
+		text.Should().Contain(
+			"invalid-parameter-type: argument 'environmentName' for MCP tool 'get-fsm-mode' is required and was not sent.",
+			because: "the lead sentence names the argument the tool needs, in the stable invalid-parameter-type form");
+		text.Should().Contain("Unknown argument 'environment-name' (did you mean 'environmentName'?).",
+			because: "the key the caller sent is the one to rename, and the refusal says to what");
+		text.Should().NotContain("arguments dictionary",
+			because: "the SDK's binder text is what this refusal replaces on every path");
 	}
 
 	[AllureStep("Assert set-fsm-mode command failed")]

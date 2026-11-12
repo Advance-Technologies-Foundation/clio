@@ -48,7 +48,7 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 			because: "the key the caller sent is the one to rename, and the refusal says to what");
 		text.Should().Contain("get-fsm-mode takes: environmentName (string, required).",
 			because: "the caller sees every argument the tool takes, typed and marked required, in one line");
-		text.Should().Contain("About environmentName: Registered clio environment name.",
+		text.Should().Contain("About 'environmentName': Registered clio environment name.",
 			because: "the argument's own description says what value it wants");
 		text.Should().NotContain("arguments dictionary",
 			because: "the SDK's binder text is what this refusal replaces");
@@ -163,7 +163,7 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 		text.Should().StartWith(
 			"invalid-parameter-type: argument 'args' for MCP tool 'fake-tool' is required and was not sent.",
 			because: "the wrapper argument is what the SDK cannot bind");
-		text.Should().Contain("Expected args: an object with entity (required), filter.",
+		text.Should().Contain("Expected 'args': an object with entity (required), filter.",
 			because: "the caller needs the record's members, not only that an object is expected");
 	}
 
@@ -197,6 +197,8 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 		// Assert
 		text.Should().NotContain("\n",
 			because: "caller-supplied text reaches the message only through the shared key sanitizer");
+		text.Should().Contain("Unknown argument 'env Nothing ran'",
+			because: "the key is still reported, with its line break turned into a space rather than dropped");
 	}
 
 	[Test]
@@ -219,7 +221,7 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Pins the SDK behaviour the refusal mirrors: the schema marks required exactly the parameters with no default, a nullable one included, and the binder refuses a key that differs only in case. If an SDK upgrade changes either, this fails before the refusal starts disagreeing with the binder.")]
+	[Description("Pins the SDK behaviour the refusal mirrors: the schema marks required exactly the parameters with no default, a nullable one included; the binder refuses a call that leaves such a parameter out, nullable or not; and it refuses a key that differs only in case. If an SDK upgrade changes any of these, this fails before the refusal starts disagreeing with the binder.")]
 	public async Task Sdk_ShouldRequireExactlyWhatTheSchemaMarksRequired_AndBindFlatParametersByExactName() {
 		// Arrange
 		McpServerTool tool = McpServerTool.Create(
@@ -230,10 +232,14 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 		RequestContext<CallToolRequestParams> exact = McpRequestContextTestFactory.CreateCallToolContext(
 			"fake-tool", Parse("{\"environmentName\":\"dev\",\"note\":\"n\"}"));
 		exact.MatchedPrimitive = tool;
+		RequestContext<CallToolRequestParams> nullableLeftOut = McpRequestContextTestFactory.CreateCallToolContext(
+			"fake-tool", Parse("{\"environmentName\":\"dev\"}"));
+		nullableLeftOut.MatchedPrimitive = tool;
 
 		// Act
 		List<string> required = McpToolRegistrySchemaContract.ReadRequired(tool.ProtocolTool.InputSchema);
 		Func<Task> caseOnlyCall = async () => await tool.InvokeAsync(caseOnly, CancellationToken.None);
+		Func<Task> nullableLeftOutCall = async () => await tool.InvokeAsync(nullableLeftOut, CancellationToken.None);
 		CallToolResult exactResult = await tool.InvokeAsync(exact, CancellationToken.None);
 
 		// Assert
@@ -241,6 +247,8 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 			because: "the schema requires every parameter without a default, the nullable note included");
 		await caseOnlyCall.Should().ThrowAsync<ArgumentException>(
 			because: "the SDK binds a flat parameter by its exact name, so the refusal compares ordinally too");
+		await nullableLeftOutCall.Should().ThrowAsync<ArgumentException>(
+			because: "the binder refuses a left-out nullable parameter that has no default, which is why the schema may list it as required");
 		exactResult.IsError.Should().NotBe(true,
 			because: "the exact names bind and the defaulted verbose may be left out");
 	}
