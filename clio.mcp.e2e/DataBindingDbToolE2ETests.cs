@@ -24,6 +24,7 @@ namespace Clio.Mcp.E2E;
 [AllureFeature("data-binding-db")]
 [NonParallelizable]
 public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
+	private const string AllEmployeesRoleId = "a29a3ba5-4b0d-de11-9a51-005056c00008";
 
 	[Test]
 	[Description("Exposes every DB-first data-binding MCP tool via the get-tool-contract compact index so callers can discover and invoke them on the lazy surface.")]
@@ -375,11 +376,11 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 	}
 
 	[Test]
-	[Description("clio#1785/#1901: binds the SysSettingsValue row of a new Float system setting by Id alone and reads the binding back with SysSettings and TextValue among its columns, because the platform reads both while it saves a SysSettingsValue binding and refused it with 'Value \"TextValue\" was not found.' when the row omitted them.")]
+	[Description("clio#1785/#1901: binds the SysSettingsValue row of a new Float system setting with a row that omits TextValue and reads the binding back with TextValue among its columns, because the platform reads both while it saves a SysSettingsValue binding and refused it with 'Value \"TextValue\" was not found.' when the row omitted them.")]
 	[AllureTag(CreateDbToolName)]
 	[AllureTag(ReadDbToolName)]
 	[AllureName("create-data-binding-db binds a SysSettingsValue row whose payload omits TextValue")]
-	[AllureDescription("Creates a uniquely-coded Float system setting with create-sys-setting, looks up its SysSettings and SysSettingsValue rows through odata-read, binds the definition, then binds the value row with create-data-binding-db passing only its Id, and reads the binding back with read-data-binding-db. Proves the binding is saved and carries SysSettings and TextValue although the row never named them.")]
+	[AllureDescription("Creates a uniquely-coded Float system setting with create-sys-setting, looks up its SysSettings and SysSettingsValue rows through odata-read, binds the definition, then binds the value row with create-data-binding-db naming its value columns but not TextValue, and reads the binding back with read-data-binding-db. Proves the binding is saved and carries TextValue although the row never named it.")]
 	public async Task CreateDataBindingDb_Should_Bind_SysSettingsValue_Row_Without_TextValue_In_Payload() {
 		// Arrange
 		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
@@ -423,7 +424,9 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 				["package-name"] = arrangeContext.PackageName,
 				["schema-name"] = "SysSettingsValue",
 				["binding-name"] = bindingName,
-				["rows"] = $"[{{\"values\":{{\"Id\":\"{valueRowId}\"}}}}]"
+				["rows"] =
+					$"[{{\"values\":{{\"Id\":\"{valueRowId}\",\"SysSettings\":\"{settingId}\","
+					+ $"\"SysAdminUnit\":\"{AllEmployeesRoleId}\",\"IsDef\":false,\"FloatValue\":100000}}}}]"
 			});
 		CommandExecutionActResult readResult = await ActCommandAsync(
 			arrangeContext,
@@ -440,10 +443,10 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 			"a SysSettingsValue binding whose row omits TextValue must be saved, not refused by the platform's SecureText check");
 		AssertToolCallSucceeded(readResult);
 		AssertCommandExitCode(readResult, 0, "the saved SysSettingsValue binding must read back");
-		AssertOutputContains(readResult, "TextValue",
+		AssertOutputContains(readResult, "TextValue=",
 			"the binding must carry TextValue, the column the platform reads while it saves a SysSettingsValue binding");
-		AssertOutputContains(readResult, "SysSettings",
-			"the binding must carry SysSettings, the other column that save reads");
+		AssertOutputContains(readResult, "FloatValue=",
+			"the binding must carry the value column the row named");
 	}
 
 	private static async Task<string> ReadSingleIdAsync(
