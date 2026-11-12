@@ -577,10 +577,14 @@ public sealed class WebServiceSoapWriteTests {
 	[TestCase("UsrNonceLength", true, Description = "nonce")]
 	[TestCase("tem:pass", true, Description = "a pass element")]
 	[TestCase("pass", true, Description = "pass alone")]
+	[TestCase("UsrPass", true, Description = "a code ending in Pass")]
+	[TestCase("AdminPass", true, Description = "an admin pass")]
+	[TestCase("SmtpPass", true, Description = "an SMTP pass")]
+	[TestCase("tem:AdminPass", true, Description = "a prefixed element ending in Pass")]
 	[TestCase("UsrPassport", false, Description = "passport")]
 	[TestCase("UsrCompass", false, Description = "compass")]
-	[TestCase("UsrBypassCache", false, Description = "bypass")]
-	[Description("The credential-name pattern also catches licence, nonce and a pass element, REST parameters included, and leaves words that only contain pass alone.")]
+	[TestCase("UsrBypass", false, Description = "bypass")]
+	[Description("The credential-name pattern also catches licence, nonce and a name ending in pass, REST parameters included, and leaves passport, compass and bypass alone.")]
 	public void IsSecretName_Should_Match_Credential_Words_Only(string name, bool expected) {
 		// Act
 		bool secret = WebServiceSchemaView.IsSecretName(name);

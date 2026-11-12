@@ -87,7 +87,7 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WebServiceSoapWriteTest
 | TC-U-B20 | unit | A refusal lists at most 50 problems and counts the rest | 2 |
 | TC-U-B21 | unit | A namespace row with null uId / isDefault reads, and setNamespaces keeps its collection key as UId (#1925 review note) | 5 |
 | TC-U-B22 | unit | A namespace row's null uId / isDefault is left out on write, never sent as null | 5 |
-| TC-U-B23 | unit | The credential-name pattern matches licence/license, nonce and a pass element, not passport, compass or bypass. REST effect: a constant default on a REST parameter so named (e.g. `UsrLicenseType`) is now refused and hidden by describe as well | 2 |
+| TC-U-B23 | unit | The credential-name pattern matches licence/license, nonce and a name ending in pass (UsrPass, AdminPass, SmtpPass, tem:pass), not passport, compass or bypass. REST effect: a constant default on a REST parameter so named (e.g. `UsrLicenseType`) is now refused and hidden by describe as well | 2 |
 | TC-I-B01 | e2e | Registers a SOAP 1.1 service through the tool (a SOAP-header object array with an item included), refuses one with an undeclared prefix, round-trips describe through modify unchanged, switches to SOAP 1.2, refuses dropping a namespace in use, and test-calls it against `http://localhost/<code>` without the response being withheld | 1-5 |
 | TC-M-B01 | manual | A service registered by clio opens and saves unchanged in Studio, SOAP 1.1 and 1.2 | 6 |
 
