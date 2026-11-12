@@ -39,6 +39,10 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private string? _entityIdProbeResponseJson;
 	private string _schemaResponseJson = string.Empty;
 	private string _saveSchemaResponseJson = """{"success":true}""";
+	private string _settingValueTypesJson = NoSettingRowsJson;
+	private const string NoSettingRowsJson = """{"rows":[],"success":true}""";
+	private const string SecureTextSettingRowsJson = """{"rows":[{"Code":"UsrApiKey","ValueTypeName":"SecureText"}],"success":true}""";
+	private static readonly Guid SettingId = Guid.Parse("6a3b2c1d-0e9f-4a8b-9c7d-112233445566");
 
 	public override void Setup() {
 		base.Setup();
@@ -56,6 +60,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_schemaResponseJson = SchemaResponseJson;
 		_entityIdProbeResponseJson = null;
 		_saveSchemaResponseJson = """{"success":true}""";
+		_settingValueTypesJson = NoSettingRowsJson;
 		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(false);
 	}
 
@@ -340,6 +345,192 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>(),
 			Arg.Any<int>());
 	}
+
+	[Test]
+	[Description("clio#1785/#1901: projects SysSettings and TextValue into a SysSettingsValue binding even when the row omits them, because the platform's SecureText check reads both while it saves the binding and fails with 'Value \"TextValue\" was not found.' otherwise.")]
+	public void CreateDataBindingDb_Should_Project_Platform_Required_Columns_When_Schema_Is_SysSettingsValue() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"SysSettingsValue",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e01"), "SysSettings", 10),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e02"), "TextValue", 28),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e03"), "FloatValue", 5),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e04"), "IntegerValue", 4));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettingsValue", "SysSettingsValue_UsrLimit");
+		_boundSchemaDataItemsJson = "[]";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettingsValue",
+			BindingName = "SysSettingsValue_UsrLimit",
+			RowsJson = $$$"""[{"values":{"Id":"{{{ExistingRowId}}}","FloatValue":100000}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "a SysSettingsValue binding whose row omits TextValue must still be saved");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body =>
+				body.Contains("\"SysSettings\"") &&
+				body.Contains("\"TextValue\"") &&
+				body.Contains("\"FloatValue\"") &&
+				!body.Contains("IntegerValue")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Refuses create-data-binding-db on SysSettingsValue before any remote write when a row belongs to a SecureText setting, because the projected TextValue would ship the secret in the package.")]
+	public void CreateDataBindingDb_Should_Refuse_SecureText_Setting_Row_Before_Any_Write() {
+		// Arrange
+		_schemaResponseJson = SysSettingsValueSchemaJson();
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_settingValueTypesJson = SecureTextSettingRowsJson;
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettingsValue",
+			BindingName = "SysSettingsValue_UsrApiKey",
+			RowsJson = $$$"""[{"values":{"Id":"{{{ExistingRowId}}}","SysSettings":"{{{SettingId}}}"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a SecureText setting's value must never be bound into a package");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("UsrApiKey") && message.Contains("SecureText") && message.Contains("SysSettings_<Code>")));
+		AssertNoRemoteWrite();
+	}
+
+	[Test]
+	[Description("Projects SysSettings and TextValue when upsert-data-binding-row-db re-saves a SysSettingsValue binding, because upsert goes through the same projection and the same platform save-time check as create.")]
+	public void UpsertDataBindingRowDb_Should_Project_Platform_Required_Columns_When_Schema_Is_SysSettingsValue() {
+		// Arrange
+		_schemaResponseJson = SysSettingsValueSchemaJson();
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettingsValue", "SysSettingsValue_UsrLimit");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> { ["Id"] = ExistingRowId, ["FloatValue"] = 1 }
+		});
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettingsValue_UsrLimit",
+			ValuesJson = $$"""{"Id":"{{ExistingRowId}}","FloatValue":2}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an upsert of a non-secret setting value must re-save the binding");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains("\"SysSettings\"") && body.Contains("\"TextValue\"")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Refuses upsert-data-binding-row-db on a SysSettingsValue binding before any remote write when the row belongs to a SecureText setting.")]
+	public void UpsertDataBindingRowDb_Should_Refuse_SecureText_Setting_Row_Before_Any_Write() {
+		// Arrange
+		_schemaResponseJson = SysSettingsValueSchemaJson();
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettingsValue", "SysSettingsValue_UsrApiKey");
+		_boundSchemaDataItemsJson = "[]";
+		_settingValueTypesJson = SecureTextSettingRowsJson;
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettingsValue_UsrApiKey",
+			ValuesJson = $$"""{"Id":"{{ExistingRowId}}"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a SecureText setting's value must never be bound into a package");
+		AssertNoRemoteWrite();
+	}
+
+	[Test]
+	[Description("Projects SysSettings and TextValue when remove-data-binding-row-db re-saves a SysSettingsValue binding from its remaining rows.")]
+	public void RemoveDataBindingRowDb_Should_Project_Platform_Required_Columns_When_Schema_Is_SysSettingsValue() {
+		// Arrange
+		Guid remainingRowId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+		_schemaResponseJson = SysSettingsValueSchemaJson();
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettingsValue", "SysSettingsValue_UsrLimit");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> { ["Id"] = ExistingRowId, ["FloatValue"] = 1 },
+			new Dictionary<string, object?> { ["Id"] = remainingRowId, ["FloatValue"] = 2 }
+		});
+		RemoveDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettingsValue_UsrLimit",
+			KeyValue = ExistingRowId.ToString()
+		};
+
+		// Act
+		int result = _removeCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "removing one non-secret value row must re-save the binding from the rest");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Is<string>(body => body.Contains("\"SysSettings\"") && body.Contains("\"TextValue\"")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Refuses remove-data-binding-row-db before deleting anything when a row that would remain in the SysSettingsValue binding belongs to a SecureText setting, because re-saving would ship its secret.")]
+	public void RemoveDataBindingRowDb_Should_Refuse_When_A_Remaining_Row_Is_A_SecureText_Setting() {
+		// Arrange
+		Guid remainingRowId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+		_schemaResponseJson = SysSettingsValueSchemaJson();
+		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettingsValue", "SysSettingsValue_UsrApiKey");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> { ["Id"] = ExistingRowId },
+			new Dictionary<string, object?> { ["Id"] = remainingRowId }
+		});
+		_settingValueTypesJson = SecureTextSettingRowsJson;
+		RemoveDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettingsValue_UsrApiKey",
+			KeyValue = ExistingRowId.ToString()
+		};
+
+		// Act
+		int result = _removeCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "re-saving a binding that still holds a SecureText value would ship the secret");
+		AssertNoRemoteWrite();
+	}
+
+	private void AssertNoRemoteWrite() {
+		foreach (string route in new[] { "InsertQuery", "UpdateQuery", "DeleteQuery", "SchemaDataDesignerService.svc/SaveSchema" }) {
+			_applicationClient.DidNotReceive().ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith(route, StringComparison.Ordinal)),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		}
+	}
+
+	private static string SysSettingsValueSchemaJson() =>
+		BuildSchemaResponseJson(
+			"SysSettingsValue",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e01"), "SysSettings", 10),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e02"), "TextValue", 28),
+			(Guid.Parse("21f8d2a7-1c39-4f1b-9d43-0a6c1b4a7e03"), "FloatValue", 5));
 
 	[Test]
 	[Description("Fails create-data-binding-db before remote writes when the requested row values explicitly reference a runtime column with an unsupported dataValueType.")]
@@ -1392,6 +1583,11 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
 			requestBody.Contains("\"rootSchemaName\":\"SysPackage\",", StringComparison.Ordinal)) {
 			return $$"""{"success":true,"rows":[{"Name":"{{PackageName}}","UId":"{{PackageUId}}","InstallType":0}]}""";
+		}
+
+		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
+			requestBody.Contains("ValueTypeName", StringComparison.Ordinal)) {
+			return _settingValueTypesJson;
 		}
 
 		if (url.Contains("SelectQuery", StringComparison.Ordinal) &&
