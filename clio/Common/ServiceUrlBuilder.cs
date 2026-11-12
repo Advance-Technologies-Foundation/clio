@@ -458,7 +458,14 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     (<c>CallServiceSchemaService.Execute</c> of the ServiceDesigner package; requires
 		///     <c>CanManageSolution</c>).
 		/// </summary>
-		CallServiceSchemaMethod = 126
+		CallServiceSchemaMethod = 126,
+
+		/// <summary>
+		///     Builds a minimal dynamic case (DCM) for an object from one of its lookup columns via the
+		///     ProcessDesignService package. The body is <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and
+		///     the answer is wrapped under <c>BuildCaseResult</c>; <c>validateOnly: true</c> plans without writing.
+		/// </summary>
+		BuildCase = 127
 
 	}
 
@@ -561,6 +568,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
+		{KnownRoute.BuildCase, "/rest/ProcessDesignService/BuildCase"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
 		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},
