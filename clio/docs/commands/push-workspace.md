@@ -109,6 +109,9 @@ with the packages that may not have been installed, then exits with `1`:
 [ERR] - Workspace packages may not have been installed: UsrApp, UsrAppData.
 ```
 
+An invalid package archive is the exception: the command fails with the archive
+error alone, without the package list.
+
 ## See Also
 
 create-workspace - Create a workspace
