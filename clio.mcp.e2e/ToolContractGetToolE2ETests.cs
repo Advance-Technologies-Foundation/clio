@@ -1727,10 +1727,13 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert the contract is the short form", () =>
 			contract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
 				because: "the case is about what a caller sees when it asks for the short contract"));
-		AllureApi.Step("Assert the cut filters field shows its shape", () =>
+		AllureApi.Step("Assert the cut filters field shows its shape and operators", () => {
+			filters.Description.Should().Contain("op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq)",
+				because: "the first sentence the short form keeps names every operator the filter accepts");
 			filters.Description.Should().Contain(
-				"Example: {\"all\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"In Progress\"}]}",
-				because: "the example is the shape of a structured filter in one line"));
+				"Example: {\"all\":[{\"field\":\"Account/Id\",\"op\":\"eq\",\"value\":\"8ecab4a1-0ca3-4515-9399-efe0a19390bd\"}]}",
+				because: "the field's own example is the shape of a structured filter in one line");
+		});
 	}
 
 	[Test]

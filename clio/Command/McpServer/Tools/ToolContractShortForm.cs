@@ -238,6 +238,11 @@ internal static class ToolContractShortForm {
 	/// contract - compact and unescaped: the example is quoted inside a description, and the reply's own encoder
 	/// escapes it once more on the wire.
 	/// </summary>
+	/// <remarks>
+	/// The dependency on <see cref="BindingsModule.CreateMcpSerializerOptions"/> is intended: an example has to read
+	/// exactly as the server serializes the same value, so a change to those options is meant to change the example
+	/// too. The budget tests in <c>ToolContractPayloadBudgetTests</c> report it if that moves a reply's size.
+	/// </remarks>
 	private static readonly JsonSerializerOptions FieldExampleJsonOptions =
 		new(BindingsModule.CreateMcpSerializerOptions()) {
 			Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -571,33 +576,32 @@ internal static class ToolContractShortForm {
 			|| type.StartsWith("array", StringComparison.OrdinalIgnoreCase));
 
 	/// <summary>
-	/// The field's value in the first contract example that carries one within <see cref="MaxFieldExampleChars"/>,
-	/// as compact JSON; otherwise the JSON value that follows the field description's own <c>Example:</c> marker,
-	/// when it parses and fits; otherwise <see langword="null"/>.
+	/// The JSON value that follows the field description's own <c>Example:</c> marker, as compact JSON, when it
+	/// parses and fits within <see cref="MaxFieldExampleChars"/>; otherwise the field's value in the first contract
+	/// example that carries one within the bound; otherwise <see langword="null"/>.
 	/// </summary>
 	/// <remarks>
-	/// The description's example is read as ONE JSON value, not up to the next sentence end: a period inside a
-	/// string value (<c>{"Name":"Acme Inc. Ltd"}</c>) would otherwise cut it, and an example with no period after
-	/// it would carry the following prose along. Text that does not parse as JSON gives no example.
+	/// The field's own example comes first: it was written for the field (odata-read's teaches the Account/Id
+	/// navigation path for a lookup), while a contract example is written for a call scenario and its order in the
+	/// list is incidental, so reordering the examples must not change the short form. The description's example
+	/// is read as ONE JSON value, not up to the next sentence end: a period inside a string value
+	/// (<c>{"Name":"Acme Inc. Ltd"}</c>) would otherwise cut it, and an example with no period after it would carry
+	/// the following prose along. Text that does not parse as JSON gives no example.
 	/// </remarks>
 	internal static string? FindFieldExample(ToolContractField field, IReadOnlyList<ToolContractExample>? examples) {
-		string? fromContract = (examples ?? [])
+		string description = field.Description ?? string.Empty;
+		int marker = description.IndexOf(FieldExampleMarker, StringComparison.Ordinal);
+		if (marker >= 0
+			&& ReadJsonValue(description[(marker + FieldExampleMarker.Length)..]) is { Length: > 0 and <= MaxFieldExampleChars } own) {
+			return own;
+		}
+		return (examples ?? [])
 			.Select(example => example.Arguments)
 			.Where(arguments => arguments is not null)
 			.Select(arguments => arguments.TryGetValue(field.Name, out object? value) ? value : null)
 			.Where(value => value is not null)
 			.Select(value => JsonSerializer.Serialize(value, FieldExampleJsonOptions))
 			.FirstOrDefault(json => json.Length <= MaxFieldExampleChars);
-		if (fromContract is not null) {
-			return fromContract;
-		}
-		string description = field.Description ?? string.Empty;
-		int marker = description.IndexOf(FieldExampleMarker, StringComparison.Ordinal);
-		if (marker < 0) {
-			return null;
-		}
-		string own = ReadJsonValue(description[(marker + FieldExampleMarker.Length)..]);
-		return own is { Length: > 0 and <= MaxFieldExampleChars } ? own : null;
 	}
 
 	/// <summary>

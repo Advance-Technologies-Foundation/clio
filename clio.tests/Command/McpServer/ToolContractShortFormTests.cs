@@ -518,7 +518,7 @@ public sealed class ToolContractShortFormTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A cut array input field whose contract has no example falls back to the Example sentence of its own description.")]
+	[Description("A cut array input field takes the Example sentence of its own description, read as one JSON value.")]
 	public void Shorten_Should_UseTheFieldsOwnExampleSentence_WhenNoContractExampleCarriesTheField() {
 		// Arrange
 		ToolContractDefinition full = WithInputField(
@@ -530,7 +530,51 @@ public sealed class ToolContractShortFormTests {
 
 		// Assert
 		trimmed.Should().Be("Fields to return. Example: [\"Id\",\"Name\"]",
-			because: "the field's own documented example is the next best source of its shape, read as one JSON value");
+			because: "the field's own documented example is the first source of its shape, read as one JSON value");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The field's own Example wins over a contract example: it was written for the field, while a contract example is written for a call scenario and its order is incidental.")]
+	public void Shorten_Should_PreferTheFieldsOwnExample_OverAContractExample() {
+		// Arrange
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("filters", "object",
+				"Structured filter. Use Account/Id for a lookup. Example: { \"all\": [{ \"field\": \"Account/Id\", \"op\": \"eq\", \"value\": \"1\" }] }."),
+			new Dictionary<string, object?> {
+				["filters"] = new Dictionary<string, object?> {
+					["all"] = new[] { new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "eq", ["value"] = "x" } }
+				}
+			});
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "filters");
+
+		// Assert
+		trimmed.Should().Be("Structured filter. Example: {\"all\":[{\"field\":\"Account/Id\",\"op\":\"eq\",\"value\":\"1\"}]}",
+			because: "the example written for the field teaches what it was written to teach, whatever order the call examples are in");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A field whose own Example is over the bound falls back to the first contract example that fits.")]
+	public void Shorten_Should_UseAContractExample_WhenTheFieldsOwnExampleIsTooLong() {
+		// Arrange
+		string longValue = new('v', ToolContractShortForm.MaxFieldExampleChars);
+		ToolContractDefinition full = WithInputField(
+			new ToolContractField("filters", "object", $"Structured filter. Example: {{ \"all\": [{{ \"field\": \"{longValue}\" }}] }}."),
+			new Dictionary<string, object?> {
+				["filters"] = new Dictionary<string, object?> {
+					["all"] = new[] { new Dictionary<string, object?> { ["field"] = "Name", ["op"] = "eq", ["value"] = "x" } }
+				}
+			});
+
+		// Act
+		string trimmed = FieldDescription(ToolContractShortForm.Shorten(full, destructive: false), "filters");
+
+		// Assert
+		trimmed.Should().Be("Structured filter. Example: {\"all\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"x\"}]}",
+			because: "an own example over the bound is left out rather than cut, and a contract example that fits is next");
 	}
 
 	[Test]
@@ -623,9 +667,11 @@ public sealed class ToolContractShortFormTests {
 			new ToolContractGetArgs([ODataReadTool.ToolName], ToolContractShortForm.ShortDetail)).Tools!.Single();
 
 		// Assert
-		FieldDescription(shortForm, "filters").Should().Contain(
-			"Example: {\"all\":[{\"field\":\"Name\",\"op\":\"eq\",\"value\":\"In Progress\"}]}",
-			because: "the short contract must show the all/any group of {field, op, value} conditions");
+		string filters = FieldDescription(shortForm, "filters");
+		filters.Should().Contain("op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq)",
+			because: "the short contract keeps the first sentence, and it names every operator the filter accepts");
+		filters.Should().Contain("Example: {\"all\":[{\"field\":\"Account/Id\",\"op\":\"eq\",\"value\":\"8ecab4a1-0ca3-4515-9399-efe0a19390bd\"}]}",
+			because: "the field's own example shows the all/any group of {field, op, value} conditions and the Account/Id path for a lookup");
 	}
 
 	[Test]

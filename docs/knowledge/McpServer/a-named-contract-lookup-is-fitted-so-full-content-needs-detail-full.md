@@ -43,13 +43,17 @@ MEASURED against the budget:
 - A contract whose short form would be no smaller is left complete and unmarked, and a field label such
   as "Optional, default true." is kept in front of the field's first sentence, not instead of it.
 - A cut INPUT field of type object or array gets one example of its value appended (`Example: <compact
-  JSON>`): the field's value in the first contract example that carries it within 160 characters, else the
-  JSON value after the field description's own `Example:` marker - parsed as JSON, never cut at a period -
-  within 160 characters, else nothing. Without it odata-read's `filters` read only "Structured filter." and
-  an agent guessed `{"all": [{"column": ..., "operator": ...}]}`. Measured over the catalog on 2026-11-11:
-  seven fields in seven tools gain one, about 650 bytes in Fit's measure, none of them in the
-  seven-contract bundle; a single-tool lookup of those seven still fits whole, but in a multi-contract
-  reply Fit may now shorten one contract more than before. The `CallShapes` tools are skipped by name,
+  JSON>`): the JSON value after the field description's own `Example:` marker - parsed as JSON, never cut at
+  a period - within 160 characters, else the field's value in the first contract example that carries it
+  within 160 characters, else nothing. The field's own example comes first because it was written for the
+  field (odata-read's teaches the Account/Id path for a lookup), while a contract example is written for a
+  call scenario and its order is incidental. Without an example odata-read's `filters` read only "Structured
+  filter." and an agent guessed `{"all": [{"column": ..., "operator": ...}]}`; the `filters` field of
+  odata-read and odata-read-to-file now also opens with its shape and the full operator list, which the
+  short form keeps as the first sentence. Measured over the catalog on 2026-11-12: six fields in six tools
+  gain an example, 378 characters as appended (more in Fit's measure, whose default encoder escapes every
+  quote), none of them in the seven-contract bundle; a single-tool lookup of those six still fits whole, but
+  in a multi-contract reply Fit may now shorten one contract more than before. The `CallShapes` tools are skipped by name,
   because their shape block already lists every nested field and their bundle has about 145 bytes of
   headroom; a new short example on another of the seven would spend that headroom, which the budget tests
   below report.
