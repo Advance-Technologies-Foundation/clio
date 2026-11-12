@@ -363,23 +363,8 @@ public static partial class WebServiceResponseMasker {
 	private static JsonNode MaskNode(JsonNode node, IReadOnlyList<string> secrets, IReadOnlyList<string> forms,
 		ref bool masked) {
 		switch (node) {
-			case JsonObject obj: {
-				var rebuilt = new JsonObject();
-				List<KeyValuePair<string, JsonNode>> properties = obj.ToList();
-				obj.Clear();
-				foreach (KeyValuePair<string, JsonNode> property in properties) {
-					string key = ApplyForms(property.Key, forms, out bool keyMasked);
-					masked |= keyMasked;
-					JsonNode value = property.Value is null ? null : MaskNode(property.Value, secrets, forms, ref masked);
-					// Two keys masked to the same text keep both values: a suffix keeps them apart.
-					string unique = key;
-					for (int n = 2; rebuilt.ContainsKey(unique); n++) {
-						unique = $"{key}#{n}";
-					}
-					rebuilt[unique] = value;
-				}
-				return rebuilt;
-			}
+			case JsonObject obj:
+				return MaskObject(obj, secrets, forms, ref masked);
 			case JsonArray array: {
 				var rebuilt = new JsonArray();
 				List<JsonNode> items = array.ToList();
@@ -389,27 +374,50 @@ public static partial class WebServiceResponseMasker {
 				}
 				return rebuilt;
 			}
-			case JsonValue value when value.TryGetValue(out string text): {
-				if (EqualsSecretByValue(text, secrets)) {
-					masked = true;
-					return JsonValue.Create(Mask);
-				}
-				string replaced = ApplyForms(text, forms, out bool changed);
-				masked |= changed;
-				return changed ? JsonValue.Create(replaced) : value;
-			}
-			case JsonValue value: {
-				// A number or a boolean: masked whole when its text carries a secret (an account number, a PIN), also
-				// when the platform's type conversion dropped leading zeros or trailing decimals.
-				string text = value.ToJsonString();
-				ApplyForms(text, forms, out bool changed);
-				changed |= EqualsSecretByValue(text, secrets);
-				masked |= changed;
-				return changed ? JsonValue.Create(Mask) : value;
-			}
+			case JsonValue value:
+				return MaskValue(value, secrets, forms, ref masked);
 			default:
 				return node;
 		}
+	}
+
+	private static JsonObject MaskObject(JsonObject obj, IReadOnlyList<string> secrets, IReadOnlyList<string> forms,
+		ref bool masked) {
+		var rebuilt = new JsonObject();
+		List<KeyValuePair<string, JsonNode>> properties = obj.ToList();
+		obj.Clear();
+		foreach (KeyValuePair<string, JsonNode> property in properties) {
+			string key = ApplyForms(property.Key, forms, out bool keyMasked);
+			masked |= keyMasked;
+			JsonNode value = property.Value is null ? null : MaskNode(property.Value, secrets, forms, ref masked);
+			// Two keys masked to the same text keep both values: a suffix keeps them apart.
+			string unique = key;
+			for (int n = 2; rebuilt.ContainsKey(unique); n++) {
+				unique = $"{key}#{n}";
+			}
+			rebuilt[unique] = value;
+		}
+		return rebuilt;
+	}
+
+	private static JsonNode MaskValue(JsonValue value, IReadOnlyList<string> secrets, IReadOnlyList<string> forms,
+		ref bool masked) {
+		if (value.TryGetValue(out string text)) {
+			if (EqualsSecretByValue(text, secrets)) {
+				masked = true;
+				return JsonValue.Create(Mask);
+			}
+			string replaced = ApplyForms(text, forms, out bool changed);
+			masked |= changed;
+			return changed ? JsonValue.Create(replaced) : value;
+		}
+		// A number or a boolean: masked whole when its text carries a secret (an account number, a PIN), also when the
+		// platform's type conversion dropped leading zeros or trailing decimals.
+		string json = value.ToJsonString();
+		ApplyForms(json, forms, out bool found);
+		found |= EqualsSecretByValue(json, secrets);
+		masked |= found;
+		return found ? JsonValue.Create(Mask) : value;
 	}
 
 	private static IEnumerable<string> Forms(string secret) {
@@ -427,10 +435,8 @@ public static partial class WebServiceResponseMasker {
 			JsonSerializer.Serialize(secret, RelaxedJson)[1..^1],
 			JsonSerializer.Serialize(secret)[1..^1],
 			JsonSerializer.Serialize(secret, RelaxedJson)[1..^1].Replace("/", @"\/", StringComparison.Ordinal)
-		}.Distinct(StringComparer.Ordinal)) {
-			if (json != secret) {
-				yield return json;
-			}
+		}.Distinct(StringComparer.Ordinal).Where(json => json != secret)) {
+			yield return json;
 		}
 		// An XML body or a SOAP fault escapes markup characters: always & and <, often > and sometimes the quotes.
 		string minimalXml = secret.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal);
@@ -439,10 +445,8 @@ public static partial class WebServiceResponseMasker {
 			escapedGt.Replace("\"", "&quot;", StringComparison.Ordinal).Replace("'", "&apos;", StringComparison.Ordinal),
 			escapedGt,
 			minimalXml
-		}.Distinct(StringComparer.Ordinal)) {
-			if (xml != secret) {
-				yield return xml;
-			}
+		}.Distinct(StringComparer.Ordinal).Where(xml => xml != secret)) {
+			yield return xml;
 		}
 	}
 

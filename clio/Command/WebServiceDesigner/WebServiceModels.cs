@@ -305,9 +305,6 @@ public static partial class WebServiceSchemaView {
 		|| placement == ServiceSchemaCodes.Placements["cookie"]
 		|| IsSecretName(parameterName);
 
-	/// <summary>Whether a parameter code or wire name looks like a credential (key, token, secret, password, ...).</summary>
-	public static bool IsSecretName(string name) => SecretNamePattern().IsMatch(name ?? string.Empty);
-
 	/// <summary>
 	/// Whether a parameter's constant default must be hidden: a header or cookie, a SOAP-header element (WS-Security
 	/// and licence headers travel there), or a code or wire name that looks like a credential.
@@ -316,6 +313,9 @@ public static partial class WebServiceSchemaView {
 		int placement = parameter.IsSoapHeader == true ? ServiceSchemaCodes.Placements["header"] : parameter.Type;
 		return IsSecretLike(parameter.Name, placement) || IsSecretLike(parameter.Path, placement);
 	}
+
+	/// <summary>Whether a parameter code or wire name looks like a credential (key, token, secret, password, ...).</summary>
+	public static bool IsSecretName(string name) => SecretNamePattern().IsMatch(name ?? string.Empty);
 
 	public static WebServiceView From(ServiceSchemaDto schema, string packageName) {
 		bool soap = IsSoap(schema);
