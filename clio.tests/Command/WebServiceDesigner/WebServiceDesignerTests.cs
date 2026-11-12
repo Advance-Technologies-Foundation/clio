@@ -638,6 +638,31 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("setBaseUri that removes a base-URI placeholder a kept method's path parameter fills is refused, unless the method's own URI still has it.")]
+	public void Modify_SetBaseUri_Should_Refuse_Removing_A_Placeholder_A_Kept_Method_Fills() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search",
+			RequestParameters: [new WebServiceParameterArg("version", "path")]));
+		schema.BaseUri = "https://api.bing.example/{version}/";
+		ServiceSchemaDto ownUri = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "{version}/search",
+			RequestParameters: [new WebServiceParameterArg("version", "path")]));
+		ownUri.BaseUri = "https://api.bing.example/{version}/";
+		var removedErrors = new WebServiceDefinitionBuilder.Errors();
+		var ownErrors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.ValidateBaseUriChange(schema.Methods.Items.Values.Single(), schema.BaseUri,
+			"https://api.bing.example/", removedErrors);
+		WebServiceDefinitionBuilder.ValidateBaseUriChange(ownUri.Methods.Items.Values.Single(), ownUri.BaseUri,
+			"https://api.bing.example/", ownErrors);
+
+		// Assert
+		removedErrors.Should().ContainSingle(because: "the path parameter would fill nothing and the call would go out without it")
+			.Which.Should().Contain("{version}", because: "the refusal names the lost placeholder");
+		ownErrors.Should().BeEmpty(because: "the method's own URI still carries the placeholder");
+	}
+
+	[Test]
 	[Description("A kept method whose own placeholder differs in case from its path parameter does not block a setBaseUri that adds no placeholder.")]
 	public void Modify_SetBaseUri_Should_Not_Recheck_A_Kept_Methods_Own_Uri() {
 		// Arrange
