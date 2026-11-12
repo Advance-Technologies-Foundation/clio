@@ -209,10 +209,10 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.NoEnvironment")]
 	[Test]
-	[Description("Binds a stepper active-step condition payload (a '<StepperName>_ActiveStep' path) through the real MCP server and reports an invalid environment failure from command execution.")]
+	[Description("Binds a stepper active-step condition payload (a '<StepperName>_ActiveStep' path) through the real MCP server and reports an invalid environment failure from command execution. Covers payload binding only: without an environment the path is not resolved against the page.")]
 	[AllureTag(ToolName)]
 	[AllureName("Page business-rule MCP tool binds stepper active-step condition paths")]
-	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with a condition on a '<StepperName>_ActiveStep' path and an intentionally missing environment, then verifies the payload binds and reaches command execution instead of failing MCP payload binding.")]
+	[AllureDescription("Starts the real clio MCP server, calls create-page-business-rules with a condition on a '<StepperName>_ActiveStep' path and an intentionally missing environment, then verifies the payload binds and reaches command execution instead of failing MCP payload binding. The path is not resolved against the page, so bound and generated active-step forms are not told apart here.")]
 	public async Task BusinessRuleCreate_Should_Bind_Stepper_Active_Step_Condition_Payload_And_Report_Invalid_Environment() {
 		// Arrange
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));

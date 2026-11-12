@@ -43,7 +43,13 @@ public static class CreateBusinessProcessPrompt {
 		 every parameter value (read `get-guidance name=process-tracing`).
 		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
 		 trigger), not a page save handler; add `changedColumns` to fire an `on:modified` trigger only when specific
-		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`
+		 columns change, and/or a `filter` to fire only for matching records. Several `signalStart`s on ONE object
+		 that share one chain: declare a Guid parameter with `mergeFrom` [`"<Start>.RecordId"`, ...] (omit its
+		 `direction`: a merged parameter is always Internal) and let the shared chain read the record by it
+		 (`get-guidance name=process-multi-start`). Branches `mergeFrom` cannot merge - signal starts on different
+		 objects, a timer or message start, gateway branches after one start - each set the shared parameter with a
+		 `formulaTask` whose `formula.resultProcessParameter` names it (`get-guidance name=process-parameters`).
+		 To send an email, add a `sendEmail`
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
 		 message as EITHER an HTML custom-message `body` (`bodyFormat` `html` only) OR an existing email `template`
 		 (by name or id; plus `templateEntity`, the record its macros resolve against, when the template is authored
