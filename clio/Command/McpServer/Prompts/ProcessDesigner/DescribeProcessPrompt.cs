@@ -104,7 +104,8 @@ public static class DescribeProcessPrompt {
 		conditional, where the platform drops it at generation time and it never runs. And when
 		`branchesOnActivityResult` is true the branch is decided by which BUTTONS the preceding activity was
 		completed with, not by the expression: the text is still shown, and the runtime ignores it entirely.
-		`results` then names WHICH results select the branch, by caption, and `resultsActivity` the element
+		`results` then names WHICH results select the branch, by the profile culture's caption (an approval's
+		outcome code `Positive` / `Negative` / `Canceled` is the culture-independent name to write back), and `resultsActivity` the element
 		whose results they are - usually the flow's source, but for a connector leaving a GATEWAY an element
 		upstream of it, so narrate the activity `resultsActivity` names rather than assuming the source.
 		Both are ABSENT on a package cut from a line that never carried them, which reads exactly
