@@ -729,15 +729,17 @@ public static partial class WebServiceDefinitionBuilder {
 	/// match, so the whole name must fit it, and its prefix is checked against the namespaces with the method's other
 	/// names. A response item is matched by local name only, so there only the part after the prefix matters.
 	/// </summary>
-	private static string SequenceElementProblem(string name, bool isRequest) =>
-		!isRequest
-			? ElementNamePattern().IsMatch(name[(name.IndexOf(':') + 1)..]) ? null : "is not an XML element name."
-			: name.Contains(':')
-			? PrefixedElementPattern().IsMatch(name)
-				? null
-				: "must be prefix:name with letters, digits, '_' or '-' only (the platform cuts the name at any other "
-					+ "character)."
-			: ElementNamePattern().IsMatch(name) ? null : "is not an XML element name.";
+	private static string SequenceElementProblem(string name, bool isRequest) {
+		if (!isRequest) {
+			return ElementNamePattern().IsMatch(name[(name.IndexOf(':') + 1)..]) ? null : "is not an XML element name.";
+		}
+		if (!name.Contains(':')) {
+			return ElementNamePattern().IsMatch(name) ? null : "is not an XML element name.";
+		}
+		return PrefixedElementPattern().IsMatch(name)
+			? null
+			: "must be prefix:name with letters, digits, '_' or '-' only (the platform cuts the name at any other character).";
+	}
 
 	/// <summary>The item element name a SOAP parameter is stored with; Studio writes <c>item</c> when none is given.</summary>
 	private static string SoapSequenceElement(WebServiceParameterArg arg) =>
