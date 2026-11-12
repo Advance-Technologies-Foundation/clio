@@ -221,6 +221,15 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CreateNewClientUnitDesignerSchema, "https://localhost/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerParentSchemas, "https://localhost/0/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerParentSchemas, "https://localhost/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas");
+			// Web service designer: read, save, name check and test call of a REST web service schema.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.ServiceSchemaRead, "https://localhost/0/DataService/json/SyncReply/ServiceSchemaRequest");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.ServiceSchemaRead, "https://localhost/DataService/json/SyncReply/ServiceSchemaRequest");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.ServiceSchemaSave, "https://localhost/0/DataService/json/SyncReply/ServiceDataContract");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.ServiceSchemaSave, "https://localhost/DataService/json/SyncReply/ServiceDataContract");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CheckUniqueSchemaName, "https://localhost/0/ServiceModel/EntitySchemaDesignerService.svc/CheckUniqueSchemaName");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CheckUniqueSchemaName, "https://localhost/ServiceModel/EntitySchemaDesignerService.svc/CheckUniqueSchemaName");
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CallServiceSchemaMethod, "https://localhost/0/rest/CallServiceSchemaService/Execute");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CallServiceSchemaMethod, "https://localhost/rest/CallServiceSchemaService/Execute");
 			// Registered WITHOUT a leading slash, unlike the /rest/... entries, so both prefix shapes are
 			// pinned here rather than left to CreateUrl's normalisation happening to be right.
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
