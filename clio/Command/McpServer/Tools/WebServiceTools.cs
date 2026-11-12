@@ -80,7 +80,7 @@ public sealed class DescribeWebServiceTool(IToolCommandResolver commandResolver)
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Reads one web service. It returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees. Credential values and constant defaults of header, cookie, key or token parameters are never returned (default-masked: true). With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
+	[Description("Reads one web service. REST, SOAP 1.1 and SOAP 1.2 services are read alike: it returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees. A SOAP service also returns its namespaces (the default first), and each SOAP method its message-element and soap-action instead of a uri; SOAP parameters carry soap-header and sequence-element where they apply, and their paths are element paths (tem:Outer/tem:Inner). Credential values and constant defaults of header, cookie, key or token parameters are never returned (default-masked: true). With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
 	public WebServiceToolResult DescribeWebService(
 		[Description("Parameters: environment-name, code (required); usages (optional, default false)")]
 		[Required]
@@ -132,7 +132,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Test-calls a web service method. It sends one real request, as Studio's Send test request does, and returns the HTTP status and the response body (request and response headers are never returned; values sent from system settings or in Authorization are masked in the body). The call reaches the external API, so a POST, PUT, PATCH or DELETE method changes data there: confirm with the user first. The caller needs CanManageSolution.")]
+	[Description("Test-calls a web service method. For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. The call reaches the external API, so a POST, PUT, PATCH or DELETE method and every SOAP method can change data there: confirm with the user first. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
 	public WebServiceTestResult TestWebServiceMethod(
 		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value)")]
 		[Required]

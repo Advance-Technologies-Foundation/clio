@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace Clio.Command.WebServiceDesigner;
 
@@ -56,8 +59,9 @@ public static partial class WebServiceResponseMasker {
 	/// <param name="requestBody">The request body the platform reports as sent.</param>
 	/// <param name="secretUnlocated">
 	/// Whether a setting-bound value may have been sent but cannot be located: a path value not found in the URL,
-	/// a header, query or cookie value with no request line and headers reported, or a body value when the
-	/// reported body is missing or is not JSON (a SOAP envelope, an XML body).
+	/// a header, query or cookie value with no request line and headers reported, a body value when the reported
+	/// body is missing or is neither JSON nor XML, or a top-level body element missing from an XML body (a SOAP
+	/// envelope, its Header included).
 	/// </param>
 	/// <returns>Distinct values, longest first.</returns>
 	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
@@ -82,16 +86,28 @@ public static partial class WebServiceResponseMasker {
 		Dictionary<string, List<string>> query = Query(lines.FirstOrDefault());
 		Dictionary<string, List<string>> cookies = Cookies(headers);
 		JsonNode body = ParseBody(requestBody);
+		// A body that is not JSON is read as XML: a SOAP envelope, whose Header carries WS-Security values.
+		XDocument xmlBody = body is null ? ParseXmlBody(requestBody) : null;
 		var secrets = new List<string>();
 		bool rawReported = !string.IsNullOrWhiteSpace(requestRawData);
 		// The Authorization header carries the service credentials (from settings or typed in Studio); without the
 		// reported headers its value cannot be found, so it cannot be masked either.
 		secretUnlocated |= serviceHasAuth && method?.UseAuthInfo == true && !rawReported;
-		foreach (ServiceParameterDto parameter in SettingBound(method?.Request?.Parameters)) {
-			string name = string.IsNullOrEmpty(parameter.Path) ? parameter.Name : parameter.Path;
-			// Values are found in what the platform reports as sent; when that part is missing or is not JSON,
-			// a value that went out cannot be found, so the caller withholds the response instead.
-			secretUnlocated |= parameter.Type == PlacementBody ? body is null : !rawReported;
+		foreach ((ServiceParameterDto parameter, ServiceParameterDto parent) in SettingBound(method?.Request?.Parameters, null)) {
+			string name = WireName(parameter);
+			// Values are found in what the platform reports as sent; when that part is missing or is neither JSON nor
+			// XML, a value that went out cannot be found, so the caller withholds the response instead.
+			secretUnlocated |= parameter.Type == PlacementBody ? body is null && xmlBody is null : !rawReported;
+			if (parameter.Type == PlacementBody && xmlBody is not null) {
+				List<string> found = XmlBodyValues(xmlBody, name);
+				// A top-level element is always rendered, and so is every field of a parent the platform rendered; a
+				// parent with no value is skipped whole. So a field missing while its parent carries content means the
+				// lookup missed it: fail closed.
+				secretUnlocated |= found.Count == 0
+					&& (parent is null || XmlElements(xmlBody, WireName(parent)).Any(e => e.HasElements));
+				secrets.AddRange(found);
+				continue;
+			}
 			switch (parameter.Type) {
 				case PlacementHeader:
 					secrets.AddRange(Lookup(headers, name));
@@ -117,35 +133,67 @@ public static partial class WebServiceResponseMasker {
 		// describe-web-service hides a secret constant (an API key typed in Studio); an echo must not show it
 		// either. It is known from the schema, so it is masked whether or not the request carried it.
 		secrets.AddRange(SecretConstants(method?.Request?.Parameters));
+		// A response parameter's default fills a value the API did not send, so a secret constant there can come back
+		// in the parsed response values.
+		secrets.AddRange(SecretConstants(method?.Response?.Parameters));
 		foreach (string authorization in Lookup(headers, "Authorization")) {
 			secrets.AddRange(AuthorizationParts(authorization));
 		}
+		// The SOAP envelope is written with CRLF line ends and read back with LF, and an API may echo a multi-line value
+		// (a PEM key, an assertion) either way or line by line, so each line is a secret of its own too.
+		secrets.AddRange(secrets.Where(s => s?.Contains('\n') == true).SelectMany(s => s.Split('\n'))
+			.Select(line => line.TrimEnd('\r')).ToList());
 		return secrets.Where(s => s is { Length: >= MinMaskedLength })
 			.Distinct(StringComparer.Ordinal)
 			.OrderByDescending(s => s.Length)
 			.ToList();
 	}
 
-	/// <summary>Replaces every secret in <paramref name="text"/>, also in its URL- and JSON-escaped forms.</summary>
+	/// <summary>Replaces every secret in <paramref name="text"/>, also in its URL-, JSON- and XML-escaped forms.</summary>
 	/// <param name="text">Text returned to the caller.</param>
 	/// <param name="secrets">Values from <see cref="SentSecrets"/>.</param>
 	/// <param name="masked">Whether anything was replaced.</param>
 	/// <returns>The text without the secrets.</returns>
-	public static string Apply(string text, IReadOnlyList<string> secrets, out bool masked) {
+	public static string Apply(string text, IReadOnlyList<string> secrets, out bool masked) =>
+		ApplyForms(text, AllForms(secrets), out masked);
+
+	/// <summary>Every form of every secret, longest secret first, built once per masked text.</summary>
+	private static List<string> AllForms(IReadOnlyList<string> secrets) =>
+		(secrets ?? []).SelectMany(Forms).Distinct(StringComparer.Ordinal).ToList();
+
+	private static string ApplyForms(string text, IReadOnlyList<string> forms, out bool masked) {
 		masked = false;
 		if (string.IsNullOrEmpty(text)) {
 			return text;
 		}
 		string result = text;
-		foreach (string secret in secrets) {
-			foreach (string form in Forms(secret)) {
-				if (result.Contains(form, StringComparison.Ordinal)) {
-					result = result.Replace(form, Mask, StringComparison.Ordinal);
-					masked = true;
-				}
+		foreach (string form in forms) {
+			if (form.Length > 0 && result.Contains(form, StringComparison.Ordinal)) {
+				result = result.Replace(form, Mask, StringComparison.Ordinal);
+				masked = true;
 			}
 		}
 		return result;
+	}
+
+	/// <summary>
+	/// Whether a whole value equals a secret once both are read as a Guid or as a number: the platform converts a
+	/// parsed response value to the parameter's type, so an echoed key comes back as <c>6f9619ff-...</c> or
+	/// <c>123456</c> where the setting holds <c>6F9619FF...</c> or <c>00123456</c>.
+	/// </summary>
+	private static bool EqualsSecretByValue(string text, IReadOnlyList<string> secrets) {
+		if (string.IsNullOrWhiteSpace(text)) {
+			return false;
+		}
+		if (Guid.TryParse(text, out Guid guid)) {
+			return secrets.Any(s => Guid.TryParse(s, out Guid other) && other == guid);
+		}
+		if (decimal.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture,
+				out decimal number)) {
+			return secrets.Any(s => decimal.TryParse(s, System.Globalization.NumberStyles.Float,
+				System.Globalization.CultureInfo.InvariantCulture, out decimal other) && other == number);
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -163,34 +211,166 @@ public static partial class WebServiceResponseMasker {
 		if (string.IsNullOrEmpty(body) || secrets is not { Count: > 0 }) {
 			return body;
 		}
+		List<string> forms = AllForms(secrets);
 		try {
 			JsonNode root = JsonNode.Parse(body);
 			if (root is not (JsonObject or JsonArray)) {
-				return Apply(body, secrets, out masked);
+				return ApplyForms(body, forms, out masked);
 			}
 			bool any = false;
-			JsonNode result = MaskNode(root, secrets, ref any);
+			JsonNode result = MaskNode(root, secrets, forms, ref any);
 			masked = any;
 			return any ? result.ToJsonString(IndentedRelaxedJson) : body;
 		} catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException) {
 			// JsonNode parses lazily: a duplicate key surfaces as ArgumentException during the walk.
-			return Apply(body, secrets, out masked);
+			return ApplyXmlOrText(body, secrets, forms, out masked);
+		}
+	}
+
+	/// <summary>
+	/// Masks an XML body (a SOAP fault, an XML API) by its decoded text and attribute values, so a secret written with
+	/// character references (<c>&amp;#39;</c>, <c>&amp;#xD;</c>) is found too, then masks the written result as text.
+	/// Anything that is not XML is masked as plain text.
+	/// </summary>
+	private static string ApplyXmlOrText(string body, IReadOnlyList<string> secrets, IReadOnlyList<string> forms,
+		out bool masked) {
+		XDocument document = ParseXmlBody(body);
+		if (document is null) {
+			return ApplyForms(body, forms, out masked);
+		}
+		bool any = false;
+		foreach (XText text in document.DescendantNodes().OfType<XText>()) {
+			string replaced = MaskText(text.Value, secrets, forms, ref any);
+			if (!ReferenceEquals(replaced, text.Value)) {
+				text.Value = replaced;
+			}
+		}
+		foreach (XAttribute attribute in document.Descendants().SelectMany(e => e.Attributes())) {
+			string replaced = MaskText(attribute.Value, secrets, forms, ref any);
+			if (!ReferenceEquals(replaced, attribute.Value)) {
+				attribute.Value = replaced;
+			}
+		}
+		if (!any) {
+			// Nothing was found in the decoded values; a secret in a comment or a processing instruction is still masked.
+			return ApplyForms(body, forms, out masked);
+		}
+		string written = (document.Declaration is null ? string.Empty : document.Declaration + Environment.NewLine)
+			+ document.ToString(SaveOptions.DisableFormatting);
+		masked = true;
+		return ApplyForms(written, forms, out _);
+	}
+
+	private static string MaskText(string value, IReadOnlyList<string> secrets, IReadOnlyList<string> forms, ref bool masked) {
+		if (EqualsSecretByValue(value?.Trim(), secrets)) {
+			masked = true;
+			return Mask;
+		}
+		string replaced = ApplyForms(value, forms, out bool changed);
+		masked |= changed;
+		return changed ? replaced : value;
+	}
+
+	/// <summary>
+	/// Masks the platform's parsed response values (<c>ParameterValues</c>, a JSON object by parameter code). Besides
+	/// the sent secrets, the value of every response parameter that may carry a credential is masked by its code,
+	/// whatever it holds: one whose default comes from a system setting or is a secret constant (the platform fills the
+	/// default when the API did not send the value), one read from a cookie, and one read from a header whose code or
+	/// name looks like a credential. A null stays null.
+	/// </summary>
+	/// <param name="parameterValues">The JSON text the platform returned.</param>
+	/// <param name="method">The called method.</param>
+	/// <param name="secrets">Values from <see cref="SentSecrets"/>.</param>
+	/// <param name="masked">Whether anything was replaced.</param>
+	/// <returns>The masked JSON object or array, or <c>null</c> when the text is not one.</returns>
+	public static JsonNode MaskResponseValues(string parameterValues, ServiceMethodDto method,
+		IReadOnlyList<string> secrets, out bool masked) {
+		masked = false;
+		JsonNode root;
+		try {
+			root = JsonNode.Parse(parameterValues);
+			if (root is not (JsonObject or JsonArray)) {
+				return null;
+			}
+			var codes = new HashSet<string>(CredentialResponseCodes(method?.Response?.Parameters), StringComparer.Ordinal);
+			bool any = false;
+			MaskByCode(root, codes, ref any);
+			JsonNode result = secrets is { Count: > 0 } ? MaskNode(root, secrets, AllForms(secrets), ref any) : root;
+			masked = any;
+			return result;
+		} catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Whether a response parameter (array item fields included) has a default from a system setting or a secret
+	/// constant. The platform converts such a default to the parameter's type after the call, and a conversion
+	/// failure ends the call with an error that can quote the value and with nothing reported as sent.
+	/// </summary>
+	/// <param name="method">The called method.</param>
+	/// <returns><c>true</c> when an error text may carry such a default.</returns>
+	public static bool HasCredentialResponseDefault(ServiceMethodDto method) =>
+		Flatten(method?.Response?.Parameters).Any(parameter =>
+			parameter.DefValue?.Source == ServiceSchemaCodes.ValueSourceSysSetting
+			|| (parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value.Length: > 0 }
+				&& WebServiceSchemaView.IsSecretLike(parameter)));
+
+	private static IEnumerable<ServiceParameterDto> Flatten(ServiceItemCollection<ServiceParameterDto> parameters) =>
+		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
+			.SelectMany(parameter => Flatten(parameter.ItemProperties).Prepend(parameter));
+
+	private static IEnumerable<string> CredentialResponseCodes(ServiceItemCollection<ServiceParameterDto> parameters) {
+		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
+			bool fromSetting = parameter.DefValue?.Source == ServiceSchemaCodes.ValueSourceSysSetting;
+			bool secretConstant = parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value.Length: > 0 }
+				&& WebServiceSchemaView.IsSecretLike(parameter);
+			bool credentialPlacement = parameter.Type == PlacementCookie
+				|| (parameter.Type == PlacementHeader
+					&& (WebServiceSchemaView.IsSecretName(parameter.Name) || WebServiceSchemaView.IsSecretName(parameter.Path)));
+			if (fromSetting || secretConstant || credentialPlacement) {
+				yield return parameter.Name;
+			}
+			foreach (string nested in CredentialResponseCodes(parameter.ItemProperties)) {
+				yield return nested;
+			}
+		}
+	}
+
+	private static void MaskByCode(JsonNode node, ISet<string> codes, ref bool masked) {
+		switch (node) {
+			case JsonObject obj:
+				foreach (string key in obj.Select(p => p.Key).ToList()) {
+					if (codes.Contains(key) && obj[key] is not null) {
+						obj[key] = Mask;
+						masked = true;
+					} else if (obj[key] is { } child) {
+						MaskByCode(child, codes, ref masked);
+					}
+				}
+				break;
+			case JsonArray array:
+				foreach (JsonNode item in array.Where(i => i is not null)) {
+					MaskByCode(item, codes, ref masked);
+				}
+				break;
 		}
 	}
 
 	private static readonly JsonSerializerOptions IndentedRelaxedJson =
 		new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
 
-	private static JsonNode MaskNode(JsonNode node, IReadOnlyList<string> secrets, ref bool masked) {
+	private static JsonNode MaskNode(JsonNode node, IReadOnlyList<string> secrets, IReadOnlyList<string> forms,
+		ref bool masked) {
 		switch (node) {
 			case JsonObject obj: {
 				var rebuilt = new JsonObject();
 				List<KeyValuePair<string, JsonNode>> properties = obj.ToList();
 				obj.Clear();
 				foreach (KeyValuePair<string, JsonNode> property in properties) {
-					string key = Apply(property.Key, secrets, out bool keyMasked);
+					string key = ApplyForms(property.Key, forms, out bool keyMasked);
 					masked |= keyMasked;
-					JsonNode value = property.Value is null ? null : MaskNode(property.Value, secrets, ref masked);
+					JsonNode value = property.Value is null ? null : MaskNode(property.Value, secrets, forms, ref masked);
 					// Two keys masked to the same text keep both values: a suffix keeps them apart.
 					string unique = key;
 					for (int n = 2; rebuilt.ContainsKey(unique); n++) {
@@ -205,19 +385,25 @@ public static partial class WebServiceResponseMasker {
 				List<JsonNode> items = array.ToList();
 				array.Clear();
 				foreach (JsonNode item in items) {
-					rebuilt.Add(item is null ? null : MaskNode(item, secrets, ref masked));
+					rebuilt.Add(item is null ? null : MaskNode(item, secrets, forms, ref masked));
 				}
 				return rebuilt;
 			}
 			case JsonValue value when value.TryGetValue(out string text): {
-				string replaced = Apply(text, secrets, out bool changed);
+				if (EqualsSecretByValue(text, secrets)) {
+					masked = true;
+					return JsonValue.Create(Mask);
+				}
+				string replaced = ApplyForms(text, forms, out bool changed);
 				masked |= changed;
 				return changed ? JsonValue.Create(replaced) : value;
 			}
 			case JsonValue value: {
-				// A number or a boolean: masked whole when its text carries a secret (an account number, a PIN).
+				// A number or a boolean: masked whole when its text carries a secret (an account number, a PIN), also
+				// when the platform's type conversion dropped leading zeros or trailing decimals.
 				string text = value.ToJsonString();
-				Apply(text, secrets, out bool changed);
+				ApplyForms(text, forms, out bool changed);
+				changed |= EqualsSecretByValue(text, secrets);
 				masked |= changed;
 				return changed ? JsonValue.Create(Mask) : value;
 			}
@@ -228,6 +414,10 @@ public static partial class WebServiceResponseMasker {
 
 	private static IEnumerable<string> Forms(string secret) {
 		yield return secret;
+		// The platform writes a SOAP envelope with CRLF line ends, so a multi-line value goes out and comes back so.
+		if (secret.Contains('\n') && !secret.Contains("\r\n", StringComparison.Ordinal)) {
+			yield return secret.Replace("\n", "\r\n", StringComparison.Ordinal);
+		}
 		string escaped = Uri.EscapeDataString(secret);
 		if (escaped != secret) {
 			yield return escaped;
@@ -242,13 +432,24 @@ public static partial class WebServiceResponseMasker {
 				yield return json;
 			}
 		}
+		// An XML body or a SOAP fault escapes markup characters: always & and <, often > and sometimes the quotes.
+		string minimalXml = secret.Replace("&", "&amp;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal);
+		string escapedGt = minimalXml.Replace(">", "&gt;", StringComparison.Ordinal);
+		foreach (string xml in new[] {
+			escapedGt.Replace("\"", "&quot;", StringComparison.Ordinal).Replace("'", "&apos;", StringComparison.Ordinal),
+			escapedGt,
+			minimalXml
+		}.Distinct(StringComparer.Ordinal)) {
+			if (xml != secret) {
+				yield return xml;
+			}
+		}
 	}
 
 	private static IEnumerable<string> SecretConstants(ServiceItemCollection<ServiceParameterDto> parameters) {
 		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
 			if (parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value: { Length: > 0 } value }
-					&& (WebServiceSchemaView.IsSecretLike(parameter.Name, parameter.Type)
-						|| WebServiceSchemaView.IsSecretLike(parameter.Path, parameter.Type))) {
+					&& WebServiceSchemaView.IsSecretLike(parameter)) {
 				yield return value;
 			}
 			foreach (string nested in SecretConstants(parameter.ItemProperties)) {
@@ -335,16 +536,74 @@ public static partial class WebServiceResponseMasker {
 	[GeneratedRegex(@"\{([^{}]+)\}", RegexOptions.CultureInvariant)]
 	private static partial Regex PlaceholderPattern();
 
-	private static IEnumerable<ServiceParameterDto> SettingBound(ServiceItemCollection<ServiceParameterDto> parameters) {
+	private static IEnumerable<(ServiceParameterDto Parameter, ServiceParameterDto Parent)> SettingBound(
+		ServiceItemCollection<ServiceParameterDto> parameters, ServiceParameterDto parent) {
 		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
 			if (parameter.DefValue?.Source == ServiceSchemaCodes.ValueSourceSysSetting) {
-				yield return parameter;
+				yield return (parameter, parent);
 			}
-			foreach (ServiceParameterDto nested in SettingBound(parameter.ItemProperties)) {
-				yield return nested;
+			foreach ((ServiceParameterDto, ServiceParameterDto) item in SettingBound(parameter.ItemProperties, parameter)) {
+				yield return item;
 			}
 		}
 	}
+
+	private static string WireName(ServiceParameterDto parameter) =>
+		string.IsNullOrEmpty(parameter.Path) ? parameter.Name : parameter.Path;
+
+	/// <summary>
+	/// Parses a request body as XML with DTD processing prohibited and no resolver, so a body can neither expand
+	/// entities nor make clio read a file or a URL. Returns <c>null</c> when the body is not XML.
+	/// </summary>
+	private static XDocument ParseXmlBody(string requestBody) {
+		if (string.IsNullOrWhiteSpace(requestBody)) {
+			return null;
+		}
+		var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+		try {
+			using var text = new StringReader(requestBody);
+			using var reader = XmlReader.Create(text, settings);
+			return XDocument.Load(reader);
+		} catch (XmlException) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// The values a body parameter took in an XML body. The platform renders a parameter as the element its path
+	/// names (<c>wsse:Security/wsse:UsernameToken/wsse:Password</c>; a leading <c>/</c> is ignored), under the
+	/// message element or under the SOAP Header, so the element is matched by the local name of the last segment
+	/// wherever it occurs. An element with children (a scalar array whose items carry the sequence element name)
+	/// gives every leaf text.
+	/// </summary>
+	private static List<string> XmlBodyValues(XDocument body, string path) =>
+		XmlElements(body, path)
+			.SelectMany(element => element.HasElements
+				? element.Descendants().Where(e => !e.HasElements).Select(e => e.Value)
+				: [element.Value])
+			.ToList();
+
+	private static IEnumerable<XElement> XmlElements(XDocument body, string path) {
+		string localName = XmlLocalName(path);
+		return body.Descendants().Where(e => e.Name.LocalName == localName);
+	}
+
+	/// <summary>
+	/// The local name the platform gives the element of a path's last segment. Terrasoft.Services
+	/// <c>SoapBodyBuilder.ParseElementPath</c> takes the first <c>prefix:name</c> match of
+	/// <see cref="PrefixedNamePattern"/>, unanchored, so <c>tem:Api.Key</c> renders as <c>tem:Api</c>; a segment
+	/// without a prefix is the name as written.
+	/// </summary>
+	private static string XmlLocalName(string path) {
+		string segment = (path ?? string.Empty).TrimEnd('/');
+		int slash = segment.LastIndexOf('/');
+		segment = slash >= 0 ? segment[(slash + 1)..] : segment;
+		Match prefixed = PrefixedNamePattern().Match(segment);
+		return prefixed.Success ? prefixed.Groups[2].Value : segment;
+	}
+
+	[GeneratedRegex(@"([a-zA-Z0-9_\-]+):([a-zA-Z0-9_\-]+)", RegexOptions.CultureInvariant)]
+	private static partial Regex PrefixedNamePattern();
 
 	private static Dictionary<string, List<string>> Headers(IEnumerable<string> lines) {
 		var headers = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);

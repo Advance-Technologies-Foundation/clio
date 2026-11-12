@@ -7,7 +7,10 @@ using Clio.Common;
 
 namespace Clio.Command.WebServiceDesigner;
 
-/// <summary>Registers, reads and changes REST web services the way Studio > Web services does.</summary>
+/// <summary>
+/// Registers and changes REST web services, and reads and test-calls REST and SOAP ones, the way Studio > Web
+/// services does.
+/// </summary>
 public interface IWebServiceDesigner {
 	/// <summary>
 	/// Lists the web services of the environment, REST and SOAP, as Studio > Web services shows them. Needs no
@@ -54,12 +57,16 @@ public interface IWebServiceDesigner {
 
 	/// <summary>
 	/// Sends one real request through the platform, as Studio's Send test request does. Values sent from system
-	/// settings, the Authorization header and secret constant defaults are masked in the returned body and error.
+	/// settings (in a JSON body, an XML or SOAP body, its SOAP Header, the URL, headers or cookies), the
+	/// Authorization header and secret constant defaults are masked in the returned body, error and parsed values.
 	/// </summary>
 	/// <param name="code">The service code.</param>
 	/// <param name="methodCode">The method code.</param>
 	/// <param name="values">Values for top-level request parameters, by parameter code.</param>
-	/// <returns>The status code and the masked, length-limited response body or error.</returns>
+	/// <returns>
+	/// The status code, the masked, length-limited response body or error, and the response parameters as the platform
+	/// parsed them; body and values are withheld when a sent setting value cannot be located.
+	/// </returns>
 	WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, string> values);
 }
 
@@ -159,7 +166,8 @@ public sealed class WebServiceDesigner(
 		ServiceRow row = FindService(code);
 		ServiceSchemaDto schema = client.ReadSchema(row.UId, row.PackageUId);
 		if (schema.Type != ServiceSchemaCodes.ServiceTypeRest) {
-			throw new ArgumentException($"'{schema.Name}' is a SOAP service; change it in Studio > Web services.");
+			throw new ArgumentException($"'{schema.Name}' is a {WebServiceSchemaView.TypeName(schema.Type)} service; "
+				+ "only REST services can be changed here, so change it in Studio > Web services.");
 		}
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -220,24 +228,83 @@ public sealed class WebServiceDesigner(
 				$"method '{methodCode}' not found; methods: {string.Join(", ", schema.Methods.Items.Values.Select(m => m.Name))}.");
 		RequireKnownParameterCodes(method, values);
 		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, values);
+		if (IsRestXmlRefusal(schema, method, result)) {
+			// Nothing was built or sent, so there is no secret to locate and the explanation must not be withheld.
+			return new WebServiceTestResult(false, SensitiveErrorTextRedactor.Redact(ExplainRestXml(result.Error)),
+				result.StatusCode);
+		}
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, result.RequestRawData,
 			result.RequestBody, HasAuth(schema), out bool secretUnlocated);
+		if (!string.IsNullOrEmpty(result.Error) && string.IsNullOrEmpty(result.RequestRawData)
+			&& string.IsNullOrEmpty(result.RequestBody) && WebServiceResponseMasker.HasCredentialResponseDefault(method)) {
+			// A failure with nothing reported as sent may come from converting a response default after the call (a
+			// FormatException quoting a setting value), and that value is not among the sent secrets: fail closed.
+			return new WebServiceTestResult(result.Success,
+				"The platform's error is withheld: the call failed with nothing reported as sent, and a response parameter "
+				+ "of this method takes its default from a system setting or a secret constant, which such an error can "
+				+ "quote. Check the method's parameter types and defaults with describe-web-service.",
+				result.StatusCode, null, false, true);
+		}
 		if (secretUnlocated) {
-			// The value is unknown, so it cannot be masked: fail closed and return the status only.
+			// The value is unknown, so it cannot be masked: fail closed and return the status only. The parsed
+			// response values come from the same response and are withheld with it.
 			return new WebServiceTestResult(result.Success,
 				"The response is withheld: a value filled from a system setting could not be located in what the "
-				+ "platform reports as sent (or the request body is not JSON), so it could not be masked.",
+				+ "platform reports as sent (or the request body is neither JSON nor XML), so it could not be masked.",
 				result.StatusCode, null, false, true);
 		}
 		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
 		string body = WebServiceResponseMasker.ApplyToBody(result.ResponseBody, secrets, out bool bodyMasked);
 		string error = WebServiceResponseMasker.Apply(result.Error, secrets, out bool errorMasked);
+		JsonElement? responseValues = ResponseValues(result.ParameterValues, method, secrets, out bool valuesMasked,
+			out bool valuesOmitted);
 		bool truncated = body is { Length: > MaxResponseBodyLength };
 		return new WebServiceTestResult(result.Success,
 			error is null ? null : SensitiveErrorTextRedactor.Redact(error),
 			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
-			bodyMasked || errorMasked);
+			bodyMasked || errorMasked || valuesMasked, responseValues, valuesOmitted ? true : null);
 	}
+
+	/// <summary>
+	/// The platform's parsed response parameters, masked like the body and, by code, wherever a parameter may carry a
+	/// credential (see <see cref="WebServiceResponseMasker.MaskResponseValues"/>). Values that cannot be read as a JSON
+	/// object or array are not returned: unparsed text would bypass the per-value masking. Values longer than the body
+	/// limit are not returned either (<paramref name="omitted"/>): a JSON tree cannot be cut like text.
+	/// </summary>
+	private static JsonElement? ResponseValues(string parameterValues, ServiceMethodDto method,
+		IReadOnlyList<string> secrets, out bool masked, out bool omitted) {
+		masked = false;
+		omitted = false;
+		if (string.IsNullOrWhiteSpace(parameterValues)) {
+			return null;
+		}
+		string text = WebServiceResponseMasker.MaskResponseValues(parameterValues, method, secrets, out masked)
+			?.ToJsonString();
+		if (text is null) {
+			return null;
+		}
+		if (text.Length > MaxResponseBodyLength) {
+			omitted = true;
+			return null;
+		}
+		using JsonDocument document = JsonDocument.Parse(text);
+		return document.RootElement.Clone();
+	}
+
+	/// <summary>
+	/// Whether the platform refused a REST method with an XML body before building it: it has no request builder for
+	/// one and answers "Rest:Xml" with nothing sent (measured with and without body parameters).
+	/// </summary>
+	private static bool IsRestXmlRefusal(ServiceSchemaDto schema, ServiceMethodDto method, ServiceMethodCallResult result) =>
+		!WebServiceSchemaView.IsSoap(schema)
+		&& method.Request?.ContentType == ServiceSchemaCodes.ContentTypeXml
+		&& result.Error?.Contains("Rest:Xml", StringComparison.OrdinalIgnoreCase) == true
+		&& string.IsNullOrEmpty(result.RequestRawData) && string.IsNullOrEmpty(result.RequestBody);
+
+	private static string ExplainRestXml(string error) =>
+		$"{error} The platform cannot build the request of a REST method with content-type xml, so this method "
+		+ "cannot be test-called and nothing was sent. A process calls it through the Call web service element's "
+		+ "RequestBody, which carries the whole XML body, and reads the raw Response.";
 
 	/// <summary>A value for a code the method does not have would be dropped silently by the platform.</summary>
 	private static void RequireKnownParameterCodes(ServiceMethodDto method, IReadOnlyDictionary<string, string> values) {

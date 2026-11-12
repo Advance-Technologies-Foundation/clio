@@ -5047,3 +5047,83 @@ stories:
       parameter of the element, tagged inputs, nested items and RequestBody included (Q11 A3); describe reports
       unresolved services and methods and a modify that lets the platform prune says so (Q12). Ships in the same
       package, knowledge and clio PRs as story 1; status moves with story 1.
+  # --- eng-105475-soap-web-service (ENG-105475 SOAP web services in the web service tools) - added 2026-11-12 ---
+  - id: story-eng-105475-soap-web-service-1
+    title: "SOAP read side, XML-aware masking and parsed test outputs"
+    feature: "eng-105475-soap-web-service"
+    repo: "clio"
+    size: M
+    # in-progress set in the BMAD set: implementation starts on the same branch.
+    status: in-progress
+    jira: ENG-105475
+    file: spec/stories/story-eng-105475-soap-web-service-1.md
+    prd: spec/prd/spec-eng-105475-soap-web-service.md
+    adr: spec/adr/adr-eng-105475-soap-web-service.md
+    test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
+    depends_on: []
+    blocks:
+      - story-eng-105475-soap-web-service-2
+      - story-eng-105475-soap-web-service-4
+  - id: story-eng-105475-soap-web-service-2
+    title: "Register and modify a hand-described SOAP service"
+    feature: "eng-105475-soap-web-service"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-105475
+    file: spec/stories/story-eng-105475-soap-web-service-2.md
+    prd: spec/prd/spec-eng-105475-soap-web-service.md
+    adr: spec/adr/adr-eng-105475-soap-web-service.md
+    test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
+    depends_on:
+      - story-eng-105475-soap-web-service-1
+    blocks:
+      - story-eng-105475-soap-web-service-3
+      - story-eng-105475-soap-web-service-5
+  - id: story-eng-105475-soap-web-service-3
+    title: "read-wsdl: WSDL to register-web-service arguments"
+    feature: "eng-105475-soap-web-service"
+    repo: "clio"
+    size: L
+    status: ready-for-dev
+    jira: ENG-105475
+    file: spec/stories/story-eng-105475-soap-web-service-3.md
+    prd: spec/prd/spec-eng-105475-soap-web-service.md
+    adr: spec/adr/adr-eng-105475-soap-web-service.md
+    test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
+    depends_on:
+      - story-eng-105475-soap-web-service-2
+    blocks:
+      - story-eng-105475-soap-web-service-5
+    note: >-
+      ADR D11 (stable vs Studio GUID-suffixed method codes) and D12 (which SOAP ports to return) are owner decisions
+      taken before this story starts.
+  - id: story-eng-105475-soap-web-service-4
+    title: "Nested test values"
+    feature: "eng-105475-soap-web-service"
+    repo: "clio"
+    size: S
+    status: ready-for-dev
+    jira: ENG-105475
+    file: spec/stories/story-eng-105475-soap-web-service-4.md
+    prd: spec/prd/spec-eng-105475-soap-web-service.md
+    adr: spec/adr/adr-eng-105475-soap-web-service.md
+    test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
+    depends_on:
+      - story-eng-105475-soap-web-service-1
+    blocks: []
+  - id: story-eng-105475-soap-web-service-5
+    title: "Guidance for SOAP web services"
+    feature: "eng-105475-soap-web-service"
+    repo: "clio-knowledge"
+    size: S
+    status: ready-for-dev
+    jira: ENG-105475
+    file: spec/stories/story-eng-105475-soap-web-service-5.md
+    prd: spec/prd/spec-eng-105475-soap-web-service.md
+    adr: spec/adr/adr-eng-105475-soap-web-service.md
+    test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
+    depends_on:
+      - story-eng-105475-soap-web-service-2
+      - story-eng-105475-soap-web-service-3
+    blocks: []
