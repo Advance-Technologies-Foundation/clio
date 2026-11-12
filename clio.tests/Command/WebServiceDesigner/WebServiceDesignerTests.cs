@@ -38,10 +38,11 @@ public sealed class WebServiceDesignerTests {
 		_client.Select(root, Arg.Any<IReadOnlyList<string>>(), Arg.Any<IReadOnlyDictionary<string, string>>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>()).Returns(rows);
 
-	private void GivenRegisteredService(ServiceSchemaDto schema) {
+	private void GivenRegisteredService(ServiceSchemaDto schema, string name = "BingSearchApiCall") {
 		GivenSelect("VwWebServiceV2", new JsonObject {
-			["UId"] = ServiceUId.ToString(), ["PackageUId"] = PackageUId.ToString(), ["Name"] = "BingSearchApiCall",
-			["Caption"] = "Bing", ["TypeName"] = "REST", ["SysPackageName"] = "CrtCustomer360AI"
+			["UId"] = ServiceUId.ToString(), ["PackageUId"] = PackageUId.ToString(), ["Name"] = name,
+			["Caption"] = "Bing", ["TypeName"] = WebServiceSchemaView.TypeName(schema.Type),
+			["SysPackageName"] = "CrtCustomer360AI"
 		});
 		_client.ReadSchema(ServiceUId, PackageUId).Returns(schema);
 	}
@@ -699,22 +700,204 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("A setting-bound body value in a body that is not JSON (a SOAP envelope) cannot be located, so the body is withheld.")]
-	public void TestMethod_Should_Withhold_When_The_Sent_Body_Is_Not_Json() {
+	[Description("A setting-bound body value in a body that is neither JSON nor XML cannot be located, so the body is withheld.")]
+	public void TestMethod_Should_Withhold_When_The_Sent_Body_Is_Neither_Json_Nor_Xml() {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", RequestParameters: [
 			new WebServiceParameterArg("UsrToken", Path: "token", DefaultSysSetting: "UsrBingToken")])));
 		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
 			.Returns(new ServiceMethodCallResult(false, 500, "<fault>bad token tok-secret-9</fault>", null,
 				"POST https://api.bing.example/search HTTPS/1.1\r\nHost: api.bing.example",
-				"<soap:Envelope><soap:Body><token>tok-secret-9</token></soap:Body></soap:Envelope>"));
+				"token=tok-secret-9"));
 
 		// Act
 		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
 
 		// Assert
-		result.ResponseBody.Should().BeNull(because: "a fault that echoes the envelope would carry the token");
+		result.ResponseBody.Should().BeNull(because: "a fault that echoes the body would carry the token");
 		result.StatusCode.Should().Be(500, because: "the status code carries no secret");
+	}
+
+	[Test]
+	[Description("A SOAP fault that echoes the WS-Security password from a system setting comes back with the password masked, instead of being withheld.")]
+	public void TestMethod_Should_Mask_A_Setting_Value_Echoed_From_A_Soap_Envelope() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, 500,
+				"<soap:Fault><soap:Reason>bad password pw-s3cret&amp;&lt;9&gt; for inner-key-77</soap:Reason></soap:Fault>",
+				null, SoapServiceFixture.SentRaw, SoapServiceFixture.SentEnvelope));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+
+		// Assert
+		result.ResponseBody.Should().Be("<soap:Fault><soap:Reason>bad password [masked] for [masked]</soap:Reason></soap:Fault>",
+			because: "both setting values are found in the envelope and masked in the escaped and plain forms the fault uses");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+		result.StatusCode.Should().Be(500, because: "the status code is returned as the platform reported it");
+	}
+
+	[Test]
+	[Description("The parsed response values are returned with sent secrets masked, and withheld together with the body when a secret cannot be located.")]
+	public void TestMethod_Should_Return_Masked_Response_Values_And_Withhold_Them_With_The_Body() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		const string values = "{\"UsrResult\":\"echo inner-key-77\",\"UsrCount\":5,\"UsrMissing\":null}";
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(
+				new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw, SoapServiceFixture.SentEnvelope, values),
+				new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw, "not xml", values));
+
+		// Act
+		WebServiceTestResult located = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult withheld = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+
+		// Assert
+		located.ResponseValues.Should().NotBeNull(because: "the platform parsed the response parameters");
+		JsonElement parsed = located.ResponseValues!.Value;
+		parsed.GetProperty("UsrResult").GetString().Should().Be("echo [masked]", because: "a parsed value is masked like the body");
+		parsed.GetProperty("UsrCount").GetInt32().Should().Be(5, because: "a value without a secret stays readable and typed");
+		parsed.GetProperty("UsrMissing").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "a null tells the agent the response path read nothing");
+		located.SentSecretsMasked.Should().BeTrue(because: "a parsed value carried a secret");
+		withheld.ResponseValues.Should().BeNull(because: "values come from the same response that is withheld");
+		withheld.ResponseBody.Should().BeNull(because: "the sent value could not be located");
+	}
+
+	[Test]
+	[Description("A JSONPath on a response parameter of an XML response is named in a notice by describe and by the test call, since it reads nothing.")]
+	public void DescribeAndTest_Should_Notice_A_JsonPath_On_An_Xml_Response() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		schema.Methods.Items.Values.Single().Response.Parameters.Items.Values.Single().Path = "$.UsrOpResult";
+		GivenRegisteredService(schema, "UsrSoapProbe");
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "<UsrOpResult>5</UsrOpResult>", null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, "{\"UsrResult\":null}"));
+
+		// Act
+		WebServiceToolResult described = _sut.Describe("UsrSoapProbe", false);
+		WebServiceTestResult tested = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+
+		// Assert
+		string notice = described.Notices.Should().ContainSingle(because: "one response path does not fit its XML response")
+			.Subject;
+		notice.Should().Contain("UsrResult", because: "the notice names the parameter");
+		notice.Should().Contain("$.UsrOpResult", because: "the notice quotes the path that reads nothing");
+		notice.Should().Contain("element path", because: "the notice names the path dialect the platform reads");
+		notice.Should().Contain("Studio", because: "a SOAP service's path is changed in Studio");
+		tested.Notices.Should().ContainSingle(because: "the null in response-values must not read like a failure of the call")
+			.Which.Should().Contain("UsrResult", because: "the notice names the parameter that read nothing");
+	}
+
+	[Test]
+	[Description("A JSONPath on a JSON response gets no notice.")]
+	public void Describe_Should_Not_Notice_A_JsonPath_On_A_Json_Response() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
+			new WebServiceParameterArg("UsrStatus", Path: "$.status")])));
+
+		// Act
+		WebServiceToolResult described = _sut.Describe("BingSearchApiCall", false);
+
+		// Assert
+		described.Notices.Should().BeNull(because: "a JSON response is read by JSONPath");
+	}
+
+	[Test]
+	[Description("Parsed response values longer than the response-body limit are not returned and the result says so.")]
+	public void TestMethod_Should_Omit_Response_Values_Over_The_Limit() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		string values = JsonSerializer.Serialize(new Dictionary<string, string> {
+			["UsrResult"] = new string('x', Clio.Command.WebServiceDesigner.WebServiceDesigner.MaxResponseBodyLength)
+		});
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, values));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+
+		// Assert
+		result.ResponseValues.Should().BeNull(because: "a JSON tree past the limit cannot be cut like text");
+		result.ResponseValuesOmitted.Should().BeTrue(because: "the agent learns the values exist but were too long");
+		result.ResponseBody.Should().Be("<ok/>", because: "the body itself is still returned");
+	}
+
+	[Test]
+	[Description("A REST xml method the platform refuses with Rest:Xml gets an error that names the RequestBody route.")]
+	public void TestMethod_Should_Explain_The_Rest_Xml_Failure() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml")));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the platform sent nothing");
+		result.Error.Should().StartWith("Rest:Xml", because: "the platform's own message is kept");
+		result.Error.Should().Contain("RequestBody", because: "the agent learns the only route that calls such a method");
+	}
+
+	[Test]
+	[Description("The Rest:Xml explanation is returned, not withheld, when the method uses authentication and a setting-bound parameter: nothing was sent.")]
+	public void TestMethod_Should_Explain_The_Rest_Xml_Failure_With_Auth_And_Settings() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml",
+			UseAuth: true, RequestParameters: [new WebServiceParameterArg("UsrKey", "header", Path: "X-Key",
+				DefaultSysSetting: "UsrBingKey")]));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthBasic };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().Contain("RequestBody", because: "with nothing sent there is no secret to locate");
+		result.Error.Should().NotContain("withheld", because: "the fail-closed path is for responses to sent requests");
+	}
+
+	[Test]
+	[Description("A failure with nothing reported as sent is withheld when a response default comes from a system setting, since the error can quote it.")]
+	public void TestMethod_Should_Withhold_An_Error_That_Can_Quote_A_Response_Default() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
+			new WebServiceParameterArg("UsrCount", "header", Type: "Integer", Path: "X-Absent", DefaultSysSetting: "UsrApiSecret")])));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, null, null, "The input string 'live-setting-value' was not in a correct format."));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().NotContain("live-setting-value", because: "the setting value was never sent, so nothing masks it");
+		result.Error.Should().Contain("withheld", because: "the agent learns why the error is not shown");
+	}
+
+	[Test]
+	[Description("A response parameter whose default comes from a system setting is masked in the parsed values, even when nothing sent carried it.")]
+	public void TestMethod_Should_Mask_A_Response_Value_Filled_From_A_Setting_Default() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
+			new WebServiceParameterArg("UsrToken", "header", Path: "X-Absent", DefaultSysSetting: "UsrApiSecret")])));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, 401, "{}", null,
+				"GET https://api.bing.example/search HTTPS/1.1\r\nHost: api.bing.example", null,
+				"{\"UsrToken\":\"live-setting-value\"}"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseValues!.Value.GetProperty("UsrToken").GetString().Should().Be("[masked]",
+			because: "the platform fills the setting's value when the API does not send the header");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
 	}
 
 	[Test]

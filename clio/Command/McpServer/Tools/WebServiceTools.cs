@@ -80,7 +80,7 @@ public sealed class DescribeWebServiceTool(IToolCommandResolver commandResolver)
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Reads one web service. It returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees. Credential values and constant defaults of header, cookie, key or token parameters are never returned (default-masked: true). With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
+	[Description("Reads one web service. REST, SOAP 1.1 and SOAP 1.2 services are read alike: it returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees. A SOAP service also returns its namespaces (the default first), and each SOAP method its message-element and soap-action instead of a uri; SOAP parameters carry soap-header and sequence-element where they apply, and their paths are element paths (tem:Outer/tem:Inner). Credential values and constant defaults of header, cookie, key or token parameters are never returned (default-masked: true). With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
 	public WebServiceToolResult DescribeWebService(
 		[Description("Parameters: environment-name, code (required); usages (optional, default false)")]
 		[Required]
@@ -132,7 +132,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Test-calls a web service method. It sends one real request, as Studio's Send test request does, and returns the HTTP status and the response body (request and response headers are never returned; values sent from system settings or in Authorization are masked in the body). The call reaches the external API, so a POST, PUT, PATCH or DELETE method changes data there: confirm with the user first. The caller needs CanManageSolution.")]
+	[Description("Test-calls a web service method. For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. The call reaches the external API, so a POST, PUT, PATCH or DELETE method and every SOAP method can change data there: confirm with the user first. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
 	public WebServiceTestResult TestWebServiceMethod(
 		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value)")]
 		[Required]
@@ -140,7 +140,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		try {
 			ArgumentNullException.ThrowIfNull(args);
 			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData,
-				"Valid: environment-name, code, method, parameters.");
+				"Valid: environment-name, code, method, parameters.", WebServiceToolRunner.TestMethodAliases);
 			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args.EnvironmentName);
 			return designer.TestMethod(args.Code, args.Method, WebServiceToolRunner.ToWireValues(args.Parameters));
 		} catch (Exception exception) {
@@ -158,10 +158,39 @@ internal static class WebServiceToolRunner {
 		return resolver.Resolve<IWebServiceDesigner>(new EnvironmentOptions { Environment = environmentName });
 	}
 
+	/// <summary>
+	/// Spellings agents use for the service code, answered with a rename hint (never bound): agents that skip the
+	/// contract send service-code or method-code, measured in isolated runs. Built on the shared environment-name
+	/// aliases and case-insensitive like them, because the binder matches names case-insensitively. Only spellings that
+	/// can mean nothing but the code are listed: a bare <c>service</c> may wrap a whole object and a <c>service-name</c>
+	/// may be a caption, so those stay unknown keys.
+	/// </summary>
+	public static readonly IReadOnlyDictionary<string, string> ServiceCodeAliases = WithAliases(
+		McpToolArgumentSupport.EnvironmentNameAliases,
+		("service-code", "code"), ("service_code", "code"), ("serviceCode", "code"));
+
+	/// <summary><see cref="ServiceCodeAliases"/> plus the method-code spellings of test-web-service-method.</summary>
+	public static readonly IReadOnlyDictionary<string, string> TestMethodAliases = WithAliases(ServiceCodeAliases,
+		("method-code", "method"), ("method_code", "method"), ("methodCode", "method"));
+
+	private static IReadOnlyDictionary<string, string> WithAliases(IReadOnlyDictionary<string, string> source,
+		params (string Alias, string Canonical)[] extra) {
+		var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach ((string alias, string canonical) in source) {
+			map[alias] = canonical;
+		}
+		foreach ((string alias, string canonical) in extra) {
+			map[alias] = canonical;
+		}
+		return map;
+	}
+
 	// Non-resident tools get no flat-argument classification upstream, so a misspelled key would otherwise
 	// be dropped at bind time and the call would succeed without it.
-	public static void RejectUnknownArguments(IReadOnlyDictionary<string, JsonElement> extensionData, string validHint) {
-		string error = McpToolArgumentSupport.BuildUnknownArgumentError(extensionData, validHint);
+	public static void RejectUnknownArguments(IReadOnlyDictionary<string, JsonElement> extensionData, string validHint,
+		IReadOnlyDictionary<string, string> aliases = null) {
+		string error = McpToolArgumentSupport.BuildLegacyAliasError(extensionData,
+			aliases ?? McpToolArgumentSupport.EnvironmentNameAliases, ".", validHint);
 		if (error is not null) {
 			throw new ArgumentException(error);
 		}
@@ -171,7 +200,7 @@ internal static class WebServiceToolRunner {
 		IReadOnlyDictionary<string, JsonElement> extensionData, string validHint,
 		Func<IWebServiceDesigner, WebServiceToolResult> action) {
 		try {
-			RejectUnknownArguments(extensionData, validHint);
+			RejectUnknownArguments(extensionData, validHint, ServiceCodeAliases);
 			return action(Resolve(resolver, environmentName));
 		} catch (Exception exception) {
 			return new WebServiceToolResult(false, Describe(exception));
@@ -306,11 +335,12 @@ public sealed record TestWebServiceMethodArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("code")]
+	[property: Description("Web service code (its schema name), e.g. UsrErpOrders; the argument is code, not service-code")]
 	[property: Required]
 	string Code,
 
 	[property: JsonPropertyName("method")]
-	[property: Description("Method code")]
+	[property: Description("Method code, e.g. UsrGetOrders; the argument is method, not method-code")]
 	[property: Required]
 	string Method,
 
