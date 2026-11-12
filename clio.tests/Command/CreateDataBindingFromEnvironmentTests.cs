@@ -37,7 +37,6 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 
 	private static readonly string WorkspaceRoot =
 		Path.Combine(Path.GetTempPath(), $"clio-create-data-binding-from-env-{Guid.NewGuid():N}");
-	private static readonly Guid PackageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
 
 	private CreateDataBindingCommand _command = null!;
 	private IApplicationClient _applicationClient = null!;
@@ -288,9 +287,6 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 					"ddb3a1ee-07e8-4d62-b7a9-d0e618b00fbd")
 			}),
 			"SysPackageDataLcz" => _localizationRowsJson,
-			"SysPackage" => JsonSerializer.Serialize(new[] {
-				new Dictionary<string, object> { ["Name"] = PackageName, ["UId"] = PackageUId.ToString(), ["InstallType"] = 0 }
-			}),
 			_ => "[]"
 		};
 		return $$"""{"rows":{{rows}},"success":true}""";

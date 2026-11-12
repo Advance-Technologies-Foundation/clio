@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Package;
 
@@ -31,13 +32,13 @@ internal sealed record DataBindingSnapshot(
 /// registration (<c>SysPackageSchemaData</c>) and its columns (<c>SysPackageSchemaDataColumn</c>) make the
 /// descriptor, <c>SysPackageSchemaData.Data</c> is the <c>data.json</c> text and <c>SysPackageDataLcz.Data</c> is the
 /// <c>Localization/data.&lt;culture&gt;.json</c> text of each culture. Reading those keeps the value shapes the export
-/// writes (an empty lookup as <c>"null"</c>, a localizable column inline when the binding has no culture snapshot)
+/// writes (an empty lookup as stored, a localizable column inline when the binding has no culture snapshot)
 /// without re-deriving them.
 /// </remarks>
 internal interface IDataBindingSnapshotReader {
 
 	/// <summary>Reads the binding <paramref name="bindingName"/> of package <paramref name="packageName"/>.</summary>
-	/// <exception cref="InvalidOperationException">The package or the binding does not exist on the environment,
+	/// <exception cref="InvalidOperationException">The package has no binding by that name on the environment,
 	/// the binding has no columns, or a stored snapshot is not package data JSON.</exception>
 	DataBindingSnapshot Read(string packageName, string bindingName);
 }
@@ -45,40 +46,39 @@ internal interface IDataBindingSnapshotReader {
 /// <inheritdoc />
 internal sealed class DataBindingSnapshotReader(
 	IApplicationClient applicationClient,
-	IServiceUrlBuilder serviceUrlBuilder,
-	IPackageDataBindingWriter bindingWriter) : IDataBindingSnapshotReader {
+	IServiceUrlBuilder serviceUrlBuilder) : IDataBindingSnapshotReader {
 
 	private const string RegistrationSchemaName = "SysPackageSchemaData";
 	private const string ColumnSchemaName = "SysPackageSchemaDataColumn";
 	private const string LocalizationSchemaName = "SysPackageDataLcz";
-	private const string RowsProperty = "rows";
 
 	/// <inheritdoc />
 	public DataBindingSnapshot Read(string packageName, string bindingName) {
-		PackageRef package = bindingWriter.ResolvePackage(packageName);
-		JsonObject registration = ReadRegistration(package, bindingName);
-		string registrationId = ReadString(registration, "Id");
-		List<DataBindingColumnDefinition> columns = ReadColumns(registrationId, bindingName);
+		RegistrationRow registration = ReadRegistration(packageName, bindingName);
 		DataBindingDescriptorFile descriptor = new() {
 			Descriptor = new DataBindingDescriptor {
-				UId = Guid.Parse(ReadString(registration, "UId")),
-				Name = ReadString(registration, "Name"),
-				ModifiedOnUtc = ReadModifiedOnUtc(registrationId),
-				InstallType = registration["InstallType"]?.GetValue<int>() ?? 0,
+				UId = registration.UId,
+				Name = registration.Name,
+				ModifiedOnUtc = ReadModifiedOnUtc(registration.Id),
+				InstallType = registration.InstallType,
 				Schema = new DataBindingSchemaRef {
-					UId = Guid.Parse(ReadString(registration, "SchemaUId")),
-					Name = ReadString(registration, "SchemaName")
+					UId = registration.SchemaUId,
+					Name = registration.SchemaName
 				},
-				Columns = columns
+				Columns = ReadColumns(registration.Id, bindingName)
 			}
 		};
-		string data = ReadSnapshot(registration["Data"], bindingName, "data.json")
+		string data = ReadSnapshot(registration.Data, bindingName, "data.json")?.Text
 			?? JsonSerializer.Serialize(new DataBindingPackageDataFile(), DataBindingJson.Options);
-		return new DataBindingSnapshot(descriptor, data, ReadLocalizations(registrationId, bindingName));
+		return new DataBindingSnapshot(descriptor, data, ReadLocalizations(registration.Id, bindingName));
 	}
 
-	private JsonObject ReadRegistration(PackageRef package, string bindingName) {
-		JsonArray rows = ReadRows(SelectQueryHelper.BuildSelectQuery(
+	/// <summary>
+	/// Reads the registration by package and binding name in one select, so a missing package and a missing
+	/// binding are the same "not found" answer.
+	/// </summary>
+	private RegistrationRow ReadRegistration(string packageName, string bindingName) {
+		List<RegistrationRow> rows = Select<RegistrationRow>(
 			RegistrationSchemaName,
 			[
 				Column("Id"), Column("UId"), Column("Name"), Column("InstallType"),
@@ -90,38 +90,33 @@ internal sealed class DataBindingSnapshotReader(
 				new SelectQueryHelper.SelectQueryFilterDefinition(
 					"Name", bindingName, SelectQueryHelper.TextDataValueType),
 				new SelectQueryHelper.SelectQueryFilterDefinition(
-					"SysPackage.UId", package.UId.ToString(), SelectQueryHelper.GuidDataValueType)
-			]));
+					"SysPackage.Name", packageName, SelectQueryHelper.TextDataValueType)
+			]);
 		return rows.Count switch {
 			0 => throw new InvalidOperationException(
-				$"Binding '{bindingName}' was not found in package '{package.Name}' on the environment."),
-			1 => rows[0] as JsonObject ?? throw new InvalidOperationException(
-				$"The environment returned an unreadable registration for binding '{bindingName}'."),
+				$"Binding '{bindingName}' was not found in package '{packageName}' on the environment."),
+			1 => rows[0],
 			_ => throw new InvalidOperationException(
-				$"Binding '{bindingName}' has {rows.Count} registrations in package '{package.Name}', so it is "
+				$"Binding '{bindingName}' has {rows.Count} registrations in package '{packageName}', so it is "
 				+ "not clear which one to write.")
 		};
 	}
 
-	private List<DataBindingColumnDefinition> ReadColumns(string registrationId, string bindingName) {
-		JsonArray rows = ReadRows(SelectQueryHelper.BuildSelectQuery(
-			ColumnSchemaName,
-			[
-				new SelectQueryHelper.SelectQueryColumnDefinition("PackageSchemaColumnUId", "ColumnUId"),
-				Column("ColumnName"), Column("IsForceUpdate"), Column("IsKey"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("DataValueTypeUId", "DataTypeValueUId")
-			],
-			[
-				new SelectQueryHelper.SelectQueryFilterDefinition(
-					"SysPackageSchemaData.Id", registrationId, SelectQueryHelper.GuidDataValueType)
-			]));
-		List<DataBindingColumnDefinition> columns = rows.OfType<JsonObject>()
+	private List<DataBindingColumnDefinition> ReadColumns(Guid registrationId, string bindingName) {
+		List<DataBindingColumnDefinition> columns = Select<ColumnRow>(
+				ColumnSchemaName,
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition("PackageSchemaColumnUId", "ColumnUId"),
+					Column("ColumnName"), Column("IsForceUpdate"), Column("IsKey"),
+					new SelectQueryHelper.SelectQueryColumnDefinition("DataValueTypeUId", "DataTypeValueUId")
+				],
+				[RegistrationFilter(registrationId)])
 			.Select(row => new DataBindingColumnDefinition {
-				ColumnUId = Guid.Parse(ReadString(row, "ColumnUId")),
-				ColumnName = ReadString(row, "ColumnName"),
-				IsForceUpdate = row["IsForceUpdate"]?.GetValue<bool>() ?? false,
-				IsKey = row["IsKey"]?.GetValue<bool>() ?? false,
-				DataTypeValueUId = Guid.Parse(ReadString(row, "DataTypeValueUId"))
+				ColumnUId = row.ColumnUId,
+				ColumnName = row.ColumnName,
+				IsForceUpdate = row.IsForceUpdate,
+				IsKey = row.IsKey,
+				DataTypeValueUId = row.DataTypeValueUId
 			})
 			.OrderBy(column => column.ColumnName, StringComparer.Ordinal)
 			.ToList();
@@ -132,20 +127,15 @@ internal sealed class DataBindingSnapshotReader(
 		return columns;
 	}
 
-	private Dictionary<string, string> ReadLocalizations(string registrationId, string bindingName) {
-		JsonArray rows = ReadRows(SelectQueryHelper.BuildSelectQuery(
-			LocalizationSchemaName,
-			[new SelectQueryHelper.SelectQueryColumnDefinition("SysCulture.Name", "CultureName"), Column("Data")],
-			[
-				new SelectQueryHelper.SelectQueryFilterDefinition(
-					"SysPackageSchemaData.Id", registrationId, SelectQueryHelper.GuidDataValueType)
-			]));
+	private Dictionary<string, string> ReadLocalizations(Guid registrationId, string bindingName) {
 		Dictionary<string, string> localizations = new(StringComparer.OrdinalIgnoreCase);
-		foreach (JsonObject row in rows.OfType<JsonObject>()) {
-			string culture = ReadString(row, "CultureName");
-			string? snapshot = ReadSnapshot(row["Data"], bindingName, $"Localization/data.{culture}.json");
-			if (snapshot is not null && HasRows(snapshot)) {
-				localizations[culture] = snapshot;
+		foreach (LocalizationRow row in Select<LocalizationRow>(
+					LocalizationSchemaName,
+					[new SelectQueryHelper.SelectQueryColumnDefinition("SysCulture.Name", "CultureName"), Column("Data")],
+					[RegistrationFilter(registrationId)])) {
+			StoredSnapshot? snapshot = ReadSnapshot(row.Data, bindingName, $"Localization/data.{row.CultureName}.json");
+			if (snapshot is { RowCount: > 0 }) {
+				localizations[row.CultureName] = snapshot.Text;
 			}
 		}
 
@@ -159,7 +149,7 @@ internal sealed class DataBindingSnapshotReader(
 	/// Over OData, not DataService: a DataService select returns a date in the connected user's time zone without
 	/// an offset, while OData returns it in UTC.
 	/// </remarks>
-	private string ReadModifiedOnUtc(string registrationId) {
+	private string ReadModifiedOnUtc(Guid registrationId) {
 		string url = serviceUrlBuilder.Build($"odata/{RegistrationSchemaName}({registrationId})?$select=ModifiedOn");
 		string response = applicationClient.ExecuteGetRequest(url);
 		string? modifiedOn = JsonNode.Parse(response)?["ModifiedOn"]?.GetValue<string>();
@@ -173,18 +163,17 @@ internal sealed class DataBindingSnapshotReader(
 	}
 
 	/// <summary>
-	/// Returns a stored snapshot verbatim, or <see langword="null"/> when none is stored. A snapshot that is not
-	/// package data JSON is refused rather than written.
+	/// Returns a stored snapshot verbatim with its row count, or <see langword="null"/> when none is stored. A
+	/// snapshot that is not package data JSON is refused rather than written.
 	/// </summary>
-	private static string? ReadSnapshot(JsonNode? node, string bindingName, string fileName) {
-		string? text = node?.GetValue<string>();
+	private static StoredSnapshot? ReadSnapshot(string? text, string bindingName, string fileName) {
 		if (string.IsNullOrWhiteSpace(text)) {
 			return null;
 		}
 
 		try {
-			if (JsonNode.Parse(text)?["PackageData"] is JsonArray) {
-				return text;
+			if (JsonNode.Parse(text)?["PackageData"] is JsonArray packageData) {
+				return new StoredSnapshot(text, packageData.Count);
 			}
 		}
 		catch (JsonException) {
@@ -195,20 +184,46 @@ internal sealed class DataBindingSnapshotReader(
 			$"The stored {fileName} of binding '{bindingName}' is not package data JSON, so it was not written.");
 	}
 
-	private static bool HasRows(string snapshot) =>
-		JsonNode.Parse(snapshot)?["PackageData"] is JsonArray { Count: > 0 };
+	private List<TRow> Select<TRow>(
+		string schemaName,
+		IReadOnlyList<SelectQueryHelper.SelectQueryColumnDefinition> columns,
+		IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters) =>
+		SelectQueryHelper.ExecuteSelectQuery<SelectResponse<TRow>>(
+				applicationClient, serviceUrlBuilder, SelectQueryHelper.BuildSelectQuery(schemaName, columns, filters))
+			.Rows;
 
-	private JsonArray ReadRows(object query) {
-		string response = applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
-			JsonSerializer.Serialize(query));
-		DataServiceResponse.ThrowIfUnsuccessful(response, "SelectQuery");
-		return JsonNode.Parse(response)?[RowsProperty] as JsonArray ?? [];
-	}
-
-	private static string ReadString(JsonObject row, string property) =>
-		row[property]?.GetValue<string>()
-		?? throw new InvalidOperationException($"The environment returned no '{property}' for a binding read.");
+	private static SelectQueryHelper.SelectQueryFilterDefinition RegistrationFilter(Guid registrationId) =>
+		new("SysPackageSchemaData.Id", registrationId.ToString(), SelectQueryHelper.GuidDataValueType);
 
 	private static SelectQueryHelper.SelectQueryColumnDefinition Column(string path) => new(path, path);
+
+	private sealed record StoredSnapshot(string Text, int RowCount);
+
+	private sealed class SelectResponse<TRow> : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<TRow> Rows { get; init; } = [];
+	}
+
+	private sealed class RegistrationRow {
+		public Guid Id { get; init; }
+		public Guid UId { get; init; }
+		public string Name { get; init; } = string.Empty;
+		public int InstallType { get; init; }
+		public Guid SchemaUId { get; init; }
+		public string SchemaName { get; init; } = string.Empty;
+		public string? Data { get; init; }
+	}
+
+	private sealed class ColumnRow {
+		public Guid ColumnUId { get; init; }
+		public string ColumnName { get; init; } = string.Empty;
+		public bool IsForceUpdate { get; init; }
+		public bool IsKey { get; init; }
+		public Guid DataTypeValueUId { get; init; }
+	}
+
+	private sealed class LocalizationRow {
+		public string CultureName { get; init; } = string.Empty;
+		public string? Data { get; init; }
+	}
 }

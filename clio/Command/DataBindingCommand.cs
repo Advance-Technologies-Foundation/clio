@@ -245,12 +245,8 @@ internal sealed class DataBindingService(
 			: options.BindingName.Trim();
 		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
 
-		DataBindingDescriptorFile? existingDescriptor = TryReadDescriptor(bindingDirectoryPath);
-		if (existingDescriptor is not null &&
-			!string.Equals(existingDescriptor.Descriptor.Schema.Name, schema.Name, StringComparison.Ordinal)) {
-			throw new InvalidOperationException(
-				$"Binding '{bindingName}' already exists for schema '{existingDescriptor.Descriptor.Schema.Name}'.");
-		}
+		DataBindingDescriptorFile? existingDescriptor =
+			ReadExistingDescriptorOfSchema(bindingDirectoryPath, bindingName, schema.Name);
 
 		Dictionary<string, JsonNode?>? values = ParseColumnObject(options.ValuesJson, "values", required: false);
 		Dictionary<string, Dictionary<string, JsonNode?>>? localizations =
@@ -320,6 +316,18 @@ internal sealed class DataBindingService(
 				$"Binding '{bindingName}' is a binding of schema '{schemaName}', not '{options.SchemaName.Trim()}'.");
 		}
 
+		ReadExistingDescriptorOfSchema(bindingDirectoryPath, bindingName, schemaName);
+		Dictionary<string, string> localizationFiles = snapshot.Localizations.ToDictionary(
+			pair => $"data.{pair.Key}.json", pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+		WriteBindingFolder(packagePath, bindingDirectoryPath, serializer.SerializeDescriptor(snapshot.Descriptor),
+			snapshot.Data, localizationFiles, createLocalizationFolder: localizationFiles.Count > 0);
+	}
+
+	/// <summary>
+	/// Reads the descriptor already on disk, refusing it when it belongs to a binding of another schema.
+	/// </summary>
+	private DataBindingDescriptorFile? ReadExistingDescriptorOfSchema(
+		string bindingDirectoryPath, string bindingName, string schemaName) {
 		DataBindingDescriptorFile? existingDescriptor = TryReadDescriptor(bindingDirectoryPath);
 		if (existingDescriptor is not null &&
 			!string.Equals(existingDescriptor.Descriptor.Schema.Name, schemaName, StringComparison.Ordinal)) {
@@ -327,10 +335,7 @@ internal sealed class DataBindingService(
 				$"Binding '{bindingName}' already exists for schema '{existingDescriptor.Descriptor.Schema.Name}'.");
 		}
 
-		Dictionary<string, string> localizationFiles = snapshot.Localizations.ToDictionary(
-			pair => $"data.{pair.Key}.json", pair => pair.Value, StringComparer.OrdinalIgnoreCase);
-		WriteBindingFolder(packagePath, bindingDirectoryPath, serializer.SerializeDescriptor(snapshot.Descriptor),
-			snapshot.Data, localizationFiles, createLocalizationFolder: localizationFiles.Count > 0);
+		return existingDescriptor;
 	}
 
 	private void WriteBindingFolder(
