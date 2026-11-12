@@ -126,8 +126,10 @@ public static partial class WsdlRegistrationMapper {
 	internal static string UniqueCode(string prefix, string name, string fallback, ISet<string> taken) {
 		string tail = Identifier(WsdlParser.ShortenCaption((name ?? string.Empty).Replace(" ", string.Empty)), fallback);
 		string code = Capped(prefix, tail);
-		for (int index = 2; taken.Contains(code); index++) {
+		int index = 2;
+		while (taken.Contains(code)) {
 			code = Capped(prefix, tail + index);
+			index++;
 		}
 		taken.Add(code);
 		return code;
@@ -190,8 +192,10 @@ public static partial class WsdlRegistrationMapper {
 					continue;
 				}
 				string nsPrefix = ns.Prefix;
-				for (int index = 0; prefixes.Contains(nsPrefix); index++) {
+				int index = 0;
+				while (prefixes.Contains(nsPrefix)) {
 					nsPrefix = "ns" + index;
+					index++;
 				}
 				prefixes.Add(nsPrefix);
 				_prefixRename[ns.Prefix] = nsPrefix;
@@ -294,40 +298,15 @@ public static partial class WsdlRegistrationMapper {
 
 		private WebServiceParameterArg Parameter(WsdlParameter parameter, bool isRequest, string parentCaption,
 			ISet<string> codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
-			string side = isRequest ? "request" : "response";
 			string path = ElementPath(parameter.Path);
-			string where = $"Operation '{Shown(_operation)}': {side} element '{Shown(path)}' was left out";
-			if (parameter.IsCopy) {
-				Warn($"{where}: Studio's wizard lists an element of a nested anonymous type a second time one level too high, "
-					+ "and no such element exists there.");
-				return null;
-			}
-			if (parameter.EscapesItem) {
-				Warn($"{where}: it is an array inside an item of another array, and Studio's wizard gives it the outer "
-					+ "array's path, which would nest it wrongly; describe it by hand if it is needed.");
-				return null;
-			}
-			if (path.Length == 0) {
-				Warn($"Operation '{Shown(_operation)}': a repeated {side} element without a wrapper element was left out; "
-					+ "Studio's wizard gives it an empty path, which the platform cannot address.");
-				return null;
-			}
-			if (isRequest && !WebServiceDefinitionBuilder.IsSendableElementPath(path)) {
-				Warn($"{where}: the platform cuts a prefixed element name at any character other than letters, digits, '_' "
-					+ "and '-', so it would send another element.");
-				return null;
-			}
 			string sequenceElement = parameter.IsArray ? ElementPath(parameter.SequenceElement) : null;
-			if (parameter.IsArray && !WebServiceDefinitionBuilder.IsSendableSequenceElement(sequenceElement, isRequest)) {
-				Warn($"{where}: its item element '{Shown(sequenceElement)}' is not a name the platform can "
-					+ (isRequest ? "send." : "read."));
+			string refusal = LeaveOutReason(parameter, path, sequenceElement, isRequest);
+			if (refusal is not null) {
+				Warn(refusal);
 				return null;
 			}
 			bool isObject = parameter.Type == ObjectType;
-			if (isObject && (!parameter.IsArray || parameter.Items.Count == 0)) {
-				Warn($"{where}: it is an object with no readable fields, which a web service parameter cannot describe.");
-				return null;
-			}
+			string where = LeftOut(path, isRequest);
 			WebServiceParameterView previous = existing.GetValueOrDefault(path);
 			string code = previous?.Code ?? UniqueCode(prefix, parentCaption + parameter.Caption, "Param", codes);
 			List<WebServiceParameterArg> items = isObject
@@ -346,6 +325,37 @@ public static partial class WsdlRegistrationMapper {
 				Items: items.Count > 0 ? items : null,
 				SoapHeader: parameter.IsSoapHeader && isRequest ? true : null,
 				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);
+		}
+
+		private string LeftOut(string path, bool isRequest) =>
+			$"Operation '{Shown(_operation)}': {(isRequest ? "request" : "response")} element '{Shown(path)}' was left out";
+
+		// Why register-web-service would refuse the parameter, or null when it would take it.
+		private string LeaveOutReason(WsdlParameter parameter, string path, string sequenceElement, bool isRequest) {
+			string where = LeftOut(path, isRequest);
+			if (parameter.IsCopy) {
+				return $"{where}: Studio's wizard lists an element of a nested anonymous type a second time one level too "
+					+ "high, and no such element exists there.";
+			}
+			if (parameter.EscapesItem) {
+				return $"{where}: it is an array inside an item of another array, and Studio's wizard gives it the outer "
+					+ "array's path, which would nest it wrongly; describe it by hand if it is needed.";
+			}
+			if (path.Length == 0) {
+				return $"Operation '{Shown(_operation)}': a repeated {(isRequest ? "request" : "response")} element without a "
+					+ "wrapper element was left out; Studio's wizard gives it an empty path, which the platform cannot address.";
+			}
+			if (isRequest && !WebServiceDefinitionBuilder.IsSendableElementPath(path)) {
+				return $"{where}: the platform cuts a prefixed element name at any character other than letters, digits, '_' "
+					+ "and '-', so it would send another element.";
+			}
+			if (parameter.IsArray && !WebServiceDefinitionBuilder.IsSendableSequenceElement(sequenceElement, isRequest)) {
+				return $"{where}: its item element '{Shown(sequenceElement)}' is not a name the platform can "
+					+ (isRequest ? "send." : "read.");
+			}
+			return parameter.Type == ObjectType && (!parameter.IsArray || parameter.Items.Count == 0)
+				? $"{where}: it is an object with no readable fields, which a web service parameter cannot describe."
+				: null;
 		}
 
 		// The path with clio's prefixes: renamed where a target service already declares the namespace, removed where the

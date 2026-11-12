@@ -160,14 +160,16 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 
 	internal const string ToolName = "read-wsdl";
 
+	private const string WsdlUrl = "wsdl-url";
+	private const string WsdlFiles = "wsdl-files";
 	private const string ValidHint = "Valid: environment-name, wsdl-url, wsdl-files, port, service-code, operations.";
 
 	/// <summary>Spellings agents use for the WSDL source, answered with a rename hint (never bound).</summary>
 	internal static readonly IReadOnlyDictionary<string, string> Aliases = WebServiceToolRunner.WithAliases(
 		McpToolArgumentSupport.EnvironmentNameAliases,
-		("url", "wsdl-url"), ("wsdl", "wsdl-url"), ("wsdl_url", "wsdl-url"), ("wsdlUrl", "wsdl-url"),
-		("files", "wsdl-files"), ("wsdl-path", "wsdl-files"), ("wsdl-file", "wsdl-files"), ("wsdl_files", "wsdl-files"),
-		("wsdlFiles", "wsdl-files"));
+		("url", WsdlUrl), ("wsdl", WsdlUrl), ("wsdl_url", WsdlUrl), ("wsdlUrl", WsdlUrl),
+		("files", WsdlFiles), ("wsdl-path", WsdlFiles), ("wsdl-file", WsdlFiles), ("wsdl_files", WsdlFiles),
+		("wsdlFiles", WsdlFiles));
 
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[McpToolExecution(

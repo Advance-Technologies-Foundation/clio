@@ -151,7 +151,7 @@ public sealed class WsdlReader(
 				.Select(s => Uri.TryCreate(s.Arguments.BaseUri, UriKind.Absolute, out Uri endpoint) ? endpoint.Host : null)
 				.Where(h => h is not null && url is not null && !string.Equals(h, url.Host, StringComparison.OrdinalIgnoreCase))
 				.Distinct(StringComparer.OrdinalIgnoreCase)) {
-			notices.Add($"The WSDL sends the calls to {WsdlParser.Shown(host)}, not to {url!.Host} where it was downloaded "
+			notices.Add($"The WSDL sends the calls to {WsdlParser.Shown(host)}, not to {url.Host} where it was downloaded "
 				+ "from; show the user the base-uri before registering.");
 		}
 		return notices;
@@ -195,8 +195,8 @@ public sealed class WsdlReader(
 		string trimmed = url.Trim();
 		if (!Uri.TryCreate(trimmed, UriKind.Absolute, out Uri parsed)
 				|| (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)) {
-			throw new ArgumentException("wsdl-url must be an absolute http or https URL, e.g. "
-				+ "http://www.dneonline.com/calculator.asmx?WSDL.");
+			throw new ArgumentException("wsdl-url must be an absolute http or https URL to the WSDL, such as the address "
+				+ "of an .asmx or .svc service followed by ?WSDL.");
 		}
 		if (!string.IsNullOrEmpty(parsed.UserInfo)) {
 			throw new ArgumentException("wsdl-url must not carry credentials (user:password@); download the WSDL yourself "
@@ -204,13 +204,13 @@ public sealed class WsdlReader(
 		}
 		// The URL travels to the stand and back in its error messages, so a key or token in it is refused like one in a
 		// base URI.
-		foreach (string pair in parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)) {
-			int equals = pair.IndexOf('=');
-			if (equals > 0 && equals < pair.Length - 1
-					&& WebServiceSchemaView.IsSecretName(Uri.UnescapeDataString(pair[..equals]))) {
-				throw new ArgumentException("wsdl-url carries a key or token in its query; download the WSDL yourself and "
-					+ "pass it as wsdl-files.");
-			}
+		bool secretInQuery = parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+			.Select(pair => (Pair: pair, At: pair.IndexOf('=')))
+			.Any(p => p.At > 0 && p.At < p.Pair.Length - 1
+				&& WebServiceSchemaView.IsSecretName(Uri.UnescapeDataString(p.Pair[..p.At])));
+		if (secretInQuery) {
+			throw new ArgumentException("wsdl-url carries a key or token in its query; download the WSDL yourself and pass "
+				+ "it as wsdl-files.");
 		}
 		return parsed;
 	}
@@ -323,11 +323,12 @@ public sealed class WsdlReader(
 		if (string.IsNullOrWhiteSpace(serviceCode)) {
 			return null;
 		}
-		WebServiceView service = designer.Describe(serviceCode.Trim(), false).Service;
-		bool soap = service?.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap11)
-			|| service?.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap12);
+		WebServiceView service = designer.Describe(serviceCode.Trim(), false).Service
+			?? throw new ArgumentException($"service-code '{serviceCode}' could not be read.");
+		bool soap = service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap11)
+			|| service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap12);
 		if (!soap) {
-			throw new ArgumentException($"service-code '{serviceCode}' is a {service?.Type} service; a WSDL's operations go "
+			throw new ArgumentException($"service-code '{serviceCode}' is a {service.Type} service; a WSDL's operations go "
 				+ "into a SOAP service.");
 		}
 		return new WsdlTargetService(service.Code, service.Namespaces ?? [], service.Methods);
