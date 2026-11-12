@@ -62,9 +62,14 @@
 		// The ping URL comes from the environment being pinged, not from the one this instance was built for: the
 		// public TryPing(environment, ...) contract allows pinging another environment, and a failed ping now
 		// stops a restore instead of being ignored.
+		// For another .NET Framework environment the URL comes from a builder of its own: the shared builder's
+		// Build(endpoint, environment) re-points that builder at the environment it is given, which would send this
+		// command's later routes (downloads, installs) to the pinged environment.
 		private string PingUriFor(EnvironmentSettings environmentSettings) => environmentSettings.IsNetCore
 			? environmentSettings.Uri
-			: _serviceUrlBuilder.Build("ping", environmentSettings);
+			: ReferenceEquals(environmentSettings, _environmentSettings)
+				? _serviceUrlBuilder.Build("ping")
+				: new ServiceUrlBuilder(environmentSettings).Build("ping");
 
 		#endregion
 

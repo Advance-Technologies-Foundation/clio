@@ -81,17 +81,16 @@ public sealed class ApplicationPingTests {
 	}
 
 	[Test]
-	[Description("For a .NET Framework environment the ping URL is built for the environment being pinged.")]
-	public void TryPing_ShouldBuildTheFrameworkPingUrlForTheEnvironmentItIsGiven() {
+	[Description("For another .NET Framework environment the ping URL is built for that environment by a builder of its own, and the shared URL builder - which later routes of the command use - is left alone.")]
+	public void TryPing_ShouldBuildTheFrameworkPingUrlForTheEnvironmentItIsGiven_WithoutRepointingTheSharedBuilder() {
 		// Arrange
 		EnvironmentSettings injected = new() { Uri = "http://injected.example", IsNetCore = false };
 		EnvironmentSettings target = new() { Uri = "http://target.example", IsNetCore = false };
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
 		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
 		factory.CreateOwnedClient(target).Returns(client);
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		urlBuilder.Build("ping", target).Returns("http://target.example/0/ping");
-		ApplicationPing ping = new(injected, factory, urlBuilder);
+		IServiceUrlBuilder sharedBuilder = Substitute.For<IServiceUrlBuilder>();
+		ApplicationPing ping = new(injected, factory, sharedBuilder);
 
 		// Act
 		ping.TryPing(target, out _);
@@ -99,8 +98,35 @@ public sealed class ApplicationPingTests {
 		// Assert
 		client.ReceivedCalls().Should().ContainSingle(call =>
 				call.GetMethodInfo().Name == nameof(IOwnedApplicationClient.ExecuteGetRequest)
-				&& (string)call.GetArguments()[0] == "http://target.example/0/ping",
+				&& ((string)call.GetArguments()[0]).StartsWith("http://target.example/", StringComparison.Ordinal)
+				&& ((string)call.GetArguments()[0]).EndsWith("ping", StringComparison.Ordinal),
 			because: "the Framework ping route must be built for the environment being pinged");
+		sharedBuilder.ReceivedCalls().Should().BeEmpty(
+			because: "Build(endpoint, environment) re-points the shared builder, which would send the command's later routes to the pinged environment");
+	}
+
+	[Test]
+	[Description("For the injected .NET Framework environment the ping uses the shared builder's own route, as before.")]
+	public void TryPing_ShouldUseTheSharedBuilder_WhenPingingTheInjectedFrameworkEnvironment() {
+		// Arrange
+		EnvironmentSettings injected = new() { Uri = "http://injected.example", IsNetCore = false };
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateOwnedClient(injected).Returns(client);
+		IServiceUrlBuilder sharedBuilder = Substitute.For<IServiceUrlBuilder>();
+		sharedBuilder.Build("ping").Returns("http://injected.example/0/ping");
+		ApplicationPing ping = new(injected, factory, sharedBuilder);
+
+		// Act
+		ping.TryPing(injected, out _);
+
+		// Assert
+		client.ReceivedCalls().Should().ContainSingle(call =>
+				call.GetMethodInfo().Name == nameof(IOwnedApplicationClient.ExecuteGetRequest)
+				&& (string)call.GetArguments()[0] == "http://injected.example/0/ping",
+			because: "the injected environment's ping keeps the route the shared builder was built for");
+		sharedBuilder.ReceivedCalls().Should().ContainSingle(
+			because: "one route is built, through the overload that does not re-point the builder");
 	}
 
 	[Test]
