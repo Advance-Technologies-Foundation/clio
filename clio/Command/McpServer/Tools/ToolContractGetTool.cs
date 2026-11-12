@@ -5040,7 +5040,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBindingDb() {
 		return new ToolContractDefinition(
 			CreateDataBindingDbTool.CreateDataBindingDbToolName,
-			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow. SaveSchema metadata is projected from the primary key plus columns referenced by currently bound or requested rows, so unrelated runtime-only columns are not blockers, while explicitly requested unsupported runtime columns still fail. For workflow selection, call get-guidance with name `data-bindings`.",
+			"Creates or updates a DB-first package data binding and optionally applies rows immediately as an explicit fallback or standalone path outside a batched sync-schemas flow. SaveSchema metadata is projected from the primary key plus columns referenced by currently bound or requested rows, so unrelated runtime-only columns are not blockers, while explicitly requested unsupported runtime columns still fail. A `SysSettingsValue` binding always carries `SysSettings` and `TextValue` too, because the platform reads both while it saves that binding; a row of a SecureText setting is refused, so its secret never ships. For workflow selection, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, SchemaNameFieldName],
 				EnvironmentPackageSchemaFields(
@@ -7515,7 +7515,8 @@ internal static class ToolContractCatalog {
 				"Create the sys-setting once, then update the value as it changes. The setting exists only on this environment. " +
 				"To ship it with the package that reads it, set the value first (an existing row is bound as it is in the database), " +
 				"then call create-data-binding-db twice with explicit binding-name values: SysSettings_<Code> (schema SysSettings) and " +
-				"SysSettingsValue_<Code> (schema SysSettingsValue, All employees row, always including TextValue). " +
+				"SysSettingsValue_<Code> (schema SysSettingsValue, All employees row naming SysSettings, SysAdminUnit, IsDef and its value column; " +
+				"TextValue is added automatically, and a SecureText value is refused - ship only SysSettings_<Code> for it). " +
 				"Bind SysSettings_<Code> first and check that its bound Id is the setting's own before binding the value. " +
 				"Read both back with read-data-binding-db. The value binding is a snapshot: after changing a shipped value, " +
 				"re-run create-data-binding-db for SysSettingsValue_<Code> and read it back. " +
