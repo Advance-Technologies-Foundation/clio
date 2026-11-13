@@ -236,14 +236,17 @@ internal static class WebServiceToolRunner {
 		McpToolArgumentSupport.EnvironmentNameAliases,
 		("service-code", "code"), ("service_code", "code"), ("serviceCode", "code"));
 
+	/// <summary>The test-web-service-method argument that carries the user's explicit yes.</summary>
+	internal const string UserConfirmed = "user-confirmed";
+
 	/// <summary>
 	/// <see cref="ServiceCodeAliases"/> plus the method-code and confirmation spellings of test-web-service-method; a
 	/// confirmation under another name is answered with a rename hint, never taken as the user's yes.
 	/// </summary>
 	public static readonly IReadOnlyDictionary<string, string> TestMethodAliases = WithAliases(ServiceCodeAliases,
 		("method-code", "method"), ("method_code", "method"), ("methodCode", "method"),
-		("confirmed", "user-confirmed"), ("confirm", "user-confirmed"), ("user_confirmed", "user-confirmed"),
-		("userConfirmed", "user-confirmed"), ("confirmed-by-user", "user-confirmed"));
+		("confirmed", UserConfirmed), ("confirm", UserConfirmed), ("user_confirmed", UserConfirmed),
+		("userConfirmed", UserConfirmed), ("confirmed-by-user", UserConfirmed));
 
 	internal static IReadOnlyDictionary<string, string> WithAliases(IReadOnlyDictionary<string, string> source,
 		params (string Alias, string Canonical)[] extra) {
@@ -433,7 +436,7 @@ public sealed record TestWebServiceMethodArgs(
 	[property: Description("Values by request parameter code: text, a number or a boolean for a scalar; for a body array a JSON array of them, e.g. [\"a\", \"b\"]; for an array of objects a JSON array of objects by field code, e.g. [{\"UsrSku\": \"A1\", \"UsrQty\": 2}], with arrays inside items given the same way. A path, query, header or cookie value is one text even when marked as an array (a list as \"1,2\"). Every code, nested ones included, must be the method's; null leaves a value out")]
 	IReadOnlyDictionary<string, JsonElement> Parameters = null,
 
-	[property: JsonPropertyName("user-confirmed")]
+	[property: JsonPropertyName(WebServiceToolRunner.UserConfirmed)]
 	[property: Description("True only after the user explicitly said yes to this call; a request to test is not a confirmation. A POST, PUT, PATCH, DELETE or SOAP method is refused without it and nothing is sent; a GET needs none")]
 	bool? UserConfirmed = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }

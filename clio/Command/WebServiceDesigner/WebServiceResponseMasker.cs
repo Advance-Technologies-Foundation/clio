@@ -122,48 +122,17 @@ public static partial class WebServiceResponseMasker {
 			if (parent is not null && root?.Type != PlacementBody) {
 				continue;
 			}
-			int placement = parent is null ? parameter.Type : PlacementBody;
-			string name = WireName(parameter);
-			// A body array is rendered only from a value the call gives it, never from its default, so its values are the
-			// caller's own and its absence hides nothing. A path, query, header or cookie value takes its default whatever
-			// its array flag says.
-			bool mayCarrySetting = placement != PlacementBody || !parameter.IsArray;
-			// Values are found in what the platform reports as sent; when that part is missing or is neither JSON nor
-			// XML, a value that went out cannot be found, so the caller withholds the response instead.
-			secretUnlocated |= mayCarrySetting
-				&& (placement == PlacementBody ? body is null && xmlBody is null : !rawReported);
-			if (placement == PlacementBody && xmlBody is not null) {
-				List<string> found = XmlBodyValues(xmlBody, name);
-				secretUnlocated |= mayCarrySetting && found.Count == 0
-					&& XmlFieldMayHaveBeenSent(xmlBody, parent, root, sentCodes);
-				secrets.AddRange(found);
+			if (parent is not null || parameter.Type == PlacementBody) {
+				secrets.AddRange(SentBodyValues(body, xmlBody, parameter, parent, root, sentCodes, out bool bodyUnlocated));
+				secretUnlocated |= bodyUnlocated;
 				continue;
 			}
-			if (placement == PlacementBody && body is not null) {
-				// The platform reads a JSON path in parts (customer.name, $.auth.secret, items[0], $['key']) and writes the
-				// value under the last named part, inside an array when an index follows it.
-				string key = JsonKey(name);
-				secrets.AddRange(BodyValues(body, key));
-				secretUnlocated |= mayCarrySetting && !HasJsonKey(body, key)
-					&& JsonFieldMayHaveBeenSent(body, parent, root, sentCodes);
-				continue;
-			}
-			switch (placement) {
-				case PlacementHeader:
-					secrets.AddRange(Lookup(headers, name));
-					break;
-				case PlacementQuery:
-					secrets.AddRange(Lookup(query, name));
-					break;
-				case PlacementCookie:
-					secrets.AddRange(Lookup(cookies, name));
-					break;
-				case PlacementPath:
-					List<string> located = PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name);
-					secretUnlocated |= located is null;
-					secrets.AddRange(located ?? []);
-					break;
-			}
+			// A path, query, header or cookie value is found in the reported request line and headers; without them, a value
+			// that went out cannot be found, so the caller withholds the response instead.
+			IEnumerable<string> located = SentRequestLineValues(parameter.Type, WireName(parameter), lines.FirstOrDefault(),
+				method?.Request?.Uri, headers, query, cookies);
+			secretUnlocated |= !rawReported || located is null;
+			secrets.AddRange(located ?? []);
 		}
 		// describe-web-service hides a secret constant (an API key typed in Studio); an echo must not show it
 		// either. It is known from the schema, so it is masked whether or not the request carried it.
@@ -734,6 +703,48 @@ public static partial class WebServiceResponseMasker {
 		return cookies;
 	}
 
+	/// <summary>
+	/// The values a body parameter, or a field of an array item (always rendered in the body), went out with, found in
+	/// the reported JSON or XML body. <paramref name="unlocated"/> is set when a value may have gone out but cannot be
+	/// found there, including when the body is missing or is neither JSON nor XML. A body array is rendered only from a
+	/// value the call gives it, never from its default, so its values are the caller's own and its absence hides nothing.
+	/// </summary>
+	private static List<string> SentBodyValues(JsonNode body, XDocument xmlBody, ServiceParameterDto parameter,
+		ServiceParameterDto parent, ServiceParameterDto root, IReadOnlyCollection<string> sentCodes, out bool unlocated) {
+		bool mayCarrySetting = !parameter.IsArray;
+		string name = WireName(parameter);
+		if (xmlBody is not null) {
+			List<string> found = XmlBodyValues(xmlBody, name);
+			unlocated = mayCarrySetting && found.Count == 0 && XmlFieldMayHaveBeenSent(xmlBody, parent, root, sentCodes);
+			return found;
+		}
+		if (body is not null) {
+			// The platform reads a JSON path in parts (customer.name, $.auth.secret, items[0], $['key']) and writes the
+			// value under the last named part, inside an array when an index follows it.
+			string key = JsonKey(name);
+			unlocated = mayCarrySetting && !HasJsonKey(body, key) && JsonFieldMayHaveBeenSent(body, parent, root, sentCodes);
+			return BodyValues(body, key).ToList();
+		}
+		unlocated = mayCarrySetting;
+		return [];
+	}
+
+	/// <summary>
+	/// The values a top-level path, query, header or cookie parameter went out with, read from the reported request
+	/// line and headers. A path, query, header or cookie value takes its default whatever its array flag says. Returns
+	/// null when a path value cannot be located.
+	/// </summary>
+	private static IEnumerable<string> SentRequestLineValues(int placement, string name, string requestLine,
+		string uriTemplate, Dictionary<string, List<string>> headers, Dictionary<string, List<string>> query,
+		Dictionary<string, List<string>> cookies) =>
+		placement switch {
+			PlacementHeader => Lookup(headers, name),
+			PlacementQuery => Lookup(query, name),
+			PlacementCookie => Lookup(cookies, name),
+			PlacementPath => PathValues(requestLine, uriTemplate, name),
+			_ => []
+		};
+
 	private static JsonNode ParseBody(string requestBody) {
 		if (string.IsNullOrWhiteSpace(requestBody)) {
 			return null;
@@ -754,25 +765,17 @@ public static partial class WebServiceResponseMasker {
 	/// an empty key is never found, so such a value fails closed.
 	/// </summary>
 	private static string JsonKey(string path) {
-		string text = path ?? string.Empty;
-		text = text.StartsWith("$.", StringComparison.Ordinal) ? text[2..]
-			: text.StartsWith('$') ? text[1..] : text;
 		string last = string.Empty;
 		var name = new StringBuilder();
 		bool inBracket = false;
-		foreach (char c in text) {
-			if (!inBracket && (c == '.' || c == '[')) {
-				last = name.Length > 0 ? name.ToString() : last;
-				name.Clear();
-				inBracket = c == '[';
-			} else if (inBracket && c == ']') {
-				string inner = name.ToString();
-				last = int.TryParse(inner, out _) ? last : inner.Trim('\'');
-				name.Clear();
-				inBracket = false;
-			} else {
+		foreach (char c in WithoutJsonRoot(path ?? string.Empty)) {
+			if (!EndsJsonPathPart(c, inBracket)) {
 				name.Append(c);
+				continue;
 			}
+			last = JsonPathPartName(name.ToString(), inBracket, last);
+			name.Clear();
+			inBracket = c == '[';
 		}
 		if (inBracket) {
 			return string.Empty;
@@ -780,31 +783,34 @@ public static partial class WebServiceResponseMasker {
 		return name.Length > 0 ? name.ToString() : last;
 	}
 
+	/// <summary>The path without a leading <c>$.</c> or <c>$</c>, which names the body root.</summary>
+	private static string WithoutJsonRoot(string path) {
+		if (path.StartsWith("$.", StringComparison.Ordinal)) {
+			return path[2..];
+		}
+		return path.StartsWith('$') ? path[1..] : path;
+	}
+
+	/// <summary>Outside brackets a dot or an opening bracket ends a part; inside, only the closing bracket does.</summary>
+	private static bool EndsJsonPathPart(char c, bool inBracket) => inBracket ? c == ']' : c is '.' or '[';
+
+	/// <summary>
+	/// The name a finished path part leaves as the last one: a bracketed index (<c>[0]</c>) keeps the previous name, a
+	/// bracketed name (<c>['key']</c>) is the name without quotes, and an empty dotted part keeps the previous name.
+	/// </summary>
+	private static string JsonPathPartName(string part, bool bracketed, string previous) {
+		if (bracketed) {
+			return int.TryParse(part, out _) ? previous : part.Trim('\'');
+		}
+		return part.Length > 0 ? part : previous;
+	}
+
 	/// <summary>
 	/// The values a JSON body carries under a property name, at any depth: a value, or every leaf value of an array
 	/// (a path with an index writes the value inside one).
 	/// </summary>
-	private static IEnumerable<string> BodyValues(JsonNode node, string name) {
-		switch (node) {
-			case JsonObject obj:
-				foreach (KeyValuePair<string, JsonNode> property in obj) {
-					if (string.Equals(property.Key, name, StringComparison.Ordinal)) {
-						foreach (JsonValue value in Leaves(property.Value)) {
-							yield return value.ToString();
-						}
-					}
-					foreach (string nested in BodyValues(property.Value, name)) {
-						yield return nested;
-					}
-				}
-				break;
-			case JsonArray array:
-				foreach (string nested in array.SelectMany(item => BodyValues(item, name))) {
-					yield return nested;
-				}
-				break;
-		}
-	}
+	private static IEnumerable<string> BodyValues(JsonNode node, string name) =>
+		JsonProperties(node, name).SelectMany(Leaves).Select(value => value.ToString());
 
 	private static IEnumerable<JsonValue> Leaves(JsonNode node) => node switch {
 		JsonValue value => [value],

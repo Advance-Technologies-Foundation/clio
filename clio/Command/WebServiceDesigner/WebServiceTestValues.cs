@@ -177,11 +177,11 @@ public static class WebServiceTestValues {
 		WebServiceDefinitionBuilder.Errors errors, ISet<string> sentCodes) {
 		var built = new List<ServiceCallParameter>();
 		var seen = new HashSet<string>(StringComparer.Ordinal);
-		var unknown = new List<string>();
+		List<string> unknown = item.EnumerateObject().Select(property => property.Name)
+			.Where(code => Find(fields, code) is null).Distinct(StringComparer.Ordinal).ToList();
 		foreach (JsonProperty property in item.EnumerateObject()) {
 			ServiceParameterDto field = Find(fields, property.Name);
 			if (field is null) {
-				unknown.Add(property.Name);
 				continue;
 			}
 			// The platform refuses a code given twice in one item ("An item with the same key has already been added").
@@ -196,7 +196,7 @@ public static class WebServiceTestValues {
 			}
 		}
 		if (unknown.Count > 0) {
-			errors.Add($"{where}: {Quoted(unknown.Distinct(StringComparer.Ordinal))} is not a field of '{parameter.Name}' "
+			errors.Add($"{where}: {Quoted(unknown)} is not a field of '{parameter.Name}' "
 				+ $"items; valid codes: {ValidCodes(fields)}.");
 		}
 		return built;
