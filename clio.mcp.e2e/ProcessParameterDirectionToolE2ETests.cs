@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -51,18 +52,14 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 	[Description("create-business-process with three Text parameters: one declared with no direction that a Formula element fills, one with a stated Variable that a Formula fills, and one with no direction that only a constant fills. The first is saved Internal and named as switched once; the stated Variable keeps Variable and is advised once; the constant keeps Variable, silently.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("a helper parameter declared with no direction is built Internal")]
-	public async Task CreateBusinessProcess_Should_SaveOnlyTheDefaultedHelpersInternal() {
+	public async Task CreateBusinessProcess_Should_SaveOnlyTheDefaultedHelperInternal() {
 		// Arrange
 		await using ProcessDesignerArrangeContext context =
 			await ProcessDesignerE2EArrange.StartAsync("Process parameter direction", MinimumPackageVersion);
 		string processName = $"UsrClioBpDirection{Guid.NewGuid():N}";
 
 		// Act
-		string built = ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["descriptor"] = BuildDescriptor(processName)
-			}));
+		string built = await BuildAsync(context, processName, BuildDescriptor(processName));
 		// Before the try: when this fires clio refused the call, nothing was built, and the cleanup would only log.
 		ProcessDesignerE2ESupport.IgnoreWhenProcessBuilderIsBehind(built, MinimumPackageVersion);
 
@@ -103,11 +100,7 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 		string processName = $"UsrClioBpDirectionFiles{Guid.NewGuid():N}";
 
 		// Act
-		string built = ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["descriptor"] = FileCollectionDescriptor(processName)
-			}));
+		string built = await BuildAsync(context, processName, FileCollectionDescriptor(processName));
 		// Before the try: when this fires clio refused the call, nothing was built, and the cleanup would only log.
 		ProcessDesignerE2ESupport.IgnoreWhenProcessBuilderIsBehind(built, MinimumPackageVersion);
 
@@ -118,6 +111,7 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 			Dictionary<string, string?> directions = await DirectionsAsync(context, processName);
 			directions["PDocs"].Should().Be("Variable",
 				because: "a FileCollection keeps its Variable default even when an element fills it (owner decision D3)");
+			await StoredValueAsync(context, processName, "PDocs");
 			built.Should().NotContain($"Process parameter 'PDocs' {SwitchNotice}",
 				because: "the builder does not switch a collection: {0}", built);
 			built.Should().NotContain($"Process parameter 'PDocs' {AdviceWarning}",
@@ -128,25 +122,21 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 	}
 
 	[Test]
-	[Description("modify-business-process on a process whose PExisting parameter was built with a stated Variable: one request maps an element output onto PExisting, adds PNew with no direction plus a mapping onto it, and adds PCount with no direction plus an expression mapping that reads the contact name the Read data element found. PNew and PCopy are saved Internal with the switch notice once each; PExisting, which existed before the request, keeps Variable and the response advises it once, worded as a report that asks for its callers first.")]
+	[Description("modify-business-process on a process whose PExisting parameter was built with a stated Variable: one request maps an element output onto PExisting, adds PNew with no direction plus a mapping onto it, and adds PCopy with no direction plus an expression mapping that reads the contact name the Read data element found. PNew and PCopy are saved Internal with the switch notice once each; PExisting, which existed before the request, keeps Variable and the response advises it once, worded as a report that asks for its callers first.")]
 	[AllureTag(ModifyToolName)]
-	[AllureName("modify switches a new defaulted helper and advises on an existing Variable one")]
-	public async Task ModifyBusinessProcess_Should_SwitchTheNewHelperAndAdviseOnTheExistingOne() {
+	[AllureName("modify switches new defaulted helpers and advises on an existing Variable one")]
+	public async Task ModifyBusinessProcess_Should_SwitchTheNewHelpersAndAdviseOnTheExistingOne() {
 		// Arrange
 		await using ProcessDesignerArrangeContext context =
 			await ProcessDesignerE2EArrange.StartAsync("Process parameter direction", MinimumPackageVersion);
 		string processName = $"UsrClioBpDirectionMod{Guid.NewGuid():N}";
-		string built = ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["descriptor"] = ModifyBaseDescriptor(processName)
-			}));
+		string built = await BuildAsync(context, processName, ModifyBaseDescriptor(processName));
 		// Before the try: when this fires clio refused the call, nothing was built, and the cleanup would only log.
 		ProcessDesignerE2ESupport.IgnoreWhenProcessBuilderIsBehind(built, MinimumPackageVersion);
 
 		try {
 			built.Should().Contain("created (UId:", because: "the arrange step must have built the process: {0}", built);
-			string contactName = await StoredValueAsync(context, processName, "PSeed");
+			string readNameMetaPath = await StoredValueAsync(context, processName, "PSeed");
 
 			// Act
 			string modified = ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
@@ -171,7 +161,7 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 						new Dictionary<string, object?> {
 							["op"] = "addMapping",
 							["mapping"] = new Dictionary<string, object?> {
-								["targetProcessParameter"] = "PCopy", ["expression"] = $"{contactName} + \" (copy)\""
+								["targetProcessParameter"] = "PCopy", ["expression"] = $"{readNameMetaPath} + \" (copy)\""
 							}
 						}
 					})
@@ -195,9 +185,13 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 				because: "a switched helper is no longer Variable, so there is nothing to advise: {0}", modified);
 			modified.Should().Contain($"Process parameter 'PExisting' {AdviceWarning}", Exactly.Once(),
 				because: "an existing Variable parameter the request made an element fill gets advice once: {0}", modified);
-			modified.Should().Contain(CallersFirst, Exactly.Once(),
+			NoticeAbout(modified, "PExisting").Should().Contain(CallersFirst,
 				because: "other processes may call an existing parameter, so its advice asks for the callers first: {0}",
 				modified);
+			modified.Should().Contain(CallersFirst, Exactly.Once(),
+				because: "only the parameter that existed before the request is reported that way: {0}", modified);
+			modified.Should().NotContain($"Process parameter 'PCopy' {AdviceWarning}",
+				because: "a switched helper is no longer Variable, so there is nothing to advise: {0}", modified);
 			modified.Should().NotContain($"Process parameter 'PExisting' {SwitchNotice}",
 				because: "a parameter that existed before the request is never switched, so never reported as one: {0}",
 				modified);
@@ -213,39 +207,58 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 	private static string ToolText(CallToolResult callResult) =>
 		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
 
-	private static async Task<Dictionary<string, string?>> DirectionsAsync(ProcessDesignerArrangeContext context,
-		string processName) {
-		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.CallToolAsync(context,
-			DescribeProcessTool.ToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["mode"] = "full",
-				["process-name"] = processName
-			}));
-		return graph["parameters"]!.AsArray().OfType<JsonObject>()
-			.ToDictionary(parameter => parameter["name"]!.GetValue<string>(),
-				parameter => parameter["direction"]?.GetValue<string>());
+	/// <summary>
+	/// Runs the build. When the call itself throws, the server may still have saved the process, so it is deleted before
+	/// the exception goes on; a call that returns hands its text to the skip check, which runs before any cleanup is
+	/// scheduled.
+	/// </summary>
+	private static async Task<string> BuildAsync(ProcessDesignerArrangeContext context, string processName,
+		string descriptor) {
+		try {
+			return ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["descriptor"] = descriptor
+				}));
+		} catch {
+			await ProcessDesignerE2ESupport.DeleteProcessAsync(context.EnvironmentName, processName);
+			throw;
+		}
 	}
 
+	/// <summary>The process's parameters as describe reports them, by name.</summary>
+	private static async Task<Dictionary<string, JsonObject>> ParametersAsync(ProcessDesignerArrangeContext context,
+		string processName) {
+		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+		return graph["parameters"]!.AsArray().OfType<JsonObject>()
+			.ToDictionary(parameter => parameter["name"]!.GetValue<string>());
+	}
+
+	private static async Task<Dictionary<string, string?>> DirectionsAsync(ProcessDesignerArrangeContext context,
+		string processName) =>
+		(await ParametersAsync(context, processName))
+			.ToDictionary(parameter => parameter.Key, parameter => parameter.Value["direction"]?.GetValue<string>());
+
 	/// <summary>
-	/// The stored value of a process parameter, read from describe: for a parameter mapped from an element output it is
-	/// the raw meta path of that output. The mapping <c>expression</c> route stores what it is given and does not expand
+	/// The stored value of a process parameter, checked to read an element output: for a parameter mapped from one it is
+	/// that output's raw meta path. The mapping <c>expression</c> route stores what it is given and does not expand
 	/// element names, so an expression that reads an element must carry such a path.
 	/// </summary>
 	private static async Task<string> StoredValueAsync(ProcessDesignerArrangeContext context, string processName,
 		string parameterName) {
-		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.CallToolAsync(context,
-			DescribeProcessTool.ToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["mode"] = "full",
-				["process-name"] = processName
-			}));
-		JsonObject parameter = graph["parameters"]!.AsArray().OfType<JsonObject>()
-			.Single(candidate => candidate["name"]?.GetValue<string>() == parameterName);
+		JsonObject parameter = (await ParametersAsync(context, processName))[parameterName];
 		string? value = parameter["value"]?.GetValue<string>();
 		value.Should().Contain("[Element:", because: "'{0}' was built mapped from an element output: {1}", parameterName,
 			parameter.ToJsonString());
 		return value!;
 	}
+
+	/// <summary>
+	/// The advice about <paramref name="name"/> in a tool response: from its opening up to the end of that message. The
+	/// advice for a parameter that existed before the request carries no double quote, so the message ends at the next one.
+	/// </summary>
+	private static string NoticeAbout(string toolText, string name) =>
+		Regex.Match(toolText, $"Process parameter '{Regex.Escape(name)}' is 'Variable'[^\"]*").Value;
 
 	private static Dictionary<string, object> NameOfTheReadContact(string targetParameter) =>
 		new() {

@@ -77,8 +77,8 @@ public class BundledProcessBuilderPackageTests {
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
 	/// marker, the script stamped the package descriptor to 1.6.6.172 and packed that commit with it overlaid (386
 	/// entries), and the stamp was committed after it as the child commit <c>88cc8187</c>.
-	/// The number is the next free one above the global maximum; whichever package branch lands after this one restamps
-	/// above it.
+	/// 1.6.6.172 is the first number above every cut in both histories (1.6.6.171 was the highest); whichever package
+	/// branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
