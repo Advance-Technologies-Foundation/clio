@@ -314,7 +314,7 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 		lines.Should().Contain(line => line.EndsWith(longDestination) && line.TrimStart().StartsWith("destination"),
 			because: "long values must stay on one line so they can be copied");
 		lines.Should().Contain(line => line.EndsWith(longHash) && line.TrimStart().StartsWith("reporting-policy-hash"),
-			because: "the policy hash must stay on one line so it can be copied");
+			because: "the policy hash must stay on one line so it can be copied into expected-policy-hash");
 	}
 
 	[Test]

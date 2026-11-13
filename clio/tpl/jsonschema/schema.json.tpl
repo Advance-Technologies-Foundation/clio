@@ -217,11 +217,11 @@
 					"enum": ["ask", "auto", "off"],
 					"enumDescriptions": [
 						"Keep the evidence and ask the user, for each discrepancy, whether to file an issue",
-						"File the issue at the end of the task without asking; requires a matching standing-approval, otherwise the effective mode falls back to ask",
+						"File the issue at the end of the task without asking; requires a standing-approval, and the effective mode falls back to ask when the approved guidance article changes",
 						"Do not report discrepancies and do not ask about them"
 					],
 					"default": "ask",
-					"description": "Configured feedback mode. ask: ask the user for each discrepancy. auto: file automatically at task end, but only while standing-approval.policy-hash matches the current 'knowledge-feedback' guidance article; otherwise the effective mode is ask until auto is approved again. off: no reporting and no prompts."
+					"description": "Configured feedback mode. ask: ask the user for each discrepancy. auto: file automatically at task end; requires a standing-approval, and when the 'knowledge-feedback' guidance article changes so that its hash differs from standing-approval.policy-hash, the effective mode is ask until auto is approved again (temporary unavailability of the article does not downgrade an existing approval). off: no reporting and no prompts."
 				},
 				"destination": {
 					"type": "string",
@@ -238,15 +238,15 @@
 					"type": "string",
 					"enum": ["full", "sanitized"],
 					"enumDescriptions": [
-						"Comprehensive internal report: commands and tool inputs/outputs, errors and traces, versions, environment identifiers, local paths, chronology, workaround, and verified behavior",
+						"Comprehensive internal report, for a private destination repository only, never a public one: commands and tool inputs/outputs, errors and traces, versions, environment identifiers, local paths, chronology, workaround, and verified behavior",
 						"Public-safe report: customer, organization, user, environment, and host identifiers, private URLs, local paths, sensitive configuration, and raw logs are removed or generalized; keeps a minimal reproduction, versions, expected/actual behavior, and workaround"
 					],
 					"default": "sanitized",
-					"description": "How much detail a feedback issue contains. full: comprehensive internal report, intended for a private repository. sanitized: public-safe report, intended for a public repository. Both scopes always exclude passwords, tokens, keys, cookies, other authentication material, and hidden chain-of-thought."
+					"description": "How much detail a feedback issue contains. full: comprehensive internal report, for a private destination repository only; do not combine it with a public destination. sanitized: public-safe report, intended for a public repository. Both scopes always exclude passwords, tokens, keys, cookies, other authentication material, and hidden chain-of-thought."
 				},
 				"standing-approval": {
 					"$ref": "#/definitions/knowledgefeedbackapproval",
-					"description": "Written by Clio when auto mode is selected; do not edit by hand. Records which version of the 'knowledge-feedback' guidance article the user approved for automatic reporting. Removed whenever the mode is changed to ask or off."
+					"description": "Written by Clio when auto mode is selected; do not edit by hand. Records which version of the 'knowledge-feedback' guidance article the user approved for automatic reporting. Removed when 'clio config' or the configure-knowledge-feedback-policy MCP tool sets the mode to ask or off; editing mode by hand leaves it in place."
 				}
 			},
 			"required": ["mode", "destination", "reporting-scope"]

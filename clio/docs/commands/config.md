@@ -118,7 +118,8 @@ the site name before deployment proceeds.
 
 - With no arguments (or with `--show`), prints the `appsettings.json` path followed by
   aligned key/value lists of the deploy-creatio defaults and the configured/effective
-  knowledge-feedback policy. Unset values are shown as `(not set)`.
+  knowledge-feedback policy. Unset values are shown as `(not set)`; when no deploy-creatio
+  defaults are configured, that list is a single `(none configured)` line.
 - With one or more `--deploy-*` arguments, updates only the supplied values,
   persists them, and prints the resulting defaults.
 - A configured fixed site port takes precedence over the range. Setting
