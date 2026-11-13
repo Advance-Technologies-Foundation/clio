@@ -83,16 +83,19 @@ public static partial class WebServiceResponseMasker {
 		SentSecrets(method, requestRawData, requestBody, serviceHasAuth, null, out secretUnlocated);
 
 	/// <summary>
-	/// As <see cref="SentSecrets(ServiceMethodDto, string, string, bool, out bool)"/>, knowing which top-level request
-	/// parameters the call gave a value. A field of an array item whose array element is not in an XML body was not
-	/// sent only when its top-level parameter had no value: no value from the call and no default. Unknown (null), or
-	/// with a value, the missing element is a lookup miss and fails closed.
+	/// As <see cref="SentSecrets(ServiceMethodDto, string, string, bool, out bool)"/>, knowing which request parameters
+	/// the call gave a value. A field of an array item whose array element is not in an XML body was not sent only when
+	/// that array had no value: no value from the call (in no item, for an array inside an array item) and no default.
+	/// Unknown (null), or with a value, the missing element is a lookup miss and fails closed.
 	/// </summary>
 	/// <param name="method">The called method.</param>
 	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
 	/// <param name="requestBody">The request body the platform reports as sent.</param>
 	/// <param name="serviceHasAuth">Whether the service has authentication.</param>
-	/// <param name="sentCodes">The top-level request parameter codes the call gave a value, or null when unknown.</param>
+	/// <param name="sentCodes">
+	/// The request parameter codes the call gave a value, the fields of array items included (see
+	/// <see cref="WebServiceTestCall.SentCodes"/>), or null when unknown.
+	/// </param>
 	/// <param name="secretUnlocated">See the four-argument overload.</param>
 	/// <returns>Distinct values, longest first.</returns>
 	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
@@ -575,8 +578,11 @@ public static partial class WebServiceResponseMasker {
 	/// Whether a setting-bound element missing from an XML body may still have been sent, so its absence means the lookup
 	/// missed it. A top-level element is always rendered. A field of an array item is rendered whenever its parent is:
 	/// a parent element with content and no such field is a miss, an empty parent is an array sent empty. A parent
-	/// element that is missing too is either an array the platform skipped (its top-level parameter had no value) or a
-	/// parent the lookup also missed; only a top-level parameter known to have had no value tells them apart.
+	/// element that is missing too is either an array the platform skipped (the call gave that array no value, at
+	/// whatever depth it sits) or a parent the lookup also missed; only a parent array known to have had no value tells
+	/// them apart. The platform renders an array only from a value the call gives it, never from a default (Terrasoft.
+	/// Services <c>RequestBodyBuilder.ProcessArrayNode</c>), so an inner array left out of every item renders nothing
+	/// (measured on a .NET Framework stand). A code shared by two parents can only make this answer yes.
 	/// </summary>
 	private static bool XmlFieldMayHaveBeenSent(XDocument body, ServiceParameterDto parent, ServiceParameterDto root,
 		IReadOnlyCollection<string> sentCodes) {
@@ -587,11 +593,13 @@ public static partial class WebServiceResponseMasker {
 		if (parents.Count > 0) {
 			return parents.Any(e => e.HasElements);
 		}
-		bool rootHasDefault = root?.DefValue is { Source: not ServiceSchemaCodes.ValueSourceNone } value
-			&& (value.Source == ServiceSchemaCodes.ValueSourceSysSetting || !string.IsNullOrEmpty(value.Value));
-		return sentCodes is null || rootHasDefault
-			|| sentCodes.Contains(root?.Name ?? string.Empty, StringComparer.Ordinal);
+		return sentCodes is null || HasDefault(root) || HasDefault(parent)
+			|| sentCodes.Contains(parent.Name ?? string.Empty, StringComparer.Ordinal);
 	}
+
+	private static bool HasDefault(ServiceParameterDto parameter) =>
+		parameter?.DefValue is { Source: not ServiceSchemaCodes.ValueSourceNone } value
+		&& (value.Source == ServiceSchemaCodes.ValueSourceSysSetting || !string.IsNullOrEmpty(value.Value));
 
 	private static string WireName(ServiceParameterDto parameter) =>
 		string.IsNullOrEmpty(parameter.Path) ? parameter.Name : parameter.Path;

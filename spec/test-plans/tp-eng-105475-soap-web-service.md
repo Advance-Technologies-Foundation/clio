@@ -7,7 +7,7 @@
 **Stories**: [1](../stories/story-eng-105475-soap-web-service-1.md), [2](../stories/story-eng-105475-soap-web-service-2.md),
 [3](../stories/story-eng-105475-soap-web-service-3.md), [4](../stories/story-eng-105475-soap-web-service-4.md),
 [5](../stories/story-eng-105475-soap-web-service-5.md)
-**Status**: slice A rows final; slices B-D and K are outlines, refined when their story starts
+**Status**: slice A, B and D rows final; slices C and K are outlines, refined when their story starts
 **Created**: 2026-11-12
 
 ## Rules
@@ -116,10 +116,29 @@ the platform download error without its stack trace. TC-I-C: `wsdl-files` mode w
 test project (no internet); URL mode in a separate category that is Ignored when the stand has no internet; Studio vs
 clio diff of the saved services (manual stand check).
 
-## Slice D (story 4), outline
+## Slice D (story 4)
 
-TC-U-D: arrays and object arrays mapped to the platform's `nested` member; a single object refused; masking of
-nested values. TC-I-D: a test call with an array and an object array, asserting the sent body.
+The wire shape was measured first (ADR D10). Unit rows live in
+`clio.tests/Command/WebServiceDesigner/WebServiceTestValuesTests.cs` (D01-D07) and next to the code they cover.
+
+| Id | Level | Case | AC |
+| --- | --- | --- | --- |
+| TC-U-D01 | unit | A scalar goes out as text (a number or boolean as its JSON text) with no `nested` member; null leaves the parameter out | 1 |
+| TC-U-D02 | unit | An array of scalars goes out as a JSON array of texts in `value`; an empty array goes out empty | 1 |
+| TC-U-D03 | unit | An array of objects goes out in `nested`, one list per item, with a scalar array and an inner object array inside an item; a null field is left out; every code given a value is reported, nested ones included | 1, 2 |
+| TC-U-D04 | unit | One refusal names, with its location, an unknown top-level code and an unknown item field (each with the valid codes), a scalar given an array, an array given a text (one item per character), a single object for an object array, a non-object item, a misshapen value two arrays deep, a null scalar-array item and a value for a single Object parameter | 1, 2 |
+| TC-U-D05 | unit | A field given twice in one item is refused (the platform fails the call on it) | 2 |
+| TC-U-D06 | unit | Codes match case-sensitively, as the platform looks them up | 2 |
+| TC-U-D07 | unit | No values build an empty call; the given order is kept | 1 |
+| TC-U-D08 | unit | The client posts `{code, value}`, `{code, value: [...]}` and `{code, nested: [[...]]}` (`WebServiceDesignerClientTests`) | 1 |
+| TC-U-D09 | unit | A setting-bound field of an inner object array is collected two arrays deep; its missing element fails closed only when the call gave that inner array a value, not merely the outer one (`WebServiceSoapTests`) | 2 |
+| TC-U-D10 | unit | `TestMethod` sends an object array in `nested` and masks a setting value the platform filled into every item and an API echoed, in the body and `response-values` (`WebServiceDesignerTests`) | 1, 2 |
+| TC-U-D11 | unit | `TestMethod` refuses an unknown item field before any request (`WebServiceDesignerTests`) | 2 |
+| TC-U-D12 | unit | `TestMethod` on SOAP returns the masked response when the call left an inner array out, instead of withholding it (`WebServiceDesignerTests`) | 2 |
+| TC-U-D13 | unit | test-web-service-method passes `parameters` with arrays to the designer unchanged (`WebServiceToolsArgumentTests`) | 1 |
+| TC-I-D01 | e2e | Registers a REST service on an echo API (`https://httpbin.org/anything`) with a Text array and an Object array whose items hold a Text array and an inner Object array, test-calls it with values at every depth and expects the echoed JSON body to carry them; then expects a text for an array and an unknown item field refused with their locations. Ignored when the stand cannot reach the echo API | 1, 2 |
+| TC-I-D02 | e2e | Registers a SOAP 1.1 service on `http://localhost/<code>` whose Object array has an item field and an inner Object array field bound to a system setting; test-calls it leaving the inner array out and filling it, and expects neither response withheld | 2 |
+| TC-I-D03 | e2e (existing) | The REST, SOAP and contract web service e2e suites stay green | 1 |
 
 ## Knowledge (story 5)
 

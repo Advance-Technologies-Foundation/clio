@@ -5053,8 +5053,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: M
-    # review: the clio PR (#1925) opened on 2026-11-12.
-    status: review
+    # done: the clio PR (#1925) merged to master on 2026-11-13.
+    status: done
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-1.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
@@ -5069,7 +5069,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: L
-    status: review
+    # done: the clio PR (#1928) merged to master on 2026-11-13.
+    status: done
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-2.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
@@ -5103,7 +5104,7 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    status: in-progress
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-4.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md

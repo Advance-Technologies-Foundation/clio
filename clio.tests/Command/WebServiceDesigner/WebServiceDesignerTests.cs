@@ -262,7 +262,7 @@ public sealed class WebServiceDesignerTests {
 		schema.Methods.Items.Clear();
 		schema.Methods.Items[method.UId.ToString()] = method;
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 401, """{"error":"key sk-live-0042 is not valid"}""", null,
 				"GET https://api.bing.example/search HTTPS/1.1\r\nX-Api-Key: sk-live-0042\r\nHost: api.bing.example"));
 
@@ -381,39 +381,6 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("An object or array as a test-call value is refused by name instead of being sent as raw JSON.")]
-	public void ToWireValues_Should_Refuse_Objects_And_Arrays() {
-		// Arrange
-		var values = new Dictionary<string, JsonElement> { ["UsrItems"] = JsonDocument.Parse("[1,2]").RootElement };
-
-		// Act
-		Action act = () => Clio.Command.McpServer.Tools.WebServiceToolRunner.ToWireValues(values);
-
-		// Assert
-		act.Should().Throw<ArgumentException>(because: "the test call takes one scalar per top-level parameter")
-			.WithMessage("*UsrItems*", because: "the refusal names the parameter");
-	}
-
-	[Test]
-	[Description("Test-call values arrive as text: numbers and booleans as their JSON text, null left out.")]
-	public void ToWireValues_Should_Turn_Json_Scalars_Into_Text() {
-		// Arrange
-		var values = new Dictionary<string, JsonElement> {
-			["UsrAmount"] = JsonDocument.Parse("1.5").RootElement,
-			["UsrActive"] = JsonDocument.Parse("true").RootElement,
-			["UsrName"] = JsonDocument.Parse("\"Alice\"").RootElement,
-			["UsrNote"] = JsonDocument.Parse("null").RootElement
-		};
-
-		// Act
-		IReadOnlyDictionary<string, string> wire = Clio.Command.McpServer.Tools.WebServiceToolRunner.ToWireValues(values);
-
-		// Assert
-		wire.Should().BeEquivalentTo(new Dictionary<string, string> { ["UsrAmount"] = "1.5", ["UsrActive"] = "true", ["UsrName"] = "Alice" },
-			because: "the platform's test call takes text, and a null value means the parameter is not sent");
-	}
-
-	[Test]
 	[Description("Every tool that reads or writes a service refuses a user without CanManageSolution.")]
 	public void Describe_Should_Require_CanManageSolution() {
 		// Arrange
@@ -473,7 +440,7 @@ public sealed class WebServiceDesignerTests {
 		schema.Methods.Items.Clear();
 		schema.Methods.Items[method.UId.ToString()] = method;
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 404, "no tenant hidden-tenant-77", null,
 				"GET https://api.bing.example/elsewhere HTTPS/1.1\r\nHost: api.bing.example"));
 
@@ -563,13 +530,91 @@ public sealed class WebServiceDesignerTests {
 		GivenRegisteredService(BingSchema());
 
 		// Act
-		Action act = () => _sut.TestMethod("BingSearchApiCall", "Search", new Dictionary<string, string> { ["qq"] = "x" });
+		Action act = () => _sut.TestMethod("BingSearchApiCall", "Search",
+			new Dictionary<string, JsonElement> { ["qq"] = JsonSerializer.SerializeToElement("x") });
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the platform would drop the value silently")
 			.WithMessage("*'qq'*valid codes: q*", because: "the refusal lists the codes the method has");
 		_client.DidNotReceive().CallMethod(Arg.Any<string>(), Arg.Any<string>(),
-			Arg.Any<IReadOnlyDictionary<string, string>>());
+			Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	private ServiceSchemaDto OrdersSchema() => SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "orders",
+		ContentType: "json", RequestParameters: [
+			new WebServiceParameterArg("UsrLines", "body", "Object", "lines", Array: true, Items: [
+				new WebServiceParameterArg("UsrSku", Path: "sku"),
+				new WebServiceParameterArg("UsrKey", Path: "key", DefaultSysSetting: "UsrErpKey")
+			])
+		]));
+
+	[Test]
+	[Description("An array of objects reaches the platform in nested, and a setting value the platform filled into every item and an API echoed is masked in the body and the parsed values.")]
+	public void TestMethod_Should_Send_An_Object_Array_And_Mask_A_Setting_Value_Filled_Into_Items() {
+		// Arrange
+		GivenRegisteredService(OrdersSchema());
+		IReadOnlyList<ServiceCallParameter> sent = null;
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Do<IReadOnlyList<ServiceCallParameter>>(p => sent = p))
+			.Returns(new ServiceMethodCallResult(true, 200,
+				"{\"json\":{\"lines\":[{\"sku\":\"S1\",\"key\":\"sk-erp-4711\"},{\"sku\":\"S2\",\"key\":\"sk-erp-4711\"}]}}", null,
+				"POST https://api.bing.example/orders HTTP/1.1\r\nContent-Type: application/json",
+				"{\"lines\":[{\"sku\":\"S1\",\"key\":\"sk-erp-4711\"},{\"sku\":\"S2\",\"key\":\"sk-erp-4711\"}]}",
+				"{\"UsrEcho\":\"sk-erp-4711\"}"));
+		var values = new Dictionary<string, JsonElement> {
+			["UsrLines"] = JsonDocument.Parse("[{\"UsrSku\":\"S1\"},{\"UsrSku\":\"S2\"}]").RootElement
+		};
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", values);
+
+		// Assert
+		JsonSerializer.Serialize(sent).Should().Be(
+			"[{\"code\":\"UsrLines\",\"nested\":[[{\"code\":\"UsrSku\",\"value\":\"S1\"}],[{\"code\":\"UsrSku\",\"value\":\"S2\"}]]}]",
+			because: "an array of objects goes out one list of field values per item, as Studio's test request sends it");
+		result.ResponseBody.Should().NotContain("sk-erp-4711", because: "the setting value of an item field is found by its name")
+			.And.Contain("[masked]", because: "the echoed value is replaced, not removed");
+		result.ResponseValues!.Value.GetRawText().Should().NotContain("sk-erp-4711",
+			because: "the parsed values are masked like the body");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+	}
+
+	[Test]
+	[Description("A misshapen value inside an array item is refused before any request is sent.")]
+	public void TestMethod_Should_Refuse_An_Unknown_Field_Inside_An_Item_Before_Calling() {
+		// Arrange
+		GivenRegisteredService(OrdersSchema());
+		var values = new Dictionary<string, JsonElement> {
+			["UsrLines"] = JsonDocument.Parse("[{\"UsrSku\":\"S1\",\"UsrPrice\":5}]").RootElement
+		};
+
+		// Act
+		Action act = () => _sut.TestMethod("BingSearchApiCall", "Search", values);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the platform would drop an unknown field silently")
+			.WithMessage("*parameters.UsrLines[0]: 'UsrPrice' is not a field of 'UsrLines' items; valid codes: UsrKey, UsrSku.*",
+				because: "the refusal names the item and the codes it has");
+		_client.DidNotReceive().CallMethod(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[Test]
+	[Description("A SOAP call that filled an array of objects but left its inner array out returns the masked response instead of withholding it, because nothing of the inner array was sent.")]
+	public void TestMethod_Should_Return_A_Soap_Response_When_An_Inner_Array_Was_Left_Out() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.SchemaWithInnerArray(), "UsrSoapProbe");
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, $"<ok>{SoapServiceFixture.LineTokenValue}</ok>", null,
+				SoapServiceFixture.SentRaw, SoapServiceFixture.SentWithItem));
+		var values = new Dictionary<string, JsonElement> { ["UsrLines"] = JsonDocument.Parse("[{}]").RootElement };
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", values);
+
+		// Assert
+		result.ResponseBody.Should().Be("<ok>[masked]</ok>",
+			because: "the item token the platform filled is found and masked, and the unsent inner array withholds nothing");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
 	}
 
 	[Test]
@@ -578,7 +623,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
 			new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, "echo sk-live-0042", "timeout"));
 
 		// Act
@@ -598,7 +643,7 @@ public sealed class WebServiceDesignerTests {
 			new WebServiceAuthArg("basic", UsernameSysSetting: "UsrUser", PasswordSysSetting: "UsrPassword"), null,
 			new WebServiceDefinitionBuilder.Errors());
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 401, "bad credentials for admin:hunter2", null));
 
 		// Act
@@ -614,7 +659,7 @@ public sealed class WebServiceDesignerTests {
 	public void TestMethod_Should_Not_Withhold_When_The_Service_Has_No_Authentication() {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true)));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 404, "not found", null));
 
 		// Act
@@ -706,7 +751,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", RequestParameters: [
 			new WebServiceParameterArg("UsrToken", Path: "token", DefaultSysSetting: "UsrBingToken")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 500, "<fault>bad token tok-secret-9</fault>", null,
 				"POST https://api.bing.example/search HTTPS/1.1\r\nHost: api.bing.example",
 				"token=tok-secret-9"));
@@ -724,7 +769,7 @@ public sealed class WebServiceDesignerTests {
 	public void TestMethod_Should_Mask_A_Setting_Value_Echoed_From_A_Soap_Envelope() {
 		// Arrange
 		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 500,
 				"<soap:Fault><soap:Reason>bad password pw-s3cret&amp;&lt;9&gt; for inner-key-77</soap:Reason></soap:Fault>",
 				null, SoapServiceFixture.SentRaw, SoapServiceFixture.SentEnvelope));
@@ -745,7 +790,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
 		const string values = "{\"UsrResult\":\"echo inner-key-77\",\"UsrCount\":5,\"UsrMissing\":null}";
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(
 				new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw, SoapServiceFixture.SentEnvelope, values),
 				new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw, "not xml", values));
@@ -773,7 +818,7 @@ public sealed class WebServiceDesignerTests {
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
 		schema.Methods.Items.Values.Single().Response.Parameters.Items.Values.Single().Path = "$.UsrOpResult";
 		GivenRegisteredService(schema, "UsrSoapProbe");
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(true, 200, "<UsrOpResult>5</UsrOpResult>", null, SoapServiceFixture.SentRaw,
 				SoapServiceFixture.SentEnvelope, "{\"UsrResult\":null}"));
 
@@ -814,7 +859,7 @@ public sealed class WebServiceDesignerTests {
 		string values = JsonSerializer.Serialize(new Dictionary<string, string> {
 			["UsrResult"] = new string('x', Clio.Command.WebServiceDesigner.WebServiceDesigner.MaxResponseBodyLength)
 		});
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw,
 				SoapServiceFixture.SentEnvelope, values));
 
@@ -832,7 +877,7 @@ public sealed class WebServiceDesignerTests {
 	public void TestMethod_Should_Explain_The_Rest_Xml_Failure() {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml")));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
 
 		// Act
@@ -853,7 +898,7 @@ public sealed class WebServiceDesignerTests {
 				DefaultSysSetting: "UsrBingKey")]));
 		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthBasic };
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
 
 		// Act
@@ -870,7 +915,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
 			new WebServiceParameterArg("UsrCount", "header", Type: "Integer", Path: "X-Absent", DefaultSysSetting: "UsrApiSecret")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, null, "The input string 'live-setting-value' was not in a correct format."));
 
 		// Act
@@ -887,7 +932,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
 			new WebServiceParameterArg("UsrToken", "header", Path: "X-Absent", DefaultSysSetting: "UsrApiSecret")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 401, "{}", null,
 				"GET https://api.bing.example/search HTTPS/1.1\r\nHost: api.bing.example", null,
 				"{\"UsrToken\":\"live-setting-value\"}"));

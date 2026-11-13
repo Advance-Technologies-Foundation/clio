@@ -1,0 +1,267 @@
+using System.Text.Json;
+using Allure.NUnit;
+using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Tools;
+using Clio.Command.WebServiceDesigner;
+using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
+using FluentAssertions;
+using ModelContextProtocol.Protocol;
+
+namespace Clio.Mcp.E2E;
+
+/// <summary>
+/// End-to-end coverage of test-web-service-method with values for arrays and arrays of objects against a live stand:
+/// a REST call whose echo shows the body the platform built from them, the refusal of a misshapen nested value, and a
+/// SOAP call whose setting-bound item fields are located in the envelope at two depths. Every service is registered
+/// by the test with codes built from the stand's prefix and removed in the teardown.
+/// </summary>
+[TestFixture]
+[Category("McpE2E.Sandbox")]
+[AllureNUnit]
+[AllureFeature(TestWebServiceMethodTool.ToolName)]
+[NonParallelizable]
+public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase {
+
+	private const string PackageName = "Custom";
+	private const string EchoBaseUri = "https://httpbin.org/anything";
+	private const string TemNamespace = "http://example.org/clio-e2e-nested";
+
+	private readonly List<string> _serviceCodes = [];
+	private string? _environmentName;
+	private string _prefix = string.Empty;
+
+	private string Prefixed(string name) => _prefix + name;
+
+	private string UniqueCode(string stem) => Prefixed(stem) + Guid.NewGuid().ToString("N")[..12];
+
+	[TearDown]
+	public async Task RemoveThrowawayServicesAsync() {
+		try {
+			if (_environmentName is null) {
+				return;
+			}
+			using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
+			McpE2ESettings settings = TestConfiguration.Load();
+			foreach (string code in _serviceCodes) {
+				ClioCliCommandResult rows = await ClioCliCommandRunner.RunAsync(settings, [
+					"call-service", "-e", _environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
+					"-b", SelectQuery("VwWebServiceV2", "Name", code, "UId", "PackageUId")
+				], cancellationToken: cts.Token);
+				using JsonDocument answer = JsonDocument.Parse(rows.StandardOutput[rows.StandardOutput.IndexOf('{')..]);
+				foreach (JsonElement row in answer.RootElement.GetProperty("rows").EnumerateArray()) {
+					await ClioCliCommandRunner.RunAsync(settings, [
+						"call-service", "-e", _environmentName, "--service-path",
+						"DataService/json/SyncReply/ServiceSchemaRemoveRequest", "-b", JsonSerializer.Serialize(new {
+							uId = row.GetProperty("UId").GetString(), packageUId = row.GetProperty("PackageUId").GetString()
+						})
+					], cancellationToken: cts.Token);
+				}
+			}
+		} finally {
+			_serviceCodes.Clear();
+			_prefix = string.Empty;
+		}
+	}
+
+	[Test]
+	[AllureName("test-call a REST method with arrays and arrays of objects")]
+	[Description("Registers a REST service on an echo API with an array of texts and an array of objects whose items hold an array of texts and an inner array of objects, test-calls it with values at every depth and expects the echo to show the JSON body the platform built from them; then expects a misshapen nested value and an unknown item field to be refused with their locations before anything is sent. Ignored when the stand cannot reach the echo API.")]
+	public async Task TestWebServiceMethod_Should_Send_Arrays_And_Arrays_Of_Objects() {
+		// Arrange
+		await ArrangeAsync();
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(cts.Token);
+		string code = UniqueCode("E2eNestRest");
+		_serviceCodes.Add(code);
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["package-name"] = PackageName, ["code"] = code,
+				["base-uri"] = EchoBaseUri,
+				["methods"] = new[] {
+					new Dictionary<string, object?> {
+						["code"] = Prefixed("Post"), ["http-method"] = "POST", ["uri"] = "nested", ["content-type"] = "json",
+						["request-parameters"] = new object[] {
+							Field("Tags", "tags", array: true),
+							Field("Lines", "lines", "Object", true,
+								Field("Sku", "sku"), Field("Qty", "qty", "Integer"), Field("Notes", "notes", array: true),
+								Field("Subs", "subs", "Object", true, Field("Note", "note")))
+						}
+					}
+				}
+			}, cts.Token);
+		registered.Success.Should().BeTrue(because: $"the arrange step registers the service; error: {registered.Error}");
+
+		// Act
+		WebServiceTestResult result = await TestAsync(code, Prefixed("Post"), new Dictionary<string, object?> {
+			[Prefixed("Tags")] = new object[] { "red", "green" },
+			[Prefixed("Lines")] = new object[] {
+				new Dictionary<string, object?> {
+					[Prefixed("Sku")] = "S1", [Prefixed("Qty")] = 2, [Prefixed("Notes")] = new object[] { "n1", "n2" },
+					[Prefixed("Subs")] = new object[] { new Dictionary<string, object?> { [Prefixed("Note")] = "deep" } }
+				},
+				new Dictionary<string, object?> { [Prefixed("Sku")] = "S2" }
+			}
+		}, cts.Token);
+		if (result.StatusCode != 200) {
+			Assert.Ignore($"'{_environmentName}' could not reach {EchoBaseUri} (status {result.StatusCode}, "
+				+ $"error {result.Error}), so the sent body cannot be read back.");
+		}
+		WebServiceTestResult refused = await TestAsync(code, Prefixed("Post"), new Dictionary<string, object?> {
+			[Prefixed("Tags")] = "red",
+			[Prefixed("Lines")] = new object[] { new Dictionary<string, object?> { [Prefixed("Sku")] = "S1", [Prefixed("Price")] = 5 } }
+		}, cts.Token);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"the echo API answers the call; error: {result.Error}");
+		using JsonDocument echo = JsonDocument.Parse(result.ResponseBody!);
+		JsonElement sent = echo.RootElement.GetProperty("json");
+		sent.GetProperty("tags").EnumerateArray().Select(t => t.GetString()).Should().Equal(["red", "green"],
+			because: "an array of texts goes out as a JSON array, not one item per character");
+		JsonElement[] lines = sent.GetProperty("lines").EnumerateArray().ToArray();
+		lines.Should().HaveCount(2, because: "each object of the array becomes one item");
+		lines[0].GetProperty("sku").GetString().Should().Be("S1", because: "an item field goes out under its path");
+		lines[0].GetProperty("qty").GetInt32().Should().Be(2, because: "the platform converts the text to the field's type");
+		lines[0].GetProperty("notes").EnumerateArray().Select(n => n.GetString()).Should().Equal(["n1", "n2"],
+			because: "an array of texts inside an item goes out as a JSON array");
+		lines[0].GetProperty("subs")[0].GetProperty("note").GetString().Should().Be("deep",
+			because: "an array of objects inside an item goes out with its own items");
+		lines[1].GetProperty("sku").GetString().Should().Be("S2", because: "the second item is sent too");
+		refused.Success.Should().BeFalse(because: "misshapen values are refused before the call");
+		refused.Error.Should().Contain($"parameters.{Prefixed("Tags")}", because: "a text for an array is named")
+			.And.Contain($"parameters.{Prefixed("Lines")}[0]: '{Prefixed("Price")}' is not a field of",
+				because: "an unknown item field is named with its location, since the platform would drop it silently");
+	}
+
+	[Test]
+	[AllureName("test-call a SOAP method with arrays of objects")]
+	[Description("Registers a SOAP 1.1 service on the stand's own host whose array of objects has an item field and an inner array of objects with a field, both bound to a system setting; test-calls it once leaving the inner array out and once filling it, and expects both responses to come back instead of being withheld, because every setting value that went out is located in the envelope and an inner array left out sends nothing.")]
+	public async Task TestWebServiceMethod_Should_Locate_Setting_Values_In_Nested_Soap_Items() {
+		// Arrange
+		await ArrangeAsync();
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(cts.Token);
+		string code = UniqueCode("E2eNestSoap");
+		_serviceCodes.Add(code);
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["package-name"] = PackageName, ["code"] = code,
+				["type"] = "soap11", ["base-uri"] = $"http://localhost/{code}",
+				["namespaces"] = new object[] { new Dictionary<string, object?> { ["prefix"] = "tem", ["uri"] = TemNamespace } },
+				["methods"] = new[] {
+					new Dictionary<string, object?> {
+						["code"] = Prefixed("Op"), ["message-element"] = "tem:Op",
+						["soap-action"] = "http://example.org/clio-e2e-nested/Op",
+						["request-parameters"] = new object[] {
+							Field("Lines", "tem:Lines", "Object", true,
+								Field("Sku", "tem:Sku"), SettingField("Key", "tem:Key", "SchemaNamePrefix"),
+								Field("Subs", "tem:Subs", "Object", true,
+									Field("Note", "tem:Note"), SettingField("SubKey", "tem:SubKey", "SchemaNamePrefix")))
+						},
+						["response-parameters"] = new object[] {
+							new Dictionary<string, object?> { ["code"] = Prefixed("Result"), ["path"] = "OpResponse/OpResult" }
+						}
+					}
+				}
+			}, cts.Token);
+		registered.Success.Should().BeTrue(because: $"the arrange step registers the service; error: {registered.Error}");
+
+		// Act
+		WebServiceTestResult innerLeftOut = await TestAsync(code, Prefixed("Op"), new Dictionary<string, object?> {
+			[Prefixed("Lines")] = new object[] { new Dictionary<string, object?> { [Prefixed("Sku")] = "S1" } }
+		}, cts.Token);
+		WebServiceTestResult innerFilled = await TestAsync(code, Prefixed("Op"), new Dictionary<string, object?> {
+			[Prefixed("Lines")] = new object[] {
+				new Dictionary<string, object?> {
+					[Prefixed("Sku")] = "S1",
+					[Prefixed("Subs")] = new object[] { new Dictionary<string, object?> { [Prefixed("Note")] = "n1" } }
+				}
+			}
+		}, cts.Token);
+
+		// Assert
+		(innerLeftOut.Error ?? string.Empty).Should().NotContain("withheld",
+			because: "the item's setting field is located, and an inner array left out of every item sent no field");
+		innerLeftOut.ResponseValues.Should().NotBeNull(because: "the platform built and sent the envelope");
+		(innerFilled.Error ?? string.Empty).Should().NotContain("withheld",
+			because: "the setting field of the inner array's item is located two arrays deep");
+		innerFilled.ResponseValues.Should().NotBeNull(because: "the platform built and sent the envelope");
+	}
+
+	private async Task ArrangeAsync() {
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+	}
+
+	private Dictionary<string, object?> Field(string stem, string path, string? type = null, bool array = false,
+		params Dictionary<string, object?>[] items) {
+		var field = new Dictionary<string, object?> { ["code"] = Prefixed(stem), ["path"] = path };
+		if (type is not null) {
+			field["type"] = type;
+		}
+		if (array) {
+			field["array"] = true;
+		}
+		if (items.Length > 0) {
+			field["items"] = items;
+		}
+		return field;
+	}
+
+	private Dictionary<string, object?> SettingField(string stem, string path, string setting) {
+		Dictionary<string, object?> field = Field(stem, path);
+		field["default-sys-setting"] = setting;
+		return field;
+	}
+
+	private async Task<WebServiceTestResult> TestAsync(string code, string method, Dictionary<string, object?> parameters,
+		CancellationToken token) =>
+		await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName, new Dictionary<string, object?> {
+			["environment-name"] = _environmentName, ["code"] = code, ["method"] = method, ["parameters"] = parameters
+		}, token);
+
+	/// <summary>Reads the stand's <c>SchemaNamePrefix</c>; every code is built from it, so any prefix (or none) works.</summary>
+	private async Task ResolvePrefixAsync(CancellationToken token) {
+		ClioCliCommandResult queried = await ClioCliCommandRunner.RunAsync(TestConfiguration.Load(), [
+			"call-service", "-e", _environmentName!, "--service-path", "DataService/json/SyncReply/QuerySysSettings",
+			"-b", JsonSerializer.Serialize(new { sysSettingsNameCollection = new[] { "SchemaNamePrefix" } })
+		], cancellationToken: token);
+		queried.ExitCode.Should().Be(0,
+			because: $"the codes are built from the stand's prefix; output: {queried.StandardOutput} {queried.StandardError}");
+		using JsonDocument answer = JsonDocument.Parse(queried.StandardOutput[queried.StandardOutput.IndexOf('{')..]);
+		_prefix = answer.RootElement.GetProperty("values").TryGetProperty("SchemaNamePrefix", out JsonElement setting)
+			&& setting.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.String
+				? value.GetString()!.Trim()
+				: string.Empty;
+	}
+
+	private async Task<T> CallAsync<T>(string toolName, Dictionary<string, object?> args, CancellationToken token) {
+		CallToolResult result = await Session.CallToolAsync(toolName,
+			new Dictionary<string, object?> { ["args"] = args }, token);
+		return EntitySchemaStructuredResultParser.Extract<T>(result);
+	}
+
+	private static string SelectQuery(string root, string filterColumn, string value, params string[] columns) =>
+		JsonSerializer.Serialize(new {
+			rootSchemaName = root,
+			operationType = 0,
+			columns = new {
+				items = columns.ToDictionary(c => c, c => (object)new { expression = new { expressionType = 0, columnPath = c } })
+			},
+			filters = new {
+				rootSchemaName = root, filterType = 6, logicalOperation = 0, isEnabled = true,
+				items = new Dictionary<string, object> {
+					[filterColumn] = new {
+						filterType = 1, comparisonType = 3, isEnabled = true, dataValueType = 1,
+						leftExpression = new { expressionType = 0, columnPath = filterColumn },
+						rightExpression = new { expressionType = 2, parameter = new { dataValueType = 1, value } }
+					}
+				}
+			}
+		});
+}

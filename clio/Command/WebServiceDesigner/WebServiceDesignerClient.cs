@@ -53,10 +53,13 @@ public interface IWebServiceDesignerClient {
 	/// <summary>Calls one method through <c>CallServiceSchemaService.Execute</c>, as Studio's test request does.</summary>
 	/// <param name="serviceName">The service code.</param>
 	/// <param name="methodName">The method code.</param>
-	/// <param name="parameterValues">Values for top-level request parameters, by code.</param>
+	/// <param name="parameters">
+	/// The values to send, built by <see cref="WebServiceTestValues"/>: text in <c>value</c>, the items of an array of
+	/// scalars in <c>value</c>, and an array of objects in <c>nested</c>.
+	/// </param>
 	/// <returns>The raw outcome, including what the platform reports as sent.</returns>
 	ServiceMethodCallResult CallMethod(string serviceName, string methodName,
-		IReadOnlyDictionary<string, string> parameterValues);
+		IReadOnlyList<ServiceCallParameter> parameters);
 }
 
 /// <summary>
@@ -174,13 +177,10 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 	}
 
 	public ServiceMethodCallResult CallMethod(string serviceName, string methodName,
-		IReadOnlyDictionary<string, string> parameterValues) {
-		var parameters = (parameterValues ?? new Dictionary<string, string>())
-			.Select(pair => new { code = pair.Key, value = pair.Value })
-			.ToList();
+		IReadOnlyList<ServiceCallParameter> parameters) {
 		CallMethodEnvelope envelope = PostAndDeserialize<CallMethodEnvelope>(
 			ServiceUrlBuilder.KnownRoute.CallServiceSchemaMethod,
-			new { serviceName, methodName, parameters }, RequestOptions);
+			new { serviceName, methodName, parameters = parameters ?? [] }, RequestOptions);
 		CallMethodResponse result = envelope?.Result
 			?? throw new InvalidOperationException("The test call returned no result.");
 		return new ServiceMethodCallResult(result.Success, result.StatusCode, result.ResponseBody,

@@ -38,6 +38,28 @@ public sealed class WebServiceToolsArgumentTests {
 	}
 
 	[Test]
+	[Description("test-web-service-method passes parameters to the designer as given, arrays and arrays of objects included, instead of refusing them in the tool.")]
+	public void TestWebServiceMethod_Should_Pass_Array_Values_To_The_Designer() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
+		designer.TestMethod(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, JsonElement>>())
+			.Returns(new WebServiceTestResult(true));
+		Dictionary<string, JsonElement> parameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+			"""{"UsrTags": ["a", "b"], "UsrLines": [{"UsrSku": "S1", "UsrSubs": [{"UsrNote": "n"}]}]}""");
+		var tool = new TestWebServiceMethodTool(resolver);
+
+		// Act
+		WebServiceTestResult result = tool.TestWebServiceMethod(new TestWebServiceMethodArgs("dev", "UsrErp", "UsrGet", parameters));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "arrays are checked against the method by the designer, not refused by the tool");
+		designer.Received(1).TestMethod("UsrErp", "UsrGet", Arg.Is<IReadOnlyDictionary<string, JsonElement>>(
+			p => ReferenceEquals(p, parameters)));
+	}
+
+	[Test]
 	[Description("register-web-service passes type and namespaces to the designer unchanged.")]
 	public void RegisterWebService_Should_Pass_Type_And_Namespaces() {
 		// Arrange

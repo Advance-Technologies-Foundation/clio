@@ -124,6 +124,33 @@ unsupported constructs).
 `parameters` accepts arrays and arrays of objects, sent through the platform's `nested` member of
 `CallServiceSchemaService.Execute`. A single object stays refused, as the parameter model has none.
 
+**Measured** on stand `Creatio` (.NET Framework, prefix `Usr`) on 2026-11-13 with raw `call-service` calls on a throwaway
+REST service (echo `https://httpbin.org/anything`) and a SOAP 1.1 service (`http://localhost/<code>`), each with a Text
+array, an Integer array and an Object array whose items hold a Text, an Integer, a setting-bound Text, a Text array
+and an inner Object array (script and log: `C:\Projects\workspace\soap-research\evidence\slice-d-*`). The shape is the one
+Studio's Send test request sends (creatio-ui `service-client-form.component.ts`, `_getParameterValue`):
+
+| Parameter | Wire | REST body / SOAP envelope |
+| --- | --- | --- |
+| scalar | `{code, value: "text"}` | as before |
+| array of scalars | `{code, value: ["a", "b"]}`, texts or numbers | `"tags":["a","b"]`; `<tem:Tags arrayType="xsd:array[]"><tem:Tag>a</tem:Tag>...`; converted to the item type (`"1"` → `1`) |
+| array of objects | `{code, nested: [[{code, value}, ...], ...]}`, one list per item, no `value` | `"lines":[{"sku":"S1",...}]`; `<tem:Lines ...><tem:Line><tem:Sku>S1</tem:Sku>...` |
+| inside an item | the same rules, recursively (a scalar array in `value`, an inner object array in `nested`) | rendered under the item |
+
+What the platform does with anything else, which is why clio checks the shape first: a text for an array goes out one
+item per character (`"ab"` → `["a","b"]`); objects in `value` go out as an empty array; `nested` on an array of scalars
+sends the text `System.Collections.Generic.Dictionary...`; an unknown code inside an item is dropped silently; a code
+given twice (top level or in an item) fails the call with "An item with the same key has already been added." and
+nothing is sent; a null item of a scalar array goes out empty. An empty array is sent empty (`[]`, an empty element);
+an array the call leaves out is not rendered at all, an inner one included, and a setting-bound item field is filled
+in every item, also in an item given no fields.
+
+Decisions taken from the measurement: values are checked against the method's parameter tree in the designer (the tool
+has no schema), every problem is reported in one refusal with its location (`parameters.UsrLines[0].UsrSku`), a null
+array item is refused rather than sent empty, and the masking judges a missing array element by whether the call gave
+THAT array a value (the codes given a value at any depth), not its top-level ancestor, so a call that leaves an inner
+array out is not withheld for it.
+
 ### D11. Open owner question: generated method codes in `read-wsdl`
 
 Studio generates `prefix + shortened caption + _ + 8 hex characters of a GUID`, so a re-import creates new methods.

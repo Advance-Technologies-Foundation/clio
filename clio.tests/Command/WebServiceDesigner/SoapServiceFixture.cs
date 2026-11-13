@@ -99,7 +99,57 @@ internal static class SoapServiceFixture {
 		+ "Content-Type: application/soap+xml;charset=UTF-8\r\nSOAPAction: http://example.org/UsrSoapR/UsrOp\r\n"
 		+ "Host: localhost";
 
+	public const string SubKeyValue = "sub-key-99";
+
+	/// <summary>
+	/// <see cref="SentEnvelope"/> with one <c>UsrLines</c> item that carries its token and no inner array, as the platform
+	/// renders an item whose inner array the call left out (measured on a .NET Framework stand).
+	/// </summary>
+	public static readonly string SentWithItem = SentEnvelope.Replace("<tem:Lines arrayType=\"xsd:array[]\"/>",
+		$"<tem:Lines arrayType=\"xsd:array[]\"><tem:item><tem:Token>{LineTokenValue}</tem:Token></tem:item></tem:Lines>");
+
+	/// <summary><see cref="SentWithItem"/> with the inner array rendered, one item carrying its setting-bound key.</summary>
+	public static readonly string SentWithInnerItem = SentEnvelope.Replace("<tem:Lines arrayType=\"xsd:array[]\"/>",
+		$"<tem:Lines arrayType=\"xsd:array[]\"><tem:item><tem:Token>{LineTokenValue}</tem:Token>"
+		+ $"<tem:Subs arrayType=\"xsd:array[]\"><tem:Sub><tem:SubKey>{SubKeyValue}</tem:SubKey></tem:Sub></tem:Subs>"
+		+ "</tem:item></tem:Lines>");
+
 	public static ServiceSchemaDto Schema() => JsonSerializer.Deserialize<ServiceSchemaDto>(PlatformRead);
+
+	/// <summary>
+	/// <see cref="Schema"/> with an inner array of objects in the <c>UsrLines</c> items, <c>UsrSubs</c> (element
+	/// <c>tem:Subs</c>, items <c>tem:Sub</c>), whose field <c>UsrSubKey</c> (<c>tem:SubKey</c>) is bound to a setting.
+	/// </summary>
+	public static ServiceSchemaDto SchemaWithInnerArray() {
+		ServiceSchemaDto schema = Schema();
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+			foreach (ServiceParameterDto lines in method.Request.Parameters.Items.Values) {
+				if (lines.Name != "UsrLines") {
+					continue;
+				}
+				var key = new ServiceParameterDto {
+					UId = System.Guid.Parse("11111111-0000-4000-8000-000000000009"), Type = 1, Name = "UsrSubKey",
+					Path = "tem:SubKey", DataValueTypeName = "Text",
+					DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceSysSetting, Value = "UsrSubKey" }
+				};
+				var subs = new ServiceParameterDto {
+					UId = System.Guid.Parse("11111111-0000-4000-8000-000000000008"), Type = 1, Name = "UsrSubs",
+					Path = "tem:Subs", DataValueTypeName = "Object", IsArray = true, SequenceElementName = "tem:Sub",
+					DefValue = new ServiceParameterValueDto()
+				};
+				subs.ItemProperties.Items[key.UId.ToString()] = key;
+				lines.ItemProperties.Items[subs.UId.ToString()] = subs;
+			}
+		}
+		return schema;
+	}
+
+	public static ServiceMethodDto MethodWithInnerArray() {
+		foreach (ServiceMethodDto method in SchemaWithInnerArray().Methods.Items.Values) {
+			return method;
+		}
+		return null;
+	}
 
 	public static ServiceMethodDto Method() {
 		foreach (ServiceMethodDto method in Schema().Methods.Items.Values) {

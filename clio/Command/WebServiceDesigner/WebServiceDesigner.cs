@@ -60,12 +60,16 @@ public interface IWebServiceDesigner {
 	/// </summary>
 	/// <param name="code">The service code.</param>
 	/// <param name="methodCode">The method code.</param>
-	/// <param name="values">Values for top-level request parameters, by parameter code.</param>
+	/// <param name="values">
+	/// Values by top-level request parameter code: a text, number or boolean for a scalar, a JSON array of them for an
+	/// array of scalars, and a JSON array of objects by field code for an array of objects (see
+	/// <see cref="WebServiceTestValues"/>). A code the method does not have is refused at every level.
+	/// </param>
 	/// <returns>
 	/// The status code, the masked, length-limited response body or error, and the response parameters as the platform
 	/// parsed them; body and values are withheld when a sent setting value cannot be located.
 	/// </returns>
-	WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, string> values);
+	WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, JsonElement> values);
 }
 
 public sealed class WebServiceDesigner(
@@ -276,25 +280,25 @@ public sealed class WebServiceDesigner(
 			Usages: affected, Notices: [.. soapActionNotices, .. Notices(settings, row.Package, missingKept)]);
 	}
 
-	public WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, string> values) {
+	public WebServiceTestResult TestMethod(string code, string methodCode,
+		IReadOnlyDictionary<string, JsonElement> values) {
 		RequireManageSolution();
 		ServiceRow row = FindService(code);
 		ServiceSchemaDto schema = client.ReadSchema(row.UId, row.PackageUId);
 		ServiceMethodDto method = FindMethod(schema, methodCode)
 			?? throw new ArgumentException(
 				$"method '{methodCode}' not found; methods: {string.Join(", ", schema.Methods.Items.Values.Select(m => m.Name))}.");
-		RequireKnownParameterCodes(method, values);
-		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, values);
+		WebServiceTestCall call = WebServiceTestValues.Build(method, values);
+		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, call.Parameters);
 		if (IsRestXmlRefusal(schema, method, result)) {
 			// Nothing was built or sent, so there is no secret to locate and the explanation must not be withheld.
 			return new WebServiceTestResult(false, SensitiveErrorTextRedactor.Redact(ExplainRestXml(result.Error)),
 				result.StatusCode);
 		}
-		// The codes the call gave a value tell an array the platform skipped from one the lookup missed.
-		IReadOnlyCollection<string> sentCodes = values?.Where(p => p.Value is not null).Select(p => p.Key).ToList()
-			?? (IReadOnlyCollection<string>)[];
+		// The codes the call gave a value, nested ones included, tell an array the platform skipped from one the
+		// lookup missed.
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, result.RequestRawData,
-			result.RequestBody, HasAuth(schema), sentCodes, out bool secretUnlocated);
+			result.RequestBody, HasAuth(schema), call.SentCodes, out bool secretUnlocated);
 		if (!string.IsNullOrEmpty(result.Error) && string.IsNullOrEmpty(result.RequestRawData)
 			&& string.IsNullOrEmpty(result.RequestBody) && WebServiceResponseMasker.HasCredentialResponseDefault(method)) {
 			// A failure with nothing reported as sent may come from converting a response default after the call (a
@@ -368,18 +372,6 @@ public sealed class WebServiceDesigner(
 		$"{error} The platform cannot build the request of a REST method with content-type xml, so this method "
 		+ "cannot be test-called and nothing was sent. A process calls it through the Call web service element's "
 		+ "RequestBody, which carries the whole XML body, and reads the raw Response.";
-
-	/// <summary>A value for a code the method does not have would be dropped silently by the platform.</summary>
-	private static void RequireKnownParameterCodes(ServiceMethodDto method, IReadOnlyDictionary<string, string> values) {
-		var known = new HashSet<string>(
-			method.Request?.Parameters?.Items.Values.Select(p => p.Name) ?? [], StringComparer.Ordinal);
-		List<string> unknown = (values ?? new Dictionary<string, string>()).Keys.Where(k => !known.Contains(k)).ToList();
-		if (unknown.Count > 0) {
-			throw new ArgumentException($"parameters: {string.Join(", ", unknown.Select(u => $"'{u}'"))} is not a "
-				+ $"top-level request parameter of method '{method.Name}'; valid codes: "
-				+ (known.Count == 0 ? "none" : string.Join(", ", known.Order(StringComparer.Ordinal))) + ".");
-		}
-	}
 
 	internal IReadOnlyList<WebServiceUsage> FindUsages(Guid serviceUId) {
 		string uid = serviceUId.ToString();
