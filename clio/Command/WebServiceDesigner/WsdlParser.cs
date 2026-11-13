@@ -248,6 +248,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 	private const string SchemaTag = "schema";
 	private const string SequenceTag = "sequence";
 	private const string MessageTag = "message";
+	private const string OperationTag = "operation";
 	private const string MessageAttribute = "message";
 	private const char ElementPathSeparator = '/';
 	private const string IntegerType = "Integer";
@@ -739,7 +740,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				.ToHashSet(StringComparer.Ordinal);
 			return definitions.Elements()
 				.Where(e => Is(e, "portType") && portTypes.Contains(Attr(e, "name") ?? string.Empty))
-				.SelectMany(e => e.Elements().Where(o => Is(o, "operation")))
+				.SelectMany(e => e.Elements().Where(o => Is(o, OperationTag)))
 				.Select(o => Attr(o, "name") ?? string.Empty)
 				.Distinct(StringComparer.Ordinal)
 				.ToArray();
@@ -832,7 +833,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private (List<WsdlNamespace> Namespaces, List<WsdlOperation> Operations) BuildBinding(XElement definitions,
 			XElement binding) {
 			_bindingOperations = new Dictionary<string, List<XElement>>(StringComparer.Ordinal);
-			foreach (XElement bindingOperation in binding.Elements().Where(e => Is(e, "operation"))) {
+			foreach (XElement bindingOperation in binding.Elements().Where(e => Is(e, OperationTag))) {
 				string name = Attr(bindingOperation, "name") ?? string.Empty;
 				if (_bindingOperations.GetValueOrDefault(name) is not { Count: >= MaxSameNameBindingOperations }) {
 					AddTo(_bindingOperations, name, bindingOperation);
@@ -841,7 +842,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			string portTypeName = LocalPart(Attr(binding, "type"));
 			XElement[] operations = definitions.Elements()
 				.Where(e => Is(e, "portType") && Attr(e, "name") == portTypeName)
-				.SelectMany(e => e.Elements().Where(o => Is(o, "operation")))
+				.SelectMany(e => e.Elements().Where(o => Is(o, OperationTag)))
 				.Where(o => _wantedOperations is null || _wantedOperations.Contains(Attr(o, "name") ?? string.Empty))
 				.ToArray();
 			string targetNamespace = Attr(definitions, "targetNamespace") ?? DefaultTargetNamespace;
@@ -872,7 +873,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		}
 
 		private void ReportBindingStyle(string portName, XElement binding) {
-			bool rpc = binding.Descendants().Any(e => (Is(e, "binding") || Is(e, "operation"))
+			bool rpc = binding.Descendants().Any(e => (Is(e, "binding") || Is(e, OperationTag))
 				&& e.Name.NamespaceName is Soap11BindingNamespace or Soap12BindingNamespace && Attr(e, "style") == "rpc");
 			bool encoded = binding.Descendants().Any(e => Is(e, "body") && Attr(e, "use") == "encoded");
 			if (encoded) {
@@ -902,7 +903,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 			string studioCode = PrefixedName(caption);
 			List<XElement> bindingOperations = _bindingOperations.GetValueOrDefault(caption) ?? [];
-			XElement soapOperation = bindingOperations.SelectMany(o => o.Elements().Where(e => Is(e, "operation"))).FirstOrDefault();
+			XElement soapOperation = bindingOperations.SelectMany(o => o.Elements().Where(e => Is(e, OperationTag))).FirstOrDefault();
 			string soapAction = Attr(soapOperation, "soapAction");
 			(string rootElement, string rootNamespace) = RootElement(input, bindingOperations);
 			ReportPartSelection(input, bindingOperations);
