@@ -17,6 +17,9 @@ namespace Clio.Command;
 /// <c>stages</c>, the request handlers) is created and OVERWRITTEN by the platform's page preprocessor on every
 /// open, so writing any of it would only add something the next open discards or fights. The bar takes its stage
 /// column from the object's first enabled, active-version case, which is why <c>entityName</c> is all it needs.
+/// The two behaviour flags take the bar's own defaults, which the page template and 7 of the 11 product record
+/// pages with a bar keep: <c>saveOnChange</c> false (a stage click sets the field and the user saves) unless the
+/// caller asks for a save on click, and <c>askUserToChangeSchema</c> true. The wizard writes true and false.
 /// </remarks>
 public static class ProgressBarFragment {
 
@@ -46,7 +49,8 @@ public static class ProgressBarFragment {
 	/// <summary>Builds the view-config diff the fragment carries.</summary>
 	/// <param name="entitySchemaName">The case object; the bar's <c>entityName</c>.</param>
 	/// <param name="nameSuffix">Appended to both element names when the page already uses them; empty otherwise.</param>
-	public static JsonArray BuildViewConfigDiff(string entitySchemaName, string nameSuffix) {
+	/// <param name="saveOnChange">Whether a stage click saves the record at once; the bar's default is false.</param>
+	public static JsonArray BuildViewConfigDiff(string entitySchemaName, string nameSuffix, bool saveOnChange = false) {
 		string containerName = ContainerName + nameSuffix;
 		return [
 			new JsonObject {
@@ -77,8 +81,8 @@ public static class ProgressBarFragment {
 				["values"] = new JsonObject {
 					["type"] = BarType,
 					["entityName"] = entitySchemaName,
-					["saveOnChange"] = true,
-					["askUserToChangeSchema"] = false
+					["saveOnChange"] = saveOnChange,
+					["askUserToChangeSchema"] = true
 				},
 				["parentName"] = containerName,
 				["propertyName"] = "items",
@@ -94,8 +98,10 @@ public static class ProgressBarFragment {
 	/// <param name="pageSchemaName">The record page.</param>
 	/// <param name="entitySchemaName">The case object.</param>
 	/// <param name="nameSuffix">See <see cref="BuildViewConfigDiff"/>.</param>
-	public static string BuildBody(string pageSchemaName, string entitySchemaName, string nameSuffix) {
-		string diff = BuildViewConfigDiff(entitySchemaName, nameSuffix).ToJsonString();
+	/// <param name="saveOnChange">See <see cref="BuildViewConfigDiff"/>.</param>
+	public static string BuildBody(string pageSchemaName, string entitySchemaName, string nameSuffix,
+		bool saveOnChange = false) {
+		string diff = BuildViewConfigDiff(entitySchemaName, nameSuffix, saveOnChange).ToJsonString();
 		return "define(\"" + pageSchemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, "
 			+ "function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {\n"
 			+ "\treturn {\n"
@@ -127,7 +133,7 @@ public static class ProgressBarFragment {
 	/// <param name="body">The body with the two inserts, or <see langword="null"/> on <see langword="false"/>.</param>
 	/// <param name="error">Why the stored body cannot take them, or <see langword="null"/>.</param>
 	public static bool TryInsertIntoFullBody(string currentBody, string entitySchemaName, string nameSuffix,
-		out string body, out string error) {
+		out string body, out string error, bool saveOnChange = false) {
 		body = null;
 		if (!PageSchemaSectionReader.TryRead(currentBody ?? string.Empty, out string section, ViewConfigDiffMarker)) {
 			error = "the stored body has no viewConfigDiff marker pair to insert the bar into";
@@ -141,7 +147,7 @@ public static class ProgressBarFragment {
 			error = $"the stored viewConfigDiff is not a JSON array: {exception.Message}";
 			return false;
 		}
-		foreach (JsonNode insert in BuildViewConfigDiff(entitySchemaName, nameSuffix)) {
+		foreach (JsonNode insert in BuildViewConfigDiff(entitySchemaName, nameSuffix, saveOnChange)) {
 			items.Add(JToken.Parse(insert!.ToJsonString()));
 		}
 		PageSchemaSectionReader.TryReplaceSection(currentBody, items.ToString(Formatting.Indented), out body,

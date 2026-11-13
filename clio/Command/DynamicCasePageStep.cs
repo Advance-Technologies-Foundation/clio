@@ -35,6 +35,9 @@ public sealed class DynamicCasePagePlan {
 	/// </summary>
 	public string Fragment { get; init; }
 
+	/// <summary>The bar's <c>saveOnChange</c> in <see cref="Fragment"/>.</summary>
+	public bool SaveOnChange { get; init; }
+
 	/// <summary>
 	/// <c>append</c>, or <c>replace</c> for a page stored in the full form (every record page create-app makes),
 	/// which append refuses to merge into.
@@ -81,8 +84,9 @@ public interface IDynamicCasePageStep {
 	/// <param name="packageName">The case's package; the add-on is read in its hierarchy.</param>
 	/// <param name="entitySchemaName">The case object.</param>
 	/// <param name="explicitPageSchemaName">A page the caller named, or <see langword="null"/>.</param>
+	/// <param name="saveOnChange">Whether a stage click on the bar saves the record at once.</param>
 	DynamicCasePagePlan Plan(string environmentName, string packageName, string entitySchemaName,
-		string explicitPageSchemaName, IReadOnlyList<string> fallbackPackageNames = null);
+		string explicitPageSchemaName, IReadOnlyList<string> fallbackPackageNames = null, bool saveOnChange = false);
 
 	/// <summary>Writes the planned body to the page's design package, in the planned mode.</summary>
 	/// <param name="environmentName">Registered clio environment name.</param>
@@ -115,7 +119,7 @@ public sealed class DynamicCasePageStep(
 
 	/// <inheritdoc />
 	public DynamicCasePagePlan Plan(string environmentName, string packageName, string entitySchemaName,
-		string explicitPageSchemaName, IReadOnlyList<string> fallbackPackageNames = null) {
+		string explicitPageSchemaName, IReadOnlyList<string> fallbackPackageNames = null, bool saveOnChange = false) {
 		RecordPageResolution resolution = recordPageResolver.Resolve(packageName, entitySchemaName, explicitPageSchemaName,
 			fallbackPackageNames);
 		if (resolution.ErrorCode is not null) {
@@ -163,7 +167,7 @@ public sealed class DynamicCasePageStep(
 		// Append REPLACES an entry with the same operation and name, so reusing a name the page already has would
 		// overwrite that element instead of adding the bar.
 		string suffix = check.NamesTaken ? "_" + Guid.NewGuid().ToString("N")[..8] : string.Empty;
-		string fragment = ProgressBarFragment.BuildBody(pageSchemaName, entitySchemaName, suffix);
+		string fragment = ProgressBarFragment.BuildBody(pageSchemaName, entitySchemaName, suffix, saveOnChange);
 		SchemaValidationResult references = dataSourceValidator.Validate(fragment, () => page.Bundle.ModelConfig?.ToJsonString());
 		if (references is { IsValid: false }) {
 			return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
@@ -183,7 +187,7 @@ public sealed class DynamicCasePageStep(
 					+ "Retry the call.");
 			}
 			if (!ProgressBarFragment.TryInsertIntoFullBody(page.Raw.Body, entitySchemaName, suffix, out writeBody,
-					out string insertError)) {
+					out string insertError, saveOnChange)) {
 				return Refused(DynamicCaseErrorCodes.PageAppendRejected, pageSchemaName, resolution.ResolvedBy,
 					$"The progress bar cannot be added to '{pageSchemaName}', stored in the full form: {insertError}.");
 			}
@@ -202,6 +206,7 @@ public sealed class DynamicCasePageStep(
 			DesignPackageName = designPackageName,
 			Template = check.Template,
 			Fragment = fragment,
+			SaveOnChange = saveOnChange,
 			WriteMode = writeMode,
 			WriteBody = writeBody,
 			ExpectedChecksum = expectedChecksum,
