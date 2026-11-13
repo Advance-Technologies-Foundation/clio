@@ -876,6 +876,32 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("modify-business-process names the chatMessage block on addElement and setElement, refuses SendChatMessageUserTask on the generic route (Q1), routes the block to its guide, and its prompt states the partial-update rules: an omitted member is kept, columnValues: [] clears, and a switch to custom needs the new message in the same update.")]
+	public void ModifyBusinessProcess_Description_ShouldOfferTheChatMessageBlockAndItsSetElementRules() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess");
+
+		// Assert
+		description.Should().Contain("fileProcessing, webService, sendChatMessage - and the same block",
+			because: "addElement applies the chatMessage block only on its own element type");
+		description.Should().Contain("WebServiceUserTask or SendChatMessageUserTask is REFUSED",
+			because: "the Send chat message task is refused on the generic route (Q1)");
+		description.Should().Contain("name=process-send-chat-message the chatMessage block",
+			because: "the contract must route the block to the guide that owns it");
+		prompt.Should().Contain("a Send chat message element is `type:\"sendChatMessage\"` with its `chatMessage` block, never a generic",
+			because: "the prompt must match its tool's generic-route refusal");
+		prompt.Should().Contain("`columnValues: []` clears the column values, and switching to `messageSource: \"custom\"` needs the new",
+			because: "an empty list is the only way to clear the column values, and a switch to custom must carry its text");
+		prompt.Should().Contain("A described `chatMessage` block",
+			because: "describe reports the block in its write shape with three describe-only members");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The modify contract offers the webService block on addElement and setElement and names WebServiceUserTask among the generic-route refusals (Q1, Q15), and its prompt carries the setElement rules - an omitted member is kept, method alone switches within the service, service without method is refused, 0 and false clear - and the replay rule for a described block. An agent that cannot see the block builds the generic userTask the server refuses.")]
 	public void ModifyBusinessProcess_Description_ShouldOfferTheWebServiceBlockAndItsSetElementRules() {
 		// Arrange

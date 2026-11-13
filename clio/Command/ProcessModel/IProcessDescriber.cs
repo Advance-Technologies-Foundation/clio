@@ -2799,8 +2799,8 @@ public sealed class DescribedChatMessage {
 
 	/// <summary>
 	/// The chat channel the message is sent from (the element's <c>Channel</c>), in the shared value-source shape: a
-	/// constant channel reads back as the <c>[#Lookup.…#]</c> macro the designer stores, a system setting as its
-	/// <c>[#SysSettings.…#]</c> expression.
+	/// constant channel reads back as its record id in <c>value</c> with its name in the describe-only <c>display</c>, a
+	/// system setting as its <c>[#SysSettings.…#]</c> expression.
 	/// </summary>
 	[JsonPropertyName("from")]
 	public DescribedFileProcessingValueSource From { get; set; }

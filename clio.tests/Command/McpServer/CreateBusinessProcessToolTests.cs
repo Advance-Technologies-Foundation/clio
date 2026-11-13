@@ -650,6 +650,33 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The create contract names the sendChatMessage type, its chatMessage block and the guide that owns it, and the prompt keeps the agent off the generic SendChatMessageUserTask route the server refuses (Q1) - the contract carries only the type, the block and the pointer (Q10), the guide everything else.")]
+	public void CreateBusinessProcessTool_ShouldOfferTheSendChatMessageElementAndRouteToItsGuide() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		toolDescription.Should().Contain("|webService|sendChatMessage (aliases ",
+			because: "the element type list is where an agent learns which type tokens a build accepts");
+		toolDescription.Should().Contain("chatMessage? (sendChatMessage elements only - get-guidance name=process-send-chat-message owns the block)",
+			because: "the block clause names the element type and the guide that owns the block");
+		prompt.Should().Contain("and except `SendChatMessageUserTask` (Send chat message), which is built as a `sendChatMessage` element;",
+			because: "the list-user-tasks step must not hand the agent the chat task for a generic userTask");
+		prompt.Should().Contain("`userTask` naming `SendChatMessageUserTask`, which is refused.",
+			because: "the prompt must keep the agent off the generic route the server refuses");
+		prompt.Should().Contain("personalised text is a formula mapped onto the element's `Message`",
+			because: "a constant message is sent verbatim, so personalisation goes through a mapping");
+		prompt.Should().Contain("Read `get-guidance name=process-send-chat-message` before",
+			because: "the guide owns the block's members, notices and refusals");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The create contract's flows[] clause says, for every element kind, that a branch on an activity RESULT takes flows[].results and no condition. The clause around it says a conditional flow REQUIRES a condition, and only the Approval block said otherwise, so without this sentence an agent branching on a Perform task, Pre-configured page or Open edit page result writes a formula the build refuses. The Process file element's description trimmed the sentence once to pay for its own text; this pin keeps the next trim from doing so unseen.")]
 	public void CreateBusinessProcessTool_ShouldSayAnActivityResultBranchTakesResults_ForEveryResultSource() {
 		// Arrange

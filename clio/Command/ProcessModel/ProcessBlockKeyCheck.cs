@@ -582,6 +582,9 @@ internal static class ProcessBlockKeyCheck {
 			if (child == WebServiceBlock && value is JsonObject webService) {
 				RefuseFractionalTimeout(webService, where, prefix + key);
 			}
+			if (child == ChatMessageBlock && value is JsonObject chatMessage) {
+				RefuseChatValueSourceShape(chatMessage, where, prefix + key);
+			}
 			if (value is JsonObject nested) {
 				Visit(nested, child, where, $"{prefix}{key}.", placement, depth + 1);
 				return;
@@ -592,6 +595,27 @@ internal static class ProcessBlockKeyCheck {
 						Visit(item, child, where, $"{prefix}{key}[{index}].", placement, depth + 1);
 					}
 				}
+			}
+		}
+
+		// chatMessage.from and chatMessage.to are ONE value-source object each on the server's contract. A list - the
+		// shape an agent reaches for to message several contacts - or a bare string is not a key the contract drops:
+		// the serializer fails to read the WHOLE request before the package's own refusal can run, so the reply could
+		// not say that the element sends to one contact. This check says it before anything is sent.
+		private void RefuseChatValueSourceShape(JsonObject chatMessage, string where, string blockPath) {
+			foreach (string member in new[] { "from", "to" }) {
+				if (!chatMessage.TryGetPropertyValue(member, out JsonNode value) || value is null or JsonObject) {
+					continue;
+				}
+				string path = $"{blockPath}.{member}";
+				string what = member == "to" ? "ONE contact" : "ONE channel";
+				RefuseShape(value is JsonArray
+					? $"{where}: '{path}' is a list, which the server cannot read: a Send chat message element sends to "
+						+ $"{what}. Send one value source, for example \"{member}\": {{\"processParameter\": \"...\"}}; "
+						+ "to message several contacts, add one element per contact or run the element in a "
+						+ "multi-instance sub-process over the list."
+					: $"{where}: '{path}' is {value.ToJsonString(ReadableJson)}, which the server cannot read: it takes "
+						+ $"ONE value-source object, for example \"{member}\": {{\"value\": {value.ToJsonString(ReadableJson)}}}.");
 			}
 		}
 

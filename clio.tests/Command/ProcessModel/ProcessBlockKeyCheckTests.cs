@@ -907,6 +907,44 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "a column value is named for the block member it sits in");
 	}
 
+	[TestCase("to", """[ { "processParameter": "ContactA" }, { "processParameter": "ContactB" } ]""", "sends to ONE contact")]
+	[TestCase("from", """[ { "value": "Support Telegram" } ]""", "sends to ONE channel")]
+	[Description("A list in chatMessage.to or chatMessage.from is refused before sending with the one-contact hint: the server's serializer cannot read it and fails the whole request before the package's own refusal runs, so only clio can say that the element sends to one contact and how to reach several.")]
+	public void Check_Should_RefuseAListInAChatMessageValueSource_WithTheOneContactHint(string member, string list,
+		string hint) {
+		// Arrange
+		string element = $$"""{ "name": "Chat1", "type": "sendChatMessage", "chatMessage": { "{{member}}": {{list}} } }""";
+		string operations = $$"""[ { "op": "setElement", "elementName": "Chat1", "elementUpdate": { "chatMessage": { "{{member}}": {{list}} } } } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
+		create.Error.Should().Contain($"'chatMessage.{member}' is a list, which the server cannot read",
+			because: "the refusal names the member and why it cannot be sent");
+		create.Error.Should().Contain(hint, because: "the refusal says the element takes one value");
+		modify.Error.Should().Contain($"'elementUpdate.chatMessage.{member}' is a list",
+			because: "a setElement is checked the same way");
+	}
+
+	[Test]
+	[Description("A bare string in chatMessage.to is refused before sending and the refusal shows the value-source object it belongs in, because the server's serializer cannot read a string where it expects an object.")]
+	public void Check_Should_RefuseABareStringInAChatMessageValueSource() {
+		// Arrange
+		string element = """{ "name": "Chat1", "type": "sendChatMessage", "chatMessage": { "to": "ContactId" } }""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().Contain("'chatMessage.to' is \"ContactId\", which the server cannot read",
+			because: "the refusal names the member and the value sent");
+		result.Error.Should().Contain("\"to\": {\"value\": \"ContactId\"}",
+			because: "the refusal shows the object shape the value belongs in");
+	}
+
 	[Test]
 	[Description("A described chatMessage block fed back unchanged - the replay rule describe states - keeps building: templateName, outputs and issues are describe-only, so they are listed as ignored read-backs, never refused, and a value source's display is tolerated the same way.")]
 	public void Check_Should_TolerateTheReadBackFields_OfADescribedChatMessageBlock() {
