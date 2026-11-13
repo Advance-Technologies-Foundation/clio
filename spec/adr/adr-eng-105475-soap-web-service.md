@@ -161,6 +161,24 @@ there); a JSON body now fails closed like XML, finding a value under the name th
 `$['k']` included) and withholding the response when a top-level value, or an item field whose array went out, is
 missing; and a body array never withholds for its own setting default, which the platform never uses.
 
+### D14. A test call that can change data waits for the user's explicit yes (owner, 2026-11-13)
+
+Before `test-web-service-method` calls a POST, PUT, PATCH or DELETE method, or any SOAP method (every SOAP call is a
+POST whose effect clio cannot know), the agent tells the user the call sends a real request that can change data in
+that API and calls only after the user's explicit yes, even when the user asked to "test" it: a request to test is not
+a confirmation. A GET needs no question. Isolated agent runs read "as a test" as consent under the earlier wording
+("confirm with the user first"), so the tool description now states the rule right after its first sentence, and the
+clio-knowledge registration guide (REST) and SOAP guide carry the same rule. clio does not enforce it: the tool has no
+confirmation argument, so the rule is the agent's.
+
+Measured on 2026-11-13 with an isolated agent (TC-13 step 1, "add 2 and 3 as a test", stand studio-16317520, clio built
+from this change, the published guides of library 1.15.213): the agent still called without asking. It never read the
+new description: `test-web-service-method` is a long-tail tool called through `clio-run`, and the `get-tool-contract`
+index it read shows only the first sentence. It read the registration and SOAP guides, whose published text still says
+"confirm with the user first". So the rule reaches agents through the guides once they are published; whether clio
+should also refuse such a call until an explicit confirmation argument is given (as `modify-web-service` does with
+`acknowledge-usages`) is an open owner question.
+
 ### D11. Open owner question: generated method codes in `read-wsdl`
 
 Studio generates `prefix + shortened caption + _ + 8 hex characters of a GUID`, so a re-import creates new methods.
