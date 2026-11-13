@@ -226,16 +226,17 @@ public sealed class WsdlReader(
 		if (paths.Count > MaxFiles) {
 			throw new ArgumentException($"wsdl-files: at most {MaxFiles} files.");
 		}
-		foreach (string path in paths) {
-			// A UNC path (\\host\share, //host/share) would make the machine running clio open a network connection with
-			// the user's credentials.
-			if (string.IsNullOrWhiteSpace(path) || !fileSystem.Path.IsPathFullyQualified(path)
-					|| path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal)) {
-				throw new ArgumentException($"wsdl-files: '{WsdlParser.Shown(path)}' must be an absolute local path; the MCP "
-					+ "server does not run in the user's folder, and network paths are not read.");
-			}
+		if (paths.Any(IsRefusedPath)) {
+			throw new ArgumentException($"wsdl-files: '{WsdlParser.Shown(paths.First(IsRefusedPath))}' must be an absolute "
+				+ "local path; the MCP server does not run in the user's folder, and network paths are not read.");
 		}
 	}
+
+	// A UNC path (\\host\share, //host/share) would make the machine running clio open a network connection with the
+	// user's credentials.
+	private bool IsRefusedPath(string path) =>
+		string.IsNullOrWhiteSpace(path) || !fileSystem.Path.IsPathFullyQualified(path)
+		|| path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal);
 
 	private IReadOnlyList<WsdlSourceFile> ReadFiles(IReadOnlyList<string> paths) {
 		var files = new List<WsdlSourceFile>();

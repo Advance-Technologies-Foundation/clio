@@ -191,6 +191,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 	private const string SchemaTag = "schema";
 	private const string SequenceTag = "sequence";
 	private const string MessageTag = "message";
+	private const string MessageAttribute = "message";
+	private const char ElementPathSeparator = '/';
 	private const string IntegerType = "Integer";
 	private const string TextType = "Text";
 	private const string FloatType = "Float";
@@ -683,7 +685,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		// The wizard's root element: the local name of the first part's element. The namespace is clio's addition: Studio stores
 		// the bare name, which the platform qualifies with the default namespace.
 		private (string Name, string Namespace) RootElement(XElement input, List<XElement> bindingOperations) {
-			XElement part = MessageParts(LocalPart(Attr(input, "message"))).FirstOrDefault();
+			XElement part = MessageParts(LocalPart(Attr(input, MessageAttribute))).FirstOrDefault();
 			string element = Attr(part, "element");
 			if (element is not null) {
 				return (LocalPart(element), NamespaceOf(element, part));
@@ -705,11 +707,11 @@ public sealed partial class WsdlParser : IWsdlParser {
 		// Header; a binding that splits one message between them (soap:body parts=, a header part of the input message)
 		// therefore gets parameters in both places.
 		private void ReportPartSelection(XElement input, List<XElement> bindingOperations) {
-			string inputMessage = LocalPart(Attr(input, "message"));
+			string inputMessage = LocalPart(Attr(input, MessageAttribute));
 			IEnumerable<XElement> bindingInputs = BindingInputs(bindingOperations).ToArray();
 			bool bodyParts = bindingInputs.SelectMany(i => i.Elements()).Any(e => Is(e, "body") && Attr(e, "parts") is not null);
 			bool headerFromInput = bindingInputs.SelectMany(i => i.Elements())
-				.Any(e => Is(e, "header") && LocalPart(Attr(e, "message")) == inputMessage);
+				.Any(e => Is(e, "header") && LocalPart(Attr(e, MessageAttribute)) == inputMessage);
 			if (bodyParts || headerFromInput) {
 				Warn($"{OperationPrefix}its binding splits the input message between the body and the SOAP header (part/parts); "
 					+ "Studio's wizard reads every part into both, so remove the header elements from the body parameters and "
@@ -725,7 +727,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 			if (headers.Length > 1) {
 				Warn($"{OperationPrefix}its binding input has {headers.Length} SOAP headers; Studio's wizard reads only the first "
-					+ $"('{Shown(LocalPart(Attr(headers[0], "message")))}'). Add the others by hand if the API needs them.");
+					+ $"('{Shown(LocalPart(Attr(headers[0], MessageAttribute)))}'). Add the others by hand if the API needs them.");
 			}
 			List<Parameter> parameters = ParametersForMessage(headers[0], fromRoot: true);
 			MarkAsHeader(parameters);
@@ -740,7 +742,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		}
 
 		private List<Parameter> ParametersForMessage(XElement node, bool fromRoot) {
-			string messageName = LocalPart(Attr(node, "message"));
+			string messageName = LocalPart(Attr(node, MessageAttribute));
 			var parameters = new List<Parameter>();
 			foreach (XElement part in MessageParts(messageName)) {
 				string element = Attr(part, "element");
@@ -1132,7 +1134,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 			string path = node.IsArray && !node.IsObject ? string.Empty : $"{prefix}:{node.Path}";
 			for (Node parent = node.Parent; parent is not null && !parent.IsArray; parent = parent.Parent) {
 				string parentPrefix = PrefixFor(parent.Namespace);
-				path = $"{parentPrefix}:{parent.Path}" + (path.Length > 0 ? "/" + path : string.Empty);
+				string segment = $"{parentPrefix}:{parent.Path}";
+				path = path.Length > 0 ? string.Join(ElementPathSeparator, segment, path) : segment;
 			}
 			return path;
 		}
