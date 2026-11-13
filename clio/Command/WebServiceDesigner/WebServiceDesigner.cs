@@ -372,15 +372,12 @@ public sealed class WebServiceDesigner(
 	/// <summary>
 	/// Whether a test call of the method can change data in the external API: every SOAP call is a POST whose effect clio
 	/// cannot know, and so is a REST method with any verb but GET (an unknown verb counts too). A REST method with an XML
-	/// body is the exception: the platform refuses to build its request and sends nothing (see <see cref="IsRestXmlRefusal"/>).
+	/// body is not exempt although the platform usually refuses to build it: a custom body builder (<c>bodyBuilderId</c>)
+	/// makes it go out.
 	/// </summary>
-	private static bool CanChangeData(ServiceSchemaDto schema, ServiceMethodDto method) {
-		if (WebServiceSchemaView.IsSoap(schema)) {
-			return true;
-		}
-		return method.Request?.ContentType != ServiceSchemaCodes.ContentTypeXml
-			&& method.Request?.HttpMethodType != ServiceSchemaCodes.HttpMethods["GET"];
-	}
+	private static bool CanChangeData(ServiceSchemaDto schema, ServiceMethodDto method) =>
+		WebServiceSchemaView.IsSoap(schema)
+		|| method.Request?.HttpMethodType != ServiceSchemaCodes.HttpMethods["GET"];
 
 	private static string ConfirmationRefusal(ServiceSchemaDto schema, ServiceMethodDto method) {
 		string verb = WebServiceSchemaView.IsSoap(schema)

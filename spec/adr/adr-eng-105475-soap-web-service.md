@@ -166,8 +166,8 @@ missing; and a body array never withholds for its own setting default, which the
 Before `test-web-service-method` calls a POST, PUT, PATCH or DELETE method, or any SOAP method (every SOAP call is a
 POST whose effect clio cannot know), the agent tells the user the call sends a real request that can change data in
 that API and calls only after the user's explicit yes, even when the user asked to "test" it: a request to test is not
-a confirmation. A GET needs no question, and neither does a REST method with an XML body, for which the platform builds
-and sends nothing.
+a confirmation. A GET needs no question. A REST method with an XML body is not exempt although the platform usually
+sends nothing for it: a custom body builder (`bodyBuilderId`) makes it go out (gate review, 2026-11-13).
 
 clio enforces it (owner, 2026-11-13, after the measurement below): such a call without `user-confirmed: true` is refused
 before anything is sent, with `confirmation-required: true` and an error that tells the agent to ask the user, not to
@@ -181,6 +181,10 @@ stand studio-16317520, clio with the rule only in the description, published gui
 called without asking. It never read the description: `test-web-service-method` is a long-tail tool called through
 `clio-run`, and the `get-tool-contract` index shows only the first sentence; the published guides still said "confirm
 with the user first". A refusal reaches the agent on its first call whatever it read.
+
+Rerun with the gate (same case, stand and guides, 2026-11-13): the agent's first call was refused with nothing sent;
+it told the user the SOAP call sends a real request and asked for a yes. After "Yes, send it." it repeated the call with
+`user-confirmed: true` and got HTTP 200 and 5.
 
 ### D11. Open owner question: generated method codes in `read-wsdl`
 

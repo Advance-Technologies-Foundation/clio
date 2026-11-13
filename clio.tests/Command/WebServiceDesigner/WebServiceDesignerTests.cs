@@ -561,8 +561,9 @@ public sealed class WebServiceDesignerTests {
 		refused.Success.Should().BeFalse(because: "a request to test is not a confirmation");
 		refused.ConfirmationRequired.Should().BeTrue(because: "the result says the user has to be asked first");
 		refused.StatusCode.Should().BeNull(because: "nothing was sent");
-		refused.Error.Should().Contain($"a {verb} method").And.Contain("do not set user-confirmed yourself")
-			.And.Contain("user-confirmed: true", because: "the refusal tells the agent to ask and how to repeat after the yes");
+		refused.Error.Should().Contain($"a {verb} method", because: "the refusal names why the call needs a yes")
+			.And.Contain("do not set user-confirmed yourself", because: "the agent must ask, not confirm on its own")
+			.And.Contain("user-confirmed: true", because: "the refusal says how to repeat the call after the yes");
 		confirmed.Success.Should().BeTrue(because: "the confirmed call goes out");
 		confirmed.ConfirmationRequired.Should().BeNull(because: "a confirmed call carries no confirmation flag");
 		_client.Received(1).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
@@ -585,23 +586,31 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("A GET and a REST method with an XML body need no confirmation: a GET reads, and the platform sends nothing for an XML body.")]
-	public void TestMethod_Should_Not_Ask_For_A_Get_Or_A_Rest_Xml_Method() {
+	[Description("A GET needs no confirmation, while a REST method with an XML body and a method of an unknown verb do: a custom body builder can send the first, and the second may change data.")]
+	public void TestMethod_Should_Ask_For_Everything_But_A_Get() {
 		// Arrange
 		GivenRegisteredService(BingSchema());
 		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(true, 200, "{}", null, "GET https://api.bing.example/search HTTP/1.1", null));
+		ServiceSchemaDto unknownVerb = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search"));
+		foreach (ServiceMethodDto method in unknownVerb.Methods.Items.Values) {
+			method.Request.HttpMethodType = 0;
+		}
 
 		// Act
 		WebServiceTestResult get = _sut.TestMethod("BingSearchApiCall", "Search", null);
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml")));
 		WebServiceTestResult xml = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		GivenRegisteredService(unknownVerb);
+		WebServiceTestResult unknown = _sut.TestMethod("BingSearchApiCall", "Search", null);
 
 		// Assert
 		get.ConfirmationRequired.Should().BeNull(because: "a GET does not change data");
 		get.Success.Should().BeTrue(because: "the GET went out");
-		xml.ConfirmationRequired.Should().BeNull(because: "the platform refuses to build an XML REST body, so nothing could be sent");
-		_client.Received(2).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+		xml.ConfirmationRequired.Should().BeTrue(because: "a custom body builder can send an XML REST body");
+		unknown.ConfirmationRequired.Should().BeTrue(because: "a verb clio does not know may change data");
+		unknown.Error.Should().Contain("a non-GET method", because: "the refusal names what it could not tell");
+		_client.Received(1).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
 	}
 
 	private ServiceSchemaDto OrdersSchema() => SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "orders",
@@ -945,7 +954,7 @@ public sealed class WebServiceDesignerTests {
 			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the platform sent nothing");
@@ -966,7 +975,7 @@ public sealed class WebServiceDesignerTests {
 			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
 
 		// Assert
 		result.Error.Should().Contain("RequestBody", because: "with nothing sent there is no secret to locate");

@@ -20,5 +20,7 @@ builder.
 
 **What breaks if you ignore it** — an agent that registers an XML API as REST and test-calls it reads a bare
 "Rest:Xml" and starts changing the service instead of moving the body into the process. `test-web-service-method`
-therefore keeps the platform's message and appends the `RequestBody` route. It does not refuse before calling, so a
-platform or a builder that makes the call work is not blocked.
+therefore keeps the platform's message and appends the `RequestBody` route. It does not refuse such a method for its
+content type, so a platform or a custom builder (`bodyBuilderId`) that makes the call work is not blocked; for the same
+reason a POST, PUT, PATCH or DELETE xml method needs the user's `user-confirmed: true` like any other, since that
+builder would send it.

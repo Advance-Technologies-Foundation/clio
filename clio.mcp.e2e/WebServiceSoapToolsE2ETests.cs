@@ -285,7 +285,7 @@ public sealed class WebServiceSoapToolsE2ETests : McpContractFixtureBase {
 		// Act
 		WebServiceTestResult result = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
 			new Dictionary<string, object?> {
-				["environment-name"] = _environmentName, ["code"] = code, ["method"] = Prefixed("Post")
+				["environment-name"] = _environmentName, ["code"] = code, ["method"] = Prefixed("Post"), ["user-confirmed"] = true
 			}, cts.Token);
 
 		// Assert
