@@ -9,7 +9,7 @@ applies-to:
   - clio.mcp.e2e/ToolContractGetToolE2ETests.cs
   - clio.tests/Common/BundledProcessBuilderSource.cs
 ticket: ENG-100154
-date: 2026-11-11
+date: 2026-11-13
 ---
 
 **What is true** — since ENG-100154 `get-tool-contract` with `tool-names` and no `detail` returns every
@@ -54,7 +54,7 @@ MEASURED against the budget:
   gain an example, 378 characters as appended (more in Fit's measure, whose default encoder escapes every
   quote), none of them in the seven-contract bundle; a single-tool lookup of those six still fits whole, but
   in a multi-contract reply Fit may now shorten one contract more than before. The `CallShapes` tools are skipped by name,
-  because their shape block already lists every nested field and their bundle has about 145 bytes of
+  because their shape block already lists every nested field and their bundle has about 119 bytes of
   headroom; a new short example on another of the seven would spend that headroom, which the budget tests
   below report.
 - The short `create-business-process` and `modify-business-process` contracts also carry a `SHAPE:` block
@@ -105,9 +105,10 @@ a change that keeps one of the seven whole, or brings their floor back under Fit
 `GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget`,
 so the trade is re-decided rather than drifting.
 
-Both budgets are nearly spent. Measured after ENG-103990 joined ENG-92710 (2026-11-11): the largest full
-contract, `describe-business-process`, is 35 069 bytes, 3 under the 35 072-byte per-contract ceiling in
-`ToolContractPayloadBudgetTests` (create 35 065), and the seven-contract reply 18 855 bytes, 145 under 19 000 on the wire;
+Both budgets are nearly spent. Measured after ENG-96034 (the Send chat message element, 2026-11-13): the largest
+full contract, `describe-business-process`, is 35 061 bytes, 11 under the 35 072-byte per-contract ceiling in
+`ToolContractPayloadBudgetTests` (create 35 056, modify 35 041), and the seven-contract reply 18 881 bytes, 119 under
+19 000 on the wire; ENG-96034 paid for its text by turning em dashes into ' - ', and fewer of those are left each time;
 that test's comment carries the current figures for each contract.
 The next sentence on that tool pays by a swap, as the ceiling's comment
 records for earlier tickets, and the order to cut in is: provenance first (version floors, history, which

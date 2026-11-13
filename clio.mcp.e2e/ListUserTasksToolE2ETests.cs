@@ -101,7 +101,7 @@ public sealed class ListUserTasksToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path the list-user-tasks contract that get-tool-contract publishes names SendChatMessageUserTask as REFUSED on the generic userTask route and points to type sendChatMessage with its chatMessage block, so an agent picking the chat task from the palette is told before the build refuses it (hermetic).")]
+	[Description("TC-I-10: over the real MCP path the list-user-tasks contract that get-tool-contract publishes names SendChatMessageUserTask as REFUSED on the generic userTask route and points to type sendChatMessage with its chatMessage block, so an agent picking the chat task from the palette is told before the build refuses it (hermetic).")]
 	[AllureTag(ToolName)]
 	[AllureName("list-user-tasks publishes the generic-route refusal of SendChatMessageUserTask")]
 	public async Task ListUserTasks_Should_PublishTheGenericRouteRefusalOfSendChatMessageUserTask() {

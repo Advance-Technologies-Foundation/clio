@@ -5127,3 +5127,54 @@ stories:
       - story-eng-105475-soap-web-service-2
       - story-eng-105475-soap-web-service-3
     blocks: []
+  # --- eng-96034-send-chat-message-element (ENG-96034 Send chat message element) - added 2026-11-13 ---
+  - id: story-eng-96034-send-chat-message-element-1
+    title: "Send chat message element: build, describe and refusals through the process builder"
+    feature: "eng-96034-send-chat-message-element"
+    repo: "crt-process-builder + clio-knowledge + clio"
+    size: L
+    # in-progress: the BMAD set ships in the clio code PR (the owner asked for exactly three PRs), so ready-for-dev is never true.
+    status: in-progress
+    jira: ENG-96034
+    file: spec/stories/story-eng-96034-send-chat-message-element-1.md
+    prd: spec/prd/spec-eng-96034-send-chat-message-element.md
+    adr: spec/adr/adr-eng-96034-send-chat-message-element.md
+    test_plan: spec/test-plans/tp-eng-96034-send-chat-message-element.md
+    depends_on: []
+    blocks:
+      - story-eng-96034-send-chat-message-element-2
+    note: >-
+      ENG-96034 Send chat message element. Owner decisions Q1-Q18 on 2026-11-13 (Q13 deferred: what the
+      process-designer lane stand carries must be known before the clio PR merges). Status moves to review when the
+      clio PR leaves draft; done in the next clio PR that touches this file after the last merge, with only the really
+      ticked Definition of Done boxes. Merge order (human merges): package -> knowledge -> clio.
+  - id: story-eng-96034-send-chat-message-element-2
+    title: "Send chat message element: modify in place (setElement, mode switch, mapping guard)"
+    feature: "eng-96034-send-chat-message-element"
+    repo: "crt-process-builder + clio-knowledge + clio"
+    size: M
+    # in-progress: the BMAD set ships in the clio code PR (the owner asked for exactly three PRs), so ready-for-dev is never true.
+    status: in-progress
+    jira: ENG-96034
+    file: spec/stories/story-eng-96034-send-chat-message-element-2.md
+    prd: spec/prd/spec-eng-96034-send-chat-message-element.md
+    adr: spec/adr/adr-eng-96034-send-chat-message-element.md
+    test_plan: spec/test-plans/tp-eng-96034-send-chat-message-element.md
+    depends_on:
+      - story-eng-96034-send-chat-message-element-1
+    blocks: []
+  - id: story-eng-96034-send-chat-message-element-3
+    title: "Send chat message element: guidance and run-time proof"
+    feature: "eng-96034-send-chat-message-element"
+    repo: "crt-process-builder + clio-knowledge + clio"
+    size: S
+    # in-progress: the BMAD set ships in the clio code PR (the owner asked for exactly three PRs), so ready-for-dev is never true.
+    status: in-progress
+    jira: ENG-96034
+    file: spec/stories/story-eng-96034-send-chat-message-element-3.md
+    prd: spec/prd/spec-eng-96034-send-chat-message-element.md
+    adr: spec/adr/adr-eng-96034-send-chat-message-element.md
+    test_plan: spec/test-plans/tp-eng-96034-send-chat-message-element.md
+    depends_on:
+      - story-eng-96034-send-chat-message-element-1
+    blocks: []

@@ -75,7 +75,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	#region Methods: Tests - create and describe
 
 	[Test]
-	[Description("A create builds a Send chat message element in template mode - a constant active channel, the contact from a process parameter, a chat template by name, ignoreErrors on - and describe reads the block back in its write shape: from as the channel id, to as the process parameter, messageSource template, the template with its name, ignoreErrors true, no message, both outputs listed. Re-applying the described block through setElement changes nothing.")]
+	[Description("TC-I-01: a create builds a Send chat message element in template mode - a constant active channel, the contact from a process parameter, a chat template by name, ignoreErrors on - and describe reads the block back in its write shape: from as the channel id, to as the process parameter, messageSource template, the template with its name, ignoreErrors true, no message, both outputs listed. Re-applying the described block through setElement changes nothing.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process builds a template-mode chat element and describe reads it back re-appliably")]
 	public async Task CreateBusinessProcess_Should_BuildATemplateModeChatElement_AndDescribeItBackReappliably() {
@@ -123,7 +123,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("A create builds a Send chat message element in custom mode with a plain message and ignoreErrors omitted; describe reads the message back and states ignoreErrors false - the create default, under which a failed send stops the process.")]
+	[Description("TC-I-02: a create builds a Send chat message element in custom mode with a plain message and ignoreErrors omitted; describe reads the message back and states ignoreErrors false - the create default, under which a failed send stops the process.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process builds a custom-mode chat element with ignoreErrors stated false")]
 	public async Task CreateBusinessProcess_Should_BuildACustomModeChatElement_WithIgnoreErrorsStatedFalse() {
@@ -164,7 +164,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 		new[] { "Nothing was sent", "'chatMessage.to' is a list", "ONE contact" }, false, TestName = "A list of contacts")]
 	[TestCase("""{ "name": "Chat1", "type": "sendChatMessage", "chatMessage": { "from": { "value": "{0}" }, "to": { "processParameter": "ContactId" }, "template": "UsrClioE2eNoSuchChatTemplate" } }""",
 		new[] { "UsrClioE2eNoSuchChatTemplate" }, true, TestName = "Unknown chat template")]
-	[Description("A generic userTask naming SendChatMessageUserTask, an unknown system setting on from, a list of contacts on to and an unknown chat template are refused - the list by clio's key check before anything is sent, the rest by the server. Nothing is created in any case: describe of the process name answers that it was not found.")]
+	[Description("TC-I-03: a generic userTask naming SendChatMessageUserTask, an unknown system setting on from, a list of contacts on to and an unknown chat template are refused - the list by clio's key check before anything is sent, the rest by the server. Nothing is created in any case: describe of the process name answers that it was not found.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process refuses an unusable chat element and creates nothing")]
 	public async Task CreateBusinessProcess_Should_RefuseAndCreateNothing(string elementJson, string[] expectedFragments,
@@ -196,7 +196,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("A message template of type Email template is refused for a chat element, naming the template: only a Chat template renders against the created chat.")]
+	[Description("TC-I-04: a message template of type Email template is refused for a chat element, naming the template: only a Chat template renders against the created chat.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process refuses an email template on a chat element")]
 	public async Task CreateBusinessProcess_Should_RefuseAnEmailTypedTemplate() {
@@ -228,7 +228,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	#region Methods: Tests - modify
 
 	[Test]
-	[Description("setElement switches a template-mode chat element to custom with the new message in the same update, and describe then reports custom mode with that message and no template; a switch to custom WITHOUT a message is refused, because the designer leaves the template body with its macros in Message and the run would send them as literal text.")]
+	[Description("TC-I-05: setElement switches a template-mode chat element to custom with the new message in the same update, and describe then reports custom mode with that message and no template; a switch to custom WITHOUT a message is refused, because the designer leaves the template body with its macros in Message and the run would send them as literal text.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process switches a chat element to custom only with the new message")]
 	public async Task ModifyBusinessProcess_Should_SwitchToCustom_OnlyWithTheNewMessage() {
@@ -266,7 +266,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("A raw addMapping onto the chat element's Template parameter is refused, naming the chatMessage member that sets it: a raw lookup value is stored in a shape the designer card shows empty and skips the chat-template type check.")]
+	[Description("TC-I-06: a raw addMapping onto the chat element's Template parameter is refused, naming the chatMessage member that sets it: a raw lookup value is stored in a shape the designer card shows empty and skips the chat-template type check.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process refuses a raw mapping onto a block-owned chat parameter")]
 	public async Task ModifyBusinessProcess_Should_RefuseARawMappingOntoTheTemplate() {
@@ -302,7 +302,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	#region Methods: Tests - validation, parity and run time
 
 	[Test]
-	[Description("validate-process-graph over a described Send chat message element: the element's build type is read from describe and validated in a Start -> element -> End graph, which validates with no UNKNOWN finding.")]
+	[Description("TC-I-07: validate-process-graph over a described Send chat message element: the element's build type is read from describe and validated in a Start -> element -> End graph, which validates with no UNKNOWN finding.")]
 	[AllureTag(ValidateProcessGraphTool.ToolName)]
 	[AllureName("validate-process-graph accepts a described chat element")]
 	public async Task ValidateProcessGraph_Should_AcceptADescribedChatElement() {
@@ -342,7 +342,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("Read-only parity: describe of the designer-built process UsrSendChatDesignerFixture reports its chat element's block, and re-applying that block to a server-built copy of the element reads back the same block - so what the designer stores and what the builder writes describe alike.")]
+	[Description("TC-I-08: read-only parity - describe of the designer-built process UsrSendChatDesignerFixture reports its chat element's block, and re-applying that block to a server-built copy of the element reads back the same block - so what the designer stores and what the builder writes describe alike.")]
 	[AllureTag(DescribeProcessTool.ToolName)]
 	[AllureName("describe reads a designer-built chat element in the same shape the builder writes")]
 	public async Task DescribeProcess_Should_ReadTheDesignerFixture_InTheBuildersShape() {
@@ -372,7 +372,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 
 	[TestCase(true, "completed")]
 	[TestCase(false, "error")]
-	[Description("A send that fails at run time - the contact parameter left empty, so the element's own input check fails without reaching any provider - reaches the end of the process with SendStatus = Error when ignoreErrors is true, and ends the instance in Error when it is false. Ignored without McpE2E:AllowDestructiveMcpTests.")]
+	[Description("TC-I-09: a send that fails at run time - the contact parameter left empty, so the element's own input check fails without reaching any provider - reaches the end of the process with SendStatus = Error when ignoreErrors is true, and ends the instance in Error when it is false. Ignored without McpE2E:AllowDestructiveMcpTests.")]
 	[AllureTag(RunProcessTool.ToolName)]
 	[AllureName("run-process continues past a failed send only when errors are ignored")]
 	public async Task RunProcess_Should_Continue_WhenTheSendFailsAndErrorsAreIgnored(bool ignoreErrors, string expectedStatus) {
