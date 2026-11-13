@@ -579,7 +579,7 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("A misshapen value inside an array item is refused before any request is sent.")]
+	[Description("An unknown field inside an array item is refused with its location before any request is sent.")]
 	public void TestMethod_Should_Refuse_An_Unknown_Field_Inside_An_Item_Before_Calling() {
 		// Arrange
 		GivenRegisteredService(OrdersSchema());

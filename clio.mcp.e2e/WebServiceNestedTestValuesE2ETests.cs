@@ -13,10 +13,14 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage of test-web-service-method with values for arrays and arrays of objects against a live stand:
-/// a REST call whose echo shows the body the platform built from them, the refusal of a misshapen nested value, and a
-/// SOAP call whose setting-bound item fields are located in the envelope at two depths. Every service is registered
-/// by the test with codes built from the stand's prefix and removed in the teardown.
+/// a REST call whose echo shows the body the platform built from them, the refusal of misshapen values before anything
+/// is sent, and a SOAP call whose setting-bound item fields are located in the envelope at two depths. Every service is
+/// registered by the test with codes built from the stand's prefix and removed in the teardown.
 /// </summary>
+/// <remarks>
+/// The stand helpers (prefix, teardown, select query) repeat those of <see cref="WebServiceSoapToolsE2ETests"/>; they
+/// belong in one shared web service stand helper with the other web service fixtures.
+/// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
 [AllureNUnit]
@@ -49,7 +53,13 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 					"call-service", "-e", _environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
 					"-b", SelectQuery("VwWebServiceV2", "Name", code, "UId", "PackageUId")
 				], cancellationToken: cts.Token);
-				using JsonDocument answer = JsonDocument.Parse(rows.StandardOutput[rows.StandardOutput.IndexOf('{')..]);
+				int start = rows.StandardOutput.IndexOf('{');
+				if (start < 0) {
+					TestContext.Progress.WriteLine($"Could not look up throwaway service '{code}' for removal: "
+						+ $"{rows.StandardOutput} {rows.StandardError}");
+					continue;
+				}
+				using JsonDocument answer = JsonDocument.Parse(rows.StandardOutput[start..]);
 				foreach (JsonElement row in answer.RootElement.GetProperty("rows").EnumerateArray()) {
 					await ClioCliCommandRunner.RunAsync(settings, [
 						"call-service", "-e", _environmentName, "--service-path",
@@ -67,7 +77,7 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 
 	[Test]
 	[AllureName("test-call a REST method with arrays and arrays of objects")]
-	[Description("Registers a REST service on an echo API with an array of texts and an array of objects whose items hold an array of texts and an inner array of objects, test-calls it with values at every depth and expects the echo to show the JSON body the platform built from them; then expects a misshapen nested value and an unknown item field to be refused with their locations before anything is sent. Ignored when the stand cannot reach the echo API.")]
+	[Description("Registers a REST service on an echo API with an array of texts and an array of objects whose items hold an array of texts and an inner array of objects, test-calls it with values at every depth and expects the echo to show the JSON body the platform built from them. Ignored only when the stand gets no answer from the echo API; a call the platform fails to build fails the test.")]
 	public async Task TestWebServiceMethod_Should_Send_Arrays_And_Arrays_Of_Objects() {
 		// Arrange
 		await ArrangeAsync();
@@ -104,14 +114,12 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 				new Dictionary<string, object?> { [Prefixed("Sku")] = "S2" }
 			}
 		}, cts.Token);
-		if (result.StatusCode != 200) {
-			Assert.Ignore($"'{_environmentName}' could not reach {EchoBaseUri} (status {result.StatusCode}, "
+		// An echo API that answers with an error, or a stand that cannot reach it, cannot show the sent body. A call the
+		// platform failed to build reports no status and its own error, and must fail the test instead.
+		if (result.StatusCode > 200 || (result.StatusCode is null or 0 && IsConnectionFailure(result.Error))) {
+			Assert.Ignore($"'{_environmentName}' got no answer from {EchoBaseUri} (status {result.StatusCode}, "
 				+ $"error {result.Error}), so the sent body cannot be read back.");
 		}
-		WebServiceTestResult refused = await TestAsync(code, Prefixed("Post"), new Dictionary<string, object?> {
-			[Prefixed("Tags")] = "red",
-			[Prefixed("Lines")] = new object[] { new Dictionary<string, object?> { [Prefixed("Sku")] = "S1", [Prefixed("Price")] = 5 } }
-		}, cts.Token);
 
 		// Assert
 		result.Success.Should().BeTrue(because: $"the echo API answers the call; error: {result.Error}");
@@ -128,8 +136,48 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 		lines[0].GetProperty("subs")[0].GetProperty("note").GetString().Should().Be("deep",
 			because: "an array of objects inside an item goes out with its own items");
 		lines[1].GetProperty("sku").GetString().Should().Be("S2", because: "the second item is sent too");
+	}
+
+	[Test]
+	[AllureName("refuse misshapen test-call values")]
+	[Description("Registers a REST service with a query array, a body array and an array of objects, test-calls it with a JSON array for the query value, a text for the body array and an unknown item field, and expects one refusal that names each by its location, before anything is sent; needs no internet.")]
+	public async Task TestWebServiceMethod_Should_Refuse_Misshapen_Values_Before_Sending() {
+		// Arrange
+		await ArrangeAsync();
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(cts.Token);
+		string code = UniqueCode("E2eNestBad");
+		_serviceCodes.Add(code);
+		Dictionary<string, object?> ids = Field("Ids", "ids", array: true);
+		ids["in"] = "query";
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["package-name"] = PackageName, ["code"] = code,
+				["base-uri"] = "https://example.invalid/api",
+				["methods"] = new[] {
+					new Dictionary<string, object?> {
+						["code"] = Prefixed("Post"), ["http-method"] = "POST", ["uri"] = "nested", ["content-type"] = "json",
+						["request-parameters"] = new object[] {
+							ids, Field("Tags", "tags", array: true), Field("Lines", "lines", "Object", true, Field("Sku", "sku"))
+						}
+					}
+				}
+			}, cts.Token);
+		registered.Success.Should().BeTrue(because: $"the arrange step registers the service; error: {registered.Error}");
+
+		// Act
+		WebServiceTestResult refused = await TestAsync(code, Prefixed("Post"), new Dictionary<string, object?> {
+			[Prefixed("Ids")] = new object[] { "1", "2" },
+			[Prefixed("Tags")] = "red",
+			[Prefixed("Lines")] = new object[] { new Dictionary<string, object?> { [Prefixed("Sku")] = "S1", [Prefixed("Price")] = 5 } }
+		}, cts.Token);
+
+		// Assert
 		refused.Success.Should().BeFalse(because: "misshapen values are refused before the call");
-		refused.Error.Should().Contain($"parameters.{Prefixed("Tags")}", because: "a text for an array is named")
+		refused.StatusCode.Should().BeNull(because: "nothing was sent, so there is no HTTP status");
+		refused.Error.Should().Contain($"parameters.{Prefixed("Ids")}: ",
+				because: "the platform would send a JSON array in a query value as System.Object[]")
+			.And.Contain($"parameters.{Prefixed("Tags")}: ", because: "a text for a body array would go out one item per character")
 			.And.Contain($"parameters.{Prefixed("Lines")}[0]: '{Prefixed("Price")}' is not a field of",
 				because: "an unknown item field is named with its location, since the platform would drop it silently");
 	}
@@ -188,6 +236,10 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 			because: "the setting field of the inner array's item is located two arrays deep");
 		innerFilled.ResponseValues.Should().NotBeNull(because: "the platform built and sent the envelope");
 	}
+
+	private static bool IsConnectionFailure(string? error) =>
+		error is not null && new[] { "resolve", "connect", "timed out", "timeout", "ssl", "tls", "unreachable", "network" }
+			.Any(word => error.Contains(word, StringComparison.OrdinalIgnoreCase));
 
 	private async Task ArrangeAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();

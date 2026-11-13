@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Clio.Command.WebServiceDesigner;
 using Clio.Common;
 using FluentAssertions;
@@ -11,14 +12,22 @@ namespace Clio.Tests.Command.WebServiceDesigner;
 [Property("Module", "Command")]
 public sealed class WebServiceDesignerClientTests {
 
-	private static ServiceMethodCallResult Call(string reply) {
+	private static ServiceMethodCallResult Call(string reply) => Call(reply, null, out _);
+
+	/// <summary>Calls the method through a client whose transport answers <paramref name="reply"/>.</summary>
+	/// <param name="posted">The request body the client posted.</param>
+	private static ServiceMethodCallResult Call(string reply, IReadOnlyList<ServiceCallParameter> parameters,
+		out string posted) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("http://stand/rest/CallServiceSchemaService/Execute");
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
-			Arg.Any<int>()).Returns(reply);
+		string body = null;
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(sent => body = sent), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>()).Returns(reply);
 		var client = new WebServiceDesignerClient(applicationClient, urlBuilder);
-		return client.CallMethod("UsrSvc", "UsrOp", null);
+		ServiceMethodCallResult result = client.CallMethod("UsrSvc", "UsrOp", parameters);
+		posted = body;
+		return result;
 	}
 
 	[TestCase("\"{\\\"UsrResult\\\":5}\"", "{\"UsrResult\":5}", Description = "a JSON text, as measured")]
@@ -42,14 +51,6 @@ public sealed class WebServiceDesignerClientTests {
 	[Description("The test call posts a scalar as code and value, an array of scalars as a JSON array in value, and an array of objects in nested with no value member, the shape Studio's test request sends.")]
 	public void CallMethod_Should_Post_Values_And_Nested_Items_In_The_Platform_Shape() {
 		// Arrange
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.CallServiceSchemaMethod)
-			.Returns("http://stand/rest/CallServiceSchemaService/Execute");
-		string posted = null;
-		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => posted = body), Arg.Any<int>(),
-			Arg.Any<int>(), Arg.Any<int>()).Returns("{\"ExecuteResult\":{\"success\":true,\"StatusCode\":200}}");
-		var client = new WebServiceDesignerClient(applicationClient, urlBuilder);
 		ServiceCallParameter[] parameters = [
 			new() { Code = "UsrA", Value = "x" },
 			new() { Code = "UsrTags", Value = new[] { "a", "b" } },
@@ -57,7 +58,7 @@ public sealed class WebServiceDesignerClientTests {
 		];
 
 		// Act
-		client.CallMethod("UsrSvc", "UsrOp", parameters);
+		Call("{\"ExecuteResult\":{\"success\":true,\"StatusCode\":200}}", parameters, out string posted);
 
 		// Assert
 		posted.Should().Be("{\"serviceName\":\"UsrSvc\",\"methodName\":\"UsrOp\",\"parameters\":["

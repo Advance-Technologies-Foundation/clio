@@ -13,10 +13,13 @@ namespace Clio.Tests.Command.WebServiceDesigner;
 [Property("Module", "Command")]
 public sealed class WebServiceTestValuesTests {
 
+	private const int Body = 1;
+	private const int Query = 3;
+
 	private static ServiceParameterDto Parameter(string name, string type = "Text", bool isArray = false,
 		params ServiceParameterDto[] items) {
 		var parameter = new ServiceParameterDto {
-			UId = Guid.NewGuid(), Name = name, Type = 1, Path = name, DataValueTypeName = type, IsArray = isArray,
+			UId = Guid.NewGuid(), Name = name, Type = Body, Path = name, DataValueTypeName = type, IsArray = isArray,
 			DefValue = new ServiceParameterValueDto()
 		};
 		foreach (ServiceParameterDto item in items) {
@@ -26,19 +29,26 @@ public sealed class WebServiceTestValuesTests {
 	}
 
 	/// <summary>
-	/// A method with a scalar, an array of scalars, an array of objects whose items hold a scalar array and an inner
-	/// array of objects, and a single Object parameter Studio no longer creates.
+	/// A method with two scalars, an array of scalars, an array of objects whose items hold a scalar array and an inner
+	/// array of objects, a single Object parameter Studio no longer creates, and a query parameter marked as an array.
 	/// </summary>
 	private static ServiceMethodDto Method() {
-		var method = new ServiceMethodDto { Name = "UsrOp" };
-		foreach (ServiceParameterDto parameter in new[] {
+		ServiceParameterDto ids = Parameter("UsrIds", isArray: true);
+		ids.Type = Query;
+		return MethodWith(
 			Parameter("UsrA"),
+			Parameter("UsrB"),
 			Parameter("UsrTags", isArray: true),
 			Parameter("UsrLines", "Object", true,
 				Parameter("UsrSku"), Parameter("UsrQty", "Integer"), Parameter("UsrNotes", isArray: true),
 				Parameter("UsrSubs", "Object", true, Parameter("UsrNote"))),
-			Parameter("UsrShape", "Object", false, Parameter("UsrX"))
-		}) {
+			Parameter("UsrShape", "Object", false, Parameter("UsrX")),
+			ids);
+	}
+
+	private static ServiceMethodDto MethodWith(params ServiceParameterDto[] parameters) {
+		var method = new ServiceMethodDto { Name = "UsrOp" };
+		foreach (ServiceParameterDto parameter in parameters) {
 			method.Request.Parameters.Items[parameter.UId.ToString()] = parameter;
 		}
 		return method;
@@ -50,10 +60,10 @@ public sealed class WebServiceTestValuesTests {
 	private static string Wire(IReadOnlyList<ServiceCallParameter> parameters) => JsonSerializer.Serialize(parameters);
 
 	[Test]
-	[Description("Scalar values are sent as text: a number or boolean as its JSON text, and null is left out so the platform fills the default.")]
+	[Description("A scalar is sent as text, a number or boolean as its JSON text; null leaves a scalar and an array out, so the platform fills the scalar's default and sends no array.")]
 	public void Build_Should_Send_Scalars_As_Text_And_Leave_Out_Null() {
 		// Arrange
-		Dictionary<string, JsonElement> values = Values("""{"UsrA": 1.5, "UsrTags": null}""");
+		Dictionary<string, JsonElement> values = Values("""{"UsrA": 1.5, "UsrB": null, "UsrTags": null}""");
 
 		// Act
 		WebServiceTestCall call = WebServiceTestValues.Build(Method(), values);
@@ -94,6 +104,7 @@ public sealed class WebServiceTestValuesTests {
 
 		// Act
 		WebServiceTestCall call = WebServiceTestValues.Build(Method(), values);
+		WebServiceTestCall empty = WebServiceTestValues.Build(Method(), Values("""{"UsrLines": []}"""));
 
 		// Assert
 		Wire(call.Parameters).Should().Be("""[{"code":"UsrLines","nested":[[{"code":"UsrSku","value":"S1"},"""
@@ -102,10 +113,32 @@ public sealed class WebServiceTestValuesTests {
 			because: "the platform builds each item from its list of field values, recursively, and skips a field left out");
 		call.SentCodes.Should().BeEquivalentTo(["UsrLines", "UsrSku", "UsrQty", "UsrNotes", "UsrSubs", "UsrNote"],
 			because: "the masking needs every array the call filled, at any depth");
+		Wire(empty.Parameters).Should().Be("""[{"code":"UsrLines","nested":[]}]""",
+			because: "an empty array of objects goes out empty, which the platform renders as an empty array");
 	}
 
 	[Test]
-	[Description("Every misshapen value and unknown code is refused in one message that names where it is: a scalar given an array, an array given a text or a single object, a bad array item, an unknown or repeated field, and a single Object parameter.")]
+	[Description("A path, query, header or cookie value is one text whatever its array flag says, because the platform writes it as text: a list goes as one text, and a JSON array is refused.")]
+	public void Build_Should_Send_A_Value_Outside_The_Body_As_One_Text() {
+		// Arrange
+		Dictionary<string, JsonElement> text = Values("""{"UsrIds": "1,2"}""");
+		Dictionary<string, JsonElement> array = Values("""{"UsrIds": ["1", "2"]}""");
+
+		// Act
+		WebServiceTestCall call = WebServiceTestValues.Build(Method(), text);
+		Action act = () => WebServiceTestValues.Build(Method(), array);
+
+		// Assert
+		Wire(call.Parameters).Should().Be("""[{"code":"UsrIds","value":"1,2"}]""",
+			because: "the platform sends a query value as written, so a list goes as one text");
+		act.Should().Throw<ArgumentException>(because: "the platform would send a JSON array as System.Object[]")
+			.WithMessage("parameters.UsrIds: takes one text, number or boolean value, not an array (a path, query, header "
+				+ "or cookie value is sent as written; give a list as one text, e.g. \"1,2\").",
+				because: "the refusal says how to send a list there");
+	}
+
+	[Test]
+	[Description("Every misshapen value and unknown code is refused in one message that names where it is: a scalar given an array, an array given a text or a single object, a bad array item, an unknown field, a value two arrays deep, a null array item and a single Object parameter.")]
 	public void Build_Should_Refuse_Misshapen_Values_At_Every_Level() {
 		// Arrange
 		Dictionary<string, JsonElement> values = Values("""
@@ -120,8 +153,10 @@ public sealed class WebServiceTestValuesTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "nothing is sent while any value is wrong")
-			.Which.Message.Should().ContainAll(new[] {
-				"parameters: 'UsrZ' is not a top-level request parameter of method 'UsrOp'; valid codes: UsrA, UsrLines, UsrShape, UsrTags.",
+			.Which.Message.Should().StartWith(
+				"parameters: 'UsrZ' is not a top-level request parameter of method 'UsrOp'; valid codes: UsrA, UsrB, UsrIds, "
+				+ "UsrLines, UsrShape, UsrTags.", "the unknown codes come first, with every valid code")
+			.And.ContainAll(new[] {
 				"parameters.UsrA: takes one text, number or boolean value, not an array.",
 				"parameters.UsrTags: is an array of Text",
 				"one item per character",
@@ -131,8 +166,36 @@ public sealed class WebServiceTestValuesTests {
 				"parameters.UsrLines[1]: an item of an array of objects is a JSON object by field code, not a text."
 			}, "each problem is named with its location, so the agent fixes all of them in one round");
 		actSingle.Should().Throw<ArgumentException>(because: "a single object is not an array of objects")
-			.Which.Message.Should().ContainAll(new[] { "wrap a single item in an array", "use \"\" for an empty item" },
-				"the refusal says how to send the value instead");
+			.Which.Message.Should().ContainAll(new[] {
+				"parameters.UsrLines: is an array of objects; send a JSON array of objects by field code, such as "
+					+ "[{\"UsrNotes\": \"...\"}], not an object (wrap a single item in an array).",
+				"use \"\" for an empty item"
+			}, "the refusal says how to send the value instead");
+	}
+
+	[TestCase("""{"UsrLines": "S1"}""", "parameters.UsrLines: is an array of objects", "not a text.",
+		Description = "a text for an array of objects")]
+	[TestCase("""{"UsrLines": 5}""", "parameters.UsrLines: is an array of objects", "not a number.",
+		Description = "a number for an array of objects")]
+	[TestCase("""{"UsrTags": 5}""", "parameters.UsrTags: is an array of Text", "not a number.",
+		Description = "a number for an array of scalars")]
+	[TestCase("""{"UsrTags": {"a": 1}}""", "parameters.UsrTags: is an array of Text", "not an object.",
+		Description = "an object for an array of scalars")]
+	[TestCase("""{"UsrTags": [["a"]]}""", "parameters.UsrTags[0]: an item of an array of Text", "not an array.",
+		Description = "a nested array in an array of scalars")]
+	[Description("A value of the wrong kind for an array is refused with the kind it got, and only a text for a body array mentions the per-character split.")]
+	public void Build_Should_Name_The_Kind_A_Misshapen_Array_Got(string json, string start, string end) {
+		// Arrange
+		Dictionary<string, JsonElement> values = Values(json);
+
+		// Act
+		Action act = () => WebServiceTestValues.Build(Method(), values);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the value cannot be sent as the parameter's shape")
+			.Which.Message.Should().StartWith(start, because: "the refusal names the parameter")
+			.And.EndWith(end, because: "the refusal names what was given")
+			.And.NotContain("per character", because: "only a text for a body array is split into characters");
 	}
 
 	[Test]
@@ -150,14 +213,20 @@ public sealed class WebServiceTestValuesTests {
 	}
 
 	[Test]
-	[Description("No values build an empty call that reports no code as sent.")]
-	public void Build_Should_Accept_No_Values() {
+	[Description("No values build an empty call that reports no code as sent, and any value for a method without request parameters is refused with no valid code.")]
+	public void Build_Should_Accept_No_Values_And_Refuse_Values_For_A_Method_Without_Parameters() {
+		// Arrange
+		ServiceMethodDto bare = MethodWith();
+
 		// Act
 		WebServiceTestCall call = WebServiceTestValues.Build(Method(), null);
+		Action act = () => WebServiceTestValues.Build(bare, Values("""{"UsrA": "1"}"""));
 
 		// Assert
-		call.Parameters.Should().BeEmpty(because: "the platform fills every parameter from its default");
+		call.Parameters.Should().BeEmpty(because: "the platform fills every scalar from its default");
 		call.SentCodes.Should().BeEmpty(because: "the call gave nothing a value");
+		act.Should().Throw<ArgumentException>(because: "the method has nothing to fill")
+			.WithMessage("*valid codes: none.", because: "the refusal says the method takes no value");
 	}
 
 	[Test]
@@ -175,16 +244,18 @@ public sealed class WebServiceTestValuesTests {
 	}
 
 	[Test]
-	[Description("A call sends one parameter per given top-level code, in the order given.")]
-	public void Build_Should_Keep_The_Given_Order() {
+	[Description("More array items than a test call takes, counted at every depth, are refused before anything is checked or sent.")]
+	public void Build_Should_Refuse_Too_Many_Array_Items() {
 		// Arrange
-		Dictionary<string, JsonElement> values = Values("""{"UsrTags": ["x"], "UsrA": "a"}""");
+		string notes = string.Join(",", Enumerable.Repeat("\"n\"", WebServiceTestValues.MaxArrayItems));
+		Dictionary<string, JsonElement> values = Values($$"""{"UsrLines": [{"UsrNotes": [{{notes}}]}]}""");
 
 		// Act
-		WebServiceTestCall call = WebServiceTestValues.Build(Method(), values);
+		Action act = () => WebServiceTestValues.Build(Method(), values);
 
 		// Assert
-		call.Parameters.Select(p => p.Code).Should().Equal(["UsrTags", "UsrA"],
-			because: "the order of the request does not change what the platform builds, so it is kept as given");
+		act.Should().Throw<ArgumentException>(because: "the whole list would be posted to the platform and the external API")
+			.WithMessage($"parameters: {WebServiceTestValues.MaxArrayItems + 1} array items in all; a test call takes at most "
+				+ $"{WebServiceTestValues.MaxArrayItems}.", because: "the item and its notes are counted together");
 	}
 }

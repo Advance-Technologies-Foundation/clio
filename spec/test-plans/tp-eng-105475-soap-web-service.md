@@ -119,26 +119,33 @@ clio diff of the saved services (manual stand check).
 ## Slice D (story 4)
 
 The wire shape was measured first (ADR D10). Unit rows live in
-`clio.tests/Command/WebServiceDesigner/WebServiceTestValuesTests.cs` (D01-D07) and next to the code they cover.
+`clio.tests/Command/WebServiceDesigner/WebServiceTestValuesTests.cs` (D01-D10) and next to the code they cover.
 
 | Id | Level | Case | AC |
 | --- | --- | --- | --- |
-| TC-U-D01 | unit | A scalar goes out as text (a number or boolean as its JSON text) with no `nested` member; null leaves the parameter out | 1 |
-| TC-U-D02 | unit | An array of scalars goes out as a JSON array of texts in `value`; an empty array goes out empty | 1 |
-| TC-U-D03 | unit | An array of objects goes out in `nested`, one list per item, with a scalar array and an inner object array inside an item; a null field is left out; every code given a value is reported, nested ones included | 1, 2 |
-| TC-U-D04 | unit | One refusal names, with its location, an unknown top-level code and an unknown item field (each with the valid codes), a scalar given an array, an array given a text (one item per character), a single object for an object array, a non-object item, a misshapen value two arrays deep, a null scalar-array item and a value for a single Object parameter | 1, 2 |
-| TC-U-D05 | unit | A field given twice in one item is refused (the platform fails the call on it) | 2 |
-| TC-U-D06 | unit | Codes match case-sensitively, as the platform looks them up | 2 |
-| TC-U-D07 | unit | No values build an empty call; the given order is kept | 1 |
-| TC-U-D08 | unit | The client posts `{code, value}`, `{code, value: [...]}` and `{code, nested: [[...]]}` (`WebServiceDesignerClientTests`) | 1 |
-| TC-U-D09 | unit | A setting-bound field of an inner object array is collected two arrays deep; its missing element fails closed only when the call gave that inner array a value, not merely the outer one (`WebServiceSoapTests`) | 2 |
-| TC-U-D10 | unit | `TestMethod` sends an object array in `nested` and masks a setting value the platform filled into every item and an API echoed, in the body and `response-values` (`WebServiceDesignerTests`) | 1, 2 |
-| TC-U-D11 | unit | `TestMethod` refuses an unknown item field before any request (`WebServiceDesignerTests`) | 2 |
-| TC-U-D12 | unit | `TestMethod` on SOAP returns the masked response when the call left an inner array out, instead of withholding it (`WebServiceDesignerTests`) | 2 |
-| TC-U-D13 | unit | test-web-service-method passes `parameters` with arrays to the designer unchanged (`WebServiceToolsArgumentTests`) | 1 |
-| TC-I-D01 | e2e | Registers a REST service on an echo API (`https://httpbin.org/anything`) with a Text array and an Object array whose items hold a Text array and an inner Object array, test-calls it with values at every depth and expects the echoed JSON body to carry them; then expects a text for an array and an unknown item field refused with their locations. Ignored when the stand cannot reach the echo API | 1, 2 |
+| TC-U-D01 | unit | A scalar goes out as text (a number or boolean as its JSON text) with no `nested` member; null leaves a scalar and an array out | 1 |
+| TC-U-D02 | unit | A body array of scalars goes out as a JSON array of texts in `value`; an empty array goes out empty | 1 |
+| TC-U-D03 | unit | An array of objects goes out in `nested`, one list per item, with a scalar array and an inner object array inside an item; an empty one as `nested: []`; a null field is left out; every code given a value is reported, nested ones included | 1, 2 |
+| TC-U-D04 | unit | One refusal names, with its location and the unknown codes first, an unknown top-level code and an unknown item field (each with the valid codes), a scalar given an array, a body array given a text (one item per character), a single object for an object array, a non-object item, a misshapen value two arrays deep, a null scalar-array item and a value for a single Object parameter | 1, 2 |
+| TC-U-D05 | unit | A value of the wrong kind for an array (a text or number for an object array, a number, object or nested array for a scalar array) names the kind it got, without the per-character hint | 1 |
+| TC-U-D06 | unit | A path, query, header or cookie parameter marked as an array takes one text (`"1,2"` sent as written); a JSON array there is refused, since the platform would send `System.Object[]` (measured) | 1 |
+| TC-U-D07 | unit | A field given twice in one item is refused (the platform fails the call on it) | 2 |
+| TC-U-D08 | unit | No values build an empty call; a value for a method without request parameters is refused with "valid codes: none" | 1 |
+| TC-U-D09 | unit | Codes match case-sensitively, as the platform looks them up | 2 |
+| TC-U-D10 | unit | More than 1,000 array items in all, counted at every depth, are refused | 1 |
+| TC-U-D11 | unit | The client posts `{code, value}`, `{code, value: [...]}` and `{code, nested: [[...]]}` (`WebServiceDesignerClientTests`) | 1 |
+| TC-U-D12 | unit | A setting-bound field of an inner object array is collected two arrays deep; its missing element fails closed only when the call gave that inner array a value, not merely the outer one (`WebServiceSoapTests`) | 2 |
+| TC-U-D13 | unit | A setting-bound JSON body value is found under the name the platform writes it to, for `k[0]` and `$['b']` too; one missing from the body fails closed, one sent as null is located (`WebServiceResponseMaskerTests`) | 2 |
+| TC-U-D14 | unit | A setting-bound field of a JSON array item is found in every item also when its own placement says header; it fails closed when an item that went out lacks it or a given array is missing; an array left out or sent empty, and a setting-bound body array, hide nothing (`WebServiceResponseMaskerTests`) | 2 |
+| TC-U-D15 | unit | A setting-bound SOAP item field whose own placement says header is collected from the envelope body, and fails closed when an item lacks it (`WebServiceResponseMaskerTests`) | 2 |
+| TC-U-D16 | unit | `TestMethod` sends an object array in `nested` and masks a setting value the platform filled into every item and an API echoed, in the body and `response-values` (`WebServiceDesignerTests`) | 1, 2 |
+| TC-U-D17 | unit | `TestMethod` refuses an unknown item field before any request (`WebServiceDesignerTests`) | 2 |
+| TC-U-D18 | unit | `TestMethod` on SOAP returns the masked response when the call left an inner array out, instead of withholding it (`WebServiceDesignerTests`) | 2 |
+| TC-U-D19 | unit | test-web-service-method passes `parameters` with arrays to the designer unchanged (`WebServiceToolsArgumentTests`) | 1 |
+| TC-I-D01 | e2e | Registers a REST service on an echo API (`https://httpbin.org/anything`) with a Text array and an Object array whose items hold a Text array and an inner Object array, test-calls it with values at every depth and expects the echoed JSON body to carry them. Ignored only when the echo API gives no answer; a call the platform fails to build fails the test | 1 |
 | TC-I-D02 | e2e | Registers a SOAP 1.1 service on `http://localhost/<code>` whose Object array has an item field and an inner Object array field bound to a system setting; test-calls it leaving the inner array out and filling it, and expects neither response withheld | 2 |
-| TC-I-D03 | e2e (existing) | The REST, SOAP and contract web service e2e suites stay green | 1 |
+| TC-I-D03 | e2e | Registers a REST service with a query array, a body array and an Object array, and expects a JSON array for the query value, a text for the body array and an unknown item field refused together with their locations, with no status (nothing sent); needs no internet | 1, 2 |
+| TC-I-D04 | e2e (existing) | The REST, SOAP and contract web service e2e suites stay green | 1 |
 
 ## Knowledge (story 5)
 

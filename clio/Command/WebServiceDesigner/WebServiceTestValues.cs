@@ -39,14 +39,21 @@ public sealed record WebServiceTestCall(IReadOnlyList<ServiceCallParameter> Para
 
 /// <summary>
 /// Checks test-call values against a method's request parameter tree and turns them into the platform's test-call
-/// parameters. A scalar parameter takes one text, number or boolean; an array of scalars a JSON array of them; an
-/// array of objects a JSON array of objects whose keys are the item's field codes, each field taking a value by the
-/// same rules (arrays inside items included). A code the method does not have is refused at every level, because
-/// the platform drops it silently; null leaves a value out, so the platform fills the parameter's default.
+/// parameters. A body array of scalars takes a JSON array of texts, numbers or booleans; a body array of objects (an
+/// array with item fields, as the platform tells them apart) a JSON array of objects whose keys are the item's field
+/// codes, each field taking a value by the same rules (arrays inside items included); every other parameter, a path,
+/// query, header or cookie one included whatever its array flag says, one text, number or boolean, which the platform
+/// sends as written. A code the method does not have is refused at every level, because the platform drops it
+/// silently. Null leaves a value out: the platform fills a scalar's default, and an array left out is not sent.
 /// </summary>
 public static class WebServiceTestValues {
 
 	private const string ObjectType = "Object";
+
+	private static readonly int BodyPlacement = ServiceSchemaCodes.Placements["body"];
+
+	/// <summary>The most array items one test call takes, at every depth together: a test needs a few.</summary>
+	public const int MaxArrayItems = 1000;
 
 	/// <summary>Builds the test call, or throws one <see cref="ArgumentException"/> naming every problem.</summary>
 	/// <param name="method">The called method.</param>
@@ -56,40 +63,56 @@ public static class WebServiceTestValues {
 		IReadOnlyDictionary<string, JsonElement> values) {
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var sentCodes = new HashSet<string>(StringComparer.Ordinal);
-		IReadOnlyCollection<ServiceParameterDto> topLevel = Parameters(method?.Request?.Parameters);
-		List<string> unknown = (values ?? new Dictionary<string, JsonElement>()).Keys
-			.Where(code => Find(topLevel, code) is null).ToList();
-		if (unknown.Count > 0) {
-			errors.Add($"parameters: {Quoted(unknown)} is not a top-level request parameter of method "
-				+ $"'{method?.Name}'; valid codes: {ValidCodes(topLevel)}.");
-		}
 		var parameters = new List<ServiceCallParameter>();
+		var unknown = new List<string>();
+		IReadOnlyCollection<ServiceParameterDto> topLevel = Parameters(method?.Request?.Parameters);
+		int items = values?.Values.Sum(ArrayItems) ?? 0;
+		if (items > MaxArrayItems) {
+			throw new ArgumentException($"parameters: {items} array items in all; a test call takes at most "
+				+ $"{MaxArrayItems}.");
+		}
 		foreach ((string code, JsonElement value) in values ?? new Dictionary<string, JsonElement>()) {
 			ServiceParameterDto parameter = Find(topLevel, code);
-			ServiceCallParameter built = parameter is null
-				? null
-				: BuildValue(parameter, value, $"parameters.{code}", errors, sentCodes);
+			if (parameter is null) {
+				unknown.Add(code);
+				continue;
+			}
+			ServiceCallParameter built = BuildValue(parameter, value, $"parameters.{code}",
+				parameter.Type != BodyPlacement, errors, sentCodes);
 			if (built is not null) {
 				parameters.Add(built);
 			}
+		}
+		if (unknown.Count > 0) {
+			errors.Insert(0, $"parameters: {Quoted(unknown)} is not a top-level request parameter of method "
+				+ $"'{method?.Name}'; valid codes: {ValidCodes(topLevel)}.");
 		}
 		errors.ThrowIfAny();
 		return new WebServiceTestCall(parameters, sentCodes);
 	}
 
+	/// <param name="outsideBody">
+	/// Whether the parameter is a top-level path, query, header or cookie one. The platform writes such a value with
+	/// <c>ToString()</c> (Terrasoft.Services <c>ServiceClientRequest</c>), so a list would go out as
+	/// <c>System.Object[]</c> (measured); item fields are always rendered in the body.
+	/// </param>
 	private static ServiceCallParameter BuildValue(ServiceParameterDto parameter, JsonElement value, string where,
-		WebServiceDefinitionBuilder.Errors errors, ISet<string> sentCodes) {
+		bool outsideBody, WebServiceDefinitionBuilder.Errors errors, ISet<string> sentCodes) {
 		if (value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) {
 			return null;
 		}
+		bool hasFields = Parameters(parameter.ItemProperties).Count > 0;
 		bool objectType = string.Equals(parameter.DataValueTypeName, ObjectType, StringComparison.OrdinalIgnoreCase);
-		ServiceCallParameter built = (parameter.IsArray, objectType) switch {
-			(true, true) => ObjectArray(parameter, value, where, errors, sentCodes),
-			(true, false) => ScalarArray(parameter, value, where, errors),
-			(false, true) => Refuse(errors, $"{where}: a single Object parameter cannot be given a value in a test call "
-				+ "(the platform fills only an array of objects); leave it out."),
-			_ => Scalar(parameter, value, where, errors)
-		};
+		ServiceCallParameter built = outsideBody
+			? Scalar(parameter, value, where, errors, " (a path, query, header or cookie value is sent as written; give a "
+				+ "list as one text, e.g. \"1,2\")")
+			: (parameter.IsArray, hasFields || objectType) switch {
+				(true, true) when hasFields => ObjectArray(parameter, value, where, errors, sentCodes),
+				(true, _) => ScalarArray(parameter, value, where, errors),
+				(false, true) => Refuse(errors, $"{where}: a single Object parameter cannot be given a value in a test "
+					+ "call (the platform fills only an array of objects); leave it out."),
+				_ => Scalar(parameter, value, where, errors, string.Empty)
+			};
 		if (built is not null) {
 			sentCodes.Add(parameter.Name);
 		}
@@ -97,10 +120,10 @@ public static class WebServiceTestValues {
 	}
 
 	private static ServiceCallParameter Scalar(ServiceParameterDto parameter, JsonElement value, string where,
-		WebServiceDefinitionBuilder.Errors errors) {
+		WebServiceDefinitionBuilder.Errors errors, string hint) {
 		string text = Text(value);
 		return text is null
-			? Refuse(errors, $"{where}: takes one text, number or boolean value, not {Kind(value)}.")
+			? Refuse(errors, $"{where}: takes one text, number or boolean value, not {Kind(value)}{hint}.")
 			: new ServiceCallParameter { Code = parameter.Name, Value = text };
 	}
 
@@ -111,30 +134,31 @@ public static class WebServiceTestValues {
 				+ "[\"a\", \"b\"], not " + Kind(value)
 				+ (value.ValueKind == JsonValueKind.String ? " (the platform would send one item per character)." : "."));
 		}
+		int problems = errors.Count;
 		var texts = new List<string>();
 		int index = 0;
-		bool valid = true;
 		foreach (JsonElement item in value.EnumerateArray()) {
 			string text = Text(item);
 			if (text is null) {
 				errors.Add($"{where}[{index}]: an item of an array of {parameter.DataValueTypeName} is one text, number or "
 					+ $"boolean, not {Kind(item)}" + (item.ValueKind == JsonValueKind.Null ? " (use \"\" for an empty item)." : "."));
-				valid = false;
 			}
 			texts.Add(text);
 			index++;
 		}
-		return valid ? new ServiceCallParameter { Code = parameter.Name, Value = texts } : null;
+		return errors.Count == problems ? new ServiceCallParameter { Code = parameter.Name, Value = texts } : null;
 	}
 
 	private static ServiceCallParameter ObjectArray(ServiceParameterDto parameter, JsonElement value, string where,
 		WebServiceDefinitionBuilder.Errors errors, ISet<string> sentCodes) {
+		IReadOnlyCollection<ServiceParameterDto> fields = Parameters(parameter.ItemProperties);
 		if (value.ValueKind != JsonValueKind.Array) {
+			string example = fields.Select(p => p.Name).Order(StringComparer.Ordinal).First();
 			return Refuse(errors, $"{where}: is an array of objects; send a JSON array of objects by field code, such as "
-				+ $"[{{\"{FirstCode(parameter)}\": \"...\"}}], not {Kind(value)}"
+				+ $"[{{\"{example}\": \"...\"}}], not {Kind(value)}"
 				+ (value.ValueKind == JsonValueKind.Object ? " (wrap a single item in an array)." : "."));
 		}
-		IReadOnlyCollection<ServiceParameterDto> fields = Parameters(parameter.ItemProperties);
+		int problems = errors.Count;
 		var items = new List<IReadOnlyList<ServiceCallParameter>>();
 		int index = 0;
 		foreach (JsonElement item in value.EnumerateArray()) {
@@ -145,7 +169,7 @@ public static class WebServiceTestValues {
 			}
 			items.Add(Item(parameter, fields, item, itemWhere, errors, sentCodes));
 		}
-		return new ServiceCallParameter { Code = parameter.Name, Nested = items };
+		return errors.Count == problems ? new ServiceCallParameter { Code = parameter.Name, Nested = items } : null;
 	}
 
 	private static List<ServiceCallParameter> Item(ServiceParameterDto parameter,
@@ -165,7 +189,8 @@ public static class WebServiceTestValues {
 				errors.Add($"{where}: '{property.Name}' is given twice.");
 				continue;
 			}
-			ServiceCallParameter value = BuildValue(field, property.Value, $"{where}.{property.Name}", errors, sentCodes);
+			ServiceCallParameter value = BuildValue(field, property.Value, $"{where}.{property.Name}", false, errors,
+				sentCodes);
 			if (value is not null) {
 				built.Add(value);
 			}
@@ -176,6 +201,12 @@ public static class WebServiceTestValues {
 		}
 		return built;
 	}
+
+	private static int ArrayItems(JsonElement value) => value.ValueKind switch {
+		JsonValueKind.Array => value.GetArrayLength() + value.EnumerateArray().Sum(ArrayItems),
+		JsonValueKind.Object => value.EnumerateObject().Sum(property => ArrayItems(property.Value)),
+		_ => 0
+	};
 
 	private static ServiceCallParameter Refuse(WebServiceDefinitionBuilder.Errors errors, string message) {
 		errors.Add(message);
@@ -206,9 +237,6 @@ public static class WebServiceTestValues {
 
 	private static ServiceParameterDto Find(IReadOnlyCollection<ServiceParameterDto> parameters, string code) =>
 		parameters.FirstOrDefault(p => string.Equals(p.Name, code, StringComparison.Ordinal));
-
-	private static string FirstCode(ServiceParameterDto parameter) =>
-		Parameters(parameter.ItemProperties).Select(p => p.Name).Order(StringComparer.Ordinal).FirstOrDefault() ?? "code";
 
 	private static string ValidCodes(IReadOnlyCollection<ServiceParameterDto> parameters) =>
 		parameters.Count == 0 ? "none" : string.Join(", ", parameters.Select(p => p.Name).Order(StringComparer.Ordinal));

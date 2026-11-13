@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using Clio.Command.WebServiceDesigner;
 
@@ -99,6 +100,7 @@ internal static class SoapServiceFixture {
 		+ "Content-Type: application/soap+xml;charset=UTF-8\r\nSOAPAction: http://example.org/UsrSoapR/UsrOp\r\n"
 		+ "Host: localhost";
 
+	/// <summary>The value of the setting-bound field of the inner array's item in <see cref="SentWithInnerItem"/>.</summary>
 	public const string SubKeyValue = "sub-key-99";
 
 	/// <summary>
@@ -128,12 +130,12 @@ internal static class SoapServiceFixture {
 					continue;
 				}
 				var key = new ServiceParameterDto {
-					UId = System.Guid.Parse("11111111-0000-4000-8000-000000000009"), Type = 1, Name = "UsrSubKey",
+					UId = Guid.Parse("11111111-0000-4000-8000-000000000009"), Type = 1, Name = "UsrSubKey",
 					Path = "tem:SubKey", DataValueTypeName = "Text",
 					DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceSysSetting, Value = "UsrSubKey" }
 				};
 				var subs = new ServiceParameterDto {
-					UId = System.Guid.Parse("11111111-0000-4000-8000-000000000008"), Type = 1, Name = "UsrSubs",
+					UId = Guid.Parse("11111111-0000-4000-8000-000000000008"), Type = 1, Name = "UsrSubs",
 					Path = "tem:Subs", DataValueTypeName = "Object", IsArray = true, SequenceElementName = "tem:Sub",
 					DefValue = new ServiceParameterValueDto()
 				};

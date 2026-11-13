@@ -330,7 +330,7 @@ public sealed record TestWebServiceMethodArgs(
 	string Method,
 
 	[property: JsonPropertyName("parameters")]
-	[property: Description("Values by request parameter code: text, a number or a boolean for a scalar; a JSON array of them for an array, e.g. [\"a\", \"b\"]; a JSON array of objects by field code for an array of objects, e.g. [{\"UsrSku\": \"A1\", \"UsrQty\": 2}], with arrays inside items given the same way. Every code, nested ones included, must be the method's; null leaves a value out")]
+	[property: Description("Values by request parameter code: text, a number or a boolean for a scalar; for a body array a JSON array of them, e.g. [\"a\", \"b\"]; for an array of objects a JSON array of objects by field code, e.g. [{\"UsrSku\": \"A1\", \"UsrQty\": 2}], with arrays inside items given the same way. A path, query, header or cookie value is one text even when marked as an array (a list as \"1,2\"). Every code, nested ones included, must be the method's; null leaves a value out")]
 	IReadOnlyDictionary<string, JsonElement> Parameters = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }

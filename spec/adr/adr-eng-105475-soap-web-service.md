@@ -127,8 +127,9 @@ unsupported constructs).
 **Measured** on stand `Creatio` (.NET Framework, prefix `Usr`) on 2026-11-13 with raw `call-service` calls on a throwaway
 REST service (echo `https://httpbin.org/anything`) and a SOAP 1.1 service (`http://localhost/<code>`), each with a Text
 array, an Integer array and an Object array whose items hold a Text, an Integer, a setting-bound Text, a Text array
-and an inner Object array (script and log: `C:\Projects\workspace\soap-research\evidence\slice-d-*`). The shape is the one
-Studio's Send test request sends (creatio-ui `service-client-form.component.ts`, `_getParameterValue`):
+and an inner Object array (the script and its raw log are kept with the slice A research evidence, outside the
+repository). The shape is the one Studio's Send test request sends (creatio-ui `service-client-form.component.ts`,
+`_getParameterValue`):
 
 | Parameter | Wire | REST body / SOAP envelope |
 | --- | --- | --- |
@@ -136,6 +137,7 @@ Studio's Send test request sends (creatio-ui `service-client-form.component.ts`,
 | array of scalars | `{code, value: ["a", "b"]}`, texts or numbers | `"tags":["a","b"]`; `<tem:Tags arrayType="xsd:array[]"><tem:Tag>a</tem:Tag>...`; converted to the item type (`"1"` → `1`) |
 | array of objects | `{code, nested: [[{code, value}, ...], ...]}`, one list per item, no `value` | `"lines":[{"sku":"S1",...}]`; `<tem:Lines ...><tem:Line><tem:Sku>S1</tem:Sku>...` |
 | inside an item | the same rules, recursively (a scalar array in `value`, an inner object array in `nested`) | rendered under the item |
+| path, query, header or cookie, array or not | `{code, value: "text"}` | the value's `ToString()`, sent as given (`"1,2"` → `?ids=1%2C2`); a JSON array goes out as `System.Object[]` (Terrasoft.Services `ServiceClientRequest`, measured) |
 
 What the platform does with anything else, which is why clio checks the shape first: a text for an array goes out one
 item per character (`"ab"` → `["a","b"]`); objects in `value` go out as an empty array; `nested` on an array of scalars
@@ -146,10 +148,18 @@ an array the call leaves out is not rendered at all, an inner one included, and 
 in every item, also in an item given no fields.
 
 Decisions taken from the measurement: values are checked against the method's parameter tree in the designer (the tool
-has no schema), every problem is reported in one refusal with its location (`parameters.UsrLines[0].UsrSku`), a null
-array item is refused rather than sent empty, and the masking judges a missing array element by whether the call gave
+has no schema), every problem is reported in one refusal with its location (`parameters.UsrLines[0].UsrSku`), a value
+outside the body takes one text whatever its array flag says (a JSON array there is refused), arrays of objects are told
+apart by their item fields as the platform does (`RequestBodyBuilder.GetNodeInQueue`), a null array item is refused
+rather than sent empty, and the masking judges a missing array element by whether the call gave
 THAT array a value (the codes given a value at any depth), not its top-level ancestor, so a call that leaves an inner
 array out is not withheld for it.
+
+The pre-PR security review added three masking rules, since nested values make array items reachable for the first
+time: an item field is looked for in the body whatever placement it carries (the platform renders every item property
+there); a JSON body now fails closed like XML, finding a value under the name the platform writes it to (`k[0]`,
+`$['k']` included) and withholding the response when a top-level value, or an item field whose array went out, is
+missing; and a body array never withholds for its own setting default, which the platform never uses.
 
 ### D11. Open owner question: generated method codes in `read-wsdl`
 
