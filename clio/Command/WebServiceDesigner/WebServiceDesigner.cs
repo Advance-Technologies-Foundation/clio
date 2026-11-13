@@ -65,11 +65,17 @@ public interface IWebServiceDesigner {
 	/// array of scalars, and a JSON array of objects by field code for an array of objects (see
 	/// <see cref="WebServiceTestValues"/>). A code the method does not have is refused at every level.
 	/// </param>
+	/// <param name="userConfirmed">
+	/// Whether the user explicitly agreed to this call. A POST, PUT, PATCH or DELETE method and every SOAP method can
+	/// change data in the external API, so without it such a call is refused with
+	/// <see cref="WebServiceTestResult.ConfirmationRequired"/> and nothing is sent; a GET needs none.
+	/// </param>
 	/// <returns>
 	/// The status code, the masked, length-limited response body or error, and the response parameters as the platform
 	/// parsed them; body and values are withheld when a sent setting value cannot be located.
 	/// </returns>
-	WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, JsonElement> values);
+	WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, JsonElement> values,
+		bool userConfirmed = false);
 }
 
 public sealed class WebServiceDesigner(
@@ -281,7 +287,7 @@ public sealed class WebServiceDesigner(
 	}
 
 	public WebServiceTestResult TestMethod(string code, string methodCode,
-		IReadOnlyDictionary<string, JsonElement> values) {
+		IReadOnlyDictionary<string, JsonElement> values, bool userConfirmed = false) {
 		RequireManageSolution();
 		ServiceRow row = FindService(code);
 		ServiceSchemaDto schema = client.ReadSchema(row.UId, row.PackageUId);
@@ -289,6 +295,11 @@ public sealed class WebServiceDesigner(
 			?? throw new ArgumentException(
 				$"method '{methodCode}' not found; methods: {string.Join(", ", schema.Methods.Items.Values.Select(m => m.Name))}.");
 		WebServiceTestCall call = WebServiceTestValues.Build(method, values);
+		if (!userConfirmed && CanChangeData(schema, method)) {
+			// Owner decision (ADR D14): a request to test is not a confirmation. Checked after the values, so the call the
+			// agent repeats after the user's yes is already valid.
+			return new WebServiceTestResult(false, ConfirmationRefusal(schema, method), ConfirmationRequired: true);
+		}
 		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, call.Parameters);
 		if (IsRestXmlRefusal(schema, method, result)) {
 			// Nothing was built or sent, so there is no secret to locate and the explanation must not be withheld.
@@ -356,6 +367,29 @@ public sealed class WebServiceDesigner(
 		}
 		using JsonDocument document = JsonDocument.Parse(text);
 		return document.RootElement.Clone();
+	}
+
+	/// <summary>
+	/// Whether a test call of the method can change data in the external API: every SOAP call is a POST whose effect clio
+	/// cannot know, and so is a REST method with any verb but GET (an unknown verb counts too). A REST method with an XML
+	/// body is the exception: the platform refuses to build its request and sends nothing (see <see cref="IsRestXmlRefusal"/>).
+	/// </summary>
+	private static bool CanChangeData(ServiceSchemaDto schema, ServiceMethodDto method) {
+		if (WebServiceSchemaView.IsSoap(schema)) {
+			return true;
+		}
+		return method.Request?.ContentType != ServiceSchemaCodes.ContentTypeXml
+			&& method.Request?.HttpMethodType != ServiceSchemaCodes.HttpMethods["GET"];
+	}
+
+	private static string ConfirmationRefusal(ServiceSchemaDto schema, ServiceMethodDto method) {
+		string verb = WebServiceSchemaView.IsSoap(schema)
+			? "a SOAP method"
+			: $"a {ServiceSchemaCodes.HttpMethods.FirstOrDefault(m => m.Value == method.Request?.HttpMethodType).Key ?? "non-GET"} method";
+		return $"Not sent: '{method.Name}' of '{schema.Name}' is {verb}, so the test call sends a real request that can "
+			+ "change data in that API, and a request to test is not a confirmation. Tell the user exactly that and ask for "
+			+ "their explicit yes; do not set user-confirmed yourself. Only after they say yes, repeat the same call with "
+			+ "user-confirmed: true.";
 	}
 
 	/// <summary>

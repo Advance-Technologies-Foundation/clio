@@ -540,6 +540,70 @@ public sealed class WebServiceDesignerTests {
 			Arg.Any<IReadOnlyList<ServiceCallParameter>>());
 	}
 
+	[TestCase("POST")]
+	[TestCase("PUT")]
+	[TestCase("PATCH")]
+	[TestCase("DELETE")]
+	[Description("A test call of a method that can change data, without the user's confirmation, is refused with confirmation-required and nothing is sent; with the confirmation it goes out.")]
+	public void TestMethod_Should_Refuse_A_Data_Changing_Call_Until_The_User_Confirms(string verb) {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", verb, "search")));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "{}", null, "POST https://api.bing.example/search HTTP/1.1", "{}"));
+
+		// Act
+		WebServiceTestResult refused = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		int sentWhenRefused = _client.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IWebServiceDesignerClient.CallMethod));
+		WebServiceTestResult confirmed = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
+
+		// Assert
+		sentWhenRefused.Should().Be(0, because: "nothing reaches the external API before the user's yes");
+		refused.Success.Should().BeFalse(because: "a request to test is not a confirmation");
+		refused.ConfirmationRequired.Should().BeTrue(because: "the result says the user has to be asked first");
+		refused.StatusCode.Should().BeNull(because: "nothing was sent");
+		refused.Error.Should().Contain($"a {verb} method").And.Contain("do not set user-confirmed yourself")
+			.And.Contain("user-confirmed: true", because: "the refusal tells the agent to ask and how to repeat after the yes");
+		confirmed.Success.Should().BeTrue(because: "the confirmed call goes out");
+		confirmed.ConfirmationRequired.Should().BeNull(because: "a confirmed call carries no confirmation flag");
+		_client.Received(1).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[Test]
+	[Description("Every SOAP test call needs the user's confirmation, because each one is a POST whose effect clio cannot know.")]
+	public void TestMethod_Should_Refuse_A_Soap_Call_Until_The_User_Confirms() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+
+		// Assert
+		result.ConfirmationRequired.Should().BeTrue(because: "a SOAP call can change data in the external API");
+		result.Error.Should().Contain("a SOAP method", because: "the refusal names why the call needs a yes");
+		_client.DidNotReceive().CallMethod(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[Test]
+	[Description("A GET and a REST method with an XML body need no confirmation: a GET reads, and the platform sends nothing for an XML body.")]
+	public void TestMethod_Should_Not_Ask_For_A_Get_Or_A_Rest_Xml_Method() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "{}", null, "GET https://api.bing.example/search HTTP/1.1", null));
+
+		// Act
+		WebServiceTestResult get = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml")));
+		WebServiceTestResult xml = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		get.ConfirmationRequired.Should().BeNull(because: "a GET does not change data");
+		get.Success.Should().BeTrue(because: "the GET went out");
+		xml.ConfirmationRequired.Should().BeNull(because: "the platform refuses to build an XML REST body, so nothing could be sent");
+		_client.Received(2).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
 	private ServiceSchemaDto OrdersSchema() => SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "orders",
 		ContentType: "json", RequestParameters: [
 			new WebServiceParameterArg("UsrLines", "body", "Object", "lines", Array: true, Items: [
@@ -565,7 +629,7 @@ public sealed class WebServiceDesignerTests {
 		};
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", values);
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", values, userConfirmed: true);
 
 		// Assert
 		JsonSerializer.Serialize(sent).Should().Be(
@@ -609,7 +673,7 @@ public sealed class WebServiceDesignerTests {
 		var values = new Dictionary<string, JsonElement> { ["UsrLines"] = JsonDocument.Parse("[{}]").RootElement };
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", values);
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", values, userConfirmed: true);
 
 		// Assert
 		result.ResponseBody.Should().Be("<ok>[masked]</ok>",
@@ -757,7 +821,7 @@ public sealed class WebServiceDesignerTests {
 				"token=tok-secret-9"));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
 
 		// Assert
 		result.ResponseBody.Should().BeNull(because: "a fault that echoes the body would carry the token");
@@ -775,7 +839,7 @@ public sealed class WebServiceDesignerTests {
 				null, SoapServiceFixture.SentRaw, SoapServiceFixture.SentEnvelope));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		result.ResponseBody.Should().Be("<soap:Fault><soap:Reason>bad password [masked] for [masked]</soap:Reason></soap:Fault>",
@@ -796,8 +860,8 @@ public sealed class WebServiceDesignerTests {
 				new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw, "not xml", values));
 
 		// Act
-		WebServiceTestResult located = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
-		WebServiceTestResult withheld = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult located = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
+		WebServiceTestResult withheld = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		located.ResponseValues.Should().NotBeNull(because: "the platform parsed the response parameters");
@@ -824,7 +888,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Act
 		WebServiceToolResult described = _sut.Describe("UsrSoapProbe", false);
-		WebServiceTestResult tested = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult tested = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		string notice = described.Notices.Should().ContainSingle(because: "one response path does not fit its XML response")
@@ -864,7 +928,7 @@ public sealed class WebServiceDesignerTests {
 				SoapServiceFixture.SentEnvelope, values));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		result.ResponseValues.Should().BeNull(because: "a JSON tree past the limit cannot be cut like text");

@@ -21,7 +21,9 @@ public sealed class WebServiceToolsArgumentTests {
 	[TestCase("methodCode", "method")]
 	[TestCase("service-code", "code")]
 	[TestCase("Service-Code", "code")]
-	[Description("test-web-service-method answers a guessed method or service argument name with the canonical name, before touching any environment.")]
+	[TestCase("confirmed", "user-confirmed")]
+	[TestCase("userConfirmed", "user-confirmed")]
+	[Description("test-web-service-method answers a guessed method, service or confirmation argument name with the canonical name, before touching any environment, so a confirmation under another name is never taken as the user's yes.")]
 	public void TestWebServiceMethod_Should_Hint_The_Canonical_Argument(string guessed, string canonical) {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
@@ -38,25 +40,27 @@ public sealed class WebServiceToolsArgumentTests {
 	}
 
 	[Test]
-	[Description("test-web-service-method passes parameters to the designer as given, arrays and arrays of objects included, instead of refusing them in the tool.")]
+	[Description("test-web-service-method passes parameters to the designer as given, arrays and arrays of objects included, and passes user-confirmed only when it is true.")]
 	public void TestWebServiceMethod_Should_Pass_Array_Values_To_The_Designer() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
 		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
-		designer.TestMethod(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, JsonElement>>())
-			.Returns(new WebServiceTestResult(true));
+		designer.TestMethod(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, JsonElement>>(),
+			Arg.Any<bool>()).Returns(new WebServiceTestResult(true));
 		Dictionary<string, JsonElement> parameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 			"""{"UsrTags": ["a", "b"], "UsrLines": [{"UsrSku": "S1", "UsrSubs": [{"UsrNote": "n"}]}]}""");
 		var tool = new TestWebServiceMethodTool(resolver);
 
 		// Act
 		WebServiceTestResult result = tool.TestWebServiceMethod(new TestWebServiceMethodArgs("dev", "UsrErp", "UsrGet", parameters));
+		tool.TestWebServiceMethod(new TestWebServiceMethodArgs("dev", "UsrErp", "UsrPost", null, UserConfirmed: true));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "arrays are checked against the method by the designer, not refused by the tool");
 		designer.Received(1).TestMethod("UsrErp", "UsrGet", Arg.Is<IReadOnlyDictionary<string, JsonElement>>(
-			p => ReferenceEquals(p, parameters)));
+			p => ReferenceEquals(p, parameters)), false);
+		designer.Received(1).TestMethod("UsrErp", "UsrPost", null, true);
 	}
 
 	[Test]

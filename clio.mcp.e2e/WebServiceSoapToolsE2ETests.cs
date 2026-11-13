@@ -93,7 +93,7 @@ public sealed class WebServiceSoapToolsE2ETests : McpContractFixtureBase {
 		WebServiceTestResult testCall = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = soap11, ["method"] = Prefixed("Op"),
-				["parameters"] = new Dictionary<string, object?> { [Prefixed("A")] = "a1" }
+				["parameters"] = new Dictionary<string, object?> { [Prefixed("A")] = "a1" }, ["user-confirmed"] = true
 			}, cts.Token);
 
 		// Assert
@@ -182,7 +182,7 @@ public sealed class WebServiceSoapToolsE2ETests : McpContractFixtureBase {
 		WebServiceTestResult testCall = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = code, ["method"] = Prefixed("Op"),
-				["parameters"] = new Dictionary<string, object?> { [Prefixed("A")] = "a1" }
+				["parameters"] = new Dictionary<string, object?> { [Prefixed("A")] = "a1" }, ["user-confirmed"] = true
 			}, cts.Token);
 
 		// Assert

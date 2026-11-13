@@ -184,7 +184,7 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 
 	[Test]
 	[AllureName("test-call a SOAP method with arrays of objects")]
-	[Description("Registers a SOAP 1.1 service on the stand's own host whose array of objects has an item field and an inner array of objects with a field, both bound to a system setting; test-calls it once leaving the inner array out and once filling it, and expects both responses to come back instead of being withheld, because every setting value that went out is located in the envelope and an inner array left out sends nothing.")]
+	[Description("Registers a SOAP 1.1 service on the stand's own host whose array of objects has an item field and an inner array of objects with a field, both bound to a system setting; expects a test call without the user's confirmation to be refused with nothing sent, then test-calls it confirmed once leaving the inner array out and once filling it, and expects both responses to come back instead of being withheld, because every setting value that went out is located in the envelope and an inner array left out sends nothing.")]
 	public async Task TestWebServiceMethod_Should_Locate_Setting_Values_In_Nested_Soap_Items() {
 		// Arrange
 		await ArrangeAsync();
@@ -216,6 +216,9 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 		registered.Success.Should().BeTrue(because: $"the arrange step registers the service; error: {registered.Error}");
 
 		// Act
+		WebServiceTestResult unconfirmed = await TestAsync(code, Prefixed("Op"), new Dictionary<string, object?> {
+			[Prefixed("Lines")] = new object[] { new Dictionary<string, object?> { [Prefixed("Sku")] = "S1" } }
+		}, cts.Token, confirmed: false);
 		WebServiceTestResult innerLeftOut = await TestAsync(code, Prefixed("Op"), new Dictionary<string, object?> {
 			[Prefixed("Lines")] = new object[] { new Dictionary<string, object?> { [Prefixed("Sku")] = "S1" } }
 		}, cts.Token);
@@ -229,6 +232,9 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 		}, cts.Token);
 
 		// Assert
+		unconfirmed.Success.Should().BeFalse(because: "a request to test is not a confirmation for a SOAP call");
+		unconfirmed.ConfirmationRequired.Should().BeTrue(because: "the result tells the agent to ask the user first");
+		unconfirmed.StatusCode.Should().BeNull(because: "nothing was sent before the user's yes");
 		(innerLeftOut.Error ?? string.Empty).Should().NotContain("withheld",
 			because: "the item's setting field is located, and an inner array left out of every item sent no field");
 		innerLeftOut.ResponseValues.Should().NotBeNull(because: "the platform built and sent the envelope");
@@ -271,10 +277,15 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 		return field;
 	}
 
+	/// <summary>
+	/// Test-calls a method. The services here are POST and SOAP ones, which test-web-service-method calls only with the
+	/// user's confirmation; the test stands in for the user's yes unless <paramref name="confirmed"/> is false.
+	/// </summary>
 	private async Task<WebServiceTestResult> TestAsync(string code, string method, Dictionary<string, object?> parameters,
-		CancellationToken token) =>
+		CancellationToken token, bool confirmed = true) =>
 		await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName, new Dictionary<string, object?> {
-			["environment-name"] = _environmentName, ["code"] = code, ["method"] = method, ["parameters"] = parameters
+			["environment-name"] = _environmentName, ["code"] = code, ["method"] = method, ["parameters"] = parameters,
+			["user-confirmed"] = confirmed ? true : null
 		}, token);
 
 	/// <summary>Reads the stand's <c>SchemaNamePrefix</c>; every code is built from it, so any prefix (or none) works.</summary>

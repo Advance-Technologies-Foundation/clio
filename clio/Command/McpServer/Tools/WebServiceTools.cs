@@ -136,17 +136,17 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Test-calls a web service method. A request to test is not a confirmation: for a POST, PUT, PATCH or DELETE method and for every SOAP method, first tell the user the call sends a real request that can change data in that API, and call only after their explicit yes. For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
+	[Description("Test-calls a web service method. A request to test is not a confirmation: for a POST, PUT, PATCH or DELETE method and for every SOAP method, first tell the user the call sends a real request that can change data in that API, and call only after their explicit yes, with user-confirmed: true (without it such a call is refused and nothing is sent). For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
 	public WebServiceTestResult TestWebServiceMethod(
-		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value; arrays and arrays of objects take JSON arrays)")]
+		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value; arrays and arrays of objects take JSON arrays), user-confirmed (optional; true only after the user's explicit yes to a POST, PUT, PATCH, DELETE or SOAP call)")]
 		[Required]
 		TestWebServiceMethodArgs args) {
 		try {
 			ArgumentNullException.ThrowIfNull(args);
 			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData,
-				"Valid: environment-name, code, method, parameters.", WebServiceToolRunner.TestMethodAliases);
+				"Valid: environment-name, code, method, parameters, user-confirmed.", WebServiceToolRunner.TestMethodAliases);
 			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args.EnvironmentName);
-			return designer.TestMethod(args.Code, args.Method, args.Parameters);
+			return designer.TestMethod(args.Code, args.Method, args.Parameters, args.UserConfirmed == true);
 		} catch (Exception exception) {
 			return new WebServiceTestResult(false, WebServiceToolRunner.Describe(exception));
 		}
@@ -173,9 +173,14 @@ internal static class WebServiceToolRunner {
 		McpToolArgumentSupport.EnvironmentNameAliases,
 		("service-code", "code"), ("service_code", "code"), ("serviceCode", "code"));
 
-	/// <summary><see cref="ServiceCodeAliases"/> plus the method-code spellings of test-web-service-method.</summary>
+	/// <summary>
+	/// <see cref="ServiceCodeAliases"/> plus the method-code and confirmation spellings of test-web-service-method; a
+	/// confirmation under another name is answered with a rename hint, never taken as the user's yes.
+	/// </summary>
 	public static readonly IReadOnlyDictionary<string, string> TestMethodAliases = WithAliases(ServiceCodeAliases,
-		("method-code", "method"), ("method_code", "method"), ("methodCode", "method"));
+		("method-code", "method"), ("method_code", "method"), ("methodCode", "method"),
+		("confirmed", "user-confirmed"), ("confirm", "user-confirmed"), ("user_confirmed", "user-confirmed"),
+		("userConfirmed", "user-confirmed"), ("confirmed-by-user", "user-confirmed"));
 
 	private static IReadOnlyDictionary<string, string> WithAliases(IReadOnlyDictionary<string, string> source,
 		params (string Alias, string Canonical)[] extra) {
@@ -331,7 +336,11 @@ public sealed record TestWebServiceMethodArgs(
 
 	[property: JsonPropertyName("parameters")]
 	[property: Description("Values by request parameter code: text, a number or a boolean for a scalar; for a body array a JSON array of them, e.g. [\"a\", \"b\"]; for an array of objects a JSON array of objects by field code, e.g. [{\"UsrSku\": \"A1\", \"UsrQty\": 2}], with arrays inside items given the same way. A path, query, header or cookie value is one text even when marked as an array (a list as \"1,2\"). Every code, nested ones included, must be the method's; null leaves a value out")]
-	IReadOnlyDictionary<string, JsonElement> Parameters = null) {
+	IReadOnlyDictionary<string, JsonElement> Parameters = null,
+
+	[property: JsonPropertyName("user-confirmed")]
+	[property: Description("True only after the user explicitly said yes to this call; a request to test is not a confirmation. A POST, PUT, PATCH, DELETE or SOAP method is refused without it and nothing is sent; a GET needs none")]
+	bool? UserConfirmed = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 
