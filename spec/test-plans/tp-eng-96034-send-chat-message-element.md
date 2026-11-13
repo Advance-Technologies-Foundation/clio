@@ -17,7 +17,7 @@ Run: `dotnet test clio.tests/clio.tests.csproj -f net10.0 --filter "TestCategory
 | TC-U-03 | An unknown block key is refused with the path, the accepted keys and the `body`/`channel`/`contact`/case pointer | `ProcessBlockKeyCheckTests.Check_Should_RefuseAnUnknownChatMessageKey_NamingItsPathAndPointer` |
 | TC-U-04 | Unknown keys inside a value source and a `columnValues` entry are refused under their own labels | `ProcessBlockKeyCheckTests.Check_Should_RefuseAnUnknownKeyInsideAChatMessageValueSourceOrColumnValue` |
 | TC-U-05 | A described block replays: `templateName`, `outputs`, `issues`, `display` are tolerated read-backs | `ProcessBlockKeyCheckTests.Check_Should_TolerateTheReadBackFields_OfADescribedChatMessageBlock` |
-| TC-U-06 | A list or a bare string in `from`/`to` is refused before sending with the one-contact hint | `ProcessBlockKeyCheckTests.Check_Should_RefuseAListInAChatMessageValueSource_WithTheOneContactHint`, `Check_Should_RefuseABareStringInAChatMessageValueSource` |
+| TC-U-06 | A list or a bare string in `from`/`to` is refused before sending with the one-contact (one-channel) hint | `ProcessBlockKeyCheckTests.Check_Should_RefuseAListInAChatMessageValueSource_WithTheOneValueHint`, `Check_Should_RefuseABareStringInAChatMessageValueSource` |
 | TC-U-07 | The key sets equal the bundled contracts; read-backs are describe-only members | `ProcessBlockKeyCheckTests.KeySets_Should_EqualTheMembersOfTheBundledServerContracts`, `ReadBackFields_Should_BeDescribeOnlyMembers` (red until the rebundle) |
 | TC-U-08 | The create call shape names `chatMessage (sendChatMessage)` and the bundled element contract has it | `ToolContractShortFormTests.CreateCallShape_Should_NameExactlyTheMembersOfTheBundledServerContract` (red until the rebundle) |
 | TC-U-09 | Describe reads `chatMessage`, keeps unknown members in the bags, leaves it null when absent | `ServerProcessDescriberTests.Describe_ShouldReadTheChatMessageMember_WhenServerReportsIt`, `Describe_ShouldKeepUnknownChatMessageMembers_InTheBag`, `Describe_ShouldLeaveTheChatMessageMemberNull_WhenServerOmitsIt` |
@@ -25,7 +25,7 @@ Run: `dotnet test clio.tests/clio.tests.csproj -f net10.0 --filter "TestCategory
 | TC-U-11 | modify contract and prompt: addElement/setElement lists, Q1 refusal, setElement rules, pointer | `ModifyBusinessProcessToolTests.ModifyBusinessProcess_Description_ShouldOfferTheChatMessageBlockAndItsSetElementRules` |
 | TC-U-12 | describe contract and prompt: read-back clause, describe-only members, outputs, connections warning | `DescribeProcessToolTests.DescribeProcess_ShouldDocumentTheChatMessageBlock_WhenToolContractIsRead` |
 | TC-U-13 | list-user-tasks contract and prompt refuse the chat task on the generic route | `ListUserTasksToolTests.ListUserTasks_Description_ShouldRefuseTheSendChatMessageTaskOnTheGenericRoute` |
-| TC-U-14 | validate-process-graph names the element as buildable | `ValidateProcessGraphToolTests` (buildable-list pin) |
+| TC-U-14 | validate-process-graph names the element as buildable | `ValidateProcessGraphToolTests.ValidateTool_ShouldNameTheWebServiceAndChatElementsAsBuildable_WhenDescriptionIsRead` |
 | TC-U-15 | Per-contract ceiling and wire bundle hold, no ceiling raise | `ToolContractPayloadBudgetTests` |
 | TC-U-16 | Floor literals name the chat cut | `ProcessDesignerRequiresPackageAttributeTests` (with the rebundle) |
 | TC-U-17 | Archive pins (SHA, version, stamps, producing commit, security counts) | `BundledProcessBuilderPackageTests` (with the rebundle) |

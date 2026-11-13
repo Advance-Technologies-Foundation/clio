@@ -908,9 +908,9 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[TestCase("to", """[ { "processParameter": "ContactA" }, { "processParameter": "ContactB" } ]""", "sends to ONE contact")]
-	[TestCase("from", """[ { "value": "Support Telegram" } ]""", "sends to ONE channel")]
-	[Description("A list in chatMessage.to or chatMessage.from is refused before sending with the one-contact hint: the server's serializer cannot read it and fails the whole request before the package's own refusal runs, so only clio can say that the element sends to one contact and how to reach several.")]
-	public void Check_Should_RefuseAListInAChatMessageValueSource_WithTheOneContactHint(string member, string list,
+	[TestCase("from", """[ { "value": "Support Telegram" } ]""", "sends from ONE channel")]
+	[Description("A list in chatMessage.to or chatMessage.from is refused before sending with the one-value hint: the server's serializer cannot read it and fails the whole request before the package's own refusal runs, so only clio can say that the element sends to one contact (and how to reach several) from one channel.")]
+	public void Check_Should_RefuseAListInAChatMessageValueSource_WithTheOneValueHint(string member, string list,
 		string hint) {
 		// Arrange
 		string element = $$"""{ "name": "Chat1", "type": "sendChatMessage", "chatMessage": { "{{member}}": {{list}} } }""";
@@ -951,7 +951,7 @@ public sealed class ProcessBlockKeyCheckTests {
 		// Arrange
 		string operations = """
 			[ { "op": "setElement", "elementName": "Chat1", "elementUpdate": { "chatMessage": {
-			    "from": { "value": "[#Lookup.a26e0c98-9a52-4e80-9a04-75221742fed7.6f2b2f4e-3c1a-4b0e-9a55-5f7e6a1d1b11#]", "display": "Support Telegram" },
+			    "from": { "value": "6f2b2f4e-3c1a-4b0e-9a55-5f7e6a1d1b11", "display": "Support Telegram" },
 			    "to": { "processParameter": "ContactId" }, "messageSource": "template",
 			    "template": "[#Lookup.93030575-f70f-4041-902e-c4badaf62c63.0b3e2a52-1d3f-4c5e-8a7f-1b2c3d4e5f60#]",
 			    "templateName": "Creating new case from chat", "ignoreErrors": false, "columnValues": [],

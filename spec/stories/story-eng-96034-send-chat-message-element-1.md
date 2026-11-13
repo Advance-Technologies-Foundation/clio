@@ -10,7 +10,7 @@
 **Repo**: crt-process-builder, then clio-knowledge, then clio (one PR each, titled `ENG-96034 Send chat message
 element`, branch `feature/ENG-96034-send-chat-message`). Stories 2 and 3 ship in the same three PRs.
 **Depends on**: ENG-95986 (Send email template mode; the template resolver), ENG-91844 (element-output value sources)
-**Blocks**: [story 2](story-eng-96034-send-chat-message-element-2.md)
+**Blocks**: [story 2](story-eng-96034-send-chat-message-element-2.md), [story 3](story-eng-96034-send-chat-message-element-3.md)
 
 ---
 

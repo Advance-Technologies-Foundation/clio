@@ -604,19 +604,33 @@ internal static class ProcessBlockKeyCheck {
 		// not say that the element sends to one contact. This check says it before anything is sent.
 		private void RefuseChatValueSourceShape(JsonObject chatMessage, string where, string blockPath) {
 			foreach (string member in new[] { "from", "to" }) {
-				if (!chatMessage.TryGetPropertyValue(member, out JsonNode value) || value is null or JsonObject) {
-					continue;
+				JsonNode value;
+				try {
+					if (!chatMessage.TryGetPropertyValue(member, out value) || value is null or JsonObject) {
+						continue;
+					}
+				} catch (ArgumentException) {
+					// A repeated key: the walk of the block reports it with its path.
+					return;
 				}
 				string path = $"{blockPath}.{member}";
-				string what = member == "to" ? "ONE contact" : "ONE channel";
+				string example = $"\"{member}\": {{\"processParameter\": \"...\"}}";
 				RefuseShape(value is JsonArray
-					? $"{where}: '{path}' is a list, which the server cannot read: a Send chat message element sends to "
-						+ $"{what}. Send one value source, for example \"{member}\": {{\"processParameter\": \"...\"}}; "
-						+ "to message several contacts, add one element per contact or run the element in a "
-						+ "multi-instance sub-process over the list."
-					: $"{where}: '{path}' is {value.ToJsonString(ReadableJson)}, which the server cannot read: it takes "
-						+ $"ONE value-source object, for example \"{member}\": {{\"value\": {value.ToJsonString(ReadableJson)}}}.");
+					? member == "to"
+						? $"{where}: '{path}' is a list, which the server cannot read: a Send chat message element sends to "
+							+ $"ONE contact. Send one value source, for example {example}; to message several contacts, add "
+							+ "one element per contact or run the element in a multi-instance sub-process over the list."
+						: $"{where}: '{path}' is a list, which the server cannot read: a Send chat message element sends from "
+							+ $"ONE channel. Send one value source, for example {example}."
+					: $"{where}: '{path}' is {Echo(value)}, which the server cannot read: it takes "
+						+ $"ONE value-source object, for example \"{member}\": {{\"value\": {Echo(value)}}}.");
 			}
+		}
+
+		// A caller's value echoed into a refusal, cut so a large one does not swamp the message.
+		private static string Echo(JsonNode value) {
+			string text = value.ToJsonString(ReadableJson);
+			return text.Length <= 200 ? text : text[..200] + "...";
 		}
 
 		// A filter condition's 'value' is ONE string on the server's contract and 'values' a LIST of strings

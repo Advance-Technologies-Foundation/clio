@@ -33,8 +33,8 @@ public static class ModifyBusinessProcessPrompt {
 		 `methodResolved`, `issues` and `parameters` are describe-only, ignored and named in a warning; a
 		 fractional `timeoutSeconds` is refused (leave it out to keep the stored value, or send whole seconds), and a
 		 block with no `service` needs a registered service named again. A described `chatMessage` block
-		 re-applies unchanged: its `templateName`, `outputs` and `issues` are describe-only, ignored and named
-		 in a warning. A filter, signal or
+		 re-applies unchanged: its `templateName`, `outputs`, `issues` and each value source's `display` are
+		 describe-only, ignored and named in a warning. A filter, signal or
 		 connections goes in its own operation (setFilter, setSignal, setConnections), and flat approval fields are
 		 written nested in the same block (approver.type, notifyApprover.emailTemplate); (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
@@ -190,7 +190,8 @@ public static class ModifyBusinessProcessPrompt {
 		 first - it owns the block;
 		 and a `sendChatMessage` element's `chatMessage` block: an omitted member keeps its stored value,
 		 `columnValues: []` clears the column values, and switching to `messageSource: "custom"` needs the new
-		 `message` in the same update. Read `get-guidance name=process-send-chat-message` first - it owns the block;
+		 `message` in the same update and clears the template (a switch to template clears a constant message).
+		 Read `get-guidance name=process-send-chat-message` first - it owns the block;
 		 `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare

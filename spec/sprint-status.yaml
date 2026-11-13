@@ -5143,6 +5143,7 @@ stories:
     depends_on: []
     blocks:
       - story-eng-96034-send-chat-message-element-2
+      - story-eng-96034-send-chat-message-element-3
     note: >-
       ENG-96034 Send chat message element. Owner decisions Q1-Q18 on 2026-11-13 (Q13 deferred: what the
       process-designer lane stand carries must be known before the clio PR merges). Status moves to review when the

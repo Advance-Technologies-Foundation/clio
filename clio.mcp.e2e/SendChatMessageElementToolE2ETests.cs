@@ -183,7 +183,9 @@ public sealed class SendChatMessageElementToolE2ETests {
 
 			// Assert
 			ShouldBeRefused(callResult, "an element that cannot send a chat message is refused before anything is saved");
-			string log = LogText(callResult);
+			// The task name is quoted back by any refusal of the generic route, so it is removed before looking for the
+			// type the refusal points to; otherwise "sendChatMessage" would match inside it.
+			string log = LogText(callResult).Replace(ChatTaskName, string.Empty, StringComparison.Ordinal);
 			foreach (string fragment in expectedFragments) {
 				log.Should().ContainEquivalentOf(fragment, because: "the refusal names what was sent and what to use instead");
 			}
@@ -253,8 +255,8 @@ public sealed class SendChatMessageElementToolE2ETests {
 
 			// Assert
 			ShouldBeRefused(withoutMessage, "a switch to custom must carry the text it sends");
-			LogText(withoutMessage).Should().ContainEquivalentOf("message",
-				because: "the refusal names the member that is missing");
+			LogText(withoutMessage).Should().MatchRegex("['\"`]message['\"`]",
+				because: "the refusal names the member that is missing, quoted as a member name");
 			ShouldHaveLanded(withMessage, "a switch to custom with its message is an ordinary update");
 			JsonObject block = ChatBlock(Element(await DescribeGraphAsync(context, processName), "Chat1"));
 			Text(block, "messageSource").Should().Be("custom", because: "the switch landed");
@@ -290,8 +292,9 @@ public sealed class SendChatMessageElementToolE2ETests {
 
 			// Assert
 			ShouldBeRefused(callResult, "the Template parameter is owned by the chatMessage block");
-			LogText(callResult).Should().ContainEquivalentOf("chatMessage",
-				because: "the refusal points to the block member that sets the parameter");
+			LogText(callResult).Should().Contain("chatMessage",
+				because: "the refusal points to the block member that sets the parameter (case-sensitive: the task name "
+					+ "SendChatMessageUserTask does not match)");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -375,7 +378,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	[Description("TC-I-09: a send that fails at run time - the contact parameter left empty, so the element's own input check fails without reaching any provider - reaches the end of the process with SendStatus = Error when ignoreErrors is true, and ends the instance in Error when it is false. Ignored without McpE2E:AllowDestructiveMcpTests.")]
 	[AllureTag(RunProcessTool.ToolName)]
 	[AllureName("run-process continues past a failed send only when errors are ignored")]
-	public async Task RunProcess_Should_Continue_WhenTheSendFailsAndErrorsAreIgnored(bool ignoreErrors, string expectedStatus) {
+	public async Task RunProcess_Should_HonourIgnoreErrors_WhenTheSendFails(bool ignoreErrors, string expectedStatus) {
 		// Arrange
 		IgnoreUnlessDestructiveTestsAreAllowed("the ignore-errors run case");
 		await using ProcessDesignerArrangeContext context = await StartAsync();
@@ -453,10 +456,14 @@ public sealed class SendChatMessageElementToolE2ETests {
 	private static Dictionary<string, object?> GraphEdge(string source, string target) =>
 		new() { ["source"] = source, ["target"] = target, ["flow-kind"] = "sequence" };
 
-	/// <summary>The block without its describe-only members that legitimately differ between two elements.</summary>
+	/// <summary>The block without the describe-only members that legitimately differ between two elements.</summary>
 	private static JsonObject Comparable(JsonObject block) {
 		JsonObject copy = block.DeepClone().AsObject();
 		copy.Remove("issues");
+		// display is the designer's caption of the bound parameter or record; the copy's parameter has none of its own.
+		foreach (string member in new[] { "from", "to" }) {
+			(copy[member] as JsonObject)?.Remove("display");
+		}
 		return copy;
 	}
 
@@ -489,7 +496,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("IsActive", "IsActive")
-			], [], rowCount: 50), "the chat channels");
+			], [], rowCount: 500), "the chat channels");
 		JsonElement? active = rows.EnumerateArray()
 			.Where(row => row.TryGetProperty("IsActive", out JsonElement flag) && flag.ValueKind == JsonValueKind.True)
 			.Select(row => (JsonElement?)row).FirstOrDefault();
@@ -589,7 +596,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 		if (rows.GetArrayLength() == 0) {
 			Assert.Ignore($"Designer fixture {DesignerFixtureName} not found on '{context.EnvironmentName}'. Build it in "
 				+ "the classic designer: one Send chat message element - From an active channel, To a Lookup process "
-				+ "parameter on Contact, template mode with a chat template, Ignore sending errors ticked - and save.");
+				+ "parameter on Contact named ContactId, template mode with a chat template, Ignore sending errors ticked - and save.");
 		}
 	}
 

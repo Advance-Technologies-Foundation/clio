@@ -82,9 +82,10 @@ public static class DescribeProcessPrompt {
 		   (the channel) and `to` (the contact) in the shared value-source shape, `messageSource`, `template` (the
 		   stored macro; `templateName` names it) or `message` (custom mode only - in template mode the designer's
 		   copy of the template body is not reported), `ignoreErrors` (always stated: `false` means a failed send
-		   stops the process), `columnValues` set on the created chat, `outputs` (`SendStatus`, `Sent` or `Error`,
+		   stops the process), `columnValues` set on the created chat, `outputs` (`SendStatus` - `Sent` or `Error` -
 		   and `SendStatusDetails`, listed even when unmapped) and `issues` (what is left unconfigured). The block
-		   resubmits unchanged: `templateName`, `outputs` and `issues` are describe-only, ignored with a warning.
+		   resubmits unchanged: `templateName`, `outputs`, `issues` and each value source's `display` are describe-only,
+		   ignored with a warning.
 		   Ignore the `MessageType` and `Contact` entries `connections` may list for it and never replay them:
 		   `setConnections` refuses this task. `get-guidance name=process-send-chat-message` owns the block.
 		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
