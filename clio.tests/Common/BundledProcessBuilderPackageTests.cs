@@ -70,17 +70,15 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>fcef6a9e</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.171</c>): branch <c>feature/clio-1896-lookup-macro-schema</c> with <c>main</c> merged in
-	/// at 1.6.6.165 (<c>caee591e</c>, the merge of <c>af7ff977</c>, ENG-105556), so the cut carries everything 1.6.6.165
-	/// shipped.
-	/// This cut is a HAND cut from the stamp commit, packed as exported with no overlay: the producing commit carries the
-	/// restamped descriptor itself, so its descriptor reads 1.6.6.171 and every archive entry, <c>descriptor.json</c>
-	/// included, is byte-identical to that commit's blob (all 384 checked). The pin therefore reproduces from the commit
-	/// id alone: export it with the two <c>-c</c> flags and pack the export.
-	/// The number is the next free one above the global maximum: this branch's earlier cuts 1.6.6.155, 1.6.6.161, 1.6.6.163,
-	/// 1.6.6.164, 1.6.6.166 and 1.6.6.168 are burned (each was pushed and installed before it was superseded), and 1.6.6.167
-	/// and 1.6.6.170 are another package branch's; whichever lands after this one restamps above it.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>640acdf8</c>, to be
+	/// tagged <c>crtprocessbuilder-1.6.6.172</c>): branch <c>feature/ENG-105558-internal-helper-parameter</c> with
+	/// <c>main</c> merged in at 1.6.6.171 (<c>4d89bc98</c>, the merge of <c>e3e7f838</c>), so the cut carries everything
+	/// 1.6.6.171 shipped.
+	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
+	/// marker, the script stamped the package descriptor to 1.6.6.172 and packed that commit with it overlaid (386
+	/// entries), and the stamp was committed after it as the child commit <c>88cc8187</c>.
+	/// The number is the next free one above the global maximum; whichever package branch lands after this one restamps
+	/// above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -93,24 +91,21 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.165 (issue #1896): in a Modify data / Add data / Open edit page value
-	/// <c>expression</c> on a lookup column, EVERY <c>[#Lookup...#]</c> macro - the whole value or one inside a formula -
-	/// is checked, and the value is refused, naming the element and the column, when a macro is not the case-sensitive
-	/// two-segment formula <c>[#Lookup.{object}.{record}#]</c> (a display macro, a dotted object name, a wrongly cased
-	/// prefix), when its object segment names no entity schema (by base or extension UId, or by case-sensitive name), or
-	/// when its record segment is not the Id of an existing row - of the COLUMN's object for a macro that is the whole
-	/// value, since the element writes it into the column's foreign key (on a schema-registry column too), and of the
-	/// object its own segment names for a macro inside a formula, whose condition may compare another object's records.
-	/// The service surface is unchanged from 1.6.6.165 (9 operations, 6 design-gate call sites and the one case-gate call
-	/// site, counted in the producing sources). No <c>[RequiresPackage]</c> floor moves (create, modify and
-	/// modify-as-new-version stay at 1.6.6.162, <c>create-dynamic-case</c> at 1.6.6.165): clio advertises nothing new, and
-	/// an older server only stores the dead macro it always stored. What earlier cuts carried is in this file's git history
-	/// rather than here: it described archives that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.171 (ENG-105558): a top-level process parameter that the same build or
+	/// modify creates with no direction, that an element of the process fills and that is not a collection, is saved
+	/// <c>Internal</c> instead of <c>Variable</c>, with a notice; a stated direction is never switched, a FileCollection
+	/// keeps <c>Variable</c> with no advice, a <c>Variable</c> stated for a parameter the request creates and an element
+	/// fills is advised once, and a pre-existing <c>Variable</c> parameter the request makes an element fill keeps
+	/// <c>Variable</c> and gets advice worded as a report that asks for its callers first. The service surface is
+	/// unchanged from 1.6.6.171 (9 operations, 6 design-gate call sites and the one case-gate call site, counted in the
+	/// producing sources). No <c>[RequiresPackage]</c> floor moves (create, modify and modify-as-new-version stay at
+	/// 1.6.6.162, <c>create-dynamic-case</c> at 1.6.6.165): no request key is added, and an older package simply keeps
+	/// <c>Variable</c>. What earlier cuts carried is in this file's git history rather than here: it described archives
+	/// that are no longer shipped.</para>
 	/// <para>
-	/// The package suite was NOT re-run locally for this cut, which is a base-merge re-cut: the merge touched no source
-	/// file of either change, and each ran the suite on its own producing sources (issue #1896: 6174 passed, 0 failed, on
-	/// <c>dev-nf</c> at <c>0cb1fa07</c>; ENG-105556: 6230 passed on <c>dev-nf</c> and <c>dev-n8</c> at <c>35e61293</c>). The
-	/// package CI runs it on the merged head. That matters beyond hygiene, because skipping the suite
+	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6322 passed,
+	/// 0 failed, on <c>dev-nf</c>. <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
+	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
 	/// </para>
@@ -191,7 +186,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"EE10752548831A0AACA4087AFD8A6AE53E623C9A9FCB23FE0E26B070D34A3479";
+		"48D00E48CA4F50C93EE08080312286202548B86577076BBCF44F2679EE615752";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -219,7 +214,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.171";
+	private const string ExpectedArchiveVersion = "1.6.6.172";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -230,7 +225,7 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 a script cut.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -238,7 +233,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "fcef6a9e5b65eacec825f22c270af8793ec9548e";
+	private const string ExpectedProducingCommit = "640acdf80cd6691a2cbbdd0b832e70147d965fdd";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -264,7 +259,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794512149000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794574773000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -279,7 +274,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794512142000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794574650000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
