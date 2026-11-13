@@ -461,12 +461,19 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		CallServiceSchemaMethod = 126,
 
 		/// <summary>
+		///     Builds a minimal dynamic case (DCM) for an object from one of its lookup columns via the
+		///     ProcessDesignService package. The body is <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and
+		///     the answer is wrapped under <c>BuildCaseResult</c>; <c>validateOnly: true</c> plans without writing.
+		/// </summary>
+		BuildCase = 127,
+
+		/// <summary>
 		///     Downloads a WSDL and the schemas it imports by <c>schemaLocation</c>, as Studio's SOAP quick setup does
 		///     (<c>DownloadWsdlEndpoint.GetXmlSchemaFilesContent</c> of the ServiceDesigner package; requires
 		///     <c>CanManageSolution</c>). The body is the URL array; the response is
 		///     <c>{"success","errorInfo":{"message","stackTrace"},"files":[{"Key":url,"Value":[ascii codes]}]}</c>.
 		/// </summary>
-		DownloadWsdlSchemaFiles = 127
+		DownloadWsdlSchemaFiles = 128
 
 	}
 
@@ -569,6 +576,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
+		{KnownRoute.BuildCase, "/rest/ProcessDesignService/BuildCase"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
 		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},

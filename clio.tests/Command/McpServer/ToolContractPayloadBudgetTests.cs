@@ -108,9 +108,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	// more long-tail tools. Measured 50352 bytes with them registered (944 over 49408); next 256-byte step is 50432 (197).
 	// Merged with ENG-105681 on the ENG-105475 branch: with both sets registered and the web service tools'
 	// first sentences shortened for the line index, under 50176 (196).
+	// Re-pinned for ENG-105556: create-dynamic-case is one more long-tail tool. Measured 50380 bytes with it on top
+	// of the web service and page-modal-size tools (204 over 50176); next 256-byte step is 50432 (197).
 	// Re-pinned for ENG-105475 slice C: read-wsdl is one more long-tail tool. Measured 50250 bytes with it registered
 	// (74 over 50176); next 256-byte step is 50432 (197).
-	private const int MaxCompactIndexSerializedBytes = 197 * 256;
+	// Merged with ENG-105556 on the ENG-105475 slice C branch: read-wsdl and create-dynamic-case together measured
+	// 50480 bytes (48 over 50432); next 256-byte step is 50688 (198).
+	private const int MaxCompactIndexSerializedBytes = 198 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -140,9 +144,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// it has to shorten the legend or the purpose cut instead.
 	// Merged with ENG-105681 (two more lines): the web service tools' first sentences were shortened to stay
 	// within 18688 instead of raising it.
+	// ENG-105556 (create-dynamic-case, one more line) measured 18767 (79 over). As the note above asks, the legend
+	// paid for it instead of the ceiling: its last sentence, which repeated get-tool-contract's own description,
+	// is gone.
 	// ENG-105475 slice C (read-wsdl, one more line): measured 18709, 21 over. Paid by the legend as this comment asks,
 	// not by a raise: "characters" became "chars" and "returns this index as objects" became "gives objects" (ClioRing
 	// reads detail=index-entries, never the legend), and the tool's purpose is the short "Reads a WSDL.".
+	// Merged with ENG-105556 on the ENG-105475 slice C branch: both lines together measured 18696, 8 over, after
+	// ENG-105556 dropped the legend's last sentence. Paid by the legend again: "One line per tool:" became
+	// "Each line:" and "it may delete" became "may delete". The resident sentence is unchanged.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

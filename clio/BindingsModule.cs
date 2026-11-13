@@ -548,6 +548,13 @@ public class BindingsModule {
 		services.AddTransient<SetActiveProcessVersionCommand>();
 		services.AddTransient<ICompileBusinessProcessService, CompileBusinessProcessService>();
 		services.AddTransient<CompileBusinessProcessCommand>();
+		services.AddTransient<IBuildCaseClient, BuildCaseClient>();
+		services.AddTransient<IEntityClientSchemaReader, ListEntityClientSchemasCommand>();
+		services.AddTransient<IPageBodyWriter, PageUpdateCommand>();
+		services.AddTransient<IDynamicCaseRecordPageResolver, DynamicCaseRecordPageResolver>();
+		services.AddTransient<IDynamicCasePageStep, DynamicCasePageStep>();
+		services.AddTransient<IDynamicCaseService, DynamicCaseService>();
+		services.AddTransient<CreateDynamicCaseCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();

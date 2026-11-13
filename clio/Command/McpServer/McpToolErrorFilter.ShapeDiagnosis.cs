@@ -567,7 +567,15 @@ public static partial class McpToolErrorFilter
 	/// (<c>entity-set</c> - <c>entity</c>, <c>operator</c> - <c>op</c>), otherwise one within two edits. Nothing
 	/// when neither holds: a semantic guess (<c>column</c> for <c>field</c>) is left to the expected shape.
 	/// </summary>
-	private static string? SuggestWireName(string name, IReadOnlyList<WireMember> candidates) {
+	private static string? SuggestWireName(string name, IReadOnlyList<WireMember> candidates) =>
+		SuggestName(name, [.. candidates.Select(candidate => candidate.Name)]);
+
+	/// <summary>
+	/// <see cref="SuggestWireName"/> over plain names, shared with the missing-argument refusal. Names are
+	/// compared with letters and digits only, lower-cased, so <c>environment-name</c> finds
+	/// <c>environmentName</c>.
+	/// </summary>
+	private static string? SuggestName(string name, IReadOnlyList<string> candidates) {
 		if (name.Length > MaxSuggestedKeyLength) {
 			return null;
 		}
@@ -575,16 +583,16 @@ public static partial class McpToolErrorFilter
 		if (normalized.Length < 2) {
 			return null;
 		}
-		WireMember? prefixMatch = candidates
-			.Where(candidate => NormalizeMemberName(candidate.Name) is { Length: >= 2 } known
+		string? prefixMatch = candidates
+			.Where(candidate => NormalizeMemberName(candidate) is { Length: >= 2 } known
 				&& (normalized.StartsWith(known, StringComparison.Ordinal) || known.StartsWith(normalized, StringComparison.Ordinal)))
-			.OrderByDescending(candidate => NormalizeMemberName(candidate.Name).Length)
+			.OrderByDescending(candidate => NormalizeMemberName(candidate).Length)
 			.FirstOrDefault();
 		if (prefixMatch is not null) {
-			return prefixMatch.Name;
+			return prefixMatch;
 		}
 		return candidates
-			.Select(candidate => (candidate.Name, Known: NormalizeMemberName(candidate.Name)))
+			.Select(candidate => (Name: candidate, Known: NormalizeMemberName(candidate)))
 			.Where(scored => Math.Abs(scored.Known.Length - normalized.Length) <= 2)
 			.Select(scored => (scored.Name, Distance: McpToolArgumentSupport.LevenshteinDistance(normalized, scored.Known)))
 			.Where(scored => scored.Distance <= 2 && scored.Distance * 2 < normalized.Length)

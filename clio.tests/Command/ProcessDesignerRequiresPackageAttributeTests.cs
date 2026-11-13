@@ -150,6 +150,26 @@ namespace Clio.Tests
         }
 
         [Test]
+        [Description("create-dynamic-case declares a VERSIONED floor held in one constant on its options type: BuildCase is an operation an older package does not carry at all, so a presence-only gate would let the call reach a package that answers its route with a 404. The floor is above 1.6.6.150, the archive that predates the operation.")]
+        public void CreateDynamicCaseOptions_ShouldDeclareTheVersionBuildCaseFirstShipsIn()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(typeof(CreateDynamicCaseOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "the case write calls an operation only a recent package carries, so the gate must fire");
+            requirement!.Version.Should().Be(CreateDynamicCaseOptions.MinimumProcessBuilderVersion,
+                because: "the floor is written in one place, so the rebundle moves one constant");
+            PackageVersion.TryParseVersion(requirement.Version, out PackageVersion floor).Should().BeTrue(
+                because: "the checker parses the literal, and an unparseable one throws instead of gating");
+            (floor > PackageVersion.ParseVersion("1.6.6.153")).Should().BeTrue(
+                because: "1.6.6.153 has no BuildCase, so a floor at or below it lets the call reach a 404");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the install hint must be consistent across all process-designer gates");
+        }
+
+        [Test]
         [Description("get-process-signature must NOT be gated on the process-builder package: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
         public void GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService()
         {

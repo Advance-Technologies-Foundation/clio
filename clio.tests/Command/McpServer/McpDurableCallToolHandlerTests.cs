@@ -516,4 +516,73 @@ public sealed class McpDurableCallToolHandlerTests {
 		texts.Should().NotContain(text => text.Contains("[clio] Executed 'echo-tool'"),
 			because: "the 'Executed' wording is reserved for a successful (non-error) result");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A long-tail get-fsm-mode call that sends environment-name, reached through the durable handler and the real clio-run executor, is refused with environmentName named and the did-you-mean intact after the durable path's failure redaction.")]
+	public async Task HandleAsync_ShouldNameTheMissingArgument_WhenAFlatParameterIsSentInKebabCase() {
+		// Arrange
+		McpServerTool tool = McpServerTool.Create(
+			typeof(FsmModeTool).GetMethod(nameof(FsmModeTool.GetFsmMode), BindingFlags.Public | BindingFlags.Instance)!,
+			_ => throw new AssertionException("the tool body must not run"));
+		McpDurableCallToolHandler sut = CreateHandlerOverTheRealExecutor(FsmModeTool.GetFsmModeToolName, tool);
+		RequestContext<CallToolRequestParams> context = CallContext(FsmModeTool.GetFsmModeToolName,
+			new Dictionary<string, JsonElement> { ["environment-name"] = JsonSerializer.SerializeToElement("dev") });
+
+		// Act
+		CallToolResult result = await sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		result.IsError.Should().BeTrue(because: "a call that leaves out a required argument never reaches the tool body");
+		text.Should().Contain(
+			"invalid-parameter-type: argument 'environmentName' for MCP tool 'get-fsm-mode' is required and was not sent.",
+			because: "the durable path answers with the same refusal as the direct and clio-run paths");
+		text.Should().Contain("Unknown argument 'environment-name' (did you mean 'environmentName'?).",
+			because: "the suggestion survives the durable path's failure redaction");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The argument description in the refusal survives the durable path's credential redaction when the missing argument is named password, because the hint quotes the name instead of writing a password: value pair.")]
+	public async Task HandleAsync_ShouldKeepTheArgumentDescription_WhenTheMissingArgumentIsAPassword() {
+		// Arrange
+		McpServerTool tool = McpServerTool.Create(
+			typeof(FakeCredentialsTool).GetMethod(nameof(FakeCredentialsTool.Connect))!,
+			new FakeCredentialsTool(),
+			new McpServerToolCreateOptions { Name = "fake-credentials-tool", ReadOnly = true });
+		McpDurableCallToolHandler sut = CreateHandlerOverTheRealExecutor("fake-credentials-tool", tool);
+		RequestContext<CallToolRequestParams> context = CallContext("fake-credentials-tool",
+			new Dictionary<string, JsonElement> { ["url"] = JsonSerializer.SerializeToElement("http://dev.example") });
+
+		// Act
+		CallToolResult result = await sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("About 'password': Creatio instance password.",
+			because: "a quoted argument name is not the key: value shape the credential rule redacts");
+		text.Should().NotContain("[redacted]",
+			because: "the refusal carries no secret, so nothing in it should be scrubbed");
+	}
+
+	private McpDurableCallToolHandler CreateHandlerOverTheRealExecutor(string toolName, McpServerTool tool) {
+		_registry.TryGetTool(toolName, out Arg.Any<McpServerTool>())
+			.Returns(callInfo => { callInfo[1] = tool; return true; });
+		_registry.IsReadOnly(toolName).Returns(true);
+		McpExecutionRouter router = new(
+			new McpToolExecutionMetadataReader(Substitute.For<IMcpToolCompatibilityCatalog>()),
+			new McpWorkerCohort([]),
+			new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+			workerPathWired: true);
+		return new McpDurableCallToolHandler(
+			_registry, _catalog, new ClioRunExecutor(_registry, _catalog, router), router);
+	}
+
+	public sealed class FakeCredentialsTool {
+		public string Connect(
+			[System.ComponentModel.Description("Creatio instance url.")] [System.ComponentModel.DataAnnotations.Required] string url,
+			[System.ComponentModel.Description("Creatio instance password.")] [System.ComponentModel.DataAnnotations.Required] string password) =>
+			throw new AssertionException("the tool body must not run");
+	}
 }
