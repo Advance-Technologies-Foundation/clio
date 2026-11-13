@@ -560,10 +560,35 @@ public sealed class McpDurableCallToolHandlerTests {
 
 		// Assert
 		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
-		text.Should().Contain("About 'password': Creatio instance password.",
+		text.Should().Contain("About `password`: Creatio instance password.",
 			because: "a quoted argument name is not the key: value shape the credential rule redacts");
 		text.Should().NotContain("[redacted]",
 			because: "the refusal carries no secret, so nothing in it should be scrubbed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A wrong-kind member named password on a long-tail tool, reached through the durable handler, keeps its About hint after the durable path's failure redaction.")]
+	public async Task HandleAsync_ShouldKeepTheShapeHintIntact_WhenTheFailingMemberIsNamedPassword() {
+		// Arrange
+		McpServerTool tool = McpToolErrorFilterShapeDiagnosisTests.CreateFakeConnectionTool();
+		McpDurableCallToolHandler sut = CreateHandlerOverTheRealExecutor(
+			McpToolErrorFilterShapeDiagnosisTests.FakeConnectionTool.ToolName, tool);
+		RequestContext<CallToolRequestParams> context = CallContext(
+			McpToolErrorFilterShapeDiagnosisTests.FakeConnectionTool.ToolName,
+			new Dictionary<string, JsonElement> {
+				["args"] = JsonDocument.Parse("{\"password\":5}").RootElement
+			});
+
+		// Act
+		CallToolResult result = await sut.HandleAsync(context, CancellationToken.None);
+
+		// Assert
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().Contain("About `password`: Direct password paired with uri; fallback only.",
+			because: "a quoted member name is not the key: value shape the durable path's credential redaction scrubs");
+		text.Should().NotContain("[redacted]",
+			because: "the refusal echoes member names only, never a value, so nothing in it is a secret");
 	}
 
 	private McpDurableCallToolHandler CreateHandlerOverTheRealExecutor(string toolName, McpServerTool tool) {

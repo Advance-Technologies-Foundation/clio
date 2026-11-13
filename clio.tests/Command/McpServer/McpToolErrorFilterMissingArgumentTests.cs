@@ -48,7 +48,7 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 			because: "the key the caller sent is the one to rename, and the refusal says to what");
 		text.Should().Contain("get-fsm-mode takes: environmentName (string, required).",
 			because: "the caller sees every argument the tool takes, typed and marked required, in one line");
-		text.Should().Contain("About 'environmentName': Registered clio environment name.",
+		text.Should().Contain("About `environmentName`: Registered clio environment name.",
 			because: "the argument's own description says what value it wants");
 		text.Should().NotContain("arguments dictionary",
 			because: "the SDK's binder text is what this refusal replaces");
@@ -163,7 +163,7 @@ public sealed class McpToolErrorFilterMissingArgumentTests {
 		text.Should().StartWith(
 			"invalid-parameter-type: argument 'args' for MCP tool 'fake-tool' is required and was not sent.",
 			because: "the wrapper argument is what the SDK cannot bind");
-		text.Should().Contain("Expected 'args': an object with entity (required), filter.",
+		text.Should().Contain("Expected `args`: an object with entity (required), filter.",
 			because: "the caller needs the record's members, not only that an object is expected");
 	}
 
