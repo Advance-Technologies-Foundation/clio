@@ -44,27 +44,47 @@ public sealed class WebServiceToolsArgumentTests {
 	}
 
 	[Test]
-	[Description("test-web-service-method passes parameters to the designer as given, arrays and arrays of objects included, and passes user-confirmed only when it is true.")]
+	[Description("test-web-service-method passes parameters to the designer as given, arrays and arrays of objects included.")]
 	public void TestWebServiceMethod_Should_Pass_Array_Values_To_The_Designer() {
 		// Arrange
-		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
-		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
-		designer.TestMethod(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, JsonElement>>(),
-			Arg.Any<bool>()).Returns(new WebServiceTestResult(true));
+		TestWebServiceMethodTool tool = TestMethodTool(designer);
 		Dictionary<string, JsonElement> parameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 			"""{"UsrTags": ["a", "b"], "UsrLines": [{"UsrSku": "S1", "UsrSubs": [{"UsrNote": "n"}]}]}""");
-		var tool = new TestWebServiceMethodTool(resolver);
 
 		// Act
 		WebServiceTestResult result = tool.TestWebServiceMethod(new TestWebServiceMethodArgs("dev", "UsrErp", "UsrGet", parameters));
-		tool.TestWebServiceMethod(new TestWebServiceMethodArgs("dev", "UsrErp", "UsrPost", null, UserConfirmed: true));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "arrays are checked against the method by the designer, not refused by the tool");
 		designer.Received(1).TestMethod("UsrErp", "UsrGet", Arg.Is<IReadOnlyDictionary<string, JsonElement>>(
 			p => ReferenceEquals(p, parameters)), false);
-		designer.Received(1).TestMethod("UsrErp", "UsrPost", null, true);
+	}
+
+	[TestCase(null, false)]
+	[TestCase(false, false)]
+	[TestCase(true, true)]
+	[Description("test-web-service-method passes the user's confirmation to the designer only when user-confirmed is true.")]
+	public void TestWebServiceMethod_Should_Pass_User_Confirmed_Only_When_True(bool? userConfirmed, bool expected) {
+		// Arrange
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		TestWebServiceMethodTool tool = TestMethodTool(designer);
+
+		// Act
+		WebServiceTestResult result = tool.TestWebServiceMethod(
+			new TestWebServiceMethodArgs("dev", "UsrErp", "UsrPost", null, UserConfirmed: userConfirmed));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the designer's answer is returned as it is");
+		designer.Received(1).TestMethod("UsrErp", "UsrPost", null, expected);
+	}
+
+	private static TestWebServiceMethodTool TestMethodTool(IWebServiceDesigner designer) {
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
+		designer.TestMethod(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, JsonElement>>(),
+			Arg.Any<bool>()).Returns(new WebServiceTestResult(true));
+		return new TestWebServiceMethodTool(resolver);
 	}
 
 	[Test]

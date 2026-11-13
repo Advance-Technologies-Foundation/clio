@@ -250,6 +250,13 @@ there); a JSON body now fails closed like XML, finding a value under the name th
 `$['k']` included) and withholding the response when a top-level value, or an item field whose array went out, is
 missing; and a body array never withholds for its own setting default, which the platform never uses.
 
+The final review (2026-11-13) added three more: a leading `$` is dropped only from a top-level JSON path, since the
+platform trims the root of the body's direct children only (`JsonRequestBodyRenderer.TrimStartRoot`, read in source,
+not measured; if it does not hold, an item field such as `$apiKey` is not found and the response is withheld) and a
+decoy item field `apiKey` must not be taken for the setting's value; a setting-bound field under a single Object,
+which an older schema may hold, withholds the response when neither is found, since the Object is never given a value
+of its own; and the codes a refusal echoes are sanitized, cut to 120 characters and at most ten.
+
 ### D11. Stable codes in `read-wsdl` (owner, 2026-11-12; full names, owner, 2026-11-13)
 
 A generated method or parameter code is the environment's `SchemaNamePrefix` (read with `IWebServicePrefixReader`,

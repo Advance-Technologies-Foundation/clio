@@ -586,31 +586,44 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("A GET needs no confirmation, while a REST method with an XML body and a method of an unknown verb do: a custom body builder can send the first, and the second may change data.")]
-	public void TestMethod_Should_Ask_For_Everything_But_A_Get() {
+	[Description("A GET is sent without the user's confirmation: it does not change data.")]
+	public void TestMethod_Should_Send_A_Get_Without_Confirmation() {
 		// Arrange
 		GivenRegisteredService(BingSchema());
 		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(true, 200, "{}", null, "GET https://api.bing.example/search HTTP/1.1", null));
-		ServiceSchemaDto unknownVerb = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search"));
-		foreach (ServiceMethodDto method in unknownVerb.Methods.Items.Values) {
-			method.Request.HttpMethodType = 0;
-		}
 
 		// Act
 		WebServiceTestResult get = _sut.TestMethod("BingSearchApiCall", "Search", null);
-		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml")));
-		WebServiceTestResult xml = _sut.TestMethod("BingSearchApiCall", "Search", null);
-		GivenRegisteredService(unknownVerb);
-		WebServiceTestResult unknown = _sut.TestMethod("BingSearchApiCall", "Search", null);
 
 		// Assert
 		get.ConfirmationRequired.Should().BeNull(because: "a GET does not change data");
 		get.Success.Should().BeTrue(because: "the GET went out");
-		xml.ConfirmationRequired.Should().BeTrue(because: "a custom body builder can send an XML REST body");
-		unknown.ConfirmationRequired.Should().BeTrue(because: "a verb clio does not know may change data");
-		unknown.Error.Should().Contain("a non-GET method", because: "the refusal names what it could not tell");
 		_client.Received(1).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[TestCase("xml", "a POST method")]
+	[TestCase("unknown verb", "a non-GET method")]
+	[Description("A REST method with an XML body and a method of an unknown verb need the user's confirmation: a custom body builder can send the first, and the second may change data.")]
+	public void TestMethod_Should_Ask_Before_An_Xml_Or_Unknown_Verb_Call(string kind, string named) {
+		// Arrange
+		ServiceSchemaDto schema = kind == "xml"
+			? SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml"))
+			: SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search"));
+		if (kind != "xml") {
+			foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+				method.Request.HttpMethodType = 0;
+			}
+		}
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ConfirmationRequired.Should().BeTrue(because: $"a {kind} method may change data when it goes out");
+		result.Error.Should().Contain(named, because: "the refusal names why the call needs a yes");
+		_client.DidNotReceiveWithAnyArgs().CallMethod(default, default, default);
 	}
 
 	private ServiceSchemaDto OrdersSchema() => SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "orders",

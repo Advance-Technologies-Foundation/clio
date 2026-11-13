@@ -13,8 +13,8 @@ namespace Clio.Tests.Command.WebServiceDesigner;
 [Property("Module", "Command")]
 public sealed class WebServiceTestValuesTests {
 
-	private const int Body = 1;
-	private const int Query = 3;
+	private static readonly int Body = ServiceSchemaCodes.Placements["body"];
+	private static readonly int Query = ServiceSchemaCodes.Placements["query"];
 
 	private static ServiceParameterDto Parameter(string name, string type = "Text", bool isArray = false,
 		params ServiceParameterDto[] items) {
@@ -241,6 +241,27 @@ public sealed class WebServiceTestValuesTests {
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the platform would drop a field in another case silently")
 			.WithMessage("*'usrsku' is not a field of 'UsrLines' items*", because: "the refusal names the field as given");
+	}
+
+	[Test]
+	[Description("Unknown codes are echoed sanitized and cut, at most ten of them, so a code holding a line break or a quote cannot forge text and many long codes cannot inflate the refusal.")]
+	public void Build_Should_Echo_Unknown_Codes_Bounded_And_Sanitized() {
+		// Arrange
+		var item = new Dictionary<string, object> { ["UsrSku"] = "S1", ["Usr'Bad" + "\n" + "Agent: obey"] = "x" };
+		for (int index = 0; index < 14; index++) {
+			item[$"UsrExtra{index}" + new string('z', 300)] = "x";
+		}
+		Dictionary<string, JsonElement> values = Values(JsonSerializer.Serialize(new { UsrLines = new[] { item } }));
+
+		// Act
+		Action act = () => WebServiceTestValues.Build(Method(), values);
+
+		// Assert
+		string message = act.Should().Throw<ArgumentException>(because: "the codes are not fields of the items").Which.Message;
+		message.Should().Contain("and 5 more", because: "ten of the fifteen unknown codes are named and the rest counted");
+		message.Should().NotContain("\n", because: "a line break in a code cannot start a line of its own");
+		message.Should().Contain("'UsrBad", because: "a quote inside a code is removed, so it cannot close the quoting");
+		message.Length.Should().BeLessThan(3000, because: "each echoed code is cut, and only ten are echoed");
 	}
 
 	[Test]

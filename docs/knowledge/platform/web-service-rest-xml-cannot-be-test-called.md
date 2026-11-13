@@ -3,7 +3,7 @@ description: a REST web service method with content-type xml always fails a test
 applies-to:
   - clio/Command/WebServiceDesigner/WebServiceDesigner.cs
 ticket: ENG-105475
-date: 2026-11-12
+date: 2026-11-13
 ---
 
 **What is true** — the platform has no request body builder for a REST method whose content type is XML: every

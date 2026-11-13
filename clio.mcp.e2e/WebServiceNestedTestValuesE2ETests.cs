@@ -4,6 +4,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.WebServiceDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -17,10 +18,6 @@ namespace Clio.Mcp.E2E;
 /// is sent, and a SOAP call whose setting-bound item fields are located in the envelope at two depths. Every service is
 /// registered by the test with codes built from the stand's prefix and removed in the teardown.
 /// </summary>
-/// <remarks>
-/// The stand helpers (prefix, teardown, select query) repeat those of <see cref="WebServiceSoapToolsE2ETests"/>; they
-/// belong in one shared web service stand helper with the other web service fixtures.
-/// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
 [AllureNUnit]
@@ -43,31 +40,9 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 	[TearDown]
 	public async Task RemoveThrowawayServicesAsync() {
 		try {
-			if (_environmentName is null) {
-				return;
-			}
-			using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
-			McpE2ESettings settings = TestConfiguration.Load();
-			foreach (string code in _serviceCodes) {
-				ClioCliCommandResult rows = await ClioCliCommandRunner.RunAsync(settings, [
-					"call-service", "-e", _environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
-					"-b", SelectQuery("VwWebServiceV2", "Name", code, "UId", "PackageUId")
-				], cancellationToken: cts.Token);
-				int start = rows.StandardOutput.IndexOf('{');
-				if (start < 0) {
-					TestContext.Progress.WriteLine($"Could not look up throwaway service '{code}' for removal: "
-						+ $"{rows.StandardOutput} {rows.StandardError}");
-					continue;
-				}
-				using JsonDocument answer = JsonDocument.Parse(rows.StandardOutput[start..]);
-				foreach (JsonElement row in answer.RootElement.GetProperty("rows").EnumerateArray()) {
-					await ClioCliCommandRunner.RunAsync(settings, [
-						"call-service", "-e", _environmentName, "--service-path",
-						"DataService/json/SyncReply/ServiceSchemaRemoveRequest", "-b", JsonSerializer.Serialize(new {
-							uId = row.GetProperty("UId").GetString(), packageUId = row.GetProperty("PackageUId").GetString()
-						})
-					], cancellationToken: cts.Token);
-				}
+			if (_environmentName is not null && _serviceCodes.Count > 0) {
+				using CancellationTokenSource cts = new(TimeSpan.FromMinutes(2));
+				await WebServiceStand.RemoveServicesAsync(TestConfiguration.Load(), _environmentName, _serviceCodes, cts.Token);
 			}
 		} finally {
 			_serviceCodes.Clear();
@@ -77,7 +52,7 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 
 	[Test]
 	[AllureName("test-call a REST method with arrays and arrays of objects")]
-	[Description("Registers a REST service on an echo API with an array of texts and an array of objects whose items hold an array of texts and an inner array of objects, test-calls it with values at every depth and expects the echo to show the JSON body the platform built from them. Ignored only when the stand gets no answer from the echo API; a call the platform fails to build fails the test.")]
+	[Description("Registers a REST service on an echo API with an array of texts and an array of objects whose items hold an array of texts and an inner array of objects, test-calls it with values at every depth and expects the echo to show the JSON body the platform built from them. Ignored when the echo API answers with an error or the stand cannot reach it, since the sent body cannot be read back then; a call the platform fails to build fails the test.")]
 	public async Task TestWebServiceMethod_Should_Send_Arrays_And_Arrays_Of_Objects() {
 		// Arrange
 		await ArrangeAsync();
@@ -289,42 +264,12 @@ public sealed class WebServiceNestedTestValuesE2ETests : McpContractFixtureBase 
 		}, token);
 
 	/// <summary>Reads the stand's <c>SchemaNamePrefix</c>; every code is built from it, so any prefix (or none) works.</summary>
-	private async Task ResolvePrefixAsync(CancellationToken token) {
-		ClioCliCommandResult queried = await ClioCliCommandRunner.RunAsync(TestConfiguration.Load(), [
-			"call-service", "-e", _environmentName!, "--service-path", "DataService/json/SyncReply/QuerySysSettings",
-			"-b", JsonSerializer.Serialize(new { sysSettingsNameCollection = new[] { "SchemaNamePrefix" } })
-		], cancellationToken: token);
-		queried.ExitCode.Should().Be(0,
-			because: $"the codes are built from the stand's prefix; output: {queried.StandardOutput} {queried.StandardError}");
-		using JsonDocument answer = JsonDocument.Parse(queried.StandardOutput[queried.StandardOutput.IndexOf('{')..]);
-		_prefix = answer.RootElement.GetProperty("values").TryGetProperty("SchemaNamePrefix", out JsonElement setting)
-			&& setting.TryGetProperty("value", out JsonElement value) && value.ValueKind == JsonValueKind.String
-				? value.GetString()!.Trim()
-				: string.Empty;
-	}
+	private async Task ResolvePrefixAsync(CancellationToken token) =>
+		_prefix = await WebServiceStand.ReadPrefixAsync(TestConfiguration.Load(), _environmentName!, token);
 
 	private async Task<T> CallAsync<T>(string toolName, Dictionary<string, object?> args, CancellationToken token) {
 		CallToolResult result = await Session.CallToolAsync(toolName,
 			new Dictionary<string, object?> { ["args"] = args }, token);
 		return EntitySchemaStructuredResultParser.Extract<T>(result);
 	}
-
-	private static string SelectQuery(string root, string filterColumn, string value, params string[] columns) =>
-		JsonSerializer.Serialize(new {
-			rootSchemaName = root,
-			operationType = 0,
-			columns = new {
-				items = columns.ToDictionary(c => c, c => (object)new { expression = new { expressionType = 0, columnPath = c } })
-			},
-			filters = new {
-				rootSchemaName = root, filterType = 6, logicalOperation = 0, isEnabled = true,
-				items = new Dictionary<string, object> {
-					[filterColumn] = new {
-						filterType = 1, comparisonType = 3, isEnabled = true, dataValueType = 1,
-						leftExpression = new { expressionType = 0, columnPath = filterColumn },
-						rightExpression = new { expressionType = 2, parameter = new { dataValueType = 1, value } }
-					}
-				}
-			}
-		});
 }

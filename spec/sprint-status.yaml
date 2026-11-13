@@ -5086,7 +5086,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: L
-    status: review
+    # done: the clio PR (#1930) merged to master on 2026-11-13.
+    status: done
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-3.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md

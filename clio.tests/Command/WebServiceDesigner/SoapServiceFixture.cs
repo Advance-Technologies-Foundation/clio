@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command.WebServiceDesigner;
 
@@ -146,12 +147,8 @@ internal static class SoapServiceFixture {
 		return schema;
 	}
 
-	public static ServiceMethodDto MethodWithInnerArray() {
-		foreach (ServiceMethodDto method in SchemaWithInnerArray().Methods.Items.Values) {
-			return method;
-		}
-		return null;
-	}
+	/// <summary>The one method of <see cref="SchemaWithInnerArray"/>.</summary>
+	public static ServiceMethodDto MethodWithInnerArray() => SchemaWithInnerArray().Methods.Items.Values.First();
 
 	public static ServiceMethodDto Method() {
 		foreach (ServiceMethodDto method in Schema().Methods.Items.Values) {

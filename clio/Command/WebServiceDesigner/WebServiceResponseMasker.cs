@@ -587,11 +587,13 @@ public static partial class WebServiceResponseMasker {
 	/// Whether an array whose element is missing from the body may still have been rendered, so the miss is the
 	/// lookup's: unknown (<paramref name="sentCodes"/> null), or the call gave it a value. A default on the array or on
 	/// its top-level ancestor also answers yes: no platform path is known to render an array from one, and this keeps a
-	/// fail-closed margin for a path that would.
+	/// fail-closed margin for a path that would. A parent that is not an array (a single Object, which clio and Studio
+	/// refuse to create but an older schema may hold) is never given a value of its own, so whether it went out cannot
+	/// be told: it answers yes.
 	/// </summary>
 	private static bool ParentMayHaveBeenGiven(ServiceParameterDto parent, ServiceParameterDto root,
 		IReadOnlyCollection<string> sentCodes) =>
-		sentCodes is null || HasDefault(root) || HasDefault(parent)
+		sentCodes is null || !parent.IsArray || HasDefault(root) || HasDefault(parent)
 		|| sentCodes.Contains(parent.Name ?? string.Empty, StringComparer.Ordinal);
 
 	private static bool HasDefault(ServiceParameterDto parameter) =>
@@ -721,7 +723,7 @@ public static partial class WebServiceResponseMasker {
 		if (body is not null) {
 			// The platform reads a JSON path in parts (customer.name, $.auth.secret, items[0], $['key']) and writes the
 			// value under the last named part, inside an array when an index follows it.
-			string key = JsonKey(name);
+			string key = JsonKey(name, parent is null);
 			unlocated = mayCarrySetting && !HasJsonKey(body, key) && JsonFieldMayHaveBeenSent(body, parent, root, sentCodes);
 			return BodyValues(body, key).ToList();
 		}
@@ -758,17 +760,20 @@ public static partial class WebServiceResponseMasker {
 
 	/// <summary>
 	/// The property name a JSON request path writes its value under, read as Terrasoft.Services
-	/// <c>JsonPathUtils.GetPathParts</c> reads it: a leading <c>$</c> or <c>$.</c> is dropped, the path splits at dots
-	/// and brackets, <c>['name']</c> is a name and <c>[0]</c> an array index, and the value lands under the last name
-	/// (inside an array when an index follows it). Returns an empty string when the path names no property, and when it
-	/// ends inside an unclosed bracket, which the platform writes under a name of its own (<c>a[b</c> → <c>"[b"</c>):
-	/// an empty key is never found, so such a value fails closed.
+	/// <c>JsonPathUtils.GetPathParts</c> reads it: the path splits at dots and brackets, <c>['name']</c> is a name and
+	/// <c>[0]</c> an array index, and the value lands under the last name (inside an array when an index follows it). A
+	/// leading <c>$</c> or <c>$.</c> is dropped only from a top-level parameter's path
+	/// (<paramref name="topLevel"/>): the platform trims the root there (<c>JsonRequestBodyRenderer</c>) and keeps an
+	/// item field's path as written, so an item field <c>$apiKey</c> goes out under <c>$apiKey</c>, and reading it as
+	/// <c>apiKey</c> could take a decoy field of that name for the setting's value. Returns an empty string when the path
+	/// names no property, and when it ends inside an unclosed bracket, which the platform writes under a name of its own
+	/// (<c>a[b</c> → <c>"[b"</c>): an empty key is never found, so such a value fails closed.
 	/// </summary>
-	private static string JsonKey(string path) {
+	private static string JsonKey(string path, bool topLevel) {
 		string last = string.Empty;
 		var name = new StringBuilder();
 		bool inBracket = false;
-		foreach (char c in WithoutJsonRoot(path ?? string.Empty)) {
+		foreach (char c in topLevel ? WithoutJsonRoot(path ?? string.Empty) : path ?? string.Empty) {
 			if (!EndsJsonPathPart(c, inBracket)) {
 				name.Append(c);
 				continue;
@@ -857,7 +862,7 @@ public static partial class WebServiceResponseMasker {
 		if (parent is null) {
 			return true;
 		}
-		string parentKey = JsonKey(WireName(parent));
+		string parentKey = JsonKey(WireName(parent), ReferenceEquals(parent, root));
 		List<JsonNode> parents = parentKey.Length == 0 ? [] : JsonProperties(body, parentKey).ToList();
 		if (parents.Count > 0) {
 			return parents.Any(p => p is JsonArray { Count: > 0 } or JsonObject { Count: > 0 });

@@ -55,6 +55,9 @@ public static class WebServiceTestValues {
 	/// <summary>The most array items one test call takes, at every depth together: a test needs a few.</summary>
 	public const int MaxArrayItems = 1000;
 
+	private const int MaxEchoedCodes = 10;
+	private const int MaxEchoedCodeLength = 120;
+
 	/// <summary>Builds the test call, or throws one <see cref="ArgumentException"/> naming every problem.</summary>
 	/// <param name="method">The called method.</param>
 	/// <param name="values">The values by top-level parameter code; may be null.</param>
@@ -107,7 +110,7 @@ public static class WebServiceTestValues {
 			? Scalar(parameter, value, where, errors, " (a path, query, header or cookie value is sent as written; give a "
 				+ "list as one text, e.g. \"1,2\")")
 			: (parameter.IsArray, hasFields || objectType) switch {
-				(true, true) when hasFields => ObjectArray(parameter, value, where, errors, sentCodes),
+				(true, _) when hasFields => ObjectArray(parameter, value, where, errors, sentCodes),
 				(true, _) => ScalarArray(parameter, value, where, errors),
 				(false, true) => Refuse(errors, $"{where}: a single Object parameter cannot be given a value in a test "
 					+ "call (the platform fills only an array of objects); leave it out."),
@@ -186,7 +189,7 @@ public static class WebServiceTestValues {
 			}
 			// The platform refuses a code given twice in one item ("An item with the same key has already been added").
 			if (!seen.Add(property.Name)) {
-				errors.Add($"{where}: '{property.Name}' is given twice.");
+				errors.Add($"{where}: {Quoted([property.Name])} is given twice.");
 				continue;
 			}
 			ServiceCallParameter value = BuildValue(field, property.Value, $"{where}.{property.Name}", false, errors,
@@ -241,5 +244,18 @@ public static class WebServiceTestValues {
 	private static string ValidCodes(IReadOnlyCollection<ServiceParameterDto> parameters) =>
 		parameters.Count == 0 ? "none" : string.Join(", ", parameters.Select(p => p.Name).Order(StringComparer.Ordinal));
 
-	private static string Quoted(IEnumerable<string> codes) => string.Join(", ", codes.Select(code => $"'{code}'"));
+	/// <summary>
+	/// Codes the caller sent, for a refusal: at most <see cref="MaxEchoedCodes"/>, each cut to
+	/// <see cref="MaxEchoedCodeLength"/> characters and sanitized with its quotes removed, so a key holding a newline or
+	/// a quote cannot forge text of its own and many long keys cannot inflate the answer.
+	/// </summary>
+	private static string Quoted(IReadOnlyCollection<string> codes) {
+		string shown = string.Join(", ", codes.Take(MaxEchoedCodes).Select(code => $"'{CallerCode(code)}'"));
+		return codes.Count > MaxEchoedCodes ? $"{shown} and {codes.Count - MaxEchoedCodes} more" : shown;
+	}
+
+	private static string CallerCode(string code) =>
+		Clio.Common.TextUtilities.SanitizeForDisplay(code ?? string.Empty, MaxEchoedCodeLength)
+			.Replace("'", string.Empty)
+			.Replace("\"", string.Empty);
 }

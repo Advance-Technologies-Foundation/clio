@@ -348,7 +348,7 @@ public sealed class WebServiceResponseMaskerTests {
 	public void SentSecrets_Should_Locate_Json_Array_Item_Fields_And_Fail_Closed() {
 		// Arrange
 		ServiceParameterDto key = BodyParameter("UsrKey", "key", "UsrItemKey");
-		key.Type = 4;
+		key.Type = ServiceSchemaCodes.Placements["header"];
 		ServiceMethodDto method = JsonMethod(BodyParameter("UsrLines", "lines", type: "Object", isArray: true, items: [
 			key, BodyParameter("UsrTags", "tags", "UsrTagSetting", isArray: true)
 		]));
@@ -374,13 +374,52 @@ public sealed class WebServiceResponseMaskerTests {
 	}
 
 	[Test]
+	[Description("A setting-bound field under a single Object inside an array item fails closed when neither it nor the Object is in the body: the Object is never given a value, so whether it went out cannot be told.")]
+	public void SentSecrets_Should_Fail_Closed_For_A_Field_Under_A_Single_Object() {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(BodyParameter("UsrLines", "lines", type: "Object", isArray: true, items: [
+			BodyParameter("UsrSku", "sku"),
+			BodyParameter("UsrMeta", "meta", type: "Object", items: [BodyParameter("UsrKey", "key", "UsrItemKey")])
+		]));
+
+		// Act
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"lines":[{"sku":"x"}]}""", false, ["UsrLines"],
+			out bool unlocated);
+
+		// Assert
+		unlocated.Should().BeTrue(because: "a field under an Object that may have gone out is a lookup miss, not proof it was not sent");
+	}
+
+	[Test]
+	[Description("An array item field whose path starts with $ is looked for under that name, as the platform keeps an item path as written, so a decoy field of the name without $ is not taken for the setting's value; a top-level $. path still loses its root.")]
+	public void SentSecrets_Should_Keep_The_Root_Sign_Of_An_Item_Field_Path() {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(
+			BodyParameter("UsrToken", "$.token", "UsrTopSetting"),
+			BodyParameter("UsrLines", "lines", type: "Object", isArray: true, items: [
+				BodyParameter("UsrKey", "$apiKey", "UsrItemKey"), BodyParameter("UsrDecoy", "apiKey")
+			]));
+
+		// Act
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, JsonRaw,
+			"""{"token":"top-secret-1","lines":[{"$apiKey":"item-secret-2","apiKey":"decoy-3"}]}""", false,
+			["UsrLines", "UsrDecoy"], out bool unlocated);
+
+		// Assert
+		secrets.Should().Contain("item-secret-2", because: "the item field went out under its path as written, $ included");
+		secrets.Should().Contain("top-secret-1", because: "a top-level path's $. names the body root");
+		secrets.Should().NotContain("decoy-3", because: "the caller's own field is not a setting value");
+		unlocated.Should().BeFalse(because: "every setting value was found where the platform wrote it");
+	}
+
+	[Test]
 	[Description("A setting-bound field of a SOAP array item whose own placement says header is collected from the envelope body, where the platform renders it, instead of being looked for in the headers.")]
 	public void SentSecrets_Should_Find_An_Item_Field_In_The_Body_Whatever_Its_Placement() {
 		// Arrange
 		ServiceMethodDto method = SoapServiceFixture.Method();
 		foreach (ServiceParameterDto lines in method.Request.Parameters.Items.Values) {
 			foreach (ServiceParameterDto field in lines.ItemProperties.Items.Values) {
-				field.Type = 4;
+				field.Type = ServiceSchemaCodes.Placements["header"];
 			}
 		}
 

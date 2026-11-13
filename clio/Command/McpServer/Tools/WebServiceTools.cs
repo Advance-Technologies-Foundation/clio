@@ -137,9 +137,9 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Test-calls a web service method. A request to test is not a confirmation: for a POST, PUT, PATCH or DELETE method and for every SOAP method, first tell the user the call sends a real request that can change data in that API, and call only after their explicit yes, with user-confirmed: true (without it such a call is refused and nothing is sent). For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
+	[Description("Test-calls a web service method. A request to test is not a confirmation: for any method but a REST GET (POST, PUT, PATCH, DELETE, every SOAP method), first tell the user the call sends a real request that can change data in that API, and call only after their explicit yes, with user-confirmed: true (without it such a call is refused and nothing is sent). For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
 	public WebServiceTestResult TestWebServiceMethod(
-		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value; arrays and arrays of objects take JSON arrays), user-confirmed (optional; true only after the user's explicit yes to a POST, PUT, PATCH, DELETE or SOAP call)")]
+		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value; arrays and arrays of objects take JSON arrays), user-confirmed (optional; true only after the user's explicit yes to a call of any method but a REST GET)")]
 		[Required]
 		TestWebServiceMethodArgs args) {
 		try {
@@ -437,7 +437,7 @@ public sealed record TestWebServiceMethodArgs(
 	IReadOnlyDictionary<string, JsonElement> Parameters = null,
 
 	[property: JsonPropertyName(WebServiceToolRunner.UserConfirmed)]
-	[property: Description("True only after the user explicitly said yes to this call; a request to test is not a confirmation. A POST, PUT, PATCH, DELETE or SOAP method is refused without it and nothing is sent; a GET needs none")]
+	[property: Description("True only after the user explicitly said yes to this call; a request to test is not a confirmation. Any method but a REST GET (POST, PUT, PATCH, DELETE, every SOAP method) is refused without it and nothing is sent")]
 	bool? UserConfirmed = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
