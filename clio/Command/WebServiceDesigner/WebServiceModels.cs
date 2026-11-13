@@ -339,7 +339,12 @@ public sealed record WebServiceTestResult(
 	[property: JsonPropertyName("notices")]
 	[property: Description("Problems in the method definition the call surfaced, e.g. a JSONPath on an XML response that reads nothing")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	IReadOnlyList<string> Notices = null);
+	IReadOnlyList<string> Notices = null,
+
+	[property: JsonPropertyName("confirmation-required")]
+	[property: Description("True when nothing was sent because the method can change data in the external API and the call did not carry user-confirmed: true; ask the user, and repeat with it only after their explicit yes")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	bool? ConfirmationRequired = null);
 
 #endregion
 
