@@ -111,6 +111,12 @@ public static class WebServiceTestValues {
 				+ "list as one text, e.g. \"1,2\")")
 			: (parameter.IsArray, hasFields || objectType) switch {
 				(true, _) when hasFields => ObjectArray(parameter, value, where, errors, sentCodes),
+				// An Object array with no item fields cannot carry an object: Terrasoft.Services RequestBodyBuilder writes
+				// each item as a plain value (read from source), so a text goes out as a string, not an object, and an
+				// object cannot be written at all. Only an empty array goes out as it is.
+				(true, true) when !IsEmptyArray(value) => Refuse(errors, $"{where}: is an array of objects with no item "
+					+ "fields described; describe its item fields ('items') with modify-web-service setMethod first, "
+					+ "or leave it out."),
 				(true, _) => ScalarArray(parameter, value, where, errors),
 				(false, true) => Refuse(errors, $"{where}: a single Object parameter cannot be given a value in a test "
 					+ "call (the platform fills only an array of objects); leave it out."),
@@ -204,6 +210,9 @@ public static class WebServiceTestValues {
 		}
 		return built;
 	}
+
+	private static bool IsEmptyArray(JsonElement value) =>
+		value.ValueKind == JsonValueKind.Array && value.GetArrayLength() == 0;
 
 	private static int ArrayItems(JsonElement value) => value.ValueKind switch {
 		JsonValueKind.Array => value.GetArrayLength() + value.EnumerateArray().Sum(ArrayItems),

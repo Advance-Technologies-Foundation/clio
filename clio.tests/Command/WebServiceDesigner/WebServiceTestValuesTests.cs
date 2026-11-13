@@ -212,6 +212,37 @@ public sealed class WebServiceTestValuesTests {
 			.WithMessage("*parameters.UsrLines[0]: 'UsrSku' is given twice*", because: "the refusal names the field");
 	}
 
+	[TestCase("""{"UsrRows": ["a"]}""", Description = "texts for an Object array with no item fields")]
+	[TestCase("""{"UsrRows": [{"UsrX": "1"}]}""", Description = "objects for an Object array with no item fields")]
+	[Description("An array of objects with no item fields described is refused when it has items, because the platform writes each item as a plain value: a text would go out as a string, not an object, and an object cannot be written.")]
+	public void Build_Should_Refuse_An_Object_Array_Without_Item_Fields(string json) {
+		// Arrange
+		ServiceMethodDto method = MethodWith(Parameter("UsrRows", "Object", true));
+
+		// Act
+		Action act = () => WebServiceTestValues.Build(method, Values(json));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "no item can go out as an object")
+			.WithMessage("parameters.UsrRows: is an array of objects with no item fields described; describe its item "
+				+ "fields ('items') with modify-web-service setMethod first, or leave it out.",
+				because: "the refusal says how to make the parameter usable");
+	}
+
+	[Test]
+	[Description("An empty array for an array of objects with no item fields is still sent empty in value, as before, because it carries no item to misrender.")]
+	public void Build_Should_Send_An_Empty_Object_Array_Without_Item_Fields() {
+		// Arrange
+		ServiceMethodDto method = MethodWith(Parameter("UsrRows", "Object", true));
+
+		// Act
+		WebServiceTestCall call = WebServiceTestValues.Build(method, Values("""{"UsrRows": []}"""));
+
+		// Assert
+		Wire(call.Parameters).Should().Be("""[{"code":"UsrRows","value":[]}]""",
+			because: "an empty array has no item the platform could write wrongly");
+	}
+
 	[Test]
 	[Description("No values build an empty call that reports no code as sent, and any value for a method without request parameters is refused with no valid code.")]
 	public void Build_Should_Accept_No_Values_And_Refuse_Values_For_A_Method_Without_Parameters() {

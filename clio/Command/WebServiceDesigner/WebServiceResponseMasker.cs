@@ -760,7 +760,9 @@ public static partial class WebServiceResponseMasker {
 
 	/// <summary>
 	/// The property name a JSON request path writes its value under, read as Terrasoft.Services
-	/// <c>JsonPathUtils.GetPathParts</c> reads it: the path splits at dots and brackets, <c>['name']</c> is a name and
+	/// <c>JsonPathUtils.GetPathParts</c> reads the paths it can write (where the two differ, such as a dot inside
+	/// brackets, the key read here is one the platform never writes, so it matches nothing and fails closed): the path
+	/// splits at dots and brackets, <c>['name']</c> is a name and
 	/// <c>[0]</c> an array index, and the value lands under the last name (inside an array when an index follows it). A
 	/// leading <c>$</c> or <c>$.</c> is dropped only from a top-level parameter's path
 	/// (<paramref name="topLevel"/>): the platform trims the root there (<c>JsonRequestBodyRenderer</c>) and keeps an
@@ -802,6 +804,8 @@ public static partial class WebServiceResponseMasker {
 	/// <summary>
 	/// The name a finished path part leaves as the last one: a bracketed index (<c>[0]</c>) keeps the previous name, a
 	/// bracketed name (<c>['key']</c>) is the name without quotes, and an empty dotted part keeps the previous name.
+	/// Only single quotes are stripped: Terrasoft.Services <c>JsonPathUtils</c> strips only those and writes
+	/// <c>["key"]</c> under a name that keeps its double quotes, so stripping them would look up another property.
 	/// </summary>
 	private static string JsonPathPartName(string part, bool bracketed, string previous) {
 		if (bracketed) {

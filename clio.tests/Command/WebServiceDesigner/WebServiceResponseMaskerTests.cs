@@ -329,6 +329,25 @@ public sealed class WebServiceResponseMaskerTests {
 		nullUnlocated.Should().BeFalse(because: "a value sent as null (an empty setting) carries nothing to hide");
 	}
 
+	[Test]
+	[Description("A bracketed name in double quotes is looked up with its quotes, because the platform strips only single quotes and writes the value under the quoted name; a property named without the quotes is not taken for it.")]
+	public void SentSecrets_Should_Keep_The_Double_Quotes_Of_A_Bracketed_Name() {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(BodyParameter("UsrQuoted", "$[\"api-key\"]", "UsrKeyQ"));
+
+		// Act
+		IReadOnlyList<string> found = WebServiceResponseMasker.SentSecrets(method, JsonRaw,
+			"""{"\"api-key\"":"v-quoted-66","api-key":"decoy-77"}""", false, null, out bool foundUnlocated);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"api-key":"decoy-77"}""", false, null,
+			out bool decoyUnlocated);
+
+		// Assert
+		found.Should().Contain("v-quoted-66", because: "the platform writes $[\"api-key\"] under the name \"api-key\" with its quotes");
+		found.Should().NotContain("decoy-77", because: "a property named without the quotes is not where the value went");
+		foundUnlocated.Should().BeFalse(because: "the value was found under the quoted name");
+		decoyUnlocated.Should().BeTrue(because: "with only the unquoted name in the body the sent value is missing, so the response is withheld");
+	}
+
 	[TestCase("a[b", """{"a":{"[b":"v-open-44"}}""", Description = "a top-level path ending in an unclosed bracket")]
 	[TestCase("a", """{"a":{"x":"v-object-55"}}""", Description = "a name that holds only an object")]
 	[Description("A setting-bound JSON value whose name holds only an object, or whose path ends in an unclosed bracket the platform writes under a name of its own, is not taken as found, so the response is withheld instead of returned unmasked.")]
