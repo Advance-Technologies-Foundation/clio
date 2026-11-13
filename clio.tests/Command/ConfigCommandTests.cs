@@ -280,11 +280,18 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 	}
 
 	[Test]
-	[Description("Prints a table of configured defaults after a successful update.")]
-	public void Execute_ShouldPrintTable_WhenDefaultsAreConfigured() {
+	[Description("Prints configured defaults as an aligned key/value list instead of a table, so long values are not wrapped.")]
+	public void Execute_ShouldPrintAlignedKeyValueList_WhenDefaultsAreConfigured() {
 		// Arrange
 		_settingsRepository.GetDeployCreatioDefaults()
-			.Returns(new DeployCreatioDefaults { DbServerName = "my-local-postgres" });
+			.Returns(new DeployCreatioDefaults { DbServerName = "my-local-postgres", SitePortRange = [40100, 40199] });
+		string longDestination = "https://creatio.ghe.com/engineering/clio-feedback";
+		string longHash = "sha256:" + new string('a', 64);
+		_feedbackPolicyService.GetPolicy().Returns(new KnowledgeFeedbackPolicy(
+			"auto", "auto", longDestination, "full", longHash, null, "approved"));
+		List<string> lines = [];
+		_logger.When(logger => logger.WriteLine(Arg.Any<string>()))
+			.Do(call => lines.Add(call.Arg<string>()));
 		ConfigOptions options = new() { Show = true };
 
 		// Act
@@ -292,7 +299,42 @@ public sealed class ConfigCommandTests : BaseCommandTests<ConfigOptions> {
 
 		// Assert
 		result.Should().Be(0, because: "showing configured defaults succeeds");
-		_logger.Received().PrintTable(Arg.Any<ConsoleTable>());
+		_logger.DidNotReceive().PrintTable(Arg.Any<ConsoleTable>());
+		lines.Should().ContainInOrder(
+			["Deploy-creatio defaults", "Knowledge feedback"],
+			because: "each settings group is introduced by a plain heading");
+		const string pad = "  ";
+		int valueColumn = pad.Length + "reporting-policy-hash".Length + pad.Length;
+		lines.Should().Contain(pad + "db-server-name".PadRight(valueColumn - 2 * pad.Length) + pad + "my-local-postgres",
+			because: "values in both groups share the column set by the longest key");
+		lines.Should().Contain(pad + "site-name".PadRight(valueColumn - 2 * pad.Length) + pad + "(not set)",
+			because: "unset values are shown explicitly rather than as blank cells");
+		lines.Should().Contain(pad + "site-port-range".PadRight(valueColumn - 2 * pad.Length) + pad + "40100,40199",
+			because: "the port range is shown in the same form the --deploy-site-port-range option accepts");
+		lines.Should().Contain(line => line.EndsWith(longDestination) && line.TrimStart().StartsWith("destination"),
+			because: "long values must stay on one line so they can be copied");
+		lines.Should().Contain(line => line.EndsWith(longHash) && line.TrimStart().StartsWith("reporting-policy-hash"),
+			because: "the policy hash must stay on one line so it can be copied");
+	}
+
+	[Test]
+	[Description("Reports that no deploy-creatio defaults are configured while still listing the knowledge-feedback policy.")]
+	public void Execute_ShouldListFeedbackPolicy_WhenNoDeployDefaultsConfigured() {
+		// Arrange
+		List<string> lines = [];
+		_logger.When(logger => logger.WriteLine(Arg.Any<string>()))
+			.Do(call => lines.Add(call.Arg<string>()));
+
+		// Act
+		int result = _sut.Execute(new ConfigOptions());
+
+		// Assert
+		result.Should().Be(0, because: "showing the configuration succeeds");
+		lines.Should().ContainInOrder(
+			["Deploy-creatio defaults", "  (none configured)", "Knowledge feedback"],
+			because: "an empty deploy group is stated once, followed by the feedback policy");
+		lines.Should().Contain(line => line.TrimStart().StartsWith("effective-mode") && line.EndsWith("ask"),
+			because: "the knowledge-feedback policy is always listed");
 	}
 
 	[Test]

@@ -116,8 +116,9 @@ the site name before deployment proceeds.
 
 ## Behavior
 
-- With no arguments (or with `--show`), prints the `appsettings.json` path and a
-  tables for deploy-creatio defaults and the configured/effective knowledge-feedback policy.
+- With no arguments (or with `--show`), prints the `appsettings.json` path followed by
+  aligned key/value lists of the deploy-creatio defaults and the configured/effective
+  knowledge-feedback policy. Unset values are shown as `(not set)`.
 - With one or more `--deploy-*` arguments, updates only the supplied values,
   persists them, and prints the resulting defaults.
 - A configured fixed site port takes precedence over the range. Setting

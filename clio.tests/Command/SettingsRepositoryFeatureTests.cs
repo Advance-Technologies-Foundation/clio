@@ -173,6 +173,53 @@ public sealed class SettingsRepositoryFeatureTests {
 			because: "schema hover and completion must agree with the materialized built-in value");
 	}
 
+	[Test]
+	[Description("Documents every knowledge-feedback key and each mode and reporting-scope option, with defaults matching the materialized settings.")]
+	public void AppSettingsSchema_ShouldDescribeKnowledgeFeedbackPolicy() {
+		// Arrange
+		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
+		JsonObject schema = JsonNode.Parse(File.ReadAllText(templatePath))!.AsObject();
+		JsonObject definitions = schema["definitions"]!.AsObject();
+		JsonObject feedbackProperties = definitions["knowledgefeedbacksettings"]!["properties"]!.AsObject();
+		JsonObject approvalProperties = definitions["knowledgefeedbackapproval"]!["properties"]!.AsObject();
+		KnowledgeFeedbackSettings builtIn = new();
+
+		// Act
+		string[] undocumented = feedbackProperties.Concat(approvalProperties)
+			.Where(property => string.IsNullOrWhiteSpace(property.Value?["description"]?.GetValue<string>()))
+			.Select(property => property.Key)
+			.ToArray();
+		Regex destinationPattern = new(feedbackProperties["destination"]!["pattern"]!.GetValue<string>());
+
+		// Assert
+		feedbackProperties.Select(property => property.Key).Should().BeEquivalentTo(
+			["mode", "destination", "reporting-scope", "standing-approval"],
+			because: "editor completion must expose every knowledge-feedback key persisted by SettingsRepository");
+		undocumented.Should().BeEmpty(
+			because: "hover help must explain every knowledge-feedback setting, including the Clio-managed approval");
+		foreach (string key in new[] { "mode", "reporting-scope" }) {
+			JsonObject property = feedbackProperties[key]!.AsObject();
+			property["enumDescriptions"]!.AsArray().Should().HaveCount(property["enum"]!.AsArray().Count,
+				because: $"every '{key}' option needs its own explanation in editor completion");
+		}
+		feedbackProperties["mode"]!["default"]!.GetValue<string>().Should().Be(builtIn.Mode,
+			because: "schema hover must agree with the materialized built-in mode");
+		feedbackProperties["reporting-scope"]!["default"]!.GetValue<string>().Should().Be(builtIn.ReportingScope,
+			because: "schema hover must agree with the materialized built-in reporting scope");
+		feedbackProperties["destination"]!["default"]!.GetValue<string>().Should().Be(builtIn.Destination,
+			because: "schema hover must agree with the materialized built-in destination");
+		destinationPattern.IsMatch(builtIn.Destination).Should().BeTrue(
+			because: "the built-in destination must be valid against its own schema");
+		destinationPattern.IsMatch("https://creatio.ghe.com/engineering/clio-feedback").Should().BeTrue(
+			because: "GitHub Enterprise repositories are valid destinations");
+		destinationPattern.IsMatch("https://token@github.com/owner/repo").Should().BeFalse(
+			because: "runtime normalization rejects credentials in the destination");
+		destinationPattern.IsMatch("https://github.com/owner").Should().BeFalse(
+			because: "runtime normalization requires an owner/repository path");
+		destinationPattern.IsMatch("http://github.com/owner/repo").Should().BeFalse(
+			because: "runtime normalization requires HTTPS");
+	}
+
 	private static string[] RequiredForTransport(JsonObject source, string transportType) => source["allOf"]!
 		.AsArray()
 		.Single(rule => rule!["if"]!["properties"]!["type"]!["const"]!.GetValue<string>() == transportType)!
