@@ -70,7 +70,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>640acdf8</c>, to be
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>640acdf8</c>,
 	/// tagged <c>crtprocessbuilder-1.6.6.172</c>): branch <c>feature/ENG-105558-internal-helper-parameter</c> with
 	/// <c>main</c> merged in at 1.6.6.171 (<c>4d89bc98</c>, the merge of <c>e3e7f838</c>), so the cut carries everything
 	/// 1.6.6.171 shipped.
