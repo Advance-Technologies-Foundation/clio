@@ -143,8 +143,17 @@ element's simple type are scanned once, not once per element that uses them; a n
 lookup; import and include directives are removed in one pass per schema; a binding keeps at most 8 operations of one
 name; names longer than 1,024 characters are not read; a repeated code is numbered from the last number used for it;
 and more than 20,000 parameters over the ports read are listed by operation name before anything is mapped or
-serialized. None of these grows quadratically. As a backstop for an input none of them foresaw, one parse stops after 30
-seconds. Running read-wsdl in the MCP worker cohort, which would isolate the host from any input, was considered and
+serialized, and so is a result whose kept parameters' paths and captions alone pass the result limit (ports on one
+binding share their operations, so mapping each port copied the same long paths once per port). A parameter's path and caption, which join
+the names of its ancestors up to the nearest array, are counted from the names, charged against a budget of
+100,000,000 characters per parse, and only then built once (the review measured 42 s and 199 GB of allocation for an
+84 KB WSDL whose paths were joined level by level). A nested `schema` element of an imported file is cut out of its
+parent before anything is copied (copying each with its content copied a file nested 250 levels deep once per level),
+the imported files of one WSDL hold at most 1,000 schema elements, each schema inherits at most 256 namespace
+declarations, and the schemas of an import are inserted in one step. A code given back by the mapper lowers only its own
+name's next number, and an item's name is kept to the end a code can reach. None of these grows quadratically. As a
+backstop for an input none of them foresaw, one parse stops after 30 seconds, counted from the first file loaded, so
+loading and merging count too. Running read-wsdl in the MCP worker cohort, which would isolate the host from any input, was considered and
 left out: with `service-code` it reads the service through the schema designer, and the cohort keeps schema-designer
 reads host-resident, because a worker's separate Creatio session can read a schema that a host-resident write has just
 changed and get it stale. Moving read-wsdl means moving that read out of it first. A local path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as

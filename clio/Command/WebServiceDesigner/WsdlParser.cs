@@ -168,6 +168,27 @@ public sealed partial class WsdlParser : IWsdlParser {
 	/// </summary>
 	internal const int MaxElementsRead = 200_000;
 
+	/// <summary>
+	/// The most characters of parameter paths and captions one parse builds. A leaf's path and caption join the names of
+	/// its ancestors up to the nearest array, so names of 1,024 characters 64 levels deep make one path about 65,000
+	/// characters, and the element budget allows tens of thousands of leaves; past this the WSDL is refused instead of
+	/// exhausting the host. A WSDL at the element budget whose leaves are a few levels deep under names of a few dozen
+	/// characters builds about 30 million, so the budget leaves it room; a large result is listed by operation name later.
+	/// </summary>
+	internal const int MaxPathCharacters = 100_000_000;
+
+	/// <summary>
+	/// The most schema elements the imported files of one WSDL hold. A WSDL has a handful; each one is copied into the WSDL
+	/// with the namespace declarations it inherits, so many of them under many declarations multiply.
+	/// </summary>
+	internal const int MaxMergedSchemas = 1_000;
+
+	/// <summary>
+	/// The most namespace declarations a schema of an imported file inherits from the elements around it. Each one is
+	/// copied onto the schema and checked against those already there, so the cost grows with their square.
+	/// </summary>
+	internal const int MaxInheritedDeclarations = 256;
+
 	/// <summary>The deepest a type may name another type (<c>type=</c> on a type, or <c>extension base=</c>).</summary>
 	private const int MaxTypeChain = 32;
 
@@ -275,14 +296,25 @@ public sealed partial class WsdlParser : IWsdlParser {
 		if (files is not { Count: > 0 }) {
 			throw new ArgumentException("No WSDL file was given.");
 		}
+		// One clock for the whole parse: loading and merging the files count against the backstop too.
+		var clock = System.Diagnostics.Stopwatch.StartNew();
 		var documents = new Dictionary<string, XDocument>(StringComparer.Ordinal);
 		foreach (WsdlSourceFile file in files) {
+			CheckClock(clock);
 			documents.TryAdd(file.Key, Load(file));
 		}
 		var warnings = new List<string>();
 		string wsdlKey = FindWsdl(documents, warnings);
-		XDocument merged = new WsdlMerge(documents).Merge(wsdlKey);
-		return new Session(merged, schemaNamePrefix ?? string.Empty, warnings, options ?? new WsdlParseOptions()).Build();
+		XDocument merged = new WsdlMerge(documents, clock).Merge(wsdlKey);
+		return new Session(merged, schemaNamePrefix ?? string.Empty, warnings, options ?? new WsdlParseOptions(), clock)
+			.Build();
+	}
+
+	private static void CheckClock(System.Diagnostics.Stopwatch clock) {
+		if (clock.Elapsed > MaxParseTime) {
+			throw new ArgumentException($"The WSDL takes longer than {MaxParseTime.TotalSeconds:0} seconds to read, so it "
+				+ "cannot be read whole. Read it again with port and operations, or describe the operations you need by hand.");
+		}
 	}
 
 	private static XDocument Load(WsdlSourceFile file) {
@@ -378,10 +410,12 @@ public sealed partial class WsdlParser : IWsdlParser {
 	/// the schema elements of the file its <c>schemaLocation</c> names (that file's own imports first), each file once,
 	/// inserted before the importing schema.
 	/// </summary>
-	private sealed class WsdlMerge(IReadOnlyDictionary<string, XDocument> documents) {
+	private sealed class WsdlMerge(IReadOnlyDictionary<string, XDocument> documents, System.Diagnostics.Stopwatch clock) {
 		// Each file is merged once even when it is imported under several locations (a.xsd, ./a.xsd, a.xsd#x), which the
 		// file-name match would otherwise follow into a recursion as deep as the number of spellings.
 		private readonly HashSet<XDocument> _mergedDocuments = [];
+		private readonly Dictionary<XElement, List<XAttribute>> _declarations = new();
+		private int _schemasMerged;
 
 		public XDocument Merge(string wsdlKey) {
 			_mergedDocuments.Add(documents[wsdlKey]);
@@ -396,10 +430,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 				&& Is(e.Parent.Parent, "types") && Is(e.Parent.Parent.Parent, "definitions")).ToArray();
 			foreach (XElement node in nodes) {
 				IReadOnlyList<XElement> schemas = SchemaNodes(Attr(node, "schemaLocation"), wsdlKey);
-				XElement parentSchema = node.Parent;
-				foreach (XElement schema in schemas) {
-					parentSchema.AddBeforeSelf(schema);
-				}
+				// All at once: each AddBeforeSelf walks the siblings before the importing schema, which grow with each insert.
+				node.Parent.AddBeforeSelf(schemas);
 			}
 			RemoveAll(nodes);
 		}
@@ -420,6 +452,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			if (string.IsNullOrEmpty(location)) {
 				return [];
 			}
+			CheckClock(clock);
 			(string key, XDocument source) = Resolve(location, importerKey);
 			if (!_mergedDocuments.Add(source)) {
 				return [];
@@ -428,7 +461,53 @@ public sealed partial class WsdlParser : IWsdlParser {
 			var result = new List<XElement>();
 			result.AddRange(Inserted(document, "import", key));
 			result.AddRange(Inserted(document, "include", key));
-			result.AddRange(document.Descendants().Where(e => Is(e, SchemaTag)).Select(Detached));
+			result.AddRange(SchemasCutApart(document));
+			return result;
+		}
+
+		// Every schema element of the file, each a schema of its own as the wizard takes them, a nested one too (inside
+		// xs:appinfo, or invalid XSD). A nested schema is cut out of its parent before anything is copied: copying each with
+		// its content copied a file nested 250 levels deep once per level (654 MB from a 206 KB file). Each keeps the
+		// namespace declarations it inherited, read before the cut, so its QName values still resolve.
+		private List<XElement> SchemasCutApart(XDocument document) {
+			List<XElement> schemas = document.Descendants().Where(e => Is(e, SchemaTag)).ToList();
+			_schemasMerged += schemas.Count;
+			if (_schemasMerged > MaxMergedSchemas) {
+				throw new ArgumentException($"The WSDL's imported files hold more than {MaxMergedSchemas} schema elements; it "
+					+ "cannot be read. Describe the operations you need by hand.");
+			}
+			List<List<XAttribute>> inherited = schemas.Select(InheritedDeclarations).ToList();
+			var all = new HashSet<XElement>(schemas);
+			RemoveAll(schemas.Where(s => s.Ancestors().Any(all.Contains)).ToList());
+			var result = new List<XElement>(schemas.Count);
+			for (int i = 0; i < schemas.Count; i++) {
+				CheckClock(clock);
+				var copy = new XElement(schemas[i]);
+				copy.Add(inherited[i]);
+				result.Add(copy);
+			}
+			return result;
+		}
+
+		// The namespace declarations a schema inherits and does not make itself, the nearest ancestor's first. An element's
+		// own declarations are listed once for every schema under it.
+		private List<XAttribute> InheritedDeclarations(XElement schema) {
+			var names = new HashSet<XName>(schema.Attributes().Where(a => a.IsNamespaceDeclaration).Select(a => a.Name));
+			var result = new List<XAttribute>();
+			for (XElement ancestor = schema.Parent; ancestor is not null; ancestor = ancestor.Parent) {
+				if (!_declarations.TryGetValue(ancestor, out List<XAttribute> declarations)) {
+					declarations = ancestor.Attributes().Where(a => a.IsNamespaceDeclaration).ToList();
+					_declarations[ancestor] = declarations;
+				}
+				foreach (XAttribute declaration in declarations.Where(d => names.Add(d.Name))) {
+					if (result.Count == MaxInheritedDeclarations) {
+						throw new ArgumentException($"A schema of the WSDL's imported files sits inside more than "
+							+ $"{MaxInheritedDeclarations} namespace declarations; it cannot be read. Describe the operations you "
+							+ "need by hand.");
+					}
+					result.Add(new XAttribute(declaration));
+				}
+			}
 			return result;
 		}
 
@@ -507,17 +586,6 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return result;
 		}
 
-		// A schema moved into the WSDL keeps the prefixes its old ancestors declared, so its QName values still resolve.
-		private static XElement Detached(XElement schema) {
-			var copy = new XElement(schema);
-			for (XElement ancestor = schema.Parent; ancestor is not null; ancestor = ancestor.Parent) {
-				foreach (XAttribute declaration in ancestor.Attributes()
-						.Where(a => a.IsNamespaceDeclaration && copy.Attribute(a.Name) is null)) {
-					copy.Add(new XAttribute(declaration));
-				}
-			}
-			return copy;
-		}
 	}
 
 	/// <summary>An element of a message or a type while it is read (<c>WsdlElement</c>).</summary>
@@ -586,7 +654,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private readonly HashSet<string> _wantedOperations;
 		private readonly Dictionary<XElement, XElement> _extensionOf = new();
 		private readonly Dictionary<XElement, string> _simpleTypeNames = new();
-		private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
+		private readonly System.Diagnostics.Stopwatch _clock;
+		private long _pathCharacters;
 		private List<WsdlNamespace> _namespaces;
 		// The prefix of each namespace URI of the binding being built, and the next free ns-number: a lookup per element
 		// path segment must not scan every namespace.
@@ -598,7 +667,9 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private int _warningsDropped;
 		private bool _droppedNamesWithQuestionMark;
 
-		public Session(XDocument doc, string prefix, List<string> warnings, WsdlParseOptions options) {
+		public Session(XDocument doc, string prefix, List<string> warnings, WsdlParseOptions options,
+				System.Diagnostics.Stopwatch clock) {
+			_clock = clock;
 			_doc = doc;
 			_prefix = prefix;
 			_warnings = warnings;
@@ -757,10 +828,15 @@ public sealed partial class WsdlParser : IWsdlParser {
 					.Distinct(StringComparer.Ordinal)
 					.ToArray(), StringComparer.Ordinal);
 
-		private void CheckClock() {
-			if (_clock.Elapsed > MaxParseTime) {
-				throw new ArgumentException($"The WSDL takes longer than {MaxParseTime.TotalSeconds:0} seconds to read, so it "
-					+ "cannot be read whole. Read it again with port and operations, or describe the operations you need by hand.");
+		private void CheckClock() => WsdlParser.CheckClock(_clock);
+
+		// Counts the characters of a path or caption about to be built against MaxPathCharacters, before it is built.
+		private void ChargePath(long length) {
+			_pathCharacters += length;
+			if (_pathCharacters > MaxPathCharacters) {
+				throw new ArgumentException($"The WSDL's parameter paths add up to more than {MaxPathCharacters} characters; "
+					+ "it cannot be read whole. Read it again with port and operations, or describe the operations you need by "
+					+ "hand.");
 			}
 		}
 
@@ -1402,6 +1478,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		#region Parameters (SoapWebServiceMethodBuilder, WsdlElement)
 
 		private List<Node> Flatten(Node node, string rootElementName = null) {
+			CheckClock();
 			if (node.Nested.Count == 0) {
 				return [node];
 			}
@@ -1432,35 +1509,52 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}).ToList();
 		}
 
-		private Parameter ToParameter(Node node) => new() {
-			Caption = BuildCaption(node),
-			Path = BuildPath(node),
-			Type = node.Type,
-			IsArray = node.IsArray,
-			IsSoapHeader = node.IsSoapHeader,
-			SequenceElement = node.SequenceElement,
-			Items = node.Nested.Select(ToParameter).ToList(),
-			IsCopy = node.InCopy,
-			EscapesItem = node.EscapesItem
-		};
-
-		private string BuildPath(Node node) {
-			string prefix = PrefixFor(node.Namespace);
-			string path = node.IsArray && !node.IsObject ? string.Empty : $"{prefix}:{node.Path}";
-			for (Node parent = node.Parent; parent is not null && !parent.IsArray; parent = parent.Parent) {
-				string parentPrefix = PrefixFor(parent.Namespace);
-				string segment = $"{parentPrefix}:{parent.Path}";
-				path = path.Length > 0 ? string.Join(ElementPathSeparator, segment, path) : segment;
-			}
-			return path;
+		private Parameter ToParameter(Node node) {
+			CheckClock();
+			return new Parameter {
+				Caption = BuildCaption(node),
+				Path = BuildPath(node),
+				Type = node.Type,
+				IsArray = node.IsArray,
+				IsSoapHeader = node.IsSoapHeader,
+				SequenceElement = node.SequenceElement,
+				Items = node.Nested.Select(ToParameter).ToList(),
+				IsCopy = node.InCopy,
+				EscapesItem = node.EscapesItem
+			};
 		}
 
-		private static string BuildCaption(Node node) {
-			string caption = node.IsArray && !node.IsObject ? string.Empty : node.Path;
-			for (Node parent = node.Parent; parent is not null && !parent.IsArray; parent = parent.Parent) {
-				caption = parent.Path + (caption.Length > 0 ? " " + caption : string.Empty);
+		// A leaf's path and caption join the names of its ancestors up to the nearest array. Their length is counted from
+		// the names and charged against MaxPathCharacters first, then the string is built once, so a path costs its own
+		// length, not its length per level, and a refused one is never built.
+		private string BuildPath(Node node) => BuildJoined(node, ElementPathSeparator, withPrefix: true);
+
+		private string BuildCaption(Node node) => BuildJoined(node, ' ', withPrefix: false);
+
+		private string BuildJoined(Node node, char separator, bool withPrefix) {
+			// PrefixFor numbers a namespace it meets first, so it is asked in the order it always was: the node, then up.
+			string nodePrefix = withPrefix ? PrefixFor(node.Namespace) : null;
+			var chain = new List<(string Name, string Prefix)>();
+			if (!(node.IsArray && !node.IsObject)) {
+				chain.Add((node.Path, nodePrefix));
 			}
-			return caption;
+			for (Node parent = node.Parent; parent is not null && !parent.IsArray; parent = parent.Parent) {
+				chain.Add((parent.Path, withPrefix ? PrefixFor(parent.Namespace) : null));
+			}
+			long length = Math.Max(chain.Count - 1, 0)
+				+ chain.Sum(segment => (long)segment.Name.Length + (withPrefix ? segment.Prefix.Length + 1 : 0));
+			ChargePath(length);
+			var builder = new StringBuilder((int)length);
+			for (int i = chain.Count - 1; i >= 0; i--) {
+				if (builder.Length > 0) {
+					builder.Append(separator);
+				}
+				if (withPrefix) {
+					builder.Append(chain[i].Prefix).Append(':');
+				}
+				builder.Append(chain[i].Name);
+			}
+			return builder.ToString();
 		}
 
 		// WsdlElement: an unknown namespace is added as the first free ns0..ns999.
@@ -1506,6 +1600,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private void GenerateStudioCodes(List<Parameter> parameters, string parentName, HashSet<string> taken,
 			Dictionary<string, int> next) {
 			foreach (Parameter parameter in parameters) {
+				CheckClock();
 				string local = PrefixedName(parameter.Caption, parentName);
 				string code = local;
 				if (taken.Contains(code)) {

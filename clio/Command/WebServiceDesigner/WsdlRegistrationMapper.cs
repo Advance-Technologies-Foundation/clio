@@ -227,12 +227,14 @@ public static partial class WsdlRegistrationMapper {
 
 	/// <summary>
 	/// The codes in use, with the next number to try per name: numbering many equal names stays linear instead of probing
-	/// 2, 3, 4... again for each of them. A code given back clears the remembered numbers, so the next claim takes the
-	/// lowest free number again, as the plain loop did; giving codes back is rare (an object with no describable field).
+	/// 2, 3, 4... again for each of them. A code given back (an object with no describable field) lowers the next number of
+	/// the name it was claimed for to its own, so the next claim of that name takes it again; the other names keep theirs,
+	/// so giving codes back does not start every name's probing over.
 	/// </summary>
 	internal sealed class CodePool {
 		private readonly HashSet<string> _taken;
 		private readonly Dictionary<string, int> _next = new(StringComparer.OrdinalIgnoreCase);
+		private readonly Dictionary<string, (string Tail, int Index)> _claimedAs = new(StringComparer.OrdinalIgnoreCase);
 
 		/// <summary>Creates a pool with codes already taken.</summary>
 		/// <param name="taken">Codes no new one may take.</param>
@@ -258,14 +260,16 @@ public static partial class WsdlRegistrationMapper {
 				_next[tail] = index + 1;
 			}
 			_taken.Add(code);
+			_claimedAs[code] = (tail, index);
 			return code;
 		}
 
 		/// <summary>Gives a claimed code back.</summary>
 		/// <param name="code">The code.</param>
 		public void Release(string code) {
-			if (_taken.Remove(code)) {
-				_next.Clear();
+			if (_taken.Remove(code) && _claimedAs.Remove(code, out (string Tail, int Index) claimed) && claimed.Index > 1
+					&& _next.TryGetValue(claimed.Tail, out int next) && claimed.Index < next) {
+				_next[claimed.Tail] = claimed.Index;
 			}
 		}
 	}
@@ -503,6 +507,11 @@ public static partial class WsdlRegistrationMapper {
 			// item's starts with its array's, so fields of different branches (customer/name, company/name) differ without a
 			// number and a code does not depend on its siblings.
 			string name = parentName + " " + PathNames(path);
+			// A code keeps the end of a long name; the names of nested array items add up, so only the end that can reach a
+			// code is kept, and an item's name does not grow with every array above it.
+			if (name.Length > 4 * MaxParameterCodeLength) {
+				name = name[^(4 * MaxParameterCodeLength)..];
+			}
 			string code = previous?.Code ?? UniqueCode(prefix, name, "Param", codes, MaxParameterCodeLength);
 			List<WebServiceParameterArg> items = isObject
 				? Parameters(parameter.Items, isRequest, name, codes, CodesByPath(previous?.Items))

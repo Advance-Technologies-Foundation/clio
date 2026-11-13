@@ -52,7 +52,7 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
-	[Description("A code given back is taken again by the next claim of a name it collides with, even when it was claimed under another name.")]
+	[Description("A code given back is taken again by the next claim of the name it was claimed for; one claimed under another name stays free for that name.")]
 	public void CodePool_Should_Reuse_A_Code_Released_Under_Another_Name() {
 		// Arrange
 		var pool = new WsdlRegistrationMapper.CodePool();
@@ -64,10 +64,34 @@ public sealed class WsdlRegistrationMapperTests {
 		pool.Release(third);
 		pool.Release("Usrab2");
 		string again = pool.Claim("Usr", "ab");
+		string other = pool.Claim("Usr", "ab2");
 
 		// Assert
 		third.Should().Be("UsrAb3", because: "Usrab and Usrab2 are taken, ignoring case");
-		again.Should().Be("Usrab2", because: "the lowest free number is taken again after a release, as the plain loop did");
+		again.Should().Be("Usrab3", because: "the number given back is taken again by the name it was claimed for");
+		other.Should().Be("Usrab2", because: "a code given back stays free for the name it was claimed under");
+	}
+
+	[Test]
+	[Description("Claiming and giving back codes of one name many times stays linear: a release does not start the numbering over.")]
+	public void CodePool_Should_Stay_Linear_When_Codes_Are_Given_Back() {
+		// Arrange
+		var pool = new WsdlRegistrationMapper.CodePool();
+		var kept = new List<string>();
+		long before = GC.GetAllocatedBytesForCurrentThread();
+
+		// Act
+		for (int i = 0; i < 20_000; i++) {
+			kept.Add(WsdlRegistrationMapper.UniqueCode("Usr", "_", "Param", pool));
+			pool.Release(WsdlRegistrationMapper.UniqueCode("Usr", "_", "Param", pool));
+		}
+		long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+		// Assert
+		kept.Should().OnlyHaveUniqueItems(because: "every kept claim gets a free code");
+		kept.Take(3).Should().Equal(["UsrParam", "UsrParam2", "UsrParam3"], because: "a given-back number is taken by the next claim");
+		allocated.Should().BeLessThan(200_000_000,
+			because: "starting the numbering over after each release probed every number again: quadratic in the claims");
 	}
 
 	[Test]

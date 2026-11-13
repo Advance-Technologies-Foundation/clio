@@ -537,6 +537,100 @@ public sealed class WsdlParserGuardTests {
 	}
 
 	[Test]
+	[Description("An imported file whose schema elements nest hundreds of levels deep is merged with each schema cut out of its parent first, so its content is copied once, not once per level, and a type declared only in a nested schema is still read.")]
+	public void Parse_Should_Merge_Nested_Schemas_Without_Copying_Them_Per_Level() {
+		// Arrange
+		const int levels = 250;
+		string open = string.Concat(Enumerable.Repeat("<xs:schema>", levels));
+		string close = string.Concat(Enumerable.Repeat("</xs:schema>", levels));
+		string schema = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:tns=\"http://example.org/t/\" "
+			+ "targetNamespace=\"http://example.org/t/\">" + Request("<xs:element name=\"x\" type=\"tns:Count\" />") + open
+			+ "<xs:simpleType name=\"Count\"><xs:restriction base=\"xs:int\" /></xs:simpleType>"
+			+ string.Concat(Enumerable.Repeat("<y />", 40_000)) + close + "</xs:schema>";
+		string wsdl = Wsdl("<xs:import namespace=\"http://example.org/t/\" schemaLocation=\"types.xsd\" />",
+			Messages("Op", "Op", "OpResponse"), Operation("Op"), Binding("Op"));
+		long before = GC.GetAllocatedBytesForCurrentThread();
+
+		// Act
+		WsdlDocument document = _sut.Parse([File(wsdl, "/w/svc.wsdl"), File(schema, "/w/types.xsd")], "Usr");
+		long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+		// Assert
+		document.Ports.Single().Operations.Single().Request.Select(p => (p.Path, p.Type)).Should().Equal([("tem:x", "Integer")],
+			because: "the type declared in the innermost schema is found, as the wizard finds it");
+		allocated.Should().BeLessThan(150_000_000,
+			because: "copying each nested schema with its content copied this 206 KB file once per level: 654 MB");
+	}
+
+	[Test]
+	[Description("Imported files holding more schema elements than the limit are refused before they are copied in.")]
+	public void Parse_Should_Refuse_Too_Many_Imported_Schemas() {
+		// Arrange
+		string schema = "<r xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">"
+			+ string.Concat(Enumerable.Repeat("<xs:schema />", WsdlParser.MaxMergedSchemas + 1)) + "</r>";
+		string wsdl = Wsdl("<xs:import namespace=\"http://example.org/t/\" schemaLocation=\"types.xsd\" />"
+				+ Request("<xs:element name=\"x\" type=\"xs:string\" />"), Messages("Op", "Op", "OpResponse"), Operation("Op"),
+			Binding("Op"));
+
+		// Act
+		Action act = () => _sut.Parse([File(wsdl, "/w/svc.wsdl"), File(schema, "/w/types.xsd")], "Usr");
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "each schema is copied with what it inherits, so their number is bounded")
+			.WithMessage("*more than 1000 schema elements*");
+	}
+
+	[Test]
+	[Description("A schema inside more namespace declarations than the limit is refused: each is copied onto the schema and checked against those already there.")]
+	public void Parse_Should_Refuse_A_Schema_Under_Too_Many_Namespace_Declarations() {
+		// Arrange
+		string declarations = string.Concat(Enumerable.Range(0, WsdlParser.MaxInheritedDeclarations + 1)
+			.Select(i => $" xmlns:p{i}=\"urn:p{i}\""));
+		string schema = $"<r xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"{declarations}><xs:schema /></r>";
+		string wsdl = Wsdl("<xs:import namespace=\"http://example.org/t/\" schemaLocation=\"types.xsd\" />"
+				+ Request("<xs:element name=\"x\" type=\"xs:string\" />"), Messages("Op", "Op", "OpResponse"), Operation("Op"),
+			Binding("Op"));
+
+		// Act
+		Action act = () => _sut.Parse([File(wsdl, "/w/svc.wsdl"), File(schema, "/w/types.xsd")], "Usr");
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the declarations a schema inherits are bounded")
+			.WithMessage("*more than 256 namespace declarations*");
+	}
+
+	[Test]
+	[Description("Parameter paths that join long names deep under many leaves are refused at the path-character budget, with a path's length counted before it is built, instead of building gigabytes of path text.")]
+	public void Parse_Should_Refuse_Paths_Past_The_Character_Budget() {
+		// Arrange
+		var types = new StringBuilder();
+		const int chain = 48;
+		const int fanOut = 14;
+		for (int i = 0; i < chain; i++) {
+			string name = "n" + i + new string('a', 995);
+			string next = i + 1 < chain ? $"tns:C{i + 1}" : "tns:L0";
+			types.Append($"<xs:complexType name=\"C{i}\"><xs:sequence><xs:element name=\"{name}\" type=\"{next}\" /></xs:sequence></xs:complexType>");
+		}
+		for (int j = 0; j < fanOut; j++) {
+			string next = j + 1 < fanOut ? $"tns:L{j + 1}" : "xs:string";
+			types.Append($"<xs:complexType name=\"L{j}\"><xs:sequence><xs:element name=\"a\" type=\"{next}\" />"
+				+ $"<xs:element name=\"b\" type=\"{next}\" /></xs:sequence></xs:complexType>");
+		}
+		string xml = Wsdl(types + Request("<xs:element name=\"root\" type=\"tns:C0\" />"), Messages("Op", "Op", "OpResponse"),
+			Operation("Op"), Binding("Op"));
+		long before = GC.GetAllocatedBytesForCurrentThread();
+
+		// Act
+		Action act = () => Parse(xml);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "16,384 leaves with 48,000-character paths are past the budget")
+			.WithMessage("*parameter paths add up to more than*");
+		(GC.GetAllocatedBytesForCurrentThread() - before).Should().BeLessThan(1_500_000_000,
+			because: "each path is built once to its own length; joining it level by level cost tens of GB here");
+	}
+
+	[Test]
 	[Description("Shown flattens line breaks and control characters, collapses blanks and cuts long text.")]
 	public void Shown_Should_Flatten_And_Cut() {
 		// Arrange

@@ -348,6 +348,38 @@ public sealed class WsdlReaderTests {
 		</wsdl:definitions>
 		""";
 
+	[Test]
+	[Description("A result whose paths and captions alone pass the result limit is listed by operation name before any port is mapped: twenty ports on one binding would otherwise copy the same long paths once per port.")]
+	public void Read_Should_List_Names_Only_When_The_Paths_Alone_Are_Too_Long() {
+		// Arrange
+		var types = new StringBuilder("<xs:complexType name=\"Leaves\"><xs:sequence>");
+		types.Append(string.Concat(Enumerable.Range(0, 200).Select(i => $"<xs:element name=\"f{i}\" type=\"xs:string\" />")));
+		types.Append("</xs:sequence></xs:complexType>");
+		for (int level = 1; level < 5; level++) {
+			string next = level + 1 < 5 ? $"tns:C{level + 1}" : "tns:Leaves";
+			types.Append($"<xs:complexType name=\"C{level}\"><xs:sequence><xs:element name=\"w{level}{new string('a', 995)}\" "
+				+ $"type=\"{next}\" /></xs:sequence></xs:complexType>");
+		}
+		string fields = $"<xs:element name=\"w0{new string('a', 995)}\" type=\"tns:C1\" />";
+		string ports = string.Concat(Enumerable.Range(0, 20).Select(i =>
+			$"<wsdl:port name=\"Soap{i}\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc\" /></wsdl:port>"));
+		string wsdl = InlineWsdl(fields)
+			.Replace("<xs:element name=\"Op\">", types + "<xs:element name=\"Op\">")
+			.Replace("<wsdl:port name=\"Soap\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc\" /></wsdl:port>", ports);
+		string path = GivenFile("ports.wsdl", Encoding.UTF8.GetBytes(wsdl));
+		long before = GC.GetAllocatedBytesForCurrentThread();
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path) with { Port = null });
+		long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+		// Assert
+		result.Services.Should().OnlyContain(s => s.Arguments == null, because: "nothing is mapped when the paths alone are too long");
+		result.Notices.Should().Contain(n => n.Contains("too large"), because: "the agent is told why");
+		allocated.Should().BeLessThan(150_000_000,
+			because: "mapping and serializing each of the twenty ports copied the same 2 million characters of paths twenty times");
+	}
+
 	[TestCase(@"\??\UNC\host\share\a.wsdl")]
 	[TestCase(@"\??\GLOBALROOT\Device\Mup\host\share\a.wsdl")]
 	[Description("An NT path that reaches a network share is refused like a UNC path, before anything is opened.")]

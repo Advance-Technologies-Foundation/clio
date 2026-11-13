@@ -169,7 +169,11 @@ public sealed partial class WsdlReader(
 		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document), request.Operations);
 		// The target is read first, so a wrong service-code is refused also when the result falls back to names.
 		WsdlTargetService target = ReadTarget(request.ServiceCode);
-		if (ports.Sum(p => p.Operations.Sum(o => Count(o.Request) + Count(o.Response))) > MaxMappedParameters) {
+		// Listed by name before anything is mapped: too many parameters, or paths and captions of the parameters the mapper
+		// keeps that alone pass the result limit (each is serialized, so the result could not fit). Ports on one binding share
+		// their operations, so mapping and serializing each would copy the same long paths once per port first.
+		if (ports.Sum(p => p.Operations.Sum(o => Count(o.Request) + Count(o.Response))) > MaxMappedParameters
+				|| ports.Sum(p => p.Operations.Sum(o => TextLength(o.Request) + TextLength(o.Response))) > MaxResultCharacters) {
 			return NamesOnly(ports.Select(p => (p.Name, p.Name == document.StudioPort, p.Operations.Select(o => o.Caption).ToList()))
 				.ToList(), warnings, [], narrowest: ports.Count == 1 && ports[0].Operations.Count <= 1);
 		}
@@ -188,6 +192,11 @@ public sealed partial class WsdlReader(
 
 	private static int Count(IReadOnlyList<WsdlParameter> parameters) =>
 		(parameters ?? []).Sum(p => 1 + Count(p.Items));
+
+	// The wizard's copies and arrays inside array items are always left out by the mapper, so they are not counted.
+	private static long TextLength(IReadOnlyList<WsdlParameter> parameters) =>
+		(parameters ?? []).Where(p => !p.IsCopy && !p.EscapesItem)
+			.Sum(p => (long)(p.Path?.Length ?? 0) + (p.Caption?.Length ?? 0) + TextLength(p.Items));
 
 	private List<string> Notices(IReadOnlyList<WsdlServiceArguments> services, WsdlTargetService target, Uri url) {
 		var notices = new List<string>();
