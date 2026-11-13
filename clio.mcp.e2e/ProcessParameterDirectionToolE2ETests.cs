@@ -21,7 +21,8 @@ namespace Clio.Mcp.E2E;
 /// installs the bundled CrtProcessBuilder; locally, against a stand carrying 1.6.6.172 or newer. Each test deletes
 /// the process it built.
 /// <para>The builder decides only for a parameter the SAME request creates with no direction and an element fills - an
-/// element output mapped onto it, an expression mapping that reads an element, or a Formula result. A stated direction
+/// element output mapped onto it, an expression mapping that reads an element output (a raw meta path: the mapping
+/// expression route does not expand element names), or a Formula result. A stated direction
 /// is never switched, but a <c>Variable</c> stated for a parameter the request creates and an element fills is advised
 /// once; a parameter only a constant fills keeps <c>Variable</c> silently; a <c>FileCollection</c> keeps its
 /// <c>Variable</c> default with no advice; and a parameter that existed before the request is never switched - it gets
@@ -47,7 +48,7 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 	#region Methods: Tests
 
 	[Test]
-	[Description("create-business-process with four Text parameters: one declared with no direction that a Formula element fills, one with no direction that an expression mapping reading an element fills, one with a stated Variable that a Formula fills, and one with no direction that only a constant fills. The first two are saved Internal and named as switched once; the stated Variable keeps Variable and is advised once; the constant keeps Variable, silently.")]
+	[Description("create-business-process with three Text parameters: one declared with no direction that a Formula element fills, one with a stated Variable that a Formula fills, and one with no direction that only a constant fills. The first is saved Internal and named as switched once; the stated Variable keeps Variable and is advised once; the constant keeps Variable, silently.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("a helper parameter declared with no direction is built Internal")]
 	public async Task CreateBusinessProcess_Should_SaveOnlyTheDefaultedHelpersInternal() {
@@ -72,17 +73,13 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 			Dictionary<string, string?> directions = await DirectionsAsync(context, processName);
 			directions["PHelper"].Should().Be("Internal",
 				because: "no direction was stated and only a Formula element of the process fills it");
-			directions["PExpression"].Should().Be("Internal",
-				because: "no direction was stated and an expression that reads an element output fills it");
 			directions["PStated"].Should().Be("Variable", because: "a stated direction is the author's choice");
 			directions["PConstant"].Should().Be("Variable",
 				because: "a constant is a starting value, not a value an element of the process produces");
-			foreach (string helper in new[] { "PHelper", "PExpression" }) {
-				built.Should().Contain($"Process parameter '{helper}' {SwitchNotice}", Exactly.Once(),
-					because: "the switch is reported once, with the way back: {0}", built);
-				built.Should().NotContain($"Process parameter '{helper}' {AdviceWarning}",
-					because: "a switched helper is no longer Variable, so there is nothing to advise: {0}", built);
-			}
+			built.Should().Contain($"Process parameter 'PHelper' {SwitchNotice}", Exactly.Once(),
+				because: "the switch is reported once, with the way back: {0}", built);
+			built.Should().NotContain($"Process parameter 'PHelper' {AdviceWarning}",
+				because: "a switched helper is no longer Variable, so there is nothing to advise: {0}", built);
 			built.Should().Contain($"Process parameter 'PStated' {AdviceWarning}", Exactly.Once(),
 				because: "a Variable stated for a helper the request creates is kept but advised once: {0}", built);
 			built.Should().NotContain($"Process parameter 'PStated' {SwitchNotice}",
@@ -131,7 +128,7 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 	}
 
 	[Test]
-	[Description("modify-business-process on a process whose PExisting parameter was built with a stated Variable: one request maps an element output onto PExisting and adds PNew with no direction plus a mapping onto it. PNew is saved Internal with the switch notice once; PExisting, which existed before the request, keeps Variable and the response advises it once, worded as a report that asks for its callers first.")]
+	[Description("modify-business-process on a process whose PExisting parameter was built with a stated Variable: one request maps an element output onto PExisting, adds PNew with no direction plus a mapping onto it, and adds PCount with no direction plus an expression mapping that reads the contact name the Read data element found. PNew and PCopy are saved Internal with the switch notice once each; PExisting, which existed before the request, keeps Variable and the response advises it once, worded as a report that asks for its callers first.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify switches a new defaulted helper and advises on an existing Variable one")]
 	public async Task ModifyBusinessProcess_Should_SwitchTheNewHelperAndAdviseOnTheExistingOne() {
@@ -149,6 +146,7 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 
 		try {
 			built.Should().Contain("created (UId:", because: "the arrange step must have built the process: {0}", built);
+			string contactName = await StoredValueAsync(context, processName, "PSeed");
 
 			// Act
 			string modified = ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
@@ -165,6 +163,16 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 						},
 						new Dictionary<string, object?> {
 							["op"] = "addMapping", ["mapping"] = NameOfTheReadContact("PNew")
+						},
+						new Dictionary<string, object?> {
+							["op"] = "addParameter",
+							["parameter"] = new Dictionary<string, object?> { ["name"] = "PCopy", ["type"] = "Text" }
+						},
+						new Dictionary<string, object?> {
+							["op"] = "addMapping",
+							["mapping"] = new Dictionary<string, object?> {
+								["targetProcessParameter"] = "PCopy", ["expression"] = $"{contactName} + \" (copy)\""
+							}
 						}
 					})
 				}));
@@ -175,10 +183,14 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 			Dictionary<string, string?> directions = await DirectionsAsync(context, processName);
 			directions["PNew"].Should().Be("Internal",
 				because: "the request created it with no direction and an element output fills it");
+			directions["PCopy"].Should().Be("Internal",
+				because: "the request created it with no direction and an expression that reads an element output fills it");
 			directions["PExisting"].Should().Be("Variable",
 				because: "a parameter that existed before the request is never switched");
 			modified.Should().Contain($"Process parameter 'PNew' {SwitchNotice}", Exactly.Once(),
 				because: "the switch is reported once: {0}", modified);
+			modified.Should().Contain($"Process parameter 'PCopy' {SwitchNotice}", Exactly.Once(),
+				because: "the expression route is reported like a mapping: {0}", modified);
 			modified.Should().NotContain($"Process parameter 'PNew' {AdviceWarning}",
 				because: "a switched helper is no longer Variable, so there is nothing to advise: {0}", modified);
 			modified.Should().Contain($"Process parameter 'PExisting' {AdviceWarning}", Exactly.Once(),
@@ -214,6 +226,27 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 				parameter => parameter["direction"]?.GetValue<string>());
 	}
 
+	/// <summary>
+	/// The stored value of a process parameter, read from describe: for a parameter mapped from an element output it is
+	/// the raw meta path of that output. The mapping <c>expression</c> route stores what it is given and does not expand
+	/// element names, so an expression that reads an element must carry such a path.
+	/// </summary>
+	private static async Task<string> StoredValueAsync(ProcessDesignerArrangeContext context, string processName,
+		string parameterName) {
+		JsonObject graph = DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			DescribeProcessTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
+				["process-name"] = processName
+			}));
+		JsonObject parameter = graph["parameters"]!.AsArray().OfType<JsonObject>()
+			.Single(candidate => candidate["name"]?.GetValue<string>() == parameterName);
+		string? value = parameter["value"]?.GetValue<string>();
+		value.Should().Contain("[Element:", because: "'{0}' was built mapped from an element output: {1}", parameterName,
+			parameter.ToJsonString());
+		return value!;
+	}
+
 	private static Dictionary<string, object> NameOfTheReadContact(string targetParameter) =>
 		new() {
 			["targetProcessParameter"] = targetParameter, ["sourceElement"] = "ReadOne",
@@ -241,7 +274,6 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 			["name"] = processName, ["caption"] = "Clio BP Parameter Direction E2E", ["packageName"] = "Custom",
 			["parameters"] = new object[] {
 				new Dictionary<string, object> { ["name"] = "PHelper", ["type"] = "Text" },
-				new Dictionary<string, object> { ["name"] = "PExpression", ["type"] = "Text" },
 				new Dictionary<string, object> { ["name"] = "PStated", ["type"] = "Text", ["direction"] = "Variable" },
 				new Dictionary<string, object> { ["name"] = "PConstant", ["type"] = "Text", ["value"] = "fixed" }
 			},
@@ -254,12 +286,6 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 			},
 			["flows"] = new[] {
 				Flow("Start1", "ReadOne"), Flow("ReadOne", "FHelper"), Flow("FHelper", "FStated"), Flow("FStated", "End1")
-			},
-			["mappings"] = new object[] {
-				new Dictionary<string, object> {
-					["targetProcessParameter"] = "PExpression",
-					["expression"] = "[#ReadOne.ResultEntity.Name#] + \" (copy)\""
-				}
 			}
 		});
 
@@ -298,14 +324,17 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 		JsonSerializer.Serialize(new Dictionary<string, object> {
 			["name"] = processName, ["caption"] = "Clio BP Parameter Direction Modify E2E", ["packageName"] = "Custom",
 			["parameters"] = new object[] {
-				new Dictionary<string, object> { ["name"] = "PExisting", ["type"] = "Text", ["direction"] = "Variable" }
+				new Dictionary<string, object> { ["name"] = "PExisting", ["type"] = "Text", ["direction"] = "Variable" },
+				// Stated Internal, so it draws no notice: it only gives the modify a stored meta path to read.
+				new Dictionary<string, object> { ["name"] = "PSeed", ["type"] = "Text", ["direction"] = "Internal" }
 			},
 			["elements"] = new object[] {
 				new Dictionary<string, object> { ["name"] = "Start1", ["type"] = "startEvent" },
 				ReadOneContact(),
 				new Dictionary<string, object> { ["name"] = "End1", ["type"] = "endEvent" }
 			},
-			["flows"] = new[] { Flow("Start1", "ReadOne"), Flow("ReadOne", "End1") }
+			["flows"] = new[] { Flow("Start1", "ReadOne"), Flow("ReadOne", "End1") },
+			["mappings"] = new object[] { NameOfTheReadContact("PSeed") }
 		});
 
 	private static Dictionary<string, object> Flow(string source, string target) =>
