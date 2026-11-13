@@ -70,14 +70,13 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>640acdf8</c>,
-	/// tagged <c>crtprocessbuilder-1.6.6.172</c>): branch <c>feature/ENG-105558-internal-helper-parameter</c> with
-	/// <c>main</c> merged in at 1.6.6.171 (<c>4d89bc98</c>, the merge of <c>e3e7f838</c>), so the cut carries everything
-	/// 1.6.6.171 shipped.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>e93b02b9</c>,
+	/// tagged <c>crtprocessbuilder-1.6.6.173</c>): branch <c>feature/ENG-106378-modify-dynamic-case</c> with
+	/// <c>main</c> merged in at 1.6.6.172 (<c>4dbe2270</c>), so the cut carries everything 1.6.6.172 shipped.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.172 and packed that commit with it overlaid (386
-	/// entries), and the stamp was committed after it as the child commit <c>88cc8187</c>.
-	/// 1.6.6.172 is the first number above every cut in both histories (1.6.6.171 was the highest); whichever package
+	/// marker, the script stamped the package descriptor to 1.6.6.173 and packed that commit with it overlaid (395
+	/// entries), and the stamp was committed after it as the child commit <c>1f351231</c>.
+	/// 1.6.6.173 is the first number above every cut in both histories (1.6.6.172 was the highest); whichever package
 	/// branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
@@ -186,7 +185,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"48D00E48CA4F50C93EE08080312286202548B86577076BBCF44F2679EE615752";
+		"B4725809F38E098B245313BD840EC54302CA3E3AE02E09F20BF86B928EB51A26";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -214,7 +213,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.172";
+	private const string ExpectedArchiveVersion = "1.6.6.173";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -225,7 +224,7 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 a script cut.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 and 1.6.6.173 are script cuts.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -233,7 +232,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "640acdf80cd6691a2cbbdd0b832e70147d965fdd";
+	private const string ExpectedProducingCommit = "e93b02b9aa84eeef758fbed430ef2e4e0c408e3f";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +258,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794574773000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794595897000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -274,7 +273,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794574650000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794595721000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -283,9 +282,10 @@ public class BundledProcessBuilderPackageTests {
 	private const string AuthorizationGateMethodName = "EnsureCanManageProcessDesign";
 
 	/// <summary>
-	/// The gate <c>BuildCase</c> applies instead of <see cref="AuthorizationGateMethodName"/>: the platform's own rights
-	/// for cases (<c>CanManageDcm</c>, <c>CanManageSolution</c>, append on both case settings tables, a General user).
-	/// One call site, in the case handler, before anything is read.
+	/// The gate the three case operations (<c>BuildCase</c>, <c>DescribeCase</c>, <c>ModifyCase</c>) apply instead of
+	/// <see cref="AuthorizationGateMethodName"/>: the platform's own rights for cases (<c>CanManageDcm</c>,
+	/// <c>CanManageSolution</c>, append on both case settings tables, a General user). Three call sites, one in each
+	/// case handler, before anything is read.
 	/// </summary>
 	private const string CaseGateMethodName = "EnsureCanManageDcm";
 
@@ -297,7 +297,7 @@ public class BundledProcessBuilderPackageTests {
 	/// Six, NOT seven, and the difference is worth writing down because it is the first thing anyone
 	/// recomputing this number gets wrong: it is not one gate per gated operation. Of the
 	/// <see cref="ExpectedOperationContractCount"/> operations, one is ungated
-	/// (<see cref="UngatedOperations"/>), <c>BuildCase</c> is gated by the case gate
+	/// (<see cref="UngatedOperations"/>), the three case operations are gated by the case gate
 	/// (<see cref="CaseGateMethodName"/>, pinned separately), and the remaining seven are gated at six places, because
 	/// <c>ProcessDesigner.Execute</c> is a SHARED boundary for the two read operations — it applies the guard
 	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. The four write
@@ -369,7 +369,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 9;
+	private const int ExpectedOperationContractCount = 11;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.
@@ -717,10 +717,11 @@ public class BundledProcessBuilderPackageTests {
 				+ "required too, and that half is exactly what makes this gate stricter than CanManageSolution. "
 				+ "A rebundle that lost the connection-type check would install, pass every other pin here, and "
 				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
-		CountUncommentedOccurrences(archive, $"_guard.{CaseGateMethodName}()").Should().Be(1,
-			because: "BuildCase writes a case schema and two settings rows, and it is gated by the case gate rather "
-				+ "than the design gate, so the design-gate count below cannot see it; without this pin an archive "
-				+ "whose case handler lost its gate would pass every other check here");
+		CountUncommentedOccurrences(archive, $"_guard.{CaseGateMethodName}()").Should().Be(3,
+			because: "BuildCase, DescribeCase and ModifyCase read and write cases and settings rows, each gated by the "
+				+ "case gate in its own handler rather than by the design gate, so the design-gate count below cannot "
+				+ "see them; without this pin an archive whose case handler lost its gate would pass every other "
+				+ "check here");
 		archive.Should().Contain("\"CanManageDcm\"",
 			because: "the case gate's operation is the platform's own right for cases");
 		CountUncommentedOccurrences(archive, "_guard.EnsureCanCompileConfiguration()").Should().Be(1,
