@@ -297,7 +297,9 @@ public sealed partial class WsdlReader(
 	// metadata host names.
 	private static bool IsStandLocal(Uri url) {
 		string host = url.DnsSafeHost.TrimEnd('.');
-		if (url.IsLoopback || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) || MetadataHosts.Contains(host)) {
+		// The host is compared without a trailing dot: Uri.IsLoopback is false for "localhost.", the same host.
+		if (url.IsLoopback || host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+			|| host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) || MetadataHosts.Contains(host)) {
 			return true;
 		}
 		if (!System.Net.IPAddress.TryParse(host, out System.Net.IPAddress address)) {
