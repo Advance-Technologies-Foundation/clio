@@ -2815,7 +2815,9 @@ public sealed class DescribedChatMessage {
 
 	/// <summary>
 	/// The chat template as stored: the <c>[#Lookup.…#]</c> macro of a message template of type "Chat template". A
-	/// provider (WhatsApp) template picked in the designer is reported as its raw id; this tool cannot write one.
+	/// provider (WhatsApp) template picked in the designer is reported as its raw id; this tool cannot write one. Not
+	/// reported when the message type is bound to a source other than a constant, because the mode is then decided at
+	/// run time.
 	/// </summary>
 	[JsonPropertyName("template")]
 	public string Template { get; set; }

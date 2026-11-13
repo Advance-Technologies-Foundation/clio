@@ -34,7 +34,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
 /// and it covers a host whose server check reports itself unavailable. Every caller requires the create/modify floor
-/// (1.6.6.162 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
+/// (1.6.6.174 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
 /// only while that line stamps lower numbers - should it ever stamp that floor or above without the ENG-95244 check, a
 /// replayed read-back member would be dropped there with no word from either side. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
 /// payloads.</para>
@@ -43,7 +43,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// here by a stale list. Fields <c>describe-business-process</c> reports but the write path does not take
 /// (<c>sourceSchemaUId</c>, <c>outputs</c>, <c>position</c>, ...) are DERIVED read-backs: a described block fed
 /// back keeps building. clio tolerates them and says nothing: the server they reach (every caller requires
-/// the create/modify floor, 1.6.6.162 today) ignores them and names them in its own "Read-only fields copied from describe were
+/// the create/modify floor, 1.6.6.174 today) ignores them and names them in its own "Read-only fields copied from describe were
 /// ignored" warning, which names them and, where it can, the key that changes each. A second warning from clio about
 /// the same fields only doubled the noise of a describe -> setElement round trip. The accepted cost: on a host whose
 /// server check reports itself unavailable, the server's warning says the request was not checked and may name none of

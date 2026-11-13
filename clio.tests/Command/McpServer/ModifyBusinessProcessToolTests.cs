@@ -826,7 +826,7 @@ public class ModifyBusinessProcessToolTests {
 			because: "the operation, its argument and its family-wide scope are what a caller decides at call time");
 		description.Should().Contain("get-guidance name=process-tracing",
 			because: "the data and volume costs live in the guide, and the contract must route there");
-		description.Should().Contain("this clio requires 1.6.6.162, for chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, setTracing,",
+		description.Should().Contain("this clio requires 1.6.6.174, for chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, setTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block, then by mergeFrom)");
 		prompt.Should().Contain("`clearConnections`, or `setTracing`",
 			because: "the prompt's operation list must match its tool's contract");

@@ -190,7 +190,8 @@ public static class ModifyBusinessProcessPrompt {
 		 first - it owns the block;
 		 and a `sendChatMessage` element's `chatMessage` block: an omitted member keeps its stored value,
 		 `columnValues: []` clears the column values, and switching to `messageSource: "custom"` needs the new
-		 `message` in the same update and clears the template (a switch to template clears a constant message).
+		 `message` in the same update (unless `Message` is mapped to a formula) and clears the template (a switch to
+		 template clears a constant message). A constant text goes in `message`, never in a raw mapping onto `Message`.
 		 Read `get-guidance name=process-send-chat-message` first - it owns the block;
 		 `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,

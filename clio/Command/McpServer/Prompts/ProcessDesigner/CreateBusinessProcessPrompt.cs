@@ -135,7 +135,8 @@ public static class CreateBusinessProcessPrompt {
 		 element with a `chatMessage` block (`from` the channel, `to` ONE contact, `messageSource` with `template`
 		 (a message template of type "Chat template") or `message` (plain text), `ignoreErrors`, `columnValues` on
 		 the created chat) - not a generic `userTask` naming `SendChatMessageUserTask`, which is refused. A
-		 personalised text is a formula mapped onto the element's `Message`; read `SendStatus` and
+		 personalised text is a formula mapped onto the element's `Message` (a constant text goes in `message`, never in
+		 a raw mapping); read `SendStatus` and
 		 `SendStatusDetails` like any element output. Read `get-guidance name=process-send-chat-message` before
 		 writing it - that guide owns the block.
 		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in

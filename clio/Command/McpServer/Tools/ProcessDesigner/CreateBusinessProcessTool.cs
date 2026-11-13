@@ -311,7 +311,7 @@ public class CreateBusinessProcessTool(
 		 + "(another element's output, + sourceColumn for one column of its record), processParameter, value, or "
 		 + "expression. An 'expression' is a FORMULA, "
 		 + "validated by the PLATFORM at the pre-save gate — so a bad one aborts the whole build with 'Process "
-		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.162 (for "
+		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.174 (for "
 		 + "chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, isTracing, the meta-path checks, sourceColumn, scriptTask and subProcess.multiInstanceOptions), which is "
 		 + "NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
 		 + "time and the platform's gate became the only one. "
