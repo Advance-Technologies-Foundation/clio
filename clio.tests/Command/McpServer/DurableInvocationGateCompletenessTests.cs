@@ -148,6 +148,9 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"read-data-binding-db",
 		"read-entity-business-rules",
 		"read-page-business-rules",
+		// Reads a WSDL (local files, or downloaded by the platform's WSDL endpoint, which saves nothing) and returns
+		// register-web-service arguments; it saves no service.
+		"read-wsdl",
 		"resolve-oauth-system-user",
 		"restart-status",
 		"show-passing-infrastructure",

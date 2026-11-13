@@ -1191,10 +1191,10 @@ internal static class ToolContractCatalog {
 	/// and the line index had no room left under the spill line for a tool and the sentence together (ENG-105556).
 	/// </summary>
 	internal static readonly string ToolIndexLegend =
-		$"One line per tool: name (R)(D) [aka deprecated names]: purpose, cut to {MaxToolIndexPurposeLength} characters. "
+		$"Each line: name (R)(D) [aka old names]: purpose, cut to {MaxToolIndexPurposeLength} chars. "
 		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
 		+ "A tool without (R) is called through clio-run {\"command\":\"<name>\",\"args\":{...}}. "
-		+ "(D) = destructive: it may delete or overwrite data; a line without (D) can still write.";
+		+ "(D) = destructive: may delete or overwrite data; a line without (D) can still write.";
 
 	/// <summary>
 	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the
@@ -1563,7 +1563,7 @@ internal static class ToolContractCatalog {
 				Field("tools", ArrayType, "Tool contract definitions; populated when tool-names are passed or detail=full. A short contract carries detail=\"short\" and full-contract-bytes (the size of its full form); a full contract carries neither. In a reply fitted below the inline budget, an error-contract may be {codes: [], same-as: <tool>}: the same codes as that earlier contract in the reply."),
 				Field("not-found", ArrayType, "Unresolved names with per-name error codes, messages and suggestions. Valid contracts remain in tools; omitted when all names resolve. If no names resolve, success=false and error retains the first tool-not-found diagnostic."),
 				Field("index", ArrayType, "Compact tool index as objects (name, purpose, contract-available, resident, destructive, aliases); populated for a no-names request with detail=index-entries. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run — never wrap a resident tool in clio-run."),
-				Field("tool-index", ArrayType, $"The default answer to a no-names request: one line per tool, 'name (R)(D) [aka deprecated names]: purpose', the purpose cut to {MaxToolIndexPurposeLength} characters; legend explains the (R) and (D) markers."),
+				Field("tool-index", ArrayType, $"The default answer to a no-names request: one line per tool, 'name (R)(D) [aka old names]: purpose', the purpose cut to {MaxToolIndexPurposeLength} characters; legend explains the (R) and (D) markers."),
 				Field("legend", StringType, "Explains the tool-index line format and markers; returned only with tool-index."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),

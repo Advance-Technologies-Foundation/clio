@@ -64,6 +64,10 @@
 		<None Update="Assets/ClioMcpE2EFixture.gz">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+		<!-- read-wsdl (ENG-105475 slice C): the synthetic WSDL the unit tests read, shipped to a live stand in wsdl-files mode. -->
+		<None Include="..\clio.tests\Examples\Wsdl\wizard-features.wsdl" Link="Assets\Wsdl\wizard-features.wsdl">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 	</ItemGroup>
 
 </Project>

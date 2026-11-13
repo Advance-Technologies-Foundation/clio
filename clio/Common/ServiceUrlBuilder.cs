@@ -468,11 +468,19 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		BuildCase = 127,
 
 		/// <summary>
+		///     Downloads a WSDL and the schemas it imports by <c>schemaLocation</c>, as Studio's SOAP quick setup does
+		///     (<c>DownloadWsdlEndpoint.GetXmlSchemaFilesContent</c> of the ServiceDesigner package; requires
+		///     <c>CanManageSolution</c>). The body is the URL array; the response is
+		///     <c>{"success","errorInfo":{"message","stackTrace"},"files":[{"Key":url,"Value":[ascii codes]}]}</c>.
+		/// </summary>
+		DownloadWsdlSchemaFiles = 128,
+
+		/// <summary>
 		///     Reads an existing dynamic case (DCM), or every case of an object, via the ProcessDesignService package
 		///     without changing anything. The body is <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the
 		///     answer is wrapped under <c>DescribeCaseResult</c>.
 		/// </summary>
-		DescribeCase = 128,
+		DescribeCase = 129,
 
 		/// <summary>
 		///     Changes an existing dynamic case (DCM) in place via the ProcessDesignService package: its stages, their
@@ -480,7 +488,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the answer is wrapped under
 		///     <c>ModifyCaseResult</c>; <c>validateOnly: true</c> plans without writing.
 		/// </summary>
-		ModifyCase = 129
+		ModifyCase = 130
 
 	}
 
@@ -606,6 +614,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ServiceSchemaSave, "DataService/json/SyncReply/ServiceDataContract"},
 		{KnownRoute.CheckUniqueSchemaName, "ServiceModel/EntitySchemaDesignerService.svc/CheckUniqueSchemaName"},
 		{KnownRoute.CallServiceSchemaMethod, "rest/CallServiceSchemaService/Execute"},
+		{KnownRoute.DownloadWsdlSchemaFiles, "rest/DownloadWsdlEndpoint/GetXmlSchemaFilesContent"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 		{KnownRoute.GetClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema"},
 		{KnownRoute.SaveClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema"},

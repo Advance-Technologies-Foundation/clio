@@ -174,7 +174,7 @@ public sealed class DescribeDynamicCaseToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
-		description.Should().Contain("change nothing", because: "the read-only promise is stated");
+		description.Should().Contain("read-only", because: "the read-only promise is stated");
 		description.Should().Contain("before answering any question about an existing case",
 			because: "an agent must read the stored case instead of guessing it");
 		description.Should().Contain("modify-dynamic-case", because: "the read comes before a change");

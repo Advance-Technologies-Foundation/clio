@@ -40,7 +40,7 @@ public class DescribeDynamicCaseTool(
 	/// <returns>The command execution result; the result document is in the log output.</returns>
 	[McpServerTool(Name = DescribeDynamicCaseToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		 OpenWorld = false),
-	 Description("Read an existing dynamic case (DCM), or every case of an object, and change nothing. Answers the "
+	 Description("Reads a dynamic case (DCM), read-only. One case, or every case of an object. Answers the "
 		 + "stages in order with their groups, the final stages, which stages hold steps, the running cases per stage, "
 		 + "whether the case is enabled, and the object's case settings rows, with the designer link per case. Call "
 		 + "it before answering any question about an existing case and before changing one with "

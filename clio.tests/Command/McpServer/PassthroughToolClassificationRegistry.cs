@@ -404,6 +404,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["read-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["read-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["read-wsdl"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["remove-package-dependency"] = PassthroughClassification.NotApplicable,
