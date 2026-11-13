@@ -89,18 +89,25 @@ the call work, and the tool should not decide that for the platform.
 
 `register-web-service` takes `type` (`rest` default, `soap11`, `soap12`; the describe strings are accepted too) and
 `namespaces` (`[{prefix, uri, default?}]`). A SOAP method takes `message-element` (required) and `soap-action`
-(optional; empty gives a notice that no `SOAPAction` header is sent) and no `http-method`, `uri` or `content-type`
-(forced POST/XML). A SOAP parameter takes `in` body, header or cookie, `soap-header` (top-level body parameters only;
-copied to its items as Studio does) and `sequence-element` (arrays; default `item`). `modify-web-service` lifts the SOAP
-refusal and adds `setNamespaces` and `setType` (1.1 ↔ 1.2 only; REST ↔ SOAP refused, as Studio does). Both count as
-changing every method for the usage guard, because they change every call.
+(optional; empty gives a notice that no `SOAPAction` header is sent) and no `uri`; `http-method` and `content-type` are
+forced to POST and XML, and only those values are accepted back (describe prints them, so the round trip needs them).
+A SOAP parameter takes `in` body, header or cookie, `soap-header` (top-level body request parameters; copied to its
+items as Studio does, and accepted back on those items) and `sequence-element` (arrays; default `item`).
+`modify-web-service` lifts the SOAP refusal and adds `setNamespaces` and `setType` (1.1 ↔ 1.2 only; REST ↔ SOAP
+refused, as Studio does). Both count as changing every method for the usage guard when they really change the list or
+the version (describe output sent back unchanged does not), because they change every call. A setNamespaces that drops a
+prefix a kept method uses is refused; a kept method is not otherwise re-validated.
 
 ### D8. The SOAP validator refuses what Studio only warns about
 
-Exactly one default namespace when any exists; unique prefixes; non-empty URIs; every prefix in a message element or
-in any path segment is declared (Studio warns and lets the user save; the call then fails with no HTTP request, so
+Exactly one default namespace when any exists; unique prefixes, none reserved (`xml*`, and `soapenv`, which the platform
+declares for the envelope); non-empty URIs without credentials or control characters; a message element of one
+segment; every prefix in the message element or in a body request path segment is declared (Studio warns and lets the user save; the call then fails with no HTTP request, so
 clio refuses); request placements body, header, cookie; a response path starting with `$` is refused for XML; no
-trailing slash is added to a SOAP base URI. The REST rule "an xml method has no body parameters" applies to REST only.
+trailing slash is added to a SOAP base URI; a `prefix:name` segment the platform would cut (its regex stops at the
+first character outside letters, digits, `_` and `-`, so `tem:Api.Key` renders as `tem:Api`) is refused; a constant
+default on a SOAP-header parameter is refused like a header constant (WS-Security and licence values travel there).
+The REST rule "an xml method has no body parameters" applies to REST only.
 
 ### D9. `read-wsdl` (slice C)
 

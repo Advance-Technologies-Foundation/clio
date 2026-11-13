@@ -109,12 +109,23 @@ public sealed class ServiceParameterDto {
 	[JsonExtensionData] public Dictionary<string, JsonElement> Extra { get; set; }
 }
 
-/// <summary>A SOAP namespace of a service: <c>name</c> is its URI.</summary>
+/// <summary>
+/// A SOAP namespace of a service: <c>name</c> is its URI. <c>uId</c> and <c>isDefault</c> are nullable because the
+/// collection used to be read as raw JSON: a row that carries null there must not fail the whole schema read. A null
+/// member is left out on write, never sent as <c>null</c>: the platform's contract declares both as non-nullable.
+/// </summary>
 public sealed class ServiceNamespaceDto {
-	[JsonPropertyName("uId")] public Guid UId { get; set; }
+	[JsonPropertyName("uId")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Guid? UId { get; set; }
+
 	[JsonPropertyName("name")] public string Name { get; set; }
 	[JsonPropertyName("prefix")] public string Prefix { get; set; }
-	[JsonPropertyName("isDefault")] public bool IsDefault { get; set; }
+
+	[JsonPropertyName("isDefault")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? IsDefault { get; set; }
+
 	[JsonExtensionData] public Dictionary<string, JsonElement> Extra { get; set; }
 }
 

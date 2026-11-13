@@ -5069,7 +5069,7 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-2.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
