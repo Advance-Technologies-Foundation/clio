@@ -171,7 +171,7 @@ public static partial class McpToolErrorFilter
 			return;
 		}
 		message.Append("contains a value that does not match the documented shape. ");
-		message.Append($"At {finding.Location}: ");
+		message.Append($"At {QuoteLocation(finding.Location)}: ");
 		message.Append(missing
 			? $"missing required {DescribeMembers(finding.MissingRequired)}."
 			: $"expected {finding.Expected}, received {finding.Received}.");
@@ -189,15 +189,27 @@ public static partial class McpToolErrorFilter
 			message.Append(" This member takes a JSON document as TEXT: send it as one JSON string, not as a nested JSON value.");
 		}
 		if (finding.MemberDescription is not null) {
-			message.Append($" About {finding.Location}: {finding.MemberDescription}");
+			message.Append($" About {QuoteLocation(finding.Location)}: {finding.MemberDescription}");
 		}
 		if (finding.ExpectedShape is not null) {
-			message.Append($" Expected {finding.Location}: {finding.ExpectedShape}.");
+			message.Append($" Expected {QuoteLocation(finding.Location)}: {finding.ExpectedShape}.");
 		}
 		if (finding.Example is not null) {
-			message.Append($" Example {finding.NamedArgument}: {finding.Example}");
+			message.Append($" Example {QuoteLocation(finding.NamedArgument)}: {finding.Example}");
 		}
 	}
+
+	/// <summary>
+	/// A location or member name as a hint shows it before its colon: in backticks, <c>`filters.all[0]`</c>.
+	/// </summary>
+	/// <remarks>
+	/// Not cosmetic. A refusal that leaves through <c>clio-run</c> or the durable long-tail handler passes
+	/// <c>ClioRunExecutor.RedactFailureContent</c>, whose credential rule reads a bare <c>password: ...</c>,
+	/// <c>host: ...</c> or <c>uId: ...</c> as a secret pair: "About password: Direct password paired with uri"
+	/// arrived as "About password=[redacted] password paired with uri". A quoted name is not that shape. Backticks
+	/// rather than single quotes, because a location already carries <c>['key']</c> for a dictionary key.
+	/// </remarks>
+	private static string QuoteLocation(string location) => $"`{location}`";
 
 	/// <summary>
 	/// Follows <paramref name="exception"/>'s JSON path through the caller's value and the declared type, and
