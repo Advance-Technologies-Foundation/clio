@@ -44,8 +44,9 @@ edits as a VALUE (a combo box writes the picked record's id). A parameter the pa
 stores whatever that window produced, and for a picked record that is the `Script` lookup macro (the process
 designer's `ProcessSchemaParametersEditMixin`). Measured for the Send chat message element on 2026-11-13 (ENG-96034,
 designer captures C-T1 and C-CH on a stand): `Channel`, `Contact` and `Template` constants are `Script`
-`[#Lookup.{root object UId}.{record id}#]`, and the element's page parses a constant only in that form - a
-`ConstValue` Guid there (Send email's `EmailTemplateId` write copied across) saves green and shows an empty field.
+`[#Lookup.{root object UId}.{record id}#]` (the stored form is measured). The element's properties page parses a
+constant only in that form, so a `ConstValue` Guid there (Send email's `EmailTemplateId` write copied across) saves
+green and would show an empty field - read from the page source, not measured on a stand.
 Send email's recipients are mapping-edited too. Before writing a lookup constant onto a new element, find out which
 editor its properties page uses for that parameter.
 

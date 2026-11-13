@@ -18,8 +18,8 @@ Run: `dotnet test clio.tests/clio.tests.csproj -f net10.0 --filter "TestCategory
 | TC-U-04 | Unknown keys inside a value source and a `columnValues` entry are refused under their own labels | `ProcessBlockKeyCheckTests.Check_Should_RefuseAnUnknownKeyInsideAChatMessageValueSourceOrColumnValue` |
 | TC-U-05 | A described block replays: `templateName`, `outputs`, `issues`, `display` are tolerated read-backs | `ProcessBlockKeyCheckTests.Check_Should_TolerateTheReadBackFields_OfADescribedChatMessageBlock` |
 | TC-U-06 | A list or a bare string in `from`/`to` is refused before sending with the one-contact (one-channel) hint | `ProcessBlockKeyCheckTests.Check_Should_RefuseAListInAChatMessageValueSource_WithTheOneValueHint`, `Check_Should_RefuseABareStringInAChatMessageValueSource` |
-| TC-U-07 | The key sets equal the bundled contracts; read-backs are describe-only members | `ProcessBlockKeyCheckTests.KeySets_Should_EqualTheMembersOfTheBundledServerContracts`, `ReadBackFields_Should_BeDescribeOnlyMembers` (red until the rebundle) |
-| TC-U-08 | The create call shape names `chatMessage (sendChatMessage)` and the bundled element contract has it | `ToolContractShortFormTests.CreateCallShape_Should_NameExactlyTheMembersOfTheBundledServerContract` (red until the rebundle) |
+| TC-U-07 | The key sets equal the bundled contracts; read-backs are describe-only members | `ProcessBlockKeyCheckTests.KeySets_Should_EqualTheMembersOfTheBundledServerContracts`, `ReadBackFields_Should_BeDescribeOnlyMembers` |
+| TC-U-08 | The create call shape names `chatMessage (sendChatMessage)` and the bundled element contract has it | `ToolContractShortFormTests.CreateCallShape_Should_NameExactlyTheMembersOfTheBundledServerContract` |
 | TC-U-09 | Describe reads `chatMessage`, keeps unknown members in the bags, leaves it null when absent | `ServerProcessDescriberTests.Describe_ShouldReadTheChatMessageMember_WhenServerReportsIt`, `Describe_ShouldKeepUnknownChatMessageMembers_InTheBag`, `Describe_ShouldLeaveTheChatMessageMemberNull_WhenServerOmitsIt` |
 | TC-U-10 | create contract and prompt: type, block, guide pointer, Q1 carve-out | `CreateBusinessProcessToolTests.CreateBusinessProcessTool_ShouldOfferTheSendChatMessageElementAndRouteToItsGuide` |
 | TC-U-11 | modify contract and prompt: addElement/setElement lists, Q1 refusal, setElement rules, pointer | `ModifyBusinessProcessToolTests.ModifyBusinessProcess_Description_ShouldOfferTheChatMessageBlockAndItsSetElementRules` |
@@ -28,10 +28,11 @@ Run: `dotnet test clio.tests/clio.tests.csproj -f net10.0 --filter "TestCategory
 | TC-U-14 | validate-process-graph names the element as buildable | `ValidateProcessGraphToolTests.ValidateTool_ShouldNameTheWebServiceAndChatElementsAsBuildable_WhenDescriptionIsRead` |
 | TC-U-15 | Per-contract ceiling and wire bundle hold, no ceiling raise | `ToolContractPayloadBudgetTests` |
 | TC-U-16 | Floor literals name the chat cut | `ProcessDesignerRequiresPackageAttributeTests` (with the rebundle) |
-| TC-U-17 | Archive pins (SHA, version, stamps, producing commit, security counts) | `BundledProcessBuilderPackageTests` (with the rebundle) |
+| TC-U-17 | Archive pins (SHA, version, stamps, producing commit, security counts) | `BundledProcessBuilderPackageTests` |
+| TC-U-18 | The bundled archive declares every chatMessage wire name clio sends or reads (a numeric floor alone cannot prove the block is there) | `BundledProcessBuilderPackageTests.BundledArchive_ShouldDeclareTheSendChatMessageWireNamesClioReads` |
 
-The guidance-name oracle `UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead` stays red until
-`curated-knowledge-names.json` names `process-send-chat-message`.
+The guidance-name oracle `UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead` checks that the
+contracts point only at published guidance; `curated-knowledge-names.json` names `process-send-chat-message`.
 
 ## Integration (clio.mcp.e2e, category `McpE2E.ProcessDesigner`)
 
@@ -42,7 +43,7 @@ without a uniquely named chat template; TC-I-08 needs the designer fixture `UsrS
 
 | ID | What |
 |---|---|
-| TC-I-01 | Template-mode build -> describe in the write shape -> setElement replay is a no-op |
+| TC-I-01 | Template-mode build with column values (a constant text column, a lookup from a parameter) -> describe in the write shape -> setElement replay is a no-op |
 | TC-I-02 | Custom-mode build; `ignoreErrors` omitted reads back `false` |
 | TC-I-03 | Refusals that create nothing: generic route, unknown system setting, a list of contacts (clio), unknown template |
 | TC-I-04 | An email-typed template is refused |

@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-96034-send-chat-message-element.md](../prd/spec-eng-96034-send-chat-message-element.md) - R8
 **ADR**: [adr-eng-96034-send-chat-message-element.md](../adr/adr-eng-96034-send-chat-message-element.md) - D5, D7
 **Test plan**: [tp-eng-96034-send-chat-message-element.md](../test-plans/tp-eng-96034-send-chat-message-element.md)
-**Status**: in-progress (moves with story 1)
+**Status**: review (moves with story 1)
 **Repo**: clio-knowledge (the guide), clio (pointers, re-pin, run e2e)
 **Depends on**: [story 1](story-eng-96034-send-chat-message-element-1.md)
 
@@ -41,5 +41,5 @@ I build a process that actually sends, and I tell the user what to set up when i
 
 - [ ] Knowledge PR merged and re-pinned here.
 - [x] TC-I-09 implemented (gated by `McpE2E:AllowDestructiveMcpTests`).
-- [ ] TC-I-09 run green on a stand with OmnichannelMessaging and the chat cut installed.
+- [x] TC-I-09 run green on a stand with OmnichannelMessaging and the chat cut installed.
 - [ ] Tier B (WireMock Telegram) run recorded on the Jira story.

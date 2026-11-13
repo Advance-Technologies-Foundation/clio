@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-96034-send-chat-message-element.md](../prd/spec-eng-96034-send-chat-message-element.md) - R1, R3, R5
 **ADR**: [adr-eng-96034-send-chat-message-element.md](../adr/adr-eng-96034-send-chat-message-element.md) - D1, D4, D6
 **Test plan**: [tp-eng-96034-send-chat-message-element.md](../test-plans/tp-eng-96034-send-chat-message-element.md)
-**Status**: in-progress (moves with story 1)
+**Status**: review (moves with story 1)
 **Repo**: the same three PRs as story 1
 **Depends on**: [story 1](story-eng-96034-send-chat-message-element-1.md)
 
@@ -42,4 +42,4 @@ lookup value the designer card shows empty
 
 - [x] TC-U-11 implemented and green.
 - [x] TC-I-05 and TC-I-06 implemented.
-- [ ] TC-I-05 and TC-I-06 run green on a stand with OmnichannelMessaging and the chat cut installed.
+- [x] TC-I-05 and TC-I-06 run green on a stand with OmnichannelMessaging and the chat cut installed.

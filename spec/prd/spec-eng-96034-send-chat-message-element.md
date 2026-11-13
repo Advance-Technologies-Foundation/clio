@@ -36,7 +36,7 @@ for the reply (the created chat is already Completed); provider (WhatsApp approv
 | # | Requirement | Owner repo |
 |---|---|---|
 | R1 | A dedicated element type `sendChatMessage` with a `chatMessage` block `{from, to, messageSource, template, message, ignoreErrors, columnValues}` on create, `addElement` and `setElement` (Q4). | package (+ clio key set) |
-| R2 | `from` is the chat channel and `to` ONE contact, each in the shared value-source shape (a constant, a process parameter, an element output with an optional column, a formula). A list in `to` is refused with the one-contact hint (Q4) - by clio, because the server's serializer fails the request before package code runs. | package + clio |
+| R2 | `from` is the chat channel and `to` ONE contact, each in the shared value-source shape (a constant, a process parameter, an element output with an optional column, a formula). A list in `to` is refused with the one-contact hint (Q4): the server binds it as an unknown `item` key and the package refuses it; clio refuses it first, before sending, and covers `from` too. | package + clio |
 | R3 | `template` takes only a message template of type "Chat template" (by name, id or macro); a provider template is refused with "pick it in the designer" (Q2). `message` is plain text; a formula goes through `mappings` on `Message`. | package |
 | R4 | A generic `userTask` naming `SendChatMessageUserTask` is refused on create, pointing to `type: "sendChatMessage"` (Q1). | package (+ clio wording) |
 | R5 | `describe-business-process` reports the block in its write shape, so it replays unchanged; `templateName`, `outputs` (`SendStatus`, `SendStatusDetails`, always listed) and `issues` are describe-only; `ignoreErrors` is always stated. | package + clio DTO |

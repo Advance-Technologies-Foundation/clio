@@ -909,7 +909,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 	[TestCase("to", """[ { "processParameter": "ContactA" }, { "processParameter": "ContactB" } ]""", "sends to ONE contact")]
 	[TestCase("from", """[ { "value": "Support Telegram" } ]""", "sends from ONE channel")]
-	[Description("A list in chatMessage.to or chatMessage.from is refused before sending with the one-value hint: the server's serializer cannot read it and fails the whole request before the package's own refusal runs, so only clio can say that the element sends to one contact (and how to reach several) from one channel.")]
+	[Description("A list in chatMessage.to or chatMessage.from is refused before sending with the one-value hint, naming its path: the element sends to one contact (and the refusal says how to reach several) from one channel. The server would bind the list as an unknown key and refuse it too; clio says so first and covers from as well.")]
 	public void Check_Should_RefuseAListInAChatMessageValueSource_WithTheOneValueHint(string member, string list,
 		string hint) {
 		// Arrange
@@ -922,8 +922,8 @@ public sealed class ProcessBlockKeyCheckTests {
 
 		// Assert
 		create.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
-		create.Error.Should().Contain($"'chatMessage.{member}' is a list, which the server cannot read",
-			because: "the refusal names the member and why it cannot be sent");
+		create.Error.Should().Contain($"'chatMessage.{member}' is a list, but it takes ONE value-source object",
+			because: "the refusal names the member and the one shape it takes");
 		create.Error.Should().Contain(hint, because: "the refusal says the element takes one value");
 		modify.Error.Should().Contain($"'elementUpdate.chatMessage.{member}' is a list",
 			because: "a setElement is checked the same way");

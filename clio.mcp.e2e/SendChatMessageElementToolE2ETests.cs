@@ -75,7 +75,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	#region Methods: Tests - create and describe
 
 	[Test]
-	[Description("TC-I-01: a create builds a Send chat message element in template mode - a constant active channel, the contact from a process parameter, a chat template by name, ignoreErrors on - and describe reads the block back in its write shape: from as the channel id, to as the process parameter, messageSource template, the template with its name, ignoreErrors true, no message, both outputs listed. Re-applying the described block through setElement changes nothing.")]
+	[Description("TC-I-01: a create builds a Send chat message element in template mode - a constant active channel, the contact from a process parameter, a chat template by name, ignoreErrors on, and column values on the created chat (a constant text column and a lookup column from a process parameter) - and describe reads the block back in its write shape: from as the channel id, to as the process parameter, messageSource template, the template with its name, ignoreErrors true, no message, both outputs listed, both column values. Re-applying the described block through setElement changes nothing.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process builds a template-mode chat element and describe reads it back re-appliably")]
 	public async Task CreateBusinessProcess_Should_BuildATemplateModeChatElement_AndDescribeItBackReappliably() {
@@ -86,9 +86,11 @@ public sealed class SendChatMessageElementToolE2ETests {
 		List<string> created = [];
 		try {
 			string processName = NewProcessName("Template");
-			string descriptor = LinearDescriptor(processName, ContactParameterJson, ChatElementJson("Chat1", $$"""
+			string descriptor = LinearDescriptor(processName, ContactAndLanguageParametersJson, ChatElementJson("Chat1", $$"""
 				{ "from": { "value": "{{channelId}}" }, "to": { "processParameter": "ContactId" },
-				  "messageSource": "template", "template": {{JsonSerializer.Serialize(template)}}, "ignoreErrors": true }
+				  "messageSource": "template", "template": {{JsonSerializer.Serialize(template)}}, "ignoreErrors": true,
+				  "columnValues": [ { "column": "Notes", "value": "Clio e2e note" },
+				                    { "column": "Language", "processParameter": "ChatLanguageId" } ] }
 				"""), "[]");
 
 			// Act
@@ -109,6 +111,9 @@ public sealed class SendChatMessageElementToolE2ETests {
 			block.ContainsKey("message").Should().BeFalse(because: "template mode reports no message");
 			(block["outputs"] as JsonArray ?? []).Select(output => output!.GetValue<string>()).Should()
 				.Contain(["SendStatus", "SendStatusDetails"], because: "both outputs are listed even when unmapped");
+			(block["columnValues"] as JsonArray ?? []).OfType<JsonObject>().Select(entry => Text(entry, "column")).Should()
+				.BeEquivalentTo(["Notes", "Language"],
+					because: "a constant text column and a lookup column bound to a process parameter read back");
 			CallToolResult replayed = await ModifyAsync(context, processName,
 				$$"""[ { "op": "setElement", "elementName": "Chat1", "elementUpdate": { "chatMessage": {{block.ToJsonString()}} } } ]""");
 			replayed.IsError.Should().NotBeTrue(because: "a described block re-applies through setElement");
@@ -420,6 +425,12 @@ public sealed class SendChatMessageElementToolE2ETests {
 		[ { "name": "ContactId", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" } ]
 		""";
 
+	// The contact parameter and a language parameter one of the created chat's column values is bound to.
+	private const string ContactAndLanguageParametersJson = """
+		[ { "name": "ContactId", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" },
+		  { "name": "ChatLanguageId", "type": "Lookup", "referenceSchema": "SysLanguage", "direction": "In" } ]
+		""";
+
 	// The run-time case: the contact parameter (left empty) and the parameter SendStatus is read into.
 	private const string RunParametersJson = """
 		[ { "name": "ContactId", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" },
@@ -483,6 +494,8 @@ public sealed class SendChatMessageElementToolE2ETests {
 			[new SelectQueryHelper.SelectQueryFilterDefinition("Name", ChatTaskName, SelectQueryHelper.TextDataValueType)],
 			rowCount: 1), $"the {ChatTaskName} schema row");
 		if (rows.GetArrayLength() == 0) {
+			// The caller's 'await using' never receives this context, so the session it started is disposed here.
+			await context.DisposeAsync();
 			Assert.Ignore($"{ChatTaskName} not found on '{context.EnvironmentName}': install OmnichannelMessaging to run "
 				+ $"the {Subject} cases.");
 		}

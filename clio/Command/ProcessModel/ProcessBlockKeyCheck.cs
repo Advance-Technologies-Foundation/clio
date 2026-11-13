@@ -599,9 +599,10 @@ internal static class ProcessBlockKeyCheck {
 		}
 
 		// chatMessage.from and chatMessage.to are ONE value-source object each on the server's contract. A list - the
-		// shape an agent reaches for to message several contacts - or a bare string is not a key the contract drops:
-		// the serializer fails to read the WHOLE request before the package's own refusal can run, so the reply could
-		// not say that the element sends to one contact. This check says it before anything is sent.
+		// shape an agent reaches for to message several contacts - is bound by the server as an unknown 'item' key of
+		// that object, which the package refuses (with its own one-contact hint for 'to'); a bare string the serializer
+		// cannot read at all, and the whole request fails. This check refuses both before anything is sent, names the
+		// path, and covers 'from' as well (owner decision Q4: an array is refused with a hint).
 		private void RefuseChatValueSourceShape(JsonObject chatMessage, string where, string blockPath) {
 			foreach (string member in new[] { "from", "to" }) {
 				JsonNode value;
@@ -617,10 +618,10 @@ internal static class ProcessBlockKeyCheck {
 				string example = $"\"{member}\": {{\"processParameter\": \"...\"}}";
 				RefuseShape(value is JsonArray
 					? member == "to"
-						? $"{where}: '{path}' is a list, which the server cannot read: a Send chat message element sends to "
+						? $"{where}: '{path}' is a list, but it takes ONE value-source object: a Send chat message element sends to "
 							+ $"ONE contact. Send one value source, for example {example}; to message several contacts, add "
 							+ "one element per contact or run the element in a multi-instance sub-process over the list."
-						: $"{where}: '{path}' is a list, which the server cannot read: a Send chat message element sends from "
+						: $"{where}: '{path}' is a list, but it takes ONE value-source object: a Send chat message element sends from "
 							+ $"ONE channel. Send one value source, for example {example}."
 					: $"{where}: '{path}' is {Echo(value)}, which the server cannot read: it takes "
 						+ $"ONE value-source object, for example \"{member}\": {{\"value\": {Echo(value)}}}.");

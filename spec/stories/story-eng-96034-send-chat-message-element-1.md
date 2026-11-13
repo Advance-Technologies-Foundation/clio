@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-96034-send-chat-message-element.md](../prd/spec-eng-96034-send-chat-message-element.md) - R1-R7, R9
 **ADR**: [adr-eng-96034-send-chat-message-element.md](../adr/adr-eng-96034-send-chat-message-element.md) - D1-D8
 **Test plan**: [tp-eng-96034-send-chat-message-element.md](../test-plans/tp-eng-96034-send-chat-message-element.md)
-**Status**: in-progress (moved to review when the clio feature PR leaves draft; done in the next clio PR that touches
+**Status**: review (the clio PR is open; done in the next clio PR that touches
 `spec/sprint-status.yaml` after the last merge, with only the really ticked boxes)
 **Repo**: crt-process-builder, then clio-knowledge, then clio (one PR each, titled `ENG-96034 Send chat message
 element`, branch `feature/ENG-96034-send-chat-message`). Stories 2 and 3 ship in the same three PRs.
@@ -51,7 +51,8 @@ the one the designer would have saved
 - [ ] Package PR merged with the chat cut; clio rebundled from it; floor raised.
 - [ ] clio-knowledge PR merged; `curated-knowledge-names.json` re-pinned to its generation.
 - [x] Unit tests TC-U-01 to TC-U-06 and TC-U-09 to TC-U-15 implemented and green.
-- [ ] TC-U-07, TC-U-08, TC-U-16 and TC-U-17 green on the rebundled archive.
+- [x] TC-U-07, TC-U-08, TC-U-16, TC-U-17 and TC-U-18 green on the rebundled archive.
 - [x] e2e TC-I-01 to TC-I-10 implemented (skip with a reason without OmnichannelMessaging, a channel or a chat template).
-- [ ] e2e run green on a stand with OmnichannelMessaging and the chat cut installed.
+- [ ] e2e run green on a stand with OmnichannelMessaging and the chat cut installed (TC-I-01 to TC-I-07, TC-I-09 and
+  TC-I-10 green; TC-I-08 waits for the designer fixture).
 - [ ] Q13 answered (what the process-designer lane stand carries).

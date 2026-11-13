@@ -1691,6 +1691,32 @@ public class BundledProcessBuilderPackageTests {
 		}
 	}
 
+
+	[Test]
+	[Description("clio checks the chatMessage block's keys before sending it and TYPES its describe block, and its create, modify and modify-as-new-version floors are a version number only: a later cut from a package tree that lacks the Send chat message sources would satisfy that number while dropping the block. This probes the archive for every chatMessage wire name clio sends or reads, each on its NAMED type.")]
+	public void BundledArchive_ShouldDeclareTheSendChatMessageWireNamesClioReads() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "ProcessElementDescriptor", "chatMessage").Should().BeTrue(
+			because: "create-business-process and addElement send the block on this member");
+		DeclaresMemberOn(archive, "ProcessElementUpdateDescriptor", "chatMessage").Should().BeTrue(
+			because: "setElement sends the block on this member; without it the server refuses or drops the update");
+		DeclaresMemberOn(archive, "DescribeProcessElement", "chatMessage").Should().BeTrue(
+			because: "DescribedElement.ChatMessage reads the block off this member");
+		foreach (string member in new[] {
+				"from", "to", "messageSource", "template", "message", "ignoreErrors", "columnValues" }) {
+			DeclaresMemberOn(archive, "SendChatMessageDescriptor", member).Should().BeTrue(
+				because: $"the chatMessage key set sends '{member}'");
+		}
+		foreach (string member in new[] {
+				"from", "to", "messageSource", "template", "templateName", "message", "ignoreErrors", "columnValues",
+				"outputs", "issues" }) {
+			DeclaresMemberOn(archive, "DescribeSendChatMessageInfo", member).Should().BeTrue(
+				because: $"DescribedChatMessage reads '{member}'");
+		}
+	}
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector

@@ -2792,8 +2792,8 @@ public sealed class DescribedWebServiceParameter {
 /// <summary>
 /// A Send chat message element read back in the <c>chatMessage</c> block vocabulary. Mirrors the server's
 /// <c>DescribeSendChatMessageInfo</c>. Every write member reads back in a form the write side accepts, so a described
-/// block replays unchanged - except a provider (WhatsApp) template id, which the write side refuses (leave
-/// <c>template</c> out to keep it); <see cref="TemplateName"/>, <see cref="Outputs"/> and <see cref="Issues"/> are
+/// block replays unchanged - a provider (WhatsApp) template id included, which re-applies as a no-op on setElement
+/// although a NEW one cannot be written; <see cref="TemplateName"/>, <see cref="Outputs"/> and <see cref="Issues"/> are
 /// describe-only.
 /// </summary>
 public sealed class DescribedChatMessage {
@@ -2816,7 +2816,8 @@ public sealed class DescribedChatMessage {
 
 	/// <summary>
 	/// The chat template as stored: the <c>[#Lookup.…#]</c> macro of a message template of type "Chat template". A
-	/// provider (WhatsApp) template picked in the designer is reported as its raw id; this tool cannot write one. Not
+	/// provider (WhatsApp) template picked in the designer is reported as its raw id; re-sent unchanged it is a no-op, but
+	/// this tool cannot write a new one. Not
 	/// reported when the message type is bound to a source other than a constant, because the mode is then decided at
 	/// run time.
 	/// </summary>

@@ -38,10 +38,11 @@ package reuses `FileProcessingValueSourceDescriptor` (and its describe twin with
 `columnValues` entries get their own label ("columnValues entry") over the same contract, so a refusal names the
 member the caller wrote. A constant `from`/`to` reads back as the record id with its name in `display`.
 
-**D3 - The one-contact hint is clio's (Q4).** A JSON list (or a bare string) in `chatMessage.from`/`to` makes the
-server's WCF serializer fail the whole request before any package code runs, so the package cannot say why. clio's
-pre-send `ProcessBlockKeyCheck` refuses it with "sends to ONE contact" and how to reach several (one element each, or
-a multi-instance sub-process).
+**D3 - A list is refused on both sides; clio answers first (Q4).** The server binds a JSON list in
+`chatMessage.from`/`to` as an unknown `item` key of the value-source object, and the package refuses it (with its own
+one-contact hint for `to`); a bare string the serializer cannot read, so that request fails as a whole. clio's
+pre-send `ProcessBlockKeyCheck` refuses both before anything is sent, names the path, covers `from` too, and says how
+to reach several contacts (one element each, or a multi-instance sub-process).
 
 **D4 - Lookup constants are written as the designer writes them (R1 of the analysis).** `Channel`, `Contact` and
 `Template` constants are `Script` lookup macros, a system setting the typed macro; never the Send email
