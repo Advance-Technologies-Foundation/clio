@@ -122,7 +122,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		_applicationClient.Received(1).ExecutePostRequest(
 			"odata/SysImageInTag",
 			Arg.Is<string>(body => body.Contains(ImageId.ToString())
-				&& body.Contains(SetBackgroundImageCommand.ShellBackgroundTagId.ToString())));
+				&& body.Contains(BrandingBackgroundService.ShellBackgroundTagId.ToString())));
 		_sysSettingsManager.Received(1).UpdateSysSetting(
 			SetBackgroundImageCommand.BackgroundConfigCode,
 			Arg.Is<object>(value => value.ToString().Contains(ImageId.ToString())
@@ -307,7 +307,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 				Arg.Is<string>(url => url.StartsWith("odata/SysImageTag?")))
 			.Returns($"{{\"value\":[{{\"Id\":\"{CustomTagId}\"}}]}}");
 		_applicationClient.ExecutePostRequest("odata/SysImageInTag",
-				Arg.Is<string>(body => body.Contains(SetBackgroundImageCommand.ShellBackgroundTagId.ToString())))
+				Arg.Is<string>(body => body.Contains(BrandingBackgroundService.ShellBackgroundTagId.ToString())))
 			.Returns("{\"error\":{\"message\":\"FK violation\"}}");
 		_applicationClient.ExecutePostRequest("odata/SysImageInTag",
 				Arg.Is<string>(body => body.Contains(CustomTagId.ToString())))
@@ -406,7 +406,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		// Assert
 		exitCode.Should().Be(0, because: "the background was applied and the feature was turned off");
 		_featureState.Received(1).SetFeatureState(
-			SetBackgroundImageCommand.PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, false);
+			BrandingBackgroundService.PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, false);
 	}
 
 	[Test, Category("Unit")]
@@ -445,7 +445,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		// Assert
 		exitCode.Should().Be(0, because: "the background is applied and cannot be cleanly rolled back, so a failed feature toggle is only a warning");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message.Contains(SetBackgroundImageCommand.PanelIconBackgroundFeatureCode)));
+			message.Contains(BrandingBackgroundService.PanelIconBackgroundFeatureCode)));
 	}
 
 	[Test, Category("Unit")]
@@ -465,7 +465,7 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		SetBackgroundResult result = _command.SetBackground(options);
 
 		// Assert
-		result.Warnings.Should().Contain(warning => warning.Contains(SetBackgroundImageCommand.PanelIconBackgroundFeatureCode),
+		result.Warnings.Should().Contain(warning => warning.Contains(BrandingBackgroundService.PanelIconBackgroundFeatureCode),
 			because: "this caveat used to be logged straight out, so an MCP caller was told the background was applied with no hint that the panel can still hide it — the result is the only channel both surfaces read");
 	}
 
@@ -924,6 +924,30 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		result.Success.Should().BeFalse(because: "part of the delivery did not land");
 		result.Bound.Should().Contain("image",
 			because: "an empty Bound must mean the package carries nothing from this run, so a failure that did bind must say so");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Reports a binding request that times out as a failed binding that names the applied image and what is already bound, instead of letting the timeout escape the command.")]
+	public void SetBackground_ShouldReportTheBoundParts_WhenABindingRequestTimesOut() {
+		// Arrange
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_sysSettingsManager.UpdateSysSetting(SetBackgroundImageCommand.BackgroundConfigCode, Arg.Any<object>())
+			.Returns(true);
+		_packageDataBinder.BindFeatureOffState(Arg.Any<string>())
+			.Throws(new AggregateException("The request timed out", new System.Threading.Tasks.TaskCanceledException()));
+		SetBackgroundImageOptions options = new() { ImageId = ImageId.ToString() };
+
+		// Act
+		SetBackgroundResult result = _command.SetBackground(options);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "part of the delivery did not land");
+		result.Package.Should().Be(TestPackageName, because: "the parts that landed are in this package");
+		result.Error.Should().Contain(ImageId.ToString()).And.Contain("The request timed out",
+			because: "the background is applied, so a timed-out binding must say which image and why");
+		result.Bound.Should().Contain(["image", "gallery-membership", "background-config"],
+			because: "the parts bound before the timeout stay in the package");
 	}
 
 	[Test, Category("Unit")]

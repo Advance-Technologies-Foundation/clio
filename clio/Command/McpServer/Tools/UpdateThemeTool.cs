@@ -12,7 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// MCP tool that overwrites an existing custom Creatio theme on a target environment via the native
-/// <c>ThemeService</c> (a full overwrite by theme id).
+/// <c>ThemeService</c> (a full overwrite by theme id), or changes only its background and keeps the omitted fields.
 /// </summary>
 public class UpdateThemeTool(
 	UpdateThemeCommand command,
@@ -26,10 +26,16 @@ public class UpdateThemeTool(
 			["cssContent"] = "css-content",
 			["css_content"] = "css-content",
 			["cssClassName"] = "css-class-name",
-			["css_class_name"] = "css-class-name"
+			["css_class_name"] = "css-class-name",
+			["backgroundImageId"] = "background-image-id",
+			["background_image_id"] = "background-image-id",
+			["backgroundColor"] = "background-color",
+			["background_color"] = "background-color",
+			["keepIconBackground"] = "keep-icon-background",
+			["keep_icon_background"] = "keep-icon-background"
 		};
 
-	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content.</summary>
+	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content, or changes its background.</summary>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -38,17 +44,28 @@ public class UpdateThemeTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
-	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
-		"(full overwrite by id; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
+	 Description("Update a custom Creatio theme or its background on a registered environment via the native ThemeService " +
+		"(full overwrite by id without a background argument; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
 		" or later on the target environment. Only inline CSS content is accepted. " +
+		"A background argument is at most one of background-image-id (an image from upload-image) or background-color; " +
+		"null for either removes the theme's own background; a null next to a value in the other argument, or in " +
+		"both, is ignored. It needs Creatio " +
+		ThemeServiceRequirement.BackgroundMinVersion + " or later, " +
+		"checked before any write. Without one, caption, css-class-name and css-content are all required; with one, " +
+		"they are optional and the omitted ones are kept. An image or a color turns the environment-wide " +
+		"UsePanelIconBackground feature off for All employees unless keep-icon-background is true, and an image joins " +
+		"the shell background gallery before the update. The background is bound into the theme's package: an image " +
+		"with its gallery membership, and the UsePanelIconBackground off state for an image or a color; problems " +
+		"after the write come back as warnings in the log. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult UpdateTheme(
-		[Description("Parameters: environment-name (required), id (required), caption (required), " +
-			"css-class-name (required), css-content (required).")]
+		[Description("Parameters: environment-name (required), id (required), caption, css-class-name, css-content, " +
+			"background-image-id, background-color, keep-icon-background.")]
 		[Required] UpdateThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, id, caption, css-class-name, css-content.");
+			"Valid: environment-name, id, caption, css-class-name, css-content, background-image-id, " +
+			"background-color, keep-icon-background.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return CommandExecutionResult.FromValidationError(aliasError);
 		}
@@ -58,13 +75,16 @@ public class UpdateThemeTool(
 		if (string.IsNullOrWhiteSpace(args.Id)) {
 			return CommandExecutionResult.FromValidationError("id is required and cannot be empty.");
 		}
-		if (string.IsNullOrWhiteSpace(args.Caption)) {
+		(string? backgroundImageId, string? backgroundColor) =
+			IgnoreUnusedRemovals(args.BackgroundImageId, args.BackgroundColor);
+		bool hasBackground = ThemeBackground.IsGiven(backgroundImageId, backgroundColor);
+		if (!hasBackground && string.IsNullOrWhiteSpace(args.Caption)) {
 			return CommandExecutionResult.FromValidationError("caption is required and cannot be empty.");
 		}
-		if (string.IsNullOrWhiteSpace(args.CssClassName)) {
+		if (!hasBackground && string.IsNullOrWhiteSpace(args.CssClassName)) {
 			return CommandExecutionResult.FromValidationError("css-class-name is required and cannot be empty.");
 		}
-		if (string.IsNullOrWhiteSpace(args.CssContent)) {
+		if (!hasBackground && string.IsNullOrWhiteSpace(args.CssContent)) {
 			return CommandExecutionResult.FromValidationError("css-content is required and cannot be empty.");
 		}
 		UpdateThemeOptions options = new() {
@@ -72,9 +92,31 @@ public class UpdateThemeTool(
 			Id = args.Id,
 			Caption = args.Caption,
 			CssClassName = args.CssClassName,
-			CssContent = args.CssContent
+			CssContent = args.CssContent,
+			BackgroundImageId = backgroundImageId,
+			BackgroundColor = backgroundColor,
+			KeepIconBackground = args.KeepIconBackground ?? false
 		};
 		return InternalExecute<UpdateThemeCommand>(options);
+	}
+
+	private static (string? ImageId, string? Color) IgnoreUnusedRemovals(string? imageId, string? color) {
+		bool imageIdRemoves = IsRemoval(imageId);
+		bool colorRemoves = IsRemoval(color);
+		if (imageIdRemoves && colorRemoves) {
+			return (null, null);
+		}
+		if (imageIdRemoves && !string.IsNullOrWhiteSpace(color)) {
+			return (null, color);
+		}
+		if (colorRemoves && !string.IsNullOrWhiteSpace(imageId)) {
+			return (imageId, null);
+		}
+		return (imageId, color);
+	}
+
+	private static bool IsRemoval(string? value) {
+		return string.Equals(value?.Trim(), ThemeBackground.RemovalValue, StringComparison.OrdinalIgnoreCase);
 	}
 }
 
@@ -94,19 +136,38 @@ public sealed record UpdateThemeArgs(
 
 	[property: JsonPropertyName("caption")]
 	[property: Description("Human-readable theme caption (max 250).")]
-	[property: Required]
 	string? Caption = null,
 
 	[property: JsonPropertyName("css-class-name")]
 	[property: Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100).")]
-	[property: Required]
 	string? CssClassName = null,
 
 	[property: JsonPropertyName("css-content")]
 	[property: Description("Inline theme CSS content (max 1 MiB); must not be empty.")]
-	[property: Required]
-	string? CssContent = null
+	string? CssContent = null,
+
+	[property: JsonPropertyName("keep-icon-background")]
+	[property: Description("When true, leaves the UsePanelIconBackground feature as is, although the panel's icon background can hide the theme background.")]
+	bool? KeepIconBackground = null
 ) {
+	private readonly string? _backgroundImageId;
+
+	private readonly string? _backgroundColor;
+
+	[JsonPropertyName("background-image-id")]
+	[Description("Id of an image uploaded with upload-image, set as the theme background; null removes the theme's own background, so its users see the site background again.")]
+	public string? BackgroundImageId {
+		get => _backgroundImageId;
+		init => _backgroundImageId = value ?? ThemeBackground.RemovalValue;
+	}
+
+	[JsonPropertyName("background-color")]
+	[Description("Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA; null removes the theme's own background, so its users see the site background again.")]
+	public string? BackgroundColor {
+		get => _backgroundColor;
+		init => _backgroundColor = value ?? ThemeBackground.RemovalValue;
+	}
+
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement>? ExtensionData { get; init; }

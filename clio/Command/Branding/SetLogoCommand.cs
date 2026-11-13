@@ -322,11 +322,7 @@ public class SetLogoCommand : RemoteCommand<SetLogoOptions> {
 			package = _packageDataBinder.UsePackage(packageName);
 			var codesToBind = appliedImages.Select(image => image.Code).Concat(companionCodes);
 			foreach (var code in codesToBind) {
-				var outcome = _packageDataBinder.BindSysSettingsValue(code);
-				warnings.AddRange(outcome.Warnings);
-				if (outcome.Bound) {
-					boundCodes.Add(code);
-				}
+				_packageDataBinder.BindSysSettingsValue(code).RecordInto(code, boundCodes, warnings);
 			}
 			return new PackageDelivery(package, boundCodes, warnings, null);
 		} catch (Exception exception) {

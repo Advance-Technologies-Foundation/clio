@@ -14,6 +14,7 @@ and `adr-theming-agent-advisor.md`. It is the single design-rationale document f
 | Native build engine | ENG-90636 (continuation) | **Live** — `build-theme`; `[FeatureToggle("theming")]` removed at go-live (2026-07-08), colour-math parity gate verified |
 | Agent advisor | theming-agent | **Live** — renamed `theme-color-advisor` → `advise-theme-palette`; reachable (toggle removed at go-live); advisor story still in progress |
 | Area E — read theme content | ENG-93991 | **In progress** — `get-theme` CLI verb + MCP tool over the catalog + `cssFilePath` static-file fetch |
+| Area F — theme background | ENG-99181 | **In progress** — background group on `create-theme` / `update-theme` |
 
 **Go-live (2026-07-08).** `[FeatureToggle("theming")]` has been removed from the entire theming
 surface (verbs, MCP tools, resources, prompts); the feature is live on all four surfaces and the
@@ -136,7 +137,8 @@ or `[ResolvedDynamically]`.
   `--package-name` optional → resolved to UId via `PageSchemaMetadataHelper.QueryPackageUId`, and when
   omitted the `packageUId` key is dropped entirely so the server falls back to `CurrentPackageId`. No
   client-side "id exists" pre-check.
-- `update-theme` specifics: full overwrite — `--id`, `--caption`, `--css-class-name`, CSS all required;
+- `update-theme` specifics: full overwrite — `--id`, `--caption`, `--css-class-name`, CSS all required
+  (without a background argument; see F-D2);
   **no** `--package-name` (cannot re-home; `GetAvailableThemes` returns `cssFilePath` not `cssContent`,
   so read-modify-write is infeasible). No read-before-write.
   *(The "read-modify-write is infeasible" clause is superseded by Area E below (ENG-93991): `get-theme`
@@ -157,8 +159,10 @@ instance), taking **inline `cssContent` only** (no file variant). They fall thro
   `ListThemesCommand.TryGetAvailableThemes` pattern) and returns a **structured `CreateThemeResult
   { success, id, error? }`** so the agent learns the generated id. `update`/`delete` use the standard log
   envelope (`CommandExecutionResult`) — the id is caller-supplied.
-- Safety flags (`ReadOnly/Destructive/Idempotent`): create `false/false/false`; update `false/false/true`;
-  delete `false/**true**/false`. `OpenWorld` was `false` on all three; _amended (ENG-93989)_ —
+- Safety flags (`ReadOnly/Destructive/Idempotent`): create `false/**true**/false` (a background turns the
+  environment-wide `UsePanelIconBackground` feature off, F-D4); update `false/**true**/true` (a full overwrite
+  replaces the stored content); delete `false/**true**/false`.
+  `OpenWorld` was `false` on all three; _amended (ENG-93989)_ —
   `create-theme` is `OpenWorld=true` because its brand mode reaches Google Fonts through the shared build
   engine (see the amendment below); `update`/`delete` stay `false`. Auto-discovered via
   `McpFeatureToggleFilter.RegisterEnabledPrimitives`.
@@ -456,6 +460,21 @@ so `[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]` (10.0.0) appli
 added to the uniform-floor `ThemingVersionFloorContractE2ETests` gate. Long-tail on the MCP surface (no
 `McpCoreToolProfile` membership), no compatibility-catalog entry (new tool, not a rename).
 
+### Area F — Theme background (ENG-99181, added 2026-11-05)
+
+A theme can carry its own background (core merge `07c5e28f924`): `{ mode: Image, imageId }` or
+`{ mode: Color, color }`. In `UpdateTheme`, null content fields keep their values, `background: null` keeps the
+stored background, and `{}` removes it.
+
+| # | Decision |
+| --- | --- |
+| F-D1 | `get-theme` and `list-themes` return `background`, absent when the theme has none. |
+| F-D2 | The theme tools write and bind the background. `create-theme` and `update-theme` take at most one of `background-image-id` and `background-color` and send it in the same ThemeService call. In `update-theme`, `null` for either argument removes the theme's own background and is sent as `{}`; over MCP a JSON `null` binds to the same value, and an absent argument leaves the background alone. Because clients that serialize every optional field send a `null` they do not mean, `update-theme` over MCP ignores a `null` next to a value in the other argument and a `null` in both; a removal is a `null` in exactly one argument with the other left out. `create-theme` refuses `null`: a new theme has no background to remove. An image's `SysImage` row and its gallery membership are bound into the theme's package under `ThemeBackground_<theme id N>`, with the membership rules of `set-background-image`: none without the image row, none for a customized gallery tag id; `update-theme` reads that package from the catalog's `cssFilePath` for every background it sets, a color included, because the off state of F-D4 is bound into it too. Removing the background or switching it to a color leaves those bindings in the package and the image in the gallery: the theme no longer references the image, so the delivered rows are unused, and a later image for the same theme replaces each folder's single row. With a background argument, the omitted content fields of `update-theme` are kept. |
+| F-D3 | No upload in the theme tools: the image comes from `upload-image`. Before the theme write, the image joins the shell background gallery, as in `set-background-image`: the gallery is the one list of background images, a theme image is one of them, and a no-code theme page is expected to pick from the same gallery. A `background-image-id` with no `SysImage` row, or an image the gallery does not take, is refused before the theme write, and so is an image for a theme whose package is locked, because ThemeService cannot write a theme into a locked package; when the theme write then fails, the image stays in the gallery. |
+| F-D4 | After a successful write that sets an image or a color, `UsePanelIconBackground` is turned off for All employees, as `set-background-image` does, unless `keep-icon-background` is set. A failure of that step or of the binding is a warning. The theme tools and `set-background-image` share the gallery step of F-D3, this step and the package binding through `IBrandingBackgroundService`. As in `set-background-image`, the off state is bound into the theme's package with every background it sets, an image or a color, so an installed theme shows its background the way it does where it was made; the delivery refuses a state that is not off, which `keep-icon-background` leaves. |
+| F-D5 | `set-background-image` stays the site-only tool, unchanged. The `create-theme` result keeps `{ success, id, warnings?, error? }` and adds `background-image-package?` and `panel-icon-background?`, and `update-theme` keeps its command execution envelope with the report in the log. |
+| F-D6 | Floor `10.2.96`, a property-level `[RequiresCreatioVersion]` on `HasBackgroundArgument`, checked before any write: an older ThemeService drops an unknown `background` and still reports success. A `null` removal is a background argument too. |
+
 ---
 
 ## Rejected / superseded alternatives
@@ -509,6 +528,15 @@ calibration at hex boundaries (banker's rounding / last-ULP) — port operator-f
 
 **Granular per-function advisor tools / batch planner (rejected).** Round-trip cost / intake inversion
 (D-D1) — one fat verdict-returning tool instead.
+
+**Separate tools for a theme background (rejected).** `set-background-image --theme`, `set-background-color` and
+a tool that removes a theme background would keep the background off the theme tools. Rejected for F-D2: the platform stores the
+background in the theme, so the theme write carries it in one call.
+
+**A separate removal flag on `update-theme` (rejected).** A boolean flag beside `background-image-id` and
+`background-color` makes three mutually exclusive arguments for one background. `null` in either argument removes
+the background instead, so the at-most-one rule and the F-D6 floor cover a removal without a third argument, and the
+MCP schema still types both arguments as strings.
 
 ---
 

@@ -12,7 +12,10 @@ list-themes - list the custom Creatio themes available on an environment
 
 `list-themes` prints the custom themes available on the target environment,
 reading them from the native `ThemeService.svc/GetAvailableThemes` endpoint.
-For each theme it shows the `id`, `caption`, `cssClassName`, and `cssFilePath`.
+For each theme it shows the `id`, `caption`, `cssClassName`, `cssFilePath`, and
+`background`: the CLI column shows the mode with the image id or the color, and the MCP result carries
+`background: { mode, imageId?, color? }`. For a theme without a background the column is empty and the field is
+absent.
 
 The command requires Creatio 10.0.0 or later on the target environment and the
 `CanCustomizeBranding` license; a caller without the license receives an empty

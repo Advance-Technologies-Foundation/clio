@@ -1,7 +1,7 @@
 ---
 description: Creatio OData $filter must address a lookup column by its navigation path (Entity/Id, Tag/Id) while an insert payload uses the flat name (EntityId, TagId) - the flat name in a filter fails with "Column by path EntityId not found in schema"
 applies-to:
-  - clio/Command/Branding/SetBackgroundImageCommand.cs
+  - clio/Command/Branding/BrandingBackgroundService.cs
   - clio.tests/Command/SetBackgroundImageCommandTests.cs
 ticket: ENG-92981
 date: 2026-08-19

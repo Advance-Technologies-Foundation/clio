@@ -832,14 +832,15 @@ These tools manage custom themes — one part of branding a Creatio app: build a
   `warnings` on both the success and the failure paths. `error` is redacted before it leaves the tool;
   advisories travel verbatim, because each is static text or a locally computed value — a font advisory
   carries only a family name the build already validated against the font-family grammar.
+  An optional background (`background-image-id` or `background-color`, Creatio 10.2.96+) is written by the same call.
 - `update-theme`
-  Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
+  Full overwrite of an existing theme by id (caption, CSS class name, CSS content), or with a background argument (`background-image-id` or `background-color`, Creatio 10.2.96+) a change of the background that keeps the omitted fields; `null` for either removes the theme's own background.
 - `delete-theme`
   Delete a theme by id; deleting an unknown id is an error.
 - `list-themes`
-  List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
+  List custom themes (id, caption, CSS class name, CSS file path, background). An empty list means no themes or no `CanCustomizeBranding` license.
 - `get-theme`
-  Read an existing theme's content (`theme.css`) and metadata by id — the returned caption, CSS class name, and CSS content feed `update-theme` verbatim, closing the read → edit → update round-trip. `output-file` writes the CSS to a confined local path instead of returning it (which is why the tool is `ReadOnly=false` while staying non-destructive).
+  Read an existing theme's content (`theme.css`) and metadata by id, including its `background` — the returned caption, CSS class name, and CSS content feed `update-theme` verbatim, closing the read → edit → update round-trip. `output-file` writes the CSS to a confined local path instead of returning it (which is why the tool is `ReadOnly=false` while staying non-destructive).
 - `clear-themes-cache`
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`

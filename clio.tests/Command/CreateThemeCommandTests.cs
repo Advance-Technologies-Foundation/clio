@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using System;
+using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -12,7 +13,15 @@ using NUnit.Framework;
 [Property("Module", "Command")]
 public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 {
+	private const string ThemeId = "d53a816b-65ed-4b5b-ad3b-f739280add45";
+	private const string ImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
+
+	private const string GalleryMembershipId = "8b1c2d3e-4f50-4a6b-9c7d-e8f9a0b1c2d3";
+
 	private IApplicationClient _applicationClient;
+	private IFeatureStateService _featureState;
+	private IPackageDataBinder _binder;
+	private IPackageTargetResolver _packageTargetResolver;
 	private ILogger _logger;
 	private CreateThemeCommand _command;
 
@@ -31,7 +40,15 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
+		_featureState = Substitute.For<IFeatureStateService>();
+		_binder = Substitute.For<IPackageDataBinder>();
+		_packageTargetResolver = Substitute.For<IPackageTargetResolver>();
+		_packageTargetResolver.Resolve(default, default).ReturnsForAnyArgs(call =>
+			PackageTargetResolution.Resolved((string)call[0] ?? "Custom", Guid.NewGuid()));
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
+		containerBuilder.AddTransient(_ => _featureState);
+		containerBuilder.AddTransient(_ => _binder);
+		containerBuilder.AddTransient(_ => _packageTargetResolver);
 	}
 
 	private static CreateThemeOptions ValidOptions() => new() {
@@ -45,6 +62,16 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 				Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"success\":true}");
+	}
+
+	private void StubImageLookup(bool found) {
+		_applicationClient.ExecuteGetRequest(Arg.Is<string>(u => u.Contains($"odata/SysImage?$filter=Id eq {ImageId}")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(found ? $"{{\"value\":[{{\"Id\":\"{ImageId}\"}}]}}" : "{\"value\":[]}");
+		_applicationClient.ExecuteGetRequest(
+				Arg.Is<string>(u => u.Contains($"odata/SysImageInTag?$filter=Entity/Id eq {ImageId}")),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"value\":[{{\"Id\":\"{GalleryMembershipId}\"}}]}}");
 	}
 
 	[Test, Category("Unit")]
@@ -90,7 +117,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			.Returns(ci => { capturedBody = ci.ArgAt<string>(1); return "{\"success\":true}"; });
 
 		// Act
-		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _);
+		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _, out _);
 
 		// Assert
 		succeeded.Should().BeTrue(because: "a success=true response means the theme was created");
@@ -117,7 +144,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 		options.Id = "d53a816b-65ed-4b5b-ad3b-f739280add45";
 
 		// Act
-		bool succeeded = _command.TryCreateTheme(options, out string createdId, out _);
+		bool succeeded = _command.TryCreateTheme(options, out string createdId, out _, out _);
 
 		// Assert
 		succeeded.Should().BeTrue(because: "a valid explicit id is created successfully");
@@ -332,11 +359,155 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			.Returns(string.Empty);
 
 		// Act
-		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _);
+		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _, out _);
 
 		// Assert
 		succeeded.Should().BeTrue(because: "an empty body is the contract default for a successful create");
 		createdId.Should().NotBeNullOrWhiteSpace(
 			because: "the client-generated id is reported even when the server echoes an empty body");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Sends the background in the CreateTheme body, then turns the panel icon background off and binds the image and its gallery membership into the theme's package.")]
+	public void TryCreateTheme_ShouldWriteTheBackgroundThenTurnOffThePanelIconAndBindTheImage() {
+		// Arrange
+		string body = null;
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				body = call.ArgAt<string>(1);
+				return "{\"success\":true}";
+			});
+		_binder.UsePackage(default).ReturnsForAnyArgs("UsrThemes");
+		_binder.BindRow(default, default, default, default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
+		_binder.BindFeatureOffState(default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
+		StubImageLookup(found: true);
+		CreateThemeOptions options = ValidOptions();
+		options.Id = ThemeId;
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		_command.TryCreateTheme(options, out _, out _, out ThemeBackgroundOutcome backgroundOutcome);
+
+		// Assert
+		body.Should().Contain($"\"background\":{{\"mode\":\"Image\",\"imageId\":\"{ImageId}\"}}",
+			because: "the theme and its background are written by one CreateTheme call");
+		Received.InOrder(() => {
+			_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			_featureState.SetFeatureState("UsePanelIconBackground", SysAdminUnitIds.AllEmployees, false);
+			_binder.BindRow("SysImage", "ThemeBackground_d53a816b65ed4b5bad3bf739280add45",
+				Arg.Any<IReadOnlyList<string>>(), Guid.Parse(ImageId));
+			_binder.BindRow("SysImageInTag", "ThemeBackground_d53a816b65ed4b5bad3bf739280add45",
+				Arg.Any<IReadOnlyList<string>>(), Guid.Parse(GalleryMembershipId));
+			_binder.BindFeatureOffState("UsePanelIconBackground");
+		});
+		backgroundOutcome.Should().BeEquivalentTo(
+			new ThemeBackgroundOutcome([], "UsrThemes", ThemeBackgroundOutcome.PanelIconOff),
+			because: "every step after the theme write succeeded, so the outcome names the package and the off state");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Writes nothing for an image the environment does not have: no CreateTheme call, no panel icon change, no package binding.")]
+	public void TryCreateTheme_ShouldWriteNothing_WhenTheImageIsMissing() {
+		// Arrange
+		StubImageLookup(found: false);
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out _, out _);
+
+		// Assert
+		created.Should().BeFalse(because: "a background must name an uploaded image");
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_featureState.ReceivedCalls().Should().BeEmpty(because: "a refused image changes no feature");
+		_binder.ReceivedCalls().Should().BeEmpty(because: "a refused image binds nothing");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Leaves the background gallery alone and writes no theme when the package the theme would land in is locked: the environment's current package when --package-name is omitted.")]
+	public void TryCreateTheme_ShouldNotTouchTheGallery_WhenTheThemePackageIsLocked() {
+		// Arrange
+		_packageTargetResolver.Resolve(null, true).Returns(PackageTargetResolution.Locked("UsrLocked",
+			"The environment's CurrentPackageId system setting points at package 'UsrLocked', which is locked."));
+		StubImageLookup(found: true);
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out string errorMessage, out _);
+
+		// Assert
+		created.Should().BeFalse(because: "a locked package refuses the theme write");
+		errorMessage.Should().Be("The theme's package 'UsrLocked' is locked. The theme was not written.",
+			because: "the refusal names the locked package and that nothing was written, and no unlock advice");
+		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Is<string>(u => u.Contains("odata/SysImage")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Leaves the background gallery alone when --package-name does not resolve, because the theme is not written.")]
+	public void TryCreateTheme_ShouldNotTouchTheGallery_WhenThePackageNameIsUnknown() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")), Arg.Any<string>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+		StubImageLookup(found: true);
+		CreateThemeOptions options = ValidOptions();
+		options.PackageName = "NoSuchPackage";
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out _, out _);
+
+		// Assert
+		created.Should().BeFalse(because: "an unresolvable --package-name fails the command");
+		_applicationClient.DidNotReceive().ExecuteGetRequest(Arg.Is<string>(u => u.Contains("odata/SysImage")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("odata/SysImageInTag")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test, Category("Unit")]
+	[Description("Stops after a CreateTheme that does not confirm success, so neither the panel icon feature nor the package changes.")]
+	public void TryCreateTheme_ShouldChangeNothingElse_WhenTheCreateFails() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"id already exists\"}}");
+		StubImageLookup(found: true);
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = ImageId;
+
+		// Act
+		bool created = _command.TryCreateTheme(options, out _, out _, out _);
+
+		// Assert
+		created.Should().BeFalse(because: "ThemeService refused the theme");
+		_featureState.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created gets no follow-ups");
+		_binder.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created has no package to bind into");
+	}
+
+	[TestCase("null", null, "background-image-id null is not accepted: a new theme has no background to remove.")]
+	[TestCase(null, "null", "background-color null is not accepted: a new theme has no background to remove.")]
+	[Category("Unit")]
+	[Description("Refuses null in a background argument before any HTTP call, because a new theme has no background to remove.")]
+	public void TryCreateTheme_ShouldRefuseNull_WhenGivenAsABackgroundArgument(string imageId, string color,
+		string expectedError) {
+		// Arrange
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = imageId;
+		options.BackgroundColor = color;
+
+		// Act
+		bool succeeded = _command.TryCreateTheme(options, out _, out string errorMessage, out _);
+
+		// Assert
+		succeeded.Should().BeFalse(because: "create-theme has no background to remove");
+		errorMessage.Should().Be(expectedError, because: "the caller must learn why null is refused");
+		_applicationClient.ReceivedCalls().Should().BeEmpty(because: "a refused argument must stop the command before any request");
 	}
 }
