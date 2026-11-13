@@ -300,6 +300,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
 			["uninstall-identity"] = PassthroughClassification.NotApplicable, // BaseTool with per-environment command resolver.
 			["describe-business-process"] = PassthroughClassification.NotApplicable,
+			["describe-dynamic-case"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as create-dynamic-case
 			["describe-web-service"] = PassthroughClassification.NotApplicable,
 			["list-web-services"] = PassthroughClassification.NotApplicable,
 			["modify-web-service"] = PassthroughClassification.NotApplicable,
@@ -384,6 +385,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-user-tasks"] = PassthroughClassification.NotApplicable,
 			["modify-business-process"] = PassthroughClassification.NotApplicable,
 			["modify-business-process-as-new-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
+			["modify-dynamic-case"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as create-dynamic-case
 			["modify-entity-schema-column"] = PassthroughClassification.NotApplicable,
 			["modify-user-task-parameters"] = PassthroughClassification.NotApplicable,
 			["new-integration-test-project"] = PassthroughClassification.NotApplicable,

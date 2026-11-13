@@ -73,6 +73,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"dataforge-get-table-columns",
 		"dataforge-status",
 		"describe-business-process",
+		// Reads the case through ProcessDesignService.DescribeCase, which changes nothing.
+		"describe-dynamic-case",
 		"describe-environment",
 		// Reads one web service through the designer read; every credential value is masked before it is returned.
 		"describe-web-service",

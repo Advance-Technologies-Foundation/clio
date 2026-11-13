@@ -143,6 +143,14 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-105556 (create-dynamic-case, one more line) measured 18767 (79 over). As the note above asks, the legend
 	// paid for it instead of the ceiling: its last sentence, which repeated get-tool-contract's own description,
 	// is gone.
+	// ENG-106378 (describe-dynamic-case and modify-dynamic-case, two more lines) measured 18826 (138 over). Other
+	// long-tail tools' purpose lines paid for them, not the ceiling: first sentences that the 48-character cut
+	// truncated were shortened to fit it, their qualifier ("on a registered environment", the designer service)
+	// left to the environment-name argument or moved to the next sentence - list-themes, clear-themes-cache,
+	// delete-theme, create-workspace, create-package, generate-process-model, create-schema,
+	// create-client-unit-schema, update-schema, update-sql-schema, remove-package-dependency, unlock-for-hotfix,
+	// install-sql-schema, delete-app and enable-knowledge-source. Measured 18686, 2 bytes under this ceiling; the
+	// same cut kept the object index above at 50172, under its 50432 without a re-pin.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
