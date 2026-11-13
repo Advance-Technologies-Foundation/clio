@@ -226,7 +226,7 @@ public sealed class WebServiceToolsArgumentTests {
 		// Assert
 		description.Should().Contain("call read-wsdl first",
 			because: "agents on a stand registered a hand-built service from a WSDL when nothing pointed them at read-wsdl");
-		description.Should().Contain("never hand-build a service from a WSDL or infer a soap-action",
+		description.Should().Contain("never hand-build what read-wsdl returned or infer a soap-action",
 			because: "an inferred SOAP action is wrong for any operation that does not follow the pattern");
 	}
 

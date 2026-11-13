@@ -120,6 +120,11 @@ public sealed partial class WsdlReader(
 		"metadata", "metadata.google.internal", "metadata.azure.internal", "instance-data", "instance-data.ec2.internal"
 	};
 
+	// Cloud metadata addresses outside link-local: AWS over IPv6 and Alibaba Cloud.
+	private static readonly HashSet<System.Net.IPAddress> MetadataAddresses = [
+		System.Net.IPAddress.Parse("fd00:ec2::254"), System.Net.IPAddress.Parse("100.100.100.200")
+	];
+
 	/// <summary>
 	/// Whether a query parameter name carries a credential: the credential-name pattern of the web service tools, plus the
 	/// key names common hosting uses. One rule for a WSDL URL (refused) and a WSDL address (left out of base-uri).
@@ -303,7 +308,7 @@ public sealed partial class WsdlReader(
 	// to loopback on the stand, or a redirect, gets past this; only the platform's download endpoint could enforce it. It
 	// catches the literal forms an agent is most likely to be handed: localhost names, loopback, unspecified (0.0.0.0/8),
 	// link-local (169.254/16, fe80::/10) and those written as IPv4-mapped, IPv4-compatible or NAT64 IPv6, and the cloud
-	// metadata host names.
+	// metadata host names and addresses (fd00:ec2::254, 100.100.100.200).
 	private static bool IsStandLocal(Uri url) {
 		string host = url.DnsSafeHost.TrimEnd('.');
 		// The host is compared without a trailing dot: Uri.IsLoopback is false for "localhost.", the same host.
@@ -314,9 +319,12 @@ public sealed partial class WsdlReader(
 		if (!System.Net.IPAddress.TryParse(host, out System.Net.IPAddress address)) {
 			return false;
 		}
+		if (MetadataAddresses.Contains(address)) {
+			return true;
+		}
 		address = EmbeddedIPv4(address) ?? address;
 		byte[] bytes = address.GetAddressBytes();
-		return System.Net.IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal || address.Equals(System.Net.IPAddress.IPv6Any)
+		return MetadataAddresses.Contains(address) || System.Net.IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal || address.Equals(System.Net.IPAddress.IPv6Any)
 			|| (bytes.Length == 4 && (bytes[0] == 0 || bytes[0] == 127 || (bytes[0] == 169 && bytes[1] == 254)));
 	}
 
@@ -441,7 +449,7 @@ public sealed partial class WsdlReader(
 		if (unknown.Length > 0) {
 			throw new ArgumentException($"operations: {string.Join(", ", unknown.Select(WsdlParser.Shown).Take(20))} not found; "
 				+ "the operations: " + string.Join(", ", ports.SelectMany(p => p.Operations).Select(o => o.Caption).Distinct()
-					.Take(200)) + ".");
+					.Take(50).Select(WsdlParser.Shown)) + ".");
 		}
 		return ports.Select(p => p with { Operations = p.Operations.Where(o => wanted.Contains(o.Caption)).ToList() })
 			.Where(p => p.Operations.Count > 0).ToList();
@@ -451,8 +459,10 @@ public sealed partial class WsdlReader(
 		if (string.IsNullOrWhiteSpace(serviceCode)) {
 			return null;
 		}
-		WebServiceView service = designer.Describe(serviceCode.Trim(), false).Service
-			?? throw new ArgumentException($"service-code '{serviceCode}' could not be read.");
+		WebServiceToolResult described = designer.Describe(serviceCode.Trim(), false);
+		WebServiceView service = described.Service
+			?? throw new ArgumentException($"service-code '{WsdlParser.Shown(serviceCode)}' could not be read: "
+				+ WsdlParser.ShownUpTo(described.Error ?? "no reason given", 300));
 		bool soap = service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap11)
 			|| service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap12);
 		if (!soap) {

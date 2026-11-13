@@ -208,16 +208,12 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 		var files = new List<WsdlSourceFile>();
 		long total = 0;
 		foreach (DownloadedFile file in response.Files ?? []) {
-			int[] codes = file.Value ?? [];
-			total += codes.Length;
+			byte[] bytes = file.Value ?? [];
+			total += bytes.Length;
 			if (total > MaxDownloadedBytes) {
 				throw new InvalidOperationException(TooLargeDownload);
 			}
-			// Each value is a byte of the ASCII text; anything else is not what this endpoint sends.
-			files.Add(new WsdlSourceFile(file.Key, codes.Select(code => code is >= 0 and <= 255
-				? (byte)code
-				: throw new InvalidOperationException("The platform returned a WSDL file that is not text.")).ToArray(),
-				AsciiText: true));
+			files.Add(new WsdlSourceFile(file.Key, bytes, AsciiText: true));
 		}
 		return files.Count > 0
 			? files
@@ -227,7 +223,11 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 	/// <summary>The most a download may carry in all; the platform's own cap is 100 files of 10 MB.</summary>
 	internal const long MaxDownloadedBytes = 50L * 1024 * 1024;
 
-	/// <summary>The reply text that can hold <see cref="MaxDownloadedBytes"/>: each byte is up to three digits and a comma.</summary>
+	/// <summary>
+	/// The reply text that can hold <see cref="MaxDownloadedBytes"/> of text, each byte up to three digits and a comma. A
+	/// reply of one-digit values carries up to twice as many bytes in the same text; they are read straight into bytes
+	/// (not 4-byte integers), and a file past <see cref="MaxDownloadedBytes"/> is refused while it is read.
+	/// </summary>
 	internal const long MaxDownloadReplyCharacters = MaxDownloadedBytes * 4 + 1024 * 1024;
 
 	private const string TooLargeDownload = "The downloaded WSDL and its schemas are larger than 50 MB; download them "
@@ -270,7 +270,37 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 
 	private sealed class DownloadedFile {
 		[JsonPropertyName("Key")] public string Key { get; init; }
-		[JsonPropertyName("Value")] public int[] Value { get; init; }
+
+		[JsonPropertyName("Value")]
+		[JsonConverter(typeof(ByteValuesConverter))]
+		public byte[] Value { get; init; }
+	}
+
+	// The platform's array of byte values, read straight into bytes: each value is a byte of the ASCII text, anything else
+	// is not what this endpoint sends, and a file past MaxDownloadedBytes is refused before the rest of it is read.
+	private sealed class ByteValuesConverter : JsonConverter<byte[]> {
+		public override byte[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
+			if (reader.TokenType == JsonTokenType.Null) {
+				return null;
+			}
+			if (reader.TokenType != JsonTokenType.StartArray) {
+				throw new JsonException("A WSDL file is not an array of byte values.");
+			}
+			using var bytes = new System.IO.MemoryStream();
+			while (reader.Read() && reader.TokenType != JsonTokenType.EndArray) {
+				if (reader.TokenType != JsonTokenType.Number || !reader.TryGetInt32(out int value) || value is < 0 or > 255) {
+					throw new InvalidOperationException("The platform returned a WSDL file that is not text.");
+				}
+				if (bytes.Length >= MaxDownloadedBytes) {
+					throw new InvalidOperationException(TooLargeDownload);
+				}
+				bytes.WriteByte((byte)value);
+			}
+			return bytes.ToArray();
+		}
+
+		public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options) =>
+			throw new NotSupportedException();
 	}
 
 	private sealed class DownloadWsdlResponse : PlatformResponse {

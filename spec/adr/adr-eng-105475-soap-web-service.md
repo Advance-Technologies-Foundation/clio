@@ -122,7 +122,11 @@ clio adds no network reach of its own; only the URL the user gave is fetched (th
 message is returned redacted, without its stack trace and with a pointer to `wsdl-files`. Local files are read with DTD
 processing prohibited and no resolver, through one handle each so the size checked is the size read; a network path
 (`\\host`, `//host`), a directory, a device, a link and over 50 MB in all are refused, and over HTTP (`mcp-http`)
-`wsdl-files` is refused because the caller is not on that machine. A downloaded file is read as the ASCII text it is.
+`wsdl-files` is refused because the caller is not on that machine. A downloaded file is read as the ASCII text it is:
+its byte values are read straight into bytes, and a file past 50 MB is refused while it is read (a reply of one-digit
+values carries twice the bytes its text cap was sized for, and as 4-byte integers they took four times the memory).
+A drive letter mapped to a share, a directory link in a parent folder, or a file swapped after the check gets past the
+path checks; that is an accepted limit, since the user names the files.
 An import is found by its `schemaLocation`, by that location relative to the importing file, by its file name, or for a
 WCF location (`Service.svc?xsd=xsd0`) by the query value (`xsd0.xsd`); each file is merged once whatever the spelling.
 
@@ -131,7 +135,14 @@ nested deeper than 256 levels is refused before it is copied (copying recurses),
 message part are not read, type chains (`type=` on a type, `extension base=`) stop at a cycle or 32 steps, a parse
 reads at most 200,000 elements, and at most 100 warnings are listed. Names from the WSDL reach the agent in warnings,
 so operation, port and element names must be XML names (NCName, as WSDL 1.1 and XSD type them; anything else is
-skipped with a warning) and every WSDL value in a warning or error is flattened and cut to 100 characters.
+skipped with a warning) and every WSDL value in a warning or error is flattened by rune (so an invisible Unicode tag
+is caught too) and cut to 100 characters. A value that reaches the arguments the agent forwards is left out instead,
+with a warning, unless it is printable ASCII: a base URI register would refuse, or with a fragment
+(`#access_token=...`, checked before register's own error, which repeats the address), a namespace URI that is not
+printable ASCII, carries credentials or is over 2,048 characters (its elements keep the prefix, so register refuses
+them until the user gives the URI), and a soapAction that is not printable ASCII once trimmed or carries credentials (a
+soapAction is a URI). A service name that is not an XML name of at most 1,024 characters is replaced by the port name
+for the caption, since a sentence there would reach the arguments.
 
 The work is bounded by what is built, not only by what is read: an operation whose messages have no parts reads no
 element, so a WSDL repeating many of them over many ports escaped the element budget (the final review measured 4
@@ -157,7 +168,7 @@ loading and merging count too. Running read-wsdl in the MCP worker cohort, which
 left out: with `service-code` it reads the service through the schema designer, and the cohort keeps schema-designer
 reads host-resident, because a worker's separate Creatio session can read a schema that a host-resident write has just
 changed and get it stale. Moving read-wsdl means moving that read out of it first. A local path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as
-fully qualified and would open an SMB connection with the user's credentials. A `wsdl-url` naming a loopback, link-local or cloud metadata address (also in IPv4-mapped, IPv4-compatible or NAT64 form) is refused before the stand is asked to fetch it; the check is advisory, because the stand resolves the name and follows every `schemaLocation` itself, and only its download endpoint could enforce it.
+fully qualified and would open an SMB connection with the user's credentials. A `wsdl-url` naming a loopback, link-local or cloud metadata address (also in IPv4-mapped, IPv4-compatible or NAT64 form; also `fd00:ec2::254` and `100.100.100.200`) is refused before the stand is asked to fetch it; the check is advisory, because the stand resolves the name and follows every `schemaLocation` itself, and only its download endpoint could enforce it.
 
 The parser (`WsdlParser`) is a C# port of Studio's wizard parser (creatio-ui web-service-wizard:
 `SoapWebServiceBuilder`, `SoapWebServiceMethodBuilder`, `WsdlElement`, `XmlSchemaTypeUtils`, `WsdlMergeService`, the
@@ -212,10 +223,13 @@ and the words are joined. Operation `GetCustomerOrders` is `<prefix>GetCustomerO
 `<prefix>IntA`, `AddResult` is `<prefix>AddResult`, on every read. A parameter's name is the local names of its whole
 element path (`customer/name` → `<prefix>CustomerName`), not Studio's caption: the caption drops a first word that
 every top-level parameter shares, a wrapper element, so `tem:order/tem:id` would be a bare `<prefix>Id` and a code
-would change when a sibling is added. An array item's code starts with the array's path names (item `id` of array
-`orders` → `<prefix>OrdersId`; the items of `tem:msg/ns0:roles` → `<prefix>MsgRolesIdentifier`), so fields of different
-branches differ without a number, and a wrapper element or a SOAP header's root is part of every code under it
-(`<prefix>MsgOwner`, `<prefix>AuthHeaderUserName`). A letter outside Latin is dropped from its word (`Größe` → `Gre`);
+would change when a sibling is added. An array's code adds the local name of the element that repeats, its
+sequence element: sibling arrays that repeat directly inside one element share the path Studio gives them, so
+`order/lines*` and `order/notes*` are `<prefix>OrderLines` and `<prefix>OrderNotes`, not `<prefix>Order` and
+`<prefix>Order2` in WSDL order. An item's code starts with its array's (the items of `tem:msg/ns0:roles` repeating
+`RoleObject` → `<prefix>MsgRolesRoleObjectIdentifier`), so fields of different branches differ without a number, and a
+wrapper element or a SOAP header's root is part of every code under it (`<prefix>MsgOwner`,
+`<prefix>AuthHeaderUserName`). A letter outside Latin is dropped from its word (`Größe` → `Gre`);
 a name with no Latin letter or digit, such as an all-Cyrillic one, falls back to `Param` or `Method`, numbered in
 reading order as before (nothing is transliterated). A number from 2 is added
 only on a real collision, compared case-insensitively, with another operation or parameter of the same list or with a
@@ -236,8 +250,15 @@ element, the SOAP action) go into `path`, `message-element` and `soap-action`, n
 The target service is optional: `service-code` names an existing SOAP service the operations go into. An operation
 whose root element (local name) and SOAP action match one of its methods takes that method's code and is listed in
 `existing-methods` (the agent replaces it with `modify-web-service` `setMethod` and adds the rest with `addMethod`), and
-each of its parameters at the path of one of that method's parameters keeps that parameter's code, so `setMethod` keeps
-its UId (a Studio-made method's codes are not always the ones clio would generate);
+each of its parameters at the place of one of that method's parameters (its path, and for an array its sequence
+element) keeps that parameter's code, so `setMethod` keeps its UId (a Studio-made method's codes are not always the
+ones clio would generate). An array whose stored item element differs (Studio's default `item`, a bare name) is
+matched when it is the only array at its path; only SOAP body and soap-header parameters are matched, so an HTTP
+header, query or cookie parameter is never taken for a WSDL element. `setMethod` replaces the method, so what Studio set
+on the matched one is carried into the arguments: its timeout and authentication (`use-auth` false too, which register
+would otherwise take from the service), and each matched parameter's default (system setting, or a constant except on
+a soap header) and required flag; its parameters the WSDL lacks (an HTTP header added in Studio, an object whose
+fields were all left out) are named in a warning, or setMethod would remove them. A soapAction the arguments leave out is compared as left out, so such a method matches again;
 the namespaces start with that service's own prefixes, and a WSDL namespace it lacks gets a free `nsN` (the agent sends
 the list with `setNamespaces`). Without it, a notice says when `<prefix><ServiceName>` already exists. Rejected:
 Studio's GUID suffix (a re-import creates new methods instead of matching the old ones). Rejected on 2026-11-13:

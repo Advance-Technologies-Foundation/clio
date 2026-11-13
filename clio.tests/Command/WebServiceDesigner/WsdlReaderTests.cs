@@ -443,6 +443,8 @@ public sealed class WsdlReaderTests {
 	[TestCase("http://[64:ff9b::a9fe:a9fe]/latest/meta-data")]
 	[TestCase("http://[::ffff:169.254.169.254]/latest/meta-data")]
 	[TestCase("http://metadata.google.internal/computeMetadata/v1/")]
+	[TestCase("http://[fd00:ec2::254]/latest/meta-data")]
+	[TestCase("http://100.100.100.200/latest/meta-data")]
 	[Description("A loopback or link-local wsdl-url is refused before the stand is asked to download it, since the stand would read it on itself.")]
 	public void Read_Should_Refuse_A_Stand_Local_Url(string url) {
 		// Act
@@ -750,5 +752,19 @@ public sealed class WsdlReaderTests {
 		result.Notices.Should().BeNull(because: "no new service code is proposed, so none is checked");
 		_client.DidNotReceiveWithAnyArgs().IsSchemaNameUnique(default, default);
 		rest.Should().Throw<ArgumentException>(because: "WSDL operations go into a SOAP service").WithMessage("*REST*");
+	}
+
+	[Test]
+	[Description("A service-code that cannot be read is refused with the reason describe gave, so a typo and missing rights are told apart.")]
+	public void Read_Should_Give_The_Reason_A_Target_Service_Cannot_Be_Read() {
+		// Arrange
+		string path = GivenFixture("calculator.wsdl");
+		_designer.Describe("UsrNope", false).Returns(new WebServiceToolResult(false, Error: "Web service 'UsrNope' was not found."));
+
+		// Act
+		Action act = () => _sut.Read(Files(path) with { ServiceCode = "UsrNope" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the service cannot be read").WithMessage("*was not found*");
 	}
 }

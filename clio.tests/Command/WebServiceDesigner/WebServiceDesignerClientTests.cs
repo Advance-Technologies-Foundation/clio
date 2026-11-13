@@ -72,6 +72,20 @@ public sealed class WebServiceDesignerClientTests {
 	}
 
 	[Test]
+	[Description("A file value outside a byte is refused while the reply is read: the endpoint sends the bytes of ASCII text.")]
+	public void DownloadWsdl_Should_Refuse_A_Value_That_Is_Not_A_Byte() {
+		// Arrange
+		(WebServiceDesignerClient client, _) = DownloadClient(
+			"{\"success\":true,\"errorInfo\":null,\"files\":[{\"Key\":\"a.wsdl\",\"Value\":[60,256,62]}]}");
+
+		// Act
+		Action act = () => client.DownloadWsdl("http://x/a?wsdl");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a value past 255 is not a byte").WithMessage("*not text*");
+	}
+
+	[Test]
 	[Description("A failed download reports the platform's message, redacted, and never its stack trace.")]
 	public void DownloadWsdl_Should_Report_The_Platform_Error_Without_Its_Stack_Trace() {
 		// Arrange

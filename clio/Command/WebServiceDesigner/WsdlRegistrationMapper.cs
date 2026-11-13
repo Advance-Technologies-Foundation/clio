@@ -101,6 +101,12 @@ public static partial class WsdlRegistrationMapper {
 	/// <summary>The longest soapAction kept; a longer one is not an action, and it would only carry text to the agent.</summary>
 	internal const int MaxSoapActionLength = 2048;
 
+	/// <summary>The longest namespace URI the arguments carry; a longer one is left out with a warning.</summary>
+	internal const int MaxNamespaceUriLength = 2048;
+
+	/// <summary>The longest base URI the arguments carry; a longer one is left out with a warning.</summary>
+	internal const int MaxBaseUriLength = 2048;
+
 	[GeneratedRegex("[^A-Za-z0-9_]")]
 	private static partial Regex NonIdentifierCharacter();
 
@@ -147,8 +153,24 @@ public static partial class WsdlRegistrationMapper {
 			target is null ? null : existing);
 	}
 
+	// The soapAction the arguments carry, without the spaces around it register trims too: one that is not printable ASCII
+	// or carries credentials, or an overlong one, is left out (with a warning where the method is built).
+	private static string KeptSoapAction(string action) {
+		string trimmed = action?.Trim();
+		return string.IsNullOrEmpty(trimmed) || !IsPlainValue(trimmed, MaxSoapActionLength)
+			|| WebServiceDefinitionBuilder.HasUserInfo(trimmed)
+			? null
+			: trimmed;
+	}
+
+	// A value the arguments may carry as written: printable ASCII only (no spaces, control, format or invisible
+	// characters of any plane), and not overlong.
+	private static bool IsPlainValue(string value, int maxLength) =>
+		value.Length <= maxLength && value.All(c => c is > ' ' and < (char)0x7F);
+
 	// A WSDL operation is the same as an existing method when the root element (local name) and the SOAP action match:
-	// that method keeps its code, so a re-read gives setMethod input for it.
+	// that method keeps its code, so a re-read gives setMethod input for it. The action compared is the one the arguments
+	// carry, so a method registered from a read that left the action out matches again.
 	private static Dictionary<WsdlOperation, WebServiceMethodView> ReusedMethods(WsdlPort port, WsdlTargetService target) {
 		var result = new Dictionary<WsdlOperation, WebServiceMethodView>();
 		if (target is null) {
@@ -158,7 +180,8 @@ public static partial class WsdlRegistrationMapper {
 		foreach (WsdlOperation operation in port.Operations) {
 			WebServiceMethodView match = target.Methods.FirstOrDefault(m => !claimed.Contains(m.Code)
 				&& string.Equals(LocalName(m.MessageElement), operation.StudioMessageElement, StringComparison.Ordinal)
-				&& string.Equals(m.SoapAction ?? string.Empty, operation.SoapAction ?? string.Empty, StringComparison.Ordinal));
+				&& string.Equals(m.SoapAction?.Trim() ?? string.Empty, KeptSoapAction(operation.SoapAction) ?? string.Empty,
+					StringComparison.Ordinal));
 			if (match is not null) {
 				claimed.Add(match.Code);
 				result[operation] = match;
@@ -249,18 +272,21 @@ public static partial class WsdlRegistrationMapper {
 		/// <returns>The code taken.</returns>
 		public string Claim(string prefix, string tail, int maxLength = int.MaxValue) {
 			string code = Fit(prefix, tail, maxLength);
+			// Numbers are remembered per code, not per name: long names that end alike fit to one code, and each starting
+			// again at 2 probed every number already taken.
+			string key = code;
 			int index = 1;
 			if (_taken.Contains(code)) {
-				index = _next.GetValueOrDefault(tail, 2);
+				index = _next.GetValueOrDefault(key, 2);
 				code = Fit(prefix, tail + index, maxLength);
 				while (_taken.Contains(code)) {
 					index++;
 					code = Fit(prefix, tail + index, maxLength);
 				}
-				_next[tail] = index + 1;
+				_next[key] = index + 1;
 			}
 			_taken.Add(code);
-			_claimedAs[code] = (tail, index);
+			_claimedAs[code] = (key, index);
 			return code;
 		}
 
@@ -299,6 +325,8 @@ public static partial class WsdlRegistrationMapper {
 	private sealed class PortContext(WsdlPort port, string prefix, WsdlTargetService target, WarningLog warnings) {
 		private readonly Dictionary<string, string> _prefixRename = new(StringComparer.Ordinal);
 		private readonly HashSet<string> _unqualified = new(StringComparer.Ordinal);
+		// The parameters of the matched method the WSDL has, by reference, so the rest can be named.
+		private readonly HashSet<WebServiceParameterView> _matched = new(ReferenceEqualityComparer.Instance);
 		private readonly Dictionary<string, string> _prefixByUri = new(StringComparer.Ordinal);
 		private string _operation;
 
@@ -344,26 +372,47 @@ public static partial class WsdlRegistrationMapper {
 				prefixes.Add(nsPrefix);
 				_prefixRename[ns.Prefix] = nsPrefix;
 				_prefixByUri[ns.Uri] = nsPrefix;
-				result.Add(new WebServiceNamespaceArg(nsPrefix, ns.Uri));
-				if (ns.Uri.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) {
-					Warn($"Port '{port.Name}': the namespace URI '{Shown(ns.Uri)}' has spaces, which register-web-service "
-						+ "refuses; ask the API owner for the right URI.");
+				// A URI that is not printable ASCII, an overlong one or one with credentials is not a namespace the platform
+				// can declare, and it would carry WSDL text into the arguments the agent forwards. It is left out: the elements
+				// that use its prefix are then refused by register-web-service until the user gives the right URI.
+				if (!IsPlainValue(ns.Uri, MaxNamespaceUriLength) || WebServiceDefinitionBuilder.HasUserInfo(ns.Uri)) {
+					Warn($"Port '{port.Name}': the namespace URI '{Shown(ns.Uri)}' has spaces, control or non-ASCII "
+						+ $"characters or credentials, or is longer than {MaxNamespaceUriLength} characters; it was left out, so "
+						+ $"the elements with prefix '{nsPrefix}' cannot be registered. Ask the API owner for the right URI.");
+					continue;
 				}
+				result.Add(new WebServiceNamespaceArg(nsPrefix, ns.Uri));
 			}
 			return result;
 		}
 
-		/// <summary>The base URI as given; one register-web-service would refuse gets a warning, because only the user can replace it.</summary>
+		/// <summary>
+		/// The base URI, without credentials or a key. One register-web-service would refuse, or with spaces, control
+		/// characters or a fragment, is not returned at all: it could carry WSDL text or a token into the arguments the agent
+		/// forwards. A warning, without the fragment, asks for the real endpoint, because only the user can give it.
+		/// </summary>
 		public string CheckBaseUri() {
-			string baseUri = WithoutSecrets(port.BaseUri);
-			var errors = new WebServiceDefinitionBuilder.Errors();
-			WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors, soap: true);
-			if (errors.Count > 0) {
-				Warn($"Port '{port.Name}': its address '{Shown(WebServiceSchemaView.StripUserInfo(baseUri))}' cannot be "
-					+ "the base-uri (" + Shown(errors[0]) + "); ask the user for the real endpoint and set base-uri before "
-					+ "registering.");
+			string baseUri = WithoutSecrets(port.BaseUri?.Trim());
+			if (string.IsNullOrEmpty(baseUri)) {
+				return baseUri;
 			}
-			return baseUri;
+			// The fragment and the characters are checked first: register's own error repeats the address.
+			string reason = baseUri.Contains('#') ? "it has a fragment"
+				: !IsPlainValue(baseUri, MaxBaseUriLength)
+					? $"it has spaces, control or non-ASCII characters, or is longer than {MaxBaseUriLength} characters"
+				: null;
+			if (reason is null) {
+				var errors = new WebServiceDefinitionBuilder.Errors();
+				WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors, soap: true);
+				if (errors.Count == 0) {
+					return baseUri;
+				}
+				reason = Shown(errors[0]);
+			}
+			string shown = WebServiceSchemaView.StripUserInfo(baseUri.Split('#')[0]);
+			Warn($"Port '{port.Name}': its address '{Shown(shown)}' cannot be the base-uri ({reason}), so base-uri was left "
+				+ "out; ask the user for the real endpoint and set base-uri before registering.");
+			return null;
 		}
 
 		// The address without the user information of its authority (user:password@host), removed, not masked.
@@ -430,12 +479,21 @@ public static partial class WsdlRegistrationMapper {
 				return null;
 			}
 			string code = existing?.Code ?? UniqueCode(prefix, operation.Caption, "Method", methodCodes);
+			_matched.Clear();
 			List<WebServiceParameterArg> request = Parameters(operation.Request, true, string.Empty,
-				CodeSet(existing?.RequestParameters), CodesByPath(existing?.RequestParameters));
+				CodeSet(existing?.RequestParameters), new ExistingParameters(existing?.RequestParameters));
 			List<WebServiceParameterArg> response = Parameters(operation.Response, false, string.Empty,
-				CodeSet(existing?.ResponseParameters), CodesByPath(existing?.ResponseParameters));
+				CodeSet(existing?.ResponseParameters), new ExistingParameters(existing?.ResponseParameters));
+			if (existing is not null) {
+				WarnUnmatched(existing, code);
+			}
+			// setMethod replaces the method, so what was set on the matched one in Studio is carried over: its timeout and
+			// authentication here, each matched parameter's default and required flag in Parameter.
 			return new WebServiceMethodArg(code, HttpMethod: null, Uri: null,
 				Caption: operation.Caption,
+				TimeoutMs: existing?.TimeoutMs,
+				// False too: without it register takes the service's authentication for the method.
+				UseAuth: existing?.UseAuth,
 				RequestParameters: request.Count > 0 ? request : null,
 				ResponseParameters: response.Count > 0 ? response : null,
 				MessageElement: messageElement,
@@ -446,41 +504,79 @@ public static partial class WsdlRegistrationMapper {
 		// make register refuse the method, so such a value is dropped with a warning (register then names the missing
 		// action).
 		private string SoapAction(WsdlOperation operation) {
-			string action = operation.SoapAction;
-			if (string.IsNullOrEmpty(action)) {
+			if (string.IsNullOrWhiteSpace(operation.SoapAction)) {
 				return null;
 			}
-			if (action.Any(char.IsControl) || WebServiceDefinitionBuilder.HasUserInfo(action)) {
-				Warn($"Operation '{Shown(operation.Caption)}': its soapAction has a line break or credentials and was left "
-					+ "out; ask the API owner for the right value.");
-				return null;
-			}
-			if (action.Length > MaxSoapActionLength) {
-				Warn($"Operation '{Shown(operation.Caption)}': its soapAction is longer than {MaxSoapActionLength} characters "
-					+ "and was left out; ask the API owner for the right value.");
-				return null;
+			string action = KeptSoapAction(operation.SoapAction);
+			if (action is null) {
+				Warn($"Operation '{Shown(operation.Caption)}': its soapAction has spaces, a line break, non-ASCII characters "
+					+ $"or credentials, or is longer than {MaxSoapActionLength} characters (a soapAction is a URI), and was "
+					+ "left out; ask the API owner for the right value.");
 			}
 			return action;
+		}
+
+		// A parameter of the matched method the WSDL does not have (a header or credential parameter added in Studio)
+		// would be removed by setMethod, which replaces the method; the agent is told which.
+		private void WarnUnmatched(WebServiceMethodView existing, string code) {
+			string[] unmatched = Flatten(existing.RequestParameters).Concat(Flatten(existing.ResponseParameters))
+				.Where(p => !_matched.Contains(p)).Select(p => Shown(p.Code)).ToArray();
+			if (unmatched.Length > 0) {
+				Warn($"Method '{Shown(code)}': {string.Join(", ", unmatched.Take(10))}"
+					+ (unmatched.Length > 10 ? $" and {unmatched.Length - 10} more" : string.Empty)
+					+ " are not in the WSDL. setMethod replaces the method, so copy them from describe-web-service into its "
+					+ "parameters, or they are removed.");
+			}
 		}
 
 		// The codes a matched method's parameters already have, reserved so a new parameter cannot take one.
 		private static CodePool CodeSet(IReadOnlyList<WebServiceParameterView> parameters) =>
 			new(Flatten(parameters).Select(p => p.Code));
 
-		// A matched method's parameters by path, so a parameter at the same place keeps its code and setMethod keeps its UId.
-		private static Dictionary<string, WebServiceParameterView> CodesByPath(IReadOnlyList<WebServiceParameterView> parameters) {
-			var result = new Dictionary<string, WebServiceParameterView>(StringComparer.Ordinal);
-			foreach (WebServiceParameterView parameter in parameters ?? []) {
-				result.TryAdd(parameter.Path ?? string.Empty, parameter);
+		// A matched method's parameters by place, so a parameter at the same place keeps its code and setMethod keeps its
+		// UId. An array's place is its path and its sequence element: sibling arrays that repeat directly inside one
+		// element share the path (Studio's wizard gives such an array its container's path). Only a SOAP body or
+		// soap-header parameter can be a WSDL element; an HTTP header, query or cookie parameter is never matched, so it is
+		// named among those the WSDL lacks.
+		private sealed class ExistingParameters {
+			private readonly Dictionary<string, WebServiceParameterView> _byPlace = new(StringComparer.Ordinal);
+			private readonly Dictionary<string, List<WebServiceParameterView>> _arraysByPath = new(StringComparer.Ordinal);
+
+			public ExistingParameters(IReadOnlyList<WebServiceParameterView> parameters) {
+				foreach (WebServiceParameterView parameter in (parameters ?? [])
+						.Where(p => p.SoapHeader == true || string.IsNullOrEmpty(p.In) || p.In == "body")) {
+					_byPlace.TryAdd(Place(parameter.Path, parameter.Array ? parameter.SequenceElement : null), parameter);
+					if (parameter.Array) {
+						if (!_arraysByPath.TryGetValue(parameter.Path ?? string.Empty, out List<WebServiceParameterView> arrays)) {
+							arrays = [];
+							_arraysByPath[parameter.Path ?? string.Empty] = arrays;
+						}
+						arrays.Add(parameter);
+					}
+				}
 			}
-			return result;
+
+			// An array whose stored item element differs from the WSDL's (Studio's default item, a bare name) is still the
+			// one at its path when it is the only array there.
+			public WebServiceParameterView Find(string path, string sequenceElement, ISet<WebServiceParameterView> matched) {
+				if (_byPlace.TryGetValue(Place(path, sequenceElement), out WebServiceParameterView exact)) {
+					return matched.Contains(exact) ? null : exact;
+				}
+				return sequenceElement is not null && _arraysByPath.TryGetValue(path ?? string.Empty,
+						out List<WebServiceParameterView> arrays) && arrays.Count == 1 && !matched.Contains(arrays[0])
+					? arrays[0]
+					: null;
+			}
+
+			private static string Place(string path, string sequenceElement) =>
+				(path ?? string.Empty) + "\n" + (sequenceElement ?? string.Empty);
 		}
 
 		private static IEnumerable<WebServiceParameterView> Flatten(IReadOnlyList<WebServiceParameterView> parameters) =>
 			(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
 		private List<WebServiceParameterArg> Parameters(IReadOnlyList<WsdlParameter> parameters, bool isRequest,
-			string parentName, CodePool codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
+			string parentName, CodePool codes, ExistingParameters existing) {
 			var result = new List<WebServiceParameterArg>();
 			foreach (WsdlParameter parameter in parameters) {
 				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentName, codes, existing);
@@ -492,7 +588,7 @@ public static partial class WsdlRegistrationMapper {
 		}
 
 		private WebServiceParameterArg Parameter(WsdlParameter parameter, bool isRequest, string parentName,
-			CodePool codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
+			CodePool codes, ExistingParameters existing) {
 			string path = ElementPath(parameter.Path);
 			string sequenceElement = parameter.IsArray ? ElementPath(parameter.SequenceElement) : null;
 			string refusal = LeaveOutReason(parameter, path, sequenceElement, isRequest);
@@ -502,11 +598,16 @@ public static partial class WsdlRegistrationMapper {
 			}
 			bool isObject = parameter.Type == ObjectType;
 			string where = LeftOut(path, isRequest);
-			WebServiceParameterView previous = existing.GetValueOrDefault(path);
-			// The code joins the names of the whole path (never empty here: LeaveOutReason refuses an empty path), and an
-			// item's starts with its array's, so fields of different branches (customer/name, company/name) differ without a
-			// number and a code does not depend on its siblings.
-			string name = parentName + " " + PathNames(path);
+			WebServiceParameterView previous = existing.Find(path, sequenceElement, _matched);
+			if (previous is not null) {
+				_matched.Add(previous);
+			}
+			// The code joins the names of the whole path (never empty here: LeaveOutReason refuses an empty path), an
+			// array's adds the element that repeats, and an item's starts with its array's, so fields of different branches
+			// (customer/name, company/name) and sibling arrays (order/lines, order/notes) differ without a number, and a
+			// code does not depend on its siblings.
+			string name = parentName + " " + PathNames(path)
+				+ (string.IsNullOrEmpty(sequenceElement) ? string.Empty : " " + PathNames(sequenceElement));
 			// A code keeps the end of a long name; the names of nested array items add up, so only the end that can reach a
 			// code is kept, and an item's name does not grow with every array above it.
 			if (name.Length > 4 * MaxParameterCodeLength) {
@@ -514,7 +615,7 @@ public static partial class WsdlRegistrationMapper {
 			}
 			string code = previous?.Code ?? UniqueCode(prefix, name, "Param", codes, MaxParameterCodeLength);
 			List<WebServiceParameterArg> items = isObject
-				? Parameters(parameter.Items, isRequest, name, codes, CodesByPath(previous?.Items))
+				? Parameters(parameter.Items, isRequest, name, codes, new ExistingParameters(previous?.Items))
 				: [];
 			if (isObject && items.Count == 0) {
 				Warn($"{where}: none of its fields can be described, so neither can the object.");
@@ -522,6 +623,9 @@ public static partial class WsdlRegistrationMapper {
 				// other parameter takes it and setMethod gives that parameter's UId to the wrong one.
 				if (previous is null) {
 					codes.Release(code);
+				} else {
+					// Not sent, so setMethod removes it: it is named among the parameters the WSDL lacks.
+					_matched.Remove(previous);
 				}
 				return null;
 			}
@@ -530,6 +634,12 @@ public static partial class WsdlRegistrationMapper {
 				Path: path,
 				Caption: parameter.Caption,
 				Array: parameter.IsArray ? true : null,
+				Required: previous?.Required == true ? true : null,
+				// A constant is not carried onto a soap header, where register refuses one.
+				DefaultValue: previous is { DefaultMasked: false } && !(parameter.IsSoapHeader && isRequest)
+					? previous.DefaultValue
+					: null,
+				DefaultSysSetting: previous?.DefaultSysSetting,
 				Items: items.Count > 0 ? items : null,
 				SoapHeader: parameter.IsSoapHeader && isRequest ? true : null,
 				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);

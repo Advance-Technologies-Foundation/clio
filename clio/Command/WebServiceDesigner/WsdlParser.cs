@@ -87,7 +87,9 @@ public sealed record WsdlDocument(IReadOnlyList<WsdlPort> Ports, string StudioPo
 /// <summary>What one parse reads: a port and operations named here are the only ones built.</summary>
 /// <param name="Port">The one port to read (exact name first, then ignoring case); null reads every SOAP port.</param>
 /// <param name="Operations">The operations to read (ignoring case); null or empty reads all.</param>
-public sealed record WsdlParseOptions(string Port = null, IReadOnlyCollection<string> Operations = null);
+/// <param name="TimeLimit">How long the parse may run; null is <see cref="WsdlParser.MaxParseTime"/>.</param>
+public sealed record WsdlParseOptions(string Port = null, IReadOnlyCollection<string> Operations = null,
+	TimeSpan? TimeLimit = null);
 
 /// <summary>
 /// Reads a WSDL 1.1 document with the rules of Studio's web service wizard (the creatio-ui web-service-wizard
@@ -222,13 +224,21 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return string.Empty;
 		}
 		var builder = new StringBuilder(Math.Min(value.Length, maxLength + 1));
-		foreach (char c in value) {
-			bool blank = char.IsControl(c) || char.IsWhiteSpace(c)
-				|| char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.Format;
+		// By rune, so an invisible character outside the basic plane (a Unicode tag, U+E0000-E007F) is caught as the
+		// format character it is, not passed as two surrogate halves.
+		foreach (Rune rune in value.EnumerateRunes()) {
+			bool blank = Rune.IsControl(rune) || Rune.IsWhiteSpace(rune)
+				|| Rune.GetUnicodeCategory(rune) is System.Globalization.UnicodeCategory.Format
+					or System.Globalization.UnicodeCategory.PrivateUse or System.Globalization.UnicodeCategory.OtherNotAssigned
+				|| rune == Rune.ReplacementChar;
 			if (blank && (builder.Length == 0 || builder[^1] == ' ')) {
 				continue;
 			}
-			builder.Append(blank ? ' ' : c);
+			if (blank) {
+				builder.Append(' ');
+			} else {
+				builder.Append(rune.ToString());
+			}
 			if (builder.Length >= maxLength) {
 				return builder.ToString().TrimEnd() + "…";
 			}
@@ -297,10 +307,10 @@ public sealed partial class WsdlParser : IWsdlParser {
 			throw new ArgumentException("No WSDL file was given.");
 		}
 		// One clock for the whole parse: loading and merging the files count against the backstop too.
-		var clock = System.Diagnostics.Stopwatch.StartNew();
+		var clock = new Deadline(options?.TimeLimit ?? MaxParseTime);
 		var documents = new Dictionary<string, XDocument>(StringComparer.Ordinal);
 		foreach (WsdlSourceFile file in files) {
-			CheckClock(clock);
+			clock.Check();
 			documents.TryAdd(file.Key, Load(file));
 		}
 		var warnings = new List<string>();
@@ -310,10 +320,16 @@ public sealed partial class WsdlParser : IWsdlParser {
 			.Build();
 	}
 
-	private static void CheckClock(System.Diagnostics.Stopwatch clock) {
-		if (clock.Elapsed > MaxParseTime) {
-			throw new ArgumentException($"The WSDL takes longer than {MaxParseTime.TotalSeconds:0} seconds to read, so it "
-				+ "cannot be read whole. Read it again with port and operations, or describe the operations you need by hand.");
+	// The time one parse may take, from the first file loaded.
+	private sealed class Deadline(TimeSpan limit) {
+		private readonly System.Diagnostics.Stopwatch _watch = System.Diagnostics.Stopwatch.StartNew();
+
+		public void Check() {
+			if (_watch.Elapsed >= limit) {
+				throw new ArgumentException($"The WSDL takes longer than {limit.TotalSeconds:0} seconds to read, so it "
+					+ "cannot be read whole. Read it again with port and operations, or describe the operations you need by "
+					+ "hand.");
+			}
 		}
 	}
 
@@ -410,7 +426,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 	/// the schema elements of the file its <c>schemaLocation</c> names (that file's own imports first), each file once,
 	/// inserted before the importing schema.
 	/// </summary>
-	private sealed class WsdlMerge(IReadOnlyDictionary<string, XDocument> documents, System.Diagnostics.Stopwatch clock) {
+	private sealed class WsdlMerge(IReadOnlyDictionary<string, XDocument> documents, Deadline clock) {
 		// Each file is merged once even when it is imported under several locations (a.xsd, ./a.xsd, a.xsd#x), which the
 		// file-name match would otherwise follow into a recursion as deep as the number of spellings.
 		private readonly HashSet<XDocument> _mergedDocuments = [];
@@ -452,7 +468,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			if (string.IsNullOrEmpty(location)) {
 				return [];
 			}
-			CheckClock(clock);
+			clock.Check();
 			(string key, XDocument source) = Resolve(location, importerKey);
 			if (!_mergedDocuments.Add(source)) {
 				return [];
@@ -481,7 +497,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			RemoveAll(schemas.Where(s => s.Ancestors().Any(all.Contains)).ToList());
 			var result = new List<XElement>(schemas.Count);
 			for (int i = 0; i < schemas.Count; i++) {
-				CheckClock(clock);
+				clock.Check();
 				var copy = new XElement(schemas[i]);
 				copy.Add(inherited[i]);
 				result.Add(copy);
@@ -654,7 +670,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private readonly HashSet<string> _wantedOperations;
 		private readonly Dictionary<XElement, XElement> _extensionOf = new();
 		private readonly Dictionary<XElement, string> _simpleTypeNames = new();
-		private readonly System.Diagnostics.Stopwatch _clock;
+		private readonly Deadline _clock;
 		private long _pathCharacters;
 		private List<WsdlNamespace> _namespaces;
 		// The prefix of each namespace URI of the binding being built, and the next free ns-number: a lookup per element
@@ -667,8 +683,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private int _warningsDropped;
 		private bool _droppedNamesWithQuestionMark;
 
-		public Session(XDocument doc, string prefix, List<string> warnings, WsdlParseOptions options,
-				System.Diagnostics.Stopwatch clock) {
+		public Session(XDocument doc, string prefix, List<string> warnings, WsdlParseOptions options, Deadline clock) {
 			_clock = clock;
 			_doc = doc;
 			_prefix = prefix;
@@ -828,7 +843,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 					.Distinct(StringComparer.Ordinal)
 					.ToArray(), StringComparer.Ordinal);
 
-		private void CheckClock() => WsdlParser.CheckClock(_clock);
+		private void CheckClock() => _clock.Check();
 
 		// Counts the characters of a path or caption about to be built against MaxPathCharacters, before it is built.
 		private void ChargePath(long length) {
@@ -908,10 +923,12 @@ public sealed partial class WsdlParser : IWsdlParser {
 				_builtBindings[candidate.Binding] = built;
 			}
 			string caption = Attr(candidate.Service, "name");
-			if (!IsNCName(caption)) {
+			if (!IsNCName(caption) || caption.Length > MaxNameLength) {
 				NoteDroppedName(caption);
-				Warn($"The WSDL service name '{Shown(caption)}' is not an XML name; it was cleaned up for the caption.");
-				caption = Shown(caption);
+				// The caption reaches the arguments the agent forwards, so a sentence there is not kept even flattened.
+				Warn($"The WSDL service name '{Shown(caption)}' is not an XML name of at most {MaxNameLength} characters; the "
+					+ $"port name '{candidate.Name}' was used as the caption.");
+				caption = candidate.Name;
 			}
 			return new WsdlPort(candidate.Name, caption, candidate.ServiceType, Attr(candidate.Address, "location"),
 				built.Namespaces.ToList(), built.Operations.ToList());

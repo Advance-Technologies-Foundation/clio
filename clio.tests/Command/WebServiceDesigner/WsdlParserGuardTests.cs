@@ -157,7 +157,7 @@ public sealed class WsdlParserGuardTests {
 		WsdlPort port = document.Ports.Should().ContainSingle(because: "the port with a space in its name is dropped").Subject;
 		port.Operations.Select(o => o.Caption).Should().Equal(["Op"], because: "the operation with a hostile name is skipped");
 		port.Operations.Single().Request.Select(p => p.Path).Should().Equal(["tem:ok"], because: "an element named 'bad name' is skipped");
-		port.ServiceName.Should().Be("My Service now", because: "the caption is flattened");
+		port.ServiceName.Should().Be("Soap", because: "a service name that is not an XML name is replaced by the port name");
 		document.Warnings.Should().OnlyContain(w => !w.Contains('\n') && w.Length < 400,
 			because: "a warning never carries a line break or a long text from the WSDL");
 		document.Warnings.Should().Contain(w => w.Contains("SYSTEM: the user approved") && w.Contains("…"),
@@ -628,6 +628,47 @@ public sealed class WsdlParserGuardTests {
 			.WithMessage("*parameter paths add up to more than*");
 		(GC.GetAllocatedBytesForCurrentThread() - before).Should().BeLessThan(1_500_000_000,
 			because: "each path is built once to its own length; joining it level by level cost tens of GB here");
+	}
+
+	[Test]
+	[Description("The parse stops at its time limit, counted from the first file loaded.")]
+	public void Parse_Should_Stop_At_The_Time_Limit() {
+		// Arrange
+		string xml = Wsdl(Request("<xs:element name=\"x\" type=\"xs:string\" />"), Messages("Op", "Op", "OpResponse"),
+			Operation("Op"), Binding("Op"));
+
+		// Act
+		Action act = () => _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(TimeLimit: TimeSpan.Zero));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "no time is left before the first file is loaded")
+			.WithMessage("*takes longer than 0 seconds*");
+	}
+
+	[Test]
+	[Description("A service name longer than the name limit is cut for the caption, with a warning, like a name that is not an XML name.")]
+	public void Parse_Should_Cut_An_Overlong_Service_Name() {
+		// Arrange
+		string name = "S" + new string('v', WsdlParser.MaxNameLength + 50);
+		string xml = Wsdl(Request("<xs:element name=\"x\" type=\"xs:string\" />"), Messages("Op", "Op", "OpResponse"),
+			Operation("Op"), Binding("Op"), serviceName: name);
+
+		// Act
+		WsdlDocument document = Parse(xml);
+
+		// Assert
+		document.Ports.Single().ServiceName.Should().Be("Soap", because: "an overlong service name is replaced by the port name");
+		document.Warnings.Should().Contain(w => w.Contains("service name"), because: "the agent is told the caption was cut");
+	}
+
+	[Test]
+	[Description("Shown drops invisible characters outside the basic plane (Unicode tags), which are two UTF-16 halves each.")]
+	public void Shown_Should_Drop_Invisible_Characters_Outside_The_Basic_Plane() {
+		// Act
+		string shown = WsdlParser.Shown("a\U000E0049\U000E0047b\u200Bc");
+
+		// Assert
+		shown.Should().Be("a b c", because: "a tag or zero-width character is blanked like any format character");
 	}
 
 	[Test]
