@@ -391,9 +391,12 @@ public sealed partial class WsdlParser : IWsdlParser {
 				throw new ArgumentException($"The WSDL imports '{shown}', and several given files are named "
 					+ $"'{Shown(FileNameOf(matches[0].Key))}'; give only the one it means.");
 			}
-			string queryHint = queryName is null ? "." : $", or as {Shown(queryName)}.xsd for this location.";
+			// The location is often an absolute URL, which the MCP error text redacts; the file name alone survives, so it is
+			// named separately and the agent still learns which schema to add.
+			string expected = queryName is null ? fileName : queryName + ".xsd";
+			string named = string.IsNullOrEmpty(expected) ? string.Empty : $", as a file named '{Shown(expected)}'";
 			throw new ArgumentException($"The WSDL imports '{shown}', which is not among the given files. Give that schema "
-				+ "too: a local file is found by the location relative to the importing file, by its file name" + queryHint);
+				+ $"too{named}: a local file is found by the location relative to the importing file, or by its file name.");
 		}
 
 		private bool TryRelative(string location, string importerKey, out string key) {
@@ -547,7 +550,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			_warnings.Add(message);
 		}
 
-		private string OperationPrefix => _operation is null ? string.Empty : $"operation '{Shown(_operation)}': ";
+		private string OperationPrefix => _operation is null ? string.Empty : $"Operation '{Shown(_operation)}': ";
 
 		public WsdlDocument Build() {
 			XElement definitions = _doc.Root;

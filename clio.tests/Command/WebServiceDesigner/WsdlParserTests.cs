@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command.WebServiceDesigner;
+using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -123,6 +124,23 @@ public sealed class WsdlParserTests {
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the types of the operations live in the missing schema")
 			.WithMessage("*orders-operations.xsd*not among the given files*");
+	}
+
+	[Test]
+	[Description("A missing schema imported by an absolute URL is still named after the MCP error redaction removes the URL: the file name is given separately.")]
+	public void Parse_Should_Name_The_Missing_File_So_It_Survives_Redaction() {
+		// Arrange
+		WsdlSourceFile wsdl = FixtureFile("split", "orders.wsdl");
+
+		// Act
+		Action act = () => _sut.Parse([wsdl], "Usr");
+
+		// Assert
+		string message = act.Should().Throw<ArgumentException>(because: "the imported schema is missing").Which.Message;
+		string redacted = SensitiveErrorTextRedactor.Redact(message);
+		redacted.Should().Contain("[redacted-uri]", because: "the import location is an absolute URL, which the error text redacts");
+		redacted.Should().Contain("a file named 'orders-operations.xsd'",
+			because: "without the file name the agent cannot tell which schema to add (seen on a stand run)");
 	}
 
 	[Test]

@@ -141,8 +141,9 @@ public sealed class WsdlReader(
 		if (target is null) {
 			notices.AddRange(services.Select(s => s.Arguments.Code).Distinct(StringComparer.OrdinalIgnoreCase)
 				.Where(code => !client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, code))
-				.Select(code => $"The code '{code}' is already used by a web service: register under another code, or read "
-					+ $"the WSDL again with service-code '{code}' to change that service with modify-web-service."));
+				.Select(code => $"The code '{code}' is already used by a web service. Ask the user which way to go, and do not "
+					+ "pick a code yourself: register under a code the user names, or change that service (read the WSDL again "
+					+ $"with service-code '{code}', then use modify-web-service)."));
 		}
 		// The WSDL names the endpoint the calls (and any credentials set up later) go to; tell the user when it is not the
 		// host the WSDL came from.

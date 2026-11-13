@@ -462,7 +462,7 @@ public sealed class WsdlReaderTests {
 	}
 
 	[Test]
-	[Description("A service code already used on the environment gets a notice naming the two ways on: another code, or service-code to change that service.")]
+	[Description("A service code already used on the environment gets a notice that leaves the choice to the user: another code the user names, or service-code to change that service.")]
 	public void Read_Should_Notice_A_Service_Code_In_Use() {
 		// Arrange
 		string path = GivenFixture("calculator.wsdl");
@@ -472,8 +472,9 @@ public sealed class WsdlReaderTests {
 		WsdlReadResult result = _sut.Read(Files(path));
 
 		// Assert
-		result.Notices.Should().ContainSingle(because: "both ports share the code, so it is checked once")
-			.Which.Should().Contain("service-code 'UsrCalculator'", because: "the notice names the way to change that service");
+		string notice = result.Notices.Should().ContainSingle(because: "both ports share the code, so it is checked once").Subject;
+		notice.Should().Contain("service-code 'UsrCalculator'", because: "the notice names the way to change that service");
+		notice.Should().Contain("Ask the user", because: "an agent given only the options picked a code by itself on a stand");
 	}
 
 	[Test]
