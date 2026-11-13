@@ -536,7 +536,7 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.162 (for values, mergeFrom, webService, email.attachments, itemProperties, isTracing,",
+		toolDescription.Should().Contain("this clio requires 1.6.6.162 (for chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, isTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block, then by mergeFrom)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
@@ -595,7 +595,7 @@ public class CreateBusinessProcessToolTests {
 		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
 
 		// Assert
-		toolDescription.Should().Contain("|scriptTask|fileProcessing|webService (aliases ",
+		toolDescription.Should().Contain("|scriptTask|fileProcessing|webService|sendChatMessage (aliases ",
 			because: "the element type list is where an agent learns which type tokens a build accepts");
 		toolDescription.Should().NotContain("processFile",
 			because: "the server accepts processFile on build but never emits it, and it reads like the Process-parameter variant, so the contract names only fileProcessing");
@@ -632,7 +632,7 @@ public class CreateBusinessProcessToolTests {
 		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
 
 		// Assert
-		toolDescription.Should().Contain("|fileProcessing|webService (aliases ",
+		toolDescription.Should().Contain("|fileProcessing|webService|sendChatMessage (aliases ",
 			because: "the element type list is where an agent learns which type tokens a build accepts");
 		toolDescription.Should().Contain("webService? (webService elements only - a registered REST/SOAP service and its method; get-guidance name=process-web-service owns the block)",
 			because: "the block clause names what the block selects, that the service must already be registered, and the guide that owns the block");

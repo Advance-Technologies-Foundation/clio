@@ -32,7 +32,9 @@ public static class ModifyBusinessProcessPrompt {
 		 remove them. A described `webService` block re-applies unchanged: its `serviceUId`, `serviceResolved`,
 		 `methodResolved`, `issues` and `parameters` are describe-only, ignored and named in a warning; a
 		 fractional `timeoutSeconds` is refused (leave it out to keep the stored value, or send whole seconds), and a
-		 block with no `service` needs a registered service named again. A filter, signal or
+		 block with no `service` needs a registered service named again. A described `chatMessage` block
+		 re-applies unchanged: its `templateName`, `outputs` and `issues` are describe-only, ignored and named
+		 in a warning. A filter, signal or
 		 connections goes in its own operation (setFilter, setSignal, setConnections), and flat approval fields are
 		 written nested in the same block (approver.type, notifyApprover.emailTemplate); (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
@@ -48,6 +50,8 @@ public static class ModifyBusinessProcessPrompt {
 		 with its `fileProcessing` block, never a generic `userTask` naming `ObjectFileProcessingUserTask`,
 		 `ReportFileProcessingUserTask` or `ProcessFileProcessingUserTask`; a Call web service element is
 		 `type:"webService"` with its `webService` block, never a generic `userTask` naming `WebServiceUserTask`;
+		 a Send chat message element is `type:"sendChatMessage"` with its `chatMessage` block, never a generic
+		 `userTask` naming `SendChatMessageUserTask`;
 		 `setParameter` updates a parameter in place, `removeParameter` is dependency-checked — over mappings,
 		 execution-context parameters AND conditional-flow conditions, sub-processes included; `setFlowCondition`
 		 (`source` + `target` + a non-empty `condition`) turns an existing plain flow into a CONDITIONAL branch in
@@ -184,6 +188,9 @@ public static class ModifyBusinessProcessPrompt {
 		 service or method change regenerates the element's parameters and is refused while anything reads one
 		 of them other than `Success`, `Response` or `StatusCode`. Read `get-guidance name=process-web-service`
 		 first - it owns the block;
+		 and a `sendChatMessage` element's `chatMessage` block: an omitted member keeps its stored value,
+		 `columnValues: []` clears the column values, and switching to `messageSource: "custom"` needs the new
+		 `message` in the same update. Read `get-guidance name=process-send-chat-message` first - it owns the block;
 		 `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare

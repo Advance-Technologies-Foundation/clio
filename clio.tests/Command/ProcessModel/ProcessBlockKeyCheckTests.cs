@@ -839,6 +839,100 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
+	[Description("A Send chat message element carrying a valid chatMessage block - from and to in the shared value-source shape, messageSource, template or message, ignoreErrors and columnValues - passes clean on a create element, an addElement element and a setElement update, a partial one included, so clio does not refuse the block before the server reads it.")]
+	public void Check_Should_AcceptTheChatMessageBlock_OnEveryRoute() {
+		// Arrange
+		const string block = """
+			{ "from": { "expression": "[#SysSettings.UsrSupportChatChannel<Guid>#]" },
+			  "to": { "sourceElement": "ReadCase", "sourceElementParameter": "ResultEntity", "sourceColumn": "Contact" },
+			  "messageSource": "template", "template": "Creating new case from chat", "ignoreErrors": true,
+			  "columnValues": [ { "column": "Case", "processParameter": "CaseId" } ] }
+			""";
+		string element = $$"""{ "name": "Chat1", "type": "sendChatMessage", "chatMessage": {{block}} }""";
+		string operations = $$"""
+			[ { "op": "addElement", "element": { "name": "Chat2", "type": "sendChatMessage", "chatMessage": {{block}} } },
+			  { "op": "setElement", "elementName": "Chat1", "elementUpdate": { "chatMessage": {{block}} } },
+			  { "op": "setElement", "elementName": "Chat1", "elementUpdate": { "chatMessage": { "messageSource": "custom", "message": "Your appointment is confirmed.", "columnValues": [] } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "every key of the block, its value sources and its column values is a server contract member");
+		modify.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "addElement and setElement carry the same block, and a setElement may send only the members it changes");
+	}
+
+	[TestCase("body", "the chat text is 'message'")]
+	[TestCase("channel", "the channel the message is sent from is 'from'")]
+	[TestCase("contact", "the contact the message is sent to is 'to'")]
+	[TestCase("Message", "keys are case-sensitive: write 'message'")]
+	[Description("An unknown key in the chatMessage block is refused before sending, naming the element, the key path and the block's accepted keys, and pointing a Send email habit (body) or a designer label (channel, contact) at the member that sets it - instead of the server refusing it, or an older one dropping it and saving a different message than the caller described.")]
+	public void Check_Should_RefuseAnUnknownChatMessageKey_NamingItsPathAndPointer(string key, string pointer) {
+		// Arrange
+		string element = $$"""{ "name": "Chat1", "type": "sendChatMessage", "chatMessage": { "from": { "value": "Support Telegram" }, "{{key}}": "x" } }""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
+		result.Error.Should().Contain("'Chat1'", because: "the refusal names the element");
+		result.Error.Should().Contain($"'chatMessage.{key}'", because: "the refusal names the key path inside the block");
+		result.Error.Should().Contain(pointer, because: "the refusal points at the member the caller meant");
+		result.Error.Should().Contain("Accepted chatMessage keys: from, to, messageSource, template, message, ignoreErrors, columnValues",
+			because: "the refusal says what the block accepts");
+	}
+
+	[Test]
+	[Description("An unknown key inside a chatMessage value source or column value is refused naming its own path and its own set - a columnValues entry is labelled as such, not as the changeData 'values entry' it shares a contract with.")]
+	public void Check_Should_RefuseAnUnknownKeyInsideAChatMessageValueSourceOrColumnValue() {
+		// Arrange
+		string element = """
+			{ "name": "Chat1", "type": "sendChatMessage", "chatMessage": {
+			    "to": { "processParameter": "ContactId", "parameter": "x" },
+			    "columnValues": [ { "column": "Case", "processParameter": "CaseId", "values": [] } ] } }
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().Contain("'chatMessage.to.parameter' is not a key of the 'value source' block",
+			because: "a value-source key is checked against the shared value-source vocabulary");
+		result.Error.Should().Contain("'chatMessage.columnValues[0].values' is not a key of the 'columnValues entry' block",
+			because: "a column value is named for the block member it sits in");
+	}
+
+	[Test]
+	[Description("A described chatMessage block fed back unchanged - the replay rule describe states - keeps building: templateName, outputs and issues are describe-only, so they are listed as ignored read-backs, never refused, and a value source's display is tolerated the same way.")]
+	public void Check_Should_TolerateTheReadBackFields_OfADescribedChatMessageBlock() {
+		// Arrange
+		string operations = """
+			[ { "op": "setElement", "elementName": "Chat1", "elementUpdate": { "chatMessage": {
+			    "from": { "value": "[#Lookup.a26e0c98-9a52-4e80-9a04-75221742fed7.6f2b2f4e-3c1a-4b0e-9a55-5f7e6a1d1b11#]", "display": "Support Telegram" },
+			    "to": { "processParameter": "ContactId" }, "messageSource": "template",
+			    "template": "[#Lookup.93030575-f70f-4041-902e-c4badaf62c63.0b3e2a52-1d3f-4c5e-8a7f-1b2c3d4e5f60#]",
+			    "templateName": "Creating new case from chat", "ignoreErrors": false, "columnValues": [],
+			    "outputs": [ "SendStatus", "SendStatusDetails" ], "issues": [] } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().BeNull(because: "the read-back members are derived on describe and harmless to ignore");
+		result.IgnoredReadBacks.Should().ContainSingle(because: "the ignored fields are listed in one summary line")
+			.Which.Should().Contain("chatMessage.templateName", because: "the template name is describe-only")
+			.And.Contain("chatMessage.outputs", because: "the outputs list is describe-only")
+			.And.Contain("chatMessage.issues", because: "the issues are describe-only")
+			.And.Contain("chatMessage.from.display", because: "a value source's display is describe-only");
+	}
+
+	[Test]
 	[Description("Every key set mirrors its server request contract in the bundled CrtProcessBuilder exactly, so a new server member is never refused here by a stale list and a key the server lacks is never accepted.")]
 	public void KeySets_Should_EqualTheMembersOfTheBundledServerContracts() {
 		// Arrange

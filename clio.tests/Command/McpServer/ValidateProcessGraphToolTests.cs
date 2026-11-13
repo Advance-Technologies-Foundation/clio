@@ -693,7 +693,7 @@ public sealed class ValidateProcessGraphToolTests {
 		string description = method!.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
 
 		// Assert
-		description.Should().Contain("Generated report, Process parameter)/webService (Call web service) elements plus",
+		description.Should().Contain("Generated report, Process parameter)/webService (Call web service)/sendChatMessage (Send chat message) elements plus",
 			because: "the canonical buildable list must carry every element type create-business-process builds");
 	}
 

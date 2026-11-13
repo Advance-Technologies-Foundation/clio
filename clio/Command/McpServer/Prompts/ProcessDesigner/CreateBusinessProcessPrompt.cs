@@ -29,6 +29,7 @@ public static class CreateBusinessProcessPrompt {
 		 configure them, and except the three Process file tasks (`ObjectFileProcessingUserTask`,
 		 `ReportFileProcessingUserTask`, `ProcessFileProcessingUserTask`), which are built as a `fileProcessing` element;
 		 and except `WebServiceUserTask` (Call web service), which is built as a `webService` element;
+		 and except `SendChatMessageUserTask` (Send chat message), which is built as a `sendChatMessage` element;
 		 (2) read `get-guidance name=process-modeling` for the full descriptor contract — element types, flows,
 		 parameters (incl. `typeFromElement` to copy an element parameter's exact type, and a constant `value`
 		 default), the `mappings` target/source contract (including `sourceColumn`, which takes ONE column of a
@@ -130,6 +131,13 @@ public static class CreateBusinessProcessPrompt {
 		 with item mappings. An unknown service or method is refused with the list to choose from; a service
 		 that is not registered cannot be called from here - tell the user to register it in Studio > Web
 		 services. Read `get-guidance name=process-web-service` before writing it - that guide owns the block.
+		 To send a chat message to a contact through a chat channel (OmnichannelMessaging), add a `sendChatMessage`
+		 element with a `chatMessage` block (`from` the channel, `to` ONE contact, `messageSource` with `template`
+		 (a message template of type "Chat template") or `message` (plain text), `ignoreErrors`, `columnValues` on
+		 the created chat) - not a generic `userTask` naming `SendChatMessageUserTask`, which is refused. A
+		 personalised text is a formula mapped onto the element's `Message`; read `SendStatus` and
+		 `SendStatusDetails` like any element output. Read `get-guidance name=process-send-chat-message` before
+		 writing it - that guide owns the block.
 		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one
 		 and finding nothing is not evidence there were none.

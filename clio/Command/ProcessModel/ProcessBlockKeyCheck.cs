@@ -326,6 +326,21 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet WebServiceBlock = new KeySet("WebServiceDescriptor", "webService", "DescribeWebServiceInfo",
 		"service method timeoutSeconds ignoreErrors", "serviceUId serviceResolved methodResolved issues parameters");
 
+	// The Send chat message block (ENG-96034). 'from' and 'to' take the shared value-source vocabulary of the
+	// fileProcessing block; 'columnValues' entries are changeData values entries, named here for the block they sit in.
+	// Describe reports every write member in its write shape, so a described block replays unchanged and its three
+	// describe-only members are tolerated, never refused.
+	private static readonly KeySet ChatMessageBlock = new KeySet("SendChatMessageDescriptor", "chatMessage",
+			"DescribeSendChatMessageInfo", "from to messageSource template message ignoreErrors columnValues",
+			"templateName outputs issues",
+			PointerMap(
+				("body", "the chat text is 'message' (plain text; a formula goes through mappings on Message)"),
+				("channel", "the channel the message is sent from is 'from'"),
+				("contact", "the contact the message is sent to is 'to'")))
+		.With("from to", FileProcessingValueSource)
+		.With("columnValues", new KeySet(ColumnValue.ContractType, "columnValues entry", null,
+			string.Join(" ", ColumnValue.Keys)));
+
 	/// <summary>
 	/// The element's configuration blocks, each linked under its own label into both the create element and the
 	/// <c>setElement</c> update; the drift test catches a block the server gained on either side only.
@@ -333,7 +348,7 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet[] Blocks = [
 		ReadDataBlock, ChangeDataBlock, AddDataBlock, DeleteDataBlock, EmailBlock, TaskPerformer, AccessRightsBlock,
 		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock,
-		FileProcessingBlock, WebServiceBlock
+		FileProcessingBlock, WebServiceBlock, ChatMessageBlock
 	];
 
 	private static readonly string BlockKeys = string.Join(" ", Blocks.Select(block => block.Label));

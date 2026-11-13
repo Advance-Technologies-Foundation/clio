@@ -1151,6 +1151,102 @@ public sealed class ServerProcessDescriberTests {
 			because: "a null block serializes away instead of appearing on every element of every other kind");
 	}
 
+	// A Send chat message element's block as the server describes it: a sys-setting channel, a contact from a Read
+	// data column, template mode with its name, a column value, both outputs and an issue, with an undeclared key on
+	// the block and on a value source.
+	private const string ChatMessageBlock =
+		"{\"from\":{\"expression\":\"[#SysSettings.UsrSupportChatChannel<Guid>#]\",\"futureSourceFact\":1},"
+		+ "\"to\":{\"sourceElement\":\"ReadCase\",\"sourceElementParameter\":\"ResultEntity\",\"sourceColumn\":\"Contact\"},"
+		+ "\"messageSource\":\"template\","
+		+ "\"template\":\"[#Lookup.93030575-f70f-4041-902e-c4badaf62c63.0b3e2a52-1d3f-4c5e-8a7f-1b2c3d4e5f60#]\","
+		+ "\"templateName\":\"Creating new case from chat\",\"ignoreErrors\":false,"
+		+ "\"columnValues\":[{\"column\":\"Case\",\"processParameter\":\"CaseId\"}],"
+		+ "\"outputs\":[\"SendStatus\",\"SendStatusDetails\"],"
+		+ "\"issues\":[\"no contact is set\"],"
+		+ "\"futureChatFact\":{\"nested\":\"kept\"}}";
+
+	private static IApplicationClient ClientReportingChatMessage(string block) =>
+		ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000005\",\"name\":\"NotifyContact\","
+			+ "\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendchatmessage\","
+			+ "\"userTaskName\":\"SendChatMessageUserTask\","
+			+ $"\"chatMessage\":{block},\"parameters\":[]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+
+	[Test]
+	[Description("Deserializes the chatMessage member of a Send chat message element by name: from and to in the shared value-source shape, the message source, the stored template macro and its name, ignoreErrors stated false, the column values, both outputs and the issues - so the block reaches the caller instead of falling into the element's overflow bag.")]
+	public void Describe_ShouldReadTheChatMessageMember_WhenServerReportsIt() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingChatMessage(ChatMessageBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedElement element = result.Value.Elements[0];
+		DescribedChatMessage block = element.ChatMessage;
+		block.Should().NotBeNull(because: "a null here is the silent-drop signature of an undeclared block");
+		element.AdditionalData.Should().BeNull(because: "chatMessage is a declared member, not element-level overflow");
+		block.From.Expression.Should().Be("[#SysSettings.UsrSupportChatChannel<Guid>#]",
+			because: "a sys-setting channel reads back as the typed macro the designer writes");
+		block.To.SourceElement.Should().Be("ReadCase", because: "a contact from a Read data column names the element");
+		block.To.SourceColumn.Should().Be("Contact", because: "and the column of its record");
+		block.MessageSource.Should().Be("template", because: "the message source reads back");
+		block.Template.Should().StartWith("[#Lookup.93030575-f70f-4041-902e-c4badaf62c63.",
+			because: "a template reads back as the lookup macro the write side accepts");
+		block.TemplateName.Should().Be("Creating new case from chat", because: "the describe-only name reads back");
+		block.Message.Should().BeNull(because: "template mode reports no message");
+		block.IgnoreErrors.Should().BeFalse(because: "ignoreErrors is always stated, false included");
+		block.ColumnValues.Should().ContainSingle(because: "the column values read back")
+			.Which.GetProperty("column").GetString().Should().Be("Case", because: "the entry keeps its write shape");
+		block.Outputs.Should().Equal(["SendStatus", "SendStatusDetails"], because: "both outputs are listed even unmapped");
+		block.Issues.Should().ContainSingle(because: "the describe-only issues read back");
+	}
+
+	[Test]
+	[Description("Keeps every member the server reports inside the chatMessage block but this model does not declare - on the block and on a value source - in that type's own overflow bag, and forwards the block verbatim under the describe command's own options, so a newer CrtProcessBuilder field reaches the caller and no JsonPropertyName drifts from the server's DataMember unnoticed.")]
+	public void Describe_ShouldKeepUnknownChatMessageMembers_InTheBag() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingChatMessage(ChatMessageBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		JsonNode forwarded = JsonNode.Parse(JsonSerializer.Serialize(result.Value,
+			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["chatMessage"];
+
+		// Assert
+		DescribedChatMessage block = result.Value.Elements[0].ChatMessage;
+		block.AdditionalData.Should().ContainKey("futureChatFact",
+			because: "an undeclared block member lands in the block's overflow bag");
+		block.From.AdditionalData.Should().ContainKey("futureSourceFact",
+			because: "an undeclared value-source member lands in the value source's overflow bag");
+		JsonNode.DeepEquals(forwarded, JsonNode.Parse(ChatMessageBlock)).Should().BeTrue(
+			because: $"the block must reach the caller exactly as the server sent it, but came out as {forwarded?.ToJsonString()}");
+	}
+
+	[Test]
+	[Description("Leaves the chatMessage member unset (null) on an element of another kind or from a server that predates the Send chat message element, so it serializes away rather than surfacing as an empty block.")]
+	public void Describe_ShouldLeaveTheChatMessageMemberNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\","
+			+ "\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\",\"parameters\":[]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Elements[0].ChatMessage.Should().BeNull(because: "an absent block must stay null");
+		JsonNode.Parse(reserialized)!["elements"]![0]!.AsObject().ContainsKey("chatMessage").Should().BeFalse(
+			because: "a null block serializes away instead of appearing on every element of every other kind");
+	}
+
 	[Test]
 	[Description("Leaves the subProcess block and isRequired unset (null) when an older server omits them, so an element of another kind - and an older package - serialize away cleanly rather than surfacing an empty block.")]
 	public void Describe_ShouldLeaveTheSubProcessBlockNull_WhenServerOmitsIt() {
