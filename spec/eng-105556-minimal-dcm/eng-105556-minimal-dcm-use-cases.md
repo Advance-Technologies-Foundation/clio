@@ -230,7 +230,7 @@ case in a SHIPPED package (16 test DCMs are smaller) (v r5-C10) [traced PS CrtKn
 | `SysDcmSchemaInSettings` | present (needed to open the case in the designer) | present | (v r2-C4) |
 | Binding names | hand-named (`SysDcmSettings_KnowledgeArticle`) | designer default `<Schema>_<id:N>` | Q15 |
 | Stage lookup values bound | part of the reference package set (v r5-C10) | NOT bound; note N4 | Q21 |
-| Page | `KnowledgeBase_EditPage`, `saveOnChange: false` | wizard fragment, `saveOnChange: true`, `askUserToChangeSchema: false`, default design package | Q17, Q19 |
+| Page | `KnowledgeBase_EditPage`, `saveOnChange: false` | wizard layout, `saveOnChange` from `save-on-change` (default false), `askUserToChangeSchema: true`, default design package | Q17, Q19 |
 
 Deliberately NOT mirrored from the wider product shape: alternative stages and unsuccessful final stages (13/14 product
 schemas use them), restricted connections (4/14), filters (1 product DCM), subsets of a lookup (5/14 schemas). Each is a later,

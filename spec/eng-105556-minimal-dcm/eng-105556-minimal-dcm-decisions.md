@@ -240,7 +240,11 @@ recommended option, and the owner decides. Evidence tags and path aliases are th
 - **Options.** (a) wizard values, no argument; (b) wizard values + a `save-on-change` argument (design C);
   (c) template values.
 - **Recommendation.** (a): fewer knobs; an argument is additive later.
-- Status: open - owner decides
+- Status: decided 2026-11-13 by the owner, not as recommended: the bar's own defaults, as the template has them
+  (`saveOnChange: false`, `askUserToChangeSchema: true`), plus an optional `save-on-change` argument (default false).
+  The guide has the agent ask the user once, naming what each mode means: without a save nothing that reacts to the
+  saved record runs until Save; a save on click saves any other unsaved edit too. A bar already on the page keeps its
+  own mode; a value passed for it is reported in a note.
 
 ## Q20. Typed record pages, mini pages, Classic pages
 
@@ -393,7 +397,7 @@ refactors now. The judge's resolution of each factual disagreement is in section
 | Q16 | dependencies | add with opt-out, refuse on cycle |
 | Q17 | page package | default design package |
 | Q18 | page write path | `PageUpdateCommand` + data-source validator |
-| Q19 | bar flags | wizard values, no argument |
+| Q19 | bar flags | template values + `save-on-change` (default false) |
 | Q20 | typed / mini / Classic pages | refuse before any write |
 | Q21 | bind lookup values | no, note N4 |
 | Q22 | version / floor | above every deployed build |

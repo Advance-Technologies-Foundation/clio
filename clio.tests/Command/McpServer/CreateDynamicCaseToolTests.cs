@@ -108,7 +108,8 @@ public sealed class CreateDynamicCaseToolTests {
 		options.Caption.Should().Be("Order case", because: "the caption is forwarded");
 		options.PageSchemaName.Should().Be("UsrOrders_FormPage", because: "the page is forwarded");
 		options.AddProgressBar.Should().BeTrue(because: "the bar is added unless the caller says otherwise");
-		options.SaveOnChange.Should().BeFalse(because: "the bar's default: a stage click only sets the field");
+		options.SaveOnChange.Should().BeNull(
+			because: "not named: the bar is planned with its default and an existing bar is passed without a note");
 		options.AddPackageDependencies.Should().BeTrue(because: "missing dependencies are added by default");
 		options.DryRun.Should().BeFalse(because: "a call writes unless it asks for a dry run");
 		options.Stages.Should().BeEmpty(because: "no stages means the default order");

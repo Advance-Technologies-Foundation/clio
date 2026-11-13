@@ -57,7 +57,7 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	private static CreateDynamicCaseOptions Options(bool dryRun = false, bool addProgressBar = true,
-		bool addPackageDependencies = true, bool saveOnChange = false) =>
+		bool addPackageDependencies = true, bool? saveOnChange = null) =>
 		new() {
 			Environment = Env, PackageName = Package, EntitySchemaName = Entity, StageColumnName = "UsrStatus",
 			DryRun = dryRun, AddProgressBar = addProgressBar, AddPackageDependencies = addPackageDependencies,
@@ -67,7 +67,8 @@ public sealed class DynamicCaseServiceTests {
 	private static DynamicCasePagePlan PlannedPage(string designPackage = Package) => new() {
 		Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page,
 		ResolvedBy = DynamicCaseRecordPageResolver.ResolvedByRelatedPageAddon, DesignPackageName = designPackage,
-		Template = "PageWithTabsFreedomTemplate", Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty)
+		Template = "PageWithTabsFreedomTemplate", Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty),
+		SaveOnChange = false
 	};
 
 	private static BuildCaseReply Envelope(string outcome, bool success = true, string errorCode = null,
@@ -192,7 +193,7 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
-	[Description("By default the bar is planned with a click that only sets the field, and the page block says so.")]
+	[Description("A call that names no mode passes none to the page step, which plans the bar's default, and the page block reports that default.")]
 	public void Create_ShouldPlanTheBarWithoutASaveOnClick_ByDefault() {
 		// Arrange
 		Passes(Envelope("planned"));
@@ -201,7 +202,7 @@ public sealed class DynamicCaseServiceTests {
 		DynamicCaseResult result = _service.Create(Options(dryRun: true));
 
 		// Assert
-		_pageStep.Received(1).Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>(), false);
+		_pageStep.Received(1).Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>(), null);
 		result.Page.SaveOnChange.Should().BeFalse(because: "the bar's default: the user saves");
 	}
 
@@ -325,6 +326,26 @@ public sealed class DynamicCaseServiceTests {
 		result.Page.Retry.Args["body"].Should().Be(result.Page.Fragment,
 			because: "the retry sends exactly the fragment that was checked");
 		_dependencies.DidNotReceiveWithAnyArgs().RemoveDependencies(default!, default!);
+	}
+
+	[Test]
+	[Description("A page write that fails still names the save mode the bar was planned with, next to the fragment and the retry that carry it.")]
+	public void Create_ShouldReportTheSaveMode_WhenThePageWriteFails() {
+		// Arrange
+		Passes(Envelope("planned"));
+		_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>(), true).Returns(new DynamicCasePagePlan {
+			Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page, DesignPackageName = Package,
+			Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty, saveOnChange: true), SaveOnChange = true
+		});
+		_pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>()).Returns(new DynamicCasePageWrite(false, "conflict", []));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options(saveOnChange: true));
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseOutcomes.CreatedPageFailed, because: "the bar was not written");
+		result.Page.SaveOnChange.Should().BeTrue(
+			because: "the page block names the mode its fragment and retry carry, also when the write failed");
 	}
 
 	[Test]
@@ -691,6 +712,27 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.Outcome.Should().Be(DynamicCaseOutcomes.CreatedPageSkipped, because: "only the case was asked for");
 		result.Page.Status.Should().Be(DynamicCaseService.PageSkipped, because: "the page step was skipped");
+		result.Notes.Should().NotContain(note => note.Contains("save-on-change", StringComparison.Ordinal),
+			because: "no mode was named, so there is no request to report as not applied");
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A save-on-change passed with add-progress-bar=false is reported in a note, in the real call and in the dry run, because no bar is added to carry it.")]
+	public void Create_ShouldNoteTheUnappliedSaveMode_WhenTheBarIsNotWanted(bool dryRun) {
+		// Arrange
+		Passes(Envelope("planned"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options(dryRun: dryRun, addProgressBar: false, saveOnChange: true));
+
+		// Assert
+		result.Page.Status.Should().Be(DynamicCaseService.PageSkipped, because: "the page step was skipped");
+		result.Page.SaveOnChange.Should().BeNull(because: "no bar is planned, so no mode is reported as planned");
+		result.Notes.Should().ContainSingle(note => note.Contains("save-on-change was not applied", StringComparison.Ordinal)
+				&& note.Contains("add-progress-bar is false", StringComparison.Ordinal),
+			because: "the caller named a mode that this call has no bar to apply to");
 		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
 	}
 
@@ -710,6 +752,7 @@ public sealed class DynamicCaseServiceTests {
 		result.Outcome.Should().Be(DynamicCaseOutcomes.AlreadyPresent, because: "the equivalent case exists");
 		result.Success.Should().BeTrue(because: "a safe re-run is a success");
 		result.Page.Status.Should().Be(DynamicCasePageStep.StatusAlreadyPresent, because: "the bar is there");
+		result.Page.SaveOnChange.Should().BeNull(because: "the existing bar keeps its own mode, which this call did not plan");
 		_pageStep.DidNotReceiveWithAnyArgs().Write(default!, default!);
 	}
 

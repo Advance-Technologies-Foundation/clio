@@ -62,8 +62,9 @@ Evidence tags as in every file of this folder: `[traced path:line]`, `[traced, j
   lookup order exists, so the default order is: explicit list > `order-column` > `Position` / `StageOrder` / `Number`
   / `StageNumber` > display value. `orderSource` and the ordered captions are always returned (Q8; g6 §3-4).
 - **Progress bar.** The page change is the AI app wizard's two inserts: `ProgressBarContainer` (`crt.FlexContainer`) at
-  index 0 of `MainContainer`, then `crt.EntityStageProgressBar` with `entityName`, `saveOnChange: true` and
-  `askUserToChangeSchema: false` [traced UI page-with-tabs-freedom-content-generator.ts:57-109] (v r3-C8). The bar
+  index 0 of `MainContainer`, then `crt.EntityStageProgressBar` with `entityName`, `saveOnChange` from
+  `save-on-change` (default false) and `askUserToChangeSchema: true`: the wizard's layout
+  [traced UI page-with-tabs-freedom-content-generator.ts:57-109] (v r3-C8) with the bar's own flag defaults (Q19). The bar
   reads the first enabled, active-version DCM of the entity, not `SysDcmSettings` (`_verdicts.md` conflict 1), so
   both sync directions hold by construction (v r3-C7). The record page comes from the object's RelatedPage add-on (g4
   §7) and is written to the default design package (Q17). Typed, mini and Classic pages are refused before any write
@@ -138,7 +139,7 @@ All open; the owner decides. The recommended option and the evidence for each ar
 | Q16 | Missing package dependencies | clio adds them, opt-out flag, refuse on a cycle |
 | Q17 | Package that receives the page change | default design package |
 | Q18 | How clio writes the page | `PageUpdateCommand` append + data-source validator |
-| Q19 | Progress-bar flags and whether to expose them | wizard values, no argument |
+| Q19 | Progress-bar flags and whether to expose them | template values + `save-on-change` (default false) |
 | Q20 | Typed record pages, mini pages, Classic pages | refuse before any write |
 | Q21 | Bind the stage lookup values to the package | no; note N4 |
 | Q22 | Package version and the `[RequiresPackage]` floor | above every deployed build |
