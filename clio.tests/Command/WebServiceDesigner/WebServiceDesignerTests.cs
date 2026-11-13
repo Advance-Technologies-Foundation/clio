@@ -1072,4 +1072,237 @@ public sealed class WebServiceDesignerTests {
 			.WithMessage("*SchemaNamePrefix*", because: "the message names what failed");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
+
+	private void GivenSettingsExist() =>
+		_client.FindExistingSysSettingCodes(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(ci => ci.Arg<IReadOnlyCollection<string>>().ToList());
+
+	private void DidNotScanUsages() =>
+		_client.DidNotReceive().Select("SysSchema", Arg.Any<IReadOnlyList<string>>(),
+			Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>());
+
+	// The Bing service with its Search method sending the service authentication (use-auth true).
+	private static ServiceSchemaDto BingSchemaSendingAuth(bool withBasicAuth) {
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().UseAuthInfo = true;
+		if (withBasicAuth) {
+			schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(
+				new WebServiceAuthArg("basic", "UsrBingUser", "UsrBingPassword"), null, new WebServiceDefinitionBuilder.Errors());
+		}
+		return schema;
+	}
+
+	private static WebServiceOperationArg SetBasicAuth() =>
+		new("setAuth", Auth: new WebServiceAuthArg("basic", "UsrBingUser", "UsrBingPassword"));
+
+	private static IEnumerable<TestCaseData> EveryCallChanges() {
+		yield return new TestCaseData(new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/"),
+			"base URI").SetArgDisplayNames("setBaseUri");
+		yield return new TestCaseData(SetBasicAuth(), "authentication").SetArgDisplayNames("setAuth");
+	}
+
+	[TestCaseSource(nameof(EveryCallChanges))]
+	[Description("A new base URI, or new authentication of a method that sends it, changes every call a process makes, so it is refused, naming the process and what changes, until the user agrees.")]
+	public void Modify_Should_Refuse_An_Every_Call_Change_Of_A_Called_Service(WebServiceOperationArg operation,
+		string what) {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [operation], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: $"a new {what} changes every call BingSearchProcess makes");
+		result.Error.Should().Contain($"the new {what} changes every call",
+			because: "the refusal says what changes, so the user can decide");
+		result.Error.Should().NotContain("lose their parameters",
+			because: "the element keeps its parameters; only the call changes");
+		result.Usages.Should().ContainSingle(u => u.Process == "BingSearchProcess",
+			because: "the refusal names the process to show the user");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCaseSource(nameof(EveryCallChanges))]
+	[Description("The same base URI or authentication change saves when the user acknowledged the named process.")]
+	public void Modify_Should_Save_An_Every_Call_Change_When_Acknowledged(WebServiceOperationArg operation, string what) {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [operation], ["BingSearchProcess"]);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"the user agreed that the {what} of BingSearchProcess's calls changes");
+		result.Usages.Should().ContainSingle(u => u.Process == "BingSearchProcess",
+			because: "the saved result still lists the affected process");
+		_client.Received(1).SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("Removing the authentication a called method sends is a change of every call it makes.")]
+	public void Modify_Should_Refuse_Removing_The_Authentication_Of_A_Called_Service() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: true));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("none"))], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "every call of BingSearchProcess would stop sending its credentials");
+		result.Error.Should().Contain("the new authentication changes every call", because: "the refusal names what changes");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("New authentication of a service whose called method does not send it (use-auth false) changes no call, so it saves without looking for callers and a notice names that method.")]
+	public void Modify_Should_Save_New_Authentication_When_No_Method_Sends_It() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		GivenRegisteredService(schema);
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [SetBasicAuth()], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "Search sends no authentication, so BingSearchProcess's calls stay the same");
+		DidNotScanUsages();
+		result.Notices.Should().Contain(n => n.Contains("Method 'Search' has use-auth false"),
+			because: "the user must hear that the new authentication does not reach Search (measured)");
+	}
+
+	[Test]
+	[Description("The base URI and authentication the service already has, sent back as describe returns them, change nothing and are not looked up in processes; no use-auth notice either.")]
+	public void Modify_Should_Not_Scan_Usages_When_Base_Uri_And_Auth_Are_Unchanged() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: true));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.bing.example/"), SetBasicAuth()
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the same values change no call");
+		DidNotScanUsages();
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "an unchanged authentication needs no notice");
+		_client.Received(1).SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("A base URI changed and changed back in one call is no change: the guard compares the service before and after the whole call.")]
+	public void Modify_Should_Not_Scan_Usages_When_A_Value_Is_Changed_And_Changed_Back() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/"),
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.bing.example/")
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the stored base URI ends as it was");
+		DidNotScanUsages();
+	}
+
+	[Test]
+	[Description("A new retry count changes no request the API receives, so it saves without looking for callers.")]
+	public void Modify_Should_Not_Scan_Usages_For_A_New_Retry_Count() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setRetryCount", RetryCount: 3)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "retries change no request, so no caller has to agree");
+		DidNotScanUsages();
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => s.RetryCount == 3));
+	}
+
+	[Test]
+	[Description("A base URI and authentication changed together are named together in the refusal.")]
+	public void Modify_Should_Name_Every_Change_Together() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/"), SetBasicAuth()
+		], null);
+
+		// Assert
+		result.Error.Should().Contain("the new base URI and authentication change every call",
+			because: "the user must hear both changes before agreeing");
+	}
+
+	[Test]
+	[Description("A call that changes a called method and the base URI names both: the method change and that every call goes elsewhere.")]
+	public void Modify_Should_Name_The_Base_Uri_Change_Also_For_A_Changed_Method() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("removeMethod", MethodCode: "Search"),
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/")
+		], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the process calls the removed method");
+		result.Error.Should().Contain("lose their parameters", because: "the removed method breaks the caller");
+		result.Error.Should().Contain("the new base URI changes every call",
+			because: "the user must also hear that the calls go to another address before agreeing");
+	}
+
+	[Test]
+	[Description("After setAuth none, no method is named: with no authentication there is nothing a method could fail to send.")]
+	public void Modify_Should_Not_Name_Methods_When_SetAuth_Removes_The_Authentication() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: true));
+		GivenSelect("SysSchema");
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("none"))], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "a service without authentication sends none from any method");
+	}
+
+	[Test]
+	[Description("A method this call defines with an explicit use-auth false is not named in the notice: that was the agent's choice.")]
+	public void Modify_Should_Not_Name_A_Method_Defined_With_Explicit_Use_Auth() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			SetBasicAuth(),
+			new WebServiceOperationArg("addMethod", new WebServiceMethodArg("UsrHealth", "GET", "health", UseAuth: false))
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "UsrHealth was defined without authentication on purpose, and Search sends it");
+	}
 }

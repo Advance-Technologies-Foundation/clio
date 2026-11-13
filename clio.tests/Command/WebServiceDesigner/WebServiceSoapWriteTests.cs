@@ -286,7 +286,7 @@ public sealed class WebServiceSoapWriteTests {
 		// Assert
 		refused.Success.Should().BeFalse(because: "the version changes every call of the service");
 		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
-		refused.Error.Should().Contain("change every call", because: "the version or namespaces change every call the caller makes");
+		refused.Error.Should().Contain("changes every call", because: "the version or namespaces change every call the caller makes");
 		refused.Error.Should().NotContain("lose their parameters",
 			because: "the caller's element keeps its parameters (measured), so the refusal does not claim it breaks");
 		acknowledged.Success.Should().BeTrue(because: "the user agreed");
@@ -318,7 +318,7 @@ public sealed class WebServiceSoapWriteTests {
 		// Assert
 		result.Success.Should().BeFalse(because: "both callers need the user's yes");
 		result.Error.Should().Contain("lose their parameters", because: "the caller of the changed method may break");
-		result.Error.Should().Contain("change every call", because: "the other caller keeps its element but every call changes");
+		result.Error.Should().Contain("changes every call", because: "the other caller keeps its element but every call changes");
 	}
 
 	[Test]
@@ -533,7 +533,7 @@ public sealed class WebServiceSoapWriteTests {
 		unchanged.Success.Should().BeTrue(because: "describe's own list sent back changes no call");
 		refused.Success.Should().BeFalse(because: "a new namespace changes every envelope the service sends");
 		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
-		refused.Error.Should().Contain("change every call", because: "the version or namespaces change every call the caller makes");
+		refused.Error.Should().Contain("changes every call", because: "the version or namespaces change every call the caller makes");
 		refused.Error.Should().NotContain("lose their parameters",
 			because: "the caller's element keeps its parameters (measured), so the refusal does not claim it breaks");
 	}

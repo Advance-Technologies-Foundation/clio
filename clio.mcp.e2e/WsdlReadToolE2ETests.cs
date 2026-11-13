@@ -81,6 +81,38 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ReadWsdlTool.ToolName)]
+	[AllureName("read-wsdl warns about WCF ports the platform cannot call and names the SOAP 1.1 port")]
+	[Description("Reads a WSDL written by a WCF host (wsdl-files) with a SOAP 1.1, a SOAP 1.2, a SOAP 1.2 WS-Addressing and a wsHttpBinding port, and expects all four ports back with a warning on each of the last three that names the SOAP 1.1 port to register instead; nothing is saved.")]
+	public async Task ReadWsdl_Should_Warn_About_Wcf_Ports_The_Platform_Cannot_Call() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the read-wsdl E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(3));
+
+		// Act
+		WsdlReadResult read = await CallAsync<WsdlReadResult>(ReadWsdlTool.ToolName, new Dictionary<string, object?> {
+			["environment-name"] = _environmentName, ["wsdl-files"] = new[] { Asset("wcf-bindings.wsdl") }
+		}, cts.Token);
+
+		// Assert
+		read.Success.Should().BeTrue(because: $"the shipped WCF WSDL is readable; error: {read.Error}");
+		read.Services!.Select(s => s.Port).Should().Equal(
+			["BasicHttpBinding_ICalc", "CustomBinding_ICalc", "CustomBinding_ICalc1", "WSHttpBinding_ICalc"],
+			because: "every SOAP port is still returned");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'CustomBinding_ICalc' is SOAP 1.2")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "WCF refuses the platform's SOAP 1.2 call, which carries the action only in a SOAPAction header");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'CustomBinding_ICalc1' requires WS-Addressing")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "the platform writes no wsa:Action or wsa:To");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'WSHttpBinding_ICalc' requires WS-Addressing")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "a wsHttpBinding requires WS-Addressing");
+	}
+
+	[Test]
+	[AllureTag(ReadWsdlTool.ToolName)]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureName("read-wsdl output registers a SOAP service that describe reads back the same")]
 	[Description("Reads a WSDL shipped with the tests (wsdl-files), expects both SOAP ports with the SOAP 1.2 one as Studio's pick and codes built from the stand's prefix, registers that port's arguments trimmed to three operations (a SOAP-header array, an object array, a complex header with a body) under a throwaway code, and expects describe-web-service to report the same namespaces, message elements, SOAP actions, paths, SOAP-header flags and item elements; a second read with service-code returns the same codes as existing methods.")]

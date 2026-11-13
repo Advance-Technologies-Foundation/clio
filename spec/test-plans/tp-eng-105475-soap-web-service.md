@@ -216,6 +216,17 @@ The wire shape was measured first (ADR D10). Unit rows live in
 | TC-I-D03 | e2e | Registers a REST service with a query array, a body array and an Object array, and expects a JSON array for the query value, a text for the body array and an unknown item field refused together with their locations, with no status (nothing sent); needs no internet | 1, 2 |
 | TC-I-D04 | e2e (existing) | The REST, SOAP and contract web service e2e suites stay green | 1 |
 
+## Follow-up checks (story 6, ADR D15)
+
+| ID | Type | Case | Covers |
+|---|---|---|---|
+| TC-U-F01 | unit | A new base URI, and new authentication of a called method with `use-auth` (basic, and none over basic), are refused naming the process and what changes, and save after `acknowledge-usages`; both together are named together, and next to a removed method; unchanged values, a value changed and changed back, `setRetryCount`, and new authentication of a method without `use-auth` save without scanning processes (`WebServiceDesignerTests`, `WebServiceSoapWriteTests`) | D15 |
+| TC-U-F02 | unit | After a change of the authentication that leaves some, a notice names the methods with `use-auth` false, not one the call defined with an explicit `use-auth`; none after `setAuth` none or an unchanged authentication (`WebServiceDesignerTests`) | D15 |
+| TC-U-F03 | unit | On a WCF WSDL the SOAP 1.2 port and both WS-Addressing ports are warned about, naming the SOAP 1.1 port, also when only the 1.2 port is read; with no SOAP 1.1 port the Content-Type or wsa:Action/wsa:To workaround is given; optional addressing and an inline marker without `wsdl:required="true"` are not warned about; WCF's August 2004 marker is; a message-security policy is said to be uncallable; an http alternative to an https port is not recommended (`WsdlParserTests`) | D15 |
+| TC-I-F01 | e2e | modify-web-service refuses `setBaseUri` on the e2e service a fixture process calls, naming it and the base URI, and saves nothing (`WebServiceToolsE2ETests`) | D15 |
+| TC-I-F02 | e2e | read-wsdl on the WCF WSDL (wsdl-files) returns the four ports with a SOAP 1.2 or WS-Addressing warning on each of the last three, naming the SOAP 1.1 port (`WsdlReadToolE2ETests`) | D15 |
+| TC-I-F03 | e2e (existing) | The REST, SOAP, read-wsdl and contract web service e2e suites stay green | D15 |
+
 ## Knowledge (story 5)
 
 TC-K: the clio-knowledge bundle tests and the fact-check gate on the changed articles.

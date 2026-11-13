@@ -356,6 +356,46 @@ Rerun with the gate (same case, stand and guides, 2026-11-13): the agent's first
 it told the user the SOAP call sends a real request and asked for a yes. After "Yes, send it." it repeated the call with
 `user-confirmed: true` and got HTTP 200 and 5.
 
+### D15. Follow-up checks: every-call changes, per-method authentication, ports the platform cannot call (2026-11-14)
+
+Three questions left open by slices A-D were measured on stand `Creatio` (.NET Framework) against httpbin and a WCF
+host (.NET Framework 4.8, one contract on `BasicHttpBinding`, a SOAP 1.2 custom binding, a SOAP 1.2 WS-Addressing
+custom binding and `WSHttpBinding` with security mode None); the user decided to fix all three in clio.
+
+- **Usage guard.** `setBaseUri` changes every call a process makes, exactly like `setNamespaces` and `setType` (D7),
+  and `setAuth` every call of a method that sends the authentication, but neither added anything to the guard:
+  clio#1900 guarded only `setMethod` and `removeMethod`, and nothing decided to exempt them. The guard now compares the
+  service before and after the whole call (the base URI as stored after normalisation; the authentication type and
+  every value with its source; the namespace list; the type): a new base URI, namespace list or version counts as
+  changing every method, new authentication as changing the methods with `use-auth` after the call. Describe output
+  sent back, or a value changed and changed back in one call, scans nothing. `setRetryCount` stays exempt: retries
+  change no request the API receives. The refusal names every change, also next to a broken method ("the new base URI
+  and authentication change every call ...").
+- **Authentication is per method.** The platform attaches the service authentication only for a method with
+  `UseAuthInfo` (Terrasoft.Services `ServiceClientRequest.GetRequestData`), whatever the service type: SOAP 1.1 and 1.2
+  send `Authorization: Basic` exactly as REST does (measured; Digest is sent as preemptive Basic, OAuth 2.0 as
+  `Bearer`, source). `setAuth` leaves the kept methods' `use-auth` as it was (measured: a method saved without it still
+  sends nothing), so after a call that changed the authentication a notice names the methods with `use-auth` false,
+  except the ones the call defined with an explicit `use-auth`. Rejected: switching them on silently; a method may
+  have been saved without authentication on purpose (a public health-check).
+- **Ports the platform cannot call.** The platform sends a SOAP 1.2 action only as a `SOAPAction` header, never as the
+  `action` parameter of `Content-Type`; WCF on a SOAP 1.2 binding dispatches by that parameter and answers every call
+  with `ActionNotSupported` (Action ''); ASMX answers. A binding that requires WS-Addressing gets no `wsa:Action` or
+  `wsa:To` and answers `DestinationUnreachable`: a `wsaw:UsingAddressing`, `wsam:Addressing` or WCF's August 2004
+  `wsap:UsingAddressing` in a policy the binding references (not under `wsp:Optional`), or one directly in the binding
+  with `wsdl:required="true"` (WSDL 1.1 reads an extension without it as optional). A policy with a WS-SecurityPolicy
+  symmetric or asymmetric binding (a default `wsHttpBinding`) cannot be called at all. `read-wsdl` warns on each and
+  names a SOAP 1.1 port of the same port type that needs neither, preferring one of the same service at the same scheme
+  and host; one elsewhere (another host, or http where the warned port is https) is named with that difference and
+  left to the user. With none, the warning gives the workaround measured to work (a request header parameter with the
+  path `Content-Type` carrying `action="..."`, one per method; two `soap-header` parameters with the paths `wsa:Action`
+  and `wsa:To`), whose values come from a system setting or the process because a constant is refused there; none for
+  message security. The scan walks each binding and policy once with the parse clock checked (a hostile WSDL cannot
+  outrun the parse limit); policy normal form with an empty alternative, nested references and port-level policies
+  are not read. `studio-pick` keeps meaning Studio's
+  choice (D12) and is documented as not a recommendation. Rejected: moving `studio-pick` to the SOAP 1.1 port (it would
+  no longer say what Studio does) and a platform-side fix (out of clio's scope; worth a platform ticket).
+
 ## Consequences
 
 - Slice A changes no write path: register still creates REST only and modify still refuses SOAP until slice B.

@@ -456,4 +456,190 @@ public sealed class WsdlParserTests {
 		WsdlParser.ShortenCaption("intA").Should().Be("intA", because: "no capitalized word of two letters or more");
 		WsdlParser.ShortenCaption("getBank.Method").Should().Be("BMethod", because: "only capitalized words are kept");
 	}
+
+	private static string BindingWsdl(string policies, string bindings, string ports) => $"""
+		<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+			xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" xmlns:xs="http://www.w3.org/2001/XMLSchema"
+			xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy" xmlns:wsaw="http://www.w3.org/2006/05/addressing/wsdl"
+			xmlns:wsam="http://www.w3.org/2007/05/addressing/metadata"
+			xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
+			xmlns:tns="http://example.org/t/" targetNamespace="http://example.org/t/">
+			{policies}
+			<wsdl:types><xs:schema elementFormDefault="qualified" targetNamespace="http://example.org/t/">
+				<xs:element name="Ping"><xs:complexType><xs:sequence><xs:element name="text" type="xs:string" /></xs:sequence></xs:complexType></xs:element>
+				<xs:element name="PingResponse"><xs:complexType><xs:sequence><xs:element name="result" type="xs:string" /></xs:sequence></xs:complexType></xs:element>
+			</xs:schema></wsdl:types>
+			{Messages("Ping", "Ping", "PingResponse")}
+			<wsdl:portType name="P">{SimpleOperation("Ping")}</wsdl:portType>
+			{bindings}
+			<wsdl:service name="Svc">{ports}</wsdl:service>
+		</wsdl:definitions>
+		""";
+
+	private static string Binding(string name, string soapPrefix, string extra = "") =>
+		$"<wsdl:binding name=\"{name}\" type=\"tns:P\">{extra}<{soapPrefix}:binding transport=\"http://schemas.xmlsoap.org/soap/http\" />"
+		+ $"<wsdl:operation name=\"Ping\"><{soapPrefix}:operation soapAction=\"http://example.org/t/Ping\" />"
+		+ $"<wsdl:input><{soapPrefix}:body use=\"literal\" /></wsdl:input><wsdl:output><{soapPrefix}:body use=\"literal\" /></wsdl:output>"
+		+ "</wsdl:operation></wsdl:binding>";
+
+	private static string Port(string name, string binding, string soapPrefix) =>
+		$"<wsdl:port name=\"{name}\" binding=\"tns:{binding}\"><{soapPrefix}:address location=\"http://localhost/{name}\" /></wsdl:port>";
+
+	[Test]
+	[Description("On a WCF WSDL, the SOAP 1.2 port and the two WS-Addressing ports are warned about, each naming the SOAP 1.1 port to register instead (measured: the platform's SOAP 1.2 call gets ActionNotSupported, the WS-Addressing calls DestinationUnreachable); the SOAP 1.1 port is not warned about.")]
+	public void Parse_Should_Warn_About_Ports_The_Platform_Cannot_Call_And_Name_The_Soap11_Port() {
+		// Arrange / Act
+		WsdlDocument document = ParseFixture("wcf-bindings.wsdl");
+
+		// Assert
+		document.Ports.Select(p => p.Name).Should().Equal(
+			["BasicHttpBinding_ICalc", "CustomBinding_ICalc", "CustomBinding_ICalc1", "WSHttpBinding_ICalc"],
+			because: "every SOAP port is still returned; the warnings only say which one to register");
+		document.Warnings.Should().Contain(w => w.StartsWith("Port 'CustomBinding_ICalc' is SOAP 1.2")
+				&& w.Contains("ActionNotSupported") && w.Contains("Register port 'BasicHttpBinding_ICalc' (SOAP 1.1) instead"),
+			because: "the platform sends a SOAP 1.2 action only as a SOAPAction header, which WCF ignores");
+		document.Warnings.Should().Contain(w => w.StartsWith("Port 'CustomBinding_ICalc1' requires WS-Addressing")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "its binding references a policy with wsaw:UsingAddressing");
+		document.Warnings.Should().Contain(w => w.StartsWith("Port 'WSHttpBinding_ICalc' requires WS-Addressing"),
+			because: "a wsHttpBinding requires WS-Addressing too");
+		document.Warnings.Should().NotContain(w => w.Contains("Port 'BasicHttpBinding_ICalc'"),
+			because: "the platform calls a SOAP 1.1 port without WS-Addressing correctly");
+	}
+
+	[Test]
+	[Description("Reading only the SOAP 1.2 port still names the SOAP 1.1 port of the WSDL, which the port option left out.")]
+	public void Parse_Should_Name_The_Soap11_Port_When_Only_The_Soap12_Port_Is_Read() {
+		// Arrange / Act
+		WsdlDocument document = _sut.Parse([FixtureFile("wcf-bindings.wsdl")], "Usr",
+			new WsdlParseOptions(Port: "CustomBinding_ICalc"));
+
+		// Assert
+		document.Ports.Should().ContainSingle(because: "the port option narrows what is built");
+		document.Warnings.Should().ContainSingle(w => w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "the alternative is chosen over every SOAP port of the WSDL, not only the ones read");
+	}
+
+	[Test]
+	[Description("A SOAP 1.2 port with no SOAP 1.1 alternative gets the Content-Type workaround: a header parameter carrying the action parameter.")]
+	public void Parse_Should_Give_The_Content_Type_Workaround_When_There_Is_No_Soap11_Port() {
+		// Arrange
+		string wsdl = BindingWsdl("", Binding("B12", "soap12"), Port("Soap12", "B12", "soap12"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2")
+				&& w.Contains("with the path Content-Type") && w.Contains("action=\"<its soap-action>\""),
+			because: "with no SOAP 1.1 port the only way to reach a WCF SOAP 1.2 endpoint is to send the action parameter");
+	}
+
+	[Test]
+	[Description("A wsaw:UsingAddressing directly in the binding with wsdl:required=\"true\" requires WS-Addressing; with no SOAP 1.1 port without it, the warning gives the wsa:Action / wsa:To workaround.")]
+	public void Parse_Should_Give_The_Addressing_Workaround_For_An_Inline_Addressing_Marker() {
+		// Arrange
+		string wsdl = BindingWsdl("", Binding("B11", "soap", "<wsaw:UsingAddressing wsdl:required=\"true\" />"),
+			Port("Soap", "B11", "soap"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap' requires WS-Addressing")
+				&& w.Contains("wsa:Action") && w.Contains("wsa:To"),
+			because: "the only SOAP 1.1 port requires WS-Addressing itself, so there is no port to register instead");
+	}
+
+	[Test]
+	[Description("WS-Addressing a policy marks optional (wsp:Optional=\"true\") is left to the client, so a SOAP 1.1 port with it is not warned about.")]
+	public void Parse_Should_Not_Warn_About_Optional_Addressing() {
+		// Arrange
+		string policies = "<wsp:Policy wsu:Id=\"Opt\"><wsp:ExactlyOne><wsp:All><wsam:Addressing wsp:Optional=\"true\" />"
+			+ "</wsp:All></wsp:ExactlyOne></wsp:Policy>";
+		string wsdl = BindingWsdl(policies, Binding("B11", "soap", "<wsp:PolicyReference URI=\"#Opt\" />"),
+			Port("Soap", "B11", "soap"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().NotContain(w => w.Contains("WS-Addressing"),
+			because: "optional addressing does not make the service refuse a call without wsa headers");
+	}
+
+	[Test]
+	[Description("A wsaw:UsingAddressing directly in the binding without wsdl:required=\"true\" only says addressing is supported (WSDL 1.1 extension rules), so the port is not warned about.")]
+	public void Parse_Should_Not_Warn_About_Inline_Addressing_That_Is_Not_Required() {
+		// Arrange
+		string wsdl = BindingWsdl("", Binding("B11", "soap", "<wsaw:UsingAddressing wsdl:required=\"false\" />"),
+			Port("Soap", "B11", "soap"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().NotContain(w => w.Contains("WS-Addressing"),
+			because: "such a service accepts a call without wsa headers");
+	}
+
+	[Test]
+	[Description("A port whose policy requires WS-Security message security is said to be uncallable, with no workaround, and the SOAP 1.1 port is named.")]
+	public void Parse_Should_Warn_That_A_Message_Security_Port_Cannot_Be_Called() {
+		// Arrange
+		string policies = "<wsp:Policy wsu:Id=\"Sec\"><wsp:ExactlyOne><wsp:All>"
+			+ "<sp:SymmetricBinding xmlns:sp=\"http://schemas.xmlsoap.org/ws/2005/07/securitypolicy\" /><wsaw:UsingAddressing />"
+			+ "</wsp:All></wsp:ExactlyOne></wsp:Policy>";
+		string wsdl = BindingWsdl(policies,
+			Binding("BWs", "soap12", "<wsp:PolicyReference URI=\"#Sec\" />") + Binding("B11", "soap"),
+			Port("Ws", "BWs", "soap12") + Port("Soap", "B11", "soap"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		string warning = document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Ws'"),
+			because: "the secured port gets one warning").Which;
+		warning.Should().Contain("cannot be called", because: "the platform cannot produce WS-Security message security");
+		warning.Should().NotContain("wsa:To", because: "WS-Addressing headers would not make such a port callable");
+		warning.Should().Contain("Register port 'Soap' (SOAP 1.1) instead", because: "the plain SOAP 1.1 port works");
+	}
+
+	[Test]
+	[Description("A SOAP 1.1 alternative at an http address, when the warned SOAP 1.2 port is https, is named with that difference and left to the user instead of being recommended.")]
+	public void Parse_Should_Not_Recommend_A_Soap11_Port_That_Drops_Https() {
+		// Arrange
+		string ports = "<wsdl:port name=\"Soap12\" binding=\"tns:B12\"><soap12:address location=\"https://api.example/svc\" /></wsdl:port>"
+			+ "<wsdl:port name=\"Soap\" binding=\"tns:B11\"><soap:address location=\"http://api.example/svc\" /></wsdl:port>";
+		string wsdl = BindingWsdl("", Binding("B12", "soap12") + Binding("B11", "soap"), ports);
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		string warning = document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2"),
+			because: "the SOAP 1.2 port is warned about").Which;
+		warning.Should().Contain("http address where this port's is https",
+			because: "registering the http port would send the credentials readable");
+		warning.Should().NotContain("instead", because: "such a port is not recommended without the user's yes");
+	}
+
+	[Test]
+	[Description("WCF's WS-Addressing August 2004 marker in a policy counts too, and its workaround names the 2004/08 addressing namespace.")]
+	public void Parse_Should_Detect_Addressing_August_2004() {
+		// Arrange
+		string policies = "<wsp:Policy wsu:Id=\"Aug\"><wsp:ExactlyOne><wsp:All>"
+			+ "<wsap:UsingAddressing xmlns:wsap=\"http://schemas.xmlsoap.org/ws/2004/08/addressing/policy\" />"
+			+ "</wsp:All></wsp:ExactlyOne></wsp:Policy>";
+		string wsdl = BindingWsdl(policies, Binding("B11", "soap", "<wsp:PolicyReference URI=\"#Aug\" />"),
+			Port("Soap", "B11", "soap"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap' requires WS-Addressing")
+				&& w.Contains("http://schemas.xmlsoap.org/ws/2004/08/addressing "),
+			because: "such a service expects the August 2004 wsa:Action and wsa:To headers");
+	}
 }

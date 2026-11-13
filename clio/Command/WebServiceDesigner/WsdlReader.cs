@@ -27,7 +27,7 @@ public sealed record WsdlServiceView(
 	[property: JsonPropertyName("port")] string Port,
 
 	[property: JsonPropertyName("studio-pick")]
-	[property: Description("True for the port Studio's quick setup would create: the SOAP 1.2 one when the WSDL has both")]
+	[property: Description("True for the port Studio's quick setup would create: the SOAP 1.2 one when the WSDL has both. Not a recommendation: a warning names the port to register when the platform cannot call this one")]
 	bool StudioPick,
 
 	[property: JsonPropertyName("arguments")]
@@ -55,7 +55,7 @@ public sealed record WsdlReadResult(
 	IReadOnlyList<WsdlServiceView> Services = null,
 
 	[property: JsonPropertyName("warnings")]
-	[property: Description("What was not read or will need a check: dropped ports, operations and elements, unsupported constructs")]
+	[property: Description("What was not read or will need a check: dropped ports, operations and elements, unsupported constructs, and ports the platform may not be able to call (SOAP 1.2, WS-Addressing, message security) with the port to register instead")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	IReadOnlyList<string> Warnings = null,
 

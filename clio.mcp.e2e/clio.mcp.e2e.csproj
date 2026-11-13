@@ -68,6 +68,10 @@
 		<None Include="..\clio.tests\Examples\Wsdl\wizard-features.wsdl" Link="Assets\Wsdl\wizard-features.wsdl">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+		<!-- read-wsdl dispatch warnings (ENG-105475 follow-up): a WSDL written by a WCF host with four bindings. -->
+		<None Include="..\clio.tests\Examples\Wsdl\wcf-bindings.wsdl" Link="Assets\Wsdl\wcf-bindings.wsdl">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 	</ItemGroup>
 
 </Project>

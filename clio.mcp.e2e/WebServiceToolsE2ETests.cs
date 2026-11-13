@@ -206,9 +206,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ModifyWebServiceTool.ToolName)]
-	[AllureName("modify-web-service refuses a change to a method that a process calls")]
-	[Description("Registers a throwaway service, builds a process whose Call web service element calls its method, expects describe-web-service usages to name that process and element, then asks to remove the called method without acknowledge-usages and expects a refusal that names the process and changes nothing.")]
-	public async Task ModifyWebService_Should_Refuse_Changing_A_Method_A_Process_Calls() {
+	[AllureName("modify-web-service refuses a change to a method, or the base URI, of a service a process calls")]
+	[Description("Registers a throwaway service, builds a process whose Call web service element calls its method, expects describe-web-service usages to name that process and element, then asks to remove the called method, and separately to give the service a new base URI, without acknowledge-usages and expects each refused naming the process (the second as a change of every call) with nothing changed.")]
+	public async Task ModifyWebService_Should_Refuse_Changing_A_Called_Method_Or_The_Base_Uri() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
@@ -255,6 +255,13 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 						new Dictionary<string, object?> { ["op"] = "removeMethod", ["method-code"] = MethodCode }
 					}
 				}, context.CancellationTokenSource.Token);
+			WebServiceToolResult refusedBaseUri = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = _environmentName, ["code"] = _serviceCode,
+					["operations"] = new[] {
+						new Dictionary<string, object?> { ["op"] = "setBaseUri", ["base-uri"] = "https://example.invalid/other" }
+					}
+				}, context.CancellationTokenSource.Token);
 			WebServiceToolResult after = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
 				new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode },
 				context.CancellationTokenSource.Token);
@@ -266,8 +273,14 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			refused.Success.Should().BeFalse(because: "removing a called method without acknowledge-usages must be refused");
 			refused.Usages.Should().Contain(u => u.Process == processName,
 				because: "the refusal must name the processes the user has to approve breaking");
+			refusedBaseUri.Success.Should().BeFalse(because: "a new base URI changes every call the process makes");
+			refusedBaseUri.Error.Should().Contain("base URI", because: "the refusal says what changes for every call");
+			refusedBaseUri.Usages.Should().Contain(u => u.Process == processName,
+				because: "the refusal names the process the user has to agree to change");
 			after.Service!.Methods.Should().Contain(m => m.Code == MethodCode,
 				because: "a refused modify must not have saved anything");
+			after.Service.BaseUri.Should().Be("https://example.invalid/api/",
+				because: "the refused base URI must not have been saved (a REST base URI is stored with a trailing slash)");
 		} finally {
 			if (processCreated) {
 				// The process goes first: the service teardown must not leave a caller of a removed service behind.
