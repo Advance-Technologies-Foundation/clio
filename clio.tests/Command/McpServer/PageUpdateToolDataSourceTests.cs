@@ -73,7 +73,7 @@ public sealed class PageUpdateToolDataSourceTests {
 		]);
 		return new PageGetCommand(_applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), hierarchyClient,
 			new PageSchemaBodyParser(), new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 	}
 
 	private static PageUpdateTool BuildTool(PageGetCommand getCommand) {

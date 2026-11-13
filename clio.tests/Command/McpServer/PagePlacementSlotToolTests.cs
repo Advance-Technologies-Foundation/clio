@@ -89,7 +89,7 @@ public sealed class PagePlacementSlotToolTests {
 		]);
 		var command = new PageGetCommand(client, urls, logger, hierarchy, new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		var tool = new PageGetTool(command, logger, resolver, new PageFileWriter(new MockFileSystem()));

@@ -28,6 +28,21 @@ DESCRIPTION
     replacement. Normal update-page/sync-pages calls create that replacement;
     there is no need to copy vendor bodies or override the target package.
 
+    page.packageChoice says whether a write must name its target package. required is
+    true when another unlocked package (or one whose lock state could not be read) also
+    holds a replacing layer of the page: the user then chooses which package to change,
+    and update-page needs that layer's packageUId as --target-package-uid (pass
+    page.designPackageUId to keep the default; for another layer update-page takes only
+    --mode append). defaultTargetPackageName, present only when required, names the
+    default target. layers, present only when required,
+    lists the page's replacing layers lowest first, the base page excluded: packageName,
+    packageUId, schemaUId, hierarchyLevel (for an element several layers change, the
+    highest wins at runtime), packageLocked, isDefaultTarget and changes (that layer's
+    own viewConfigDiff operations and handler requests, at most 10, plus moreChanges).
+    A page whose other layers are all in locked packages has required false. A page
+    customized only in the default target needs no extra request; otherwise the
+    lock states cost one SysPackage query.
+
     CLI vs MCP: the CLI verb returns bundle and raw.body inline. The MCP
     get-page tool compacts its successful response to page and files, plus
     editable when the checksum probe succeeded - read the body from the path

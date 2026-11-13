@@ -327,7 +327,7 @@ public sealed class PageGetCommandSlotlessPlacementTests {
 		hierarchy.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>()).Returns(chain);
 		return new PageGetCommand(client, urls, Substitute.For<ILogger>(), hierarchy, new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 	}
 
 	private static JObject FindElement(JContainer tree, string name) =>

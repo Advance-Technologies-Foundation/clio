@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
@@ -49,6 +50,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 	private readonly IPageSchemaBodyParser _bodyParser;
 	private readonly IPageBundleBuilder _bundleBuilder;
 	private readonly IPageFileWriter _pageFileWriter;
+	private readonly IPageLayerInspector _layerInspector;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="PageGetCommand"/> class.
@@ -64,6 +66,9 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 	/// the same workspace layout as the MCP tool and a later <c>update-page</c> can find the baseline.
 	/// Injected as a required dependency so a broken DI registration fails loudly at resolve time
 	/// instead of silently disabling the baseline write.</param>
+	/// <param name="layerInspector">Finds the page's replacing layers for <c>page.packageChoice</c>.</param>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "DI constructor: each parameter is an independent collaborator of the page read.")]
 	public PageGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
@@ -71,7 +76,8 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 		IPageDesignerHierarchyClient hierarchyClient,
 		IPageSchemaBodyParser bodyParser,
 		IPageBundleBuilder bundleBuilder,
-		IPageFileWriter pageFileWriter) {
+		IPageFileWriter pageFileWriter,
+		IPageLayerInspector layerInspector) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_logger = logger;
@@ -79,6 +85,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 		_bodyParser = bodyParser;
 		_bundleBuilder = bundleBuilder;
 		_pageFileWriter = pageFileWriter;
+		_layerInspector = layerInspector;
 	}
 
 	/// <summary>
@@ -146,8 +153,9 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 				return false;
 			}
 
-			string rootSchemaUId = FindRootSchemaUId(initialHierarchy, options.SchemaName) ?? schemaUId;
-			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = ResolveHierarchy(schemaUId, rootSchemaUId, designPackageUId, initialHierarchy);
+			string rootSchemaUId = PageHierarchyChain.FindRootSchemaUId(initialHierarchy, options.SchemaName) ?? schemaUId;
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = PageHierarchyChain.ReadFromRootVariant(
+				_hierarchyClient, options.SchemaName, schemaUId, designPackageUId, initialHierarchy);
 
 			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
@@ -170,6 +178,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 			PageEditableSchemaInfo editableInfo = BuildEditableSchemaInfo(editableSchema);
 			(System.Text.Json.Nodes.JsonObject baseViewModelConfig, System.Text.Json.Nodes.JsonObject baseModelConfig) =
 				BuildExcludedOwnBodyBase(options.ExcludeOwnBody, parts, editableSchema);
+			PagePackageChoice packageChoice = _layerInspector.Inspect(options.SchemaName, hierarchy, designPackageUId);
 			response = new PageGetResponse {
 				Success = true,
 				Page = new PageMetadataInfo {
@@ -183,6 +192,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 					DesignPackageName = designPackageName,
 					RootSchemaUId = rootSchemaUId,
 					WillCreateReplacingInDesignPackage = willCreateReplacing,
+					PackageChoice = packageChoice,
 					SchemaType = pageSchemaType.ToLabel(),
 					SchemaTypeValue = currentSchema.SchemaType
 				},
@@ -391,18 +401,6 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 			baseBundle.ModelConfig ?? new System.Text.Json.Nodes.JsonObject());
 	}
 
-	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchy(
-		string schemaUId,
-		string rootSchemaUId,
-		string designPackageUId,
-		IReadOnlyList<PageDesignerHierarchySchema> initialHierarchy) {
-		if (string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
-			return initialHierarchy;
-		}
-		IReadOnlyList<PageDesignerHierarchySchema> fullHierarchy = _hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
-		return fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy;
-	}
-
 	private PageDesignerHierarchySchema LoadReplacingSchemaInDesignPackage(string schemaName, string designPackageUId) {
 		string replacingUId = PageSchemaMetadataHelper.FindExistingSchemaInPackage(
 			_applicationClient, _serviceUrlBuilder, schemaName, designPackageUId);
@@ -447,15 +445,6 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 		} catch {
 			return null;
 		}
-	}
-
-	private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
-		for (int i = hierarchy.Count - 1; i >= 0; i--) {
-			if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
-				return hierarchy[i].UId;
-			}
-		}
-		return null;
 	}
 
 	private static string BuildEmptyBody(string schemaName, PageSchemaType schemaType) {

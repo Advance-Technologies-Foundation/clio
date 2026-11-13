@@ -36,6 +36,7 @@ public sealed class PageGetTool(
 		"REPLACES that directory every call (recursive delete of this clio scratch tree; Destructive=false), so in-place edits are lost; save via update-page/sync-pages. " +
 		"Paths are on the MCP SERVER host, unreadable off that filesystem. " +
 		"output-directory anchors it at your project root. " +
+		"page.packageChoice.required: ask which package to write to. " +
 		"BEFORE editing, call get-guidance `page-modification` (`mobile-page-modification` if meta.json says schema-type mobile); follow its pre-edit checklist.")]
 	public PageGetResponse GetPage(
 		[Description("schema-name (required); environment-name preferred; uri/login/password fallback only.")]
