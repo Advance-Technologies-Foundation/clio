@@ -345,6 +345,14 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.GetAppearanceSettings,
 				"http://localhost/ServiceModel/AppearanceSettingsService.svc/GetAppearanceSettings");
+			// create-dynamic-case posts both of its passes here; a wrong path answers 404 and reads as a package
+			// that predates the operation.
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.BuildCase,
+				"http://localhost/0/rest/ProcessDesignService/BuildCase");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.BuildCase,
+				"http://localhost/rest/ProcessDesignService/BuildCase");
 		}
 	}
 
