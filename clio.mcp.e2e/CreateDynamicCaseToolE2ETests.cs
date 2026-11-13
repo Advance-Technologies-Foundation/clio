@@ -28,13 +28,15 @@ namespace Clio.Mcp.E2E;
 /// different order on the same object that is refused as case-exists, and refusals that write nothing.
 /// </summary>
 /// <remarks>
-/// <para>Developer-local until the seeded object ships with the ProcessDesigner lane's stand content. It needs an
-/// object <see cref="Entity"/> in package <see cref="Package"/> with the lookup column <see cref="StageColumn"/>
-/// over <see cref="StageLookup"/> (four values ordered by an integer position column that differs from both the
-/// display and the creation order), a non-lookup column <see cref="TextColumn"/>, a tabbed Freedom UI record page
-/// registered in its RelatedPage add-on, and no case on the object. Without the object every test ignores itself.
-/// Run it by hand against an owned stand with a CrtProcessBuilder that carries BuildCase, with
-/// <c>McpE2E__Sandbox__EnvironmentName</c> and <c>McpE2E__AllowDestructiveMcpTests=true</c>.</para>
+/// <para>Runs on the ProcessDesigner lane. Its seed ships in the AutoTestClioMcp 7.8.0 test package, which the
+/// lane's stand installs: the object <see cref="Entity"/> with the lookup column <see cref="StageColumn"/> over
+/// <see cref="StageLookup"/> (four values ordered by an integer position column that differs from both the display
+/// and the creation order), a non-lookup column <see cref="TextColumn"/>, a tabbed Freedom UI record page
+/// registered in its RelatedPage add-on, and no case on the object. The case itself is written to
+/// <see cref="Package"/>. Without the object the tests ignore themselves on a developer stand and fail on the lane
+/// (<c>McpE2E:RequireProcessBuilder</c>), where a missing seed means the stand content is broken, not that the
+/// tests should be skipped. Locally it needs <c>McpE2E__Sandbox__EnvironmentName</c>,
+/// <c>McpE2E__AllowDestructiveMcpTests=true</c>, a CrtProcessBuilder that carries BuildCase and the seed.</para>
 /// <para>Cleanup follows the undo order the result enables, strictly in sequence: the link-row binding, the
 /// settings-row binding only when this run CREATED the settings row (a reused row may hold other cases' link rows,
 /// which deleting it would cascade away), the case schema, then the record page's own body restored. A replacing
@@ -42,10 +44,7 @@ namespace Clio.Mcp.E2E;
 /// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
-[Category("McpE2E.Manual")]
-[Category("LocalOnly")]
 [Category(McpE2ECategories.ProcessDesigner)]
-[Explicit("Writes a case, settings rows, package bindings and a record page; run it by hand against an owned stand.")]
 [AllureFeature(CreateDynamicCaseTool.CreateDynamicCaseToolName)]
 [NonParallelizable]
 public sealed class CreateDynamicCaseToolE2ETests {
@@ -188,14 +187,15 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	#region Methods: Arrange and calls
 
 	private static async Task<ProcessDesignerArrangeContext> StartAsync() {
-		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
-			"This fixture writes a case, settings rows, package bindings and a record page. Run it by hand against an "
-			+ "owned stand.");
-		if (!TestConfiguration.Load().AllowDestructiveMcpTests) {
-			Assert.Ignore("Opt in with McpE2E__AllowDestructiveMcpTests for this local dynamic-case test.");
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Opt in with McpE2E__AllowDestructiveMcpTests: this fixture writes a case, settings rows, "
+				+ "package bindings and a record page.");
 		}
-		ProcessDesignerArrangeContext context =
-			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion);
+		// The lifecycle test makes about ten calls, a build among them, and its cleanup restores the page through the
+		// same session: the three-minute default ran out before the restore ("A task was canceled").
+		ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(Subject,
+			MinimumPackageVersion, sessionTimeout: TimeSpan.FromMinutes(10));
 		JsonElement entity = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysSchema",
 			[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
 			[
@@ -205,8 +205,13 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			], rowCount: 1), "the seeded object's SysSchema row");
 		if (entity.GetArrayLength() == 0) {
 			await context.DisposeAsync();
-			Assert.Ignore($"The seeded object {Entity} is not on '{context.EnvironmentName}'. Create it as the "
-				+ "fixture remarks describe to run the dynamic-case E2E tests.");
+			string reason = $"The seeded object {Entity} is not on '{context.EnvironmentName}'. It ships in the "
+				+ "AutoTestClioMcp 7.8.0 test package; install it, or create the object as the fixture remarks describe.";
+			if (settings.RequireProcessBuilder) {
+				Assert.Fail(reason + " This lane installs AutoTestClioMcp, so a missing seed fails the run instead of "
+					+ "skipping it.");
+			}
+			Assert.Ignore(reason);
 		}
 		return context;
 	}

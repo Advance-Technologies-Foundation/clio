@@ -79,7 +79,10 @@ internal static class ProcessDesignerE2ESupport {
 	/// The ProcessDesigner TeamCity lane sets the switch because it installs the package from the clio build under
 	/// test: there a package that cannot serve a test is a broken install or archive, and an Ignore would turn it
 	/// into a green build with the category skipped. On a developer stand that is merely behind, the Ignore stays.
-	/// Only reasons about the PACKAGE belong here: a missing sandbox or seed data keeps its plain Ignore.
+	/// Only reasons about the PACKAGE belong here: a missing sandbox keeps its plain Ignore. Missing seed data is the
+	/// fixture's own call: one whose seed ships in a test package the lane installs fails under the same switch
+	/// (<c>CreateDynamicCaseToolE2ETests</c>, whose object comes with AutoTestClioMcp), so do not route it back to a
+	/// plain Ignore.
 	/// </remarks>
 	/// <param name="reason">Why the package cannot serve the test, worded without naming the outcome: under the switch it is the failure text.</param>
 	/// <param name="settings">The loaded settings, or <see langword="null"/> to load them.</param>
