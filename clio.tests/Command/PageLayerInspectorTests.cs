@@ -194,4 +194,118 @@ public class PageLayerInspectorTests {
 		custom.Changes.Should().HaveCount(PageLayerInspector.MaxChangesPerLayer, because: "the list is capped");
 		custom.MoreChanges.Should().Be(3, because: "the changes left out are counted");
 	}
+
+	[Test]
+	[Description("A chain that does not hold the page name at all cannot be checked: the inspector reports no choice instead of guessing a base page.")]
+	public void Inspect_Should_Not_Require_Choice_When_The_Page_Name_Is_Not_In_The_Chain() {
+		// Arrange
+		(PageLayerInspector sut, IApplicationClient client) = BuildSut(LockRows((CustomPackage, 0)));
+		List<PageDesignerHierarchySchema> chain = [
+			Schema("PageWithTabsFreedomTemplate", VendorPackage),
+			Schema("BaseTemplate", VendorPackage)
+		];
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, chain, ProjectPackage);
+
+		// Assert
+		choice.Required.Should().BeFalse(because: "no schema of the chain carries the page name");
+		choice.DefaultTargetPackageUId.Should().Be(ProjectPackage, because: "the default target is always reported");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
+	}
+
+	[Test]
+	[Description("With no default target every unlocked replacing layer is outside it, so the user is asked.")]
+	public void Inspect_Should_Require_Choice_When_There_Is_No_Default_Target() {
+		// Arrange
+		(PageLayerInspector sut, _) = BuildSut(LockRows((CustomPackage, 0), (ProjectPackage, 0)));
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, QaChain(), null);
+
+		// Assert
+		choice.Required.Should().BeTrue(because: "no layer is the default target and both are unlocked");
+		choice.Layers.Should().OnlyContain(layer => !layer.IsDefaultTarget,
+			because: "nothing can be marked as the default target");
+	}
+
+	[Test]
+	[Description("A replacing layer without a package UId has an unknown lock state, so it requires a choice and the warning names it.")]
+	public void Inspect_Should_Require_Choice_When_A_Layer_Has_No_Package_UId() {
+		// Arrange
+		(PageLayerInspector sut, _) = BuildSut(LockRows((ProjectPackage, 0)));
+		List<PageDesignerHierarchySchema> chain = QaChain();
+		chain[1] = Schema(PageName, null, MergeSerialNumberBody);
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, chain, ProjectPackage);
+
+		// Assert
+		choice.Required.Should().BeTrue(because: "a layer whose package is unknown cannot be shown to be locked");
+		choice.Layers[0].PackageLocked.Should().BeNull(because: "its lock state was never read");
+		choice.Warning.Should().Contain(PageName, because: "the warning names the schema without a package UId");
+	}
+
+	[Test]
+	[Description("Handler requests a layer adds are listed as changes beside its viewConfigDiff operations.")]
+	public void Inspect_Should_List_Handler_Requests_As_Changes() {
+		// Arrange
+		(PageLayerInspector sut, _) = BuildSut(LockRows((CustomPackage, 0), (ProjectPackage, 0)));
+		string bodyWithHandler = MergeSerialNumberBody.Replace(
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"handlers: /**SCHEMA_HANDLERS*/[{request: \"crt.SaveRecordRequest\", handler: async (request, next) => next?.handle(request)}]/**SCHEMA_HANDLERS*/");
+		List<PageDesignerHierarchySchema> chain = QaChain();
+		chain[1] = Schema(PageName, CustomPackage, bodyWithHandler);
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, chain, ProjectPackage);
+
+		// Assert
+		choice.Layers[0].Changes.Should().Contain("handler crt.SaveRecordRequest",
+			because: "the user chooses by what each layer already changes, handlers included");
+	}
+
+	[Test]
+	[Description("A layer whose body cannot be parsed is still listed, with no changes, so it is never hidden from the choice.")]
+	public void Inspect_Should_Keep_A_Layer_With_An_Unparsable_Body() {
+		// Arrange
+		(PageLayerInspector sut, _) = BuildSut(LockRows((CustomPackage, 0), (ProjectPackage, 0)));
+		List<PageDesignerHierarchySchema> chain = QaChain();
+		chain[1] = Schema(PageName, CustomPackage, "this is not a schema body {");
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, chain, ProjectPackage);
+
+		// Assert
+		choice.Required.Should().BeTrue(because: "Custom is unlocked and outside the default target");
+		choice.Layers.Select(layer => layer.PackageUId).Should().Contain(CustomPackage,
+			because: "an unreadable body must not hide the layer");
+		choice.Layers.Single(layer => layer.PackageUId == CustomPackage).Changes.Should().BeEmpty(
+			because: "nothing could be read from the body");
+	}
+
+	[Test]
+	[Description("A mobile page is checked the same way as a web page: the mobile template is not a layer, the base page is not a layer, Custom and the project layer are.")]
+	public void Inspect_Should_Require_Choice_For_A_Mobile_Page() {
+		// Arrange
+		const string mobilePage = "UsrOrders_MobileFormPage";
+		string mobileBody = MergeSerialNumberBody.Replace(PageName, mobilePage);
+		(PageLayerInspector sut, _) = BuildSut(LockRows((CustomPackage, 0), (ProjectPackage, 0)));
+		List<PageDesignerHierarchySchema> chain = [
+			Schema(mobilePage, ProjectPackage, mobileBody),
+			Schema(mobilePage, CustomPackage, mobileBody),
+			Schema(mobilePage, AppPackage),
+			Schema("MobilePageWithTabsFreedomTemplate", VendorPackage)
+		];
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(mobilePage, chain, ProjectPackage);
+
+		// Assert
+		choice.Required.Should().BeTrue(because: "Custom is unlocked and is not the default target");
+		choice.Layers.Select(layer => layer.PackageUId).Should().Equal([CustomPackage, ProjectPackage],
+			because: "the mobile template and the base page are not replacing layers");
+		choice.Layers.Select(layer => layer.HierarchyLevel).Should().Equal([2, 3],
+			because: "levels count from the mobile template root");
+	}
 }

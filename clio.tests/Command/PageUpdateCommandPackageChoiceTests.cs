@@ -116,6 +116,40 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	}
 
 	[Test]
+	[Description("The CLI update-page verb turns the package-choice check on itself: Execute with no target exits non-zero with package-choice-required and saves nothing.")]
+	public void Execute_Should_Refuse_Write_Without_Target_When_Choice_Is_Required() {
+		// Arrange
+		PageUpdateCommand sut = BuildCommand(_inspector);
+		PageUpdateOptions options = new() { SchemaName = SchemaName, Body = ValidBody };
+
+		// Act
+		int exitCode = sut.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the CLI verb must refuse a write into one of several editable packages");
+		options.EnforcePackageChoice.Should().BeTrue(because: "Execute is the only place that enables the check for the CLI verb");
+		_inspector.Received(1).Inspect(SchemaName, Arg.Any<IReadOnlyList<PageDesignerHierarchySchema>>(), DesignPackage);
+		AssertNotSaved();
+	}
+
+	[Test]
+	[Description("The CLI update-page verb saves when the caller named the target package, so the refusal has a way forward.")]
+	public void Execute_Should_Save_When_Target_Package_Is_Named() {
+		// Arrange
+		PageUpdateCommand sut = BuildCommand(_inspector);
+		PageUpdateOptions options = new() { SchemaName = SchemaName, Body = ValidBody, TargetPackageUId = DesignPackage };
+
+		// Act
+		int exitCode = sut.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a named target is the user's choice");
+		_inspector.DidNotReceiveWithAnyArgs().Inspect(default, default, default);
+		_applicationClient.Received().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("The check reads the chain from the root variant of the page, as get-page does, when the name resolved to a replacing variant.")]
 	public void TryUpdatePage_Should_Inspect_The_Chain_Read_From_The_Root_Variant() {
 		// Arrange
@@ -160,6 +194,21 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 
 		// Assert
 		ok.Should().BeTrue(because: $"the save named its target explicitly: {response.Error}");
+		_inspector.DidNotReceiveWithAnyArgs().Inspect(default, default, default);
+	}
+
+	[Test]
+	[Description("A write with target-schema-uid names the exact schema to change, so no package-choice check runs.")]
+	public void TryUpdatePage_Should_Skip_Check_When_Target_Schema_Is_Named() {
+		// Arrange
+		PageUpdateCommand sut = BuildCommand(_inspector);
+		PageUpdateOptions options = Options(enforce: true);
+		options.TargetSchemaUId = LeafUId;
+
+		// Act
+		sut.TryUpdatePage(options, out _);
+
+		// Assert
 		_inspector.DidNotReceiveWithAnyArgs().Inspect(default, default, default);
 	}
 
