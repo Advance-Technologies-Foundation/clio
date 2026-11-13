@@ -940,10 +940,7 @@ public static partial class WebServiceDefinitionBuilder {
 			: Empty();
 	}
 
-	/// <summary>
-	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a credential-like key there would be a
-	/// stored constant that describe prints and every reader of the schema sees.
-	/// </summary>
+	/// <summary>The <c>wsdl</c>, <c>singleWsdl</c> or <c>xsd</c> query key that marks a WSDL or schema address, or null.</summary>
 	private static string WsdlQueryKey(string uri) {
 		int question = uri.IndexOf('?');
 		return question < 0
@@ -955,6 +952,10 @@ public static partial class WebServiceDefinitionBuilder {
 					|| key.Equals("xsd", StringComparison.OrdinalIgnoreCase));
 	}
 
+	/// <summary>
+	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a credential-like key there would be a
+	/// stored constant that describe prints and every reader of the schema sees.
+	/// </summary>
 	private static void ValidateUriQuery(string owner, string uri, Errors errors) {
 		int question = uri.IndexOf('?');
 		if (question < 0) {
