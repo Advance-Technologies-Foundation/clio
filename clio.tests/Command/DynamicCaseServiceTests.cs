@@ -712,6 +712,27 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.Outcome.Should().Be(DynamicCaseOutcomes.CreatedPageSkipped, because: "only the case was asked for");
 		result.Page.Status.Should().Be(DynamicCaseService.PageSkipped, because: "the page step was skipped");
+		result.Notes.Should().NotContain(note => note.Contains("save-on-change", StringComparison.Ordinal),
+			because: "no mode was named, so there is no request to report as not applied");
+		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A save-on-change passed with add-progress-bar=false is reported in a note, in the real call and in the dry run, because no bar is added to carry it.")]
+	public void Create_ShouldNoteTheUnappliedSaveMode_WhenTheBarIsNotWanted(bool dryRun) {
+		// Arrange
+		Passes(Envelope("planned"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options(dryRun: dryRun, addProgressBar: false, saveOnChange: true));
+
+		// Assert
+		result.Page.Status.Should().Be(DynamicCaseService.PageSkipped, because: "the page step was skipped");
+		result.Page.SaveOnChange.Should().BeNull(because: "no bar is planned, so no mode is reported as planned");
+		result.Notes.Should().ContainSingle(note => note.Contains("save-on-change was not applied", StringComparison.Ordinal)
+				&& note.Contains("add-progress-bar is false", StringComparison.Ordinal),
+			because: "the caller named a mode that this call has no bar to apply to");
 		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
 	}
 

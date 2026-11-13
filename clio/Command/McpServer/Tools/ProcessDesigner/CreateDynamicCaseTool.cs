@@ -314,8 +314,8 @@ public sealed record CreateDynamicCaseArgs(
 
 	[property: JsonPropertyName("save-on-change")]
 	[property: Description("A stage click on the bar saves the record at once; default false: the click only sets "
-		+ "the field and the user saves. A bar already on the page keeps its own mode; a value passed there is "
-		+ "reported in a note, not applied.")]
+		+ "the field and the user saves. A value that cannot apply is reported in a note: a bar already on the page "
+		+ "keeps its own mode, and add-progress-bar=false adds no bar.")]
 	bool? SaveOnChange = null) {
 
 	/// <summary>
