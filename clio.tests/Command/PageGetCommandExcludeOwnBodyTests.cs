@@ -67,7 +67,7 @@ public sealed class PageGetCommandExcludeOwnBodyTests {
 		return new PageGetCommand(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
 			hierarchyClient, new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 	}
 
 	[Test]
@@ -125,7 +125,7 @@ public sealed class PageGetCommandExcludeOwnBodyTests {
 		PageGetCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
 			hierarchyClient, new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		PageGetOptions options = new() { SchemaName = SchemaName, Environment = "dev", ExcludeOwnBody = true };
 
 		// Act

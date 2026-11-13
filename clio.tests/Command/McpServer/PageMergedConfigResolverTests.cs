@@ -73,7 +73,7 @@ public sealed class PageMergedConfigResolverTests {
 		return new PageGetCommand(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
 			hierarchyClient, new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 	}
 
 	private static IToolCommandResolver ResolverReturning(PageGetCommand command) {
@@ -117,7 +117,7 @@ public sealed class PageMergedConfigResolverTests {
 		]);
 		PageGetCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(), hierarchyClient,
 			new PageSchemaBodyParser(), new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 
 		// Act
 		(string viewModelConfigJson, string modelConfigJson) = PageMergedConfigResolver.ResolveMergedConfig(
@@ -156,7 +156,7 @@ public sealed class PageMergedConfigResolverTests {
 		PageGetCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		IToolCommandResolver resolver = ResolverReturning(command);
 		ILogger logger = Substitute.For<ILogger>();
 

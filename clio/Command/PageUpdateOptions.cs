@@ -203,6 +203,15 @@
 		/// </summary>
 		internal bool NotifyDesignerPresence { get; set; }
 
+		/// <summary>
+		/// Gets or sets whether a write without <c>target-package-uid</c> / <c>target-schema-uid</c> is refused when
+		/// another unlocked (or lock-unknown) package also holds a replacing layer of the page (ENG-105680), so the
+		/// change never lands in one of several editable packages without the user choosing it. Internal
+		/// orchestration flag, set by the <c>update-page</c> CLI verb and the <c>update-page</c> / <c>sync-pages</c>
+		/// MCP tools; composite tools that write a page as one step of a larger operation leave it off.
+		/// </summary>
+		internal bool EnforcePackageChoice { get; set; }
+
 		// The persisted-resource-key read used to be memoized on THIS type (PersistedResourceKeysRead /
 		// Snapshot / Failure). It is not any more: a cache keyed on options-INSTANCE identity cannot serve
 		// sync-pages, which builds a fresh options object per page and runs its first validation gate
@@ -240,6 +249,7 @@
 		private readonly IPageBaselineGuard _pageBaselineGuard;
 		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
 		private readonly IPageUnresolvedMergeDetector? _unresolvedMergeDetector;
+		private readonly IPageLayerInspector? _pageLayerInspector;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -266,6 +276,9 @@
 		/// <param name="unresolvedMergeDetector">Check of the viewModelConfigDiff/modelConfigDiff merges against the
 		/// parent schemas (GH-1753): a merge the platform differ skips is a warning, a merge it throws on (so the page
 		/// fails to build) rejects the save. Optional: without it a save behaves exactly as before.</param>
+		/// <param name="pageLayerInspector">Finds the page's replacing layers for the package-choice check
+		/// (<see cref="PageUpdateOptions.EnforcePackageChoice"/>). Optional only for hand-built test constructions;
+		/// DI always supplies it. Without it the check does not run.</param>
 		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
@@ -277,7 +290,8 @@
 			IPageDesignerHierarchyClient hierarchyClient = null,
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null,
 			Func<IJsonDiffApplier> viewConfigApplierFactory = null,
-			IPageUnresolvedMergeDetector? unresolvedMergeDetector = null) {
+			IPageUnresolvedMergeDetector? unresolvedMergeDetector = null,
+			IPageLayerInspector? pageLayerInspector = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
@@ -287,6 +301,7 @@
 			_pageBaselineGuard = pageBaselineGuard;
 			_persistedResourceKeyReader = persistedResourceKeyReader;
 			_unresolvedMergeDetector = unresolvedMergeDetector;
+			_pageLayerInspector = pageLayerInspector;
 		}
 
 		/// <summary>
@@ -330,6 +345,7 @@
 					options, out Dictionary<string, string> explicitResources, out JArray parsedOptionalProperties);
 				if (commonValidationError != null) { response = commonValidationError; return false; }
 				if (!TryResolveContext(options, out EditableSchemaContext context, out response)) return false;
+				if (!TryEnforcePackageChoice(options, context, out response)) return false;
 				if (!TryCheckForExternalModification(options, context, out response)) return false;
 				// The context is already in hand here, so the read delegate reuses it and resolves NOTHING.
 				// Routing it through the reader is still what makes this gate free when an MCP pre-execution
@@ -1032,6 +1048,78 @@
 			}
 		}
 
+		/// <summary>
+		/// Refuses a write that names no target while another editable package also customizes the page
+		/// (<see cref="PageUpdateOptions.EnforcePackageChoice"/>). The refusal lists the layers, so the caller can ask
+		/// the user and repeat the write with the chosen <c>target-package-uid</c>.
+		/// </summary>
+		private bool TryEnforcePackageChoice(PageUpdateOptions options, EditableSchemaContext context,
+			out PageUpdateResponse response) {
+			response = null;
+			// No inspector only in hand-built test constructions: DI always supplies one
+			// (PageUpdateCommandResolutionTests pins that), as it does every other optional collaborator here.
+			if (!options.EnforcePackageChoice
+				|| _pageLayerInspector is null
+				|| !string.IsNullOrWhiteSpace(options.TargetPackageUId)
+				|| !string.IsNullOrWhiteSpace(options.TargetSchemaUId)
+				|| context.ResolutionHierarchy is null) {
+				return true;
+			}
+			IReadOnlyList<PageDesignerHierarchySchema> chain;
+			try {
+				chain = PageHierarchyChain.ReadFromRootVariant(_hierarchyClient, options.SchemaName,
+					context.RawSchemaUId, context.DesignPackageUId, context.ResolutionHierarchy);
+			} catch (Exception ex) {
+				// Fail closed: a chain read from a replacing variant can miss the very layer the check exists for.
+				response = new PageUpdateResponse {
+					Success = false,
+					SchemaName = options.SchemaName,
+					Error = PageHierarchyRecoveryHint.Append(
+						$"Failed to load hierarchy for '{options.SchemaName}' (package-choice check): {ex.Message}")
+				};
+				return false;
+			}
+			PagePackageChoice choice = _pageLayerInspector.Inspect(options.SchemaName, chain, context.DesignPackageUId);
+			if (!choice.Required) {
+				return true;
+			}
+			response = new PageUpdateResponse {
+				Success = false,
+				SchemaName = options.SchemaName,
+				Error = DescribePackageChoice(options.SchemaName, choice),
+				PackageChoice = choice
+			};
+			return false;
+		}
+
+		internal static string DescribePackageChoice(string schemaName, PagePackageChoice choice) {
+			IEnumerable<string> layers = choice.Layers.Select(layer => {
+				string state = layer.PackageLocked switch {
+					true => "locked",
+					false => "unlocked",
+					null => "lock state unknown"
+				};
+				string role = layer.IsDefaultTarget ? ", default target" : string.Empty;
+				string changes = layer.Changes.Count == 0
+					? "no own changes"
+					: "changes: " + string.Join(", ", layer.Changes)
+						+ (layer.MoreChanges > 0 ? $" and {layer.MoreChanges} more" : string.Empty);
+				return $"{layer.PackageName} (packageUId {layer.PackageUId}, level {layer.HierarchyLevel}, {state}{role}; {changes})";
+			});
+			bool defaultHasLayer = choice.Layers.Any(layer => layer.IsDefaultTarget);
+			string defaultTarget = defaultHasLayer
+				? string.Empty
+				: $" The default target {choice.DefaultTargetPackageUId} holds no replacing layer of the page; keeping it "
+					+ "writes there.";
+			return $"package-choice-required: page '{schemaName}' is customized in more than one package that can be "
+				+ "changed, so the write must name its target package. Ask the user which package to change, then save "
+				+ "through update-page with target-package-uid set to the chosen packageUId (the default target's "
+				+ "packageUId keeps the default; for another layer send only your change with mode append). Do not "
+				+ "pick one yourself. Layers, lowest first (for an element several layers change, "
+				+ $"the highest wins at runtime): {string.Join("; ", layers)}.{defaultTarget}"
+				+ (string.IsNullOrWhiteSpace(choice.Warning) ? string.Empty : " " + choice.Warning);
+		}
+
 		private static bool TryLoadBodyFromFile(PageUpdateOptions options, out PageUpdateResponse response) {
 			(bool ok, string error) = PageUpdateBodyLoader.TryLoadBodyFromFile(options);
 			response = ok ? null : new PageUpdateResponse { Success = false, Error = error };
@@ -1122,6 +1210,7 @@
 			// failure reason reachable below, on the surface that has no MCP tool above it.
 			using IDisposable persistedResourceKeyScope = _persistedResourceKeyReader.BeginRequestScope();
 			options.NotifyDesignerPresence = true;
+			options.EnforcePackageChoice = true;
 			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
 			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
 			// schema was modified out-of-band, instead of silently overwriting the external edit.
@@ -1218,7 +1307,7 @@
 			if (!TryGetHierarchy(rawSchemaUId, designPackageUId, schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out response)) return false;
 			PageDesignerHierarchySchema head = hierarchy[0];
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(head.SchemaType);
-			string rootUId = FindRootSchemaUId(hierarchy, schemaName);
+			string rootUId = PageHierarchyChain.FindRootSchemaUId(hierarchy, schemaName);
 			PageDesignerHierarchySchema root = !string.IsNullOrWhiteSpace(rootUId)
 				? hierarchy.FirstOrDefault(s => string.Equals(s.UId, rootUId, StringComparison.OrdinalIgnoreCase)) ?? head : head;
 			(string editableUId, bool isCreateReplacing) = ResolveEditableUId(head, schemaName, designPackageUId);
@@ -1249,7 +1338,9 @@
 				ParentSchemaName = root.Name,
 				TemplateSchemaUId = isCreateReplacing ? root.UId : editableUId,
 				SchemaType = pageSchemaType,
-                ResolvedHierarchy = isCreateReplacing ? null : hierarchy
+                ResolvedHierarchy = isCreateReplacing ? null : hierarchy,
+				ResolutionHierarchy = hierarchy,
+				RawSchemaUId = rawSchemaUId
 			};
 			response = null;
 			return true;
@@ -1297,6 +1388,15 @@
 
 		internal sealed class EditableSchemaContext {
             public IReadOnlyList<PageDesignerHierarchySchema> ResolvedHierarchy { get; set; }
+
+			/// <summary>
+			/// The chain read while resolving the write target, kept even when a replacing schema will be created
+			/// (unlike <see cref="ResolvedHierarchy"/>); <c>null</c> when the target was named explicitly.
+			/// </summary>
+			public IReadOnlyList<PageDesignerHierarchySchema> ResolutionHierarchy { get; set; }
+
+			/// <summary>The UId the page name resolved to, the anchor the chain was read from.</summary>
+			public string RawSchemaUId { get; set; }
 			public string SchemaName { get; set; }
 			public string EditableSchemaUId { get; set; }
 			public string DesignPackageUId { get; set; }
@@ -1309,15 +1409,6 @@
 			/// <see cref="GetInheritedHierarchy"/>. Separate from <see cref="ResolvedHierarchy"/>, which stays
 			/// <c>null</c> on the create-replacing path.</summary>
 			public IReadOnlyList<PageDesignerHierarchySchema> InheritedHierarchy { get; set; }
-		}
-
-		private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
-			for (int i = hierarchy.Count - 1; i >= 0; i--) {
-				if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
-					return hierarchy[i].UId;
-				}
-			}
-			return null;
 		}
 
 		private static (List<string> registered, List<string> updated) UpdateSchemaBody(JObject schemaToSave,

@@ -240,10 +240,12 @@ public class GetPageHierarchyCommandTests {
 		ILogger logger = null) {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(Arg.Any<string>()).Returns(callInfo => callInfo.Arg<string>());
+		applicationClient ??= Substitute.For<IApplicationClient>();
 		return new GetPageHierarchyCommand(
-			applicationClient ?? Substitute.For<IApplicationClient>(),
+			applicationClient,
 			urlBuilder,
 			hierarchyClient ?? Substitute.For<IPageDesignerHierarchyClient>(),
+			new PageLayerInspector(applicationClient, urlBuilder, new PageSchemaBodyParser()),
 			logger ?? Substitute.For<ILogger>());
 	}
 

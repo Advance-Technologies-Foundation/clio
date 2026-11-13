@@ -186,5 +186,5 @@ public sealed class MobilePageConversionGuideToolLockTests {
 		Substitute.For<IPageDesignerHierarchyClient>(),
 		Substitute.For<IPageSchemaBodyParser>(),
 		Substitute.For<IPageBundleBuilder>(),
-		Substitute.For<IPageFileWriter>());
+		Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 }

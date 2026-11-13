@@ -653,6 +653,58 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		bodyAfter.Should().Be(bodyBefore, because: "a dry run must not write the page");
 	}
 
+	[Test]
+	[Description("ENG-105680: a page customized only in its default target needs no package choice — get-page reports packageChoice.required=false with the design package as the default target, and update-page without target-package-uid is not refused.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page needs no package choice for a page customized in one package")]
+	[AllureDescription("Reads the seeded page ClioMcp_BlankPageToSave with get-page over the real MCP transport and verifies page.packageChoice is present on the wire with required=false, no layer list and defaultTargetPackageUId equal to page.designPackageUId. Then sends an append dry run through update-page WITHOUT target-package-uid and verifies it is not refused with package-choice-required, so the check added for pages customized in several editable packages does not block the common single-package case. Non-destructive: a dry run never reaches TrySaveSchema.")]
+	public async Task PageUpdateTool_Should_Not_Require_A_Package_Choice_For_A_Single_Package_Page() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = "ClioMcp_BlankPageToSave";
+
+		// Act
+		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["body"] = BuildAppendFragment(savePage),
+					["mode"] = "append",
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse updateResponse =
+			EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert
+		getResponse.Success.Should().BeTrue(because: $"get-page must read the seeded page. Error: {getResponse.Error}");
+		PagePackageChoice choice = getResponse.Page!.PackageChoice;
+		choice.Should().NotBeNull(because: "packageChoice must survive the MCP serialization of the compacted get-page response");
+		choice.Required.Should().BeFalse(because: "the seeded page is customized only in its own app package");
+		choice.Layers.Should().BeEmpty(because: "a page with nothing to choose carries no layer list");
+		choice.DefaultTargetPackageUId.Should().Be(getResponse.Page.DesignPackageUId,
+			because: "the default target is where a write without target-package-uid goes");
+		updateResponse.Success.Should().BeTrue(
+			because: $"a single-package page must save without naming its target. Error: {updateResponse.Error}");
+		updateResponse.PackageChoice.Should().BeNull(because: "the write was not refused");
+	}
+
 	/// <summary>Builds a minimal diff-form append fragment adding one uniquely named container.</summary>
 	private static string BuildAppendFragment(string schemaName) =>
 		"define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +

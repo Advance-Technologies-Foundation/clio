@@ -389,6 +389,29 @@ A `checksum-mismatch` response returns the server's current value as
 like `--force`, and needs the same explicit confirmation from the user. Re-run `get-page`
 and re-apply your edit on the fresh body instead.
 
+## Pages customized in more than one package
+
+A page can have replacing schemas (layers) in several packages, for example in its app
+package, in `Custom` and in a project package. A save without `--target-package-uid` goes
+to the design package `get-page` reports as `page.designPackageUId`, and nothing told the
+caller that another editable package also changes the page.
+
+`update-page` therefore refuses a write that names neither `--target-package-uid` nor
+`--target-schema-uid` when another replacing layer of the page is in an unlocked package,
+or in a package whose lock state could not be read. The error starts with
+`package-choice-required` and lists every replacing layer (package, `packageUId`, level,
+lock state, whether it is the default target, and what that layer already changes); the
+response also carries the layers as `packageChoice`, in the shape of `get-page`
+`page.packageChoice`. Ask the user which package to change, then repeat the save with that
+layer's `packageUId` as `--target-package-uid` — `page.designPackageUId` keeps the default.
+To write into a layer other than the default target, send only your change with
+`--mode append`: `get-page` returns the default target's body, never the chosen layer's.
+
+Pages customized only in the default target, and pages whose other layers are all in
+locked (vendor) packages, save exactly as before. The check runs for the `update-page`
+command and the `update-page` / `sync-pages` MCP tools; composite tools that write a page
+as one step of a larger operation (for example `create-dynamic-case`) do not run it.
+
 ## Write modes
 
 `--mode replace` (default) saves the body verbatim. `--mode append` loads the current

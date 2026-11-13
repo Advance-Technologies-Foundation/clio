@@ -579,6 +579,7 @@ public class BindingsModule {
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
+		services.AddTransient<IPageLayerInspector, PageLayerInspector>();
 		// Owns the persisted-resource-key read for one logical page write. Transient is deliberate: the
 		// caching scope is flow-local and STATIC inside the implementation, so the page tools (resolved
 		// from this container) and PageUpdateCommand (resolved from a SEPARATE per-tenant container built
