@@ -24,7 +24,7 @@ public sealed class ClientUnitSchemaCreateTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Create a new JavaScript (ClientUnit) schema on a remote Creatio environment. Use this for utility/helper JS modules — not Freedom UI pages (use create-page for those). Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
+	[Description("Create a new JavaScript (ClientUnit) schema. Use this for utility/helper JS modules — not Freedom UI pages (use create-page for those). Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
 	public ClientUnitSchemaCreateResponse CreateClientUnitSchema(
 		[Description("Parameters: schema-name, package-name (required); caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] ClientUnitSchemaCreateArgs args) {

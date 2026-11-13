@@ -6305,7 +6305,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationDelete() {
 		return new ToolContractDefinition(
 			ApplicationDeleteTool.ToolName,
-			"Deletes an installed application by name or code.",
+			"Deletes an installed app by name or code.",
 			new ToolInputSchemaContract(
 				[AppNameFieldName],
 				EnvironmentOrExplicitConnectionFields(

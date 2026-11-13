@@ -31,7 +31,7 @@ public sealed class SchemaCreateTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Create a new C# source-code schema on a remote Creatio environment. Optional body or body-file supplies the initial C# source; body-file takes precedence and is read on the MCP server host. Omit both to keep the platform's blank template. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
+	[Description("Create a new C# source-code schema in Creatio. Optional body or body-file supplies the initial C# source; body-file takes precedence and is read on the MCP server host. Omit both to keep the platform's blank template. The schema is saved directly to the server — no local workspace files are created. Prefer `environment-name`; keep direct connection args only for bootstrap flows.")]
 	public SourceCodeSchemaCreateResponse CreateSchema(
 		[Description("Parameters: schema-name, package-name (required); body, body-file, caption, description (optional); environment-name preferred; uri/login/password emergency fallback only.")]
 		[Required] SchemaCreateArgs args) {

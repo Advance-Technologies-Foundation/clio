@@ -144,7 +144,7 @@ internal sealed class KnowledgeManagementTools {
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Enables a configured knowledge source without deleting or reinstalling its cache.")]
+	[Description("Enables a configured knowledge source. Its cache is neither deleted nor reinstalled.")]
 	public KnowledgeSourceCommandResult Enable(KnowledgeAliasArgs args) => _service.Enable(args.Alias);
 
 	[McpServerTool(Name = DisableKnowledgeSourceToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
