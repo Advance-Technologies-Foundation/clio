@@ -109,12 +109,75 @@ answer was identical too; test calls after the save returned HTTP 200 with the e
 masked. The SysSchema `Checksum` changes on a Studio save while the designer's read stays identical: save
 bookkeeping, not a content change.
 
-## Slice C (story 3), outline
+## Slice C (story 3)
 
-TC-U-C: golden tests ported from Studio's wizard parser fixtures and expected outputs; warnings; local files mode;
-the platform download error without its stack trace. TC-I-C: `wsdl-files` mode with a fixture WSDL shipped in the
-test project (no internet); URL mode in a separate category that is Ignored when the stand has no internet; Studio vs
-clio diff of the saved services (manual stand check).
+Unit rows live in `clio.tests/Command/WebServiceDesigner/WsdlParserTests.cs` (parser), `WsdlRegistrationMapperTests.cs`
+(clio's rules), `WsdlReaderTests.cs` (sources and result), `WebServiceDesignerClientTests.cs` (download),
+`clio.tests/Command/McpServer/WebServiceToolsArgumentTests.cs` (tool) and
+`clio.tests/Common/ServiceUrlBuilder.cs` (route). The golden files are Studio's parser output (ADR D9).
+
+| Id | Level | Case | AC |
+| --- | --- | --- | --- |
+| TC-U-C01 | unit | The public calculator WSDL and a synthetic WSDL covering the wizard's fixture cases (by-ref, nested namespaces, flattened objects, wrapped scalar and object arrays, an object array in the response root, the type map, recursion, SOAP headers simple/complex/array/two, a long element name, dotted names, typed parts) give Studio's own output (golden) | 3 |
+| TC-U-C02 | unit | A WSDL whose types come from an imported (URL `schemaLocation`), an included and a nested imported schema merges as the wizard merges it (golden); a missing schema is named | 3 |
+| TC-U-C03 | unit | Every SOAP port is returned, the SOAP 1.2 one is Studio's pick, HTTP ports are dropped with a warning; with one SOAP 1.1 port that port is the pick | 2 |
+| TC-U-C04 | unit | The wizard's expectations hold: reference namespace, ns0/ns1 order, caption normalization, scalar and object arrays with item elements, array in root, type map, recursion cap with a warning, first SOAP header only with a warning, a 200-character code, the root element, typed parts | 3 |
+| TC-U-C05 | unit | The wizard's copies of nested elements are kept and marked by the parser and left out of the arguments with a warning | 2, 3 |
+| TC-U-C06 | unit | A complexContent extension adds its elements before the base type's; a simpleContent extension of base64Binary is Text | 3 |
+| TC-U-C07 | unit | An unmapped XSD built-in and an undefined type are Text with a warning (the wizard fails); rpc/encoded, wsdl:import, MIME/MTOM, xs:choice and XML attributes give warnings; WSDL 2.0, a schema alone and a DTD are refused | 2 |
+| TC-U-C08 | unit | A downloaded file is read as ASCII text whatever encoding its declaration names | 1 |
+| TC-U-C09 | unit | Codes are stable and prefixed (`UsrAdd`), the message element is `tem:Add`, collisions get 2, 3 case-insensitively, an empty prefix works, a long code keeps the prefix | 2 |
+| TC-U-C10 | unit | What register would refuse is left out with a warning: a copy, a dotted request element, a dotted root element (the method), an object without fields, a repeated element without a wrapper; SOAP members are written only where they apply | 2 |
+| TC-U-C11 | unit | An element of no namespace loses its prefix with a warning | 2 |
+| TC-U-C12 | unit | With a target service, a matched operation keeps its code and is listed in existing-methods, another is numbered past the service's codes, and the namespaces reuse the service's prefixes | 2 |
+| TC-U-C13 | unit | wsdl-files: one argument object per port, Studio's pick marked, no null members, no uri or verb on a SOAP method, nothing downloaded or saved | 1, 2 |
+| TC-U-C14 | unit | Every port of the calculator and of the synthetic WSDL, with package-name added, is accepted and saved by register-web-service; a header array and an object array are saved with the members the platform renders | 2 |
+| TC-U-C15 | unit | wsdl-url is downloaded through the platform as given; a non-http(s), relative or credential-carrying URL is refused before anything is sent; both or neither source is refused | 1 |
+| TC-U-C16 | unit | No CanManageSolution, or an unreadable prefix, refuses the call before any download | 1 |
+| TC-U-C17 | unit | wsdl-files: a relative path, a missing file, a file over 10 MB and more than 100 files are refused; local schema files merge, found by file name | 1 |
+| TC-U-C18 | unit | port and operations narrow the result (case-insensitive operation names); an unknown one is refused with the names there are | 2 |
+| TC-U-C19 | unit | A result over the size limit lists operation names per port with a notice; a filtered read returns arguments | 2 |
+| TC-U-C20 | unit | A service code in use gives one notice; a '?' in a downloaded name gives the wsdl-files warning; service-code on a REST service is refused | 2 |
+| TC-U-C21 | unit | The download client posts the URL array to the route, keys files by URL and schemaLocation, reports the platform's message redacted without its stack trace, and refuses non-text values and an empty download | 1 |
+| TC-U-C22 | unit | The route is `0/rest/DownloadWsdlEndpoint/GetXmlSchemaFilesContent` on .NET Framework and `rest/...` on .NET Core | 1 |
+| TC-U-C23 | unit | The tool answers guessed argument names with a rename hint, refuses unknown keys with the valid list, passes every argument to the environment's reader and returns a failure as an error | 1 |
+| TC-U-C25 | unit | A file nested past 256 levels is refused before it is copied; a chain of types past 64 levels stops with a warning; a base-type or type-reference cycle stops with a warning; an exponential expansion is refused past 200,000 elements | 2 |
+| TC-U-C26 | unit | A file imported under 200 spellings is merged once; a relative schemaLocation and a WCF `?xsd=xsd0` location are found; two given files of one name are refused as ambiguous | 1 |
+| TC-U-C27 | unit | Operation, port and element names that are not XML names are skipped; the service caption is flattened; no warning carries a line break or a long WSDL text; warnings stop at 100 with a count | 2 |
+| TC-U-C28 | unit | An array inside an array item is marked by the parser (Studio's path checked against Studio's parser) and left out of the arguments; an array whose item element register would refuse is left out | 2 |
+| TC-U-C29 | unit | The warning branches of D9: missing binding, no input, undefined message element, unresolved reference, missing base type, rpc style, several WSDL files, a message element type that extends another, a split input message | 2 |
+| TC-U-C30 | unit | A port address register would refuse is kept with a warning; a soapAction with a line break is left out; a target's parameter at the same path keeps its code, and a dropped one keeps its code reserved; a prefix the target uses otherwise is renamed; a cut code without a prefix stays an identifier; one warning log for every port lists a message once and counts past 100 | 2 |
+| TC-U-C31 | unit | A network path and a key-carrying URL are refused before any request; an empty file (what a FIFO looks like), a device and a reparse point are refused before they are opened; files over 50 MB together are refused; a failed download points at wsdl-files; an endpoint on another host gives a notice; a filtered read over the size limit lists names; operations filter across ports; wsdl-files is refused over HTTP | 1, 2 |
+| TC-U-C32 | unit | A reply over the cap a caller sets is refused before it is deserialized | 1 |
+| TC-U-C33 | unit | Found on the stand run of the Jira cases TC-24..TC-31: a missing schema imported by an absolute URL is still named after the MCP error redaction (the file name is given separately); the "code already used" notice tells the agent to ask the user instead of picking a code | 2 |
+| TC-U-C34 | unit | Final review: ports on one binding share one build of its operations; past 20 ports the first ones and Studio's pick are read with a warning; port and operations narrow the parse before anything is built (Studio's pick is still decided over every port; an unknown port or operation is refused with the ones there are); more than 10,000 operations to read are refused; equal names are numbered in linear time, in the parser and in the mapper | 1 |
+| TC-U-C35 | unit | Final review: an NT path to a network share (`\??\UNC\...`, `\??\GLOBALROOT\...`) is refused like a UNC path; a hosting key in the query (`code=`, `sig=`) is refused without echoing it; a name the download turned into '?' that the parser dropped still gives the wsdl-files warning; the parser's dropped warnings are counted in the one count line; a soapAction over 2,048 characters is left out; a result too large for one operation of one port says so instead of asking to narrow it | 1, 2 |
+| TC-U-C36 | unit | Final review of the fixes: every port on an rpc binding gets its own warning; a named operation the parser left out is refused with the reason, and one only on ports past the limit with the ports that have it; a name over 1,024 characters is not read; 80,000 import directives merge in linear time; past 20,000 parameters the result lists names before mapping; a code released under another name is taken again; a platform download error is flattened and cut | 1, 2 |
+| TC-U-C37 | unit | Code review of the PR: a too-large result lists at most 500 operation names over every port together, each cut like WSDL text; a wrong service-code is refused also when the result falls back to names; with the port option an operation only another port has is refused as not on that port | 1, 2 |
+| TC-U-C38 | unit | Review (ArtemKulykov): read-wsdl runs in process, where its HTTP guard sees the HttpContext; a loopback or link-local wsdl-url is refused, a private one allowed; same-named schemas in different folders are both merged; a ref's maxOccurs does not change the global element; an extension inside a nested element does not make the outer type an extension; credentials and a key in the WSDL address are left out of base-uri | 1, 2 |
+| TC-U-C39 | unit | The register-web-service description sends a WSDL to read-wsdl first and forbids a hand-built SOAP service or a guessed soap-action; the tool index legend names old names, and the read-wsdl line stays inside the index budget | 1 |
+| TC-U-C40 | unit | Owner's D11 change (2026-11-13): codes are the full names in PascalCase; a flattened path joins the names of the whole element path (the wrapper Studio's caption drops included), an array item's code starts with the array's name, an underscore starts a word and a letter outside Latin is dropped from its word, the wizard-features WSDL's wrapper and header root stay in the codes, a method code is kept whole, a parameter code is cut at 500 characters (a compiled process declares a C# field for it, and C# refuses an identifier over 512 characters), and without a prefix a digit-first code starts with the fallback word; the collision, target-reuse and stable-code tests expect the new codes | 2 |
+| TC-U-C41 | unit | Review (n-torkvato) and its review: an imported file of nested `schema` elements is merged with each schema cut apart (allocation bounded, a type in the innermost schema still read); more than 1,000 imported schemas, or a schema under more than 256 namespace declarations, are refused; a parse whose parameter paths pass the path-character budget is refused with bounded allocation; claiming and giving back codes stays linear; a result whose kept paths alone pass the result limit is listed by name before twenty ports are mapped | 1 |
+| TC-U-C42 | unit | Review (a-trofimchuk): a base URI with a line break or a fragment, a namespace URI with a line break and a soapAction with spaces are left out of the arguments with flattened warnings; a method whose soapAction was left out matches again; a matched method's timeout, authentication, parameter default and required flag are carried, and its parameters the WSDL lacks are named; sibling arrays on one path are named by their sequence element and keep their own codes; a parameter code is cut at 500 through Map; long names that end alike are numbered linearly; a service code and a cut code without a prefix stay identifiers; the time limit stops the parse; an overlong service name is cut; the AWS IPv6 and Alibaba metadata addresses are refused; a service-code that cannot be read gives describe's reason; a downloaded value that is not a byte is refused; its review: invisible Unicode tags in a base or namespace URI or a soapAction, credentials in a namespace URI and a fragment behind an ftp address are kept out, spaces around a soapAction are trimmed, Shown drops tags, a service name that is not an XML name becomes the port name, use-auth false is carried, the only array at a path matches whatever its stored item element, and an HTTP header parameter is never matched | 1, 2 |
+| TC-I-C01 | e2e (NoEnvironment) | read-wsdl is discoverable and answers a guessed `url` with `wsdl-url` | 1 |
+| TC-I-C02 | e2e | wsdl-files with a WSDL shipped in the test project: both SOAP ports, the SOAP 1.2 one picked, codes from the stand's prefix; the pick, trimmed to three operations, registers under a throwaway code and describe reads back the same namespaces, message elements, SOAP actions, header flags and item elements (no copy); a second read with service-code lists every method as existing; removed in the teardown | 1, 2 |
+| TC-I-C03 | e2e (manual, `[Explicit]`, McpE2E.Manual) | wsdl-url: the stand downloads the public calculator WSDL; two ports, `<prefix>Add`, `tem:Add`; ignored when the stand has no internet | 1 |
+| TC-M-C01 | manual | The calculator WSDL through Studio's SOAP quick setup and through read-wsdl + register-web-service gives equivalent saved services (a Studio stand) | 4 |
+
+TC-U-C24 is not used (a numbering slip; the other rows keep their numbers).
+
+TC-M-C01 result, 2026-11-12, Creatio 10.2 Studio (.NET Framework, prefix `Usr`), clio at the slice C head: **PASS**. The
+public calculator WSDL (`http://www.dneonline.com/calculator.asmx?WSDL`) went once through Studio's SOAP quick setup
+(all methods and parameters kept; the wizard preselected `CalculatorSoap12 (SOAP 1.2)`, the port read-wsdl marks
+`studio-pick`) and once through read-wsdl in URL mode + register-web-service with the `studio-pick` arguments. Read back
+with describe-web-service, the two services are equal in type (SOAP 1.2), base URI, retry count, authentication,
+namespaces (`tem` = `http://tempuri.org/`, default), and per method in caption, verb, content type, timeout, SOAP action
+and every request and response parameter (code, caption, path, type, flags). The only differences are the ones ADR D9
+and D11 choose: Studio's method codes carry a random suffix (`UsrAdd_716f73f2`, clio `UsrAdd`), and Studio stores the
+message element bare (`Add`), clio with its prefix (`tem:Add`), the same element because `tem` is the default
+namespace. A test call of Add with 2 and 3 returned HTTP 200 and `UsrAResult` 5 through both. Since the owner's
+D11 change of 2026-11-13 clio's parameter codes are the full names (`UsrIntA`, `UsrIntB`, `UsrAddResult`), so they
+differ from Studio's shortened ones (`UsrintA`, `UsrintB`, `UsrAResult`) by design; every other field compares as above.
 
 ## Slice D (story 4), outline
 

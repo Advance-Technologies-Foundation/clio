@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic schema for clio's read-wsdl tests: the order line types orders.wsdl includes. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://example.org/clio/orders/"
+	elementFormDefault="qualified" targetNamespace="http://example.org/clio/orders/">
+	<xs:complexType name="Line">
+		<xs:sequence>
+			<xs:element name="sku" type="xs:string" />
+			<xs:element name="quantity" type="xs:int" />
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="ArrayOfLine">
+		<xs:sequence>
+			<xs:element minOccurs="0" maxOccurs="unbounded" name="Line" type="tns:Line" />
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

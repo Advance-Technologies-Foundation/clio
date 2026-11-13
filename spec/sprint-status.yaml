@@ -5085,7 +5085,7 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: L
-    status: ready-for-dev
+    status: review
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-3.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
@@ -5096,8 +5096,8 @@ stories:
     blocks:
       - story-eng-105475-soap-web-service-5
     note: >-
-      ADR D11 (stable vs Studio GUID-suffixed method codes) and D12 (which SOAP ports to return) are owner decisions
-      taken before this story starts.
+      Owner decisions of 2026-11-12: D11 stable prefixed codes, numbered only on a collision; D12 every SOAP port with
+      Studio's pick marked. Slice C also fixed D13 (a prefixed sequence-element) in the slice B validator.
   - id: story-eng-105475-soap-web-service-4
     title: "Nested test values"
     feature: "eng-105475-soap-web-service"

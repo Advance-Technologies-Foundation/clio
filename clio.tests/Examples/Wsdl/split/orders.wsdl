@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic WSDL written for clio's read-wsdl tests: its types come from schemas it imports (by a URL
+     schemaLocation) and includes (by a relative one), and one imported schema imports another. -->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+	xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:tns="http://example.org/clio/orders/"
+	targetNamespace="http://example.org/clio/orders/" name="OrdersService">
+	<wsdl:types>
+		<xs:schema elementFormDefault="qualified" targetNamespace="http://example.org/clio/orders/">
+			<xs:import namespace="http://example.org/clio/orders/" schemaLocation="http://example.org/schemas/orders-operations.xsd" />
+			<xs:include schemaLocation="orders-common.xsd" />
+		</xs:schema>
+	</wsdl:types>
+	<wsdl:message name="PlaceOrderIn"><wsdl:part name="parameters" element="tns:PlaceOrder" /></wsdl:message>
+	<wsdl:message name="PlaceOrderOut"><wsdl:part name="parameters" element="tns:PlaceOrderResponse" /></wsdl:message>
+	<wsdl:portType name="OrdersPort">
+		<wsdl:operation name="PlaceOrder">
+			<wsdl:input message="tns:PlaceOrderIn" />
+			<wsdl:output message="tns:PlaceOrderOut" />
+		</wsdl:operation>
+	</wsdl:portType>
+	<wsdl:binding name="OrdersSoap" type="tns:OrdersPort">
+		<soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document" />
+		<wsdl:operation name="PlaceOrder">
+			<soap:operation soapAction="http://example.org/clio/orders/PlaceOrder" style="document" />
+			<wsdl:input><soap:body use="literal" /></wsdl:input>
+			<wsdl:output><soap:body use="literal" /></wsdl:output>
+		</wsdl:operation>
+	</wsdl:binding>
+	<wsdl:service name="OrdersService">
+		<wsdl:port name="OrdersSoap" binding="tns:OrdersSoap">
+			<soap:address location="http://localhost/orders.asmx" />
+		</wsdl:port>
+	</wsdl:service>
+</wsdl:definitions>

@@ -57,6 +57,19 @@ public interface IWebServiceDesignerClient {
 	/// <returns>The raw outcome, including what the platform reports as sent.</returns>
 	ServiceMethodCallResult CallMethod(string serviceName, string methodName,
 		IReadOnlyDictionary<string, string> parameterValues);
+
+	/// <summary>
+	/// Downloads a WSDL through the platform's <c>DownloadWsdlEndpoint.GetXmlSchemaFilesContent</c>, as Studio's SOAP quick
+	/// setup does: the stand fetches the URL and every schema an <c>import</c> or <c>include</c> names by
+	/// <c>schemaLocation</c> (at most 100 files of 10 MB), so clio itself never reaches the URL. Requires
+	/// <c>CanManageSolution</c>. The platform sends each file as ASCII codes, so a non-ASCII character arrives as <c>?</c>.
+	/// </summary>
+	/// <param name="url">The WSDL URL.</param>
+	/// <returns>The files keyed as the platform keys them: the URL, then each <c>schemaLocation</c> as written.</returns>
+	/// <exception cref="InvalidOperationException">
+	/// The platform refused or failed the download; the message is the platform's, redacted, without its stack trace.
+	/// </exception>
+	IReadOnlyList<WsdlSourceFile> DownloadWsdl(string url);
 }
 
 /// <summary>
@@ -187,6 +200,39 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 			result.ErrorInfo?.Message, result.RequestRawData, result.RequestBody, result.ParameterValuesText);
 	}
 
+	public IReadOnlyList<WsdlSourceFile> DownloadWsdl(string url) {
+		// The reply is checked before it is parsed, so the byte arrays of an oversized download are never built.
+		DownloadWsdlResponse response = EnsureSucceeded(PostAndDeserialize<DownloadWsdlResponse>(
+			ServiceUrlBuilder.KnownRoute.DownloadWsdlSchemaFiles, new[] { url }, RequestOptions,
+			MaxDownloadReplyCharacters, TooLargeDownload), "download the WSDL");
+		var files = new List<WsdlSourceFile>();
+		long total = 0;
+		foreach (DownloadedFile file in response.Files ?? []) {
+			byte[] bytes = file.Value ?? [];
+			total += bytes.Length;
+			if (total > MaxDownloadedBytes) {
+				throw new InvalidOperationException(TooLargeDownload);
+			}
+			files.Add(new WsdlSourceFile(file.Key, bytes, AsciiText: true));
+		}
+		return files.Count > 0
+			? files
+			: throw new InvalidOperationException("The platform downloaded no file from the WSDL URL.");
+	}
+
+	/// <summary>The most a download may carry in all; the platform's own cap is 100 files of 10 MB.</summary>
+	internal const long MaxDownloadedBytes = 50L * 1024 * 1024;
+
+	/// <summary>
+	/// The reply text that can hold <see cref="MaxDownloadedBytes"/> of text, each byte up to three digits and a comma. A
+	/// reply of one-digit values carries up to twice as many bytes in the same text; they are read straight into bytes
+	/// (not 4-byte integers), and a file past <see cref="MaxDownloadedBytes"/> is refused while it is read.
+	/// </summary>
+	internal const long MaxDownloadReplyCharacters = MaxDownloadedBytes * 4 + 1024 * 1024;
+
+	private const string TooLargeDownload = "The downloaded WSDL and its schemas are larger than 50 MB; download them "
+		+ "yourself and pass the files as wsdl-files.";
+
 	/// <summary>The row key a selected column comes back under: a column path without its dots.</summary>
 	public static string ColumnAlias(string columnPath) => columnPath.Replace(".", string.Empty);
 
@@ -220,6 +266,47 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 
 	private sealed class SelectResponse : PlatformResponse {
 		[JsonPropertyName("rows")] public JsonArray Rows { get; init; }
+	}
+
+	private sealed class DownloadedFile {
+		[JsonPropertyName("Key")] public string Key { get; init; }
+
+		[JsonPropertyName("Value")]
+		[JsonConverter(typeof(ByteValuesConverter))]
+		public byte[] Value { get; init; }
+	}
+
+	// The platform's array of byte values, read straight into bytes: each value is a byte of the ASCII text, anything else
+	// is not what this endpoint sends, and a file past MaxDownloadedBytes is refused before the rest of it is read.
+	private sealed class ByteValuesConverter : JsonConverter<byte[]> {
+		// The parameters are the JsonConverter contract's; this converter needs only the reader.
+		public override byte[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) { // NOSONAR S1172
+			if (reader.TokenType == JsonTokenType.Null) {
+				return [];
+			}
+			if (reader.TokenType != JsonTokenType.StartArray) {
+				throw new JsonException("A WSDL file is not an array of byte values.");
+			}
+			using var bytes = new System.IO.MemoryStream();
+			while (reader.Read() && reader.TokenType != JsonTokenType.EndArray) {
+				if (reader.TokenType != JsonTokenType.Number || !reader.TryGetInt32(out int value) || value is < 0 or > 255) {
+					throw new InvalidOperationException("The platform returned a WSDL file that is not text.");
+				}
+				if (bytes.Length >= MaxDownloadedBytes) {
+					throw new InvalidOperationException(TooLargeDownload);
+				}
+				bytes.WriteByte((byte)value);
+			}
+			return bytes.ToArray();
+		}
+
+		// A reply is only read; the signature is the JsonConverter contract's.
+		public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options) => // NOSONAR S1172
+			throw new NotSupportedException();
+	}
+
+	private sealed class DownloadWsdlResponse : PlatformResponse {
+		[JsonPropertyName("files")] public List<DownloadedFile> Files { get; init; }
 	}
 
 	private sealed class CallMethodEnvelope {
