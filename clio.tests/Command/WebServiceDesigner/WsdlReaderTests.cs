@@ -122,12 +122,12 @@ public sealed class WsdlReaderTests {
 
 		// Assert
 		registered.Success.Should().BeTrue(because: $"the trimmed arguments are valid; error: {registered.Error}");
-		ServiceMethodDto tagged = saved().Methods.Items.Values.Single(m => m.Name == "UsrTCall");
+		ServiceMethodDto tagged = saved().Methods.Items.Values.Single(m => m.Name == "UsrTaggedCall");
 		ServiceParameterDto tags = tagged.Request.Parameters.Items.Values.Single();
 		(tags.IsSoapHeader, tags.IsArray, tags.SequenceElementName, tags.Path).Should().Be((true, true, "tem:Tag", "tem:TagsHeader"),
 			because: "the platform renders the header array by these members");
 		tagged.Request.Uri.Should().Be("tem:TaggedCall", because: "the message element is stored where the platform reads it");
-		ServiceParameterDto roles = saved().Methods.Items.Values.Single(m => m.Name == "UsrGBRoles").Request.Parameters.Items.Values
+		ServiceParameterDto roles = saved().Methods.Items.Values.Single(m => m.Name == "UsrGetByRoles").Request.Parameters.Items.Values
 			.Single(p => p.IsArray);
 		(roles.DataValueTypeName, roles.SequenceElementName, roles.ItemProperties.Items.Count).Should().Be(("Object", "ns0:RoleObject", 3),
 			because: "an object array keeps its item element and fields");

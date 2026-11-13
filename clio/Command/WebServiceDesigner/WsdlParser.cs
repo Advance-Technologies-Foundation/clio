@@ -125,7 +125,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 	private const string MimeNamespace = "http://schemas.xmlsoap.org/wsdl/mime/";
 	private const int MaxCharactersInDocument = 20_000_000;
 
-	/// <summary>The wizard's (and register-web-service's) longest code.</summary>
+	/// <summary>The wizard's longest code; read-wsdl keeps it only for the service code, a schema name (ADR D11).</summary>
 	internal const int MaxCodeLength = 200;
 
 	/// <summary>The data type of an element with child elements.</summary>

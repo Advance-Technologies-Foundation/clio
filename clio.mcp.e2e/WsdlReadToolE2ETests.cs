@@ -130,17 +130,17 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 			JsonNode.Parse(pick.Arguments!.Value.GetRawText())!["namespaces"]!.AsArray()
 				.Select((n, i) => (n!["prefix"]!.GetValue<string>(), n["uri"]!.GetValue<string>(), i == 0)),
 			because: "the namespaces are saved as read, the first being the default");
-		WebServiceMethodView tagged = service.Methods.Single(m => m.Code == _prefix + "TCall");
+		WebServiceMethodView tagged = service.Methods.Single(m => m.Code == _prefix + "TaggedCall");
 		tagged.MessageElement.Should().Be("tem:TaggedCall", because: "the message element is stored with its prefix");
 		tagged.SoapAction.Should().Be("http://example.org/clio/wizard/TaggedCall", because: "the SOAP action comes from the binding");
 		WebServiceParameterView tags = tagged.RequestParameters.Single();
 		(tags.Path, tags.SoapHeader, tags.Array, tags.SequenceElement).Should().Be(("tem:TagsHeader", true, true, "tem:Tag"),
 			because: "a SOAP-header array round-trips with its item element");
-		WebServiceParameterView roles = service.Methods.Single(m => m.Code == _prefix + "GBRoles").RequestParameters
+		WebServiceParameterView roles = service.Methods.Single(m => m.Code == _prefix + "GetByRoles").RequestParameters
 			.Single(p => p.Array);
 		(roles.Type, roles.SequenceElement, roles.Items.Count).Should().Be(("Object", "ns0:RoleObject", 3),
 			because: "an object array keeps its item element and its fields");
-		WebServiceMethodView secure = service.Methods.Single(m => m.Code == _prefix + "SCall");
+		WebServiceMethodView secure = service.Methods.Single(m => m.Code == _prefix + "SecureCall");
 		secure.RequestParameters.Where(p => p.SoapHeader == true).Select(p => p.Path).Should().BeEquivalentTo(
 			["tem:AuthHeader/tem:UserName", "tem:AuthHeader/tem:Token", "tem:AuthHeader/tem:Scope/tem:Tenant"],
 			because: "the complex header is flattened, without the wizard's copy of Tenant one level too high");

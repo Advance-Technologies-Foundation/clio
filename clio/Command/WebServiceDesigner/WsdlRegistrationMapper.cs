@@ -88,8 +88,8 @@ public sealed record WsdlRegistrationArgs(
 
 /// <summary>
 /// Turns a port read with Studio's wizard rules into register-web-service arguments with clio's rules (ADR D11): stable
-/// codes (the environment's schema-name prefix and the wizard's shortened name, a number only on a collision, never the
-/// wizard's random suffix), the message element with its namespace prefix, and nothing register-web-service would refuse
+/// codes (the environment's schema-name prefix and the full WSDL name in PascalCase, a number only on a collision, never
+/// the wizard's shortening or random suffix), the message element with its namespace prefix, and nothing register-web-service would refuse
 /// in a parameter or a method: such a parameter or method is left out with a warning. A service-level value it would
 /// refuse (the base URI, a namespace URI) is kept with a warning, because the agent can only replace it, not drop it.
 /// </summary>
@@ -103,6 +103,12 @@ public static partial class WsdlRegistrationMapper {
 
 	[GeneratedRegex("[^A-Za-z0-9_]")]
 	private static partial Regex NonIdentifierCharacter();
+
+	[GeneratedRegex(@"[^\p{L}\p{Nd}]+")]
+	private static partial Regex WordSeparator();
+
+	[GeneratedRegex("[^A-Za-z0-9]")]
+	private static partial Regex NonLatinCharacter();
 
 	/// <summary>Maps one port.</summary>
 	/// <param name="port">The port as the parser read it.</param>
@@ -177,13 +183,47 @@ public static partial class WsdlRegistrationMapper {
 	}
 
 	/// <summary>
-	/// A code: the prefix, then the wizard's shortened name made a Latin identifier, capped at 200 characters by
-	/// keeping the end of the name as the wizard does but never the prefix; a number from 2 on a collision.
+	/// The longest parameter code. The Call web service element names its process parameters <c>&lt;code&gt;_In</c> and
+	/// <c>&lt;code&gt;_Out</c>, and a compiled process declares a C# field <c>_&lt;name&gt;</c> for each, where an identifier
+	/// may have at most 512 characters (CS0645): a longer code breaks the compile of every process that calls the method.
+	/// 500 leaves room below that. A method code is only a string value there, so it is not cut.
 	/// </summary>
-	internal static string UniqueCode(string prefix, string name, string fallback, CodePool taken) {
-		string tail = Identifier(WsdlParser.ShortenCaption((name ?? string.Empty).Replace(" ", string.Empty)), fallback);
-		return taken.Claim(prefix, tail);
+	internal const int MaxParameterCodeLength = 500;
+
+	/// <summary>
+	/// A method or parameter code (ADR D11): the prefix, then the full name in PascalCase as a Latin identifier
+	/// (GetCustomerOrders stays GetCustomerOrders; a flattened path joins its names, customer/name -> CustomerName); a number
+	/// from 2 only on a collision. Studio's code validators check only that a code is a Latin letter followed by Latin
+	/// letters, digits or underscores, so without a prefix a code that would start with a digit starts with the fallback
+	/// word. A code is cut only at <paramref name="maxLength"/>, keeping the prefix and the end of the name, as the wizard
+	/// keeps it; the wizard's own 200 characters are its generator's choice, not a limit of Studio or the platform.
+	/// </summary>
+	internal static string UniqueCode(string prefix, string name, string fallback, CodePool taken,
+			int maxLength = int.MaxValue) {
+		string tail = Identifier(PascalCase(name), fallback);
+		if (prefix.Length == 0 && char.IsDigit(tail[0])) {
+			tail = fallback + tail;
+		}
+		return taken.Claim(prefix, tail, maxLength);
 	}
+
+	/// <summary>
+	/// The local names of an element path, joined by spaces (<c>tem:order/tem:id</c> -> <c>order id</c>): what a parameter
+	/// code is built from. Studio's caption is not used, because it drops a first word every top-level parameter shares (a
+	/// wrapper element), so <c>customer/name</c> would lose <c>customer</c> and a code would change with its siblings.
+	/// </summary>
+	internal static string PathNames(string path) =>
+		string.Join(' ', (path ?? string.Empty).Split('/').Select(segment => segment[(segment.IndexOf(':') + 1)..]));
+
+	/// <summary>
+	/// The words of a name, each with a capital first letter, joined (customer name, short_description, intA). Words are
+	/// split at what is neither a letter nor a digit; a letter outside Latin is then dropped from its word, so Größe is
+	/// Gre, not two words. A name with no Latin letter or digit at all gives an empty string, and the caller's fallback.
+	/// </summary>
+	internal static string PascalCase(string name) =>
+		string.Concat(WordSeparator().Split(name ?? string.Empty)
+			.Select(word => NonLatinCharacter().Replace(word, string.Empty)).Where(word => word.Length > 0)
+			.Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
 
 	/// <summary>
 	/// The codes in use, with the next number to try per name: numbering many equal names stays linear instead of probing
@@ -203,16 +243,17 @@ public static partial class WsdlRegistrationMapper {
 		/// <summary>Takes the code for the name, or the name with the lowest free number from 2.</summary>
 		/// <param name="prefix">The schema-name prefix.</param>
 		/// <param name="tail">The name after the prefix, already an identifier.</param>
+		/// <param name="maxLength">The longest code; a longer one keeps the prefix and the end of the name.</param>
 		/// <returns>The code taken.</returns>
-		public string Claim(string prefix, string tail) {
-			string code = Capped(prefix, tail);
+		public string Claim(string prefix, string tail, int maxLength = int.MaxValue) {
+			string code = Fit(prefix, tail, maxLength);
 			int index = 1;
 			if (_taken.Contains(code)) {
 				index = _next.GetValueOrDefault(tail, 2);
-				code = Capped(prefix, tail + index);
+				code = Fit(prefix, tail + index, maxLength);
 				while (_taken.Contains(code)) {
 					index++;
-					code = Capped(prefix, tail + index);
+					code = Fit(prefix, tail + index, maxLength);
 				}
 				_next[tail] = index + 1;
 			}
@@ -229,8 +270,18 @@ public static partial class WsdlRegistrationMapper {
 		}
 	}
 
-	// The end of a long name is kept, as the wizard keeps it; a code without a prefix must still start with a letter or
-	// an underscore, so a cut that leaves a digit first gets an underscore.
+	// A method or parameter code within maxLength, keeping the end of a longer name; without a prefix a cut that leaves
+	// something other than a Latin letter first gets one (Studio's validator wants it), from the name it cut.
+	private static string Fit(string prefix, string tail, int maxLength) {
+		if (prefix.Length + tail.Length <= maxLength) {
+			return prefix + tail;
+		}
+		string kept = tail[^Math.Max(maxLength - prefix.Length, 1)..];
+		return prefix.Length == 0 && !char.IsAsciiLetter(kept[0]) ? tail[0] + kept[1..] : prefix + kept;
+	}
+
+	// The service code (a schema name) keeps the end of a long name within 200 characters, as the wizard does; a code
+	// without a prefix must still start with a letter or an underscore, so a cut that leaves a digit first gets one.
 	private static string Capped(string prefix, string tail) {
 		int room = Math.Max(MaxCodeLength - prefix.Length, 1);
 		string kept = tail.Length <= room ? tail : tail[^room..];
@@ -425,10 +476,10 @@ public static partial class WsdlRegistrationMapper {
 			(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
 		private List<WebServiceParameterArg> Parameters(IReadOnlyList<WsdlParameter> parameters, bool isRequest,
-			string parentCaption, CodePool codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
+			string parentName, CodePool codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
 			var result = new List<WebServiceParameterArg>();
 			foreach (WsdlParameter parameter in parameters) {
-				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentCaption, codes, existing);
+				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentName, codes, existing);
 				if (arg is not null) {
 					result.Add(arg);
 				}
@@ -436,7 +487,7 @@ public static partial class WsdlRegistrationMapper {
 			return result;
 		}
 
-		private WebServiceParameterArg Parameter(WsdlParameter parameter, bool isRequest, string parentCaption,
+		private WebServiceParameterArg Parameter(WsdlParameter parameter, bool isRequest, string parentName,
 			CodePool codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
 			string path = ElementPath(parameter.Path);
 			string sequenceElement = parameter.IsArray ? ElementPath(parameter.SequenceElement) : null;
@@ -448,9 +499,13 @@ public static partial class WsdlRegistrationMapper {
 			bool isObject = parameter.Type == ObjectType;
 			string where = LeftOut(path, isRequest);
 			WebServiceParameterView previous = existing.GetValueOrDefault(path);
-			string code = previous?.Code ?? UniqueCode(prefix, parentCaption + parameter.Caption, "Param", codes);
+			// The code joins the names of the whole path (never empty here: LeaveOutReason refuses an empty path), and an
+			// item's starts with its array's, so fields of different branches (customer/name, company/name) differ without a
+			// number and a code does not depend on its siblings.
+			string name = parentName + " " + PathNames(path);
+			string code = previous?.Code ?? UniqueCode(prefix, name, "Param", codes, MaxParameterCodeLength);
 			List<WebServiceParameterArg> items = isObject
-				? Parameters(parameter.Items, isRequest, parameter.Caption, codes, CodesByPath(previous?.Items))
+				? Parameters(parameter.Items, isRequest, name, codes, CodesByPath(previous?.Items))
 				: [];
 			if (isObject && items.Count == 0) {
 				Warn($"{where}: none of its fields can be described, so neither can the object.");

@@ -45,3 +45,5 @@ the way Studio's quick setup does, after the user trims the operations.
   devices, and that WSDL names reached the agent's warnings unfiltered; all are closed (ADR D9) with tests.
 - AC4: PASS on a Studio stand (TC-M-C01): the calculator through Studio's quick setup and through read-wsdl +
   register are equal except for the method-code suffix (D11) and the prefixed message element (D9); both answer 2+3=5.
+  Since the owner's D11 change of 2026-11-13 clio's codes keep the full names (`UsrAddResult` for Studio's
+  `UsrAResult`), which is a chosen difference, not a defect.

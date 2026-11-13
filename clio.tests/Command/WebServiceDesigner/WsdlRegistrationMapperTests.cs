@@ -34,21 +34,21 @@ public sealed class WsdlRegistrationMapperTests {
 	[Description("Numbering many equal names stays linear, and a code given back is the next one taken.")]
 	public void CodePool_Should_Number_In_Linear_Time_And_Reuse_A_Released_Code() {
 		// Arrange
-		var pool = new WsdlRegistrationMapper.CodePool(["Usra"]);
+		var pool = new WsdlRegistrationMapper.CodePool(["UsrA"]);
 		var watch = System.Diagnostics.Stopwatch.StartNew();
 
 		// Act
 		List<string> codes = Enumerable.Range(0, 50_000).Select(_ => WsdlRegistrationMapper.UniqueCode("Usr", "a", "Param", pool))
 			.ToList();
 		watch.Stop();
-		pool.Release("Usra7");
+		pool.Release("UsrA7");
 		string again = WsdlRegistrationMapper.UniqueCode("Usr", "a", "Param", pool);
 
 		// Assert
-		codes[0].Should().Be("Usra2", because: "the taken code is numbered from 2");
+		codes[0].Should().Be("UsrA2", because: "the taken code is numbered from 2");
 		codes.Should().OnlyHaveUniqueItems(because: "each claim gets a free code");
 		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), because: "the next number is remembered per name");
-		again.Should().Be("Usra7", because: "a released code is the next one taken");
+		again.Should().Be("UsrA7", because: "a released code is the next one taken");
 	}
 
 	[Test]
@@ -168,14 +168,14 @@ public sealed class WsdlRegistrationMapperTests {
 			new(code, code, "body", path, "Text", false, false, null, null, false, []);
 		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
 			new WebServiceMethodView("UsrAdd_1a2b3c4d", "Add", "POST", null, 5000, "xml", false,
-				[View("UsrintA1", "tem:intA"), View("UsrintB", "tem:other")], [], "Add", "urn:Add")
+				[View("UsrIntA1", "tem:intA"), View("UsrIntB", "tem:other")], [], "Add", "urn:Add")
 		]);
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, new WarningLog());
 
 		// Assert
-		result.Arguments.Methods.Single().RequestParameters.Select(p => p.Code).Should().Equal(["UsrintA1", "UsrintB2"],
+		result.Arguments.Methods.Single().RequestParameters.Select(p => p.Code).Should().Equal(["UsrIntA1", "UsrIntB2"],
 			because: "intA keeps the code it has at tem:intA, and intB avoids the code another parameter of the method holds");
 	}
 
@@ -200,17 +200,57 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
-	[Description("Without a prefix, a code whose 200-character cut starts with a digit gets an underscore, so it stays an identifier.")]
-	public void Map_Should_Keep_A_Cut_Code_An_Identifier() {
+	[Description("Without a prefix, a long code that starts with a digit is kept whole and starts with the fallback word, as Studio's validator wants a Latin letter first.")]
+	public void Map_Should_Keep_A_Long_Code_Whole_And_An_Identifier() {
 		// Arrange
-		string name = new string('a', 50) + "9" + new string('b', 199);
+		string name = "9" + new string('b', 249);
 
 		// Act
 		string code = WsdlRegistrationMapper.UniqueCode(string.Empty, name, "Param", new WsdlRegistrationMapper.CodePool());
 
 		// Assert
-		code.Should().MatchRegex("^_[A-Za-z0-9_]*$", because: "an identifier cannot start with a digit").And.HaveLength(200,
-			because: "the cap still holds");
+		code.Should().Be("Param" + name, because: "a code starts with a Latin letter, and a method code is not cut (D11)");
+	}
+
+	[Test]
+	[Description("A parameter code is cut at 500 characters, keeping the prefix and the end of the name, because a compiled process declares a field for it and C# refuses an identifier over 512 characters; a collision keeps its number.")]
+	public void Map_Should_Cut_A_Parameter_Code_Below_The_Compiled_Process_Limit() {
+		// Arrange
+		string common = new string('x', 600) + " end";
+		var pool = new WsdlRegistrationMapper.CodePool();
+
+		// Act
+		string first = WsdlRegistrationMapper.UniqueCode("Usr", "a " + common, "Param", pool,
+			WsdlRegistrationMapper.MaxParameterCodeLength);
+		string second = WsdlRegistrationMapper.UniqueCode("Usr", "b " + common, "Param", pool,
+			WsdlRegistrationMapper.MaxParameterCodeLength);
+		string method = WsdlRegistrationMapper.UniqueCode("Usr", "a " + common, "Method", new WsdlRegistrationMapper.CodePool());
+
+		// Assert
+		first.Should().HaveLength(500, because: "the field the process declares for it stays under 512 characters")
+			.And.StartWith("Usrxxx", because: "the prefix is kept and the start of the name is what is cut").And.EndWith("xEnd", because: "the end of the name is kept");
+		second.Should().HaveLength(500, because: "a numbered code is cut the same way").And.EndWith("xEnd2",
+			because: "two names that end alike collide once cut, and the number stays at the end");
+		method.Should().Be("UsrAX" + new string('x', 599) + "End", because: "a method code is not cut: the process stores it as a value");
+	}
+
+	[Test]
+	[Description("PascalCase splits words at what is neither a letter nor a digit, keeps a word's own capitals, and drops letters outside Latin from a word instead of splitting it there.")]
+	[TestCase("intA", "IntA")]
+	[TestCase("HTTPHeader", "HTTPHeader")]
+	[TestCase("customer name", "CustomerName")]
+	[TestCase("short_description", "ShortDescription")]
+	[TestCase("a-dd", "ADd")]
+	[TestCase("Größe", "Gre")]
+	[TestCase("naïveName", "NaveName")]
+	[TestCase("Ім'я", "")]
+	[TestCase("--", "")]
+	public void PascalCase_Should_Join_Latin_Words(string name, string expected) {
+		// Act
+		string result = WsdlRegistrationMapper.PascalCase(name);
+
+		// Assert
+		result.Should().Be(expected, because: "codes are the full name in PascalCase, sanitized to a Latin identifier (D11)");
 	}
 
 	[Test]
@@ -224,7 +264,7 @@ public sealed class WsdlRegistrationMapperTests {
 			new(code, code, "body", path, "Text", false, false, null, null, false, []);
 		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
 			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 5000, "xml", false,
-				[View("Usrother", "tem:old")], [], "Add", "urn:Add")
+				[View("UsrOther", "tem:old")], [], "Add", "urn:Add")
 		]);
 		var warnings = new WarningLog();
 
@@ -234,7 +274,7 @@ public sealed class WsdlRegistrationMapperTests {
 
 		// Assert
 		warnings.Kept.Count(w => w.Contains("tem:x.y")).Should().Be(1, because: "the same leave-out on both ports is listed once");
-		first.Arguments.Methods.Single(m => m.Code == "UsrAdd").RequestParameters.Single().Code.Should().Be("Usrother2",
+		first.Arguments.Methods.Single(m => m.Code == "UsrAdd").RequestParameters.Single().Code.Should().Be("UsrOther2",
 			because: "the dropped parameter's existing code stays reserved, so the new parameter does not take it");
 	}
 
@@ -257,7 +297,7 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
-	[Description("Codes are the prefix plus the wizard's shortened name, without its random suffix, so every read gives the same codes; the message element gets the prefix of its namespace.")]
+	[Description("Codes are the prefix plus the full name in PascalCase, without the wizard's shortening or random suffix, so every read gives the same readable codes; the message element gets the prefix of its namespace.")]
 	public void Map_Should_Give_Stable_Prefixed_Codes_And_A_Prefixed_Message_Element() {
 		// Arrange
 		WsdlDocument document = Fixture("calculator.wsdl");
@@ -272,19 +312,20 @@ public sealed class WsdlRegistrationMapperTests {
 		(add.Code, add.MessageElement, add.SoapAction).Should().Be(("UsrAdd", "tem:Add", "http://tempuri.org/Add"),
 			because: "operation Add is UsrAdd on every read (D11) and its root element is qualified");
 		add.RequestParameters.Select(p => (p.Code, p.Path, p.Type)).Should().Equal(
-			[("UsrintA", "tem:intA", "Integer"), ("UsrintB", "tem:intB", "Integer")],
-			because: "parameter codes follow the wizard's names");
-		add.ResponseParameters.Single().Code.Should().Be("UsrAResult", because: "AddResult is shortened as the wizard does");
+			[("UsrIntA", "tem:intA", "Integer"), ("UsrIntB", "tem:intB", "Integer")],
+			because: "parameter codes are the full element names in PascalCase (D11)");
+		add.ResponseParameters.Single().Code.Should().Be("UsrAddResult",
+			because: "AddResult is kept whole, where the wizard shortens it to AResult");
 		first.Arguments.Should().BeEquivalentTo(second.Arguments, because: "the codes do not change from one read to the next");
 		(first.Arguments.Code, first.Arguments.Type, first.Arguments.Caption).Should().Be(("UsrCalculator", "soap11", "Calculator"),
 			because: "the service code is the prefix and the WSDL service name");
 	}
 
 	[Test]
-	[Description("With an empty schema-name prefix the codes are the names alone; a name that would start with a digit gets an underscore.")]
+	[Description("With an empty schema-name prefix the codes are the names alone; a name that would start with a digit starts with the fallback word.")]
 	public void Map_Should_Work_Without_A_Prefix() {
 		// Arrange
-		WsdlPort port = Port(Operation("Add", Parameter("1st", "tem:first")));
+		WsdlPort port = Port(Operation("Add", Parameter("_1st", "tem:_1st")));
 
 		// Act
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, string.Empty, "dev", null, new WarningLog());
@@ -292,11 +333,11 @@ public sealed class WsdlRegistrationMapperTests {
 		// Assert
 		WebServiceMethodArg method = result.Arguments.Methods.Single();
 		method.Code.Should().Be("Add", because: "no prefix is added when the environment has none");
-		method.RequestParameters.Single().Code.Should().Be("_1st", because: "a code must start with a letter or underscore");
+		method.RequestParameters.Single().Code.Should().Be("Param1st", because: "Studio's validator wants a Latin letter first");
 	}
 
 	[Test]
-	[Description("A code taken by another operation or parameter gets a number from 2, compared case-insensitively; a name with characters outside Latin letters, digits and underscore loses them.")]
+	[Description("A code taken by another operation or parameter gets a number from 2, compared case-insensitively; a character outside Latin letters and digits starts a new word.")]
 	public void Map_Should_Number_Collisions_From_Two() {
 		// Arrange
 		WsdlPort port = Port(Operation("Add", Parameter("value", "tem:value"), Parameter("Value", "tem:Value"),
@@ -307,15 +348,58 @@ public sealed class WsdlRegistrationMapperTests {
 		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, new WarningLog());
 
 		// Assert
-		result.Arguments.Methods.Select(m => m.Code).Should().Equal(["UsrAdd", "Usradd2", "Usradd3"],
-			because: "Add, add and a-dd clash case-insensitively once the dash is dropped");
+		result.Arguments.Methods.Select(m => m.Code).Should().Equal(["UsrAdd", "UsrAdd2", "UsrADd3"],
+			because: "Add, add and a-dd clash case-insensitively in PascalCase, the dash starting a word");
 		result.Arguments.Methods[0].RequestParameters.Select(p => p.Code).Should().Equal(
-			["Usrvalue", "UsrValue2", "Usrvalue3"], because: "parameter codes are numbered the same way");
+			["UsrValue", "UsrValue2", "UsrVaLue3"], because: "parameter codes are numbered the same way");
 	}
 
 	[Test]
-	[Description("A code over 200 characters keeps the prefix and the end of the name, where the wizard's cap drops the prefix.")]
-	public void Map_Should_Keep_The_Prefix_On_A_Long_Code() {
+	[Description("A flattened element's code joins the names of its whole path, the wrapper Studio's caption drops included, and an array item's starts with the array's, in PascalCase, so fields of different branches differ without a number.")]
+	public void Map_Should_Join_Path_Names_In_PascalCase() {
+		// Arrange
+		WsdlParameter orders = new("orders", "tem:orders", "Object", true, false, "tem:Order",
+			[Parameter("id", "tem:id"), Parameter("customer name", "tem:customer/tem:name")], "UsrOrders");
+		WsdlPort port = Port(Operation("GetCustomerOrders", Parameter("name", "tem:customer/tem:name"),
+			Parameter("email", "tem:customer/tem:email"), Parameter("short_description", "tem:short_description"), orders));
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, new WarningLog());
+
+		// Assert
+		WebServiceMethodArg method = result.Arguments.Methods.Single();
+		method.Code.Should().Be("UsrGetCustomerOrders", because: "the operation name is kept whole");
+		method.RequestParameters.Select(p => p.Code).Should().Equal(
+			["UsrCustomerName", "UsrCustomerEmail", "UsrShortDescription", "UsrOrders"],
+			because: "a flattened path joins its names, customer included where Studio's caption drops it, and an underscore starts a word");
+		method.RequestParameters[3].Items.Select(p => p.Code).Should().Equal(["UsrOrdersId", "UsrOrdersCustomerName"],
+			because: "an item's code starts with the array's name, so it does not clash with a top-level field");
+	}
+
+	[Test]
+	[Description("A wrapper element and a SOAP header root are part of a code, so a code does not depend on its siblings: the wizard-features WSDL's GetByRoles and SecureCall.")]
+	public void Map_Should_Keep_Wrappers_And_Header_Roots_In_Codes() {
+		// Arrange
+		WsdlPort port = Fixture("wizard-features.wsdl").Ports.Single(p => p.Name == "ClioWizardFeaturesSoap12");
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, new WarningLog());
+
+		// Assert
+		WebServiceMethodArg roles = result.Arguments.Methods.Single(m => m.Code == "UsrGetByRoles");
+		roles.RequestParameters.Select(p => p.Code).Should().Equal(["UsrMsgOwner", "UsrMsgRoles"],
+			because: "the msg wrapper Studio's caption drops is kept in the code");
+		roles.RequestParameters[1].Items.Select(p => p.Code).Should().Equal(
+			["UsrMsgRolesIdentifier", "UsrMsgRolesMetadataSchema", "UsrMsgRolesRoleName"],
+			because: "an item's code starts with the array's path names");
+		result.Arguments.Methods.Single(m => m.Code == "UsrSecureCall").RequestParameters.Where(p => p.SoapHeader == true)
+			.Select(p => p.Code).Should().Equal(["UsrAuthHeaderUserName", "UsrAuthHeaderToken", "UsrAuthHeaderScopeTenant"],
+				because: "a SOAP header's root element is part of the path");
+	}
+
+	[Test]
+	[Description("A long name is kept whole after the prefix in PascalCase, where the wizard cuts it to 200 characters and drops the prefix.")]
+	public void Map_Should_Keep_A_Long_Code_Whole_With_The_Prefix() {
 		// Arrange
 		WsdlOperation ping = Fixture("wizard-features.wsdl").Ports[0].Operations.Single(o => o.Caption == "Ping");
 
@@ -324,9 +408,9 @@ public sealed class WsdlRegistrationMapperTests {
 
 		// Assert
 		string code = result.Arguments.Methods.Single().RequestParameters.Single().Code;
-		code.Should().HaveLength(200, because: "codes are capped at 200 characters");
-		code.Should().StartWith("Usr", because: "register-web-service refuses a code without the prefix");
-		code.Should().EndWith("front_of_the_code", because: "the end of the name is kept, as the wizard keeps it");
+		code.Should().Be("UsrPayloadWithAVeryLongLowerCaseParameterNameThatHasNoCapitalizedWordSoTheWizardKeepsItWholeAndThenCuts"
+			+ "ItToTheLastTwoHundredCharactersWhichDropsTheSchemaNamePrefixFromTheFrontOfTheCode",
+			because: "the code is the prefix and the whole name, under the compiled-process limit (D11)");
 	}
 
 	[Test]

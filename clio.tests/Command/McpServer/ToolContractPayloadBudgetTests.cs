@@ -153,6 +153,8 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Merged with ENG-105556 on the ENG-105475 slice C branch: both lines together measured 18696, 8 over, after
 	// ENG-105556 dropped the legend's last sentence. Paid by the legend again: "One line per tool:" became
 	// "Each line:" and "it may delete" became "may delete". The resident sentence is unchanged.
+	// read-wsdl's line made findable ("Reads a WSDL." -> "Reads a SOAP WSDL.", +5 bytes; an agent on a stand never
+	// reached the tool): paid by the legend's "[aka deprecated names]" -> "[aka old names]".
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

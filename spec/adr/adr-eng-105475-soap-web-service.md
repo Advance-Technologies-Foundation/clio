@@ -193,16 +193,35 @@ sending it through `register-web-service` itself.
 `parameters` accepts arrays and arrays of objects, sent through the platform's `nested` member of
 `CallServiceSchemaService.Execute`. A single object stays refused, as the parameter model has none.
 
-### D11. Stable codes in `read-wsdl` (owner, 2026-11-12)
+### D11. Stable codes in `read-wsdl` (owner, 2026-11-12; full names, owner, 2026-11-13)
 
 A generated method or parameter code is the environment's `SchemaNamePrefix` (read with `IWebServicePrefixReader`,
-exactly as `register-web-service` reads it; any value or empty; an unreadable setting refuses the call) plus a stable
-tail from the WSDL name: Studio's shortening (`AddResult` → `AResult`, the capitalized words but the last cut to their
-first letter) made a Latin identifier, so operation `Add` is `<prefix>Add` on every read. A number from 2 is added only
-on a collision, compared case-insensitively, with another operation or parameter of the same list or with a method of
-the target service (`<prefix>Add2`). There is no Studio-style `_<8 hex>` suffix. A code is capped at 200 characters by
-keeping the end of the name as Studio does, but never the prefix (Studio's cap can drop it). The service code is the
-prefix plus the WSDL service name, not shortened, as in Studio. Wire names (element paths with prefixes, the message
+exactly as `register-web-service` reads it; any value or empty; an unreadable setting refuses the call) plus the full
+WSDL name in PascalCase made a Latin identifier: the name is split into words at every character that is not a Latin
+letter or digit (so `short_description` and `customer name` are two words each), each word gets a capital first letter,
+and the words are joined. Operation `GetCustomerOrders` is `<prefix>GetCustomerOrders`, element `intA` is
+`<prefix>IntA`, `AddResult` is `<prefix>AddResult`, on every read. A parameter's name is the local names of its whole
+element path (`customer/name` → `<prefix>CustomerName`), not Studio's caption: the caption drops a first word that
+every top-level parameter shares, a wrapper element, so `tem:order/tem:id` would be a bare `<prefix>Id` and a code
+would change when a sibling is added. An array item's code starts with the array's path names (item `id` of array
+`orders` → `<prefix>OrdersId`; the items of `tem:msg/ns0:roles` → `<prefix>MsgRolesIdentifier`), so fields of different
+branches differ without a number, and a wrapper element or a SOAP header's root is part of every code under it
+(`<prefix>MsgOwner`, `<prefix>AuthHeaderUserName`). A letter outside Latin is dropped from its word (`Größe` → `Gre`);
+a name with no Latin letter or digit, such as an all-Cyrillic one, falls back to `Param` or `Method`, numbered in
+reading order as before (nothing is transliterated). A number from 2 is added
+only on a real collision, compared case-insensitively, with another operation or parameter of the same list or with a
+method of the target service (`<prefix>Add2`). There is no Studio-style `_<8 hex>` suffix. Studio's method and
+parameter pages check only that a code is a Latin letter followed by Latin letters, digits or underscores, and the
+platform's service schema checks no length; the 200 characters of Studio's wizard are its generator's own choice, so a
+method code is not cut. One limit is real for a parameter code: the Call web service element names its process
+parameters `<code>_In` and `<code>_Out`, and a compiled process declares a C# field `_<name>` for each, where C#
+allows at most 512 characters (CS0645), so a code over 507 characters breaks the compile of every process that calls
+the method. A parameter code is therefore cut at 500 characters, keeping the prefix and the end of the name as the wizard
+does (a collision's number stays at the end). Without a prefix, a code that would start with a digit starts with
+`Param` or `Method`. The parser bounds the names and their nesting, and the reader bounds the whole result. The service
+code is the prefix plus
+the WSDL service name, not shortened, as in Studio, kept within 200 characters as a schema name by keeping the end of
+the name, but never without the prefix (Studio's cap can drop it). Wire names (element paths with prefixes, the message
 element, the SOAP action) go into `path`, `message-element` and `soap-action`, never into codes.
 
 The target service is optional: `service-code` names an existing SOAP service the operations go into. An operation
@@ -212,7 +231,13 @@ each of its parameters at the path of one of that method's parameters keeps that
 its UId (a Studio-made method's codes are not always the ones clio would generate);
 the namespaces start with that service's own prefixes, and a WSDL namespace it lacks gets a free `nsN` (the agent sends
 the list with `setNamespaces`). Without it, a notice says when `<prefix><ServiceName>` already exists. Rejected:
-Studio's GUID suffix (a re-import creates new methods instead of matching the old ones).
+Studio's GUID suffix (a re-import creates new methods instead of matching the old ones). Rejected on 2026-11-13:
+Studio's shortening (`AddResult` → `AResult`, the capitalized words but the last cut to their first letter), which
+clio used until then. It makes codes unreadable, and names that shorten alike (`GetByRoles` and `GetBankRoles` are
+both `GBRoles`, `AddResult` and `AverageResult` both `AResult`) are told apart only by a number given in reading
+order, so a fresh read of a WSDL that adds or reorders an operation renumbers them. (A re-import with `service-code`
+matches methods by root element and SOAP action and parameters by path, never by code, so it keeps the old codes
+either way.)
 
 ### D12. Every SOAP port, Studio's pick marked (owner, 2026-11-12)
 

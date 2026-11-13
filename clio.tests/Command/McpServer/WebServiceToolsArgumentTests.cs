@@ -214,6 +214,23 @@ public sealed class WebServiceToolsArgumentTests {
 	}
 
 	[Test]
+	[Description("register-web-service sends an agent that has a WSDL to read-wsdl first, so it does not hand-build a SOAP service or infer a SOAP action from one.")]
+	public void RegisterWebService_Description_Should_Send_A_Wsdl_To_ReadWsdl() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(RegisterWebServiceTool).GetMethod(nameof(RegisterWebServiceTool.RegisterWebService));
+
+		// Act
+		string description = System.Reflection.CustomAttributeExtensions
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>(method!)!.Description;
+
+		// Assert
+		description.Should().Contain("call read-wsdl first",
+			because: "agents on a stand registered a hand-built service from a WSDL when nothing pointed them at read-wsdl");
+		description.Should().Contain("never hand-build a service from a WSDL or infer a soap-action",
+			because: "an inferred SOAP action is wrong for any operation that does not follow the pattern");
+	}
+
+	[Test]
 	[Description("read-wsdl runs in the host process: its refusal of wsdl-files over HTTP reads the host's HttpContext, which a call relayed to a worker would not have.")]
 	public void ReadWsdl_Should_Run_In_Process() {
 		// Arrange
