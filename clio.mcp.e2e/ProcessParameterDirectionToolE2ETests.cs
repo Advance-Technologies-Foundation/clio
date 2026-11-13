@@ -62,19 +62,24 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 				});
 			string built = ToolText(buildCall);
 			ProcessDesignerE2ESupport.IgnoreWhenProcessBuilderIsBehind(built, MinimumPackageVersion);
+			// Checked before the read-back, so a refused build fails with its own refusal text.
+			built.Should().Contain("created (UId:", because: "the build must succeed: {0}", built);
 			Dictionary<string, string?> directions = await DirectionsAsync(context, processName);
 
 			// Assert
-			built.Should().Contain("created (UId:", because: "the build must succeed: {0}", built);
 			directions["PHelper"].Should().Be("Internal",
 				because: "no direction was stated and only a Formula element of the process fills it");
 			directions["PStated"].Should().Be("Variable", because: "a stated direction is the author's choice");
 			directions["PConstant"].Should().Be("Variable",
 				because: "a constant is a starting value, not a value an element of the process produces");
-			built.Should().Contain($"Process parameter 'PHelper' {SwitchNotice}",
-				because: "the switch is reported, with the way back: {0}", built);
-			built.Should().Contain($"Process parameter 'PStated' {AdviceWarning}",
+			built.Should().Contain($"Process parameter 'PHelper' {SwitchNotice}", Exactly.Once(),
+				because: "the switch is reported once, with the way back: {0}", built);
+			built.Should().NotContain($"Process parameter 'PHelper' {AdviceWarning}",
+				because: "a switched helper is no longer Variable, so there is nothing to advise: {0}", built);
+			built.Should().Contain($"Process parameter 'PStated' {AdviceWarning}", Exactly.Once(),
 				because: "a Variable stated for a helper the request creates is kept but advised once: {0}", built);
+			built.Should().NotContain($"Process parameter 'PStated' {SwitchNotice}",
+				because: "a stated direction is never switched, so it is never reported as one: {0}", built);
 			built.Should().NotContain("'PConstant'", because: "nothing in the process fills it: {0}", built);
 		} finally {
 			await ProcessDesignerE2ESupport.DeleteProcessAsync(context.EnvironmentName, processName);
@@ -117,18 +122,24 @@ public sealed class ProcessParameterDirectionToolE2ETests {
 						}
 					})
 				}));
+			// Checked before the read-back, so a refused edit fails with its own refusal text.
+			modified.Should().Contain("edited (", because: "the edit must succeed: {0}", modified);
 			Dictionary<string, string?> directions = await DirectionsAsync(context, processName);
 
 			// Assert
-			modified.Should().Contain("edited (", because: "the edit must succeed: {0}", modified);
 			directions["PNew"].Should().Be("Internal",
 				because: "the request created it with no direction and an element output fills it");
 			directions["PExisting"].Should().Be("Variable",
 				because: "a parameter that existed before the request is never switched");
-			modified.Should().Contain($"Process parameter 'PNew' {SwitchNotice}",
-				because: "the switch is reported: {0}", modified);
-			modified.Should().Contain($"Process parameter 'PExisting' {AdviceWarning}",
-				because: "an existing Variable parameter the request made an element fill gets advice: {0}", modified);
+			modified.Should().Contain($"Process parameter 'PNew' {SwitchNotice}", Exactly.Once(),
+				because: "the switch is reported once: {0}", modified);
+			modified.Should().NotContain($"Process parameter 'PNew' {AdviceWarning}",
+				because: "a switched helper is no longer Variable, so there is nothing to advise: {0}", modified);
+			modified.Should().Contain($"Process parameter 'PExisting' {AdviceWarning}", Exactly.Once(),
+				because: "an existing Variable parameter the request made an element fill gets advice once: {0}", modified);
+			modified.Should().NotContain($"Process parameter 'PExisting' {SwitchNotice}",
+				because: "a parameter that existed before the request is never switched, so never reported as one: {0}",
+				modified);
 		} finally {
 			await ProcessDesignerE2ESupport.DeleteProcessAsync(context.EnvironmentName, processName);
 		}

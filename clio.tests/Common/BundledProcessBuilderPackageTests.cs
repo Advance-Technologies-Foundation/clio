@@ -91,7 +91,7 @@ public class BundledProcessBuilderPackageTests {
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
 	/// <para>What this cut carries over 1.6.6.162 (ENG-105558): a top-level process parameter that the same build or
 	/// modify creates with no direction, that an element of the process fills and that is not a collection, is saved
-	/// <c>Internal</c> instead of <c>Variable</c>, with a notice; a stated direction is kept silently, a FileCollection
+	/// <c>Internal</c> instead of <c>Variable</c>, with a notice; a stated direction is never switched, a FileCollection
 	/// keeps <c>Variable</c> with no advice, and a pre-existing <c>Variable</c> parameter the request makes an element
 	/// fill gets advice instead, as does a <c>Variable</c> stated for a parameter the request creates and an element
 	/// fills (once, in that request). The service surface is unchanged (8 operations, 6 design-gate call sites, counted in
