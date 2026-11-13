@@ -308,22 +308,23 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 
 	private PagePackageLayer BuildLayer(PageDesignerHierarchySchema schema, int level, bool? locked,
 		string defaultTargetPackageUId) {
-		List<string> changes = ReadChanges(schema.Body);
+		List<string> changes = ReadChanges(schema.Body, out bool changesUnreadable);
 		return new PagePackageLayer {
-			ChangesUnreadable = changes is null,
+			ChangesUnreadable = changesUnreadable,
 			PackageName = schema.PackageName,
 			PackageUId = schema.PackageUId,
 			SchemaUId = schema.UId,
 			HierarchyLevel = level,
 			PackageLocked = locked,
 			IsDefaultTarget = IsDefaultTarget(schema, defaultTargetPackageUId),
-			Changes = changes?.Take(MaxChangesPerLayer).ToList() ?? [],
-			MoreChanges = Math.Max(0, (changes?.Count ?? 0) - MaxChangesPerLayer)
+			Changes = changes.Take(MaxChangesPerLayer).ToList(),
+			MoreChanges = Math.Max(0, changes.Count - MaxChangesPerLayer)
 		};
 	}
 
-	/// <summary>Reads the layer's own changes; <c>null</c> when the body cannot be parsed.</summary>
-	private List<string> ReadChanges(string body) {
+	/// <summary>Reads the layer's own changes and reports whether its body could not be parsed.</summary>
+	private List<string> ReadChanges(string body, out bool unreadable) {
+		unreadable = false;
 		if (string.IsNullOrWhiteSpace(body)) {
 			return [];
 		}
@@ -340,7 +341,8 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 		catch (Exception ex) when (ex is InvalidOperationException or RegexMatchTimeoutException) {
 			// The change list only helps the user choose; a body clio cannot parse must not hide the layer, and the
 			// layer is marked unreadable so it is not reported as having no own changes.
-			return null;
+			unreadable = true;
+			return [];
 		}
 	}
 
