@@ -63,15 +63,15 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		// Assert
 		text.Should().Contain("argument 'filters' for MCP tool 'odata-read' contains a value that does not match the documented shape.",
 			because: "the lead sentence keeps naming the argument the caller can navigate from");
-		text.Should().Contain("At filters.all[0]: missing required member 'field'.",
+		text.Should().Contain("At `filters.all[0]`: missing required member 'field'.",
 			because: "the message must point at the condition that failed and the member it lacks");
 		text.Should().Contain("'column'",
 			because: "every unknown key in the failing object is named back");
 		text.Should().Contain("'operator' (did you mean 'op'?)",
 			because: "operator is the obvious long form of op");
-		text.Should().Contain("Expected filters.all[0]: an object with field (required), op, value, in.",
+		text.Should().Contain("Expected `filters.all[0]`: an object with field (required), op, value, in.",
 			because: "the caller must learn the condition's members without reading the full contract");
-		text.Should().Contain("Example filters: { \"all\": [{ \"field\":",
+		text.Should().Contain("Example `filters`: { \"all\": [{ \"field\":",
 			because: "the example documented on the filters argument shows the whole shape in one line");
 	}
 
@@ -87,9 +87,9 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		string text = await CallAndReadTextAsync(context);
 
 		// Assert
-		text.Should().Contain("At filters.all: expected an array, received an object.",
+		text.Should().Contain("At `filters.all`: expected an array, received an object.",
 			because: "the failing member and both JSON kinds are what the caller needs to correct the call");
-		text.Should().Contain("Expected filters.all: an array of objects with field (required), op, value, in.",
+		text.Should().Contain("Expected `filters.all`: an array of objects with field (required), op, value, in.",
 			because: "an array of conditions is described with the members of one condition");
 	}
 
@@ -105,7 +105,7 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		string text = await CallAndReadTextAsync(context);
 
 		// Assert
-		text.Should().Contain("At filters.any[0]: missing required member 'field'. Unknown member 'Name'.",
+		text.Should().Contain("At `filters.any[0]`: missing required member 'field'. Unknown member 'Name'.",
 			because: "the condition's own column name is not a member, and nothing it resembles may be guessed");
 		text.Should().NotContain("did you mean",
 			because: "a suggestion is offered only for a prefix or a near spelling of a real member");
@@ -133,11 +133,11 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		// Assert
 		text.Should().Contain("argument 'pages' for MCP tool 'sync-pages' contains a value that does not match the documented shape.",
 			because: "the lead sentence keeps naming the argument the caller sent");
-		text.Should().Contain("At pages[0].resources: expected a string, received an object.",
+		text.Should().Contain("At `pages[0].resources`: expected a string, received an object.",
 			because: "the message must name the nested member and the JSON kind it takes");
 		text.Should().Contain("send it as one JSON string",
 			because: "a member documented as JSON text is the case where the JSON value itself is the mistake");
-		text.Should().Contain("About pages[0].resources: JSON object string",
+		text.Should().Contain("About `pages[0].resources`: JSON object string",
 			because: "the member's own description says what the string must hold");
 		text.Should().NotContain("UsrDetailsTab_caption",
 			because: "only member names are echoed - the value the caller sent stays out of the message");
@@ -163,7 +163,7 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		// Assert
 		text.Should().Contain("Received an incompatible JSON value.",
 			because: "a node of the documented kind that still fails is not something this can explain");
-		text.Should().NotContain("At value:",
+		text.Should().NotContain("At `value`:",
 			because: "naming nothing is better than naming the wrong thing");
 	}
 
@@ -221,7 +221,7 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		// Assert
 		arrayText.Should().Contain("argument 'actions' for MCP tool 'fake-tool' must be an array. Received an object.",
 			because: "the JSON kinds are still certain when the element type is polymorphic");
-		elementText.Should().Contain("At actions[0]: expected an object, received a string.",
+		elementText.Should().Contain("At `actions[0]`: expected an object, received a string.",
 			because: "an element of a polymorphic type is still an object on the wire");
 		(arrayText + elementText).Should().NotContain("uId",
 			because: "the base type's members are not the shape of any derived action");
@@ -242,13 +242,13 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		string elementText = await CallAndReadTextAsync(elementContext);
 
 		// Assert
-		keyText.Should().Contain("At map['",
+		keyText.Should().Contain("At `map['",
 			because: "a caller's dictionary key is framed so it cannot read as the server's own prose");
 		keyText.Should().Contain("missing required member 'label'",
 			because: "the dictionary value is still diagnosed as the record it is");
 		keyText.Should().NotContain("\n",
 			because: "a line break in a caller's key must not start a new line of the message");
-		elementText.Should().Contain("At map['en'].tags[0]: expected a string, received an object.",
+		elementText.Should().Contain("At `map['en'].tags[0]`: expected a string, received an object.",
 			because: "the element is located through the dictionary key and the member");
 		elementText.Should().NotContain("About ",
 			because: "the container's description describes the list, not one of its elements");
@@ -350,11 +350,60 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 		string text = await CallAndReadTextAsync(context);
 
 		// Assert
-		text.Should().Contain("At args['item']: expected a number, received a string.",
+		text.Should().Contain("At `args['item']`: expected a number, received a string.",
 			because: "the failing value is the dictionary's entry, named by its key");
 		text.Should().NotContain("'Item'",
 			because: "System.Text.Json never binds an indexer, so it is not a member a caller can send");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A wrong-kind member named password, dispatched through clio-run, keeps its About hint and its nested At location after clio-run's failure redaction. Unquoted, the credential rule turned 'About password: Direct password ...' into 'About password=[redacted] password ...'.")]
+	public async Task ClioRun_ShouldKeepTheHintsIntact_WhenTheFailingMemberIsNamedPassword() {
+		// Arrange
+		ClioRunExecutor executor = CreateExecutorOver(FakeConnectionTool.ToolName, CreateFakeConnectionTool());
+		JsonElement flat = JsonDocument.Parse("{\"password\":5}").RootElement;
+		JsonElement nested = JsonDocument.Parse("{\"credentials\":{\"password\":5}}").RootElement;
+
+		// Act
+		CallToolResult flatResult = await executor.RunAsync(FakeConnectionTool.ToolName, flat, destructiveSurface: false,
+			McpRequestContextTestFactory.CreateCallToolContext(ClioRunTool.ToolName), CancellationToken.None);
+		CallToolResult nestedResult = await executor.RunAsync(FakeConnectionTool.ToolName, nested, destructiveSurface: false,
+			McpRequestContextTestFactory.CreateCallToolContext(ClioRunTool.ToolName), CancellationToken.None);
+
+		// Assert
+		string flatText = string.Join(" ", flatResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		string nestedText = string.Join(" ", nestedResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		flatText.Should().Contain("About `password`: Direct password paired with uri; fallback only.",
+			because: "a quoted member name is not the key: value shape clio-run's credential redaction scrubs");
+		nestedText.Should().Contain("At `credentials.password`: expected a string, received a number.",
+			because: "a location ending in a secret-like member keeps its expected and received kinds");
+		(flatText + nestedText).Should().NotContain("[redacted]",
+			because: "the refusal echoes member names only, never a value, so nothing in it is a secret");
+	}
+
+	private static ClioRunExecutor CreateExecutorOver(string toolName, McpServerTool tool) {
+		IMcpToolInvokerRegistry registry = Substitute.For<IMcpToolInvokerRegistry>();
+		registry.TryGetTool(toolName, out Arg.Any<McpServerTool>())
+			.Returns(call => {
+				call[1] = tool;
+				return true;
+			});
+		return new ClioRunExecutor(
+			registry,
+			Substitute.For<IMcpToolCompatibilityCatalog>(),
+			new McpExecutionRouter(
+				new McpToolExecutionMetadataReader(Substitute.For<IMcpToolCompatibilityCatalog>()),
+				new McpWorkerCohort([]),
+				new McpWorkerPathGate(() => McpHostTransportKind.Stdio, () => false),
+				workerPathWired: true));
+	}
+
+	internal static McpServerTool CreateFakeConnectionTool() =>
+		McpServerTool.Create(
+			typeof(FakeConnectionTool).GetMethod(nameof(FakeConnectionTool.Execute))!,
+			new FakeConnectionTool(),
+			new McpServerToolCreateOptions { Name = FakeConnectionTool.ToolName, ReadOnly = true });
 
 	private static RequestContext<CallToolRequestParams> CreateODataReadContext(string argsJson) {
 		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
@@ -442,6 +491,24 @@ public sealed class McpToolErrorFilterShapeDiagnosisTests {
 
 	public sealed class FakeMapTool {
 		public string Execute(FakeMapArgs args) => "ok";
+	}
+
+	public sealed record FakeCredentials(
+		[property: JsonPropertyName("password")]
+		[property: System.ComponentModel.Description("Direct password paired with uri; fallback only.")]
+		string? Password = null);
+
+	public sealed record FakeConnectionArgs(
+		[property: JsonPropertyName("password")]
+		[property: System.ComponentModel.Description("Direct password paired with uri; fallback only.")]
+		string? Password = null,
+		[property: JsonPropertyName("credentials")]
+		FakeCredentials? Credentials = null);
+
+	public sealed class FakeConnectionTool {
+		internal const string ToolName = "fake-connection-tool";
+
+		public string Execute(FakeConnectionArgs args) => throw new AssertionException("the tool body must not run");
 	}
 
 	public enum FakeColor {

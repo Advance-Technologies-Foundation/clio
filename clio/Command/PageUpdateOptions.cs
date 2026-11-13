@@ -211,9 +211,20 @@
 	}
 
 	/// <summary>
+	/// Validates and saves a Freedom UI page body through the same pipeline <c>update-page</c> uses. The seam a
+	/// caller that writes a page as one step of a larger operation depends on, so it does not have to construct the
+	/// command.
+	/// </summary>
+	public interface IPageBodyWriter
+	{
+		/// <inheritdoc cref="PageUpdateCommand.TryUpdatePage"/>
+		bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response);
+	}
+
+	/// <summary>
 	/// Validates and saves raw Freedom UI page bodies.
 	/// </summary>
-	public class PageUpdateCommand : Command<PageUpdateOptions>
+	public class PageUpdateCommand : Command<PageUpdateOptions>, IPageBodyWriter
 	{
 		private const string LocalizableStringsKey = "localizableStrings";
 		private const string ChecksumColumnName = "Checksum";

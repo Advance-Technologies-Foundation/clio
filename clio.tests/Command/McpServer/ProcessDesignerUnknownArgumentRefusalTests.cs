@@ -219,9 +219,9 @@ public sealed class ProcessDesignerUnknownArgumentRefusalTests {
 		+ "raw transport fault. Sonar derived the same three files independently from the null-flow model. "
 		+ "The point of the test is that the decision is now UNIFORM: one place per tool decides, and none of "
 		+ "them reaches a field read with null. This is a METHOD-contract test, not wire coverage: measured "
-		+ "over the real MCP server, {\"args\":null} is answered by the SDK itself with 'The arguments "
-		+ "dictionary is missing a value for the required parameter' and the tool body never runs, so there "
-		+ "is no e2e for this path to write.")]
+		+ "over the real MCP server, {\"args\":null} is refused by clio's explicit-null check ('must be an "
+		+ "object. Received a JSON null, and the argument is required.') before the SDK binds, and the tool "
+		+ "body never runs, so there is no e2e for this path to write.")]
 	public async Task EveryTool_ShouldRefuseANullArgumentObject() {
 		// Arrange
 		CreateBusinessProcessTool create = new(null, ConsoleLogger.Instance, _commandResolver);
