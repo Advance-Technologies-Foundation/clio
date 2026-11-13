@@ -279,9 +279,10 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 	// The platform's array of byte values, read straight into bytes: each value is a byte of the ASCII text, anything else
 	// is not what this endpoint sends, and a file past MaxDownloadedBytes is refused before the rest of it is read.
 	private sealed class ByteValuesConverter : JsonConverter<byte[]> {
-		public override byte[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) {
+		// The parameters are the JsonConverter contract's; this converter needs only the reader.
+		public override byte[] Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) { // NOSONAR S1172
 			if (reader.TokenType == JsonTokenType.Null) {
-				return null;
+				return [];
 			}
 			if (reader.TokenType != JsonTokenType.StartArray) {
 				throw new JsonException("A WSDL file is not an array of byte values.");
@@ -299,7 +300,8 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 			return bytes.ToArray();
 		}
 
-		public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options) =>
+		// A reply is only read; the signature is the JsonConverter contract's.
+		public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options) => // NOSONAR S1172
 			throw new NotSupportedException();
 	}
 

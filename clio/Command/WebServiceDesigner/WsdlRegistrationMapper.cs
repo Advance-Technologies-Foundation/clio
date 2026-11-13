@@ -397,10 +397,12 @@ public static partial class WsdlRegistrationMapper {
 				return baseUri;
 			}
 			// The fragment and the characters are checked first: register's own error repeats the address.
-			string reason = baseUri.Contains('#') ? "it has a fragment"
-				: !IsPlainValue(baseUri, MaxBaseUriLength)
-					? $"it has spaces, control or non-ASCII characters, or is longer than {MaxBaseUriLength} characters"
-				: null;
+			string reason = null;
+			if (baseUri.Contains('#')) {
+				reason = "it has a fragment";
+			} else if (!IsPlainValue(baseUri, MaxBaseUriLength)) {
+				reason = $"it has spaces, control or non-ASCII characters, or is longer than {MaxBaseUriLength} characters";
+			}
 			if (reason is null) {
 				var errors = new WebServiceDefinitionBuilder.Errors();
 				WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors, soap: true);
@@ -602,46 +604,56 @@ public static partial class WsdlRegistrationMapper {
 			if (previous is not null) {
 				_matched.Add(previous);
 			}
-			// The code joins the names of the whole path (never empty here: LeaveOutReason refuses an empty path), an
-			// array's adds the element that repeats, and an item's starts with its array's, so fields of different branches
-			// (customer/name, company/name) and sibling arrays (order/lines, order/notes) differ without a number, and a
-			// code does not depend on its siblings.
-			string name = parentName + " " + PathNames(path)
-				+ (string.IsNullOrEmpty(sequenceElement) ? string.Empty : " " + PathNames(sequenceElement));
-			// A code keeps the end of a long name; the names of nested array items add up, so only the end that can reach a
-			// code is kept, and an item's name does not grow with every array above it.
-			if (name.Length > 4 * MaxParameterCodeLength) {
-				name = name[^(4 * MaxParameterCodeLength)..];
-			}
+			string name = CodeName(parentName, path, sequenceElement);
 			string code = previous?.Code ?? UniqueCode(prefix, name, "Param", codes, MaxParameterCodeLength);
 			List<WebServiceParameterArg> items = isObject
 				? Parameters(parameter.Items, isRequest, name, codes, new ExistingParameters(previous?.Items))
 				: [];
 			if (isObject && items.Count == 0) {
 				Warn($"{where}: none of its fields can be described, so neither can the object.");
-				// A code generated here is given back; one a matched method's parameter already has stays reserved, so no
-				// other parameter takes it and setMethod gives that parameter's UId to the wrong one.
-				if (previous is null) {
-					codes.Release(code);
-				} else {
-					// Not sent, so setMethod removes it: it is named among the parameters the WSDL lacks.
-					_matched.Remove(previous);
-				}
+				GiveBack(code, previous, codes);
 				return null;
 			}
+			return Argument(parameter, isRequest, code, path, sequenceElement, previous, items);
+		}
+
+		// The name a parameter's code is built from: the names of the whole path (never empty here: LeaveOutReason refuses
+		// an empty path), an array's adds the element that repeats, and an item's starts with its array's, so fields of
+		// different branches (customer/name, company/name) and sibling arrays (order/lines, order/notes) differ without a
+		// number, and a code does not depend on its siblings. A code keeps the end of a long name; the names of nested
+		// array items add up, so only the end that can reach a code is kept.
+		private static string CodeName(string parentName, string path, string sequenceElement) {
+			string name = parentName + " " + PathNames(path)
+				+ (string.IsNullOrEmpty(sequenceElement) ? string.Empty : " " + PathNames(sequenceElement));
+			return name.Length > 4 * MaxParameterCodeLength ? name[^(4 * MaxParameterCodeLength)..] : name;
+		}
+
+		// An object left out: a code generated for it is given back; one a matched method's parameter already has stays
+		// reserved, so no other parameter takes it and setMethod gives that parameter's UId to the wrong one. Not sent, the
+		// matched parameter is removed by setMethod, so it is named among those the WSDL lacks.
+		private void GiveBack(string code, WebServiceParameterView previous, CodePool codes) {
+			if (previous is null) {
+				codes.Release(code);
+			} else {
+				_matched.Remove(previous);
+			}
+		}
+
+		// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method). A
+		// constant is not carried onto a soap header, where register refuses one.
+		private static WebServiceParameterArg Argument(WsdlParameter parameter, bool isRequest, string code, string path,
+				string sequenceElement, WebServiceParameterView previous, List<WebServiceParameterArg> items) {
+			bool soapHeader = parameter.IsSoapHeader && isRequest;
 			return new WebServiceParameterArg(code,
 				Type: parameter.Type,
 				Path: path,
 				Caption: parameter.Caption,
 				Array: parameter.IsArray ? true : null,
 				Required: previous?.Required == true ? true : null,
-				// A constant is not carried onto a soap header, where register refuses one.
-				DefaultValue: previous is { DefaultMasked: false } && !(parameter.IsSoapHeader && isRequest)
-					? previous.DefaultValue
-					: null,
+				DefaultValue: previous is { DefaultMasked: false } && !soapHeader ? previous.DefaultValue : null,
 				DefaultSysSetting: previous?.DefaultSysSetting,
 				Items: items.Count > 0 ? items : null,
-				SoapHeader: parameter.IsSoapHeader && isRequest ? true : null,
+				SoapHeader: soapHeader ? true : null,
 				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);
 		}
 

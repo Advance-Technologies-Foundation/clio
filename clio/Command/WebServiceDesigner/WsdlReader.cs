@@ -120,9 +120,9 @@ public sealed partial class WsdlReader(
 		"metadata", "metadata.google.internal", "metadata.azure.internal", "instance-data", "instance-data.ec2.internal"
 	};
 
-	// Cloud metadata addresses outside link-local: AWS over IPv6 and Alibaba Cloud.
+	// Cloud metadata addresses outside link-local: AWS over IPv6 and Alibaba Cloud. They are refused, not connected to.
 	private static readonly HashSet<System.Net.IPAddress> MetadataAddresses = [
-		System.Net.IPAddress.Parse("fd00:ec2::254"), System.Net.IPAddress.Parse("100.100.100.200")
+		System.Net.IPAddress.Parse("fd00:ec2::254"), System.Net.IPAddress.Parse("100.100.100.200") // NOSONAR S1313
 	];
 
 	/// <summary>
