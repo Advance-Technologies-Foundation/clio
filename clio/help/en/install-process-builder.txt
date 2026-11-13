@@ -19,6 +19,9 @@ DESCRIPTION
     - create-dynamic-case, which creates a minimal dynamic case (DCM) from a
       lookup column and adds the stage progress bar to the record page (it
       needs a CrtProcessBuilder that carries the BuildCase operation)
+    - describe-dynamic-case and modify-dynamic-case, which read an existing
+      dynamic case and change it in place (they need a CrtProcessBuilder that
+      carries the DescribeCase and ModifyCase operations)
     - describe-business-process
     - list-user-tasks
     - validate-process-graph
