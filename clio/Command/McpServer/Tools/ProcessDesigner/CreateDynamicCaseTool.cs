@@ -62,7 +62,7 @@ public class CreateDynamicCaseTool(
 	[McpServerTool(Name = CreateDynamicCaseToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		 OpenWorld = false),
 	 Description("Create a minimal dynamic case (DCM): one stage per value of an object's lookup column, plus a "
-		 + "record-page progress bar. "
+		 + "record-page progress bar. Read get-guidance name=process-dynamic-case first. "
 		 + "One call writes the case into package-name (one stage per lookup value, every stage reachable from every "
 		 + "other, enabled), its SysDcmSettings and SysDcmSchemaInSettings rows with their package bindings, the "
 		 + "package dependencies the case needs (add-package-dependencies=false refuses instead, listing them in "
