@@ -708,21 +708,32 @@ public sealed partial class WsdlParser : IWsdlParser {
 			if (_wantedOperations is null || selected.Count == 0) {
 				return;
 			}
-			string[] everywhere = OperationNames(definitions, candidates);
+			// Built once: asking each candidate on its own would scan the whole WSDL once per port.
+			Dictionary<string, string[]> byPortType = OperationsByPortType(definitions);
+			string[] OperationNames(IEnumerable<PortCandidate> ports) => ports
+				.Select(c => LocalPart(Attr(c.Binding, "type")) ?? string.Empty)
+				.Distinct(StringComparer.Ordinal)
+				.SelectMany(type => byPortType.GetValueOrDefault(type) ?? [])
+				.Distinct(StringComparer.Ordinal)
+				.ToArray();
+			string[] everywhere = OperationNames(candidates);
 			string[] unknown = _wantedOperations.Where(n => !everywhere.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
 			if (unknown.Length > 0) {
 				throw new ArgumentException($"operations: {string.Join(", ", unknown.Select(Shown).Take(20))} not found; the "
 					+ "operations: " + string.Join(", ", everywhere.Select(Shown).Take(200)) + ".");
 			}
-			string[] onRead = OperationNames(definitions, selected);
+			string[] onRead = OperationNames(selected);
 			string[] elsewhere = _wantedOperations.Where(n => !onRead.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
 			if (elsewhere.Length > 0) {
 				string[] portsWithThem = candidates
-					.Where(c => OperationNames(definitions, [c]).Intersect(elsewhere, StringComparer.OrdinalIgnoreCase).Any())
+					.Where(c => OperationNames([c]).Intersect(elsewhere, StringComparer.OrdinalIgnoreCase).Any())
 					.Select(c => c.Name).Take(20).ToArray();
-				throw new ArgumentException($"operations: {string.Join(", ", elsewhere.Select(Shown).Take(20))} are only on ports "
-					+ $"that were not read (the first {MaxPorts} were); read the WSDL again with port, one of: "
-					+ string.Join(", ", portsWithThem) + ".");
+				// The port option or the port limit decided what was read; the refusal says which.
+				string why = string.IsNullOrWhiteSpace(_options.Port)
+					? $"are only on ports that were not read (the first {MaxPorts} were)"
+					: $"are not on port '{Shown(selected[0].Name)}'";
+				throw new ArgumentException($"operations: {string.Join(", ", elsewhere.Select(Shown).Take(20))} {why}; read the "
+					+ "WSDL again with port, one of: " + string.Join(", ", portsWithThem) + ".");
 			}
 			HashSet<string> built = ports.SelectMany(p => p.Operations).Select(o => o.Caption)
 				.ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -735,16 +746,15 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 		}
 
-		private static string[] OperationNames(XElement definitions, IEnumerable<PortCandidate> candidates) {
-			HashSet<string> portTypes = candidates.Select(c => LocalPart(Attr(c.Binding, "type")) ?? string.Empty)
-				.ToHashSet(StringComparer.Ordinal);
-			return definitions.Elements()
-				.Where(e => Is(e, "portType") && portTypes.Contains(Attr(e, "name") ?? string.Empty))
-				.SelectMany(e => e.Elements().Where(o => Is(o, OperationTag)))
-				.Select(o => Attr(o, "name") ?? string.Empty)
-				.Distinct(StringComparer.Ordinal)
-				.ToArray();
-		}
+		// The operation names of each port type (port types of one name pooled, as the bindings find them by name).
+		private static Dictionary<string, string[]> OperationsByPortType(XElement definitions) =>
+			definitions.Elements()
+				.Where(e => Is(e, "portType"))
+				.GroupBy(e => Attr(e, "name") ?? string.Empty, StringComparer.Ordinal)
+				.ToDictionary(g => g.Key, g => g.SelectMany(e => e.Elements().Where(o => Is(o, OperationTag)))
+					.Select(o => Attr(o, "name") ?? string.Empty)
+					.Distinct(StringComparer.Ordinal)
+					.ToArray(), StringComparer.Ordinal);
 
 		private void CheckClock() {
 			if (_clock.Elapsed > MaxParseTime) {

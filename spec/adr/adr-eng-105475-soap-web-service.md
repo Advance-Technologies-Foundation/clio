@@ -144,7 +144,10 @@ lookup; import and include directives are removed in one pass per schema; a bind
 name; names longer than 1,024 characters are not read; a repeated code is numbered from the last number used for it;
 and more than 20,000 parameters over the ports read are listed by operation name before anything is mapped or
 serialized. None of these grows quadratically. As a backstop for an input none of them foresaw, one parse stops after 30
-seconds. A local path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as
+seconds. Running read-wsdl in the MCP worker cohort, which would isolate the host from any input, was considered and
+left out: with `service-code` it reads the service through the schema designer, and the cohort keeps schema-designer
+reads host-resident, because a worker's separate Creatio session can read a schema that a host-resident write has just
+changed and get it stale. Moving read-wsdl means moving that read out of it first. A local path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as
 fully qualified and would open an SMB connection with the user's credentials.
 
 The parser (`WsdlParser`) is a C# port of Studio's wizard parser (creatio-ui web-service-wizard:
@@ -178,7 +181,7 @@ port one `register-web-service` argument object without `package-name` (the agen
 rpc style, RPC/encoded, `wsdl:import`, MIME/MTOM, `xs:choice`/`xs:all`, XML attributes, a message element whose type
 extends another, a binding that splits the input message between body and header, and the leave-outs) and `notices` (a
 service code already used on the environment, an endpoint on another host than the WSDL URL). A result over 120,000
-characters, filtered or not, returns at most 500 operation names per port instead, and the agent reads again with
+characters, filtered or not, returns at most 500 operation names over all ports instead, and the agent reads again with
 `operations`; when the result is already one operation of one port, the notice says that narrowing cannot help and the
 method is described by hand. Every port's output is checked in unit tests by
 sending it through `register-web-service` itself.

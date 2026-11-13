@@ -99,7 +99,7 @@ public sealed partial class WsdlReader(
 	internal const long MaxTotalBytes = WebServiceDesignerClient.MaxDownloadedBytes;
 	/// <summary>Above this the result lists operation names only; an agent reads it again with operations.</summary>
 	internal const int MaxResultCharacters = 120_000;
-	/// <summary>The most operation names a too-large result lists per port.</summary>
+	/// <summary>The most operation names a too-large result lists, over every port together.</summary>
 	internal const int MaxListedOperations = 500;
 	/// <summary>
 	/// The most parameters mapped and serialized over every port read; past it the result lists operation names only.
@@ -153,11 +153,12 @@ public sealed partial class WsdlReader(
 		}
 		warnings.AddDropped(document.WarningsDropped);
 		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document), request.Operations);
+		// The target is read first, so a wrong service-code is refused also when the result falls back to names.
+		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		if (ports.Sum(p => p.Operations.Sum(o => Count(o.Request) + Count(o.Response))) > MaxMappedParameters) {
 			return NamesOnly(ports.Select(p => (p.Name, p.Name == document.StudioPort, p.Operations.Select(o => o.Caption).ToList()))
 				.ToList(), warnings, [], narrowest: ports.Count == 1 && ports[0].Operations.Count <= 1);
 		}
-		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		var services = new List<WsdlServiceArguments>();
 		foreach (WsdlPort port in ports) {
 			services.Add(WsdlRegistrationMapper.Map(port, port.Name == document.StudioPort, prefix,
@@ -217,7 +218,8 @@ public sealed partial class WsdlReader(
 			warnings, notices, IsNarrowest(services));
 	}
 
-	// The operation names of each port, with a notice to read again narrower, for a result too large to return whole.
+	// The operation names of each port, with a notice to read again narrower, for a result too large to return whole. The
+	// names are cut like any WSDL text and capped over every port together, so this fallback stays small itself.
 	private static WsdlReadResult NamesOnly(List<(string Port, bool StudioPick, List<string> Operations)> ports,
 		WarningLog warnings, List<string> notices, bool narrowest) {
 		IReadOnlyList<string> shownWarnings = warnings.ToList();
@@ -228,12 +230,18 @@ public sealed partial class WsdlReader(
 				: $"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names "
 					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port)."
 		};
-		return new WsdlReadResult(true,
-			Services: ports.Select(p => new WsdlServiceView(p.Port, p.StudioPick,
-				Operations: p.Operations.Take(MaxListedOperations)
-					.Concat(p.Operations.Count > MaxListedOperations ? [$"...and {p.Operations.Count - MaxListedOperations} more"] : [])
-					.ToList())).ToList(),
-			Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
+		int remaining = MaxListedOperations;
+		var views = new List<WsdlServiceView>();
+		foreach ((string port, bool studioPick, List<string> operations) in ports) {
+			int listed = Math.Min(remaining, operations.Count);
+			List<string> names = operations.Take(listed).Select(name => WsdlParser.Shown(name)).ToList();
+			if (operations.Count > listed) {
+				names.Add($"...and {operations.Count - listed} more");
+			}
+			remaining -= listed;
+			views.Add(new WsdlServiceView(port, studioPick, Operations: names));
+		}
+		return new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
 			Notices: summaryNotices);
 	}
 

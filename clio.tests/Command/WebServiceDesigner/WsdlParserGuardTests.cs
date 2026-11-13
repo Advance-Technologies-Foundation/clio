@@ -389,6 +389,25 @@ public sealed class WsdlParserGuardTests {
 	}
 
 	[Test]
+	[Description("With the port option, an operation only another port has is refused as not on that port, naming the ports that have it.")]
+	public void Parse_Should_Name_The_Port_That_Lacks_A_Named_Operation() {
+		// Arrange
+		string other = "<wsdl:portType name=\"P2\"><wsdl:operation name=\"Other\"><wsdl:input message=\"tns:OpIn\" /></wsdl:operation>"
+			+ "</wsdl:portType><wsdl:binding name=\"B2\" type=\"tns:P2\"><soap:binding transport=\"http://schemas.xmlsoap.org/soap/http\" />"
+			+ "</wsdl:binding><wsdl:service";
+		string xml = OneFieldWsdl(SoapPort("Soap") + SoapPort("Late", "B2")).Replace("<wsdl:service", other);
+
+		// Act
+		Action act = () => _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Port: "Soap", Operations: ["Other"]));
+
+		// Assert
+		string message = act.Should().Throw<ArgumentException>(because: "the operation is on another port").Which.Message;
+		message.Should().Contain("not on port 'Soap'", because: "the port option decided what was read");
+		message.Should().Contain("Late", because: "the port that has the operation is named");
+		message.Should().NotContain("the first", because: "the port limit played no part");
+	}
+
+	[Test]
 	[Description("A name longer than the limit is not read, with a warning that says so instead of calling it an invalid name.")]
 	public void Parse_Should_Not_Read_An_Overlong_Name() {
 		// Arrange

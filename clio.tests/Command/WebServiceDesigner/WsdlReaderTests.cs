@@ -454,11 +454,13 @@ public sealed class WsdlReaderTests {
 
 		// Act
 		WsdlReadResult result = _sut.Read(new WsdlReadRequest("dev", null, [path], Port: "Soap", Operations: ["Op"]));
+		int longest = result.Services.SelectMany(s => s.Operations).Max(n => n.Length);
 
 		// Assert
 		result.Services.Single().Operations.Should().Equal(["Op"], because: "the result lists the operation name only");
 		result.Notices.Should().Contain(n => n.Contains("even for one operation"),
 			because: "reading again with operations cannot make it smaller");
+		longest.Should().BeLessThanOrEqualTo(101, because: "listed names are cut like any WSDL text");
 	}
 
 	[TestCase(@"\\host\share\x.wsdl")]
@@ -567,7 +569,7 @@ public sealed class WsdlReaderTests {
 			because: "each port keeps the named operation only");
 	}
 
-	private static string BigWsdl(int operationCount) {
+	private static string BigWsdl(int operationCount, int ports = 1) {
 		var operations = new StringBuilder();
 		var messages = new StringBuilder();
 		var types = new StringBuilder();
@@ -585,9 +587,43 @@ public sealed class WsdlReaderTests {
 				<wsdl:types><xs:schema targetNamespace="urn:big" elementFormDefault="qualified">{types}</xs:schema></wsdl:types>
 				{messages}<wsdl:portType name="P">{operations}</wsdl:portType>
 				<wsdl:binding name="B" type="tns:P"><soap:binding transport="http://schemas.xmlsoap.org/soap/http" />{binding}</wsdl:binding>
-				<wsdl:service name="Big"><wsdl:port name="Soap" binding="tns:B"><soap:address location="http://localhost/big" /></wsdl:port></wsdl:service>
+				<wsdl:service name="Big">{string.Concat(Enumerable.Range(0, ports).Select(i =>
+					$"<wsdl:port name=\"Soap{(i == 0 ? string.Empty : i)}\" binding=\"tns:B\"><soap:address location=\"http://localhost/big\" /></wsdl:port>"))}</wsdl:service>
 			</wsdl:definitions>
 			""";
+	}
+
+	[Test]
+	[Description("A too-large result lists at most the listing limit of operation names over every port together, so the fallback stays small.")]
+	public void Read_Should_Cap_The_Listed_Names_Over_Every_Port() {
+		// Arrange
+		string path = GivenFile("big2.wsdl", Encoding.UTF8.GetBytes(BigWsdl(400, ports: 2)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		result.Services.Should().HaveCount(2, because: "both ports are listed");
+		result.Services.SelectMany(s => s.Operations).Count(n => !n.StartsWith("...and ")).Should()
+			.Be(WsdlReader.MaxListedOperations, because: "the limit holds over the ports together");
+		result.Services[1].Operations[^1].Should().Be("...and 300 more", because: "the rest of the second port is counted");
+	}
+
+	[Test]
+	[Description("A wrong service-code is refused also when the result falls back to operation names past the parameter limit.")]
+	public void Read_Should_Check_The_Service_Code_Before_The_Parameter_Limit() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Range(0, WsdlReader.MaxMappedParameters + 1)
+			.Select(i => $"<xs:element name=\"f{i}\" type=\"xs:string\" />"));
+		string path = GivenFile("wide2.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields)));
+		_designer.Describe("UsrRest", false).Returns(new WebServiceToolResult(true,
+			Service: new WebServiceView(Guid.NewGuid(), "UsrRest", "Rest", "Custom", "REST", "http://localhost", 0, null, [], null)));
+
+		// Act
+		Action act = () => _sut.Read(Files(path) with { ServiceCode = "UsrRest" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "a WSDL's operations go into a SOAP service").WithMessage("*REST service*");
 	}
 
 	[Test]
