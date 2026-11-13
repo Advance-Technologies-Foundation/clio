@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using Clio.Common;
@@ -66,6 +67,8 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 	/// Injected as a required dependency so a broken DI registration fails loudly at resolve time
 	/// instead of silently disabling the baseline write.</param>
 	/// <param name="layerInspector">Finds the page's replacing layers for <c>page.packageChoice</c>.</param>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "DI constructor: each parameter is an independent collaborator of the page read.")]
 	public PageGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,

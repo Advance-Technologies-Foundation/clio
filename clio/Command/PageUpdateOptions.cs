@@ -1100,10 +1100,10 @@
 					null => "lock state unknown"
 				};
 				string role = layer.IsDefaultTarget ? ", default target" : string.Empty;
+				string more = layer.MoreChanges > 0 ? $" and {layer.MoreChanges} more" : string.Empty;
 				string changes = layer.Changes.Count == 0
 					? "no own changes"
-					: "changes: " + string.Join(", ", layer.Changes)
-						+ (layer.MoreChanges > 0 ? $" and {layer.MoreChanges} more" : string.Empty);
+					: "changes: " + string.Join(", ", layer.Changes) + more;
 				return $"{layer.PackageName} (packageUId {layer.PackageUId}, level {layer.HierarchyLevel}, {state}{role}; {changes})";
 			});
 			bool defaultHasLayer = choice.Layers.Any(layer => layer.IsDefaultTarget);
