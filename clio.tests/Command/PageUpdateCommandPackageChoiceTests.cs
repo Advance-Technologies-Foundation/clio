@@ -212,7 +212,7 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	}
 
 	[Test]
-	[Description("A write with target-package-uid is the user's choice: no check runs, including when the target is the default package.")]
+	[Description("A write with target-package-uid is the user's choice: the package-choice check does not run. A replace into the default package, as here, passes; a replace into a non-default package is checked against the default package and refused (see the package-choice-replace-refused tests).")]
 	public void TryUpdatePage_Should_Skip_Check_When_Target_Package_Is_Named() {
 		// Arrange
 		PageUpdateCommand sut = BuildCommand(_inspector);
