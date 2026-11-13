@@ -551,7 +551,7 @@ cleanup:
 |---|---|---|
 | CA-1 | open the app's list, create an order "CA order 1" with Status "New", save | record saved |
 | CA-2 | reload the order page | the bar shows New, In progress, On hold, Done in that order; New is current |
-| CA-3 | click "On hold" (non-adjacent); reload | Status field shows "On hold" (bar -> lookup; `saveOnChange: true` persists at once, v r9-C6) |
+| CA-3 | click "On hold" (non-adjacent); reload | Status field shows "On hold" (bar -> lookup; the prompt asks for a save on click, so the agent passes `save-on-change: true` and the click persists at once, v r9-C6; with the default the spec would have to press Save) |
 | CA-4 | set Status to "In progress" in the field, save, reload | the bar marks "In progress" (lookup -> bar, v r3-C7) |
 | CA-5 | open `<root>[/0]/Nui/ViewModule.aspx?vm=DcmDesigner#case/<uid>` (UId read from `SysSchema` by the spec, or from the agent transcript) | no error box, no "DcmSettingsId not found.", four stages listed with the lookup captions (v r2-C4, v r2-C5, v r9-C8) |
 | CA-6 | the same prompt + spec run locally against the .NET 8 stand (`local-config.yaml` `environment.isNetCore: true`) | CA-1..CA-5 and CA-7 hold (Q24) |
