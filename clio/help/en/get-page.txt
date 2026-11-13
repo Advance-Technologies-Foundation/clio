@@ -32,7 +32,9 @@ DESCRIPTION
     true when another unlocked package (or one whose lock state could not be read) also
     holds a replacing layer of the page: the user then chooses which package to change,
     and update-page needs that layer's packageUId as --target-package-uid (pass
-    page.designPackageUId to keep the default). layers, present only when required,
+    page.designPackageUId to keep the default; for another layer update-page takes only
+    --mode append). defaultTargetPackageName, present only when required, names the
+    default target. layers, present only when required,
     lists the page's replacing layers lowest first, the base page excluded: packageName,
     packageUId, schemaUId, hierarchyLevel (for an element several layers change, the
     highest wins at runtime), packageLocked, isDefaultTarget and changes (that layer's

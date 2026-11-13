@@ -18,6 +18,8 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	private const string BaseUId = "11111111-1111-1111-1111-111111111111";
 	private const string LeafUId = "22222222-2222-2222-2222-222222222222";
 	private const string DesignPackage = "design-pkg-uid";
+	private const string CustomPackage = "custom-pkg-uid";
+	private const string CustomSchemaUId = "33333333-3333-3333-3333-333333333333";
 
 	private const string ValidBody =
 		"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
@@ -27,6 +29,10 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	private const string AppendFragment =
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"merge\",\"name\":\"UsrSerialNumber\","
+		+ "\"values\":{\"visible\":true}}]/**SCHEMA_VIEW_CONFIG_DIFF*/";
 
 	private static readonly PagePackageChoice RequiredChoice = new() {
 		Required = true,
@@ -73,23 +79,45 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 			.Returns(RequiredChoice);
 	}
 
-	private PageUpdateCommand BuildCommand(IPageLayerInspector inspector) {
+	private PageUpdateCommand BuildCommand(IPageLayerInspector inspector) =>
+		BuildCommand(inspector, _hierarchyClient);
+
+	private PageUpdateCommand BuildCommand(IPageLayerInspector inspector, IPageDesignerHierarchyClient hierarchyClient) {
 		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
 		urls.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		urls.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema).Returns(GetSchemaUrl);
 		urls.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema).Returns(SaveSchemaUrl);
 		return new PageUpdateCommand(_applicationClient, urls, Substitute.For<ILogger>(),
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), _hierarchyClient,
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient,
 			viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>(), pageLayerInspector: inspector);
 	}
 
-	private static PageUpdateOptions Options(bool enforce, string targetPackageUId = null) =>
+	private static PageUpdateOptions Options(bool enforce, string targetPackageUId = null, string mode = null) =>
 		new() {
 			SchemaName = SchemaName,
 			Body = ValidBody,
 			EnforcePackageChoice = enforce,
-			TargetPackageUId = targetPackageUId
+			TargetPackageUId = targetPackageUId,
+			Mode = mode
 		};
+
+	/// <summary>
+	/// Custom holds its own replacing schema of the page: the in-package lookup for Custom finds it, and the
+	/// designer service returns it with a valid body.
+	/// </summary>
+	private void StubCustomLayer() {
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Is<string>(query => query.Contains(CustomPackage)),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success": true, "rows": [{"UId": "{{CustomSchemaUId}}"}]}""");
+		Newtonsoft.Json.Linq.JObject schema = new() {
+			["uId"] = CustomSchemaUId,
+			["name"] = SchemaName,
+			["body"] = ValidBody
+		};
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Is<string>(request => request.Contains(CustomSchemaUId)),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new Newtonsoft.Json.Linq.JObject { ["success"] = true, ["schema"] = schema }.ToString());
+	}
 
 	private void AssertNotSaved() =>
 		_applicationClient.DidNotReceive().ExecutePostRequest(
@@ -241,5 +269,131 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 		ok.Should().BeTrue(because: $"nothing to choose: {response.Error}");
 		_applicationClient.Received().ExecutePostRequest(
 			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("An append into a chosen non-default layer (Custom) saves into Custom's own replacing schema, not the design package's and not a new replacing schema.")]
+	public void TryUpdatePage_Should_Append_Into_The_Chosen_Custom_Layer() {
+		// Arrange
+		StubCustomLayer();
+		PageUpdateCommand sut = BuildCommand(_inspector);
+		PageUpdateOptions options = Options(enforce: true, targetPackageUId: CustomPackage, mode: "append");
+		options.Body = AppendFragment;
+
+		// Act
+		bool ok = sut.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: $"an append keeps Custom's own changes, so the chosen layer may take it: {response.Error}");
+		_applicationClient.Received().ExecutePostRequest(GetSchemaUrl,
+			Arg.Is<string>(request => request.Contains(CustomSchemaUId)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(request => request.Contains(CustomSchemaUId)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(request => request.Contains(LeafUId)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_inspector.DidNotReceiveWithAnyArgs().Inspect(default, default, default);
+	}
+
+	[Test]
+	[Description("A replace into a chosen non-default layer (Custom) is refused with package-choice-replace-refused and saves nothing: get-page returned the default target's body, and saving it verbatim would erase Custom's own changes.")]
+	public void TryUpdatePage_Should_Refuse_Replace_Into_A_Non_Default_Layer() {
+		// Arrange
+		StubCustomLayer();
+		PageUpdateCommand sut = BuildCommand(_inspector);
+
+		// Act
+		bool ok = sut.TryUpdatePage(Options(enforce: true, targetPackageUId: CustomPackage), out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "replace mode is the default and would overwrite Custom's layer");
+		response.Error.Should().StartWith(PageUpdateCommand.PackageChoiceReplaceRefusedMarker,
+			because: "the agent needs a stable marker to recognise the refusal");
+		response.Error.Should().Contain("mode append", because: "the refusal names the safe way forward");
+		AssertNotSaved();
+	}
+
+	[Test]
+	[Description("force lets a replace into a chosen non-default layer through, once the user confirmed replacing that layer's body.")]
+	public void TryUpdatePage_Should_Allow_Replace_Into_A_Non_Default_Layer_With_Force() {
+		// Arrange
+		StubCustomLayer();
+		PageUpdateCommand sut = BuildCommand(_inspector);
+		PageUpdateOptions options = Options(enforce: true, targetPackageUId: CustomPackage);
+		options.Force = true;
+
+		// Act
+		bool ok = sut.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: $"force is the explicit opt-in: {response.Error}");
+		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+			Arg.Is<string>(request => request.Contains(CustomSchemaUId)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("A replace with target-package-uid fails closed when the default design package cannot be resolved, since the target cannot be confirmed as the default one.")]
+	public void TryUpdatePage_Should_Refuse_Replace_When_The_Default_Package_Cannot_Be_Resolved() {
+		// Arrange
+		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>())
+			.Returns(_ => throw new System.InvalidOperationException("designer service unavailable"));
+		PageUpdateCommand sut = BuildCommand(_inspector);
+
+		// Act
+		bool ok = sut.TryUpdatePage(Options(enforce: true, targetPackageUId: DesignPackage), out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "the check fails closed");
+		response.Error.Should().StartWith(PageUpdateCommand.PackageChoiceReplaceRefusedMarker)
+			.And.Contain("designer service unavailable", because: "the cause is kept");
+		AssertNotSaved();
+	}
+
+	[Test]
+	[Description("Composite tools that do not set EnforcePackageChoice keep the target-package-uid escape hatch in replace mode.")]
+	public void TryUpdatePage_Should_Allow_Replace_Into_A_Non_Default_Layer_When_Not_Enforced() {
+		// Arrange
+		StubCustomLayer();
+		PageUpdateCommand sut = BuildCommand(_inspector);
+
+		// Act
+		bool ok = sut.TryUpdatePage(Options(enforce: false, targetPackageUId: CustomPackage), out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: $"the check is opt-in per entry point: {response.Error}");
+	}
+
+	[Test]
+	[Description("Without a designer hierarchy client the write has no resolution chain (ResolutionHierarchy is null), so the check is skipped rather than run against nothing.")]
+	public void TryUpdatePage_Should_Skip_Check_When_There_Is_No_Resolution_Hierarchy() {
+		// Arrange
+		PageUpdateCommand sut = BuildCommand(_inspector, hierarchyClient: null);
+
+		// Act
+		bool ok = sut.TryUpdatePage(Options(enforce: true), out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: $"there is no chain to inspect: {response.Error}");
+		_inspector.DidNotReceiveWithAnyArgs().Inspect(default, default, default);
+		_applicationClient.Received().ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("The refusal names a default target that holds no layer yet by its package name, not only by GUID.")]
+	public void DescribePackageChoice_Should_Name_A_Default_Target_Without_A_Layer() {
+		// Arrange
+		PagePackageChoice choice = new() {
+			Required = true,
+			DefaultTargetPackageUId = DesignPackage,
+			DefaultTargetPackageName = "UsrProj",
+			Layers = [RequiredChoice.Layers[0]]
+		};
+
+		// Act
+		string error = PageUpdateCommand.DescribePackageChoice(SchemaName, choice);
+
+		// Assert
+		error.Should().Contain($"The default target UsrProj (packageUId {DesignPackage}) holds no replacing layer",
+			because: "the user recognises a package by its name");
 	}
 }

@@ -377,6 +377,10 @@ PAGES CUSTOMIZED IN MORE THAN ONE PACKAGE
     layer's packageUId as --target-package-uid — page.designPackageUId keeps the default.
     To write into a layer other than the default target, send only your change with
     --mode append: get-page returns the default target's body, never the chosen layer's.
+    A --mode replace save (the default mode) whose --target-package-uid is not the
+    default design package is refused with package-choice-replace-refused and saves
+    nothing, since it would erase that layer's own changes; --force lets it through
+    once the user confirms replacing that layer's body.
 
     Pages customized only in the default target, and pages whose other layers are all in
     locked (vendor) packages, save exactly as before. The check runs for the update-page

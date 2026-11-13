@@ -77,6 +77,15 @@ public sealed class PagePackageChoice {
 	public string DefaultTargetPackageUId { get; init; }
 
 	/// <summary>
+	/// Gets the name of the default target package, when <see cref="Required"/> is <c>true</c> and the name could be
+	/// read; it names a default target that holds no layer of the page yet.
+	/// </summary>
+	[JsonProperty("defaultTargetPackageName", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("defaultTargetPackageName")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string DefaultTargetPackageName { get; init; }
+
+	/// <summary>
 	/// Gets the page's replacing layers, lowest first; the base schema of the page is not a layer. The highest
 	/// layer wins at runtime for an element that several layers change.
 	/// </summary>
@@ -146,6 +155,7 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 
 	private static readonly IReadOnlyList<SelectQueryHelper.SelectQueryColumnDefinition> PackageLockColumns = [
 		new("UId", "UId"),
+		new("Name", "Name"),
 		new("InstallType", "InstallType")
 	];
 
@@ -169,7 +179,18 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 	}
 
 	/// <inheritdoc />
-	public PagePackageLockRead ReadPackageLocks(IReadOnlyList<PageDesignerHierarchySchema> chain) {
+	public PagePackageLockRead ReadPackageLocks(IReadOnlyList<PageDesignerHierarchySchema> chain) =>
+		ReadPackages(chain, null).LockRead;
+
+	/// <summary>
+	/// Reads the lock state of the chain's packages and the package names with one <c>SysPackage</c> query.
+	/// </summary>
+	/// <param name="chain">The page chain, in any order.</param>
+	/// <param name="extraPackageUId">One more package to read the name of, outside the chain; <c>null</c> for none.
+	/// Its lock state is never reported as unknown, since no layer of the chain is in it.</param>
+	/// <returns>The lock read, as <see cref="ReadPackageLocks"/> returns it, and package names by UId.</returns>
+	private (PagePackageLockRead LockRead, IReadOnlyDictionary<string, string> Names) ReadPackages(
+		IReadOnlyList<PageDesignerHierarchySchema> chain, string extraPackageUId) {
 		List<string> packageUIds = chain
 			.Select(schema => schema.PackageUId)
 			.Where(uId => !string.IsNullOrWhiteSpace(uId))
@@ -184,28 +205,34 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 			: "Package lock state is unknown (packageLocked is null) for schemas without a package UId: "
 				+ $"{string.Join(", ", schemasWithoutPackage)}.";
 		Dictionary<string, bool?> locks = new(StringComparer.OrdinalIgnoreCase);
-		if (packageUIds.Count == 0) {
-			return new PagePackageLockRead(locks, noPackageWarning);
+		Dictionary<string, string> names = new(StringComparer.OrdinalIgnoreCase);
+		List<string> queried = string.IsNullOrWhiteSpace(extraPackageUId)
+			|| packageUIds.Contains(extraPackageUId, StringComparer.OrdinalIgnoreCase)
+				? packageUIds
+				: [.. packageUIds, extraPackageUId];
+		if (queried.Count == 0) {
+			return (new PagePackageLockRead(locks, noPackageWarning), names);
 		}
 		try {
 			PackageLockSelectResponse answer = SelectQueryHelper.ExecuteSelectQuery<PackageLockSelectResponse>(
 				_applicationClient, _serviceUrlBuilder,
 				SelectQueryHelper.BuildSelectQueryWithInFilter(
-					"SysPackage", PackageLockColumns, "UId", packageUIds, SelectQueryHelper.GuidDataValueType));
+					"SysPackage", PackageLockColumns, "UId", queried, SelectQueryHelper.GuidDataValueType));
 			foreach (PackageLockRow row in answer.Rows.Where(row => !string.IsNullOrWhiteSpace(row.UId))) {
 				locks[row.UId] = PackageTargetResolver.IsLockedInstallType(row.InstallType);
+				names[row.UId] = row.Name;
 			}
 			List<string> unknown = packageUIds.Where(uId => locks.GetValueOrDefault(uId) is null).ToList();
-			return new PagePackageLockRead(locks, JoinWarnings(
+			return (new PagePackageLockRead(locks, PageWarningText.Join(
 				unknown.Count == 0
 					? null
 					: $"Package lock state is unknown (packageLocked is null) for packages: {string.Join(", ", unknown)}.",
-				noPackageWarning));
+				noPackageWarning)), names);
 		}
 		catch (Exception ex) {
 			// A timeout (OperationCanceledException) is a failed read too: no cancellation token reaches it.
-			return new PagePackageLockRead(null,
-				$"Package lock state could not be read, so packageLocked is null for every schema: {ex.Message}");
+			return (new PagePackageLockRead(null,
+				$"Package lock state could not be read, so packageLocked is null for every schema: {ex.Message}"), names);
 		}
 	}
 
@@ -236,8 +263,13 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 		if (outsideDefault.Count == 0) {
 			return new PagePackageChoice { DefaultTargetPackageUId = defaultTargetPackageUId };
 		}
-		// One query for every layer, the default target's included, so each reported lock state is a read one.
-		PagePackageLockRead lockRead = ReadPackageLocks(replacing.Select(entry => entry.schema).ToList());
+		// One query for every layer, the default target's included, so each reported lock state is a read one. A
+		// default target without a layer joins the same query only to have its name read.
+		PageDesignerHierarchySchema defaultLayer = replacing
+			.Select(entry => entry.schema)
+			.FirstOrDefault(schema => IsDefaultTarget(schema, defaultTargetPackageUId));
+		(PagePackageLockRead lockRead, IReadOnlyDictionary<string, string> names) = ReadPackages(
+			replacing.Select(entry => entry.schema).ToList(), defaultLayer is null ? defaultTargetPackageUId : null);
 		bool required = outsideDefault.Any(schema => lockRead.Get(schema.PackageUId) != true);
 		if (!required) {
 			// Only locked vendor layers sit outside the default target: nothing to choose, and listing them would
@@ -247,6 +279,8 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 		return new PagePackageChoice {
 			Required = true,
 			DefaultTargetPackageUId = defaultTargetPackageUId,
+			DefaultTargetPackageName = defaultLayer?.PackageName
+				?? (string.IsNullOrWhiteSpace(defaultTargetPackageUId) ? null : names.GetValueOrDefault(defaultTargetPackageUId)),
 			Layers = replacing
 				.Select(entry => BuildLayer(entry.schema, entry.level, lockRead.Get(entry.schema.PackageUId),
 					defaultTargetPackageUId))
@@ -293,11 +327,6 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 		}
 	}
 
-	private static string JoinWarnings(params string[] warnings) {
-		string joined = string.Join(" ", warnings.Where(warning => !string.IsNullOrWhiteSpace(warning)));
-		return joined.Length == 0 ? null : joined;
-	}
-
 	private sealed class PackageLockSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
 		[JsonPropertyName("rows")]
 		public List<PackageLockRow> Rows { get; init; } = [];
@@ -306,6 +335,9 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 	private sealed class PackageLockRow {
 		[JsonPropertyName("UId")]
 		public string UId { get; init; }
+
+		[JsonPropertyName("Name")]
+		public string Name { get; init; }
 
 		[JsonPropertyName("InstallType")]
 		public int? InstallType { get; init; }

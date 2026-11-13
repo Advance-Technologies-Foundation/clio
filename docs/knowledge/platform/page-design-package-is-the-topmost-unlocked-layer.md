@@ -37,4 +37,6 @@ the rule or read it, saw the unlocked layers, and saved anyway. So clio now enfo
 layer exists (`package-choice-required`). Two traps in finding the layers: the base page is the LOWEST chain entry
 carrying the page name — the chain root at level 0 is a platform template (`BaseTemplate`), so "level 0 is the base"
 offers the base page as a layer; and the chain must be read from the page's root variant, because one anchored on a
-replacing variant can miss layers.
+replacing variant can miss layers. A retry into a layer other than the default target must be an append:
+`get-page` returns the default target's body, so a `replace` save of it into another layer would erase that
+layer's own changes; `update-page` refuses it with `package-choice-replace-refused` unless `force`.

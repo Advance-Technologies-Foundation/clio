@@ -77,4 +77,51 @@ public sealed class PageGetCommandPackageChoiceTests {
 			.And.Contain("\"defaultTargetPackageUId\":\"pkg-1\"", because: "the default target is named")
 			.And.Contain("custom-pkg", because: "every layer the user can choose is listed");
 	}
+
+	[Test]
+	[Description("When the page name resolves to a replacing variant, get-page inspects exactly the chain re-read from the root variant for the design package - the same chain update-page checks - not the partial chain read from the variant.")]
+	public void TryGetPage_Should_Inspect_The_Chain_Read_From_The_Root_Variant() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
+		applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success":true,"rows":[{"Name":"{{SchemaName}}","UId":"uid-leaf","PackageName":"UsrPkg","PackageUId":"{{DesignPackage}}","ParentSchemaName":"{{SchemaName}}"}]}""");
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-leaf").Returns(DesignPackage);
+		PageDesignerHierarchySchema leaf = new() {
+			UId = "uid-leaf", Name = SchemaName, PackageUId = DesignPackage, PackageName = "UsrPkg", SchemaVersion = 1, Body = Body
+		};
+		PageDesignerHierarchySchema baseVariant = new() {
+			UId = "uid-base", Name = SchemaName, PackageUId = "app-pkg", PackageName = "AppPkg", SchemaVersion = 1, Body = Body
+		};
+		PageDesignerHierarchySchema template = new() {
+			UId = "uid-template", Name = "BaseTemplate", PackageUId = "pkg-2", PackageName = "CrtPkg", SchemaVersion = 1, Body = Body
+		};
+		PageDesignerHierarchySchema custom = new() {
+			UId = "uid-custom", Name = SchemaName, PackageUId = "custom-pkg", PackageName = "Custom", SchemaVersion = 1, Body = Body
+		};
+		List<PageDesignerHierarchySchema> variantChain = [leaf, baseVariant, template];
+		List<PageDesignerHierarchySchema> rootChain = [leaf, custom, baseVariant, template];
+		hierarchyClient.GetParentSchemas("uid-leaf", DesignPackage).Returns(variantChain);
+		hierarchyClient.GetParentSchemas("uid-base", DesignPackage).Returns(rootChain);
+		IPageLayerInspector inspector = Substitute.For<IPageLayerInspector>();
+		inspector.Inspect(Arg.Any<string>(), Arg.Any<IReadOnlyList<PageDesignerHierarchySchema>>(), Arg.Any<string>())
+			.Returns(RequiredChoice);
+		PageGetCommand command = new(applicationClient, urls, Substitute.For<ILogger>(), hierarchyClient,
+			new PageSchemaBodyParser(),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>(), inspector);
+
+		// Act
+		bool ok = command.TryGetPage(new PageGetOptions { SchemaName = SchemaName, Environment = "dev" },
+			out PageGetResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: $"the page reads successfully: {response.Error}");
+		inspector.Received(1).Inspect(SchemaName,
+			Arg.Is<IReadOnlyList<PageDesignerHierarchySchema>>(chain => ReferenceEquals(chain, rootChain)), DesignPackage);
+	}
 }
+

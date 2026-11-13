@@ -240,6 +240,12 @@
 		private const string ModifiedOnColumnName = "ModifiedOn";
 		private const string AppendMode = "append";
 
+		/// <summary>
+		/// Marker of the refusal of a <c>replace</c> write into a <c>target-package-uid</c> other than the default
+		/// design package while the package-choice check is on (ENG-105680).
+		/// </summary>
+		internal const string PackageChoiceReplaceRefusedMarker = "package-choice-replace-refused";
+
 		private readonly IApplicationClient _applicationClient;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly ILogger _logger;
@@ -1060,10 +1066,12 @@
 			// (PageUpdateCommandResolutionTests pins that), as it does every other optional collaborator here.
 			if (!options.EnforcePackageChoice
 				|| _pageLayerInspector is null
-				|| !string.IsNullOrWhiteSpace(options.TargetPackageUId)
 				|| !string.IsNullOrWhiteSpace(options.TargetSchemaUId)
 				|| context.ResolutionHierarchy is null) {
 				return true;
+			}
+			if (!string.IsNullOrWhiteSpace(options.TargetPackageUId)) {
+				return TryAllowChosenTargetPackage(options, context, out response);
 			}
 			IReadOnlyList<PageDesignerHierarchySchema> chain;
 			try {
@@ -1092,6 +1100,44 @@
 			return false;
 		}
 
+		/// <summary>
+		/// Refuses a <c>replace</c> write into a <c>target-package-uid</c> other than the default design package,
+		/// unless <see cref="PageUpdateOptions.Force"/> is set. <c>get-page</c> returns the default target's body, so
+		/// saving it verbatim into another layer would erase that layer's own changes; only <c>append</c> keeps them.
+		/// </summary>
+		private bool TryAllowChosenTargetPackage(PageUpdateOptions options, EditableSchemaContext context,
+			out PageUpdateResponse response) {
+			response = null;
+			if (IsAppendMode(options) || options.Force) {
+				return true;
+			}
+			string defaultPackageUId;
+			try {
+				defaultPackageUId = _hierarchyClient.GetDesignPackageUId(context.RawSchemaUId);
+			} catch (Exception ex) {
+				response = BuildReplaceRefusal(options,
+					$"the default design package could not be resolved ({ex.Message}), so the target cannot be "
+					+ "confirmed as the default one");
+				return false;
+			}
+			if (SchemaUIdsMatch(defaultPackageUId, options.TargetPackageUId)) {
+				return true;
+			}
+			response = BuildReplaceRefusal(options,
+				$"target-package-uid {options.TargetPackageUId} is not the default design package {defaultPackageUId}");
+			return false;
+		}
+
+		private static PageUpdateResponse BuildReplaceRefusal(PageUpdateOptions options, string reason) =>
+			new() {
+				Success = false,
+				SchemaName = options.SchemaName,
+				Error = $"{PackageChoiceReplaceRefusedMarker}: page '{options.SchemaName}': {reason}. A replace-mode "
+					+ "write saves the body verbatim into that package's layer, and get-page returns the default "
+					+ "target's body, so it would erase the layer's own changes. Send only your change with mode "
+					+ "append, or set force only after the user confirms replacing that layer's body."
+			};
+
 		internal static string DescribePackageChoice(string schemaName, PagePackageChoice choice) {
 			IEnumerable<string> layers = choice.Layers.Select(layer => {
 				string state = layer.PackageLocked switch {
@@ -1107,14 +1153,18 @@
 				return $"{layer.PackageName} (packageUId {layer.PackageUId}, level {layer.HierarchyLevel}, {state}{role}; {changes})";
 			});
 			bool defaultHasLayer = choice.Layers.Any(layer => layer.IsDefaultTarget);
+			string defaultTargetName = string.IsNullOrWhiteSpace(choice.DefaultTargetPackageName)
+				? choice.DefaultTargetPackageUId
+				: $"{choice.DefaultTargetPackageName} (packageUId {choice.DefaultTargetPackageUId})";
 			string defaultTarget = defaultHasLayer
 				? string.Empty
-				: $" The default target {choice.DefaultTargetPackageUId} holds no replacing layer of the page; keeping it "
+				: $" The default target {defaultTargetName} holds no replacing layer of the page; keeping it "
 					+ "writes there.";
 			return $"package-choice-required: page '{schemaName}' is customized in more than one package that can be "
 				+ "changed, so the write must name its target package. Ask the user which package to change, then save "
 				+ "through update-page with target-package-uid set to the chosen packageUId (the default target's "
-				+ "packageUId keeps the default; for another layer send only your change with mode append). Do not "
+				+ "packageUId keeps the default; for another layer send only your change with mode append, replace is "
+				+ $"refused there with {PackageChoiceReplaceRefusedMarker}). Do not "
 				+ "pick one yourself. Layers, lowest first (for an element several layers change, "
 				+ $"the highest wins at runtime): {string.Join("; ", layers)}.{defaultTarget}"
 				+ (string.IsNullOrWhiteSpace(choice.Warning) ? string.Empty : " " + choice.Warning);

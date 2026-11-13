@@ -321,7 +321,7 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 			ReturnedCount = page.Count,
 			HasMore = offset + page.Count < total,
 			BodiesOmittedForSize = omitBodiesForSize,
-			Warning = JoinWarnings(
+			Warning = PageWarningText.Join(
 				omitBodiesForSize
 					? $"Bodies omitted: the selected window exceeds the {DefaultBodySizeBudgetChars}-char response budget. "
 						+ "Re-request with --metadata-only, or page with --offset/--limit, or fetch a single schema body via get-page."
@@ -331,14 +331,8 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		};
 	}
 
-	private static string JoinWarnings(params string[] warnings) {
-		string joined = string.Join(" ", warnings.Where(warning => !string.IsNullOrWhiteSpace(warning)));
-		return joined.Length == 0 ? null : joined;
-	}
-
 	// NOTE (ENG-93249): mirrors PageGetCommand's chain resolution (metadata -> design package -> full
-	// hierarchy from the root). Kept as a focused copy rather than refactoring the working get-page
-	// path; unifying both onto one resolver is tracked as ENG-93249.
+	// hierarchy from the root); the root-variant re-read itself is the shared PageHierarchyChain rule.
 	/// <summary>
 	/// Resolves the replacing-schema chain for <paramref name="schemaName"/>, classifying the outcome into three
 	/// states so that a call which never produced an answer is never reported as an answer about the page
@@ -384,13 +378,8 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		// get-page does: the name->UId metadata lookup can resolve to an arbitrary replacing variant
 		// (a page replaced across packages has one SysSchema row per package), so anchoring on the
 		// root variant yields the same complete, deterministic chain get-page merges.
-		string rootSchemaUId = FindRootSchemaUId(initialHierarchy, schemaName) ?? schemaUId;
-		if (string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
-			return (initialHierarchy, null);
-		}
-		IReadOnlyList<PageDesignerHierarchySchema> fullHierarchy =
-			_hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
-		return (fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy, null);
+		return (PageHierarchyChain.ReadFromRootVariant(
+			_hierarchyClient, schemaName, schemaUId, designPackageUId, initialHierarchy), null);
 	}
 
 	/// <summary>
@@ -435,15 +424,6 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 	/// <returns><see langword="true"/> when the service answered and rejected the lookup.</returns>
 	private static bool IsAnsweredRejection(Exception exception) =>
 		exception is InvalidOperationException and not NonJsonServiceResponseException;
-
-	private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
-		for (int i = hierarchy.Count - 1; i >= 0; i--) {
-			if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
-				return hierarchy[i].UId;
-			}
-		}
-		return null;
-	}
 
 	/// <inheritdoc />
 	public override int Execute(GetPageHierarchyOptions options) {

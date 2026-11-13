@@ -308,4 +308,41 @@ public class PageLayerInspectorTests {
 		choice.Layers.Select(layer => layer.HierarchyLevel).Should().Equal([2, 3],
 			because: "levels count from the mobile template root");
 	}
+
+	[Test]
+	[Description("A default target that holds no layer yet is named by the same SysPackage query that reads the lock states, so the refusal can name it, and its lock state is not reported as unknown.")]
+	public void Inspect_Should_Name_A_Default_Target_Without_A_Layer() {
+		// Arrange
+		(PageLayerInspector sut, IApplicationClient client) = BuildSut(
+			"{\"success\":true,\"rows\":[{\"UId\":\"custom-pkg\",\"Name\":\"Custom\",\"InstallType\":0},"
+			+ "{\"UId\":\"proj-pkg\",\"Name\":\"UsrProject\",\"InstallType\":0}]}");
+		List<PageDesignerHierarchySchema> chain = [
+			Schema(PageName, CustomPackage, MergeSerialNumberBody),
+			Schema(PageName, AppPackage),
+			Schema("BaseTemplate", VendorPackage)
+		];
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, chain, ProjectPackage);
+
+		// Assert
+		choice.DefaultTargetPackageName.Should().Be("UsrProject",
+			because: "the default target has no layer to take the name from, so the SysPackage row names it");
+		choice.Warning.Should().BeNull(because: "every layer's lock state was read");
+		client.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains(ProjectPackage)));
+	}
+
+	[Test]
+	[Description("A default target that holds a layer is named from that layer, with no extra package in the query.")]
+	public void Inspect_Should_Name_The_Default_Target_From_Its_Layer() {
+		// Arrange
+		(PageLayerInspector sut, _) = BuildSut(LockRows((CustomPackage, 0), (ProjectPackage, 0)));
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, QaChain(), ProjectPackage);
+
+		// Assert
+		choice.DefaultTargetPackageName.Should().Be(ProjectPackage + "-name",
+			because: "the default target's own layer carries its package name");
+	}
 }
