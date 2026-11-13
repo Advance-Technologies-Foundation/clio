@@ -99,7 +99,7 @@ public sealed class DynamicCaseService(
 		DynamicCasePagePlan pagePlan = null;
 		if (options.AddProgressBar) {
 			pagePlan = pageStep.Plan(options.Environment, options.PackageName, options.EntitySchemaName,
-				options.PageSchemaName, missing);
+				options.PageSchemaName, missing, options.SaveOnChange);
 			if (pagePlan.Status == DynamicCasePageStep.StatusRefused) {
 				return PageRefusal(options, plan, missing, pagePlan);
 			}
@@ -525,6 +525,8 @@ public sealed class DynamicCaseService(
 				PackageName = plan.DesignPackageName,
 				Template = plan.Template,
 				Fragment = plan.Fragment,
+				// Only for a bar this call planned or wrote; an already-present bar keeps whatever mode it has.
+				SaveOnChange = plan.Fragment is null ? null : plan.SaveOnChange,
 				Error = plan.ErrorMessage,
 				Candidates = plan.Candidates is { Count: > 0 } ? [.. plan.Candidates] : null
 			};
