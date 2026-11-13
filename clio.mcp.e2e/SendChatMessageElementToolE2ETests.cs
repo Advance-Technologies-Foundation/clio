@@ -255,8 +255,8 @@ public sealed class SendChatMessageElementToolE2ETests {
 
 			// Assert
 			ShouldBeRefused(withoutMessage, "a switch to custom must carry the text it sends");
-			LogText(withoutMessage).Should().MatchRegex("['\"`]message['\"`]",
-				because: "the refusal names the member that is missing, quoted as a member name");
+			LogText(withoutMessage).Should().Contain("'chatMessage.message'",
+				because: "the refusal names the member that is missing by its path in the block");
 			ShouldHaveLanded(withMessage, "a switch to custom with its message is an ordinary update");
 			JsonObject block = ChatBlock(Element(await DescribeGraphAsync(context, processName), "Chat1"));
 			Text(block, "messageSource").Should().Be("custom", because: "the switch landed");
