@@ -9,17 +9,19 @@ using Newtonsoft.Json.Linq;
 namespace Clio.Command;
 
 /// <summary>
-/// The record-page fragment that adds the stage progress bar: the two inserts the product's application wizard
-/// writes for a tabbed Freedom UI record page, wrapped in the marker pairs <c>update-page</c> append needs.
+/// The record-page fragment that adds the stage progress bar: the container and the bar the product's application
+/// wizard inserts into a tabbed Freedom UI record page (its layout, not its flag values), wrapped in the marker pairs
+/// <c>update-page</c> append needs.
 /// </summary>
 /// <remarks>
-/// A constant rather than agent input on purpose: the bar's runtime wiring (<c>recordId</c>, <c>value</c>,
-/// <c>stages</c>, the request handlers) is created and OVERWRITTEN by the platform's page preprocessor on every
-/// open, so writing any of it would only add something the next open discards or fights. The bar takes its stage
-/// column from the object's first enabled, active-version case, which is why <c>entityName</c> is all it needs.
-/// The two behaviour flags take the bar's own defaults, which the page template and 7 of the 11 product record
-/// pages with a bar keep: <c>saveOnChange</c> false (a stage click sets the field and the user saves) unless the
-/// caller asks for a save on click, and <c>askUserToChangeSchema</c> true. The wizard writes true and false.
+/// Everything but the save mode is fixed rather than agent input, on purpose: the bar's runtime wiring
+/// (<c>recordId</c>, <c>value</c>, <c>stages</c>, the request handlers) is created and OVERWRITTEN by the platform's
+/// page preprocessor on every open, so writing any of it would only add something the next open discards or fights.
+/// The bar takes its stage column from the object's first enabled, active-version case, which is why
+/// <c>entityName</c> is all it needs.
+/// The two behaviour flags take the bar's own defaults, which the page template and most product record pages
+/// keep: <c>saveOnChange</c> false (a stage click sets the field and the user saves) unless the caller asks for a
+/// save on click, and <c>askUserToChangeSchema</c> true. The wizard writes true and false.
 /// </remarks>
 public static class ProgressBarFragment {
 

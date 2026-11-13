@@ -250,6 +250,7 @@ public sealed class DynamicCaseService(
 		string designerUrl = DesignerUrl(options.Environment, built.Case?.SchemaUId);
 		bool alreadyPresent = built.Outcome == ServerAlreadyPresent;
 		if (!options.AddProgressBar) {
+			AddSkippedBarModeNote(options, notes);
 			return Result(alreadyPresent ? DynamicCaseOutcomes.AlreadyPresent : DynamicCaseOutcomes.CreatedPageSkipped,
 				options, built, designerUrl, dependencies, new DynamicCasePageInfo { Status = PageSkipped }, notes,
 				warnings, pageWritten: false);
@@ -276,6 +277,7 @@ public sealed class DynamicCaseService(
 			PackageName = pagePlan.DesignPackageName,
 			Template = pagePlan.Template,
 			Fragment = pagePlan.Fragment,
+			SaveOnChange = pagePlan.SaveOnChange,
 			Error = write.Error,
 			Retry = new DynamicCasePageRetry { Tool = RetryTool, Args = RetryArgs(options, pagePlan) }
 		};
@@ -318,6 +320,13 @@ public sealed class DynamicCaseService(
 			+ "change. Run compile-creatio without package-name (a configuration compile)." + tail);
 	}
 
+	// The mode lives only on the bar, so with no bar to add a mode the caller named would otherwise be dropped unseen.
+	private static void AddSkippedBarModeNote(CreateDynamicCaseOptions options, List<string> notes) {
+		if (!options.AddProgressBar && options.SaveOnChange.HasValue) {
+			notes.Add("save-on-change was not applied: add-progress-bar is false, so this call adds no progress bar.");
+		}
+	}
+
 	private static void AddPackageNote(CreateDynamicCaseOptions options, DynamicCasePagePlan pagePlan,
 		List<string> notes) {
 		if (pagePlan.Status == DynamicCasePageStep.StatusPlanned
@@ -356,6 +365,7 @@ public sealed class DynamicCaseService(
 			warnings.AddRange(pagePlan.Warnings);
 			AddPackageNote(options, pagePlan, notes);
 		}
+		AddSkippedBarModeNote(options, notes);
 		string dependencyStatus = missing.Count == 0
 			? DependenciesNoneMissing
 			: options.AddPackageDependencies ? DependenciesPlanned : DependenciesMissing;
@@ -525,8 +535,8 @@ public sealed class DynamicCaseService(
 				PackageName = plan.DesignPackageName,
 				Template = plan.Template,
 				Fragment = plan.Fragment,
-				// Only for a bar this call planned or wrote; an already-present bar keeps whatever mode it has.
-				SaveOnChange = plan.Fragment is null ? null : plan.SaveOnChange,
+				// Set by the page step only with a fragment: absent for an already-present bar, which keeps its own mode.
+				SaveOnChange = plan.SaveOnChange,
 				Error = plan.ErrorMessage,
 				Candidates = plan.Candidates is { Count: > 0 } ? [.. plan.Candidates] : null
 			};
