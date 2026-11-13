@@ -17,7 +17,7 @@ a name the tool's input schema lists as `required`. It runs after every other ar
 
 ```
 invalid-parameter-type: argument 'environmentName' for MCP tool 'get-fsm-mode' is required and was not sent.
-Unknown argument 'environment-name' (did you mean 'environmentName'?). About 'environmentName': ...
+Unknown argument 'environment-name' (did you mean 'environmentName'?). About `environmentName`: ...
 get-fsm-mode takes: environmentName (string, required). Argument names are matched exactly, case included.
 Nothing ran.
 ```
