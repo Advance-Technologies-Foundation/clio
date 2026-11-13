@@ -38,4 +38,5 @@ carrying the page name — the chain root at level 0 is a platform template (`Ba
 offers the base page as a layer; and the chain must be read from the page's root variant, because one anchored on a
 replacing variant can miss layers. A retry into a layer other than the default target must be an append:
 `get-page` returns the default target's body, so a `replace` save of it into another layer would erase that
-layer's own changes; `update-page` refuses it with `package-choice-replace-refused` unless `force`.
+layer's own changes; `update-page` refuses replacing an existing non-default replacing layer with `package-choice-replace-refused`
+unless `force`. A package with no layer yet has no own body to erase and can receive a replace without `force`.

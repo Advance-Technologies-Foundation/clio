@@ -331,6 +331,31 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 		AssertNotSaved();
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A replace into a package with no page layer preserves explicit targeting without requiring force, including dry runs.")]
+	public void TryUpdatePage_ShouldAllowReplace_WhenTargetHasNoLayer(bool dryRun) {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Is<string>(query => query.Contains(CustomPackage)),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true, "rows": []}""");
+		PageUpdateCommand sut = BuildCommand(_inspector);
+		PageUpdateOptions options = Options(enforce: true, targetPackageUId: CustomPackage);
+		options.DryRun = dryRun;
+
+		// Act
+		bool ok = sut.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: $"a new layer has no existing body to overwrite: {response.Error}");
+		if (dryRun) {
+			AssertNotSaved();
+		} else {
+			_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
+				Arg.Is<string>(request => request.Contains(CustomPackage)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		}
+	}
+
 	[Test]
 	[Description("force lets a replace into a chosen non-default layer through, once the user confirmed replacing that layer's body.")]
 	public void TryUpdatePage_Should_Allow_Replace_Into_A_Non_Default_Layer_With_Force() {

@@ -705,6 +705,50 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		updateResponse.PackageChoice.Should().BeNull(because: "the write was not refused");
 	}
 
+	[Test]
+	[Description("An explicit replace into a package with no page layer passes the real MCP dry-run path without force and leaves the page unchanged.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page allows a new layer without force")]
+	public async Task UpdatePage_ShouldAllowReplace_WhenTargetPackageHasNoLayer() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping sandbox page creation.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var context = Arrange(TimeSpan.FromMinutes(5));
+		string outputDirectory = CreateFixtureDirectory("package-choice-new-layer");
+		PageGetResponse seeded = await GetPageAsync(context, "ClioMcp_BlankPageToSave", environmentName, outputDirectory);
+		seeded.Success.Should().BeTrue(because: "the seeded page identifies the test application's package");
+		string targetPackageUId = seeded.Page!.DesignPackageUId;
+		seeded.Page.DesignPackageName.Should().NotBe("Custom",
+			because: "the new page must start in a different package from its replacement target");
+		string schemaName = "UsrPackageChoice" + Guid.NewGuid().ToString("N")[..12];
+		CallToolResult created = await context.Session.CallToolAsync(PageCreateTool.ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["schema-name"] = schemaName, ["template"] = "BlankPageTemplate",
+				["package-name"] = "Custom", ["environment-name"] = environmentName
+			} }, context.CancellationTokenSource.Token);
+		EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(created).Success.Should().BeTrue(
+			because: "a unique base page ensures the target package has no layer of it");
+		string before = await ReadRawBodyAsync(context, environmentName, schemaName);
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> {
+				["schema-name"] = schemaName, ["body"] = BuildAppendFragment(schemaName),
+				["target-package-uid"] = targetPackageUId, ["mode"] = "replace",
+				["dry-run"] = true, ["environment-name"] = environmentName
+			} }, context.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+
+		// Assert
+		result.IsError.Should().NotBeTrue(because: "the dry run must return a structured response");
+		response.Success.Should().BeTrue(because: $"a new layer erases no existing body and requires no force: {response.Error}");
+		string after = await ReadRawBodyAsync(context, environmentName, schemaName);
+		after.Should().Be(before, because: "a dry run never saves the proposed replacement");
+	}
+
 	/// <summary>Builds a minimal diff-form append fragment adding one uniquely named container.</summary>
 	private static string BuildAppendFragment(string schemaName) =>
 		"define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +

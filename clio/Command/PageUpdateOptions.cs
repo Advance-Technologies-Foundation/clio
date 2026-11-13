@@ -1066,12 +1066,14 @@
 			// (PageUpdateCommandResolutionTests pins that), as it does every other optional collaborator here.
 			if (!options.EnforcePackageChoice
 				|| _pageLayerInspector is null
-				|| !string.IsNullOrWhiteSpace(options.TargetSchemaUId)
-				|| context.ResolutionHierarchy is null) {
+				|| !string.IsNullOrWhiteSpace(options.TargetSchemaUId)) {
 				return true;
 			}
 			if (!string.IsNullOrWhiteSpace(options.TargetPackageUId)) {
 				return TryAllowChosenTargetPackage(options, context, out response);
+			}
+			if (context.ResolutionHierarchy is null) {
+				return true;
 			}
 			IReadOnlyList<PageDesignerHierarchySchema> chain;
 			try {
@@ -1101,14 +1103,14 @@
 		}
 
 		/// <summary>
-		/// Refuses a <c>replace</c> write into a <c>target-package-uid</c> other than the default design package,
+		/// Refuses a <c>replace</c> write into an existing replacing layer outside the default design package,
 		/// unless <see cref="PageUpdateOptions.Force"/> is set. <c>get-page</c> returns the default target's body, so
 		/// saving it verbatim into another layer would erase that layer's own changes; only <c>append</c> keeps them.
 		/// </summary>
 		private bool TryAllowChosenTargetPackage(PageUpdateOptions options, EditableSchemaContext context,
 			out PageUpdateResponse response) {
 			response = null;
-			if (IsAppendMode(options) || options.Force) {
+			if (IsAppendMode(options) || options.Force || context.IsCreateReplacing) {
 				return true;
 			}
 			string defaultPackageUId;
@@ -1443,7 +1445,8 @@
 
 			/// <summary>
 			/// The chain read while resolving the write target, kept even when a replacing schema will be created
-			/// (unlike <see cref="ResolvedHierarchy"/>); <c>null</c> when the target was named explicitly.
+			/// (unlike <see cref="ResolvedHierarchy"/>); also present for <c>target-package-uid</c>.
+			/// <c>null</c> for <c>target-schema-uid</c> or when no hierarchy client is available.
 			/// </summary>
 			public IReadOnlyList<PageDesignerHierarchySchema> ResolutionHierarchy { get; set; }
 
