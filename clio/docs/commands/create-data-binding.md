@@ -39,11 +39,21 @@ Files created or updated:
 If --values is omitted, the command creates a single template row with all
 schema columns and empty placeholder values.
 
+With --from-environment, the command writes one binding that already exists in
+the environment's database (for example one created by create-data-binding-db
+in file system mode) exactly as the platform package export writes it: the
+descriptor with the DB binding UId, ModifiedOn, install type and columns, the
+stored data.json, and Localization/data.<culture>.json for every culture the
+binding stores. Only that binding folder is replaced; no other package folder
+is touched, unlike pkg-to-file-system, which exports the whole environment.
+
 ## Options
 
 ```bash
 --package              Target package name
---schema               Entity schema name used to fetch template or runtime metadata
+--schema               Entity schema name used to fetch template or runtime metadata.
+Required unless --from-environment is set; with it, it must
+match the binding's schema
 --workspace-path       Workspace root containing .clio/workspaceSettings.json,
 not the package directory. Defaults to the current workspace
 --binding-name         Binding folder name. Defaults to <schema>
@@ -61,6 +71,10 @@ For image-content columns, pass either a base64
 string or a local file path inside the workspace and
 clio encodes the file
 --localizations        Optional JSON object keyed by culture and column name
+--from-environment     Write the existing DB binding --binding-name of --package
+from the environment, as the platform package export does.
+Requires --environment or --uri; cannot be combined with
+--values or --localizations
 
 Environment options are also available:
 -e, --Environment      Environment name from the registered configuration
@@ -86,6 +100,9 @@ clio create-data-binding -e dev --package Custom --schema UsrImageBinding --work
 
 # Create a binding with explicit lookup display text
 clio create-data-binding -e dev --package Custom --schema UsrLookupBinding --values "{\"Code\":\"UsrLookupBinding\",\"UsrStatus\":{\"value\":\"b659d704-3955-e011-981f-00155d043204\",\"displayValue\":\"In Progress\"}}"
+
+# Write the DB binding UsrStatus_Custom of package Custom to disk (file system mode)
+clio create-data-binding -e dev --package Custom --binding-name UsrStatus_Custom --from-environment
 ```
 
 ## Notes
@@ -105,6 +122,12 @@ not the package directory. Clio resolves packages/{package-name} beneath that ro
 - If the target binding folder already exists for another schema, the
 command fails instead of overwriting it
 - filter.json is always created as an empty file
+- --from-environment reads the binding's stored registration (SysPackageSchemaData),
+its columns (SysPackageSchemaDataColumn) and its culture snapshots (SysPackageDataLcz),
+which is what the package export writes. Everything is read before anything is
+written, so a failed read leaves the folder on disk as it was. The Localization
+folder is written only when the binding stores a culture snapshot with rows, as
+in the export
 
 Lookup descriptor compatibility: ReferenceSchemaName is a generator-only hint and is
 not written to descriptor.json. Lookup Value and DisplayValue remain in data.json.

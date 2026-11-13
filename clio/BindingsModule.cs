@@ -1017,6 +1017,7 @@ public class BindingsModule {
 		services.AddTransient<IDataBindingSerializer, DataBindingSerializer>();
 		services.AddTransient<IDataBindingValueConverter, DataBindingValueConverter>();
 		services.AddTransient<IDataBindingDisplayValueResolver, DataBindingDisplayValueResolver>();
+		services.AddTransient<IDataBindingSnapshotReader, DataBindingSnapshotReader>();
 		services.AddTransient<IDataBindingService, DataBindingService>();
 		services.AddTransient<ILookupRegistrationService, LookupRegistrationService>();
 		services.AddTransient<CreateDataBindingCommand>();

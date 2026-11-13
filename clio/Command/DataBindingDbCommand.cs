@@ -495,6 +495,12 @@ internal sealed class DataBindingDbService(
 	/// <summary>Creatio runtime <c>dataValueType</c> of a native Color column.</summary>
 	private const int ColorRuntimeDataValueType = 18;
 
+	/// <summary>
+	/// Creatio runtime <c>dataValueType</c>s of text columns: Text, the sized text types 26-30 (normalized to Text for
+	/// a query parameter), SecureText, HashText, DbObjectName, PhoneText, RichText, WebText and EmailText.
+	/// </summary>
+	private static readonly HashSet<int> TextRuntimeDataValueTypes = [1, 26, 27, 28, 29, 30, 31, 32, 33, 42, 43, 44, 45];
+
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		ValidateEnvironment(options);
@@ -965,19 +971,24 @@ internal sealed class DataBindingDbService(
 	}
 
 	/// <summary>
-	/// Shapes a row value for an Insert/Update query parameter, applying the Color rules at the DataService boundary.
+	/// Shapes a row value for an Insert/Update query parameter, applying the Color and null rules at the
+	/// DataService boundary.
 	/// </summary>
 	/// <remarks>
-	/// Every other column is written the way it always was - the JSON node stringified, null collapsed to an
-	/// empty string. Color cannot use that rule: the parameter keeps <c>dataValueType</c> 18, so a number
-	/// would be POSTed as "123", an object as its JSON text, and a null as "", none of which is a valid
-	/// "#RRGGBB" literal. The local-file converter already refuses those shapes; this is the same rule for
-	/// the DB-first create and upsert paths.
+	/// A value is written as its JSON node stringified. A null is written as an empty string only for a text
+	/// column, which stores "" for no value; every other type keeps null, because DataService reads "" for a
+	/// lookup as the empty Guid and the insert fails on the foreign key (ENG-106290). Color keeps its own rules:
+	/// the parameter keeps <c>dataValueType</c> 18, so a number would be POSTed as "123" and an object as its
+	/// JSON text, neither of which is a valid "#RRGGBB" literal. The local-file converter already refuses those
+	/// shapes; this is the same rule for the DB-first create and upsert paths.
 	/// </remarks>
 	private static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
-		dataValueType == ColorRuntimeDataValueType
-			? ConvertColorValue(columnName, value)
-			: value?.ToString() ?? "";
+		dataValueType switch {
+			ColorRuntimeDataValueType => ConvertColorValue(columnName, value),
+			_ when value is not null => value.ToString(),
+			_ when TextRuntimeDataValueTypes.Contains(dataValueType) => "",
+			_ => null
+		};
 
 	/// <summary>
 	/// Returns the hex literal of a Color value, preserving null, and rejects any other wire shape.

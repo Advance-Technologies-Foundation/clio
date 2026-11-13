@@ -2594,8 +2594,22 @@ public sealed class ToolContractGetToolTests {
 			contract.Name == CreateDataBindingTool.CreateDataBindingToolName);
 		createContract.Description.Should().Contain("data-bindings",
 			because: "create-data-binding should route callers to the canonical binding guide");
-		createContract.InputSchema.Required.Should().Contain(["package-name", "schema-name", "workspace-path"],
-			because: "create-data-binding should require package-name, schema-name, and workspace-path as the minimal local payload");
+		createContract.InputSchema.Required.Should().Equal(["package-name", "workspace-path"],
+			because: "create-data-binding requires package-name and workspace-path; schema-name is required only without from-environment");
+		createContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "require-schema-name-or-from-environment"
+				&& validator.Fields != null
+				&& validator.Fields.SequenceEqual(new[] { "schema-name", "from-environment" }),
+			because: "the conditional schema-name requirement must stay machine-readable (ENG-106290)");
+		createContract.InputSchema.Validators.Should().Contain(validator =>
+				validator.Name == "from-environment-requires-environment-and-binding"
+				&& validator.Fields != null
+				&& validator.Fields.SequenceEqual(new[] { "from-environment", "environment-name", "binding-name" }),
+			because: "from-environment reads the binding from the environment, so it needs both (ENG-106290)");
+		createContract.InputSchema.Properties.Should().Contain(field =>
+				field.Name == "from-environment" && field.Type == "boolean"
+				&& field.Description.Contains("platform package export", StringComparison.Ordinal),
+			because: "create-data-binding advertises the single-binding route from the environment (ENG-106290)");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "environment-name" &&
 				field.Description.Contains("Required when schema-name is not SysSettings", StringComparison.Ordinal),

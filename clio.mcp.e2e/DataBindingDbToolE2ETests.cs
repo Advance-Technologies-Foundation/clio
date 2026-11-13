@@ -133,6 +133,68 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 	}
 
 	[Test]
+	[Description("Writes an existing DB-first binding to the workspace through create-data-binding with from-environment, reproducing the database binding UId and row instead of generating a new descriptor (ENG-106290).")]
+	[AllureTag(CreateDbToolName)]
+	[AllureTag(CreateDataBindingTool.CreateDataBindingToolName)]
+	[AllureName("create-data-binding from-environment writes one DB binding to disk with the database UId")]
+	[AllureDescription("Creates a DB-first Lookup binding with a known row Id through create-data-binding-db, reads its uId with read-data-binding-db, then calls create-data-binding with from-environment=true and no schema-name over the real MCP transport, and asserts that Data/<binding>/descriptor.json carries the database uId and data.json the row Id.")]
+	public async Task CreateDataBinding_Should_Write_Db_Binding_With_Database_UId_When_From_Environment() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string bindingName = $"UsrFromEnvE2E{arrangeContext.PackageName}";
+		string rowId = System.Guid.NewGuid().ToString();
+		CommandExecutionActResult createDbResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "Lookup",
+				["binding-name"] = bindingName,
+				["rows"] = $"[{{\"values\":{{\"Id\":\"{rowId}\",\"Name\":\"E2E from-environment row\"}}}}]"
+			});
+		AssertCommandExitCode(createDbResult, 0, "the DB binding must exist before it can be written to disk");
+		CommandExecutionActResult readResult = await ActCommandAsync(
+			arrangeContext,
+			ReadDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = bindingName
+			});
+		AssertCommandExitCode(readResult, 0, "read-data-binding-db reports the uId the descriptor must carry");
+		string databaseUId = System.Text.RegularExpressions.Regex.Match(
+				string.Join("\n", readResult.Execution.Output!.Select(message => message.Value?.ToString() ?? string.Empty)),
+				@"uId:\s+([0-9a-fA-F-]{36})")
+			.Groups[1].Value;
+		databaseUId.Should().NotBeEmpty(because: "read-data-binding-db prints the binding uId");
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(
+			arrangeContext,
+			CreateDataBindingTool.CreateDataBindingToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["binding-name"] = bindingName,
+				["workspace-path"] = arrangeContext.WorkspacePath,
+				["from-environment"] = true
+			});
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 0,
+			"from-environment needs no schema-name and writes the stored binding when it exists");
+		string bindingDirectoryPath = Path.Combine(
+			arrangeContext.WorkspacePath, "packages", arrangeContext.PackageName, "Data", bindingName);
+		string descriptorJson = await File.ReadAllTextAsync(Path.Combine(bindingDirectoryPath, "descriptor.json"));
+		descriptorJson.Should().ContainEquivalentOf(databaseUId,
+			because: "the folder must describe the database binding, not a newly generated one");
+		string dataJson = await File.ReadAllTextAsync(Path.Combine(bindingDirectoryPath, "data.json"));
+		dataJson.Should().ContainEquivalentOf(rowId, because: "data.json carries the stored row of the binding");
+	}
+
+	[Test]
 	[Description("Fails create-data-binding-db through MCP with exit code 1 when environment-name is empty, matching the command-layer validation guard.")]
 	[AllureTag(CreateDbToolName)]
 	[AllureName("Create DB-first binding without environment fails with exit code 1")]

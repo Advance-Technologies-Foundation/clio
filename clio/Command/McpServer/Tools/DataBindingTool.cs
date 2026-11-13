@@ -32,7 +32,7 @@ public class CreateDataBindingTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Creates or regenerates a package data binding from a built-in template or a runtime entity schema.")]
+	[Description("Creates or regenerates a package data binding from a built-in template or a runtime entity schema, or with from-environment writes one existing DB binding to disk exactly as the platform package export does.")]
 	public CommandExecutionResult CreateDataBinding(
 		[Description("create-data-binding parameters")]
 		[Required]
@@ -40,14 +40,15 @@ public class CreateDataBindingTool(
 		CreateDataBindingOptions options = new() {
 			Environment = args.EnvironmentName,
 			PackageName = args.PackageName,
-			SchemaName = args.SchemaName,
+			SchemaName = args.SchemaName ?? string.Empty,
 			BindingName = args.BindingName,
 			InstallType = args.InstallType ?? 0,
 			ValuesJson = args.ValuesJson,
 			LocalizationsJson = args.LocalizationsJson,
+			FromEnvironment = args.FromEnvironment ?? false,
 			WorkspacePath = DataBindingToolPathValidator.ValidateWorkspacePath(args.WorkspacePath)
 		};
-		return templateCatalog.HasTemplate(args.SchemaName)
+		return !options.FromEnvironment && templateCatalog.HasTemplate(options.SchemaName)
 			? InternalExecute(options)
 			: InternalExecute<CreateDataBindingCommand>(options);
 	}
@@ -159,15 +160,14 @@ public sealed record CreateDataBindingArgs(
 	[property: Required]
 	string PackageName,
 
-	[property: JsonPropertyName("schema-name")]
-	[property: Description("Entity schema name used to build the binding descriptor. The built-in offline template currently includes SysSettings.")]
-	[property: Required]
-	string SchemaName,
-
 	[property: JsonPropertyName("workspace-path")]
 	[property: Description("Absolute workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root.")]
 	[property: Required]
 	string WorkspacePath,
+
+	[property: JsonPropertyName("schema-name")]
+	[property: Description("Entity schema name used to build the binding descriptor. The built-in offline template currently includes SysSettings. Required unless from-environment is true; with it, it must match the binding's schema.")]
+	string? SchemaName = null,
 
 	[property: JsonPropertyName("binding-name")]
 	[property: Description("Optional binding folder name; defaults to <schema>")]
@@ -185,8 +185,12 @@ public sealed record CreateDataBindingArgs(
 	[property: Description("Optional JSON object keyed by culture then column name. Columns may appear only here; they are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")]
 	string? LocalizationsJson = null,
 	[property: JsonPropertyName("environment-name")]
-	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template")]
-	string? EnvironmentName = null
+	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template, and required with from-environment")]
+	string? EnvironmentName = null,
+
+	[property: JsonPropertyName("from-environment")]
+	[property: Description("When true, writes the existing DB binding binding-name of package-name from environment-name to disk exactly as the platform package export does: the DB binding UId, its columns, its stored rows and every culture's Localization file. Replaces only that binding folder, unlike pkg-to-file-system, which exports the whole environment. Cannot be combined with values or localizations.")]
+	bool? FromEnvironment = null
 );
 
 /// <summary>

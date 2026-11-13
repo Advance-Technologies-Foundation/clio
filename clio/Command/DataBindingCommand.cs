@@ -22,8 +22,15 @@ public class CreateDataBindingOptions : EnvironmentOptions {
 	[Option("package", Required = true, HelpText = "Target package name")]
 	public string PackageName { get; set; } = string.Empty;
 
-	[Option("schema", Required = true, HelpText = "Entity schema name")]
+	[Option("schema", Required = false, HelpText = "Entity schema name. Required unless --from-environment is set; with it, it must match the binding's schema")]
 	public string SchemaName { get; set; } = string.Empty;
+
+	/// <summary>
+	/// Gets or sets whether the binding is written from the environment's stored binding instead of from
+	/// <see cref="ValuesJson"/> and <see cref="LocalizationsJson"/>.
+	/// </summary>
+	[Option("from-environment", Required = false, HelpText = "Write the existing DB binding --binding-name of --package from the environment to disk, exactly as the platform package export does: its UId, columns, rows and every culture's localization. Replaces only that binding folder. Requires --environment or --uri; cannot be combined with --values or --localizations")]
+	public bool FromEnvironment { get; set; }
 
 	[Option("binding-name", Required = false, HelpText = "Binding folder name")]
 	public string? BindingName { get; set; }
@@ -212,7 +219,8 @@ internal sealed class DataBindingService(
 	IDataBindingValueConverter valueConverter,
 	IDataBindingDisplayValueResolver displayValueResolver,
 	IWorkspacePathBuilder workspacePathBuilder,
-	IFileSystem fileSystem) : IDataBindingService {
+	IFileSystem fileSystem,
+	IDataBindingSnapshotReader snapshotReader) : IDataBindingService {
 	private const string DataFolderName = "Data";
 	private const string LocalizationFolderName = "Localization";
 	private const string DescriptorFileName = "descriptor.json";
@@ -221,6 +229,11 @@ internal sealed class DataBindingService(
 
 	public void CreateBinding(CreateDataBindingOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
+		if (options.FromEnvironment) {
+			CreateBindingFromEnvironment(options);
+			return;
+		}
+
 		ValidateCreateOptions(options);
 
 		string workspaceRoot = ResolveWorkspaceRoot(options.WorkspacePath);
@@ -232,12 +245,8 @@ internal sealed class DataBindingService(
 			: options.BindingName.Trim();
 		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
 
-		DataBindingDescriptorFile? existingDescriptor = TryReadDescriptor(bindingDirectoryPath);
-		if (existingDescriptor is not null &&
-			!string.Equals(existingDescriptor.Descriptor.Schema.Name, schema.Name, StringComparison.Ordinal)) {
-			throw new InvalidOperationException(
-				$"Binding '{bindingName}' already exists for schema '{existingDescriptor.Descriptor.Schema.Name}'.");
-		}
+		DataBindingDescriptorFile? existingDescriptor =
+			ReadExistingDescriptorOfSchema(bindingDirectoryPath, bindingName, schema.Name);
 
 		Dictionary<string, JsonNode?>? values = ParseColumnObject(options.ValuesJson, "values", required: false);
 		Dictionary<string, Dictionary<string, JsonNode?>>? localizations =
@@ -278,6 +287,68 @@ internal sealed class DataBindingService(
 			schema, dataFile, localizations, createTemplateDefault: isTemplate,
 			descriptorColumns, valueFileBasePath: workspaceRoot);
 
+		WriteBindingFolder(packagePath, bindingDirectoryPath, descriptorContent, dataContent, localizationFiles,
+			createLocalizationFolder: true);
+	}
+
+	/// <summary>
+	/// Writes one existing DB binding to the package folder as the platform's package export writes it.
+	/// </summary>
+	/// <remarks>
+	/// Everything is read before anything is written, so a failed read leaves the folder on disk as it was. Only
+	/// <c>Data/&lt;binding&gt;/</c> is replaced; the export's <c>Localization</c> folder exists only when the binding
+	/// has a culture snapshot, so it is written only then.
+	/// </remarks>
+	private void CreateBindingFromEnvironment(CreateDataBindingOptions options) {
+		ValidateFromEnvironmentOptions(options);
+		string workspaceRoot = ResolveWorkspaceRoot(options.WorkspacePath);
+		string packagePath = ResolvePackagePath(workspaceRoot, options.PackageName);
+		string requestedBindingName = string.IsNullOrWhiteSpace(options.BindingName)
+			? options.SchemaName.Trim()
+			: options.BindingName.Trim();
+
+		DataBindingSnapshot snapshot = snapshotReader.Read(options.PackageName, requestedBindingName);
+		// The folder is named after the stored registration, as the export names it: the name lookup is not case
+		// sensitive, and a folder named in the caller's casing would sit next to the export's on a case-sensitive
+		// file system instead of replacing it.
+		string bindingName = snapshot.Descriptor.Descriptor.Name;
+		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
+		string schemaName = snapshot.Descriptor.Descriptor.Schema.Name;
+		if (!string.IsNullOrWhiteSpace(options.SchemaName) &&
+			!string.Equals(options.SchemaName.Trim(), schemaName, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Binding '{bindingName}' is a binding of schema '{schemaName}', not '{options.SchemaName.Trim()}'.");
+		}
+
+		ReadExistingDescriptorOfSchema(bindingDirectoryPath, bindingName, schemaName);
+		Dictionary<string, string> localizationFiles = snapshot.Localizations.ToDictionary(
+			pair => $"data.{pair.Key}.json", pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+		WriteBindingFolder(packagePath, bindingDirectoryPath, serializer.SerializeDescriptor(snapshot.Descriptor),
+			snapshot.Data, localizationFiles, createLocalizationFolder: localizationFiles.Count > 0);
+	}
+
+	/// <summary>
+	/// Reads the descriptor already on disk, refusing it when it belongs to a binding of another schema.
+	/// </summary>
+	private DataBindingDescriptorFile? ReadExistingDescriptorOfSchema(
+		string bindingDirectoryPath, string bindingName, string schemaName) {
+		DataBindingDescriptorFile? existingDescriptor = TryReadDescriptor(bindingDirectoryPath);
+		if (existingDescriptor is not null &&
+			!string.Equals(existingDescriptor.Descriptor.Schema.Name, schemaName, StringComparison.Ordinal)) {
+			throw new InvalidOperationException(
+				$"Binding '{bindingName}' already exists for schema '{existingDescriptor.Descriptor.Schema.Name}'.");
+		}
+
+		return existingDescriptor;
+	}
+
+	private void WriteBindingFolder(
+		string packagePath,
+		string bindingDirectoryPath,
+		string descriptorContent,
+		string dataContent,
+		Dictionary<string, string> localizationFiles,
+		bool createLocalizationFolder) {
 		fileSystem.CreateDirectoryIfNotExists(fileSystem.Combine(packagePath, DataFolderName));
 		fileSystem.CreateDirectoryIfNotExists(bindingDirectoryPath);
 		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DescriptorFileName), descriptorContent);
@@ -286,6 +357,10 @@ internal sealed class DataBindingService(
 
 		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
 		fileSystem.DeleteDirectoryIfExists(localizationDirectoryPath);
+		if (!createLocalizationFolder) {
+			return;
+		}
+
 		fileSystem.CreateDirectoryIfNotExists(localizationDirectoryPath);
 		foreach ((string fileName, string content) in localizationFiles) {
 			fileSystem.WriteAllTextToFile(fileSystem.Combine(localizationDirectoryPath, fileName), content);
@@ -353,6 +428,9 @@ internal sealed class DataBindingService(
 	}
 
 	private void ValidateCreateOptions(CreateDataBindingOptions options) {
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			throw new InvalidOperationException("--schema is required unless --from-environment is set.");
+		}
 		bool requiresEnvironment = !templateCatalog.HasTemplate(options.SchemaName);
 		if (requiresEnvironment &&
 			string.IsNullOrWhiteSpace(options.Environment) &&
@@ -362,11 +440,25 @@ internal sealed class DataBindingService(
 		if (string.IsNullOrWhiteSpace(options.PackageName)) {
 			throw new InvalidOperationException("--package is required.");
 		}
-		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new InvalidOperationException("--schema is required.");
-		}
 		if (options.InstallType is < 0 or > 3) {
 			throw new InvalidOperationException("--install-type must be between 0 and 3.");
+		}
+	}
+
+	private static void ValidateFromEnvironmentOptions(CreateDataBindingOptions options) {
+		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrWhiteSpace(options.Uri)) {
+			throw new InvalidOperationException("create-data-binding --from-environment requires --environment or --uri.");
+		}
+		if (string.IsNullOrWhiteSpace(options.PackageName)) {
+			throw new InvalidOperationException("--package is required.");
+		}
+		if (string.IsNullOrWhiteSpace(options.BindingName) && string.IsNullOrWhiteSpace(options.SchemaName)) {
+			throw new InvalidOperationException("--from-environment requires --binding-name.");
+		}
+		if (options.ValuesJson is not null || options.LocalizationsJson is not null) {
+			throw new InvalidOperationException(
+				"--from-environment writes the binding's stored rows and localizations; it cannot be combined with "
+				+ "--values or --localizations.");
 		}
 	}
 

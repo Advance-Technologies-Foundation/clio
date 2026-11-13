@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
@@ -731,6 +732,152 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>(),
 			Arg.Any<int>());
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Inserts a null lookup as a JSON null instead of an empty string, which DataService reads as the empty Guid and rejects with a foreign key error (ENG-106290).")]
+	public void CreateDataBindingDb_ShouldSendNullLookupAsNull_WhenRowValueIsNull() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("22222222-3333-4444-5555-666666666666"), "Owner", 10));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = """[{"values":{"Name":"Account without owner","Owner":null}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an empty lookup is a valid row value");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => OwnerParameterValueIsNull(body)),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Updates a null lookup as a JSON null instead of an empty string, so clearing a lookup does not hit a foreign key error (ENG-106290).")]
+	public void UpsertDataBindingRowDb_ShouldSendNullLookupAsNull_WhenRowValueIsNull() {
+		// Arrange
+		Guid rowId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("22222222-3333-4444-5555-666666666666"), "Owner", 10));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = rowId,
+				["Name"] = "Existing account"
+			}
+		});
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrAccountBinding",
+			ValuesJson = $$"""{"Id":"{{rowId}}","Owner":null}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "clearing a lookup is a legitimate update");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Is<string>(body => OwnerParameterValueIsNull(body)),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[TestCase(29)]
+	[TestCase(45)]
+	[TestCase(43)]
+	[Category("Unit")]
+	[Description("Keeps writing a null text value as an empty string for every text type (sized text, EmailText, RichText): text columns store \"\" for no value, so only non-text types change (ENG-106290).")]
+	public void CreateDataBindingDb_ShouldSendNullTextAsEmptyString_WhenRowValueIsNull(int textDataValueType) {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("33333333-4444-5555-6666-777777777777"), "Notes", textDataValueType));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = """[{"values":{"Name":"Account","Notes":null}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an empty text value is a valid row value");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => ParameterValue(body, "Notes") == ""),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Sends a null integer as a JSON null: like a lookup, a non-text type has no empty-string value (ENG-106290).")]
+	public void CreateDataBindingDb_ShouldSendNullIntegerAsNull_WhenRowValueIsNull() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("44444444-5555-6666-7777-888888888888"), "Owner", 4));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = """[{"values":{"Name":"Account","Owner":null}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an empty integer is a valid row value");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => OwnerParameterValueIsNull(body)),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	private static bool OwnerParameterValueIsNull(string body) {
+		JsonNode? parameter = JsonNode.Parse(body)?["columnValues"]?["items"]?["Owner"]?["parameter"];
+		return parameter is JsonObject parameterObject
+			&& parameterObject.TryGetPropertyValue("value", out JsonNode? value)
+			&& value is null;
+	}
+
+	private static string? ParameterValue(string body, string columnName) =>
+		JsonNode.Parse(body)?["columnValues"]?["items"]?[columnName]?["parameter"]?["value"]?.GetValue<string>();
 
 	[Test]
 	[Description("Removes the last bound row through remove-data-binding-row-db, deletes the runtime row, and removes the package schema data record when no bound rows remain.")]
