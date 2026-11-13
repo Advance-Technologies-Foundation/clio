@@ -555,6 +555,8 @@ public class BindingsModule {
 		services.AddTransient<IDynamicCasePageStep, DynamicCasePageStep>();
 		services.AddTransient<IDynamicCaseService, DynamicCaseService>();
 		services.AddTransient<CreateDynamicCaseCommand>();
+		services.AddTransient<DescribeDynamicCaseCommand>();
+		services.AddTransient<ModifyDynamicCaseCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();

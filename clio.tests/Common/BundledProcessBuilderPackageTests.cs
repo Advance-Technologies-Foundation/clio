@@ -402,7 +402,9 @@ public class BundledProcessBuilderPackageTests {
 		typeof(Clio.Command.DescribeProcessOptions),
 		typeof(Clio.Command.ListUserTasksOptions),
 		typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ValidateProcessGraphArgs),
-		typeof(Clio.Command.CreateDynamicCaseOptions)
+		typeof(Clio.Command.CreateDynamicCaseOptions),
+		typeof(Clio.Command.DescribeDynamicCaseOptions),
+		typeof(Clio.Command.ModifyDynamicCaseOptions)
 	];
 
 	/// <summary>
@@ -897,6 +899,33 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
+	[Description("An archive that meets the describe-dynamic-case / modify-dynamic-case floor must carry the DescribeCase and ModifyCase operations, and one below it must not: a version number alone lets a cut from another branch pass every gate without the operations, and the install remedy would then reinstall the same package.")]
+	public void BundledArchive_ShouldCarryTheCaseChangeOperations_WhenItMeetsTheirFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.DynamicCaseChangeRequirement.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool carriesDescribeCase = archive.Contains("DescribeCaseResponse DescribeCase(", StringComparison.Ordinal);
+		bool carriesModifyCase = archive.Contains("ModifyCaseResponse ModifyCase(", StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			carriesDescribeCase.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the case-change floor {floor}, so it must expose the "
+					+ "operation describe-dynamic-case calls");
+			carriesModifyCase.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the case-change floor {floor}, so it must expose the "
+					+ "operation modify-dynamic-case calls");
+		} else {
+			(carriesDescribeCase || carriesModifyCase).Should().BeFalse(
+				because: $"the bundled {bundledVersion} is below the floor {floor}; an archive below it that already "
+					+ "carries the operations means the floor is higher than it needs to be");
+		}
+	}
+
+	[Test]
 	[Description("Every literal version declared in a [RequiresPackage] against the bundled package must be satisfiable by the archive clio itself ships, or clio demands of an environment something it cannot supply and its own remediation cannot help.")]
 	public void BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement() {
 		// Arrange
@@ -937,7 +966,8 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: six of the nine carry a version literal, and they do NOT all agree with
+		// The loop EXECUTES today: eight of the eleven carry a version literal (the two dynamic-case change tools
+		// share one floor, DynamicCaseChangeRequirement), and they do NOT all agree with
 		// each other — create, modify and modify-as-new-version at 1.6.6.30 since ENG-92711 (create and modify had
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
 		// the new-version route followed because it shares the operations vocabulary and runs no read-back),
@@ -948,7 +978,7 @@ public class BundledProcessBuilderPackageTests {
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor
 		// version == a constant), which needed hand-synchronising on every rebundle and asserted a
 		// coincidence, not a rule.
-		versioned.Should().HaveCount(6,
+		versioned.Should().HaveCount(8,
 			because: "the version loop is the only automated coupling stopping an archive below the floor the "
 				+ "two version tools demand from shipping, so a literal silently becoming presence-only must "
 				+ "redden here rather than leave the loop iterating over fewer gates than exist");

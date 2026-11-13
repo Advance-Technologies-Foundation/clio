@@ -169,6 +169,27 @@ namespace Clio.Tests
                 because: "the install hint must be consistent across all process-designer gates");
         }
 
+        [TestCase(typeof(DescribeDynamicCaseOptions))]
+        [TestCase(typeof(ModifyDynamicCaseOptions))]
+        [Description("describe-dynamic-case and modify-dynamic-case declare ONE shared VERSIONED floor: DescribeCase and ModifyCase are operations an older package does not carry at all, so a presence-only gate would let the call reach a package that answers its route with a 404, and BuildCase's floor is not enough for them.")]
+        public void DynamicCaseChangeOptions_ShouldDeclareTheSharedCaseChangeFloor(Type optionsType)
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetProcessBuilderRequirement(optionsType);
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: $"{optionsType.Name} calls an operation only a recent package carries, so the gate must fire");
+            requirement!.Version.Should().Be(DynamicCaseChangeRequirement.MinimumProcessBuilderVersion,
+                because: "the floor of both tools is written in one place, so the rebundle moves one constant");
+            PackageVersion.TryParseVersion(requirement.Version, out PackageVersion floor).Should().BeTrue(
+                because: "the checker parses the literal, and an unparseable one throws instead of gating");
+            (floor > PackageVersion.ParseVersion(CreateDynamicCaseOptions.MinimumProcessBuilderVersion)).Should().BeTrue(
+                because: "the archive that first carries BuildCase has no DescribeCase or ModifyCase");
+            requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
+                because: "the install hint must be consistent across all process-designer gates");
+        }
+
         [Test]
         [Description("get-process-signature must NOT be gated on the process-builder package: it reads the built-in DataService (ProcessSchemaRequest / VwProcessLib), not ProcessDesignService, so gating its public CLI verb on the experimental package was a shipped-capability regression (PR #715).")]
         public void GetProcessSignatureOptions_ShouldNotDeclareProcessBuilderRequirement_BecauseItUsesTheBuiltInDataService()
