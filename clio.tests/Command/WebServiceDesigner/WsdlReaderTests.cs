@@ -398,6 +398,38 @@ public sealed class WsdlReaderTests {
 		message.Should().Contain("wsdl-files", because: "the way on is still given");
 	}
 
+	[TestCase("http://localhost/svc.asmx?wsdl")]
+	[TestCase("http://127.0.0.1:8080/svc.asmx?wsdl")]
+	[TestCase("http://[::1]/svc.asmx?wsdl")]
+	[TestCase("http://169.254.169.254/latest/meta-data")]
+	[TestCase("http://[fe80::1]/svc.asmx?wsdl")]
+	[TestCase("http://api.localhost/svc.asmx?wsdl")]
+	[TestCase("http://0.0.0.0/svc.asmx?wsdl")]
+	[Description("A loopback or link-local wsdl-url is refused before the stand is asked to download it, since the stand would read it on itself.")]
+	public void Read_Should_Refuse_A_Stand_Local_Url(string url) {
+		// Act
+		Action act = () => _sut.Read(new WsdlReadRequest("dev", url, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the stand must not be pointed at itself").WithMessage("*loopback or link-local*");
+		_client.DidNotReceiveWithAnyArgs().DownloadWsdl(default);
+	}
+
+	[Test]
+	[Description("A private network address stays allowed: an internal API is the common case.")]
+	public void Read_Should_Allow_A_Private_Network_Url() {
+		// Arrange
+		const string url = "http://10.0.0.5/calc.asmx?wsdl";
+		_client.DownloadWsdl(url).Returns([new WsdlSourceFile(url, FixtureBytes("calculator.wsdl"), AsciiText: true)]);
+
+		// Act
+		WsdlReadResult result = _sut.Read(new WsdlReadRequest("dev", url, null));
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"a private address is read; error: {result.Error}");
+		_client.Received(1).DownloadWsdl(url);
+	}
+
 	[TestCase("https://f.example.org/api/svc?code=SECRET&wsdl")]
 	[TestCase("https://s.example.org/svc.asmx?wsdl&sig=SECRET")]
 	[Description("A key in a query parameter common hosts use (an Azure Functions code, a SAS signature) is refused like any key.")]

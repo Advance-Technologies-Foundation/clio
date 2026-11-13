@@ -256,6 +256,13 @@ public sealed partial class WsdlReader(
 			throw new ArgumentException("wsdl-url must not carry credentials (user:password@); download the WSDL yourself "
 				+ "and pass it as wsdl-files.");
 		}
+		// The stand downloads the URL and every schemaLocation in it, so a loopback or link-local address would make it read
+		// its own services or the cloud metadata endpoint. Private network addresses stay allowed: an internal ERP is the
+		// common case.
+		if (IsStandLocal(parsed)) {
+			throw new ArgumentException("wsdl-url points at a loopback or link-local address, which the stand would read on "
+				+ "itself; give the address the API is published at, or download the WSDL and pass it as wsdl-files.");
+		}
 		// The URL travels to the stand and back in its error messages, so a key or token in it is refused like one in a
 		// base URI.
 		bool secretInQuery = parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
@@ -268,6 +275,22 @@ public sealed partial class WsdlReader(
 				+ "it as wsdl-files.");
 		}
 		return parsed;
+	}
+
+	private static bool IsStandLocal(Uri url) {
+		if (url.IsLoopback || url.DnsSafeHost.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+		if (!System.Net.IPAddress.TryParse(url.DnsSafeHost, out System.Net.IPAddress address)) {
+			return false;
+		}
+		if (address.IsIPv4MappedToIPv6) {
+			address = address.MapToIPv4();
+		}
+		byte[] bytes = address.GetAddressBytes();
+		return System.Net.IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal
+			|| address.Equals(System.Net.IPAddress.Any) || address.Equals(System.Net.IPAddress.IPv6Any)
+			|| (bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254);
 	}
 
 	private IReadOnlyList<WsdlSourceFile> Download(Uri url) {

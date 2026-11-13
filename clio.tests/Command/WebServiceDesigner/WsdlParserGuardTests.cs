@@ -408,6 +408,78 @@ public sealed class WsdlParserGuardTests {
 	}
 
 	[Test]
+	[Description("Two schemas in different folders that each import their own common.xsd get both merged, by the file the location resolves to.")]
+	public void Parse_Should_Merge_Same_Named_Schemas_From_Different_Folders() {
+		// Arrange
+		const string schema = "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" targetNamespace=\"http://example.org/t/\" elementFormDefault=\"qualified\">{0}</xs:schema>";
+		string wsdl = Wsdl("<xs:import namespace=\"urn:a\" schemaLocation=\"a/x.xsd\" /><xs:import namespace=\"urn:b\" schemaLocation=\"b/y.xsd\" />"
+				+ Request("<xs:element name=\"fa\" type=\"tns:CA\" /><xs:element name=\"fb\" type=\"tns:CB\" />"),
+			Messages("Op", "Op", "OpResponse"), Operation("Op"), Binding("Op"));
+		WsdlSourceFile[] files = [
+			File(wsdl, "root/svc.wsdl"),
+			File(string.Format(schema, "<xs:include schemaLocation=\"common.xsd\" />"), "root/a/x.xsd"),
+			File(string.Format(schema, "<xs:include schemaLocation=\"common.xsd\" />"), "root/b/y.xsd"),
+			File(string.Format(schema, "<xs:complexType name=\"CA\"><xs:sequence><xs:element name=\"x\" type=\"xs:string\" /></xs:sequence></xs:complexType>"), "root/a/common.xsd"),
+			File(string.Format(schema, "<xs:complexType name=\"CB\"><xs:sequence><xs:element name=\"y\" type=\"xs:string\" /></xs:sequence></xs:complexType>"), "root/b/common.xsd")
+		];
+
+		// Act
+		WsdlDocument document = _sut.Parse(files, "Usr");
+
+		// Assert
+		List<WsdlParameter> request = document.Ports.Single().Operations.Single().Request.ToList();
+		request.Should().Contain(p => p.Path.EndsWith(":x"), because: "a/common.xsd is merged");
+		request.Should().Contain(p => p.Path.EndsWith(":y"), because: "b/common.xsd is a different file and is merged too");
+		document.Warnings.Should().NotContain(w => w.Contains("not defined"), because: "both types are found");
+	}
+
+	[Test]
+	[Description("A ref's maxOccurs does not change the shared global element, so a header that uses the element reads the same whether or not the ref was read first.")]
+	public void Parse_Should_Not_Let_A_Ref_Change_The_Global_Element() {
+		// Arrange
+		string types = "<xs:element name=\"Hdr\"><xs:complexType><xs:sequence><xs:element name=\"token\" type=\"xs:string\" /></xs:sequence></xs:complexType></xs:element>"
+			+ "<xs:element name=\"Op1\"><xs:complexType><xs:sequence><xs:element ref=\"tns:Hdr\" maxOccurs=\"unbounded\" /></xs:sequence></xs:complexType></xs:element>"
+			+ "<xs:element name=\"Op2\"><xs:complexType><xs:sequence><xs:element name=\"v\" type=\"xs:string\" /></xs:sequence></xs:complexType></xs:element>"
+			+ "<xs:element name=\"Empty\"><xs:complexType><xs:sequence /></xs:complexType></xs:element>";
+		string xml = Wsdl(types,
+			Messages("Op1", "Op1", "Empty") + Messages("Op2", "Op2", "Empty")
+				+ "<wsdl:message name=\"HdrMsg\"><wsdl:part name=\"h\" element=\"tns:Hdr\" /></wsdl:message>",
+			Operation("Op1") + Operation("Op2"),
+			Binding("Op1") + Binding("Op2", "<soap:header message=\"tns:HdrMsg\" part=\"h\" use=\"literal\" />"));
+
+		// Act
+		WsdlDocument whole = Parse(xml);
+		WsdlDocument alone = _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Operations: ["Op2"]));
+
+		// Assert
+		static string[] Header(WsdlDocument document) => document.Ports.Single().Operations.Single(o => o.Caption == "Op2").Request
+			.Where(p => p.IsSoapHeader).Select(p => $"{p.Path} array={p.IsArray}").ToArray();
+		Header(whole).Should().Equal(Header(alone), because: "the header does not depend on whether Op1 was read before it");
+		Header(alone).Should().OnlyContain(h => h.EndsWith("array=False"), because: "the header element itself does not repeat");
+	}
+
+	[Test]
+	[Description("An extension inside a nested element's anonymous type does not make the outer type an extension, so its own fields are kept.")]
+	public void Parse_Should_Keep_The_Fields_Of_A_Type_Whose_Nested_Element_Extends_Another() {
+		// Arrange
+		string types = Request("<xs:element name=\"o\" type=\"tns:Outer\" />")
+			+ "<xs:complexType name=\"Outer\"><xs:sequence><xs:element name=\"own\" type=\"xs:string\" />"
+			+ "<xs:element name=\"inner\"><xs:complexType><xs:complexContent><xs:extension base=\"tns:Base\"><xs:sequence>"
+			+ "<xs:element name=\"extra\" type=\"xs:string\" /></xs:sequence></xs:extension></xs:complexContent></xs:complexType></xs:element>"
+			+ "</xs:sequence></xs:complexType>"
+			+ "<xs:complexType name=\"Base\"><xs:sequence><xs:element name=\"b\" type=\"xs:string\" /></xs:sequence></xs:complexType>";
+		string xml = Wsdl(types, Messages("Op", "Op", "OpResponse"), Operation("Op"), Binding("Op"));
+
+		// Act
+		WsdlDocument document = Parse(xml);
+
+		// Assert
+		string[] paths = document.Ports.Single().Operations.Single().Request.Select(p => p.Path).ToArray();
+		paths.Should().Contain(p => p.EndsWith(":own"), because: "the outer type's own field is kept");
+		paths.Should().Contain(p => p.EndsWith(":extra"), because: "the nested element still reads its extension");
+	}
+
+	[Test]
 	[Description("A name longer than the limit is not read, with a warning that says so instead of calling it an invalid name.")]
 	public void Parse_Should_Not_Read_An_Overlong_Name() {
 		// Arrange

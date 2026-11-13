@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command;
+using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.WebServiceDesigner;
 using Microsoft.AspNetCore.Http;
@@ -210,5 +211,20 @@ public sealed class WebServiceToolsArgumentTests {
 		// Assert
 		result.Error.Should().Contain("Unknown args: 'service'", because: "the key is reported for the agent to fix itself");
 		result.Error.Should().NotContain("->", because: "a rename to code could put an object or a caption into code");
+	}
+
+	[Test]
+	[Description("read-wsdl runs in the host process: its refusal of wsdl-files over HTTP reads the host's HttpContext, which a call relayed to a worker would not have.")]
+	public void ReadWsdl_Should_Run_In_Process() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(ReadWsdlTool).GetMethod(nameof(ReadWsdlTool.ReadWsdl));
+
+		// Act
+		McpToolExecutionAttribute execution = System.Reflection.CustomAttributeExtensions
+			.GetCustomAttribute<McpToolExecutionAttribute>(method!);
+
+		// Assert
+		execution!.Location.Should().Be(McpToolExecutionLocation.InProcess,
+			because: "relayed to a worker, the HTTP guard would not see the caller and a remote client could read local paths");
 	}
 }

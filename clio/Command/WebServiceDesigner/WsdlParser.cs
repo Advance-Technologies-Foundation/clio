@@ -379,7 +379,6 @@ public sealed partial class WsdlParser : IWsdlParser {
 	/// inserted before the importing schema.
 	/// </summary>
 	private sealed class WsdlMerge(IReadOnlyDictionary<string, XDocument> documents) {
-		private readonly HashSet<string> _merged = new(StringComparer.Ordinal);
 		// Each file is merged once even when it is imported under several locations (a.xsd, ./a.xsd, a.xsd#x), which the
 		// file-name match would otherwise follow into a recursion as deep as the number of spellings.
 		private readonly HashSet<XDocument> _mergedDocuments = [];
@@ -415,8 +414,10 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 		}
 
+		// A file is merged once by what the location resolves to, not by the location as written: two schemas in different
+		// folders may each import their own common.xsd.
 		private List<XElement> SchemaNodes(string location, string importerKey) {
-			if (string.IsNullOrEmpty(location) || !_merged.Add(location)) {
+			if (string.IsNullOrEmpty(location)) {
 				return [];
 			}
 			(string key, XDocument source) = Resolve(location, importerKey);
@@ -1112,7 +1113,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		// WsdlElement: an element and its type. A base type that extends itself, directly or through others, ends the chain with a
 		// warning where the wizard would recurse until the stack runs out.
 		private Node FromElement(XElement elementRef, HashSet<XElement> resolvingBases = null) {
-			XElement definition = ElementDefinition(elementRef);
+			(XElement definition, string maxOccurs) = ElementDefinition(elementRef);
 			string elementName = Attr(definition, "name");
 			if (elementName is null) {
 				return null;
@@ -1130,7 +1131,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				Caption = Attr(definition, "name"),
 				Path = Attr(definition, "name"),
 				Type = type ?? ObjectType,
-				IsArray = Attr(definition, "maxOccurs") == "unbounded",
+				IsArray = maxOccurs == "unbounded",
 				Namespace = NamespaceOf(typeAttribute, definition)
 			};
 			if (!node.IsObject) {
@@ -1167,19 +1168,20 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return node;
 		}
 
-		// XmlSchemaTypeUtils: a ref resolves to the global element, which takes the referencing element's maxOccurs.
-		private XElement ElementDefinition(XElement elementRef) {
+		// XmlSchemaTypeUtils: a ref resolves to the global element, with the referencing element's maxOccurs. The wizard writes
+		// that maxOccurs onto the shared global element; here it travels with this read, so another use of the element (a
+		// header part, a ref without maxOccurs) does not depend on which operation was read before it.
+		private (XElement Definition, string MaxOccurs) ElementDefinition(XElement elementRef) {
 			string reference = Attr(elementRef, "ref");
 			if (reference is null) {
-				return elementRef;
+				return (elementRef, Attr(elementRef, "maxOccurs"));
 			}
 			if (!_globalElements.TryGetValue(LocalPart(reference), out XElement target)) {
 				Warn($"{OperationPrefix}the element reference '{Shown(reference)}' is not defined in the WSDL or its schemas; it was "
 					+ "not read.");
-				return elementRef;
+				return (elementRef, Attr(elementRef, "maxOccurs"));
 			}
-			target.SetAttributeValue("maxOccurs", Attr(elementRef, "maxOccurs"));
-			return target;
+			return (target, Attr(elementRef, "maxOccurs"));
 		}
 
 		// XmlSchemaTypeUtils: the platform type of an element, plus a read of a type no schema defines: the wizard fails there; clio reads it as Text.
@@ -1287,8 +1289,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				return false;
 			}
 			if (!_isExtension.TryGetValue(definition, out bool value)) {
-				value = definition.Descendants().Any(e => Is(e, "extension")
-					&& (Is(e.Parent, "complexContent") || Is(e.Parent, "simpleContent")) && Is(e.Parent.Parent, ComplexTypeTag));
+				value = OwnExtension(definition) is not null;
 				_isExtension[definition] = value;
 			}
 			return value;
@@ -1351,8 +1352,16 @@ public sealed partial class WsdlParser : IWsdlParser {
 		}
 
 		// "complexType extension": the first extension inside the type definition.
-		private static XElement ExtensionOf(XElement definition) =>
-			definition.Descendants().First(e => Is(e, "extension") && e.Ancestors().Any(a => Is(a, ComplexTypeTag)));
+		private static XElement ExtensionOf(XElement definition) => OwnExtension(definition);
+
+		// The extension of the type itself: complexType > complexContent|simpleContent > extension, where the complexType is
+		// the definition or the element's own anonymous type. The wizard's selector also finds an extension inside a nested
+		// element's anonymous type and then reads the outer type as that base, losing its own fields; clio does not.
+		private static XElement OwnExtension(XElement definition) {
+			XElement type = Is(definition, ComplexTypeTag) ? definition : definition?.Elements().FirstOrDefault(e => Is(e, ComplexTypeTag));
+			return type?.Elements().Where(c => Is(c, "complexContent") || Is(c, "simpleContent"))
+				.SelectMany(c => c.Elements()).FirstOrDefault(e => Is(e, "extension"));
+		}
 
 		// An element that sits inside another element of the type is read twice by the wizard: once there, and once here
 		// as a copy. The elements are always the ones read from the same root, so the set is kept per root.

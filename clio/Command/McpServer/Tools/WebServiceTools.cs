@@ -175,11 +175,13 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 	/// <param name="args">The arguments.</param>
 	/// <returns>The arguments per SOAP port with warnings and notices, or the refusal as an error.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
+	// In process, not Worker: wsdl-files is refused over HTTP by reading the host's HttpContext, which a relayed worker
+	// call would not have; and service-code reads through the schema designer, which stays host-resident (ADR D9).
 	[McpToolExecution(
-		Location = McpToolExecutionLocation.Worker,
-		Lifetime = McpToolExecutionLifetime.PerCall,
+		Location = McpToolExecutionLocation.InProcess,
+		Lifetime = McpToolExecutionLifetime.NotApplicable,
 		OperationFamily = McpToolOperationFamily.None,
-		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""

@@ -300,14 +300,60 @@ public static partial class WsdlRegistrationMapper {
 
 		/// <summary>The base URI as given; one register-web-service would refuse gets a warning, because only the user can replace it.</summary>
 		public string CheckBaseUri() {
+			string baseUri = WithoutSecrets(port.BaseUri);
 			var errors = new WebServiceDefinitionBuilder.Errors();
-			WebServiceDefinitionBuilder.NormalizeBaseUri(port.BaseUri, errors, soap: true);
+			WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors, soap: true);
 			if (errors.Count > 0) {
-				Warn($"Port '{port.Name}': its address '{Shown(WebServiceSchemaView.StripUserInfo(port.BaseUri))}' cannot be "
+				Warn($"Port '{port.Name}': its address '{Shown(baseUri)}' cannot be "
 					+ "the base-uri (" + Shown(errors[0]) + "); ask the user for the real endpoint and set base-uri before "
 					+ "registering.");
 			}
-			return port.BaseUri;
+			return baseUri;
+		}
+
+		// The address without the user information of its authority (user:password@host), removed, not masked.
+		private static string WithoutUserInfo(string uri) {
+			int scheme = uri.IndexOf("://", StringComparison.Ordinal);
+			int start = scheme < 0 ? 0 : scheme + 3;
+			int end = uri.IndexOfAny(['/', '?', '#'], start);
+			if (end < 0) {
+				end = uri.Length;
+			}
+			if (end <= start) {
+				return uri;
+			}
+			int at = uri.LastIndexOf('@', end - 1, end - start);
+			return at < 0 ? uri : uri[..start] + uri[(at + 1)..];
+		}
+
+		// Credentials or a key in the WSDL's address would reach the agent and its transcript through the arguments, and
+		// register would refuse them anyway; they are left out with a warning to set them up through a system setting.
+		private string WithoutSecrets(string address) {
+			if (string.IsNullOrEmpty(address)) {
+				return address;
+			}
+			string result = address;
+			string withoutUser = WithoutUserInfo(result);
+			if (!string.Equals(withoutUser, result, StringComparison.Ordinal)) {
+				result = withoutUser;
+				Warn($"Port '{port.Name}': its address carries credentials (user:password@); they were left out of base-uri. "
+					+ "Set the authentication up with a system setting the user fills.");
+			}
+			int question = result.IndexOf('?');
+			if (question >= 0) {
+				string[] pairs = result[(question + 1)..].Split('&');
+				string[] kept = pairs.Where(pair => {
+					int equals = pair.IndexOf('=');
+					string name = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
+					return !WebServiceSchemaView.IsSecretName(name);
+				}).ToArray();
+				if (kept.Length < pairs.Length) {
+					result = result[..question] + (kept.Length > 0 ? "?" + string.Join('&', kept) : string.Empty);
+					Warn($"Port '{port.Name}': its address carries a key or token in the query; it was left out of base-uri. "
+						+ "Send it as a parameter whose default is a system setting the user fills.");
+				}
+			}
+			return result;
 		}
 
 		/// <summary>The message element with the prefix of its namespace (Studio stores the bare local name).</summary>

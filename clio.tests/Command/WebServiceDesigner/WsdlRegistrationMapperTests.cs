@@ -71,6 +71,23 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
+	[Description("Credentials and a key in the WSDL's address are left out of base-uri with warnings, so they do not reach the agent through the arguments.")]
+	public void Map_Should_Leave_Secrets_Out_Of_The_Base_Uri() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add")) with { BaseUri = "http://user:Pw-SECRET@host.example/svc.asmx?apikey=KEY-SECRET&region=eu" };
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
+
+		// Assert
+		result.Arguments.BaseUri.Should().Be("http://host.example/svc.asmx?region=eu", because: "only the credentials and the key go");
+		warnings.Kept.Should().Contain(w => w.Contains("credentials"), because: "the agent is told to set them up with a setting");
+		warnings.Kept.Should().Contain(w => w.Contains("key or token"), because: "the agent is told how to send the key");
+		string.Join(" ", warnings.Kept).Should().NotContain("SECRET", because: "the warnings do not repeat the values");
+	}
+
+	[Test]
 	[Description("A soapAction longer than the limit is left out with a warning, so it cannot carry text to the agent.")]
 	public void Map_Should_Leave_Out_An_Overlong_Soap_Action() {
 		// Arrange

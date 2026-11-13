@@ -166,6 +166,8 @@ output. Where the wizard fails or writes something the platform cannot call, the
 | every port is named after the first `wsdl:service` | each port is named after its own service |
 | the message element is stored bare (`Add`; the platform qualifies it with the default namespace) | it carries the prefix of its own namespace (`tem:Add`) |
 | a name that is not an XML name (an operation, a port, an element) is used as written | it is skipped, with a warning |
+| an `extension` inside a nested element's anonymous type makes the outer type read as that base, losing the outer type's own fields | only the type's own `complexContent`/`simpleContent` extension counts |
+| a `ref`'s `maxOccurs` is written onto the shared global element, so a later direct use of it depends on what was read before | the `maxOccurs` travels with that read; the global element is not changed |
 | an element of an anonymous type nested in another element is listed twice, once one level too high (`Fault/faultNumber` beside `Fault/detail/faultNumber`; Studio's own golden test expects the copy) | the parser keeps the copy for parity and marks it; the arguments leave it out, with a warning |
 | an object array inside an item of another array gets the outer array's path (`tem:order/tem:lines` for the `subs` of each `lines` item), so the platform would nest it wrongly | the parser keeps it for parity and marks it; the arguments leave it out, with a warning |
 
