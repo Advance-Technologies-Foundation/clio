@@ -135,13 +135,17 @@ skipped with a warning) and every WSDL value in a warning or error is flattened 
 
 The work is bounded by what is built, not only by what is read: an operation whose messages have no parts reads no
 element, so a WSDL repeating many of them over many ports escaped the element budget (the final review measured 4
-million operations from a 269 KB file). So the operations of a binding are built once and shared by every port on it, at
-most 20 SOAP ports are built without `port` (the first ones and Studio's pick, with a warning), at most 10,000 operations
-are built, and `port` and `operations` are applied inside the parse, before anything is built, so they also narrow the
-element budget; Studio's pick is still decided over every port. A type definition is scanned once, not once per element
-that uses it, and a repeated code is numbered from the last number used for it, so neither grows quadratically. A local
-path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as fully qualified and
-would open an SMB connection with the user's credentials.
+million operations from a 269 KB file). So the operations of a binding are built once and shared by every port on it,
+without `port` the first 20 SOAP ports and Studio's pick are built (21 at most, with a warning), at most 10,000
+operations are built, and `port` and `operations` are applied inside the parse, before anything is built, so they also
+narrow the element budget; Studio's pick is still decided over every port. A type definition, its extension and an
+element's simple type are scanned once, not once per element that uses them; a namespace's prefix is a dictionary
+lookup; import and include directives are removed in one pass per schema; a binding keeps at most 8 operations of one
+name; names longer than 1,024 characters are not read; a repeated code is numbered from the last number used for it;
+and more than 20,000 parameters over the ports read are listed by operation name before anything is mapped or
+serialized. None of these grows quadratically. As a backstop for an input none of them foresaw, one parse stops after 30
+seconds. A local path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as
+fully qualified and would open an SMB connection with the user's credentials.
 
 The parser (`WsdlParser`) is a C# port of Studio's wizard parser (creatio-ui web-service-wizard:
 `SoapWebServiceBuilder`, `SoapWebServiceMethodBuilder`, `WsdlElement`, `XmlSchemaTypeUtils`, `WsdlMergeService`, the
@@ -167,14 +171,16 @@ would refuse - a request element or root element the platform's prefix regex wou
 with no readable field, a repeated element without a wrapper (the wizard gives it an empty path) - each left out with a
 warning, and so is an array whose item element register would refuse; an element of no namespace loses its prefix,
 because an empty namespace cannot be declared; a port address or a namespace URI register would refuse is kept with a
-warning to replace it (only the user knows the real value), and a soapAction with a line break is left out. Output: per SOAP
+warning to replace it (only the user knows the real value), and a soapAction with a line break or credentials, or longer
+than 2,048 characters, is left out. Output: per SOAP
 port one `register-web-service` argument object without `package-name` (the agent adds it), `studio-pick` (D12), and
 `existing-methods` with `service-code`; plus `warnings` (dropped HTTP ports, recursion cap, several SOAP headers, the
 rpc style, RPC/encoded, `wsdl:import`, MIME/MTOM, `xs:choice`/`xs:all`, XML attributes, a message element whose type
 extends another, a binding that splits the input message between body and header, and the leave-outs) and `notices` (a
 service code already used on the environment, an endpoint on another host than the WSDL URL). A result over 120,000
 characters, filtered or not, returns at most 500 operation names per port instead, and the agent reads again with
-`operations`. Every port's output is checked in unit tests by
+`operations`; when the result is already one operation of one port, the notice says that narrowing cannot help and the
+method is described by hand. Every port's output is checked in unit tests by
 sending it through `register-web-service` itself.
 
 ### D10. Nested test values (slice D)

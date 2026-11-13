@@ -52,6 +52,25 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
+	[Description("A code given back is taken again by the next claim of a name it collides with, even when it was claimed under another name.")]
+	public void CodePool_Should_Reuse_A_Code_Released_Under_Another_Name() {
+		// Arrange
+		var pool = new WsdlRegistrationMapper.CodePool();
+		pool.Claim("Usr", "ab");
+		pool.Claim("Usr", "ab2");
+		string third = pool.Claim("Usr", "Ab");
+
+		// Act
+		pool.Release(third);
+		pool.Release("Usrab2");
+		string again = pool.Claim("Usr", "ab");
+
+		// Assert
+		third.Should().Be("UsrAb3", because: "Usrab and Usrab2 are taken, ignoring case");
+		again.Should().Be("Usrab2", because: "the lowest free number is taken again after a release, as the plain loop did");
+	}
+
+	[Test]
 	[Description("A soapAction longer than the limit is left out with a warning, so it cannot carry text to the agent.")]
 	public void Map_Should_Leave_Out_An_Overlong_Soap_Action() {
 		// Arrange

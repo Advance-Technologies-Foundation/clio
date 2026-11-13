@@ -70,10 +70,7 @@ public sealed record WsdlOperation(string Caption, string StudioCode, string Soa
 /// <param name="Namespaces">The namespaces in the order the wizard added them.</param>
 /// <param name="Operations">The operations of the port type, in WSDL order.</param>
 public sealed record WsdlPort(string Name, string ServiceName, int ServiceType, string BaseUri,
-	IReadOnlyList<WsdlNamespace> Namespaces, IReadOnlyList<WsdlOperation> Operations) {
-	/// <summary>The port type its binding implements; the operations a port has are named from it.</summary>
-	internal string BindingPortType { get; init; } = string.Empty;
-}
+	IReadOnlyList<WsdlNamespace> Namespaces, IReadOnlyList<WsdlOperation> Operations);
 
 /// <summary>The SOAP ports of a WSDL and what the parser could not read.</summary>
 /// <param name="Ports">The SOAP 1.1 and SOAP 1.2 ports, in WSDL order.</param>
@@ -145,6 +142,24 @@ public sealed partial class WsdlParser : IWsdlParser {
 	/// budget alone does not bound a WSDL that repeats many such operations over many ports.
 	/// </summary>
 	internal const int MaxOperations = 10_000;
+
+	/// <summary>
+	/// The longest port, operation or element name read. Paths and captions are built from names once per operation and
+	/// per message, so a name of a million characters would cost gigabytes over the operations that use it.
+	/// </summary>
+	internal const int MaxNameLength = 1024;
+
+	/// <summary>
+	/// The most binding operations of one name kept (WSDL 1.1 overloads an operation name only a few times); every
+	/// operation of that name walks them, so a binding repeating one name could otherwise cost operations x repeats.
+	/// </summary>
+	internal const int MaxSameNameBindingOperations = 8;
+
+	/// <summary>
+	/// How long one parse may run. The limits above bound what is read; this bounds what an input none of them
+	/// foresaw can cost the host, which runs the parse on one of its own threads.
+	/// </summary>
+	internal static readonly TimeSpan MaxParseTime = TimeSpan.FromSeconds(30);
 
 	/// <summary>
 	/// The most elements one parse reads. The wizard's recursion cap bounds each type to two levels per path, but a chain of
@@ -385,7 +400,17 @@ public sealed partial class WsdlParser : IWsdlParser {
 				foreach (XElement schema in schemas) {
 					parentSchema.AddBeforeSelf(schema);
 				}
-				node.Remove();
+			}
+			RemoveAll(nodes);
+		}
+
+		// One pass per parent: removing nodes one at a time walks the siblings before each, which is quadratic for a schema
+		// holding many directives.
+		private static void RemoveAll(IReadOnlyCollection<XElement> nodes) {
+			foreach (IGrouping<XElement, XElement> group in nodes.Where(n => n.Parent is not null).GroupBy(n => n.Parent)) {
+				HashSet<XElement> removed = [.. group];
+				List<XNode> kept = group.Key.Nodes().Where(n => n is not XElement e || !removed.Contains(e)).ToList();
+				group.Key.ReplaceNodes(kept);
 			}
 		}
 
@@ -472,10 +497,11 @@ public sealed partial class WsdlParser : IWsdlParser {
 
 		private List<XElement> Inserted(XDocument document, string directive, string importerKey) {
 			var result = new List<XElement>();
-			foreach (XElement node in document.Descendants().Where(e => Is(e, directive) && Is(e.Parent, SchemaTag)).ToArray()) {
+			XElement[] nodes = document.Descendants().Where(e => Is(e, directive) && Is(e.Parent, SchemaTag)).ToArray();
+			foreach (XElement node in nodes) {
 				result.AddRange(SchemaNodes(Attr(node, "schemaLocation"), importerKey));
-				node.Remove();
 			}
+			RemoveAll(nodes);
 			return result;
 		}
 
@@ -556,7 +582,14 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private readonly Dictionary<XElement, HashSet<XElement>> _copiesByRoot = new();
 		private readonly WsdlParseOptions _options;
 		private readonly HashSet<string> _wantedOperations;
+		private readonly Dictionary<XElement, XElement> _extensionOf = new();
+		private readonly Dictionary<XElement, string> _simpleTypeNames = new();
+		private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
 		private List<WsdlNamespace> _namespaces;
+		// The prefix of each namespace URI of the binding being built, and the next free ns-number: a lookup per element
+		// path segment must not scan every namespace.
+		private Dictionary<string, string> _prefixByUri;
+		private int _nextPrefix;
 		private string _operation;
 		private int _elementsRead;
 		private int _operationsBuilt;
@@ -632,8 +665,9 @@ public sealed partial class WsdlParser : IWsdlParser {
 			// Studio's pick is decided over every SOAP port, before the port option narrows what is built.
 			string studioPort = (candidates.FirstOrDefault(p => p.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12)
 				?? candidates.FirstOrDefault())?.Name;
-			List<WsdlPort> ports = SelectPorts(candidates, studioPort).Select(c => BuildPort(definitions, c)).ToList();
-			CheckWantedOperations(definitions, ports);
+			List<PortCandidate> selected = SelectPorts(candidates, studioPort);
+			List<WsdlPort> ports = selected.Select(c => BuildPort(definitions, c)).ToList();
+			CheckWantedOperations(definitions, candidates, selected, ports);
 			return new WsdlDocument(ports, studioPort, _warnings, _warningsDropped, _droppedNamesWithQuestionMark);
 		}
 
@@ -665,24 +699,71 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return kept;
 		}
 
-		// An operation named in the options that no port read has is refused with the operations there are; the names are
-		// read from the port types, so this costs no build.
-		private void CheckWantedOperations(XElement definitions, List<WsdlPort> ports) {
-			if (_wantedOperations is null || ports.Count == 0) {
+		// An operation named in the options that the read ports do not give is refused with the reason: not in the WSDL
+		// (with the operations there are), only on ports past the limit (with those ports), or left out with a warning
+		// (with the warning). The names come from the port types, so the check builds nothing.
+		private void CheckWantedOperations(XElement definitions, List<PortCandidate> candidates, List<PortCandidate> selected,
+			List<WsdlPort> ports) {
+			if (_wantedOperations is null || selected.Count == 0) {
 				return;
 			}
-			HashSet<string> portTypes = ports.Select(p => p.BindingPortType).ToHashSet(StringComparer.Ordinal);
-			string[] available = definitions.Elements()
+			string[] everywhere = OperationNames(definitions, candidates);
+			string[] unknown = _wantedOperations.Where(n => !everywhere.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
+			if (unknown.Length > 0) {
+				throw new ArgumentException($"operations: {string.Join(", ", unknown.Select(Shown).Take(20))} not found; the "
+					+ "operations: " + string.Join(", ", everywhere.Select(Shown).Take(200)) + ".");
+			}
+			string[] onRead = OperationNames(definitions, selected);
+			string[] elsewhere = _wantedOperations.Where(n => !onRead.Contains(n, StringComparer.OrdinalIgnoreCase)).ToArray();
+			if (elsewhere.Length > 0) {
+				string[] portsWithThem = candidates
+					.Where(c => OperationNames(definitions, [c]).Intersect(elsewhere, StringComparer.OrdinalIgnoreCase).Any())
+					.Select(c => c.Name).Take(20).ToArray();
+				throw new ArgumentException($"operations: {string.Join(", ", elsewhere.Select(Shown).Take(20))} are only on ports "
+					+ $"that were not read (the first {MaxPorts} were); read the WSDL again with port, one of: "
+					+ string.Join(", ", portsWithThem) + ".");
+			}
+			HashSet<string> built = ports.SelectMany(p => p.Operations).Select(o => o.Caption)
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			string[] skipped = _wantedOperations.Where(n => !built.Contains(n)).ToArray();
+			if (skipped.Length > 0) {
+				string[] reasons = skipped.SelectMany(n => _warnings.Where(w => w.Contains($"'{Shown(n)}'", StringComparison.Ordinal)))
+					.Distinct().Take(3).ToArray();
+				throw new ArgumentException($"operations: {string.Join(", ", skipped.Select(Shown).Take(20))} could not be read"
+					+ (reasons.Length > 0 ? ": " + string.Join(" ", reasons) : "; see the WSDL."));
+			}
+		}
+
+		private static string[] OperationNames(XElement definitions, IEnumerable<PortCandidate> candidates) {
+			HashSet<string> portTypes = candidates.Select(c => LocalPart(Attr(c.Binding, "type")) ?? string.Empty)
+				.ToHashSet(StringComparer.Ordinal);
+			return definitions.Elements()
 				.Where(e => Is(e, "portType") && portTypes.Contains(Attr(e, "name") ?? string.Empty))
 				.SelectMany(e => e.Elements().Where(o => Is(o, "operation")))
 				.Select(o => Attr(o, "name") ?? string.Empty)
 				.Distinct(StringComparer.Ordinal)
 				.ToArray();
-			string[] unknown = _wantedOperations.Where(name => !available.Contains(name, StringComparer.OrdinalIgnoreCase)).ToArray();
-			if (unknown.Length > 0) {
-				throw new ArgumentException($"operations: {string.Join(", ", unknown.Select(Shown).Take(20))} not found; the "
-					+ "operations: " + string.Join(", ", available.Select(Shown).Take(200)) + ".");
+		}
+
+		private void CheckClock() {
+			if (_clock.Elapsed > MaxParseTime) {
+				throw new ArgumentException($"The WSDL takes longer than {MaxParseTime.TotalSeconds:0} seconds to read, so it "
+					+ "cannot be read whole. Read it again with port and operations, or describe the operations you need by hand.");
 			}
+		}
+
+		// An XML name no longer than MaxNameLength. A long one gets its own warning here, so the caller's "not an XML name"
+		// warning stays true.
+		private bool IsReadableName(string name) {
+			if (!IsNCName(name)) {
+				return false;
+			}
+			if (name.Length > MaxNameLength) {
+				Warn($"{OperationPrefix}a name of {name.Length} characters ('{Shown(name)}') was not read: names longer than "
+					+ $"{MaxNameLength} characters are not read.");
+				return false;
+			}
+			return true;
 		}
 
 		private void NoteDroppedName(string name) {
@@ -705,8 +786,9 @@ public sealed partial class WsdlParser : IWsdlParser {
 		}
 
 		private PortCandidate Candidate(XElement service, XElement port, Dictionary<string, XElement> bindings) {
+			CheckClock();
 			string portName = Attr(port, "name");
-			if (!IsNCName(portName)) {
+			if (!IsReadableName(portName)) {
 				NoteDroppedName(portName);
 				Warn($"A port named '{Shown(portName)}' was dropped: WSDL names are XML names (no spaces or punctuation).");
 				return null;
@@ -731,8 +813,10 @@ public sealed partial class WsdlParser : IWsdlParser {
 		}
 
 		private WsdlPort BuildPort(XElement definitions, PortCandidate candidate) {
+			// Per port, not per build: every port on an rpc binding carries the same risk and names itself in the warning.
+			ReportBindingStyle(candidate.Name, candidate.Binding);
 			if (!_builtBindings.TryGetValue(candidate.Binding, out var built)) {
-				built = BuildBinding(definitions, candidate.Name, candidate.Binding);
+				built = BuildBinding(definitions, candidate.Binding);
 				_builtBindings[candidate.Binding] = built;
 			}
 			string caption = Attr(candidate.Service, "name");
@@ -742,17 +826,17 @@ public sealed partial class WsdlParser : IWsdlParser {
 				caption = Shown(caption);
 			}
 			return new WsdlPort(candidate.Name, caption, candidate.ServiceType, Attr(candidate.Address, "location"),
-				built.Namespaces.ToList(), built.Operations.ToList()) {
-				BindingPortType = LocalPart(Attr(candidate.Binding, "type")) ?? string.Empty
-			};
+				built.Namespaces.ToList(), built.Operations.ToList());
 		}
 
 		private (List<WsdlNamespace> Namespaces, List<WsdlOperation> Operations) BuildBinding(XElement definitions,
-			string portName, XElement binding) {
-			ReportBindingStyle(portName, binding);
+			XElement binding) {
 			_bindingOperations = new Dictionary<string, List<XElement>>(StringComparer.Ordinal);
 			foreach (XElement bindingOperation in binding.Elements().Where(e => Is(e, "operation"))) {
-				AddTo(_bindingOperations, Attr(bindingOperation, "name") ?? string.Empty, bindingOperation);
+				string name = Attr(bindingOperation, "name") ?? string.Empty;
+				if (_bindingOperations.GetValueOrDefault(name) is not { Count: >= MaxSameNameBindingOperations }) {
+					AddTo(_bindingOperations, name, bindingOperation);
+				}
 			}
 			string portTypeName = LocalPart(Attr(binding, "type"));
 			XElement[] operations = definitions.Elements()
@@ -760,9 +844,13 @@ public sealed partial class WsdlParser : IWsdlParser {
 				.SelectMany(e => e.Elements().Where(o => Is(o, "operation")))
 				.Where(o => _wantedOperations is null || _wantedOperations.Contains(Attr(o, "name") ?? string.Empty))
 				.ToArray();
-			_namespaces = [new WsdlNamespace("tem", Attr(definitions, "targetNamespace") ?? DefaultTargetNamespace)];
+			string targetNamespace = Attr(definitions, "targetNamespace") ?? DefaultTargetNamespace;
+			_namespaces = [new WsdlNamespace("tem", targetNamespace)];
+			_prefixByUri = new Dictionary<string, string>(StringComparer.Ordinal) { [targetNamespace] = "tem" };
+			_nextPrefix = 0;
 			var built = new List<(WsdlOperation Operation, string Namespace)>();
 			foreach (XElement operation in operations) {
+				CheckClock();
 				if (++_operationsBuilt > MaxOperations) {
 					throw new ArgumentException($"The WSDL has more than {MaxOperations} operations to read over its ports; read it "
 						+ "again with port and operations, naming the ones you need.");
@@ -801,7 +889,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 		private WsdlOperation BuildOperation(XElement operation) {
 			string caption = Attr(operation, "name");
 			_operation = null;
-			if (!IsNCName(caption)) {
+			if (!IsReadableName(caption)) {
 				NoteDroppedName(caption);
 				Warn($"An operation named '{Shown(caption)}' was skipped: WSDL names are XML names (no spaces or punctuation).");
 				return null;
@@ -969,6 +1057,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				Warn($"{OperationPrefix}elements nested more than {MaxElementDepth} levels deep were not read.");
 				return null;
 			}
+			CheckClock();
 			if (++_elementsRead > MaxElementsRead) {
 				throw new ArgumentException($"The WSDL's types expand to more than {MaxElementsRead} elements (types that "
 					+ "nest many fields of other types); it cannot be read. Describe the operations you need by hand.");
@@ -1017,7 +1106,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			if (elementName is null) {
 				return null;
 			}
-			if (!IsNCName(elementName)) {
+			if (!IsReadableName(elementName)) {
 				NoteDroppedName(elementName);
 				Warn($"{OperationPrefix}an element named '{Shown(elementName)}' was not read: element names are XML names.");
 				return null;
@@ -1046,7 +1135,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 					Warn($"{OperationPrefix}the base type '{Shown(baseTypeName)}' of '{node.TypeName}' is not defined in the WSDL or its "
 						+ "schemas; only the elements the extension adds were read.");
 					node.Elements = elements;
-					node.Copies = CopiesOf(elements, ExtensionOf(TypeDefinition(definition)));
+					node.Copies = CopiesOf(elements, ExtensionOfOnce(TypeDefinition(definition)));
 					return node;
 				}
 				resolvingBases ??= [];
@@ -1054,12 +1143,12 @@ public sealed partial class WsdlParser : IWsdlParser {
 					Warn($"{OperationPrefix}the base type '{Shown(baseTypeName)}' of '{node.TypeName}' extends itself; only the elements read "
 						+ "before the cycle were kept.");
 					node.Elements = elements;
-					node.Copies = CopiesOf(elements, ExtensionOf(TypeDefinition(definition)));
+					node.Copies = CopiesOf(elements, ExtensionOfOnce(TypeDefinition(definition)));
 					return node;
 				}
 				Node baseNode = FromElement(baseType, resolvingBases);
 				node.Elements = [.. elements, .. baseNode?.Elements ?? []];
-				node.Copies = [.. CopiesOf(elements, ExtensionOf(TypeDefinition(definition))), .. baseNode?.Copies ?? []];
+				node.Copies = [.. CopiesOf(elements, ExtensionOfOnce(TypeDefinition(definition))), .. baseNode?.Copies ?? []];
 			} else {
 				node.Elements = ComplexTypeChildElements(definition);
 				node.Copies = CopiesOf(node.Elements, TypeDefinition(definition));
@@ -1087,7 +1176,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			string typeAttribute = Attr(element, "type");
 			string xmlTypeName = LocalPart(typeAttribute);
 			if (string.IsNullOrEmpty(xmlTypeName)) {
-				xmlTypeName = SimpleTypeName(element);
+				xmlTypeName = SimpleTypeNameOnce(element);
 			}
 			if (XsdTypes.TryGetValue(xmlTypeName ?? string.Empty, out string mapped)) {
 				return mapped;
@@ -1105,7 +1194,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				return null;
 			}
 			if (IsRestrictionOnce(definition)) {
-				xmlTypeName = SimpleTypeName(definition);
+				xmlTypeName = SimpleTypeNameOnce(definition);
 			}
 			if (IsMixedText(definition)) {
 				return "Text";
@@ -1130,6 +1219,14 @@ public sealed partial class WsdlParser : IWsdlParser {
 			}
 			XElement type = _complexTypes.GetValueOrDefault(name) ?? _simpleTypes.GetValueOrDefault(name);
 			return type is null ? null : TypeDefinition(type, depth);
+		}
+
+		private string SimpleTypeNameOnce(XElement element) {
+			if (!_simpleTypeNames.TryGetValue(element, out string name)) {
+				name = SimpleTypeName(element);
+				_simpleTypeNames[element] = name;
+			}
+			return name;
 		}
 
 		private bool IsRestrictionOnce(XElement definition) {
@@ -1192,7 +1289,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			if (_extensions.TryGetValue(definition, out var known)) {
 				return known;
 			}
-			XElement extension = ExtensionOf(definition);
+			XElement extension = ExtensionOfOnce(definition);
 			string baseXmlTypeName = LocalPart(Attr(extension, "base"));
 			XElement baseType = TypeByName(baseXmlTypeName);
 			string simpleTypeName = SimpleTypeName(baseType);
@@ -1232,6 +1329,14 @@ public sealed partial class WsdlParser : IWsdlParser {
 				_content[definition] = facts;
 			}
 			return facts;
+		}
+
+		private XElement ExtensionOfOnce(XElement definition) {
+			if (!_extensionOf.TryGetValue(definition, out XElement extension)) {
+				extension = ExtensionOf(definition);
+				_extensionOf[definition] = extension;
+			}
+			return extension;
 		}
 
 		// "complexType extension": the first extension inside the type definition.
@@ -1340,14 +1445,16 @@ public sealed partial class WsdlParser : IWsdlParser {
 
 		// WsdlElement: an unknown namespace is added as the first free ns0..ns999.
 		private string PrefixFor(string ns) {
-			WsdlNamespace existing = _namespaces.FirstOrDefault(n => n.Uri == ns);
-			if (existing is not null) {
-				return existing.Prefix;
+			string key = ns ?? "\0";
+			if (_prefixByUri.TryGetValue(key, out string known)) {
+				return known;
 			}
-			string prefix = Enumerable.Range(0, 1000).Select(i => "ns" + i)
-				.FirstOrDefault(p => _namespaces.All(n => n.Prefix != p))
-				?? throw new ArgumentException("The WSDL uses more than 1000 namespaces; it is not a WSDL clio can read.");
+			if (_nextPrefix >= 1000) {
+				throw new ArgumentException("The WSDL uses more than 1000 namespaces; it is not a WSDL clio can read.");
+			}
+			string prefix = "ns" + _nextPrefix++;
 			_namespaces.Add(new WsdlNamespace(prefix, ns));
+			_prefixByUri[key] = prefix;
 			return prefix;
 		}
 

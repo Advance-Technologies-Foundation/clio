@@ -187,12 +187,12 @@ public static partial class WsdlRegistrationMapper {
 
 	/// <summary>
 	/// The codes in use, with the next number to try per name: numbering many equal names stays linear instead of probing
-	/// 2, 3, 4... again for each of them. A code given back makes its number the next one tried.
+	/// 2, 3, 4... again for each of them. A code given back clears the remembered numbers, so the next claim takes the
+	/// lowest free number again, as the plain loop did; giving codes back is rare (an object with no describable field).
 	/// </summary>
 	internal sealed class CodePool {
 		private readonly HashSet<string> _taken;
 		private readonly Dictionary<string, int> _next = new(StringComparer.OrdinalIgnoreCase);
-		private readonly Dictionary<string, (string Tail, int Index)> _origin = new(StringComparer.OrdinalIgnoreCase);
 
 		/// <summary>Creates a pool with codes already taken.</summary>
 		/// <param name="taken">Codes no new one may take.</param>
@@ -200,10 +200,10 @@ public static partial class WsdlRegistrationMapper {
 			_taken = new HashSet<string>((taken ?? []).Where(c => c is not null), StringComparer.OrdinalIgnoreCase);
 		}
 
-		/// <summary>Whether a code is taken.</summary>
-		public bool Contains(string code) => _taken.Contains(code);
-
 		/// <summary>Takes the code for the name, or the name with the lowest free number from 2.</summary>
+		/// <param name="prefix">The schema-name prefix.</param>
+		/// <param name="tail">The name after the prefix, already an identifier.</param>
+		/// <returns>The code taken.</returns>
 		public string Claim(string prefix, string tail) {
 			string code = Capped(prefix, tail);
 			int index = 1;
@@ -217,17 +217,14 @@ public static partial class WsdlRegistrationMapper {
 				_next[tail] = index + 1;
 			}
 			_taken.Add(code);
-			_origin[code] = (tail, index);
 			return code;
 		}
 
 		/// <summary>Gives a claimed code back.</summary>
+		/// <param name="code">The code.</param>
 		public void Release(string code) {
-			if (!_taken.Remove(code) || !_origin.Remove(code, out (string Tail, int Index) origin) || origin.Index < 2) {
-				return;
-			}
-			if (_next.TryGetValue(origin.Tail, out int next) && origin.Index < next) {
-				_next[origin.Tail] = origin.Index;
+			if (_taken.Remove(code)) {
+				_next.Clear();
 			}
 		}
 	}

@@ -77,7 +77,9 @@ public interface IWsdlReader {
 	/// there.
 	/// </exception>
 	/// <exception cref="UnauthorizedAccessException">The environment user lacks CanManageSolution.</exception>
-	/// <exception cref="InvalidOperationException">The platform could not download the WSDL.</exception>
+	/// <exception cref="InvalidOperationException">
+	/// The environment's schema-name prefix could not be read, or the platform could not download the WSDL.
+	/// </exception>
 	WsdlReadResult Read(WsdlReadRequest request);
 }
 
@@ -99,6 +101,12 @@ public sealed partial class WsdlReader(
 	internal const int MaxResultCharacters = 120_000;
 	/// <summary>The most operation names a too-large result lists per port.</summary>
 	internal const int MaxListedOperations = 500;
+	/// <summary>
+	/// The most parameters mapped and serialized over every port read; past it the result lists operation names only.
+	/// Ports on one binding share the parsed operations but are mapped one by one, and the size check runs on the
+	/// serialized result, so without this a small WSDL could make both cost gigabytes first.
+	/// </summary>
+	internal const int MaxMappedParameters = 20_000;
 	private const string ManageSolutionOperation = "CanManageSolution";
 	/// <summary>The most characters of a platform download error shown.</summary>
 	private const int MaxShownErrorLength = 500;
@@ -144,7 +152,11 @@ public sealed partial class WsdlReader(
 			warnings.Add(warning);
 		}
 		warnings.AddDropped(document.WarningsDropped);
-		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document, request.Port), request.Operations);
+		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document), request.Operations);
+		if (ports.Sum(p => p.Operations.Sum(o => Count(o.Request) + Count(o.Response))) > MaxMappedParameters) {
+			return NamesOnly(ports.Select(p => (p.Name, p.Name == document.StudioPort, p.Operations.Select(o => o.Caption).ToList()))
+				.ToList(), warnings, [], narrowest: ports.Count == 1 && ports[0].Operations.Count <= 1);
+		}
 		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		var services = new List<WsdlServiceArguments>();
 		foreach (WsdlPort port in ports) {
@@ -154,9 +166,13 @@ public sealed partial class WsdlReader(
 		return Result(services, warnings, Notices(services, target, url));
 	}
 
-	// Whether the request already named one port and one operation, so a result still too large cannot be narrowed.
+	// Whether the result is already one port with one operation, so reading again with port and operations cannot make it
+	// smaller.
 	private static bool IsNarrowest(IReadOnlyList<WsdlServiceArguments> services) =>
 		services.Count == 1 && services[0].Arguments.Methods.Count <= 1;
+
+	private static int Count(IReadOnlyList<WsdlParameter> parameters) =>
+		(parameters ?? []).Sum(p => 1 + Count(p.Items));
 
 	private List<string> Notices(IReadOnlyList<WsdlServiceArguments> services, WsdlTargetService target, Uri url) {
 		var notices = new List<string>();
@@ -197,21 +213,28 @@ public sealed partial class WsdlReader(
 		if (JsonSerializer.Serialize(result).Length <= MaxResultCharacters) {
 			return result;
 		}
+		return NamesOnly(services.Select(s => (s.Port, s.StudioPick, s.Arguments.Methods.Select(m => m.Caption).ToList())).ToList(),
+			warnings, notices, IsNarrowest(services));
+	}
+
+	// The operation names of each port, with a notice to read again narrower, for a result too large to return whole.
+	private static WsdlReadResult NamesOnly(List<(string Port, bool StudioPick, List<string> Operations)> ports,
+		WarningLog warnings, List<string> notices, bool narrowest) {
+		IReadOnlyList<string> shownWarnings = warnings.ToList();
 		var summaryNotices = new List<string>(notices) {
-			IsNarrowest(services)
+			narrowest
 				? $"The result is too large to return whole (over {MaxResultCharacters} characters) even for one operation of one "
 					+ "port; only its name is listed. Ask the user which fields of it they need and describe the method by hand."
 				: $"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names "
 					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port)."
 		};
-		return result with {
-			Services = services.Select(s => new WsdlServiceView(s.Port, s.StudioPick,
-				Operations: s.Arguments.Methods.Select(m => m.Caption).Take(MaxListedOperations)
-					.Concat(s.Arguments.Methods.Count > MaxListedOperations
-						? [$"...and {s.Arguments.Methods.Count - MaxListedOperations} more"]
-						: []).ToList())).ToList(),
-			Notices = summaryNotices
-		};
+		return new WsdlReadResult(true,
+			Services: ports.Select(p => new WsdlServiceView(p.Port, p.StudioPick,
+				Operations: p.Operations.Take(MaxListedOperations)
+					.Concat(p.Operations.Count > MaxListedOperations ? [$"...and {p.Operations.Count - MaxListedOperations} more"] : [])
+					.ToList())).ToList(),
+			Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
+			Notices: summaryNotices);
 	}
 
 	private static Uri CheckUrl(string url) {
@@ -326,21 +349,12 @@ public sealed partial class WsdlReader(
 		}
 	}
 
-	private static IReadOnlyList<WsdlPort> SelectPorts(WsdlDocument document, string port) {
-		if (document.Ports.Count == 0) {
-			throw new ArgumentException("The WSDL has no SOAP 1.1 or SOAP 1.2 port, so there is nothing to register. "
+	// The parser already read only the port the request names (and refused one the WSDL lacks).
+	private static IReadOnlyList<WsdlPort> SelectPorts(WsdlDocument document) =>
+		document.Ports.Count > 0
+			? document.Ports
+			: throw new ArgumentException("The WSDL has no SOAP 1.1 or SOAP 1.2 port, so there is nothing to register. "
 				+ string.Join(" ", document.Warnings.Take(10)));
-		}
-		if (string.IsNullOrWhiteSpace(port)) {
-			return document.Ports;
-		}
-		WsdlPort selected = document.Ports.FirstOrDefault(p => string.Equals(p.Name, port.Trim(), StringComparison.Ordinal))
-			?? document.Ports.FirstOrDefault(p => string.Equals(p.Name, port.Trim(), StringComparison.OrdinalIgnoreCase));
-		return selected is null
-			? throw new ArgumentException($"port '{WsdlParser.Shown(port)}' is not a SOAP port of the WSDL; its SOAP ports: "
-				+ string.Join(", ", document.Ports.Select(p => p.Name).Take(50)) + ".")
-			: [selected];
-	}
 
 	// Each port keeps the named operations it has; a port with none of them is left out, and a name no port has is refused.
 	private static IReadOnlyList<WsdlPort> SelectOperations(IReadOnlyList<WsdlPort> ports, IReadOnlyList<string> operations) {

@@ -338,6 +338,94 @@ public sealed class WsdlParserGuardTests {
 	}
 
 	[Test]
+	[Description("Every port on an rpc binding gets its own warning, though the binding's operations are built once.")]
+	public void Parse_Should_Warn_About_The_Rpc_Style_For_Every_Port() {
+		// Arrange
+		string xml = OneFieldWsdl(SoapPort("Soap0") + SoapPort("Soap1")).Replace(
+			"<soap:binding transport=\"http://schemas.xmlsoap.org/soap/http\" />",
+			"<soap:binding transport=\"http://schemas.xmlsoap.org/soap/http\" style=\"rpc\" />");
+
+		// Act
+		WsdlDocument document = Parse(xml);
+
+		// Assert
+		document.Warnings.Should().Contain(w => w.StartsWith("Port 'Soap0' uses the rpc style"), because: "the first port is warned");
+		document.Warnings.Should().Contain(w => w.StartsWith("Port 'Soap1' uses the rpc style"),
+			because: "a second port on the same binding carries the same risk");
+	}
+
+	[Test]
+	[Description("An operation named in the options that the parser had to leave out is refused with the reason, not as missing.")]
+	public void Parse_Should_Give_The_Reason_For_A_Named_Operation_It_Left_Out() {
+		// Arrange
+		string xml = Wsdl(Request("<xs:element name=\"a\" type=\"xs:string\" />"), Messages("Op", "Op", "OpResponse"),
+			Operation("Op") + "<wsdl:operation name=\"Notify\"><wsdl:output message=\"tns:OpOut\" /></wsdl:operation>",
+			Binding("Op"));
+
+		// Act
+		Action act = () => _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Operations: ["Notify"]));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the operation has no input message")
+			.WithMessage("*Notify*could not be read*no input message*");
+	}
+
+	[Test]
+	[Description("Past the port limit, an operation that only an unread port has is refused with the ports that have it.")]
+	public void Parse_Should_Name_The_Ports_Of_An_Operation_Past_The_Port_Limit() {
+		// Arrange
+		string other = "<wsdl:portType name=\"P2\"><wsdl:operation name=\"Other\"><wsdl:input message=\"tns:OpIn\" /></wsdl:operation>"
+			+ "</wsdl:portType><wsdl:binding name=\"B2\" type=\"tns:P2\"><soap:binding transport=\"http://schemas.xmlsoap.org/soap/http\" />"
+			+ "</wsdl:binding><wsdl:service";
+		string xml = OneFieldWsdl(string.Concat(Enumerable.Range(0, WsdlParser.MaxPorts + 1).Select(i => SoapPort($"Soap{i}")))
+			+ SoapPort("Late", "B2")).Replace("<wsdl:service", other);
+
+		// Act
+		Action act = () => _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Operations: ["Other"]));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the operation exists, on a port past the limit")
+			.WithMessage("*Other*only on ports that were not read*port*Late*");
+	}
+
+	[Test]
+	[Description("A name longer than the limit is not read, with a warning that says so instead of calling it an invalid name.")]
+	public void Parse_Should_Not_Read_An_Overlong_Name() {
+		// Arrange
+		string name = new('a', WsdlParser.MaxNameLength + 1);
+		string xml = Wsdl(Request($"<xs:element name=\"{name}\" type=\"xs:string\" /><xs:element name=\"b\" type=\"xs:string\" />"),
+			Messages("Op", "Op", "OpResponse"), Operation("Op"), Binding("Op"));
+
+		// Act
+		WsdlDocument document = Parse(xml);
+
+		// Assert
+		document.Ports.Single().Operations.Single().Request.Select(p => p.Caption).Should().Equal(["b"],
+			because: "the long name is left out and the rest is read");
+		document.Warnings.Should().Contain(w => w.Contains($"longer than {WsdlParser.MaxNameLength} characters"),
+			because: "the agent is told why the field is missing");
+	}
+
+	[Test]
+	[Description("A schema holding many import directives is merged in one pass, not one sibling walk per directive.")]
+	public void Parse_Should_Merge_Many_Directives_In_Linear_Time() {
+		// Arrange
+		string directives = string.Concat(Enumerable.Repeat("<xs:import namespace=\"urn:x\" /><xs:annotation />", 80_000));
+		string xml = Wsdl(directives + Request("<xs:element name=\"a\" type=\"xs:string\" />"), Messages("Op", "Op", "OpResponse"),
+			Operation("Op"), Binding("Op"));
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		WsdlDocument document = Parse(xml);
+		watch.Stop();
+
+		// Assert
+		document.Ports.Single().Operations.Single().Request.Should().ContainSingle(because: "the WSDL is read as before");
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+			because: "removing the directives one by one took tens of seconds for this many");
+	}
+
+	[Test]
 	[Description("Many fields with one name get the wizard's numbered codes without probing every number again for each.")]
 	public void Parse_Should_Number_Equal_Names_In_Linear_Time() {
 		// Arrange

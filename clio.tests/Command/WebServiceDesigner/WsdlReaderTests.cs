@@ -352,12 +352,50 @@ public sealed class WsdlReaderTests {
 	[TestCase(@"\??\GLOBALROOT\Device\Mup\host\share\a.wsdl")]
 	[Description("An NT path that reaches a network share is refused like a UNC path, before anything is opened.")]
 	public void Read_Should_Refuse_An_Nt_Network_Path(string path) {
+		// Arrange
+		WsdlReadRequest request = Files(path);
+
 		// Act
-		Action act = () => _sut.Read(Files(path));
+		Action act = () => _sut.Read(request);
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "opening it would connect to the host with the user's credentials")
 			.WithMessage("*must be an absolute local path*");
+		_rights.DidNotReceiveWithAnyArgs().GetCanExecuteOperation(default, default);
+	}
+
+	[Test]
+	[Description("Past the parameter limit the result lists operation names before anything is mapped or serialized.")]
+	public void Read_Should_List_Names_Only_Past_The_Parameter_Limit() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Range(0, WsdlReader.MaxMappedParameters + 1)
+			.Select(i => $"<xs:element name=\"f{i}\" type=\"xs:string\" />"));
+		string path = GivenFile("wide.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		result.Services.Single().Arguments.Should().BeNull(because: "nothing is mapped past the limit");
+		result.Services.Single().Operations.Should().Equal(["Op"], because: "the operation names are listed");
+		result.Notices.Should().Contain(n => n.Contains("too large"), because: "the agent is told why");
+	}
+
+	[Test]
+	[Description("A platform download error is flattened and cut before it reaches the agent.")]
+	public void Read_Should_Flatten_And_Cut_A_Download_Error() {
+		// Arrange
+		const string url = "http://example.org/calc?wsdl";
+		_client.DownloadWsdl(url).Throws(new InvalidOperationException("first line\nsecond line " + new string('x', 2_000)));
+
+		// Act
+		Action act = () => _sut.Read(new WsdlReadRequest("dev", url, null));
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the download failed").Which.Message;
+		message.Should().NotContain("\n", because: "the platform's text is flattened");
+		message.Length.Should().BeLessThan(1_000, because: "the platform's text is cut");
+		message.Should().Contain("wsdl-files", because: "the way on is still given");
 	}
 
 	[TestCase("https://f.example.org/api/svc?code=SECRET&wsdl")]
