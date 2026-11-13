@@ -276,6 +276,7 @@ public sealed class DynamicCaseService(
 			PackageName = pagePlan.DesignPackageName,
 			Template = pagePlan.Template,
 			Fragment = pagePlan.Fragment,
+			SaveOnChange = pagePlan.SaveOnChange,
 			Error = write.Error,
 			Retry = new DynamicCasePageRetry { Tool = RetryTool, Args = RetryArgs(options, pagePlan) }
 		};
@@ -525,8 +526,8 @@ public sealed class DynamicCaseService(
 				PackageName = plan.DesignPackageName,
 				Template = plan.Template,
 				Fragment = plan.Fragment,
-				// Only for a bar this call planned or wrote; an already-present bar keeps whatever mode it has.
-				SaveOnChange = plan.Fragment is null ? null : plan.SaveOnChange,
+				// Set by the page step only with a fragment: absent for an already-present bar, which keeps its own mode.
+				SaveOnChange = plan.SaveOnChange,
 				Error = plan.ErrorMessage,
 				Candidates = plan.Candidates is { Count: > 0 } ? [.. plan.Candidates] : null
 			};

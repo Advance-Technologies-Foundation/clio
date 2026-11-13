@@ -126,7 +126,7 @@ public class CreateDynamicCaseTool(
 			Name = args.Name,
 			Caption = args.Caption,
 			AddProgressBar = args.AddProgressBar ?? true,
-			SaveOnChange = args.SaveOnChange ?? false,
+			SaveOnChange = args.SaveOnChange,
 			PageSchemaName = args.PageSchemaName,
 			AddPackageDependencies = args.AddPackageDependencies ?? true,
 			DryRun = args.DryRun ?? false
@@ -314,7 +314,8 @@ public sealed record CreateDynamicCaseArgs(
 
 	[property: JsonPropertyName("save-on-change")]
 	[property: Description("A stage click on the bar saves the record at once; default false: the click only sets "
-		+ "the field and the user saves.")]
+		+ "the field and the user saves. A bar already on the page keeps its own mode; a value passed there is "
+		+ "reported in a note, not applied.")]
 	bool? SaveOnChange = null) {
 
 	/// <summary>
