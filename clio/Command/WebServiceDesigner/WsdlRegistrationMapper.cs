@@ -304,7 +304,7 @@ public static partial class WsdlRegistrationMapper {
 			var errors = new WebServiceDefinitionBuilder.Errors();
 			WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors, soap: true);
 			if (errors.Count > 0) {
-				Warn($"Port '{port.Name}': its address '{Shown(baseUri)}' cannot be "
+				Warn($"Port '{port.Name}': its address '{Shown(WebServiceSchemaView.StripUserInfo(baseUri))}' cannot be "
 					+ "the base-uri (" + Shown(errors[0]) + "); ask the user for the real endpoint and set base-uri before "
 					+ "registering.");
 			}
@@ -345,7 +345,7 @@ public static partial class WsdlRegistrationMapper {
 				string[] kept = pairs.Where(pair => {
 					int equals = pair.IndexOf('=');
 					string name = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
-					return !WebServiceSchemaView.IsSecretName(name);
+					return !WsdlReader.IsSecretQueryName(name);
 				}).ToArray();
 				if (kept.Length < pairs.Length) {
 					result = result[..question] + (kept.Length > 0 ? "?" + string.Join('&', kept) : string.Empty);

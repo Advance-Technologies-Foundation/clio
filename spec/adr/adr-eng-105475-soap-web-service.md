@@ -148,7 +148,7 @@ seconds. Running read-wsdl in the MCP worker cohort, which would isolate the hos
 left out: with `service-code` it reads the service through the schema designer, and the cohort keeps schema-designer
 reads host-resident, because a worker's separate Creatio session can read a schema that a host-resident write has just
 changed and get it stale. Moving read-wsdl means moving that read out of it first. A local path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as
-fully qualified and would open an SMB connection with the user's credentials.
+fully qualified and would open an SMB connection with the user's credentials. A `wsdl-url` naming a loopback, link-local or cloud metadata address (also in IPv4-mapped, IPv4-compatible or NAT64 form) is refused before the stand is asked to fetch it; the check is advisory, because the stand resolves the name and follows every `schemaLocation` itself, and only its download endpoint could enforce it.
 
 The parser (`WsdlParser`) is a C# port of Studio's wizard parser (creatio-ui web-service-wizard:
 `SoapWebServiceBuilder`, `SoapWebServiceMethodBuilder`, `WsdlElement`, `XmlSchemaTypeUtils`, `WsdlMergeService`, the

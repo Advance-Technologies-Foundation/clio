@@ -405,6 +405,11 @@ public sealed class WsdlReaderTests {
 	[TestCase("http://[fe80::1]/svc.asmx?wsdl")]
 	[TestCase("http://api.localhost/svc.asmx?wsdl")]
 	[TestCase("http://0.0.0.0/svc.asmx?wsdl")]
+	[TestCase("http://0.1.2.3/svc.asmx?wsdl")]
+	[TestCase("http://[::127.0.0.1]/svc.asmx?wsdl")]
+	[TestCase("http://[64:ff9b::a9fe:a9fe]/latest/meta-data")]
+	[TestCase("http://[::ffff:169.254.169.254]/latest/meta-data")]
+	[TestCase("http://metadata.google.internal/computeMetadata/v1/")]
 	[Description("A loopback or link-local wsdl-url is refused before the stand is asked to download it, since the stand would read it on itself.")]
 	public void Read_Should_Refuse_A_Stand_Local_Url(string url) {
 		// Act

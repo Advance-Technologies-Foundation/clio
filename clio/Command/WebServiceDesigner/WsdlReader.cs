@@ -115,6 +115,20 @@ public sealed partial class WsdlReader(
 	// matched by the credential-name pattern.
 	private static readonly HashSet<string> SecretQueryNames = new(StringComparer.OrdinalIgnoreCase) { "sig", "sas", "code" };
 
+	// Cloud metadata host names that resolve to a link-local address on the stand's own network.
+	private static readonly HashSet<string> MetadataHosts = new(StringComparer.OrdinalIgnoreCase) {
+		"metadata", "metadata.google.internal", "metadata.azure.internal", "instance-data", "instance-data.ec2.internal"
+	};
+
+	/// <summary>
+	/// Whether a query parameter name carries a credential: the credential-name pattern of the web service tools, plus the
+	/// key names common hosting uses. One rule for a WSDL URL (refused) and a WSDL address (left out of base-uri).
+	/// </summary>
+	/// <param name="name">The parameter name, unescaped.</param>
+	/// <returns>Whether a value under it is a secret.</returns>
+	internal static bool IsSecretQueryName(string name) =>
+		WebServiceSchemaView.IsSecretName(name) || SecretQueryNames.Contains(name ?? string.Empty);
+
 	[GeneratedRegex(@"^[A-Za-z]:[\\/]")]
 	private static partial Regex DriveRootedPath();
 
@@ -268,8 +282,7 @@ public sealed partial class WsdlReader(
 		bool secretInQuery = parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
 			.Select(pair => (Pair: pair, At: pair.IndexOf('=')))
 			.Any(p => p.At > 0 && p.At < p.Pair.Length - 1
-				&& (WebServiceSchemaView.IsSecretName(Uri.UnescapeDataString(p.Pair[..p.At]))
-					|| SecretQueryNames.Contains(Uri.UnescapeDataString(p.Pair[..p.At]))));
+				&& IsSecretQueryName(Uri.UnescapeDataString(p.Pair[..p.At])));
 		if (secretInQuery) {
 			throw new ArgumentException("wsdl-url carries a key or token in its query; download the WSDL yourself and pass "
 				+ "it as wsdl-files.");
@@ -277,20 +290,38 @@ public sealed partial class WsdlReader(
 		return parsed;
 	}
 
+	// ADVISORY, not a boundary: the stand resolves the name and follows every schemaLocation itself, so a name that resolves
+	// to loopback on the stand, or a redirect, gets past this; only the platform's download endpoint could enforce it. It
+	// catches the literal forms an agent is most likely to be handed: localhost names, loopback, unspecified (0.0.0.0/8),
+	// link-local (169.254/16, fe80::/10) and those written as IPv4-mapped, IPv4-compatible or NAT64 IPv6, and the cloud
+	// metadata host names.
 	private static bool IsStandLocal(Uri url) {
-		if (url.IsLoopback || url.DnsSafeHost.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)) {
+		string host = url.DnsSafeHost.TrimEnd('.');
+		if (url.IsLoopback || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) || MetadataHosts.Contains(host)) {
 			return true;
 		}
-		if (!System.Net.IPAddress.TryParse(url.DnsSafeHost, out System.Net.IPAddress address)) {
+		if (!System.Net.IPAddress.TryParse(host, out System.Net.IPAddress address)) {
 			return false;
 		}
+		address = EmbeddedIPv4(address) ?? address;
+		byte[] bytes = address.GetAddressBytes();
+		return System.Net.IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal || address.Equals(System.Net.IPAddress.IPv6Any)
+			|| (bytes.Length == 4 && (bytes[0] == 0 || bytes[0] == 127 || (bytes[0] == 169 && bytes[1] == 254)));
+	}
+
+	// The IPv4 address an IPv6 one carries: IPv4-mapped (::ffff:a.b.c.d), IPv4-compatible (::a.b.c.d) or NAT64
+	// (64:ff9b::a.b.c.d); null for any other.
+	private static System.Net.IPAddress EmbeddedIPv4(System.Net.IPAddress address) {
+		if (address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6) {
+			return null;
+		}
 		if (address.IsIPv4MappedToIPv6) {
-			address = address.MapToIPv4();
+			return address.MapToIPv4();
 		}
 		byte[] bytes = address.GetAddressBytes();
-		return System.Net.IPAddress.IsLoopback(address) || address.IsIPv6LinkLocal
-			|| address.Equals(System.Net.IPAddress.Any) || address.Equals(System.Net.IPAddress.IPv6Any)
-			|| (bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254);
+		bool compatible = bytes.Take(12).All(b => b == 0);
+		bool nat64 = bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xff && bytes[3] == 0x9b && bytes.Skip(4).Take(8).All(b => b == 0);
+		return compatible || nat64 ? new System.Net.IPAddress(bytes[12..]) : null;
 	}
 
 	private IReadOnlyList<WsdlSourceFile> Download(Uri url) {
