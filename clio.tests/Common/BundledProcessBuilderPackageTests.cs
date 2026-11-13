@@ -75,8 +75,7 @@ public class BundledProcessBuilderPackageTests {
 	/// cut from package <c>main</c> at 1.6.6.172 (<c>8a3adb27</c>, the squash of ENG-105558), so the cut carries everything
 	/// 1.6.6.172 shipped.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.174 and packed that commit with it overlaid (393
-	/// entries), and the stamp was committed after it as the child commit <c>992a41be</c>.
+	/// marker, the script stamped the package descriptor to 1.6.6.174 and packed that commit with it overlaid, and the stamp was committed after it as the child commit <c>992a41be</c>.
 	/// 1.6.6.174 is the first number above every cut in both histories (1.6.6.173 is ENG-106378's cut on another
 	/// branch); whichever package branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -96,14 +95,15 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>DescribeSendChatMessageInfo</c>) on build, addElement and setElement, the refusal of the generic userTask route
 	/// naming <c>SendChatMessageUserTask</c>, and the raw-mapping guard on the block-owned chat parameters. The service
 	/// surface is unchanged from 1.6.6.172 (9 operations, 6 design-gate call sites and the one case-gate call site,
-	/// counted in the producing sources). The create, modify and modify-as-new-version floors move to 1.6.6.174, because
+	/// counted in the shipped archive by the guards below; the entries were not re-audited against the producing commit
+	/// for this cut). The create, modify and modify-as-new-version floors move to 1.6.6.174, because
 	/// an older server refuses the new type and block as undeclared keys; <c>create-dynamic-case</c> stays at 1.6.6.165.
 	/// What earlier cuts carried is in this file's git history rather than here: it described archives that are no
 	/// longer shipped.</para>
 	/// <para>
 	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6421 passed,
 	/// 0 failed, on <c>dev-nf</c>. <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
-	/// That matters beyond hygiene, because skipping the suite
+	/// Running the suite matters beyond hygiene, because skipping it
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
 	/// </para>
@@ -223,7 +223,7 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 and 1.6.6.174 (ENG-96034) script cuts.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 (ENG-105558) and 1.6.6.174 (ENG-96034) script cuts.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,

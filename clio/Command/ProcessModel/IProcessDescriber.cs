@@ -2792,7 +2792,8 @@ public sealed class DescribedWebServiceParameter {
 /// <summary>
 /// A Send chat message element read back in the <c>chatMessage</c> block vocabulary. Mirrors the server's
 /// <c>DescribeSendChatMessageInfo</c>. Every write member reads back in a form the write side accepts, so a described
-/// block replays unchanged; <see cref="TemplateName"/>, <see cref="Outputs"/> and <see cref="Issues"/> are
+/// block replays unchanged - except a provider (WhatsApp) template id, which the write side refuses (leave
+/// <c>template</c> out to keep it); <see cref="TemplateName"/>, <see cref="Outputs"/> and <see cref="Issues"/> are
 /// describe-only.
 /// </summary>
 public sealed class DescribedChatMessage {
