@@ -334,6 +334,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		string viewConfig = Regex.Replace(await File.ReadAllTextAsync(page.Files.BundleFile), @"\s+", string.Empty);
 		viewConfig.Should().Contain("crt.EntityStageProgressBar", because: "the bar was appended to the record page");
 		viewConfig.Should().Contain($"\"entityName\":\"{Entity}\"", because: "the bar names the case object");
+		viewConfig.Should().Contain("\"saveOnChange\":false",
+			because: "without save-on-change the bar keeps its default: a stage click only sets the field");
 	}
 
 	#endregion

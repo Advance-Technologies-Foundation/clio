@@ -469,6 +469,13 @@ public sealed class DynamicCasePageInfo {
 	[JsonPropertyName("fragment")]
 	public string Fragment { get; init; }
 
+	/// <summary>
+	/// The bar's mode in <see cref="Fragment"/>: true when a stage click saves the record at once, false when it only
+	/// sets the field and the user saves (the bar's default). Absent when this call did not plan the bar.
+	/// </summary>
+	[JsonPropertyName("saveOnChange")]
+	public bool? SaveOnChange { get; init; }
+
 	/// <summary>Why the page step failed or was refused.</summary>
 	[JsonPropertyName("error")]
 	public string Error { get; init; }
