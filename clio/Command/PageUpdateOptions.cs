@@ -1147,9 +1147,11 @@
 				};
 				string role = layer.IsDefaultTarget ? ", default target" : string.Empty;
 				string more = layer.MoreChanges > 0 ? $" and {layer.MoreChanges} more" : string.Empty;
-				string changes = layer.Changes.Count == 0
-					? "no own changes"
-					: "changes: " + string.Join(", ", layer.Changes) + more;
+				string changes = layer switch {
+					{ ChangesUnreadable: true } => "own changes could not be read",
+					{ Changes.Count: 0 } => "no own changes",
+					_ => "changes: " + string.Join(", ", layer.Changes) + more
+				};
 				return $"{layer.PackageName} (packageUId {layer.PackageUId}, level {layer.HierarchyLevel}, {state}{role}; {changes})";
 			});
 			bool defaultHasLayer = choice.Layers.Any(layer => layer.IsDefaultTarget);

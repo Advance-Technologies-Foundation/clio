@@ -31,9 +31,8 @@ page is customized in one package, while another unlocked package also changes i
 them and the user does not learn that the page's customization is split. Detecting the case takes the whole chain
 plus each layer's `SysPackage.InstallType`: the chain alone cannot tell an editable layer from a vendor one.
 
-Guidance alone did not close this: in three QA runs (ENG-105680 reopen, 2026-11-13) the agent either never read
-the rule or read it, saw the unlocked layers, and saved anyway. So clio now enforces it: `get-page` returns
-`page.packageChoice`, and `update-page` / `sync-pages` refuse a write with no target package while another editable
+Guidance alone does not stop an agent from saving past an editable layer, so clio enforces the choice: `get-page`
+returns `page.packageChoice`, and `update-page` / `sync-pages` refuse a write with no target package while another editable
 layer exists (`package-choice-required`). Two traps in finding the layers: the base page is the LOWEST chain entry
 carrying the page name — the chain root at level 0 is a platform template (`BaseTemplate`), so "level 0 is the base"
 offers the base page as a layer; and the chain must be read from the page's root variant, because one anchored on a

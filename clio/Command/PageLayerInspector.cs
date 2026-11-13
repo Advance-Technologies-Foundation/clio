@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using Clio.Package;
 using Newtonsoft.Json;
@@ -146,6 +147,15 @@ public sealed class PagePackageLayer {
 	[JsonProperty("moreChanges")]
 	[JsonPropertyName("moreChanges")]
 	public int MoreChanges { get; init; }
+
+	/// <summary>
+	/// Gets whether clio could not parse the layer body, so <see cref="Changes"/> is empty because the changes are
+	/// unknown, not because the layer has none.
+	/// </summary>
+	[JsonProperty("changesUnreadable", DefaultValueHandling = DefaultValueHandling.Ignore)]
+	[JsonPropertyName("changesUnreadable")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public bool ChangesUnreadable { get; init; }
 }
 
 /// <inheritdoc />
@@ -289,24 +299,30 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 		};
 	}
 
+	// Both UIds must be known: a layer without a package UId must never match an unknown default target (null ==
+	// null), or it would drop out of the layers outside the default and the write would go on without a choice.
 	private static bool IsDefaultTarget(PageDesignerHierarchySchema schema, string defaultTargetPackageUId) =>
-		string.Equals(schema.PackageUId, defaultTargetPackageUId, StringComparison.OrdinalIgnoreCase);
+		!string.IsNullOrWhiteSpace(schema.PackageUId)
+		&& !string.IsNullOrWhiteSpace(defaultTargetPackageUId)
+		&& string.Equals(schema.PackageUId, defaultTargetPackageUId, StringComparison.OrdinalIgnoreCase);
 
 	private PagePackageLayer BuildLayer(PageDesignerHierarchySchema schema, int level, bool? locked,
 		string defaultTargetPackageUId) {
 		List<string> changes = ReadChanges(schema.Body);
 		return new PagePackageLayer {
+			ChangesUnreadable = changes is null,
 			PackageName = schema.PackageName,
 			PackageUId = schema.PackageUId,
 			SchemaUId = schema.UId,
 			HierarchyLevel = level,
 			PackageLocked = locked,
 			IsDefaultTarget = IsDefaultTarget(schema, defaultTargetPackageUId),
-			Changes = changes.Take(MaxChangesPerLayer).ToList(),
-			MoreChanges = Math.Max(0, changes.Count - MaxChangesPerLayer)
+			Changes = changes?.Take(MaxChangesPerLayer).ToList() ?? [],
+			MoreChanges = Math.Max(0, (changes?.Count ?? 0) - MaxChangesPerLayer)
 		};
 	}
 
+	/// <summary>Reads the layer's own changes; <c>null</c> when the body cannot be parsed.</summary>
 	private List<string> ReadChanges(string body) {
 		if (string.IsNullOrWhiteSpace(body)) {
 			return [];
@@ -321,9 +337,10 @@ public sealed class PageLayerInspector : IPageLayerInspector {
 			changes.AddRange(handlerRequests.Select(request => $"handler {request}"));
 			return changes;
 		}
-		catch (Exception) {
-			// The change list only helps the user choose; a body clio cannot parse must not hide the layer.
-			return [];
+		catch (Exception ex) when (ex is InvalidOperationException or RegexMatchTimeoutException) {
+			// The change list only helps the user choose; a body clio cannot parse must not hide the layer, and the
+			// layer is marked unreadable so it is not reported as having no own changes.
+			return null;
 		}
 	}
 

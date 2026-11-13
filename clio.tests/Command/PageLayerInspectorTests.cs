@@ -285,6 +285,46 @@ public class PageLayerInspectorTests {
 	}
 
 	[Test]
+	[Description("A layer whose viewConfigDiff section cannot be parsed is marked as unreadable, so the refusal says its changes are unknown instead of reporting no own changes.")]
+	public void Inspect_Should_Mark_A_Layer_With_A_Broken_Section_As_Unreadable() {
+		// Arrange
+		(PageLayerInspector sut, _) = BuildSut(LockRows((CustomPackage, 0), (ProjectPackage, 0)));
+		List<PageDesignerHierarchySchema> chain = QaChain();
+		chain[1] = Schema(PageName, CustomPackage,
+			"define(\"UsrPage\", [], function() { return { viewConfigDiff: "
+			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\": /**SCHEMA_VIEW_CONFIG_DIFF*/ }; });");
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, chain, ProjectPackage);
+
+		// Assert
+		PagePackageLayer custom = choice.Layers.Single(layer => layer.PackageUId == CustomPackage);
+		custom.Changes.Should().BeEmpty(because: "nothing could be read from the body");
+		custom.ChangesUnreadable.Should().BeTrue(
+			because: "an unreadable body must not be reported as a layer with no own changes");
+		PageUpdateCommand.DescribePackageChoice(PageName, choice).Should().Contain("own changes could not be read",
+			because: "the refusal tells the user the changes are unknown, not absent");
+	}
+
+	[Test]
+	[Description("When the default target package is unknown, a layer without a package UId is not taken for the default target (null == null), so it still requires a choice.")]
+	public void Inspect_Should_Not_Match_A_Layer_Without_Package_UId_To_An_Unknown_Default_Target() {
+		// Arrange
+		(PageLayerInspector sut, _) = BuildSut(LockRows((ProjectPackage, 0)));
+		List<PageDesignerHierarchySchema> chain = QaChain();
+		chain[1] = Schema(PageName, null, MergeSerialNumberBody);
+
+		// Act
+		PagePackageChoice choice = sut.Inspect(PageName, chain, null);
+
+		// Assert
+		choice.Required.Should().BeTrue(
+			because: "a layer whose package is unknown is outside any default target and can be changed");
+		choice.Layers.Should().OnlyContain(layer => !layer.IsDefaultTarget,
+			because: "two unknown package UIds are not a match");
+	}
+
+	[Test]
 	[Description("A mobile page is checked the same way as a web page: the mobile template is not a layer, the base page is not a layer, Custom and the project layer are.")]
 	public void Inspect_Should_Require_Choice_For_A_Mobile_Page() {
 		// Arrange

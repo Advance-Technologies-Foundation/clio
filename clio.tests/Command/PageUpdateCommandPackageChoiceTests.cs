@@ -144,6 +144,25 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	}
 
 	[Test]
+	[Description("force lifts only the checksum conflict check and the replace refusal: a write that names no target is still refused with package-choice-required when the page needs a package choice.")]
+	public void TryUpdatePage_Should_Refuse_Write_Without_Target_When_Choice_Is_Required_Even_With_Force() {
+		// Arrange
+		PageUpdateCommand sut = BuildCommand(_inspector);
+		PageUpdateOptions options = Options(enforce: true);
+		options.Force = true;
+
+		// Act
+		bool ok = sut.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "force is not the user's choice of a package");
+		response.Error.Should().StartWith("package-choice-required",
+			because: "force must not bypass the package choice");
+		response.PackageChoice.Should().BeSameAs(RequiredChoice, because: "the layers are still returned for the question");
+		AssertNotSaved();
+	}
+
+	[Test]
 	[Description("The CLI update-page verb turns the package-choice check on itself: Execute with no target exits non-zero with package-choice-required and saves nothing.")]
 	public void Execute_Should_Refuse_Write_Without_Target_When_Choice_Is_Required() {
 		// Arrange

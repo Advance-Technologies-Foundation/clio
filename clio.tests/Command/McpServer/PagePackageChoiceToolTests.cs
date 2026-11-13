@@ -36,6 +36,27 @@ public sealed class PagePackageChoiceToolTests {
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
 	[Test]
+	[Description("Composite page writers (mobile-page conversion through PageEditToolHelpers) leave EnforcePackageChoice off: ENG-105680 amendment (e) exempts them, so they write as before.")]
+	public void PageEditToolHelpers_TryExecuteSaveBody_Should_Not_Enforce_The_Package_Choice() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		PageUpdateOptions captured = null;
+		resolver.Resolve<PageUpdateCommand>(Arg.Do<EnvironmentOptions>(options => captured = options as PageUpdateOptions))
+			.Returns(_ => throw new System.InvalidOperationException("stop after resolve"));
+
+		// Act
+		(PageUpdateResponse response, string resolveError) = PageEditToolHelpers.TryExecuteSaveBody(
+			resolver, RefusedPage, Body, "dev", null, null, null, null);
+
+		// Assert
+		response.Should().BeNull(because: "the resolver stopped the write before any save");
+		resolveError.Should().Be("stop after resolve", because: "the stub ends the call right after the options are built");
+		captured.Should().NotBeNull(because: "the composite writer resolves the update command with its options");
+		captured!.EnforcePackageChoice.Should().BeFalse(
+			because: "composite writers are exempt from the package-choice check and must keep writing as before");
+	}
+
+	[Test]
 	[Description("update-page builds its command options with EnforcePackageChoice on, so the MCP write path runs the package-choice check.")]
 	public void PageUpdateTool_BuildOptions_Should_Enforce_The_Package_Choice() {
 		// Arrange
