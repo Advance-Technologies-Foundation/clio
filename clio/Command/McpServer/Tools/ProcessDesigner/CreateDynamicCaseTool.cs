@@ -24,8 +24,8 @@ public class CreateDynamicCaseTool(
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused.</summary>
 	internal const string ValidArgsHint = "Valid: environment-name, package-name, entity-schema-name, "
-		+ "stage-column-name, stages, order-column, name, caption, add-progress-bar, page-schema-name, "
-		+ "add-package-dependencies, dry-run.";
+		+ "stage-column-name, stages, order-column, name, caption, add-progress-bar, save-on-change, "
+		+ "page-schema-name, add-package-dependencies, dry-run.";
 
 	/// <summary>Refusal for a call whose whole argument object is absent.</summary>
 	/// <remarks>
@@ -68,7 +68,8 @@ public class CreateDynamicCaseTool(
 		 + "package dependencies the case needs (add-package-dependencies=false refuses instead, listing them in "
 		 + "dependencies.missing), and appends a crt.EntityStageProgressBar to the object's Freedom UI record "
 		 + "page in that page's design package (add-progress-bar=false skips it; page-schema-name names the page, "
-		 + "required when the object opens a different page per record type). "
+		 + "required when the object opens a different page per record type). The bar's default mode: a stage click "
+		 + "only sets the field and the user saves; save-on-change=true makes a click save the record at once. "
 		 + "The default stage order comes from the lookup (an integer Position, StageOrder, Number or StageNumber "
 		 + "column, else the display value) and is reported in case.orderSource: pass stages (lookup value Ids or "
 		 + "exact display values, every value exactly once) when the business order matters. "
@@ -125,6 +126,7 @@ public class CreateDynamicCaseTool(
 			Name = args.Name,
 			Caption = args.Caption,
 			AddProgressBar = args.AddProgressBar ?? true,
+			SaveOnChange = args.SaveOnChange ?? false,
 			PageSchemaName = args.PageSchemaName,
 			AddPackageDependencies = args.AddPackageDependencies ?? true,
 			DryRun = args.DryRun ?? false
@@ -308,7 +310,12 @@ public sealed record CreateDynamicCaseArgs(
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("Run every check, the page write's dry run included, and write nothing; default false.")]
-	bool? DryRun = null) {
+	bool? DryRun = null,
+
+	[property: JsonPropertyName("save-on-change")]
+	[property: Description("A stage click on the bar saves the record at once; default false: the click only sets "
+		+ "the field and the user saves.")]
+	bool? SaveOnChange = null) {
 
 	/// <summary>
 	/// Overflow bag for top-level keys the SDK could not bind to a declared argument. Inspected by the tool so a

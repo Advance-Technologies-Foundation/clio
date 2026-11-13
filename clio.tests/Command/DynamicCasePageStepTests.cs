@@ -71,6 +71,25 @@ public sealed class DynamicCasePageStepTests {
 		new() { EditableSchemaExists = true, Checksum = checksum };
 
 	[Test]
+	[Description("The save mode the caller asked for reaches the fragment, the full-form replace body and the plan, so what the dry run checked is what the write sends.")]
+	public void Plan_ShouldCarryTheSaveMode_IntoTheFragmentAndTheWriteBody() {
+		// Arrange
+		string stored = ProgressBarPlacementTests.FullFormBody(Entity);
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView()), editable: Editable(),
+			rawBody: stored);
+		Saves();
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null, saveOnChange: true);
+
+		// Assert
+		plan.SaveOnChange.Should().BeTrue(because: "the plan records the mode it built");
+		plan.Fragment.Should().Be(ProgressBarFragment.BuildBody(Page, Entity, string.Empty, saveOnChange: true),
+			because: "the fragment carries the asked mode");
+		plan.WriteBody.Should().Contain("\"saveOnChange\": true", because: "the replace body carries the same mode");
+	}
+
+	[Test]
 	[Description("A page stored in the full form, as create-app makes every record page, is planned as a REPLACE of its own body with the two inserts added to its viewConfigDiff, dry-run against the page with the checksum pinned, so it takes the bar in one call instead of being refused page-append-rejected.")]
 	public void Plan_ShouldPlanAReplaceOfTheFullBody_WhenThePageIsStoredInTheFullForm() {
 		// Arrange

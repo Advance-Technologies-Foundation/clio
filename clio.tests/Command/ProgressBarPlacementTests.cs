@@ -52,8 +52,8 @@ public sealed class ProgressBarPlacementTests {
 	}
 
 	[Test]
-	[Description("The fragment is the application wizard's two inserts: a flex container at index 0 of MainContainer, then the stage bar inside it with the literal entity name, saveOnChange true and askUserToChangeSchema false.")]
-	public void BuildViewConfigDiff_ShouldCarryTheWizardValues_WhenNoSuffix() {
+	[Description("The fragment is the application wizard's two inserts: a flex container at index 0 of MainContainer, then the stage bar inside it with the literal entity name and the bar's own defaults: saveOnChange false (a click only sets the field) and askUserToChangeSchema true.")]
+	public void BuildViewConfigDiff_ShouldCarryTheWizardLayoutAndTheBarDefaults_WhenNoSuffix() {
 		// Arrange
 		const string suffix = "";
 
@@ -80,11 +80,29 @@ public sealed class ProgressBarPlacementTests {
 		JsonObject barValues = bar["values"]!.AsObject();
 		barValues["type"]!.GetValue<string>().Should().Be("crt.EntityStageProgressBar", because: "that is the stage bar component");
 		barValues["entityName"]!.GetValue<string>().Should().Be(Entity, because: "the bar finds its case by the object name");
-		barValues["saveOnChange"]!.GetValue<bool>().Should().BeTrue(because: "a click persists the stage at once");
-		barValues["askUserToChangeSchema"]!.GetValue<bool>().Should().BeFalse(because: "these are the wizard's values");
+		barValues["saveOnChange"]!.GetValue<bool>().Should().BeFalse(
+			because: "the bar's default, kept by the page template and most product pages: the user saves");
+		barValues["askUserToChangeSchema"]!.GetValue<bool>().Should().BeTrue(because: "the bar's default");
 		barValues.Select(pair => pair.Key).Should().BeEquivalentTo(
 			["type", "entityName", "saveOnChange", "askUserToChangeSchema"],
 			because: "nothing else is written on the bar");
+	}
+
+	[Test]
+	[Description("Asked for a save on click, the bar carries saveOnChange true in both the diff and the append body; nothing else changes.")]
+	public void BuildViewConfigDiff_ShouldSaveOnClick_WhenAskedTo() {
+		// Arrange
+		const bool saveOnChange = true;
+
+		// Act
+		JsonArray diff = ProgressBarFragment.BuildViewConfigDiff(Entity, string.Empty, saveOnChange);
+		string body = ProgressBarFragment.BuildBody("UsrOrders_FormPage", Entity, string.Empty, saveOnChange);
+
+		// Assert
+		JsonObject barValues = diff[1]!["values"]!.AsObject();
+		barValues["saveOnChange"]!.GetValue<bool>().Should().BeTrue(because: "the caller asked for a save on click");
+		barValues["askUserToChangeSchema"]!.GetValue<bool>().Should().BeTrue(because: "only the save mode is the caller's");
+		body.Should().Contain("\"saveOnChange\":true", because: "the append body is built from the same diff");
 	}
 
 	[Test]

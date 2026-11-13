@@ -57,10 +57,11 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	private static CreateDynamicCaseOptions Options(bool dryRun = false, bool addProgressBar = true,
-		bool addPackageDependencies = true) =>
+		bool addPackageDependencies = true, bool saveOnChange = false) =>
 		new() {
 			Environment = Env, PackageName = Package, EntitySchemaName = Entity, StageColumnName = "UsrStatus",
-			DryRun = dryRun, AddProgressBar = addProgressBar, AddPackageDependencies = addPackageDependencies
+			DryRun = dryRun, AddProgressBar = addProgressBar, AddPackageDependencies = addPackageDependencies,
+			SaveOnChange = saveOnChange
 		};
 
 	private static DynamicCasePagePlan PlannedPage(string designPackage = Package) => new() {
@@ -170,6 +171,38 @@ public sealed class DynamicCaseServiceTests {
 		result.Outcome.Should().Be(DynamicCaseOutcomes.Refused, because: "nothing was written");
 		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
+	}
+
+	[Test]
+	[Description("save-on-change reaches the page step, and the page block reports the mode the bar was planned with, so the agent can tell the user before anything is written.")]
+	public void Create_ShouldPassTheSaveModeToThePageStep_AndReportIt() {
+		// Arrange
+		Passes(Envelope("planned"));
+		_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>(), true).Returns(new DynamicCasePagePlan {
+			Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = Page, DesignPackageName = Package,
+			Fragment = ProgressBarFragment.BuildBody(Page, Entity, string.Empty, saveOnChange: true), SaveOnChange = true
+		});
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options(dryRun: true, saveOnChange: true));
+
+		// Assert
+		_pageStep.Received(1).Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>(), true);
+		result.Page.SaveOnChange.Should().BeTrue(because: "the page block names the planned mode");
+	}
+
+	[Test]
+	[Description("By default the bar is planned with a click that only sets the field, and the page block says so.")]
+	public void Create_ShouldPlanTheBarWithoutASaveOnClick_ByDefault() {
+		// Arrange
+		Passes(Envelope("planned"));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options(dryRun: true));
+
+		// Assert
+		_pageStep.Received(1).Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>(), false);
+		result.Page.SaveOnChange.Should().BeFalse(because: "the bar's default: the user saves");
 	}
 
 	[Test]

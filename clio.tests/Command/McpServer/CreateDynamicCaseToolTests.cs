@@ -108,6 +108,7 @@ public sealed class CreateDynamicCaseToolTests {
 		options.Caption.Should().Be("Order case", because: "the caption is forwarded");
 		options.PageSchemaName.Should().Be("UsrOrders_FormPage", because: "the page is forwarded");
 		options.AddProgressBar.Should().BeTrue(because: "the bar is added unless the caller says otherwise");
+		options.SaveOnChange.Should().BeFalse(because: "the bar's default: a stage click only sets the field");
 		options.AddPackageDependencies.Should().BeTrue(because: "missing dependencies are added by default");
 		options.DryRun.Should().BeFalse(because: "a call writes unless it asks for a dry run");
 		options.Stages.Should().BeEmpty(because: "no stages means the default order");
@@ -119,7 +120,7 @@ public sealed class CreateDynamicCaseToolTests {
 	public void CreateDynamicCase_ShouldMapTheFlags() {
 		// Arrange
 		CreateDynamicCaseArgs args = Args("{" + Required
-			+ ",\"dry-run\":true,\"add-progress-bar\":false,\"add-package-dependencies\":false}");
+			+ ",\"dry-run\":true,\"add-progress-bar\":false,\"add-package-dependencies\":false,\"save-on-change\":true}");
 
 		// Act
 		_tool.CreateDynamicCase(args);
@@ -128,6 +129,7 @@ public sealed class CreateDynamicCaseToolTests {
 		_resolved.Captured!.DryRun.Should().BeTrue(because: "dry-run asks for the plan only");
 		_resolved.Captured.AddProgressBar.Should().BeFalse(because: "the caller turned the bar off");
 		_resolved.Captured.AddPackageDependencies.Should().BeFalse(because: "the caller turned the add off");
+		_resolved.Captured.SaveOnChange.Should().BeTrue(because: "the caller asked for a save on click");
 	}
 
 	[TestCase("[{\"value\":\"New\"},{\"value\":\"Done\"}]")]
