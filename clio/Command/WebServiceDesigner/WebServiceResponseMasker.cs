@@ -749,7 +749,9 @@ public static partial class WebServiceResponseMasker {
 	/// The property name a JSON request path writes its value under, read as Terrasoft.Services
 	/// <c>JsonPathUtils.GetPathParts</c> reads it: a leading <c>$</c> or <c>$.</c> is dropped, the path splits at dots
 	/// and brackets, <c>['name']</c> is a name and <c>[0]</c> an array index, and the value lands under the last name
-	/// (inside an array when an index follows it). Returns an empty string when the path names no property.
+	/// (inside an array when an index follows it). Returns an empty string when the path names no property, and when it
+	/// ends inside an unclosed bracket, which the platform writes under a name of its own (<c>a[b</c> → <c>"[b"</c>):
+	/// an empty key is never found, so such a value fails closed.
 	/// </summary>
 	private static string JsonKey(string path) {
 		string text = path ?? string.Empty;
@@ -772,7 +774,10 @@ public static partial class WebServiceResponseMasker {
 				name.Append(c);
 			}
 		}
-		return name.Length > 0 && !inBracket ? name.ToString() : last;
+		if (inBracket) {
+			return string.Empty;
+		}
+		return name.Length > 0 ? name.ToString() : last;
 	}
 
 	/// <summary>
@@ -828,9 +833,13 @@ public static partial class WebServiceResponseMasker {
 		}
 	}
 
-	/// <summary>Whether a JSON body has a property of that name anywhere, whatever its value (a missing setting is null).</summary>
+	/// <summary>
+	/// Whether a JSON body has a property of that name anywhere that holds a value it could mask: a value, null (a missing
+	/// setting) or an array of values. A property holding only an object is not the value: the path wrote it under a
+	/// name of its own, so it counts as missing and fails closed.
+	/// </summary>
 	private static bool HasJsonKey(JsonNode body, string key) =>
-		key.Length > 0 && JsonProperties(body, key).Any(_ => true);
+		key.Length > 0 && JsonProperties(body, key).Any(value => value is null or JsonValue || Leaves(value).Any());
 
 	/// <summary>
 	/// Whether a setting-bound value missing from a JSON body may still have been sent, by the rules of

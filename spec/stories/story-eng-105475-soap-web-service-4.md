@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-105475-soap-web-service.md](../prd/spec-eng-105475-soap-web-service.md) - R9
 **ADR**: [adr-eng-105475-soap-web-service.md](../adr/adr-eng-105475-soap-web-service.md) - D10
 **Test plan**: [tp-eng-105475-soap-web-service.md](../test-plans/tp-eng-105475-soap-web-service.md) - TC-U-D*, TC-I-D*
-**Status**: in-progress
+**Status**: review
 **Size**: S
 **Depends on**: story 1
 **Blocks**: nothing

@@ -5104,7 +5104,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: S
-    status: in-progress
+    # review: the clio PR opened on 2026-11-13 with its clio-knowledge guidance PR.
+    status: review
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-4.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md

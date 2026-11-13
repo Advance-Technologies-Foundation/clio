@@ -329,6 +329,20 @@ public sealed class WebServiceResponseMaskerTests {
 		nullUnlocated.Should().BeFalse(because: "a value sent as null (an empty setting) carries nothing to hide");
 	}
 
+	[TestCase("a[b", """{"a":{"[b":"v-open-44"}}""", Description = "a top-level path ending in an unclosed bracket")]
+	[TestCase("a", """{"a":{"x":"v-object-55"}}""", Description = "a name that holds only an object")]
+	[Description("A setting-bound JSON value whose name holds only an object, or whose path ends in an unclosed bracket the platform writes under a name of its own, is not taken as found, so the response is withheld instead of returned unmasked.")]
+	public void SentSecrets_Should_Fail_Closed_When_The_Json_Name_Holds_No_Value(string path, string body) {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(BodyParameter("UsrOdd", path, "UsrKeyOdd"));
+
+		// Act
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, body, false, null, out bool unlocated);
+
+		// Assert
+		unlocated.Should().BeTrue(because: "the value cannot be told apart from the rest of the body, so it cannot be masked");
+	}
+
 	[Test]
 	[Description("A setting-bound field of a JSON array item is found in every item, also when its own placement says header; it fails closed when an item that went out lacks it or the given array is missing, and a setting-bound array or an array left out hides nothing.")]
 	public void SentSecrets_Should_Locate_Json_Array_Item_Fields_And_Fail_Closed() {
