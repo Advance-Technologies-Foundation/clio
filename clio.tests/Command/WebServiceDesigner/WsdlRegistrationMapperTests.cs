@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -28,6 +29,56 @@ public sealed class WsdlRegistrationMapperTests {
 	private static WsdlPort Port(params WsdlOperation[] operations) =>
 		new("Soap", "Calc", 2, "http://localhost/calc.asmx",
 			[new WsdlNamespace("tem", "http://example.org/t/"), new WsdlNamespace("ns0", "http://example.org/x")], operations);
+
+	[Test]
+	[Description("Numbering many equal names stays linear, and a code given back is the next one taken.")]
+	public void CodePool_Should_Number_In_Linear_Time_And_Reuse_A_Released_Code() {
+		// Arrange
+		var pool = new WsdlRegistrationMapper.CodePool(["Usra"]);
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		List<string> codes = Enumerable.Range(0, 50_000).Select(_ => WsdlRegistrationMapper.UniqueCode("Usr", "a", "Param", pool))
+			.ToList();
+		watch.Stop();
+		pool.Release("Usra7");
+		string again = WsdlRegistrationMapper.UniqueCode("Usr", "a", "Param", pool);
+
+		// Assert
+		codes[0].Should().Be("Usra2", because: "the taken code is numbered from 2");
+		codes.Should().OnlyHaveUniqueItems(because: "each claim gets a free code");
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), because: "the next number is remembered per name");
+		again.Should().Be("Usra7", because: "a released code is the next one taken");
+	}
+
+	[Test]
+	[Description("A soapAction longer than the limit is left out with a warning, so it cannot carry text to the agent.")]
+	public void Map_Should_Leave_Out_An_Overlong_Soap_Action() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add") with { SoapAction = "urn:" + new string('x', WsdlRegistrationMapper.MaxSoapActionLength) });
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
+
+		// Assert
+		result.Arguments.Methods.Single().SoapAction.Should().BeNull(because: "the value is too long to be an action");
+		warnings.Kept.Should().Contain(w => w.Contains("soapAction") && w.Contains("longer than"), because: "the agent is told why");
+	}
+
+	[Test]
+	[Description("Warnings another cap left out are counted into the one count line.")]
+	public void WarningLog_Should_Add_Dropped_Counts_From_The_Parser() {
+		// Arrange
+		var log = new WarningLog();
+		log.Add("one");
+
+		// Act
+		log.AddDropped(20);
+
+		// Assert
+		log.ToList().Should().Equal(["one", "...and 20 more warnings."], because: "the parser's dropped warnings are counted once");
+	}
 
 	[Test]
 	[Description("An array whose item element the platform cannot name is left out, as is an array inside an array item (the wizard gives it the outer path); the rest of the method is kept.")]
@@ -116,7 +167,7 @@ public sealed class WsdlRegistrationMapperTests {
 		string name = new string('a', 50) + "9" + new string('b', 199);
 
 		// Act
-		string code = WsdlRegistrationMapper.UniqueCode(string.Empty, name, "Param", new HashSet<string>());
+		string code = WsdlRegistrationMapper.UniqueCode(string.Empty, name, "Param", new WsdlRegistrationMapper.CodePool());
 
 		// Assert
 		code.Should().MatchRegex("^_[A-Za-z0-9_]*$", because: "an identifier cannot start with a digit").And.HaveLength(200,

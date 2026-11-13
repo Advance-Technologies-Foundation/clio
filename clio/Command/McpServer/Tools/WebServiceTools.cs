@@ -171,6 +171,9 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 		("files", WsdlFiles), ("wsdl-path", WsdlFiles), ("wsdl-file", WsdlFiles), ("wsdl_files", WsdlFiles),
 		("wsdlFiles", WsdlFiles));
 
+	/// <summary>Reads a WSDL into register-web-service arguments on the environment the call names.</summary>
+	/// <param name="args">The arguments.</param>
+	/// <returns>The arguments per SOAP port with warnings and notices, or the refusal as an error.</returns>
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -397,7 +400,10 @@ public sealed record ModifyWebServiceArgs(
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 
-
+/// <summary>
+/// The arguments of read-wsdl. Unknown keys land in <see cref="ExtensionData"/> and are refused with the valid names,
+/// so a misspelled argument is not dropped silently.
+/// </summary>
 public sealed record ReadWsdlArgs(
 	[property: JsonPropertyName("environment-name")]
 	[property: Description(McpToolDescriptions.EnvironmentName)]

@@ -144,6 +144,7 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 		secure.RequestParameters.Where(p => p.SoapHeader == true).Select(p => p.Path).Should().BeEquivalentTo(
 			["tem:AuthHeader/tem:UserName", "tem:AuthHeader/tem:Token", "tem:AuthHeader/tem:Scope/tem:Tenant"],
 			because: "the complex header is flattened, without the wizard's copy of Tenant one level too high");
+		reread.Success.Should().BeTrue(because: $"the WSDL read again with service-code gives a result; error: {reread.Error}");
 		reread.Services!.Single().ExistingMethods.Should().BeEquivalentTo(service.Methods.Select(m => m.Code),
 			because: "a second read gives the same codes (D11), so every method is matched for setMethod");
 	}

@@ -133,6 +133,16 @@ reads at most 200,000 elements, and at most 100 warnings are listed. Names from 
 so operation, port and element names must be XML names (NCName, as WSDL 1.1 and XSD type them; anything else is
 skipped with a warning) and every WSDL value in a warning or error is flattened and cut to 100 characters.
 
+The work is bounded by what is built, not only by what is read: an operation whose messages have no parts reads no
+element, so a WSDL repeating many of them over many ports escaped the element budget (the final review measured 4
+million operations from a 269 KB file). So the operations of a binding are built once and shared by every port on it, at
+most 20 SOAP ports are built without `port` (the first ones and Studio's pick, with a warning), at most 10,000 operations
+are built, and `port` and `operations` are applied inside the parse, before anything is built, so they also narrow the
+element budget; Studio's pick is still decided over every port. A type definition is scanned once, not once per element
+that uses it, and a repeated code is numbered from the last number used for it, so neither grows quadratically. A local
+path on Windows must be a drive path (`C:\...`): an NT path such as `\??\UNC\host\share` counts as fully qualified and
+would open an SMB connection with the user's credentials.
+
 The parser (`WsdlParser`) is a C# port of Studio's wizard parser (creatio-ui web-service-wizard:
 `SoapWebServiceBuilder`, `SoapWebServiceMethodBuilder`, `WsdlElement`, `XmlSchemaTypeUtils`, `WsdlMergeService`, the
 `xmlDataValueTypeNamesMap` type map), including its DOM selector semantics. Parity was measured, not assumed: Studio's

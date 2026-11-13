@@ -332,6 +332,97 @@ public sealed class WsdlReaderTests {
 		act.Should().Throw<ArgumentException>(because: "nothing to read, and the open could block").WithMessage("*empty or not a regular file*");
 	}
 
+	private static string InlineWsdl(string fields) => $"""
+		<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+			xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://example.org/t/" targetNamespace="http://example.org/t/">
+			<wsdl:types><xs:schema elementFormDefault="qualified" targetNamespace="http://example.org/t/">
+				<xs:element name="Op"><xs:complexType><xs:sequence>{fields}</xs:sequence></xs:complexType></xs:element>
+				<xs:element name="OpResponse"><xs:complexType><xs:sequence /></xs:complexType></xs:element>
+			</xs:schema></wsdl:types>
+			<wsdl:message name="OpIn"><wsdl:part name="p" element="tns:Op" /></wsdl:message>
+			<wsdl:message name="OpOut"><wsdl:part name="p" element="tns:OpResponse" /></wsdl:message>
+			<wsdl:portType name="P"><wsdl:operation name="Op"><wsdl:input message="tns:OpIn" /><wsdl:output message="tns:OpOut" /></wsdl:operation></wsdl:portType>
+			<wsdl:binding name="B" type="tns:P"><soap:binding transport="http://schemas.xmlsoap.org/soap/http" />
+				<wsdl:operation name="Op"><soap:operation soapAction="urn:Op" /><wsdl:input /></wsdl:operation></wsdl:binding>
+			<wsdl:service name="Svc"><wsdl:port name="Soap" binding="tns:B"><soap:address location="http://localhost/svc" /></wsdl:port></wsdl:service>
+		</wsdl:definitions>
+		""";
+
+	[TestCase(@"\??\UNC\host\share\a.wsdl")]
+	[TestCase(@"\??\GLOBALROOT\Device\Mup\host\share\a.wsdl")]
+	[Description("An NT path that reaches a network share is refused like a UNC path, before anything is opened.")]
+	public void Read_Should_Refuse_An_Nt_Network_Path(string path) {
+		// Act
+		Action act = () => _sut.Read(Files(path));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "opening it would connect to the host with the user's credentials")
+			.WithMessage("*must be an absolute local path*");
+	}
+
+	[TestCase("https://f.example.org/api/svc?code=SECRET&wsdl")]
+	[TestCase("https://s.example.org/svc.asmx?wsdl&sig=SECRET")]
+	[Description("A key in a query parameter common hosts use (an Azure Functions code, a SAS signature) is refused like any key.")]
+	public void Read_Should_Refuse_A_Hosting_Key_In_The_Query(string url) {
+		// Act
+		Action act = () => _sut.Read(new WsdlReadRequest("dev", url, null));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the URL travels to the stand and back").WithMessage("*key or token*")
+			.Which.Message.Should().NotContain("SECRET", because: "the refusal does not repeat the key");
+		_client.DidNotReceiveWithAnyArgs().DownloadWsdl(default);
+	}
+
+	[Test]
+	[Description("A name the download turned into '?' and the parser left out still gives the warning to use wsdl-files.")]
+	public void Read_Should_Warn_About_Replaced_Characters_The_Parser_Dropped() {
+		// Arrange
+		const string url = "http://example.org/calc?wsdl";
+		string xml = Encoding.UTF8.GetString(FixtureBytes("calculator.wsdl"))
+			.Replace("operation name=\"Add\"", "operation name=\"A?d\"");
+		_client.DownloadWsdl(url).Returns([new WsdlSourceFile(url, Encoding.ASCII.GetBytes(xml), AsciiText: true)]);
+
+		// Act
+		WsdlReadResult result = _sut.Read(new WsdlReadRequest("dev", url, null));
+
+		// Assert
+		result.Warnings.Should().Contain(w => w.Contains("wsdl-files") && w.Contains("non-ASCII"),
+			because: "the operation was left out for a '?' the download put there, not for a fault of the WSDL");
+	}
+
+	[Test]
+	[Description("Warnings the parser left out are counted in the one count line of the result.")]
+	public void Read_Should_Count_The_Warnings_The_Parser_Left_Out() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Range(0, WsdlParser.MaxWarnings + 20)
+			.Select(i => $"<xs:element name=\"f{i}\" type=\"tns:Missing{i}\" />"));
+		string path = GivenFile("many.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		result.Warnings.Should().HaveCount(WarningLog.MaxKept + 1, because: "the kept warnings and one count line");
+		result.Warnings[^1].Should().Be("...and 20 more warnings.", because: "the parser's dropped warnings are counted");
+	}
+
+	[Test]
+	[Description("A result too large even for one operation of one port says so instead of asking to narrow it again.")]
+	public void Read_Should_Say_When_One_Operation_Is_Too_Large() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Range(0, 3_000)
+			.Select(i => $"<xs:element name=\"aVeryLongFieldNameNumber{i}\" type=\"xs:string\" />"));
+		string path = GivenFile("big.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(new WsdlReadRequest("dev", null, [path], Port: "Soap", Operations: ["Op"]));
+
+		// Assert
+		result.Services.Single().Operations.Should().Equal(["Op"], because: "the result lists the operation name only");
+		result.Notices.Should().Contain(n => n.Contains("even for one operation"),
+			because: "reading again with operations cannot make it smaller");
+	}
+
 	[TestCase(@"\\host\share\x.wsdl")]
 	[TestCase("//host/share/x.wsdl")]
 	[Description("A network path is refused before any request: reading it would make the machine running clio connect to that host with the user's credentials.")]

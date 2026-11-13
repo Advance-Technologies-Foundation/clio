@@ -43,6 +43,14 @@ public sealed class WarningLog {
 	/// <summary>How many more distinct warnings there were (an upper bound once too many were seen to track).</summary>
 	public int Dropped { get; private set; }
 
+	/// <summary>Counts warnings another cap already left out (the parser's), so the count line stays true.</summary>
+	/// <param name="count">How many were left out.</param>
+	public void AddDropped(int count) {
+		if (count > 0) {
+			Dropped += count;
+		}
+	}
+
 	/// <summary>Adds a warning unless the same message was added before.</summary>
 	/// <param name="message">The warning.</param>
 	public void Add(string message) {
@@ -87,8 +95,11 @@ public sealed record WsdlRegistrationArgs(
 /// </summary>
 public static partial class WsdlRegistrationMapper {
 
-	private const int MaxCodeLength = 200;
-	private const string ObjectType = "Object";
+	private const int MaxCodeLength = WsdlParser.MaxCodeLength;
+	private const string ObjectType = WsdlParser.ObjectType;
+
+	/// <summary>The longest soapAction kept; a longer one is not an action, and it would only carry text to the agent.</summary>
+	internal const int MaxSoapActionLength = 2048;
 
 	[GeneratedRegex("[^A-Za-z0-9_]")]
 	private static partial Regex NonIdentifierCharacter();
@@ -110,7 +121,7 @@ public static partial class WsdlRegistrationMapper {
 		string baseUri = context.CheckBaseUri();
 		var methods = new List<WebServiceMethodArg>();
 		var existing = new List<string>();
-		var methodCodes = new HashSet<string>((target?.Methods ?? []).Select(m => m.Code), StringComparer.OrdinalIgnoreCase);
+		var methodCodes = new CodePool((target?.Methods ?? []).Select(m => m.Code));
 		IReadOnlyDictionary<WsdlOperation, WebServiceMethodView> reused = ReusedMethods(port, target);
 		foreach (WsdlOperation operation in port.Operations) {
 			WebServiceMethodView match = reused.GetValueOrDefault(operation);
@@ -169,16 +180,56 @@ public static partial class WsdlRegistrationMapper {
 	/// A code: the prefix, then the wizard's shortened name made a Latin identifier, capped at 200 characters by
 	/// keeping the end of the name as the wizard does but never the prefix; a number from 2 on a collision.
 	/// </summary>
-	internal static string UniqueCode(string prefix, string name, string fallback, ISet<string> taken) {
+	internal static string UniqueCode(string prefix, string name, string fallback, CodePool taken) {
 		string tail = Identifier(WsdlParser.ShortenCaption((name ?? string.Empty).Replace(" ", string.Empty)), fallback);
-		string code = Capped(prefix, tail);
-		int index = 2;
-		while (taken.Contains(code)) {
-			code = Capped(prefix, tail + index);
-			index++;
+		return taken.Claim(prefix, tail);
+	}
+
+	/// <summary>
+	/// The codes in use, with the next number to try per name: numbering many equal names stays linear instead of probing
+	/// 2, 3, 4... again for each of them. A code given back makes its number the next one tried.
+	/// </summary>
+	internal sealed class CodePool {
+		private readonly HashSet<string> _taken;
+		private readonly Dictionary<string, int> _next = new(StringComparer.OrdinalIgnoreCase);
+		private readonly Dictionary<string, (string Tail, int Index)> _origin = new(StringComparer.OrdinalIgnoreCase);
+
+		/// <summary>Creates a pool with codes already taken.</summary>
+		/// <param name="taken">Codes no new one may take.</param>
+		public CodePool(IEnumerable<string> taken = null) {
+			_taken = new HashSet<string>((taken ?? []).Where(c => c is not null), StringComparer.OrdinalIgnoreCase);
 		}
-		taken.Add(code);
-		return code;
+
+		/// <summary>Whether a code is taken.</summary>
+		public bool Contains(string code) => _taken.Contains(code);
+
+		/// <summary>Takes the code for the name, or the name with the lowest free number from 2.</summary>
+		public string Claim(string prefix, string tail) {
+			string code = Capped(prefix, tail);
+			int index = 1;
+			if (_taken.Contains(code)) {
+				index = _next.GetValueOrDefault(tail, 2);
+				code = Capped(prefix, tail + index);
+				while (_taken.Contains(code)) {
+					index++;
+					code = Capped(prefix, tail + index);
+				}
+				_next[tail] = index + 1;
+			}
+			_taken.Add(code);
+			_origin[code] = (tail, index);
+			return code;
+		}
+
+		/// <summary>Gives a claimed code back.</summary>
+		public void Release(string code) {
+			if (!_taken.Remove(code) || !_origin.Remove(code, out (string Tail, int Index) origin) || origin.Index < 2) {
+				return;
+			}
+			if (_next.TryGetValue(origin.Tail, out int next) && origin.Index < next) {
+				_next[origin.Tail] = origin.Index;
+			}
+		}
 	}
 
 	// The end of a long name is kept, as the wizard keeps it; a code without a prefix must still start with a letter or
@@ -271,7 +322,7 @@ public static partial class WsdlRegistrationMapper {
 		}
 
 		public WebServiceMethodArg BuildMethod(WsdlOperation operation, WebServiceMethodView existing,
-			ISet<string> methodCodes) {
+			CodePool methodCodes) {
 			_operation = operation.Caption;
 			string messageElement = MessageElement(operation);
 			if (!WebServiceDefinitionBuilder.IsSendableElementPath(messageElement) || messageElement.Contains('/')) {
@@ -306,12 +357,17 @@ public static partial class WsdlRegistrationMapper {
 					+ "out; ask the API owner for the right value.");
 				return null;
 			}
+			if (action.Length > MaxSoapActionLength) {
+				Warn($"Operation '{Shown(operation.Caption)}': its soapAction is longer than {MaxSoapActionLength} characters "
+					+ "and was left out; ask the API owner for the right value.");
+				return null;
+			}
 			return action;
 		}
 
 		// The codes a matched method's parameters already have, reserved so a new parameter cannot take one.
-		private static HashSet<string> CodeSet(IReadOnlyList<WebServiceParameterView> parameters) =>
-			new(Flatten(parameters).Select(p => p.Code), StringComparer.OrdinalIgnoreCase);
+		private static CodePool CodeSet(IReadOnlyList<WebServiceParameterView> parameters) =>
+			new(Flatten(parameters).Select(p => p.Code));
 
 		// A matched method's parameters by path, so a parameter at the same place keeps its code and setMethod keeps its UId.
 		private static Dictionary<string, WebServiceParameterView> CodesByPath(IReadOnlyList<WebServiceParameterView> parameters) {
@@ -326,7 +382,7 @@ public static partial class WsdlRegistrationMapper {
 			(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
 		private List<WebServiceParameterArg> Parameters(IReadOnlyList<WsdlParameter> parameters, bool isRequest,
-			string parentCaption, ISet<string> codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
+			string parentCaption, CodePool codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
 			var result = new List<WebServiceParameterArg>();
 			foreach (WsdlParameter parameter in parameters) {
 				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentCaption, codes, existing);
@@ -338,7 +394,7 @@ public static partial class WsdlRegistrationMapper {
 		}
 
 		private WebServiceParameterArg Parameter(WsdlParameter parameter, bool isRequest, string parentCaption,
-			ISet<string> codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
+			CodePool codes, IReadOnlyDictionary<string, WebServiceParameterView> existing) {
 			string path = ElementPath(parameter.Path);
 			string sequenceElement = parameter.IsArray ? ElementPath(parameter.SequenceElement) : null;
 			string refusal = LeaveOutReason(parameter, path, sequenceElement, isRequest);
@@ -358,7 +414,7 @@ public static partial class WsdlRegistrationMapper {
 				// A code generated here is given back; one a matched method's parameter already has stays reserved, so no
 				// other parameter takes it and setMethod gives that parameter's UId to the wrong one.
 				if (previous is null) {
-					codes.Remove(code);
+					codes.Release(code);
 				}
 				return null;
 			}

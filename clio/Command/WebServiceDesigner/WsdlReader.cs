@@ -6,6 +6,7 @@ using System.IO.Abstractions;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using IFileSystem = System.IO.Abstractions.IFileSystem;
 
@@ -70,11 +71,18 @@ public interface IWsdlReader {
 	/// <summary>Reads the WSDL and returns one argument object per SOAP port.</summary>
 	/// <param name="request">The request.</param>
 	/// <returns>The ports with warnings, or operation names only when the result would be too large.</returns>
+	/// <exception cref="ArgumentException">
+	/// The request names both or neither source, a URL carries credentials or a key, a path is not a local absolute one, a
+	/// file cannot be read or is too large, the WSDL cannot be read, or the port, an operation or the service code is not
+	/// there.
+	/// </exception>
+	/// <exception cref="UnauthorizedAccessException">The environment user lacks CanManageSolution.</exception>
+	/// <exception cref="InvalidOperationException">The platform could not download the WSDL.</exception>
 	WsdlReadResult Read(WsdlReadRequest request);
 }
 
 /// <inheritdoc cref="IWsdlReader"/>
-public sealed class WsdlReader(
+public sealed partial class WsdlReader(
 	IWebServiceDesignerClient client,
 	ICreatioRightsClient rights,
 	IWebServicePrefixReader prefixReader,
@@ -92,6 +100,15 @@ public sealed class WsdlReader(
 	/// <summary>The most operation names a too-large result lists per port.</summary>
 	internal const int MaxListedOperations = 500;
 	private const string ManageSolutionOperation = "CanManageSolution";
+	/// <summary>The most characters of a platform download error shown.</summary>
+	private const int MaxShownErrorLength = 500;
+
+	// Query parameters that carry a key in common hosting (an Azure SAS signature, an Azure Functions key) but are not
+	// matched by the credential-name pattern.
+	private static readonly HashSet<string> SecretQueryNames = new(StringComparer.OrdinalIgnoreCase) { "sig", "sas", "code" };
+
+	[GeneratedRegex(@"^[A-Za-z]:[\\/]")]
+	private static partial Regex DriveRootedPath();
 
 	private static readonly JsonSerializerOptions ArgumentOptions = new() {
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -117,15 +134,16 @@ public sealed class WsdlReader(
 		}
 		string prefix = prefixReader.Read();
 		IReadOnlyList<WsdlSourceFile> files = fromUrl ? Download(url) : ReadFiles(request.WsdlFiles);
-		WsdlDocument document = parser.Parse(files, prefix);
+		WsdlDocument document = parser.Parse(files, prefix, new WsdlParseOptions(request.Port, request.Operations));
 		var warnings = new WarningLog();
-		if (fromUrl && HasReplacementCharacter(document)) {
+		if (fromUrl && (document.DroppedNamesWithQuestionMark || HasReplacementCharacter(document))) {
 			warnings.Add("Some names contain '?': the platform download turns every non-ASCII character into '?', so they "
 				+ "may be left out or wrong. Read the WSDL again with wsdl-files (a local copy) to keep them.");
 		}
 		foreach (string warning in document.Warnings) {
 			warnings.Add(warning);
 		}
+		warnings.AddDropped(document.WarningsDropped);
 		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document, request.Port), request.Operations);
 		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		var services = new List<WsdlServiceArguments>();
@@ -135,6 +153,10 @@ public sealed class WsdlReader(
 		}
 		return Result(services, warnings, Notices(services, target, url));
 	}
+
+	// Whether the request already named one port and one operation, so a result still too large cannot be narrowed.
+	private static bool IsNarrowest(IReadOnlyList<WsdlServiceArguments> services) =>
+		services.Count == 1 && services[0].Arguments.Methods.Count <= 1;
 
 	private List<string> Notices(IReadOnlyList<WsdlServiceArguments> services, WsdlTargetService target, Uri url) {
 		var notices = new List<string>();
@@ -176,8 +198,11 @@ public sealed class WsdlReader(
 			return result;
 		}
 		var summaryNotices = new List<string>(notices) {
-			$"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names are "
-			+ "listed. Ask the user which operations they need, then read the WSDL again with operations (and port)."
+			IsNarrowest(services)
+				? $"The result is too large to return whole (over {MaxResultCharacters} characters) even for one operation of one "
+					+ "port; only its name is listed. Ask the user which fields of it they need and describe the method by hand."
+				: $"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names "
+					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port)."
 		};
 		return result with {
 			Services = services.Select(s => new WsdlServiceView(s.Port, s.StudioPick,
@@ -205,7 +230,8 @@ public sealed class WsdlReader(
 		bool secretInQuery = parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
 			.Select(pair => (Pair: pair, At: pair.IndexOf('=')))
 			.Any(p => p.At > 0 && p.At < p.Pair.Length - 1
-				&& WebServiceSchemaView.IsSecretName(Uri.UnescapeDataString(p.Pair[..p.At])));
+				&& (WebServiceSchemaView.IsSecretName(Uri.UnescapeDataString(p.Pair[..p.At]))
+					|| SecretQueryNames.Contains(Uri.UnescapeDataString(p.Pair[..p.At]))));
 		if (secretInQuery) {
 			throw new ArgumentException("wsdl-url carries a key or token in its query; download the WSDL yourself and pass "
 				+ "it as wsdl-files.");
@@ -217,7 +243,9 @@ public sealed class WsdlReader(
 		try {
 			return client.DownloadWsdl(url.OriginalString);
 		} catch (InvalidOperationException exception) {
-			throw new InvalidOperationException(exception.Message + " If the stand cannot reach the URL, or the WSDL imports "
+			// The platform's error is redacted already, but it can still be long and span lines.
+			throw new InvalidOperationException(WsdlParser.ShownUpTo(exception.Message, MaxShownErrorLength)
+				+ " If the stand cannot reach the URL, or the WSDL imports "
 				+ "schemas by a relative schemaLocation (which the platform cannot download), download the files yourself and "
 				+ "pass them as wsdl-files.");
 		}
@@ -234,10 +262,19 @@ public sealed class WsdlReader(
 	}
 
 	// A UNC path (\\host\share, //host/share) would make the machine running clio open a network connection with the
-	// user's credentials.
-	private bool IsRefusedPath(string path) =>
-		string.IsNullOrWhiteSpace(path) || !fileSystem.Path.IsPathFullyQualified(path)
-		|| path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal);
+	// user's credentials, and so would an NT path such as \??\UNC\host\share or \??\GLOBALROOT\Device\Mup\..., which
+	// Windows treats as fully qualified. On Windows only a drive path (C:\...) is read, checked before and after it is made
+	// full; elsewhere only a path from the root (/...) that is not //host.
+	private bool IsRefusedPath(string path) {
+		if (string.IsNullOrWhiteSpace(path) || !fileSystem.Path.IsPathFullyQualified(path)
+				|| path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal)) {
+			return true;
+		}
+		if (fileSystem.Path.DirectorySeparatorChar != '\\') {
+			return !path.StartsWith('/');
+		}
+		return !DriveRootedPath().IsMatch(path) || !DriveRootedPath().IsMatch(fileSystem.Path.GetFullPath(path));
+	}
 
 	private IReadOnlyList<WsdlSourceFile> ReadFiles(IReadOnlyList<string> paths) {
 		var files = new List<WsdlSourceFile>();

@@ -147,9 +147,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-105556 (create-dynamic-case, one more line) measured 18767 (79 over). As the note above asks, the legend
 	// paid for it instead of the ceiling: its last sentence, which repeated get-tool-contract's own description,
 	// is gone.
-	// ENG-105475 slice C (read-wsdl, one more line): measured 18709, 21 over. Paid by the legend as this comment asks,
-	// not by a raise: "characters" became "chars" and "returns this index as objects" became "gives objects" (ClioRing
-	// reads detail=index-entries, never the legend), and the tool's purpose is the short "Reads a WSDL.".
+	// ENG-105475 slice C (read-wsdl, one more line): measured 18709, 21 over, on a branch where the legend still had the
+	// last sentence ENG-105556 later dropped. Paid by the legend then, not by a raise; of that payment only "characters"
+	// -> "chars" is still in the legend, and the tool's purpose is the short "Reads a WSDL.".
 	// Merged with ENG-105556 on the ENG-105475 slice C branch: both lines together measured 18696, 8 over, after
 	// ENG-105556 dropped the legend's last sentence. Paid by the legend again: "One line per tool:" became
 	// "Each line:" and "it may delete" became "may delete". The resident sentence is unchanged.

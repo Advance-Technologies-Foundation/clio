@@ -224,7 +224,7 @@ public sealed class WsdlParserGuardTests {
 	}
 
 	[Test]
-	[Description("A parse reports at most the warning limit and counts the rest.")]
+	[Description("A parse reports at most the warning limit and counts the rest, without adding a count line of its own.")]
 	public void Parse_Should_Cap_The_Warnings() {
 		// Arrange
 		string fields = string.Concat(Enumerable.Range(0, WsdlParser.MaxWarnings + 20)
@@ -235,8 +235,126 @@ public sealed class WsdlParserGuardTests {
 		WsdlDocument document = Parse(xml);
 
 		// Assert
-		document.Warnings.Should().HaveCount(WsdlParser.MaxWarnings + 1, because: "the limit plus the count line");
-		document.Warnings[^1].Should().StartWith("...and 20 more", because: "the rest are counted");
+		document.Warnings.Should().HaveCount(WsdlParser.MaxWarnings, because: "the list stops at the limit");
+		document.WarningsDropped.Should().Be(20, because: "the rest are counted for the reader's single count line");
+	}
+
+	private static string SoapPort(string name, string binding = "B") =>
+		$"<wsdl:port name=\"{name}\" binding=\"tns:{binding}\"><soap:address location=\"http://localhost/svc\" /></wsdl:port>";
+
+	private static string Soap12Port(string name) =>
+		$"<wsdl:port name=\"{name}\" binding=\"tns:B\"><soap12:address xmlns:soap12=\"http://schemas.xmlsoap.org/wsdl/soap12/\" "
+		+ "location=\"http://localhost/svc\" /></wsdl:port>";
+
+	private static string OneFieldWsdl(string ports) =>
+		Wsdl(Request("<xs:element name=\"a\" type=\"xs:string\" />"), Messages("Op", "Op", "OpResponse"), Operation("Op"),
+			Binding("Op"), ports);
+
+	[Test]
+	[Description("Ports on one binding share a single build of its operations, so the work does not grow with ports times operations.")]
+	public void Parse_Should_Build_A_Binding_Once_For_All_Its_Ports() {
+		// Arrange
+		string xml = OneFieldWsdl(string.Concat(Enumerable.Range(0, 5).Select(i => SoapPort($"Soap{i}"))));
+
+		// Act
+		WsdlDocument document = Parse(xml);
+
+		// Assert
+		document.Ports.Should().HaveCount(5, because: "every SOAP port is returned");
+		document.Ports.Should().OnlyContain(p => ReferenceEquals(p.Operations[0], document.Ports[0].Operations[0]),
+			because: "the operations of a binding are built once and shared by its ports");
+	}
+
+	[Test]
+	[Description("Past the port limit the first ports and Studio's pick are read, with a warning to name the port.")]
+	public void Parse_Should_Cap_The_Ports() {
+		// Arrange
+		string xml = OneFieldWsdl(string.Concat(Enumerable.Range(0, WsdlParser.MaxPorts + 3).Select(i => SoapPort($"Soap{i}")))
+			+ Soap12Port("Last12"));
+
+		// Act
+		WsdlDocument document = Parse(xml);
+
+		// Assert
+		document.Ports.Should().HaveCount(WsdlParser.MaxPorts + 1, because: "the first ports and Studio's pick are read");
+		document.StudioPort.Should().Be("Last12", because: "Studio's pick is decided over every port");
+		document.Ports[^1].Name.Should().Be("Last12", because: "Studio's pick is always read");
+		document.Warnings.Should().Contain(w => w.Contains($"{WsdlParser.MaxPorts + 4} SOAP ports") && w.Contains("port"),
+			because: "the agent is told to name the port it needs");
+	}
+
+	[Test]
+	[Description("The port option builds that port only, Studio's pick is still decided over every port, and a port the WSDL lacks is refused with the ports it has.")]
+	public void Parse_Should_Read_Only_The_Named_Port() {
+		// Arrange
+		string xml = OneFieldWsdl(SoapPort("Soap") + Soap12Port("Soap12"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Port: "soap"));
+		Action unknown = () => _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Port: "Http"));
+
+		// Assert
+		document.Ports.Select(p => p.Name).Should().Equal(["Soap"], because: "the port is matched ignoring case");
+		document.StudioPort.Should().Be("Soap12", because: "the pick does not depend on the port asked for");
+		unknown.Should().Throw<ArgumentException>(because: "the port is not in the WSDL")
+			.WithMessage("*Http*not a SOAP port*Soap, Soap12*");
+	}
+
+	[Test]
+	[Description("The operations option builds the named operations only, and an operation the WSDL lacks is refused with every operation it has.")]
+	public void Parse_Should_Read_Only_The_Named_Operations() {
+		// Arrange
+		string types = Request("<xs:element name=\"a\" type=\"xs:string\" />")
+			+ "<xs:element name=\"Other\"><xs:complexType><xs:sequence /></xs:complexType></xs:element>"
+			+ "<xs:element name=\"OtherResponse\"><xs:complexType><xs:sequence /></xs:complexType></xs:element>";
+		string xml = Wsdl(types, Messages("Op", "Op", "OpResponse") + Messages("Other", "Other", "OtherResponse"),
+			Operation("Op") + Operation("Other"), Binding("Op") + Binding("Other"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Operations: ["op"]));
+		Action unknown = () => _sut.Parse([File(xml)], "Usr", new WsdlParseOptions(Operations: ["Nope"]));
+
+		// Assert
+		document.Ports.Single().Operations.Select(o => o.Caption).Should().Equal(["Op"],
+			because: "only the named operation is built, matched ignoring case");
+		unknown.Should().Throw<ArgumentException>(because: "the operation is not in the WSDL")
+			.WithMessage("*Nope*not found*Op, Other*");
+	}
+
+	[Test]
+	[Description("A WSDL with more operations to read than the limit is refused, even when its operations read no element, and the agent is told to name the ones it needs.")]
+	public void Parse_Should_Refuse_Too_Many_Operations() {
+		// Arrange
+		string operations = string.Concat(Enumerable.Range(0, WsdlParser.MaxOperations + 1)
+			.Select(i => $"<wsdl:operation name=\"O{i}\"><wsdl:input message=\"tns:E\" /></wsdl:operation>"));
+		string xml = Wsdl(string.Empty, "<wsdl:message name=\"E\" />", operations, string.Empty);
+
+		// Act
+		Action act = () => Parse(xml);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "operations without parts escape the element budget")
+			.WithMessage($"*more than {WsdlParser.MaxOperations} operations*port and operations*");
+	}
+
+	[Test]
+	[Description("Many fields with one name get the wizard's numbered codes without probing every number again for each.")]
+	public void Parse_Should_Number_Equal_Names_In_Linear_Time() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Repeat("<xs:element name=\"a\" type=\"xs:string\" />", 20_000));
+		string xml = Wsdl(Request(fields), Messages("Op", "Op", "OpResponse"), Operation("Op"), Binding("Op"));
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		WsdlDocument document = Parse(xml);
+		watch.Stop();
+
+		// Assert
+		List<string> codes = document.Ports.Single().Operations.Single().Request.Select(p => p.StudioCode).ToList();
+		codes.Should().OnlyHaveUniqueItems(because: "a repeated name gets the next number");
+		codes.Take(3).Should().Equal(["Usra", "Usra1", "Usra2"], because: "the wizard numbers a repeated code from 1");
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+			because: "numbering is linear; probing every number again took minutes for this many names");
 	}
 
 	[Test]
