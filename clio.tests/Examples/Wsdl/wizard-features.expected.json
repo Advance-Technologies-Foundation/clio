@@ -1,0 +1,1658 @@
+[
+	{
+		"type": "soap11",
+		"caption": "ClioWizardFeatures",
+		"portName": "ClioWizardFeaturesSoap",
+		"baseUri": "http://localhost/clio-wizard-features.asmx",
+		"namespaces": [
+			{
+				"prefix": "tem",
+				"name": "http://example.org/clio/wizard/"
+			},
+			{
+				"prefix": "ns0",
+				"name": "http://example.org/clio/types"
+			},
+			{
+				"prefix": "ns1",
+				"name": "http://example.org/clio/meta"
+			},
+			{
+				"prefix": "ns2",
+				"name": "http://www.w3.org/2001/XMLSchema"
+			}
+		],
+		"methods": [
+			{
+				"name": "UsrGBRef",
+				"caption": "GetByRef",
+				"soapAction": "http://example.org/clio/wizard/GetByRef",
+				"uri": "GetByRef",
+				"request": [
+					{
+						"name": "Usrrequest",
+						"caption": "request",
+						"path": "tem:request",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:RoleRef",
+						"items": [
+							{
+								"name": "Usrrequestidentifier",
+								"caption": "identifier",
+								"path": "ns0:identifier",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:identifier",
+								"items": []
+							},
+							{
+								"name": "UsrName",
+								"caption": "roleName",
+								"path": "ns0:roleName",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:roleName",
+								"items": []
+							}
+						]
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGBRResult",
+						"caption": "GetByRefResult",
+						"path": "tem:GetByRefResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetByRefResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGNested",
+				"caption": "GetNested",
+				"soapAction": "http://example.org/clio/wizard/GetNested",
+				"uri": "GetNested",
+				"request": [
+					{
+						"name": "Usridentifier",
+						"caption": "identifier",
+						"path": "tem:data/ns0:identifier",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:identifier",
+						"items": []
+					},
+					{
+						"name": "Usrmetadataschema",
+						"caption": "metadata schema",
+						"path": "tem:data/ns0:metadata/ns1:schema",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns1:schema",
+						"items": []
+					},
+					{
+						"name": "UsrName",
+						"caption": "roleName",
+						"path": "tem:data/ns0:roleName",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:roleName",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGNResult",
+						"caption": "GetNestedResult",
+						"path": "tem:GetNestedResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetNestedResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGComplex",
+				"caption": "GetComplex",
+				"soapAction": "http://example.org/clio/wizard/GetComplex",
+				"uri": "GetComplex",
+				"request": [
+					{
+						"name": "Usrid",
+						"caption": "id",
+						"path": "tem:msg/ns0:id",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:id",
+						"items": []
+					},
+					{
+						"name": "Usrroleidentifier",
+						"caption": "role identifier",
+						"path": "tem:msg/ns0:role/ns0:identifier",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:identifier",
+						"items": []
+					},
+					{
+						"name": "Usrrolemetadataschema",
+						"caption": "role metadata schema",
+						"path": "tem:msg/ns0:role/ns0:metadata/ns1:schema",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns1:schema",
+						"items": []
+					},
+					{
+						"name": "UsrName",
+						"caption": "role roleName",
+						"path": "tem:msg/ns0:role/ns0:roleName",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:roleName",
+						"items": []
+					},
+					{
+						"name": "Usractive",
+						"caption": "active",
+						"path": "tem:msg/ns0:active",
+						"type": "Boolean",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:active",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGCResult",
+						"caption": "GetComplexResult",
+						"path": "tem:GetComplexResult",
+						"type": "Boolean",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetComplexResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGBArray",
+				"caption": "GetByArray",
+				"soapAction": "http://example.org/clio/wizard/GetByArray",
+				"uri": "GetByArray",
+				"request": [
+					{
+						"name": "Usrtags",
+						"caption": "tags",
+						"path": "tem:tags",
+						"type": "Text",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:string",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGBAResult",
+						"caption": "GetByArrayResult",
+						"path": "tem:GetByArrayResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetByArrayResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGBRoles",
+				"caption": "GetByRoles",
+				"soapAction": "http://example.org/clio/wizard/GetByRoles",
+				"uri": "GetByRoles",
+				"request": [
+					{
+						"name": "Usrowner",
+						"caption": "owner",
+						"path": "tem:msg/ns0:owner",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:owner",
+						"items": []
+					},
+					{
+						"name": "Usrroles",
+						"caption": "roles",
+						"path": "tem:msg/ns0:roles",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:RoleObject",
+						"items": [
+							{
+								"name": "Usrrolesidentifier",
+								"caption": "identifier",
+								"path": "ns0:identifier",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:identifier",
+								"items": []
+							},
+							{
+								"name": "Usrrolesmetadataschema",
+								"caption": "metadata schema",
+								"path": "ns0:metadata/ns1:schema",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns1:schema",
+								"items": []
+							},
+							{
+								"name": "UsrName",
+								"caption": "roleName",
+								"path": "ns0:roleName",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:roleName",
+								"items": []
+							}
+						]
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGBRResult",
+						"caption": "GetByRolesResult",
+						"path": "tem:GetByRolesResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetByRolesResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGRegions",
+				"caption": "GetRegions",
+				"soapAction": "http://example.org/clio/wizard/GetRegions",
+				"uri": "GetRegions",
+				"request": [
+					{
+						"name": "UsrCode",
+						"caption": "countryCode",
+						"path": "tem:countryCode",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:countryCode",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGRResponse",
+						"caption": "GetRegionsResponse",
+						"path": "tem:GetRegionsResponse",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Region",
+						"items": [
+							{
+								"name": "UsrGRRRId",
+								"caption": "Region_Id",
+								"path": "tem:Region_Id",
+								"type": "Integer",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:Region_Id",
+								"items": []
+							},
+							{
+								"name": "UsrGRRRName",
+								"caption": "Region_Name",
+								"path": "tem:Region_Name",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:Region_Name",
+								"items": []
+							},
+							{
+								"name": "UsrGRRCCode",
+								"caption": "Country_Code",
+								"path": "tem:Country_Code",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:Country_Code",
+								"items": []
+							}
+						]
+					}
+				]
+			},
+			{
+				"name": "UsrGCatalog",
+				"caption": "GetCatalog",
+				"soapAction": "http://example.org/clio/wizard/GetCatalog",
+				"uri": "GetCatalog",
+				"request": [
+					{
+						"name": "Usrcategory",
+						"caption": "category",
+						"path": "tem:category",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:category",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "Usritems",
+						"caption": "items",
+						"path": "tem:items",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:item",
+						"items": [
+							{
+								"name": "Usritemstitle",
+								"caption": "title",
+								"path": "tem:title",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:title",
+								"items": []
+							},
+							{
+								"name": "Usritemsshort_description",
+								"caption": "short_description",
+								"path": "tem:short_description",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:short_description",
+								"items": []
+							}
+						]
+					},
+					{
+						"name": "Usritemstitle1",
+						"caption": "items title",
+						"path": "tem:items/tem:title",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:title",
+						"items": []
+					},
+					{
+						"name": "Usritemsshort_description1",
+						"caption": "items short_description",
+						"path": "tem:items/tem:short_description",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:short_description",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGMTypes",
+				"caption": "GetManyTypes",
+				"soapAction": "http://example.org/clio/wizard/GetManyTypes",
+				"uri": "GetManyTypes",
+				"request": [
+					{
+						"name": "Usrname",
+						"caption": "name",
+						"path": "tem:name",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:name",
+						"items": []
+					},
+					{
+						"name": "Usrcount",
+						"caption": "count",
+						"path": "tem:count",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:count",
+						"items": []
+					},
+					{
+						"name": "Usrtotal",
+						"caption": "total",
+						"path": "tem:total",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:total",
+						"items": []
+					},
+					{
+						"name": "Usrbig",
+						"caption": "big",
+						"path": "tem:big",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:big",
+						"items": []
+					},
+					{
+						"name": "Usrpercents",
+						"caption": "percents",
+						"path": "tem:percents",
+						"type": "Float",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:percents",
+						"items": []
+					},
+					{
+						"name": "Usrdate",
+						"caption": "date",
+						"path": "tem:date",
+						"type": "DateTime",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:date",
+						"items": []
+					},
+					{
+						"name": "Usrday",
+						"caption": "day",
+						"path": "tem:day",
+						"type": "Date",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:day",
+						"items": []
+					},
+					{
+						"name": "Usruid",
+						"caption": "uid",
+						"path": "tem:uid",
+						"type": "Guid",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:uid",
+						"items": []
+					},
+					{
+						"name": "Usrlevel",
+						"caption": "level",
+						"path": "tem:level",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:level",
+						"items": []
+					},
+					{
+						"name": "Usrcode",
+						"caption": "code",
+						"path": "tem:code",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:code",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGMTResult",
+						"caption": "GetManyTypesResult",
+						"path": "tem:GetManyTypesResult",
+						"type": "Boolean",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetManyTypesResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrFPerson",
+				"caption": "FindPerson",
+				"soapAction": "http://example.org/clio/wizard/FindPerson",
+				"uri": "FindPerson",
+				"request": [
+					{
+						"name": "Usrid",
+						"caption": "id",
+						"path": "tem:id",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:id",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrName",
+						"caption": "Name",
+						"path": "tem:FindPersonResult/tem:Name",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Name",
+						"items": []
+					},
+					{
+						"name": "UsrHStreet",
+						"caption": "Home Street",
+						"path": "tem:FindPersonResult/tem:Home/tem:Street",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Street",
+						"items": []
+					},
+					{
+						"name": "UsrHCity",
+						"caption": "Home City",
+						"path": "tem:FindPersonResult/tem:Home/tem:City",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:City",
+						"items": []
+					},
+					{
+						"name": "UsrSName",
+						"caption": "Spouse Name",
+						"path": "tem:FindPersonResult/tem:Spouse/tem:Name",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Name",
+						"items": []
+					},
+					{
+						"name": "UsrSHStreet",
+						"caption": "Spouse Home Street",
+						"path": "tem:FindPersonResult/tem:Spouse/tem:Home/tem:Street",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Street",
+						"items": []
+					},
+					{
+						"name": "UsrSHCity",
+						"caption": "Spouse Home City",
+						"path": "tem:FindPersonResult/tem:Spouse/tem:Home/tem:City",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:City",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrSCall",
+				"caption": "SecureCall",
+				"soapAction": "http://example.org/clio/wizard/SecureCall",
+				"uri": "SecureCall",
+				"request": [
+					{
+						"name": "Usrid",
+						"caption": "id",
+						"path": "tem:order/tem:id",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:id",
+						"items": []
+					},
+					{
+						"name": "Usrnote",
+						"caption": "note",
+						"path": "tem:order/tem:note",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:note",
+						"items": []
+					},
+					{
+						"name": "UsrUName",
+						"caption": "UserName",
+						"path": "tem:AuthHeader/tem:UserName",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:UserName",
+						"items": []
+					},
+					{
+						"name": "UsrToken",
+						"caption": "Token",
+						"path": "tem:AuthHeader/tem:Token",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Token",
+						"items": []
+					},
+					{
+						"name": "UsrSTenant",
+						"caption": "Scope Tenant",
+						"path": "tem:AuthHeader/tem:Scope/tem:Tenant",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Tenant",
+						"items": []
+					},
+					{
+						"name": "UsrTenant",
+						"caption": "Tenant",
+						"path": "tem:AuthHeader/tem:Tenant",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Tenant",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrSCResult",
+						"caption": "SecureCallResult",
+						"path": "tem:SecureCallResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:SecureCallResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrTCall",
+				"caption": "TaggedCall",
+				"soapAction": "http://example.org/clio/wizard/TaggedCall",
+				"uri": "TaggedCall",
+				"request": [
+					{
+						"name": "UsrTHeader",
+						"caption": "TagsHeader",
+						"path": "tem:TagsHeader",
+						"type": "Text",
+						"isArray": true,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Tag",
+						"items": []
+					}
+				],
+				"response": []
+			},
+			{
+				"name": "UsrPing",
+				"caption": "Ping",
+				"soapAction": "http://example.org/clio/wizard/Ping",
+				"uri": "PingWithAVeryLongRequestElementNameThatKeepsGoingPastTheLimitOfTwoHundredCharactersWhichStudioCutsFromTheStartSoTheEndOfTheNameSurvivesAndTheSchemaNamePrefixIsLostOnTheWayUnlessClioKeepsItInFrontOfTheTailEveryTime",
+				"request": [
+					{
+						"name": "ng_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"caption": "payload_with_a_very_long_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"path": "tem:payload_with_a_very_long_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:payload_with_a_very_long_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrPResult",
+						"caption": "PingResult",
+						"path": "tem:PingResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:PingResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrBMethod",
+				"caption": "getBank.Method",
+				"soapAction": "http://example.org/clio/wizard/getBank",
+				"uri": "getBank.Method",
+				"request": [
+					{
+						"name": "Usrblz.method-parameter",
+						"caption": "blz.method-parameter",
+						"path": "tem:blz.method-parameter",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:blz.method-parameter",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "Usrbezeichnung",
+						"caption": "bezeichnung",
+						"path": "tem:details/tem:bezeichnung",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:bezeichnung",
+						"items": []
+					},
+					{
+						"name": "Usrbic",
+						"caption": "bic",
+						"path": "tem:details/tem:bic",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:bic",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrCPhone",
+				"caption": "CheckPhone",
+				"soapAction": "http://example.org/clio/wizard/CheckPhone",
+				"uri": "CheckPhone",
+				"request": [
+					{
+						"name": "UsrPNumber",
+						"caption": "PhoneNumber",
+						"path": "ns2:PhoneNumber",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns2:PhoneNumber",
+						"items": []
+					},
+					{
+						"name": "UsrLKey",
+						"caption": "LicenseKey",
+						"path": "ns2:LicenseKey",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns2:LicenseKey",
+						"items": []
+					}
+				],
+				"response": []
+			}
+		]
+	},
+	{
+		"type": "soap12",
+		"caption": "ClioWizardFeatures",
+		"portName": "ClioWizardFeaturesSoap12",
+		"baseUri": "http://localhost/clio-wizard-features.asmx",
+		"namespaces": [
+			{
+				"prefix": "tem",
+				"name": "http://example.org/clio/wizard/"
+			},
+			{
+				"prefix": "ns0",
+				"name": "http://example.org/clio/types"
+			},
+			{
+				"prefix": "ns1",
+				"name": "http://example.org/clio/meta"
+			},
+			{
+				"prefix": "ns2",
+				"name": "http://www.w3.org/2001/XMLSchema"
+			}
+		],
+		"methods": [
+			{
+				"name": "UsrGBRef",
+				"caption": "GetByRef",
+				"soapAction": "http://example.org/clio/wizard/GetByRef",
+				"uri": "GetByRef",
+				"request": [
+					{
+						"name": "Usrrequest",
+						"caption": "request",
+						"path": "tem:request",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:RoleRef",
+						"items": [
+							{
+								"name": "Usrrequestidentifier",
+								"caption": "identifier",
+								"path": "ns0:identifier",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:identifier",
+								"items": []
+							},
+							{
+								"name": "UsrName",
+								"caption": "roleName",
+								"path": "ns0:roleName",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:roleName",
+								"items": []
+							}
+						]
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGBRResult",
+						"caption": "GetByRefResult",
+						"path": "tem:GetByRefResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetByRefResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGNested",
+				"caption": "GetNested",
+				"soapAction": "http://example.org/clio/wizard/GetNested",
+				"uri": "GetNested",
+				"request": [
+					{
+						"name": "Usridentifier",
+						"caption": "identifier",
+						"path": "tem:data/ns0:identifier",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:identifier",
+						"items": []
+					},
+					{
+						"name": "Usrmetadataschema",
+						"caption": "metadata schema",
+						"path": "tem:data/ns0:metadata/ns1:schema",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns1:schema",
+						"items": []
+					},
+					{
+						"name": "UsrName",
+						"caption": "roleName",
+						"path": "tem:data/ns0:roleName",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:roleName",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGNResult",
+						"caption": "GetNestedResult",
+						"path": "tem:GetNestedResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetNestedResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGComplex",
+				"caption": "GetComplex",
+				"soapAction": "http://example.org/clio/wizard/GetComplex",
+				"uri": "GetComplex",
+				"request": [
+					{
+						"name": "Usrid",
+						"caption": "id",
+						"path": "tem:msg/ns0:id",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:id",
+						"items": []
+					},
+					{
+						"name": "Usrroleidentifier",
+						"caption": "role identifier",
+						"path": "tem:msg/ns0:role/ns0:identifier",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:identifier",
+						"items": []
+					},
+					{
+						"name": "Usrrolemetadataschema",
+						"caption": "role metadata schema",
+						"path": "tem:msg/ns0:role/ns0:metadata/ns1:schema",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns1:schema",
+						"items": []
+					},
+					{
+						"name": "UsrName",
+						"caption": "role roleName",
+						"path": "tem:msg/ns0:role/ns0:roleName",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:roleName",
+						"items": []
+					},
+					{
+						"name": "Usractive",
+						"caption": "active",
+						"path": "tem:msg/ns0:active",
+						"type": "Boolean",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:active",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGCResult",
+						"caption": "GetComplexResult",
+						"path": "tem:GetComplexResult",
+						"type": "Boolean",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetComplexResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGBArray",
+				"caption": "GetByArray",
+				"soapAction": "http://example.org/clio/wizard/GetByArray",
+				"uri": "GetByArray",
+				"request": [
+					{
+						"name": "Usrtags",
+						"caption": "tags",
+						"path": "tem:tags",
+						"type": "Text",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:string",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGBAResult",
+						"caption": "GetByArrayResult",
+						"path": "tem:GetByArrayResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetByArrayResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGBRoles",
+				"caption": "GetByRoles",
+				"soapAction": "http://example.org/clio/wizard/GetByRoles",
+				"uri": "GetByRoles",
+				"request": [
+					{
+						"name": "Usrowner",
+						"caption": "owner",
+						"path": "tem:msg/ns0:owner",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:owner",
+						"items": []
+					},
+					{
+						"name": "Usrroles",
+						"caption": "roles",
+						"path": "tem:msg/ns0:roles",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:RoleObject",
+						"items": [
+							{
+								"name": "Usrrolesidentifier",
+								"caption": "identifier",
+								"path": "ns0:identifier",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:identifier",
+								"items": []
+							},
+							{
+								"name": "Usrrolesmetadataschema",
+								"caption": "metadata schema",
+								"path": "ns0:metadata/ns1:schema",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns1:schema",
+								"items": []
+							},
+							{
+								"name": "UsrName",
+								"caption": "roleName",
+								"path": "ns0:roleName",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "ns0:roleName",
+								"items": []
+							}
+						]
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGBRResult",
+						"caption": "GetByRolesResult",
+						"path": "tem:GetByRolesResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetByRolesResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGRegions",
+				"caption": "GetRegions",
+				"soapAction": "http://example.org/clio/wizard/GetRegions",
+				"uri": "GetRegions",
+				"request": [
+					{
+						"name": "UsrCode",
+						"caption": "countryCode",
+						"path": "tem:countryCode",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:countryCode",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGRResponse",
+						"caption": "GetRegionsResponse",
+						"path": "tem:GetRegionsResponse",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Region",
+						"items": [
+							{
+								"name": "UsrGRRRId",
+								"caption": "Region_Id",
+								"path": "tem:Region_Id",
+								"type": "Integer",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:Region_Id",
+								"items": []
+							},
+							{
+								"name": "UsrGRRRName",
+								"caption": "Region_Name",
+								"path": "tem:Region_Name",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:Region_Name",
+								"items": []
+							},
+							{
+								"name": "UsrGRRCCode",
+								"caption": "Country_Code",
+								"path": "tem:Country_Code",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:Country_Code",
+								"items": []
+							}
+						]
+					}
+				]
+			},
+			{
+				"name": "UsrGCatalog",
+				"caption": "GetCatalog",
+				"soapAction": "http://example.org/clio/wizard/GetCatalog",
+				"uri": "GetCatalog",
+				"request": [
+					{
+						"name": "Usrcategory",
+						"caption": "category",
+						"path": "tem:category",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:category",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "Usritems",
+						"caption": "items",
+						"path": "tem:items",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:item",
+						"items": [
+							{
+								"name": "Usritemstitle",
+								"caption": "title",
+								"path": "tem:title",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:title",
+								"items": []
+							},
+							{
+								"name": "Usritemsshort_description",
+								"caption": "short_description",
+								"path": "tem:short_description",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:short_description",
+								"items": []
+							}
+						]
+					},
+					{
+						"name": "Usritemstitle1",
+						"caption": "items title",
+						"path": "tem:items/tem:title",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:title",
+						"items": []
+					},
+					{
+						"name": "Usritemsshort_description1",
+						"caption": "items short_description",
+						"path": "tem:items/tem:short_description",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:short_description",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrGMTypes",
+				"caption": "GetManyTypes",
+				"soapAction": "http://example.org/clio/wizard/GetManyTypes",
+				"uri": "GetManyTypes",
+				"request": [
+					{
+						"name": "Usrname",
+						"caption": "name",
+						"path": "tem:name",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:name",
+						"items": []
+					},
+					{
+						"name": "Usrcount",
+						"caption": "count",
+						"path": "tem:count",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:count",
+						"items": []
+					},
+					{
+						"name": "Usrtotal",
+						"caption": "total",
+						"path": "tem:total",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:total",
+						"items": []
+					},
+					{
+						"name": "Usrbig",
+						"caption": "big",
+						"path": "tem:big",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:big",
+						"items": []
+					},
+					{
+						"name": "Usrpercents",
+						"caption": "percents",
+						"path": "tem:percents",
+						"type": "Float",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:percents",
+						"items": []
+					},
+					{
+						"name": "Usrdate",
+						"caption": "date",
+						"path": "tem:date",
+						"type": "DateTime",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:date",
+						"items": []
+					},
+					{
+						"name": "Usrday",
+						"caption": "day",
+						"path": "tem:day",
+						"type": "Date",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:day",
+						"items": []
+					},
+					{
+						"name": "Usruid",
+						"caption": "uid",
+						"path": "tem:uid",
+						"type": "Guid",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:uid",
+						"items": []
+					},
+					{
+						"name": "Usrlevel",
+						"caption": "level",
+						"path": "tem:level",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:level",
+						"items": []
+					},
+					{
+						"name": "Usrcode",
+						"caption": "code",
+						"path": "tem:code",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:code",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrGMTResult",
+						"caption": "GetManyTypesResult",
+						"path": "tem:GetManyTypesResult",
+						"type": "Boolean",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:GetManyTypesResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrFPerson",
+				"caption": "FindPerson",
+				"soapAction": "http://example.org/clio/wizard/FindPerson",
+				"uri": "FindPerson",
+				"request": [
+					{
+						"name": "Usrid",
+						"caption": "id",
+						"path": "tem:id",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:id",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrName",
+						"caption": "Name",
+						"path": "tem:FindPersonResult/tem:Name",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Name",
+						"items": []
+					},
+					{
+						"name": "UsrHStreet",
+						"caption": "Home Street",
+						"path": "tem:FindPersonResult/tem:Home/tem:Street",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Street",
+						"items": []
+					},
+					{
+						"name": "UsrHCity",
+						"caption": "Home City",
+						"path": "tem:FindPersonResult/tem:Home/tem:City",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:City",
+						"items": []
+					},
+					{
+						"name": "UsrSName",
+						"caption": "Spouse Name",
+						"path": "tem:FindPersonResult/tem:Spouse/tem:Name",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Name",
+						"items": []
+					},
+					{
+						"name": "UsrSHStreet",
+						"caption": "Spouse Home Street",
+						"path": "tem:FindPersonResult/tem:Spouse/tem:Home/tem:Street",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Street",
+						"items": []
+					},
+					{
+						"name": "UsrSHCity",
+						"caption": "Spouse Home City",
+						"path": "tem:FindPersonResult/tem:Spouse/tem:Home/tem:City",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:City",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrSCall",
+				"caption": "SecureCall",
+				"soapAction": "http://example.org/clio/wizard/SecureCall",
+				"uri": "SecureCall",
+				"request": [
+					{
+						"name": "Usrid",
+						"caption": "id",
+						"path": "tem:order/tem:id",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:id",
+						"items": []
+					},
+					{
+						"name": "Usrnote",
+						"caption": "note",
+						"path": "tem:order/tem:note",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:note",
+						"items": []
+					},
+					{
+						"name": "UsrUName",
+						"caption": "UserName",
+						"path": "tem:AuthHeader/tem:UserName",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:UserName",
+						"items": []
+					},
+					{
+						"name": "UsrToken",
+						"caption": "Token",
+						"path": "tem:AuthHeader/tem:Token",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Token",
+						"items": []
+					},
+					{
+						"name": "UsrSTenant",
+						"caption": "Scope Tenant",
+						"path": "tem:AuthHeader/tem:Scope/tem:Tenant",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Tenant",
+						"items": []
+					},
+					{
+						"name": "UsrTenant",
+						"caption": "Tenant",
+						"path": "tem:AuthHeader/tem:Tenant",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Tenant",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrSCResult",
+						"caption": "SecureCallResult",
+						"path": "tem:SecureCallResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:SecureCallResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrTCall",
+				"caption": "TaggedCall",
+				"soapAction": "http://example.org/clio/wizard/TaggedCall",
+				"uri": "TaggedCall",
+				"request": [
+					{
+						"name": "UsrTHeader",
+						"caption": "TagsHeader",
+						"path": "tem:TagsHeader",
+						"type": "Text",
+						"isArray": true,
+						"isSoapHeader": true,
+						"sequenceElementName": "tem:Tag",
+						"items": []
+					}
+				],
+				"response": []
+			},
+			{
+				"name": "UsrPing",
+				"caption": "Ping",
+				"soapAction": "http://example.org/clio/wizard/Ping",
+				"uri": "PingWithAVeryLongRequestElementNameThatKeepsGoingPastTheLimitOfTwoHundredCharactersWhichStudioCutsFromTheStartSoTheEndOfTheNameSurvivesAndTheSchemaNamePrefixIsLostOnTheWayUnlessClioKeepsItInFrontOfTheTailEveryTime",
+				"request": [
+					{
+						"name": "ng_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"caption": "payload_with_a_very_long_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"path": "tem:payload_with_a_very_long_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:payload_with_a_very_long_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrPResult",
+						"caption": "PingResult",
+						"path": "tem:PingResult",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:PingResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrBMethod",
+				"caption": "getBank.Method",
+				"soapAction": "http://example.org/clio/wizard/getBank",
+				"uri": "getBank.Method",
+				"request": [
+					{
+						"name": "Usrblz.method-parameter",
+						"caption": "blz.method-parameter",
+						"path": "tem:blz.method-parameter",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:blz.method-parameter",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "Usrbezeichnung",
+						"caption": "bezeichnung",
+						"path": "tem:details/tem:bezeichnung",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:bezeichnung",
+						"items": []
+					},
+					{
+						"name": "Usrbic",
+						"caption": "bic",
+						"path": "tem:details/tem:bic",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:bic",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrCPhone",
+				"caption": "CheckPhone",
+				"soapAction": "http://example.org/clio/wizard/CheckPhone",
+				"uri": "CheckPhone",
+				"request": [
+					{
+						"name": "UsrPNumber",
+						"caption": "PhoneNumber",
+						"path": "ns2:PhoneNumber",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns2:PhoneNumber",
+						"items": []
+					},
+					{
+						"name": "UsrLKey",
+						"caption": "LicenseKey",
+						"path": "ns2:LicenseKey",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns2:LicenseKey",
+						"items": []
+					}
+				],
+				"response": []
+			}
+		]
+	}
+]

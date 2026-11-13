@@ -37,12 +37,19 @@ public abstract class CreatioServiceClient
 	/// <param name="route">The known service route to call.</param>
 	/// <param name="request">The request payload; serialized with default options (honors JsonPropertyName).</param>
 	/// <param name="requestOptions">The request timeout and retry settings.</param>
+	/// <param name="maxResponseCharacters">
+	/// When set, a longer reply is refused before it is deserialized, so its objects are never built; the text itself has
+	/// already been read whole by the application client.
+	/// </param>
+	/// <param name="tooLargeMessage">The message of that refusal; a generic one when null.</param>
 	/// <returns>The deserialized response.</returns>
-	/// <exception cref="InvalidOperationException">The service returned an empty or non-JSON response.</exception>
+	/// <exception cref="InvalidOperationException">
+	/// The service returned an empty or non-JSON response, or one longer than <paramref name="maxResponseCharacters"/>.
+	/// </exception>
 	/// <exception cref="TimeoutException">The options' <see cref="CreatioRequestOptions.Deadline"/> is spent: nothing
 	/// was sent.</exception>
 	protected TResponse PostAndDeserialize<TResponse>(ServiceUrlBuilder.KnownRoute route, object request,
-		CreatioRequestOptions requestOptions) {
+		CreatioRequestOptions requestOptions, long? maxResponseCharacters = null, string tooLargeMessage = null) {
 		string url = _urlBuilder.Build(route);
 		string requestData = JsonSerializer.Serialize(request);
 		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
@@ -50,6 +57,10 @@ public abstract class CreatioServiceClient
 			sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
 		if (string.IsNullOrWhiteSpace(response)) {
 			throw new InvalidOperationException($"Empty response from {url}.");
+		}
+		if (response.Length > maxResponseCharacters) {
+			throw new InvalidOperationException(tooLargeMessage
+				?? $"The response from {url} is longer than {maxResponseCharacters} characters.");
 		}
 		try {
 			return JsonSerializer.Deserialize<TResponse>(response, ResponseJsonOptions);

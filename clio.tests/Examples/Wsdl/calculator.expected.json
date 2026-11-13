@@ -1,0 +1,350 @@
+[
+	{
+		"type": "soap11",
+		"caption": "Calculator",
+		"portName": "CalculatorSoap",
+		"baseUri": "http://www.dneonline.com/calculator.asmx",
+		"namespaces": [
+			{
+				"prefix": "tem",
+				"name": "http://tempuri.org/"
+			}
+		],
+		"methods": [
+			{
+				"name": "UsrAdd",
+				"caption": "Add",
+				"soapAction": "http://tempuri.org/Add",
+				"uri": "Add",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrAResult",
+						"caption": "AddResult",
+						"path": "tem:AddResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:AddResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrSubtract",
+				"caption": "Subtract",
+				"soapAction": "http://tempuri.org/Subtract",
+				"uri": "Subtract",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrSResult",
+						"caption": "SubtractResult",
+						"path": "tem:SubtractResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:SubtractResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrMultiply",
+				"caption": "Multiply",
+				"soapAction": "http://tempuri.org/Multiply",
+				"uri": "Multiply",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrMResult",
+						"caption": "MultiplyResult",
+						"path": "tem:MultiplyResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:MultiplyResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrDivide",
+				"caption": "Divide",
+				"soapAction": "http://tempuri.org/Divide",
+				"uri": "Divide",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrDResult",
+						"caption": "DivideResult",
+						"path": "tem:DivideResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:DivideResult",
+						"items": []
+					}
+				]
+			}
+		]
+	},
+	{
+		"type": "soap12",
+		"caption": "Calculator",
+		"portName": "CalculatorSoap12",
+		"baseUri": "http://www.dneonline.com/calculator.asmx",
+		"namespaces": [
+			{
+				"prefix": "tem",
+				"name": "http://tempuri.org/"
+			}
+		],
+		"methods": [
+			{
+				"name": "UsrAdd",
+				"caption": "Add",
+				"soapAction": "http://tempuri.org/Add",
+				"uri": "Add",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrAResult",
+						"caption": "AddResult",
+						"path": "tem:AddResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:AddResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrSubtract",
+				"caption": "Subtract",
+				"soapAction": "http://tempuri.org/Subtract",
+				"uri": "Subtract",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrSResult",
+						"caption": "SubtractResult",
+						"path": "tem:SubtractResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:SubtractResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrMultiply",
+				"caption": "Multiply",
+				"soapAction": "http://tempuri.org/Multiply",
+				"uri": "Multiply",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrMResult",
+						"caption": "MultiplyResult",
+						"path": "tem:MultiplyResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:MultiplyResult",
+						"items": []
+					}
+				]
+			},
+			{
+				"name": "UsrDivide",
+				"caption": "Divide",
+				"soapAction": "http://tempuri.org/Divide",
+				"uri": "Divide",
+				"request": [
+					{
+						"name": "UsrintA",
+						"caption": "intA",
+						"path": "tem:intA",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intA",
+						"items": []
+					},
+					{
+						"name": "UsrintB",
+						"caption": "intB",
+						"path": "tem:intB",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:intB",
+						"items": []
+					}
+				],
+				"response": [
+					{
+						"name": "UsrDResult",
+						"caption": "DivideResult",
+						"path": "tem:DivideResult",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:DivideResult",
+						"items": []
+					}
+				]
+			}
+		]
+	}
+]

@@ -894,6 +894,7 @@ public class BindingsModule {
 		services.AddTransient<DescribeWebServiceTool>();
 		services.AddTransient<ModifyWebServiceTool>();
 		services.AddTransient<TestWebServiceMethodTool>();
+		services.AddTransient<ReadWsdlTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
@@ -1103,6 +1104,8 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServiceDesignerClient, Clio.Command.WebServiceDesigner.WebServiceDesignerClient>();
 		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServiceDesigner, Clio.Command.WebServiceDesigner.WebServiceDesigner>();
 		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServicePrefixReader, Clio.Command.WebServiceDesigner.WebServicePrefixReader>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWsdlParser, Clio.Command.WebServiceDesigner.WsdlParser>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWsdlReader, Clio.Command.WebServiceDesigner.WsdlReader>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReader, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IGranteeLookup, Clio.Common.ObjectRights.RightManagementServiceClient>();
