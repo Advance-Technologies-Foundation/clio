@@ -273,6 +273,31 @@ public sealed class DynamicCasePageStepTests {
 		// Assert
 		plan.Status.Should().Be(DynamicCasePageStep.StatusAlreadyPresent, because: "the page already shows the stages");
 		plan.Fragment.Should().BeNull(because: "nothing is going to be written");
+		plan.SaveOnChange.Should().BeNull(because: "no bar is planned, so no mode is reported");
+		plan.Notes.Should().NotContain(note => note.Contains("save mode", StringComparison.Ordinal),
+			because: "no mode was named, so there is no request to report as not applied");
+		_writer.DidNotReceiveWithAnyArgs().TryUpdatePage(default!, out _);
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("A mode named for a page whose bar is already there is not applied, and the plan says so in a note naming the toggle and update-page, so the request is not dropped unseen.")]
+	public void Plan_ShouldNoteThatTheExistingBarKeepsItsMode_WhenAModeWasNamed(bool saveOnChange) {
+		// Arrange
+		PageReads(ProgressBarPlacementTests.Bundle(ProgressBarPlacementTests.TabbedView(new JsonObject {
+			["name"] = "ProgressBar", ["type"] = "crt.EntityStageProgressBar"
+		})));
+
+		// Act
+		DynamicCasePagePlan plan = _step.Plan(Env, Package, Entity, null, saveOnChange: saveOnChange);
+
+		// Assert
+		plan.Status.Should().Be(DynamicCasePageStep.StatusAlreadyPresent, because: "the existing bar is not rewritten");
+		plan.SaveOnChange.Should().BeNull(because: "no bar is planned, so the named mode is not reported as planned");
+		plan.Notes.Should().ContainSingle(note => note.Contains("keeps its own save mode", StringComparison.Ordinal)
+				&& note.Contains("'Save on change'", StringComparison.Ordinal)
+				&& note.Contains("update-page", StringComparison.Ordinal),
+			because: "the caller named a mode that this call does not apply");
 		_writer.DidNotReceiveWithAnyArgs().TryUpdatePage(default!, out _);
 	}
 

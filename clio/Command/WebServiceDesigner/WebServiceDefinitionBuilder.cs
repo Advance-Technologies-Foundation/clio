@@ -301,6 +301,27 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	/// <summary>
+	/// Whether every segment of a SOAP element path is one the platform sends as written (the rule
+	/// <see cref="ValidateSoapPrefixes"/> applies, without the prefix lookup): read-wsdl leaves out what register would
+	/// refuse.
+	/// </summary>
+	/// <param name="path">The element path, <c>prefix:name</c> segments joined by <c>/</c>.</param>
+	/// <returns>Whether register-web-service accepts the form of the path.</returns>
+	internal static bool IsSendableElementPath(string path) {
+		string trimmed = (path ?? string.Empty).Trim().TrimStart('/');
+		return trimmed.Length > 0 && trimmed.Split('/').All(segment => segment.Contains(':')
+			? PrefixedElementPattern().IsMatch(segment)
+			: ElementNamePattern().IsMatch(segment));
+	}
+
+	/// <summary>Whether register-web-service accepts the form of an array's item element name.</summary>
+	/// <param name="name">The item element name.</param>
+	/// <param name="isRequest">Whether the array is a request parameter.</param>
+	/// <returns>Whether the name is accepted.</returns>
+	internal static bool IsSendableSequenceElement(string name, bool isRequest) =>
+		!string.IsNullOrWhiteSpace(name) && SequenceElementProblem(name.Trim(), isRequest) is null;
+
+	/// <summary>
 	/// Collects every problem of one request so the agent can fix them in one retry. At most
 	/// <see cref="MaxReported"/> are reported, so a huge definition cannot make the refusal itself huge.
 	/// </summary>

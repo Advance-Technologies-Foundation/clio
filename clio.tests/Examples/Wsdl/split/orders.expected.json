@@ -1,0 +1,101 @@
+[
+	{
+		"type": "soap11",
+		"caption": "OrdersService",
+		"portName": "OrdersSoap",
+		"baseUri": "http://localhost/orders.asmx",
+		"namespaces": [
+			{
+				"prefix": "tem",
+				"name": "http://example.org/clio/orders/"
+			},
+			{
+				"prefix": "ns0",
+				"name": "http://example.org/clio/money"
+			}
+		],
+		"methods": [
+			{
+				"name": "UsrPOrder",
+				"caption": "PlaceOrder",
+				"soapAction": "http://example.org/clio/orders/PlaceOrder",
+				"uri": "PlaceOrder",
+				"request": [
+					{
+						"name": "Usrcustomer",
+						"caption": "customer",
+						"path": "tem:customer",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:customer",
+						"items": []
+					},
+					{
+						"name": "Usrlines",
+						"caption": "lines",
+						"path": "tem:lines",
+						"type": "Object",
+						"isArray": true,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:Line",
+						"items": [
+							{
+								"name": "Usrlinessku",
+								"caption": "sku",
+								"path": "tem:sku",
+								"type": "Text",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:sku",
+								"items": []
+							},
+							{
+								"name": "Usrlinesquantity",
+								"caption": "quantity",
+								"path": "tem:quantity",
+								"type": "Integer",
+								"isArray": false,
+								"isSoapHeader": false,
+								"sequenceElementName": "tem:quantity",
+								"items": []
+							}
+						]
+					}
+				],
+				"response": [
+					{
+						"name": "UsrNumber",
+						"caption": "orderNumber",
+						"path": "tem:orderNumber",
+						"type": "Integer",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "tem:orderNumber",
+						"items": []
+					},
+					{
+						"name": "Usrtotalamount",
+						"caption": "total amount",
+						"path": "tem:total/ns0:amount",
+						"type": "Float",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:amount",
+						"items": []
+					},
+					{
+						"name": "Usrtotalcurrency",
+						"caption": "total currency",
+						"path": "tem:total/ns0:currency",
+						"type": "Text",
+						"isArray": false,
+						"isSoapHeader": false,
+						"sequenceElementName": "ns0:currency",
+						"items": []
+					}
+				]
+			}
+		]
+	}
+]

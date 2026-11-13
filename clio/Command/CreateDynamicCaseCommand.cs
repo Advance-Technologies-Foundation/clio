@@ -53,10 +53,11 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 	public bool AddProgressBar { get; set; } = true;
 
 	/// <summary>
-	/// Whether a stage click on the bar saves the record at once; false (the bar's default) makes the click only set
-	/// the field, and the user saves.
+	/// The save mode the caller named: true when a stage click on the bar saves the record at once, false when it only
+	/// sets the field and the user saves. <see langword="null"/> when not named: the bar is planned with false, its
+	/// default, and a bar already on the page is passed without a note.
 	/// </summary>
-	public bool SaveOnChange { get; set; }
+	public bool? SaveOnChange { get; set; }
 
 	/// <summary>The Freedom UI record page to decorate; resolved from the object when empty.</summary>
 	public string PageSchemaName { get; set; }

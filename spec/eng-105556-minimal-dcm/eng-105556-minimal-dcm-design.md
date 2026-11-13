@@ -49,8 +49,9 @@ Path aliases:
    create the case) -> progress-bar append through the same `PageUpdateCommand`. One tool costs one line of the
    discovery index, which has room for exactly one (v r7-C4).
 4. **The page edit is the AI app wizard's two inserts**: `ProgressBarContainer` (`crt.FlexContainer`) at index 0 of
-   `MainContainer`, then `crt.EntityStageProgressBar` with `entityName`, `saveOnChange: true`,
-   `askUserToChangeSchema: false`. Nothing else on the page (v r3-C1, v r3-C2, v r3-C8).
+   `MainContainer`, then `crt.EntityStageProgressBar` with `entityName`, `saveOnChange` from `save-on-change` (default
+   false) and `askUserToChangeSchema: true`: the wizard's layout with the bar's own flag defaults (Q19). Nothing else
+   on the page (v r3-C1, v r3-C2, v r3-C8).
 5. **Shape written** = the product's minimal shape: one stage per lookup value in the chosen order, fresh stage
    UIds, `StageRecordId` = lookup row Id, colour `#0C8701`, full-mesh `StageConnections` n*(n-1), `Enabled = true`,
    active version; plus `SysDcmSettings` (object form) and `SysDcmSchemaInSettings`, bound to the target package
@@ -479,7 +480,7 @@ string is used in the dry run (C3), the write (C7), `page.fragment` and `retry.a
     "parentName": "MainContainer", "propertyName": "items", "index": 0 },
   { "operation": "insert", "name": "ProgressBar",
     "values": { "type": "crt.EntityStageProgressBar", "entityName": "<EntitySchemaName>",
-      "saveOnChange": true, "askUserToChangeSchema": false },
+      "saveOnChange": false, "askUserToChangeSchema": true },
     "parentName": "ProgressBarContainer", "propertyName": "items", "index": 0 }
 ]
 ```
@@ -490,8 +491,10 @@ string is used in the dry run (C3), the write (C7), `page.fragment` and `retry.a
 - The bar takes its stage column from the first enabled, active-version DCM of `entityName`
   (`DcmSchemaManagerRequest`), not from `SysDcmSettings` (`_verdicts.md` conflict 1), so the page and the DCM are
   independent writes; the bar hides itself while no such DCM exists (v r3-C3, v r9-C1).
-- `saveOnChange: true`: a click persists at once and the case runtime reacts immediately; `false` also meets the
-  acceptance text but leaves the record dirty until Save (v r9-C6) [corpus 4/12 product pages use true] (Q19).
+- `saveOnChange` comes from `save-on-change`, default `false`, the bar's own default: a click sets the field and the
+  record stays dirty until Save, so nothing that reacts to the saved record runs before it. `true` persists a click at
+  once and the case runtime reacts immediately. Both meet the acceptance text (v r9-C6) [corpus 4/12 product pages
+  use true] (Q19).
 - Both sync directions hold by construction: a click writes `{value, displayValue}` into `<PDS>.<column>`; a field
   change moves the bar through the shared attribute (v r3-C7). Proven only in the browser (manual + CAADT).
 - Target package: clio's default design package (`GetDesignPackageUId`), never forced into P; N8 when it differs
