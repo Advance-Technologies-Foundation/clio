@@ -175,7 +175,7 @@ public sealed class SettingsRepositoryFeatureTests {
 
 	[Test]
 	[Description("Documents every knowledge-feedback key and each mode and reporting-scope option, with defaults matching the materialized settings.")]
-	public void AppSettingsSchema_ShouldDescribeKnowledgeFeedbackPolicy() {
+	public void AppSettingsSchema_ShouldDescribeKnowledgeFeedbackPolicy_WhenTemplateIsLoaded() {
 		// Arrange
 		string templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tpl", "jsonschema", "schema.json.tpl");
 		JsonObject schema = JsonNode.Parse(File.ReadAllText(templatePath))!.AsObject();
