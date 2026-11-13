@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-105475-soap-web-service.md](../prd/spec-eng-105475-soap-web-service.md) - R5-R7
 **ADR**: [adr-eng-105475-soap-web-service.md](../adr/adr-eng-105475-soap-web-service.md) - D7, D8
 **Test plan**: [tp-eng-105475-soap-web-service.md](../test-plans/tp-eng-105475-soap-web-service.md) - TC-U-B*, TC-I-B*
-**Status**: ready-for-dev
+**Status**: review (draft clio PR from `feature/ENG-105475-soap-register`, stacked on story 1's branch)
 **Size**: L
 **Depends on**: story 1
 **Blocks**: stories 3 and 5

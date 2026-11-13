@@ -83,6 +83,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the change would break BingSearchProcess silently");
+		result.Error.Should().Contain("lose their parameters", because: "a removed method leaves the element unbound");
 		result.Usages.Should().ContainSingle(u => u.Process == "BingSearchProcess" && u.Element == "WebService1",
 			because: "the refusal names the process and its element");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
@@ -128,8 +129,8 @@ public sealed class WebServiceDesignerTests {
 		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
 
 		// Act
-		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null,
-			[new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]);
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]));
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "an existing service must be changed with modify-web-service")
@@ -146,11 +147,11 @@ public sealed class WebServiceDesignerTests {
 		GivenSelect("SysSettings");
 
 		// Act
-		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null, [
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null, [
 			new WebServiceMethodArg("UsrGetOrders", "GET", "orders",
 				RequestParameters: [new WebServiceParameterArg("UsrApiKey", "header", Path: "X-Api-Key",
 					DefaultSysSetting: "UsrErpApiKey")])
-		]);
+		]));
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the platform drops a missing setting silently at run time")
@@ -173,8 +174,8 @@ public sealed class WebServiceDesignerTests {
 		_client.ReadSchema(Arg.Any<Guid>(), PackageUId).Returns(_ => saved);
 
 		// Act
-		WebServiceToolResult result = _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null,
-			new WebServiceAuthArg("oauth20", OAuthApp: "Test1"), [new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]);
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null,
+			new WebServiceAuthArg("oauth20", OAuthApp: "Test1"), [new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]));
 
 		// Assert
 		result.Success.Should().BeTrue(because: "the application exists");
@@ -221,8 +222,8 @@ public sealed class WebServiceDesignerTests {
 		GivenSelect("OAuthApplications");
 
 		// Act
-		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null,
-			new WebServiceAuthArg("oauth20", OAuthApp: "NoSuchApp"), [new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]);
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null,
+			new WebServiceAuthArg("oauth20", OAuthApp: "NoSuchApp"), [new WebServiceMethodArg("UsrGetOrders", "GET", "orders")]));
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "a service cannot authenticate with a missing application")
@@ -283,8 +284,8 @@ public sealed class WebServiceDesignerTests {
 		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
 
 		// Act
-		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null,
-			[new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("GetOrders", "GET", "orders")]));
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "Studio refuses to save a method whose code lacks the prefix")
@@ -786,7 +787,7 @@ public sealed class WebServiceDesignerTests {
 		notice.Should().Contain("UsrResult", because: "the notice names the parameter");
 		notice.Should().Contain("$.UsrOpResult", because: "the notice quotes the path that reads nothing");
 		notice.Should().Contain("element path", because: "the notice names the path dialect the platform reads");
-		notice.Should().Contain("Studio", because: "a SOAP service's path is changed in Studio");
+		notice.Should().Contain("modify-web-service setMethod", because: "a SOAP service's path is changed through modify-web-service");
 		tested.Notices.Should().ContainSingle(because: "the null in response-values must not read like a failure of the call")
 			.Which.Should().Contain("UsrResult", because: "the notice names the parameter that read nothing");
 	}
@@ -932,8 +933,8 @@ public sealed class WebServiceDesignerTests {
 		_prefix.Read().Returns(_ => throw new InvalidOperationException("The SchemaNamePrefix system setting could not be read"));
 
 		// Act
-		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null, null,
-			[new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("GetOrders", "GET", "orders")]));
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "an unread prefix must not switch the rule off")

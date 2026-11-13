@@ -59,14 +59,55 @@
 
 TC-U-A11 covers the echo case that TC-I-A01 cannot reach without an echoing SOAP endpoint on the stand.
 
-## Slice B (story 2), outline
+## Slice B (story 2)
 
-TC-U-B: one row per validator rule of ADR D8 (namespaces, prefixes, placements, `soap-header` depth, `$` paths,
-REST-only members), the no-trailing-slash rule, the empty `soap-action` notice, `setNamespaces`, `setType` 1.1 ↔ 1.2,
-REST ↔ SOAP refused, the usage guard counting both as changing every method, describe → modify round trip on the
-designer-shaped fixtures. TC-I-B: register SOAP 1.1 and 1.2, describe, modify, round trip, test call against
-`http://localhost/<code>` asserting the sent envelope through the platform reply; open and save in Studio (manual
-stand check).
+Unit rows live in `clio.tests/Command/WebServiceDesigner/WebServiceSoapWriteTests.cs`.
+
+| Id | Level | Case | AC |
+| --- | --- | --- | --- |
+| TC-U-B01 | unit | A SOAP 1.1 service is saved as Studio saves one: default namespace, message element in the request uri, POST and xml, SOAP action, `isSoapHeader` false and `sequenceElementName` item on every parameter, base URI without a trailing slash | 1, 3 |
+| TC-U-B02 | unit | One refusal names every broken rule: a uri, a non-POST verb, a non-xml content type, an undeclared prefix in the message element and in a path, a query placement, a name the platform would cut (`tem:Api.Key`), a sequence element on a scalar, a SOAP header on a nested or a response parameter, a JSONPath response path; nothing is saved | 2 |
+| TC-U-B03 | unit | No namespace, two defaults, a duplicate prefix and an empty URI are refused | 2 |
+| TC-U-B04 | unit | A namespace marked default wins over the first; soap12 is SOAP 1.2 | 1 |
+| TC-U-B05 | unit | Namespaces, message-element, soap-action, soap-header and sequence-element on a REST service are refused | 2 |
+| TC-U-B06 | unit | An empty soap-action is saved with a notice that no SOAPAction header is sent | 3 |
+| TC-U-B07 | unit | A SOAP-header parameter passes the flag to its items; a constant default on a SOAP-header parameter is refused | 1, 2 |
+| TC-U-B08 | unit | describe output sent back as setNamespaces + setMethod leaves describe unchanged and keeps every UId, and a hidden SOAP-header constant is kept | 5 |
+| TC-U-B09 | unit | setType switches 1.2 to 1.1 and the usage guard treats it as changing every method | 4 |
+| TC-U-B10 | unit | setType to REST or to an unknown type is refused | 4 |
+| TC-U-B11 | unit | setNamespaces dropping a prefix a kept method uses is refused | 4 |
+| TC-U-B12 | unit | setNamespaces and setType are refused on a REST service | 4 |
+| TC-U-B13 | unit | A SOAP setBaseUri keeps the URI as given | 3 |
+| TC-U-B14 | unit | A SOAP-header object array read back from describe (its items carry the flag) saves unchanged through setMethod | 5 |
+| TC-U-B15 | unit | setNamespaces counts as changing every method only when the list really changes | 4 |
+| TC-U-B16 | unit | Reserved prefixes (xml*, soapenv) are refused | 2 |
+| TC-U-B17 | unit | A soap-action with a line break or credentials, a namespace uri with credentials, a message element with a path and a SOAP base-URI placeholder are refused without echoing the values | 2 |
+| TC-U-B18 | unit | setType with an unknown type reports that error alone | 4 |
+| TC-U-B19 | unit | A constant on an item of a SOAP-header parameter is hidden by describe even when the item lacks the flag | 2 |
+| TC-U-B20 | unit | A refusal lists at most 50 problems and counts the rest | 2 |
+| TC-U-B21 | unit | A namespace row with null uId / isDefault reads, and setNamespaces keeps its collection key as UId (#1925 review note) | 5 |
+| TC-U-B22 | unit | A namespace row's null uId / isDefault is left out on write, never sent as null | 5 |
+| TC-U-B23 | unit | The credential-name pattern matches licence/license, nonce and a name ending in pass (UsrPass, AdminPass, SmtpPass, tem:pass), not passport, compass or bypass. REST effect: a constant default on a REST parameter so named (e.g. `UsrLicenseType`) is now refused and hidden by describe as well | 2 |
+| TC-U-B24 | unit | A request array's sequence-element may be `prefix:name` with a declared prefix (`tem:Region`, as Studio's wizard writes it); an undeclared prefix or a name the platform would cut is refused, and setNamespaces cannot drop a prefix only a sequence-element uses | 2, 5 |
+| TC-U-B25 | unit | A visible body constant is not carried into the SOAP Header by a setMethod that adds soap-header without a default; a constant hidden by a SOAP-header parent is refused, not erased, when the parent leaves the Header (final-gate review) | 2, 5 |
+| TC-U-B26 | unit | User information is detected fail-closed (any `@` after `://`) in a soap-action and a namespace uri, also when the password makes the value unparseable as a URI | 2 |
+| TC-U-B27 | unit | setNamespaces counts a prefix the platform reads in a segment clio would refuse (`ns2:Api.Key`) | 4 |
+| TC-U-B28 | unit | A SOAP base URI keeps a fixed query (`?sap-client=100`); a credential-like key with a constant value there is refused; unprefixed Unicode element names are accepted | 2, 3 |
+| TC-U-B29 | unit | An empty response sequence-element survives describe → setMethod (it reads every child element; `item` would read nothing) | 5 |
+| TC-U-B30 | unit | register-web-service passes `type` and `namespaces` to the designer (MCP mapping) | 1 |
+| TC-U-B31 | unit | Review round (ArtemKulykov): the empty-soap-action notice is SOAP 1.1 only and follows a setType to 1.1 for every method; a stored namespace list without a default sent back from describe is not a change; a `?wsdl` / `?singleWsdl` base URI is refused; a blank request sequence-element is stored as `item`; the single-Object advice is an element path on SOAP; `pass` before a capital (`UsrSmtpPassValue`) is credential-like | 2, 3, 4 |
+| TC-I-B01 | e2e | Registers a SOAP 1.1 service through the tool (a SOAP-header object array with an item included), refuses one with an undeclared prefix, round-trips describe through modify unchanged, switches to SOAP 1.2, refuses dropping a namespace in use, and test-calls it against `http://localhost/<code>` without the response being withheld | 1-5 |
+| TC-M-B01 | manual | A service registered by clio opens and saves unchanged in Studio, SOAP 1.1 and 1.2 | 6 |
+
+TC-M-B01 result, 2026-11-12, Creatio 10.2 (.NET Framework, prefix `Usr`), clio at `b2f878532`: **PASS**. Three services
+registered by clio were opened in Studio > Web services: SOAP 1.1 `UsrTcNoActionB`, SOAP 1.2 `UsrTcCalcB` (registered
+as 1.1 and switched by `setType`) and SOAP 1.2 `UsrTcSecureB` (a WS-Security `soap-header` parameter bound to a
+SecureText setting). A method and a parameter of each closed with OK and no validation message, and each card was
+saved (Studio offers Save only after an edit, so a reversible Description edit was used). `describe-web-service`
+before and after the save was byte-identical for all three, and for `UsrTcNoActionB` the raw `ServiceSchemaRequest`
+answer was identical too; test calls after the save returned HTTP 200 with the expected result and the header value
+masked. The SysSchema `Checksum` changes on a Studio save while the designer's read stays identical: save
+bookkeeping, not a content change.
 
 ## Slice C (story 3), outline
 

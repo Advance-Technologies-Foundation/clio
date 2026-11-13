@@ -29,27 +29,25 @@ public interface IWebServiceDesigner {
 	WebServiceToolResult Describe(string code, bool includeUsages);
 
 	/// <summary>
-	/// Creates a REST service. Every rule Studio enforces on save is checked first and all problems are reported
-	/// in one refusal; nothing is saved unless everything passes.
+	/// Creates a REST, SOAP 1.1 or SOAP 1.2 service. Every rule Studio enforces on save is checked first, plus the
+	/// SOAP rules whose breach the platform saves and then fails every call with (undeclared prefixes, no default
+	/// namespace); all problems are reported in one refusal, and nothing is saved unless everything passes.
 	/// </summary>
 	/// <param name="packageName">The package that will own the service.</param>
-	/// <param name="code">The service code; must carry the schema-name prefix and be unused.</param>
-	/// <param name="caption">The caption; the code when empty.</param>
-	/// <param name="baseUri">An absolute http(s) URI without user information.</param>
-	/// <param name="retryCount">How many times the platform retries a failed call.</param>
-	/// <param name="auth">The authentication, by system-setting codes or an OAuth application only.</param>
-	/// <param name="methods">At least one method.</param>
+	/// <param name="registration">The service as the agent describes it.</param>
 	/// <returns>The saved service as the platform stores it, with notices for the user.</returns>
-	WebServiceToolResult Register(string packageName, string code, string caption, string baseUri, int? retryCount,
-		WebServiceAuthArg auth, IReadOnlyList<WebServiceMethodArg> methods);
+	WebServiceToolResult Register(string packageName, WebServiceRegistration registration);
 
 	/// <summary>
-	/// Applies operations to a REST service in order, all or nothing. Changing or removing a method a process
+	/// Applies operations to a REST or SOAP service in order, all or nothing. Changing or removing a method a process
 	/// calls is refused unless <paramref name="acknowledgedProcesses"/> names exactly those processes. A method
 	/// sent without use-auth follows the service authentication as it is after the whole call.
 	/// </summary>
 	/// <param name="code">The service code.</param>
-	/// <param name="operations">addMethod, setMethod, removeMethod, setBaseUri, setRetryCount or setAuth.</param>
+	/// <param name="operations">
+	/// addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, setAuth; for a SOAP service also setNamespaces
+	/// and setType (1.1 / 1.2), which change every call and so count as changing every method for the usage guard.
+	/// </param>
 	/// <param name="acknowledgedProcesses">Process codes the user agreed to affect.</param>
 	/// <returns>The saved service, or a refusal listing the affected processes.</returns>
 	WebServiceToolResult Modify(string code, IReadOnlyList<WebServiceOperationArg> operations,
@@ -124,10 +122,20 @@ public sealed class WebServiceDesigner(
 			Notices: notices.Count > 0 ? notices : null);
 	}
 
-	public WebServiceToolResult Register(string packageName, string code, string caption, string baseUri,
-		int? retryCount, WebServiceAuthArg auth, IReadOnlyList<WebServiceMethodArg> methods) {
+	public WebServiceToolResult Register(string packageName, WebServiceRegistration registration) {
+		ArgumentNullException.ThrowIfNull(registration);
+		(string code, string caption, string baseUri, int? retryCount, WebServiceAuthArg auth,
+			IReadOnlyList<WebServiceMethodArg> methods, string type, IReadOnlyList<WebServiceNamespaceArg> namespaces) =
+			registration;
 		RequireManageSolution();
 		var errors = new WebServiceDefinitionBuilder.Errors();
+		int serviceType = WebServiceDefinitionBuilder.ParseServiceType(type, errors);
+		// An unknown type would make every SOAP member read as a REST error; report the type alone.
+		errors.ThrowIfAny();
+		bool soap = serviceType != ServiceSchemaCodes.ServiceTypeRest;
+		if (!soap && namespaces is { Count: > 0 }) {
+			errors.Add("namespaces belong to a SOAP service; give type soap11 or soap12, or leave them out.");
+		}
 		string prefix = prefixReader.Read();
 		WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, errors);
 		if (errors.Count == 0 && !client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, code)) {
@@ -139,25 +147,72 @@ public sealed class WebServiceDesigner(
 		var schema = new ServiceSchemaDto {
 			Name = code,
 			Caption = WebServiceDefinitionBuilder.Caption(string.IsNullOrWhiteSpace(caption) ? code : caption),
-			BaseUri = WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors),
-			Type = ServiceSchemaCodes.ServiceTypeRest,
+			BaseUri = WebServiceDefinitionBuilder.NormalizeBaseUri(baseUri, errors, soap),
+			Type = serviceType,
 			RetryCount = Math.Max(retryCount ?? 0, 0),
 			AuthInfo = WebServiceDefinitionBuilder.BuildAuth(auth, FindOAuthApp(auth), errors)
 		};
+		if (soap) {
+			schema.Namespaces = WebServiceDefinitionBuilder.BuildNamespaces(namespaces, null, errors);
+		}
+		WebServiceDefinitionBuilder.SoapContext soapContext =
+			soap ? WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces) : null;
 		schema.UId = schema.RealUId = Guid.NewGuid();
 		schema.PackageUId = packageUId ?? Guid.Empty;
 		if (methods is not { Count: > 0 }) {
 			errors.Add("methods: register at least one method.");
 		}
 		foreach (WebServiceMethodArg method in methods ?? []) {
-			AddMethod(schema, method, prefix, HasAuth(schema), schema.BaseUri, errors);
+			AddMethod(schema, method, prefix, HasAuth(schema), schema.BaseUri, errors, soapContext);
 		}
 		(IReadOnlyCollection<string> settings, _) = RequireSysSettings(schema, [], errors);
 		errors.ThrowIfAny();
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
-			Notices: Notices(settings, packageName));
+			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName)]);
+	}
+
+	/// <summary>
+	/// An empty SOAP action sends no SOAPAction header at all (measured); many SOAP 1.1 servers refuse such a call. The
+	/// notice is written to be passed on whole: an agent that relayed only its first half dropped the risk (isolated run).
+	/// Only a SOAP 1.1 service gets it: the header is the SOAP 1.1 dispatch convention.
+	/// </summary>
+	private static IEnumerable<string> SoapActionNotices(ServiceSchemaDto schema, IEnumerable<ServiceMethodDto> methods) =>
+		schema.Type != ServiceSchemaCodes.ServiceTypeSoap11 ? [] : methods.Where(m => m.SoapAction is { Length: 0 })
+			.Select(m => $"Tell the user: method '{m.Name}' has no soap-action, so no SOAPAction header is sent, and many "
+				+ "SOAP 1.1 servers refuse such a call. Ask them for the SOAP action (the WSDL's binding operation "
+				+ "soapAction); do not make one up.");
+
+	/// <summary>
+	/// The refusal of the usage guard. A changed or removed method leaves its callers' elements with mappings that point
+	/// at nothing; a new SOAP version or new namespaces leave the elements as they are (measured: element unchanged in the
+	/// designer, the run returned the result) but change every call they make. Both need the user's yes.
+	/// </summary>
+	private static string UsageRefusal(IReadOnlyList<WebServiceOperationArg> operations,
+		IReadOnlyList<WebServiceUsage> unacknowledged) {
+		var restructured = new HashSet<string>(operations
+			.Select(o => o?.Op switch {
+				"setMethod" => o.Method?.Code,
+				"removeMethod" => o.MethodCode,
+				_ => null
+			})
+			.Where(c => !string.IsNullOrWhiteSpace(c)), StringComparer.OrdinalIgnoreCase);
+		// A caller whose metadata could not be read (no method) counts as calling every method, so it breaks only when
+		// the call changes or removes a method at all.
+		bool Breaks(WebServiceUsage usage) =>
+			usage.Method is null ? restructured.Count > 0 : restructured.Contains(usage.Method);
+		var reasons = new List<string>();
+		if (unacknowledged.Any(Breaks)) {
+			reasons.Add("the changed or removed methods are called by processes that would break silently (their "
+				+ "elements lose their parameters on the next designer load and fail at run time)");
+		}
+		if (unacknowledged.Any(u => !Breaks(u))) {
+			reasons.Add("the new SOAP version or namespaces change every call the other listed processes make (their "
+				+ "elements keep their parameters); re-run those processes afterwards to check them");
+		}
+		return $"Refused: {string.Join("; and ", reasons)}. Show these processes to the user and, only on their yes, "
+			+ "repeat the call with acknowledge-usages naming them.";
 	}
 
 	public WebServiceToolResult Modify(string code, IReadOnlyList<WebServiceOperationArg> operations,
@@ -168,9 +223,11 @@ public sealed class WebServiceDesigner(
 		}
 		ServiceRow row = FindService(code);
 		ServiceSchemaDto schema = client.ReadSchema(row.UId, row.PackageUId);
-		if (schema.Type != ServiceSchemaCodes.ServiceTypeRest) {
-			throw new ArgumentException($"'{schema.Name}' is a {WebServiceSchemaView.TypeName(schema.Type)} service; "
-				+ "only REST services can be changed here, so change it in Studio > Web services.");
+		int typeBefore = schema.Type;
+		bool soap = WebServiceSchemaView.IsSoap(schema);
+		if (!soap && schema.Type != ServiceSchemaCodes.ServiceTypeRest) {
+			throw new ArgumentException($"'{schema.Name}' is a {WebServiceSchemaView.TypeName(schema.Type)} service, "
+				+ "which these tools cannot change; change it in Studio > Web services.");
 		}
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -178,29 +235,24 @@ public sealed class WebServiceDesigner(
 		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixReader.Read() : null;
 		IReadOnlyCollection<(string Owner, string Code)> referencesBefore =
 			WebServiceDefinitionBuilder.CollectSysSettingReferences(schema);
-		// Methods are checked against the base URI as it is after the whole call, so the order of setBaseUri and
-		// addMethod or setMethod does not change the result.
+		// Methods are checked against the base URI, the namespaces and the authentication as they are after the whole
+		// call, so the order of the operations does not change the result.
 		WebServiceOperationArg lastSetBaseUri = operations.LastOrDefault(o => o?.Op == "setBaseUri");
+		WebServiceOperationArg lastSetNamespaces = operations.LastOrDefault(o => o?.Op == "setNamespaces");
 		string finalBaseUri = lastSetBaseUri is null
 			? schema.BaseUri
-			: WebServiceDefinitionBuilder.NormalizeBaseUri(lastSetBaseUri.BaseUri, new WebServiceDefinitionBuilder.Errors());
+			: WebServiceDefinitionBuilder.NormalizeBaseUri(lastSetBaseUri.BaseUri, new WebServiceDefinitionBuilder.Errors(),
+				soap);
+		WebServiceDefinitionBuilder.SoapContext soapContext = soap ? FinalSoapContext(schema, lastSetNamespaces) : null;
+		bool methodsUseAuth = MethodsUseAuth(schema, operations.LastOrDefault(o => o?.Op == "setAuth"));
+		var before = new KeptMethodBaseline(WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces).Prefixes,
+			lastSetBaseUri is null ? null : schema.BaseUri, soap && lastSetNamespaces is not null);
 		var builtMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		// A method sent without use-auth follows the service's authentication as it is after this call, so
-		// [addMethod, setAuth] gives the new method authentication just like [setAuth, addMethod] does.
-		WebServiceOperationArg lastSetAuth = operations.LastOrDefault(o => o?.Op == "setAuth");
-		bool methodsUseAuth = lastSetAuth is null
-			? HasAuth(schema)
-			: ServiceSchemaCodes.AuthTypes.TryGetValue(lastSetAuth.Auth?.Type ?? string.Empty, out int authType)
-				&& authType != ServiceSchemaCodes.AuthNone;
-		string baseUriBefore = schema.BaseUri;
 		foreach (WebServiceOperationArg operation in operations) {
-			Apply(schema, operation, prefix, methodsUseAuth, finalBaseUri, builtMethods, changedMethods, errors);
+			Apply(schema, operation, prefix, methodsUseAuth, finalBaseUri, builtMethods, changedMethods, errors,
+				soapContext);
 		}
-		if (lastSetBaseUri is not null) {
-			foreach (ServiceMethodDto kept in schema.Methods.Items.Values.Where(m => !builtMethods.Contains(m.Name ?? ""))) {
-				WebServiceDefinitionBuilder.ValidateBaseUriChange(kept, baseUriBefore, schema.BaseUri, errors);
-			}
-		}
+		ValidateKeptMethods(schema, builtMethods, before, errors);
 		(IReadOnlyCollection<string> settings, IReadOnlyList<string> missingKept) =
 			RequireSysSettings(schema, referencesBefore, errors);
 		errors.ThrowIfAny();
@@ -210,16 +262,18 @@ public sealed class WebServiceDesigner(
 		var acknowledged = new HashSet<string>(acknowledgedProcesses ?? [], StringComparer.OrdinalIgnoreCase);
 		List<WebServiceUsage> unacknowledged = affected.Where(u => !acknowledged.Contains(u.Process)).ToList();
 		if (unacknowledged.Count > 0) {
-			return new WebServiceToolResult(false,
-				"Refused: the changed or removed methods are called by processes that would break silently (their "
-				+ "elements lose their parameters on the next designer load and fail at run time). Show these "
-				+ "processes to the user and, only on their yes, repeat the call with acknowledge-usages naming them.",
-				Usages: unacknowledged);
+			return new WebServiceToolResult(false, UsageRefusal(operations, unacknowledged), Usages: unacknowledged);
 		}
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
+		// A switch to SOAP 1.1 makes every method's empty action matter, not only the methods this call built.
+		bool becameSoap11 = typeBefore != schema.Type;
+		IEnumerable<string> soapActionNotices = soap
+			? SoapActionNotices(schema,
+				schema.Methods.Items.Values.Where(m => becameSoap11 || builtMethods.Contains(m.Name ?? "")))
+			: [];
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
-			Usages: affected, Notices: Notices(settings, row.Package, missingKept));
+			Usages: affected, Notices: [.. soapActionNotices, .. Notices(settings, row.Package, missingKept)]);
 	}
 
 	public WebServiceTestResult TestMethod(string code, string methodCode, IReadOnlyDictionary<string, string> values) {
@@ -394,11 +448,11 @@ public sealed class WebServiceDesigner(
 
 	private void Apply(ServiceSchemaDto schema, WebServiceOperationArg operation, string prefix, bool methodsUseAuth,
 		string finalBaseUri, ISet<string> builtMethods, ISet<string> changedMethods,
-		WebServiceDefinitionBuilder.Errors errors) {
+		WebServiceDefinitionBuilder.Errors errors, WebServiceDefinitionBuilder.SoapContext soap) {
 		WebServiceDefinitionBuilder.RejectUnknownFields(operation?.ExtensionData, $"op '{operation?.Op}'", errors);
 		switch (operation?.Op) {
 			case "addMethod":
-				AddMethod(schema, operation.Method, prefix, methodsUseAuth, finalBaseUri, errors);
+				AddMethod(schema, operation.Method, prefix, methodsUseAuth, finalBaseUri, errors, soap);
 				builtMethods.Add(operation.Method?.Code ?? string.Empty);
 				break;
 			case "setMethod":
@@ -408,7 +462,7 @@ public sealed class WebServiceDesigner(
 					break;
 				}
 				ServiceMethodDto replacement = WebServiceDefinitionBuilder.BuildMethod(operation.Method, existing,
-					methodsUseAuth, errors, prefix, finalBaseUri);
+					methodsUseAuth, errors, prefix, finalBaseUri, soap);
 				builtMethods.Add(operation.Method?.Code ?? string.Empty);
 				if (replacement is not null) {
 					schema.Methods.Items.Remove(existing.UId.ToString());
@@ -426,7 +480,26 @@ public sealed class WebServiceDesigner(
 				changedMethods.Add(removed.Name);
 				break;
 			case "setBaseUri":
-				schema.BaseUri = WebServiceDefinitionBuilder.NormalizeBaseUri(operation.BaseUri, errors);
+				schema.BaseUri = WebServiceDefinitionBuilder.NormalizeBaseUri(operation.BaseUri, errors, soap is not null);
+				break;
+			case "setNamespaces":
+				if (soap is null) {
+					errors.Add("setNamespaces: a REST service has no namespaces.");
+					break;
+				}
+				string before = WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces);
+				schema.Namespaces = WebServiceDefinitionBuilder.BuildNamespaces(operation.Namespaces, schema.Namespaces, errors);
+				// describe output sent back unchanged is not a change of every call.
+				if (WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces) != before) {
+					ChangeEveryMethod(schema, changedMethods);
+				}
+				break;
+			case "setType":
+				int typeBefore = schema.Type;
+				SetType(schema, operation.Type, soap is not null, errors);
+				if (schema.Type != typeBefore) {
+					ChangeEveryMethod(schema, changedMethods);
+				}
 				break;
 			case "setRetryCount":
 				schema.RetryCount = Math.Max(operation.RetryCount ?? 0, 0);
@@ -435,18 +508,107 @@ public sealed class WebServiceDesigner(
 				schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(operation.Auth, FindOAuthApp(operation.Auth), errors);
 				break;
 			default:
-				errors.Add($"op '{operation?.Op}' must be addMethod, setMethod, removeMethod, setBaseUri, setRetryCount or setAuth.");
+				errors.Add($"op '{operation?.Op}' must be addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, "
+					+ "setAuth, setNamespaces or setType.");
 				break;
 		}
 	}
 
+	/// <summary>
+	/// Whether a method sent without use-auth sends the service authentication: it follows the authentication as it is
+	/// after this call, so [addMethod, setAuth] gives the new method authentication just like [setAuth, addMethod].
+	/// </summary>
+	private static bool MethodsUseAuth(ServiceSchemaDto schema, WebServiceOperationArg lastSetAuth) =>
+		lastSetAuth is null
+			? HasAuth(schema)
+			: ServiceSchemaCodes.AuthTypes.TryGetValue(lastSetAuth.Auth?.Type ?? string.Empty, out int authType)
+				&& authType != ServiceSchemaCodes.AuthNone;
+
+	/// <summary>What a kept method is checked against after the call: the service as it was before it.</summary>
+	/// <param name="Prefixes">The namespace prefixes before the call.</param>
+	/// <param name="BaseUri">The base URI before the call, when the call sets a new one; otherwise null.</param>
+	/// <param name="NamespacesSet">Whether the call sets the namespaces of a SOAP service.</param>
+	private sealed record KeptMethodBaseline(IReadOnlySet<string> Prefixes, string BaseUri, bool NamespacesSet);
+
+	/// <summary>
+	/// Checks the methods the call keeps against only what the call changed. A kept SOAP method must not lose a prefix
+	/// it uses (the platform would save the service and then fail every call of that method before sending it); a kept
+	/// method's path parameters must keep the base-URI placeholders they fill. Nothing else of a kept method is
+	/// re-validated, so a Studio-made method the stricter rules would refuse does not block an unrelated change.
+	/// </summary>
+	private static void ValidateKeptMethods(ServiceSchemaDto schema, ISet<string> builtMethods, KeptMethodBaseline before,
+		WebServiceDefinitionBuilder.Errors errors) {
+		IReadOnlySet<string> declared = WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces).Prefixes;
+		var removed = before.Prefixes.Where(p => !declared.Contains(p)).ToHashSet(StringComparer.Ordinal);
+		foreach (ServiceMethodDto kept in schema.Methods.Items.Values.Where(m => !builtMethods.Contains(m.Name ?? ""))) {
+			if (before.NamespacesSet) {
+				foreach (string lostPrefix in WebServiceDefinitionBuilder.UsedPrefixes(kept).Where(removed.Contains)) {
+					errors.Add($"setNamespaces: method '{kept.Name}' still uses prefix '{lostPrefix}', which this call removes; "
+						+ "keep the namespace or change the method in the same call.");
+				}
+			}
+			if (before.BaseUri is not null) {
+				WebServiceDefinitionBuilder.ValidateBaseUriChange(kept, before.BaseUri, schema.BaseUri, errors);
+			}
+		}
+	}
+
+	/// <summary>
+	/// The prefixes methods are checked against: the namespaces as they are after the whole call. When the last
+	/// setNamespaces is itself invalid (it is reported on its own), its valid items and the current namespaces are used,
+	/// so every built method is not also reported against an empty list.
+	/// </summary>
+	private static WebServiceDefinitionBuilder.SoapContext FinalSoapContext(ServiceSchemaDto schema,
+		WebServiceOperationArg lastSetNamespaces) {
+		if (lastSetNamespaces is null) {
+			return WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces);
+		}
+		var probe = new WebServiceDefinitionBuilder.Errors();
+		ServiceItemCollection<ServiceNamespaceDto> final =
+			WebServiceDefinitionBuilder.BuildNamespaces(lastSetNamespaces.Namespaces, schema.Namespaces, probe);
+		IReadOnlySet<string> prefixes = WebServiceDefinitionBuilder.SoapContextOf(final).Prefixes;
+		return probe.Count == 0
+			? new WebServiceDefinitionBuilder.SoapContext(prefixes)
+			: new WebServiceDefinitionBuilder.SoapContext(prefixes
+				.Concat(WebServiceDefinitionBuilder.SoapContextOf(schema.Namespaces).Prefixes)
+				.ToHashSet(StringComparer.Ordinal));
+	}
+
+	/// <summary>
+	/// The namespaces and the SOAP version decide every call of the service, so changing them counts as changing every
+	/// method for the usage guard.
+	/// </summary>
+	private static void ChangeEveryMethod(ServiceSchemaDto schema, ISet<string> changedMethods) {
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+			changedMethods.Add(method.Name);
+		}
+	}
+
+	/// <summary>Switches a SOAP service between 1.1 and 1.2; Studio offers no other change of type.</summary>
+	private static void SetType(ServiceSchemaDto schema, string type, bool soap,
+		WebServiceDefinitionBuilder.Errors errors) {
+		int errorsBefore = errors.Count;
+		int target = WebServiceDefinitionBuilder.ParseServiceType(type, errors);
+		if (errors.Count > errorsBefore) {
+			return;
+		}
+		if (string.IsNullOrWhiteSpace(type)) {
+			errors.Add("setType: give type soap11 or soap12.");
+		} else if (!soap || target == ServiceSchemaCodes.ServiceTypeRest) {
+			errors.Add("setType: only SOAP 1.1 and SOAP 1.2 can be switched; a REST service cannot become SOAP or back "
+				+ "(Studio does not allow it either). Register a new service instead.");
+		} else {
+			schema.Type = target;
+		}
+	}
+
 	private static void AddMethod(ServiceSchemaDto schema, WebServiceMethodArg arg, string prefix, bool useAuth,
-		string baseUri, WebServiceDefinitionBuilder.Errors errors) {
+		string baseUri, WebServiceDefinitionBuilder.Errors errors, WebServiceDefinitionBuilder.SoapContext soap = null) {
 		if (FindMethod(schema, arg?.Code) is not null) {
 			errors.Add($"method code '{arg?.Code}' is used twice.");
 			return;
 		}
-		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, useAuth, errors, prefix, baseUri);
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, useAuth, errors, prefix, baseUri, soap);
 		if (method is not null) {
 			schema.Methods.Items[method.UId.ToString()] = method;
 		}
