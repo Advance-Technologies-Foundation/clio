@@ -115,10 +115,6 @@ public sealed partial class WsdlReader(
 	/// <summary>The most characters of a platform download error shown.</summary>
 	private const int MaxShownErrorLength = 500;
 
-	// Query parameters that carry a key in common hosting (an Azure SAS signature, an Azure Functions key) but are not
-	// matched by the credential-name pattern.
-	private static readonly HashSet<string> SecretQueryNames = new(StringComparer.OrdinalIgnoreCase) { "sig", "sas", "code" };
-
 	// Cloud metadata host names that resolve to a link-local address on the stand's own network.
 	private static readonly HashSet<string> MetadataHosts = new(StringComparer.OrdinalIgnoreCase) {
 		"metadata", "metadata.google.internal", "metadata.azure.internal", "instance-data", "instance-data.ec2.internal"
@@ -128,15 +124,6 @@ public sealed partial class WsdlReader(
 	private static readonly HashSet<System.Net.IPAddress> MetadataAddresses = [
 		System.Net.IPAddress.Parse("fd00:ec2::254"), System.Net.IPAddress.Parse("100.100.100.200") // NOSONAR S1313
 	];
-
-	/// <summary>
-	/// Whether a query parameter name carries a credential: the credential-name pattern of the web service tools, plus the
-	/// key names common hosting uses. One rule for a WSDL URL (refused) and a WSDL address (left out of base-uri).
-	/// </summary>
-	/// <param name="name">The parameter name, unescaped.</param>
-	/// <returns>Whether a value under it is a secret.</returns>
-	internal static bool IsSecretQueryName(string name) =>
-		WebServiceSchemaView.IsSecretName(name) || SecretQueryNames.Contains(name ?? string.Empty);
 
 	[GeneratedRegex(@"^[A-Za-z]:[\\/]")]
 	private static partial Regex DriveRootedPath();
@@ -332,7 +319,7 @@ public sealed partial class WsdlReader(
 		bool secretInQuery = parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
 			.Select(pair => (Pair: pair, At: pair.IndexOf('=')))
 			.Any(p => p.At > 0 && p.At < p.Pair.Length - 1
-				&& IsSecretQueryName(Uri.UnescapeDataString(p.Pair[..p.At])));
+				&& WebServiceSchemaView.IsSecretQueryName(Uri.UnescapeDataString(p.Pair[..p.At])));
 		if (secretInQuery) {
 			throw new ArgumentException("wsdl-url carries a key or token in its query; download the WSDL yourself and pass "
 				+ "it as wsdl-files.");

@@ -116,7 +116,7 @@ public sealed class WebServiceDesigner(
 		try {
 			JsonNode root = JsonNode.Parse(metadata.TrimStart('\uFEFF'));
 			return root?["MetaData"]?["Schema"]?["IQ1"] is JsonValue value && value.TryGetValue(out string uri)
-				? WebServiceSchemaView.StripUserInfo(uri)
+				? WebServiceSchemaView.ShownUri(uri)
 				: null;
 		} catch (JsonException) {
 			return null;
@@ -252,6 +252,7 @@ public sealed class WebServiceDesigner(
 			throw new ArgumentException($"'{schema.Name}' is a {WebServiceSchemaView.TypeName(schema.Type)} service, "
 				+ "which these tools cannot change; change it in Studio > Web services.");
 		}
+		operations = RestoreMaskedUris(schema, operations);
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		// What decides every call, before the call: compared with the result after the whole call, so a value changed and
@@ -259,6 +260,7 @@ public sealed class WebServiceDesigner(
 		string baseUriBefore = schema.BaseUri;
 		string authBefore = AuthSignature(schema.AuthInfo);
 		string namespacesBefore = WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces);
+		Dictionary<string, bool> useAuthBefore = UseAuthByMethod(schema);
 		// Only a method definition carries codes the prefix rule applies to; skip the read otherwise.
 		string prefix = operations.Any(o => o?.Op is AddMethodOp or SetMethodOp) ? prefixReader.Read() : null;
 		IReadOnlyCollection<(string Owner, string Code)> referencesBefore =
@@ -298,7 +300,7 @@ public sealed class WebServiceDesigner(
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
 			Usages: affected,
-			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations),
+			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations, useAuthBefore),
 				.. Notices(settings, row.Package, missingKept)]);
 	}
 
@@ -307,7 +309,8 @@ public sealed class WebServiceDesigner(
 	/// switch to SOAP 1.1), and the methods that send no authentication after it changed the authentication.
 	/// </summary>
 	private static IEnumerable<string> SavedChangeNotices(ServiceSchemaDto schema, bool soap, int typeBefore,
-		ISet<string> builtMethods, string authBefore, IReadOnlyList<WebServiceOperationArg> operations) {
+		ISet<string> builtMethods, string authBefore, IReadOnlyList<WebServiceOperationArg> operations,
+		IReadOnlyDictionary<string, bool> useAuthBefore) {
 		var notices = new List<string>();
 		if (soap) {
 			// A switch to SOAP 1.1 makes every method's empty action matter, not only the methods this call built.
@@ -316,7 +319,7 @@ public sealed class WebServiceDesigner(
 				schema.Methods.Items.Values.Where(m => becameSoap11 || builtMethods.Contains(m.Name ?? ""))));
 		}
 		if (AuthSignature(schema.AuthInfo) != authBefore) {
-			notices.AddRange(NoAuthMethodNotices(schema, ExplicitUseAuthMethods(operations)));
+			notices.AddRange(NoAuthMethodNotices(schema, ExplicitUseAuthMethods(operations, useAuthBefore)));
 		}
 		return notices;
 	}
@@ -343,8 +346,9 @@ public sealed class WebServiceDesigner(
 		}
 		// The codes the call gave a value, nested ones included, tell an array the platform skipped from one the
 		// lookup missed.
-		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, result.RequestRawData,
-			result.RequestBody, HasAuth(schema), call.SentCodes, out bool secretUnlocated);
+		IReadOnlyList<string> secrets = WithUriQuerySecrets(WebServiceResponseMasker.SentSecrets(method,
+			result.RequestRawData, result.RequestBody, HasAuth(schema), call.SentCodes, out bool secretUnlocated),
+			schema, method);
 		if (!string.IsNullOrEmpty(result.Error) && string.IsNullOrEmpty(result.RequestRawData)
 			&& string.IsNullOrEmpty(result.RequestBody) && WebServiceResponseMasker.HasCredentialResponseDefault(method)) {
 			// A failure with nothing reported as sent may come from converting a response default after the call (a
@@ -698,11 +702,61 @@ public sealed class WebServiceDesigner(
 			+ "definition with use-auth true in setMethod."];
 	}
 
-	/// <summary>The codes of the methods this call defines with an explicit use-auth.</summary>
-	private static IReadOnlySet<string> ExplicitUseAuthMethods(IReadOnlyList<WebServiceOperationArg> operations) =>
-		operations.Where(o => o?.Op is AddMethodOp or SetMethodOp && o.Method?.UseAuth is not null)
+	/// <summary>
+	/// The codes of the methods this call defines with an explicit use-auth: an addMethod that gives one (a method
+	/// removed and added again included), or a setMethod whose use-auth differs from the stored value. describe-web-service prints use-auth on every method, so a
+	/// setMethod copied from it carries the stored value, which is not a choice the agent made.
+	/// </summary>
+	private static IReadOnlySet<string> ExplicitUseAuthMethods(IReadOnlyList<WebServiceOperationArg> operations,
+		IReadOnlyDictionary<string, bool> useAuthBefore) =>
+		operations.Where(o => o?.Op is AddMethodOp or SetMethodOp && o.Method?.UseAuth is { } useAuth
+				&& (o.Op == AddMethodOp || !useAuthBefore.TryGetValue(o.Method.Code ?? string.Empty, out bool stored)
+					|| stored != useAuth))
 			.Select(o => o.Method.Code ?? string.Empty)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// describe-web-service masks a secret query value of a stored base URI, method URI or SOAP action; sent back
+	/// unchanged, that masked form means the stored value, so the round trip neither stores the placeholder nor loses
+	/// the value.
+	/// </summary>
+	private static List<WebServiceOperationArg> RestoreMaskedUris(ServiceSchemaDto schema,
+		IReadOnlyList<WebServiceOperationArg> operations) =>
+		operations.Select(o => o switch {
+			{ Op: "setBaseUri" } => o with {
+				BaseUri = WebServiceSchemaView.RestoreMaskedUriQuery(o.BaseUri, schema.BaseUri)
+			},
+			{ Op: SetMethodOp, Method: { } method } when FindMethod(schema, method.Code) is { } stored => o with {
+				Method = method with {
+					Uri = WebServiceSchemaView.RestoreMaskedUriQuery(method.Uri, stored.Request?.Uri),
+					SoapAction = WebServiceSchemaView.RestoreMaskedUriQuery(method.SoapAction, stored.SoapAction)
+				}
+			},
+			_ => o
+		}).ToList();
+
+	/// <summary>
+	/// The secrets to mask in a test call's result, plus the secret query values of the stored base URI, method URI
+	/// and SOAP action: they go out on every call and an API may echo them, and describe-web-service hides them too.
+	/// </summary>
+	private static IReadOnlyList<string> WithUriQuerySecrets(IReadOnlyList<string> secrets, ServiceSchemaDto schema,
+		ServiceMethodDto method) =>
+		secrets.Concat(WebServiceSchemaView.UriQuerySecrets(schema.BaseUri))
+			.Concat(WebServiceSchemaView.UriQuerySecrets(method.Request?.Uri))
+			.Concat(WebServiceSchemaView.UriQuerySecrets(method.SoapAction))
+			.Where(s => s is { Length: >= WebServiceResponseMasker.MinMaskedLength })
+			.Distinct(StringComparer.Ordinal)
+			.OrderByDescending(s => s.Length)
+			.ToList();
+
+	/// <summary>Each method's stored use-auth by code, read before a change is applied.</summary>
+	private static Dictionary<string, bool> UseAuthByMethod(ServiceSchemaDto schema) {
+		var result = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+			result[method.Name ?? string.Empty] = method.UseAuthInfo;
+		}
+		return result;
+	}
 
 	/// <summary>Switches a SOAP service between 1.1 and 1.2; Studio offers no other change of type.</summary>
 	private static void SetType(ServiceSchemaDto schema, string type, bool soap,

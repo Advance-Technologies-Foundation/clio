@@ -110,7 +110,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("register, list, describe, test-call and modify a REST web service")]
-	[Description("Registers a REST service with a path parameter, a system-setting header and a nested response array, finds it through list-web-services, reads it back through describe-web-service with no credential value, test-calls a method through the platform and gets a readable failure for an unresolvable host and for an unknown method, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
+	[Description("Registers a REST service with a path parameter, a key-like query value, a system-setting header and a nested response array, finds it through list-web-services, reads it back through describe-web-service with no credential value and the query value masked, sends the described method back unchanged, test-calls a method through the platform and gets a readable failure for an unresolvable host and for an unknown method, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
 	public async Task WebServiceTools_Should_Register_Read_And_Modify_A_Rest_Service() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -131,13 +131,25 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["code"] = _serviceCode,
 				["caption"] = "E2E orders",
 				["base-uri"] = "https://example.invalid/api",
-				["methods"] = new[] { OrdersMethod(withHeader: true) }
+				["methods"] = new[] { OrdersMethod(withHeader: true, withSignature: true) }
 			}, cts.Token);
 		WebServiceListResult listed = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
 			new Dictionary<string, object?> { ["environment-name"] = _environmentName }, cts.Token);
 		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["usages"] = true
+			}, cts.Token);
+		// describe's method sent back as it is: the masked query value must keep the stored one, or the placeholder
+		// would be refused.
+		WebServiceToolResult echoed = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode,
+				["operations"] = new[] {
+					new Dictionary<string, object?> {
+						["op"] = "setMethod",
+						["method"] = JsonSerializer.SerializeToElement(described.Service?.Methods.FirstOrDefault())
+					}
+				}
 			}, cts.Token);
 		// A real call through the platform's test-request service. The host never resolves, so the call fails in
 		// the platform the same way on every stand; what is checked is the path through the tool: argument
@@ -181,7 +193,12 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		described.Success.Should().BeTrue(because: $"describe must read the service back; error: {described.Error}");
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
-		method.Uri.Should().Be("orders/{id}", because: "the method address is stored without a leading slash");
+		method.Uri.Should().Be("orders/{id}?sig=[masked]",
+			because: "the method address is stored without a leading slash, and a key-like query value is never returned");
+		JsonSerializer.Serialize(described).Should().NotContain(QuerySignature,
+			because: "describe must not print a key kept in a URI query");
+		echoed.Success.Should().BeTrue(
+			because: $"describe output sent back keeps the masked query value instead of storing the placeholder; error: {echoed.Error}");
 		method.RequestParameters.Should().Contain(p => p.Code == Prefixed("ApiKey") && p.DefaultSysSetting == "SchemaNamePrefix",
 			because: "a header bound to a system setting is returned as the setting code, never as its value");
 		method.ResponseParameters.Single(p => p.Code == Prefixed("Items")).Items.Should().ContainSingle(p => p.Code == Prefixed("Number"),
@@ -205,6 +222,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Category(McpE2ECategories.ProcessDesigner)]
 	[AllureTag(ModifyWebServiceTool.ToolName)]
 	[AllureName("modify-web-service refuses a change to a method, or the base URI, of a service a process calls")]
 	[Description("Registers a throwaway service, builds a process whose Call web service element calls its method, expects describe-web-service usages to name that process and element, then asks to remove the called method, and separately to give the service a new base URI, without acknowledge-usages and expects each refused naming the process (the second as a change of every call) with nothing changed.")]
@@ -643,7 +661,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		mappings = new[] { new { elementName = CallerElement, elementParameter = Prefixed("Id") + "_In", value = "1" } }
 	});
 
-	private Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null) {
+	private const string QuerySignature = "e2e-sig-0042-0042-0042";
+
+	private Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null, bool withSignature = false) {
 		var requestParameters = new List<Dictionary<string, object?>> {
 			new() { ["code"] = Prefixed("Id"), ["in"] = "path", ["path"] = "id" }
 		};
@@ -662,7 +682,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		return new Dictionary<string, object?> {
 			["code"] = MethodCode,
 			["http-method"] = "GET",
-			["uri"] = "/orders/{id}",
+			// A fixed key-length sig value: register keeps it (sig is not in the write-side credential pattern), and
+			// describe masks it.
+			["uri"] = withSignature ? "/orders/{id}?sig=" + QuerySignature : "/orders/{id}",
 			["request-parameters"] = requestParameters,
 			["response-parameters"] = new[] {
 				new Dictionary<string, object?> { ["code"] = Prefixed("Status"), ["path"] = "$.status" },

@@ -183,7 +183,9 @@ public static partial class WsdlRegistrationMapper {
 		foreach (WsdlOperation operation in port.Operations) {
 			WebServiceMethodView match = target.Methods.FirstOrDefault(m => !claimed.Contains(m.Code)
 				&& string.Equals(LocalName(m.MessageElement), operation.StudioMessageElement, StringComparison.Ordinal)
-				&& string.Equals(m.SoapAction?.Trim() ?? string.Empty, KeptSoapAction(operation.SoapAction) ?? string.Empty,
+				// describe masks a key-like query value of the stored action, so the WSDL's action is compared masked too.
+				&& string.Equals(m.SoapAction?.Trim() ?? string.Empty,
+					WebServiceSchemaView.MaskUriQuery(KeptSoapAction(operation.SoapAction)) ?? string.Empty,
 					StringComparison.Ordinal));
 			if (match is not null) {
 				claimed.Add(match.Code);
@@ -454,7 +456,7 @@ public static partial class WsdlRegistrationMapper {
 				string[] kept = pairs.Where(pair => {
 					int equals = pair.IndexOf('=');
 					string name = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
-					return !WsdlReader.IsSecretQueryName(name);
+					return !WebServiceSchemaView.IsSecretQueryName(name);
 				}).ToArray();
 				if (kept.Length < pairs.Length) {
 					result = result[..question] + (kept.Length > 0 ? "?" + string.Join('&', kept) : string.Empty);

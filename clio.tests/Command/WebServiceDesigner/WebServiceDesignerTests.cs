@@ -1306,4 +1306,169 @@ public sealed class WebServiceDesignerTests {
 		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
 			because: "UsrHealth was defined without authentication on purpose, and Search sends it");
 	}
+
+	[Test]
+	[Description("A method sent back with the use-auth it already has, as describe-web-service prints it, is still named in the notice after new authentication: keeping the stored value is not a choice.")]
+	public void Modify_Should_Name_A_Method_Sent_Back_With_Its_Stored_Use_Auth() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+		var search = new WebServiceMethodArg("Search", "GET", "search",
+			RequestParameters: [new WebServiceParameterArg("q", "query")], UseAuth: false);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[SetBasicAuth(), new WebServiceOperationArg("setMethod", search)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service");
+		result.Notices.Should().Contain(n => n.Contains("Method 'Search' has use-auth false"),
+			because: "Search keeps the use-auth false it had, so the new authentication does not reach it");
+	}
+
+	[Test]
+	[Description("A method removed and added again in one call with use-auth false is the agent's choice, so the notice after new authentication leaves it out.")]
+	public void Modify_Should_Treat_A_Readded_Method_Use_Auth_As_Explicit() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Name = "UsrSearch";
+		GivenRegisteredService(schema);
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+		var search = new WebServiceMethodArg("UsrSearch", "GET", "search",
+			RequestParameters: [new WebServiceParameterArg("UsrQ", "query", Path: "q")], UseAuth: false);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			SetBasicAuth(),
+			new WebServiceOperationArg("removeMethod", MethodCode: "UsrSearch"),
+			new WebServiceOperationArg("addMethod", search)
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"no process calls the service; error: {result.Error}");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "addMethod defines the method anew, so its use-auth is a choice the agent made");
+	}
+
+	[Test]
+	[Description("A setMethod that changes a method's use-auth to false together with new authentication is the agent's choice, so the notice leaves that method out.")]
+	public void Modify_Should_Treat_A_Changed_Use_Auth_As_Explicit() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+		var search = new WebServiceMethodArg("Search", "GET", "search",
+			RequestParameters: [new WebServiceParameterArg("q", "query")], UseAuth: false);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[SetBasicAuth(), new WebServiceOperationArg("setMethod", search)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"no process calls the service; error: {result.Error}");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "Search was stored with use-auth true, so false here is a choice the agent made");
+	}
+
+	[Test]
+	[Description("describe-web-service masks the value of a credential-like query parameter in a stored base URI and method URI, and keeps the other query values.")]
+	public void Describe_Should_Mask_A_Secret_Query_Value_Of_A_Stored_Uri() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.BaseUri = "https://api.bing.example/?sig=sig-0042-secret-key";
+		schema.Methods.Items.Values.Single().Request.Uri = "search?api_key=sk-live-0042&format=json";
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", false);
+
+		// Assert
+		string view = JsonSerializer.Serialize(result.Service);
+		view.Should().NotContain("sk-live-0042", because: "a key typed into a method URI in Studio is a credential");
+		view.Should().NotContain("sig-0042-secret-key", because: "an Azure SAS signature in the base URI is a credential");
+		result.Service.Methods.Single().Uri.Should().Be("search?api_key=[masked]&format=json",
+			because: "only the secret value is hidden; the reader still sees which query parameters go out");
+		result.Service.BaseUri.Should().Be("https://api.bing.example/?sig=[masked]",
+			because: "the base URI is masked the same way");
+	}
+
+	[Test]
+	[Description("list-web-services masks a credential-like query value of a stored base URI.")]
+	public void BaseUriFromMetadata_Should_Mask_A_Secret_Query_Value() {
+		// Arrange
+		string metadata = """{"MetaData":{"Schema":{"IQ1":"https://erp.example/Orders.svc?code=fn-key-0042-0042-0042"}}}""";
+
+		// Act
+		string baseUri = Clio.Command.WebServiceDesigner.WebServiceDesigner.BaseUriFromMetadata(metadata);
+
+		// Assert
+		baseUri.Should().Be("https://erp.example/Orders.svc?code=[masked]",
+			because: "an Azure Functions key in the base URI must not reach the list either");
+	}
+
+	[Test]
+	[Description("A method URI sent back exactly as describe-web-service masked it keeps the stored secret query value.")]
+	public void Modify_Should_Keep_A_Masked_Query_Value_Sent_Back_From_Describe() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Request.Uri = "search?sig=sig-0042-secret-key&format=json";
+		GivenRegisteredService(schema);
+		GivenSelect("SysSchema");
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		WebServiceMethodArg described = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single()));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setMethod", described)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"describe output is valid setMethod input; error: {result.Error}");
+		saved.Methods.Items.Values.Single().Request.Uri.Should().Be("search?sig=sig-0042-secret-key&format=json",
+			because: "the masked form sent back means the stored value, not the placeholder");
+	}
+
+	[Test]
+	[Description("A changed method URI that still carries the mask placeholder is refused and nothing is saved.")]
+	public void Modify_Should_Refuse_The_Mask_Placeholder_In_A_Changed_Uri() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Request.Uri = "search?sig=sig-0042-secret-key";
+		GivenRegisteredService(schema);
+		GivenSelect("SysSchema");
+		var changed = new WebServiceMethodArg("Search", "GET", "find?sig=[masked]",
+			RequestParameters: [new WebServiceParameterArg("q", "query")]);
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", changed)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the placeholder would be stored and sent as the key")
+			.WithMessage("*the placeholder describe-web-service shows for a hidden value*",
+				because: "the refusal says how to keep the stored value");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("A test call masks a secret query value of the stored method URI when the API echoes it.")]
+	public void TestMethod_Should_Mask_An_Echoed_Secret_Query_Value_Of_The_Stored_Uri() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Request.Uri = "search?sig=sig-0042-secret-key";
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200,
+				"""{"url":"https://api.bing.example/search?sig=sig-0042-secret-key"}""", null,
+				"GET https://api.bing.example/search?sig=sig-0042-secret-key HTTPS/1.1\r\nHost: api.bing.example"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().NotContain("sig-0042-secret-key", because: "describe hides the value, so an echo must too");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+	}
 }

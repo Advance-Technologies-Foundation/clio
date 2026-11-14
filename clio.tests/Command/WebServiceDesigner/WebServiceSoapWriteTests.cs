@@ -262,8 +262,8 @@ public sealed class WebServiceSoapWriteTests {
 		JsonSerializer.Serialize(WebServiceSchemaView.From(_saved, "Custom")).Should().Be(JsonSerializer.Serialize(before),
 			because: "describe reads the service exactly as before");
 		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Keys
-			.Should().BeEquivalentTo(original.Methods.Items.Values.Single().Request.Parameters.Items.Keys,
-				because: "kept parameters keep their UIds, so calling processes still resolve them");
+			.Should().Equal(original.Methods.Items.Values.Single().Request.Parameters.Items.Keys,
+				because: "kept parameters keep their UIds and their order: the platform renders the envelope in stored order");
 		_saved.Namespaces.Items.Keys.Should().BeEquivalentTo(original.Namespaces.Items.Keys,
 			because: "a namespace keeps its UId by prefix");
 		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrUser").DefValue.Value
@@ -947,5 +947,47 @@ public sealed class WebServiceSoapWriteTests {
 
 		// Assert
 		_saved.BaseUri.Should().Be("http://x.example/service.asmx", because: "a SOAP call goes to the base URI as given");
+	}
+	[Test]
+	[Description("A SOAP base URI sent back as describe-web-service masked it keeps the stored key and is no change, so a calling process does not make it refused.")]
+	public void Modify_Should_Keep_A_Masked_Base_Uri_Sent_Back_From_Describe() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		schema.BaseUri = "http://x.example/svc.asmx?sig=sig-0042-secret-key";
+		GivenRegistered(schema);
+		GivenSelect("SysSchema", ProcessCalling(schema.UId, schema.Methods.Items.Values.Single().Name));
+		string described = WebServiceSchemaView.From(schema, "Custom").BaseUri;
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(schema.Name,
+			[new WebServiceOperationArg("setBaseUri", BaseUri: described)], null);
+
+		// Assert
+		described.Should().Be("http://x.example/svc.asmx?sig=[masked]", because: "describe hides the stored key");
+		result.Success.Should().BeTrue(because: $"the base URI describe returned is no change; error: {result.Error}");
+		_saved.BaseUri.Should().Be("http://x.example/svc.asmx?sig=sig-0042-secret-key",
+			because: "the masked form sent back means the stored value");
+	}
+
+	[Test]
+	[Description("A SOAP action sent back as describe-web-service masked it keeps the stored key.")]
+	public void Modify_Should_Keep_A_Masked_Soap_Action_Sent_Back_From_Describe() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		ServiceMethodDto stored = schema.Methods.Items.Values.Single();
+		stored.SoapAction = "http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042";
+		GivenRegistered(schema);
+		WebServiceMethodView view = WebServiceSchemaView.From(schema, "Custom").Methods.Single();
+		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(JsonSerializer.Serialize(view));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(schema.Name, [new WebServiceOperationArg("setMethod", methodArg)], null);
+
+		// Assert
+		view.SoapAction.Should().Be("http://example.org/UsrSoapR/UsrOp?code=[masked]",
+			because: "describe hides a key-length Functions key in the action");
+		result.Success.Should().BeTrue(because: $"describe output is valid setMethod input; error: {result.Error}");
+		_saved.Methods.Items.Values.Single().SoapAction.Should().Be("http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042",
+			because: "the masked form sent back means the stored value");
 	}
 }

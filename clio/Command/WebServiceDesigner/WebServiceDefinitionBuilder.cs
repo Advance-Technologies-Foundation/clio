@@ -368,7 +368,7 @@ public static partial class WebServiceDefinitionBuilder {
 		if (string.IsNullOrWhiteSpace(baseUri)
 			|| !Uri.TryCreate(baseUri.Trim(), UriKind.Absolute, out Uri parsed)
 			|| (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)) {
-			errors.Add($"base-uri '{WebServiceSchemaView.StripUserInfo(baseUri)}' must be an absolute http or https URI.");
+			errors.Add($"base-uri '{WebServiceSchemaView.ShownUri(baseUri)}' must be an absolute http or https URI.");
 			return baseUri;
 		}
 		if (!string.IsNullOrEmpty(parsed.UserInfo)) {
@@ -987,6 +987,16 @@ public static partial class WebServiceDefinitionBuilder {
 			// The platform sends the key unescaped, so api%5Fkey is api_key on the wire.
 			string key = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
 			string value = equals < 0 ? string.Empty : pair[(equals + 1)..];
+			if (Uri.UnescapeDataString(value.Split('#')[0]) == WebServiceResponseMasker.Mask) {
+				// describe-web-service shows a stored secret query value so. modify-web-service puts the stored value back
+				// only when setMethod or setBaseUri of the same service sends the whole URI exactly as describe showed it
+				// (WebServiceSchemaView.RestoreMaskedUriQuery), so here it was changed, or it is new.
+				errors.Add($"{owner} query '{key}' is {WebServiceResponseMasker.Mask}, the placeholder describe-web-service "
+					+ "shows for a hidden value; only setMethod or setBaseUri of the same service that sends the whole URI "
+					+ "exactly as describe returned it keeps the stored value. Otherwise make it a parameter with "
+					+ "default-sys-setting.");
+				continue;
+			}
 			if (value.Length > 0 && !PathPlaceholderPattern().IsMatch(value)
 					&& WebServiceSchemaView.IsSecretLike(key, ServiceSchemaCodes.Placements["query"])) {
 				errors.Add($"{owner} query '{key}' looks like a credential and has a constant value; "
