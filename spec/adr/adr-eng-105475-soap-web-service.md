@@ -115,7 +115,7 @@ The REST rule "an xml method has no body parameters" applies to REST only.
 Read-only, `OpenWorld = true`. Inputs: `environment-name`, `wsdl-url` or `wsdl-files` (absolute local paths, for a WSDL
 the stand cannot reach or one with non-ASCII text, which the platform download turns into `?`; an import is matched by
 its `schemaLocation` or by that location's file name; at most 100 files of 10 MB, the platform endpoint's own caps),
-optional `port`, `service-code` (D11) and `operations` (names to return; a port with none of them is left out). The URL is fetched through
+optional `port`, `code` (a new service's code, D16), `service-code` (D11) and `operations` (names to return; a port with none of them is left out). The URL is fetched through
 `GetXmlSchemaFilesContent` (CanManageSolution, as Studio; route `DownloadWsdlSchemaFiles`), never by clio itself, so
 clio adds no network reach of its own; only the URL the user gave is fetched (the platform follows the
 `schemaLocation`s), a URL with `user:password@` or a key or token in its query is refused, and the platform's error
@@ -355,6 +355,64 @@ with the user first". A refusal reaches the agent on its first call whatever it 
 Rerun with the gate (same case, stand and guides, 2026-11-13): the agent's first call was refused with nothing sent;
 it told the user the SOAP call sends a real request and asked for a yes. After "Yes, send it." it repeated the call with
 `user-confirmed: true` and got HTTP 200 and 5.
+
+### D15. Follow-up checks: every-call changes, per-method authentication, ports the platform cannot call (2026-11-14)
+
+Three questions left open by slices A-D were measured on stand `Creatio` (.NET Framework) against httpbin and a WCF
+host (.NET Framework 4.8, one contract on `BasicHttpBinding`, a SOAP 1.2 custom binding, a SOAP 1.2 WS-Addressing
+custom binding and `WSHttpBinding` with security mode None); the user decided to fix all three in clio.
+
+- **Usage guard.** `setBaseUri` changes every call a process makes, exactly like `setNamespaces` and `setType` (D7),
+  and `setAuth` every call of a method that sends the authentication, but neither added anything to the guard:
+  clio#1900 guarded only `setMethod` and `removeMethod`, and nothing decided to exempt them. The guard now compares the
+  service before and after the whole call (the base URI as stored after normalisation; the authentication type and
+  every value with its source; the namespace list; the type): a new base URI, namespace list or version counts as
+  changing every method, new authentication as changing the methods with `use-auth` after the call. Describe output
+  sent back, or a value changed and changed back in one call, scans nothing. `setRetryCount` stays exempt: retries
+  change no request the API receives. The refusal names every change, also next to a broken method ("the new base URI
+  and authentication change every call ...").
+- **Authentication is per method.** The platform attaches the service authentication only for a method with
+  `UseAuthInfo` (Terrasoft.Services `ServiceClientRequest.GetRequestData`), whatever the service type: SOAP 1.1 and 1.2
+  send `Authorization: Basic` exactly as REST does (measured; Digest is sent as preemptive Basic, OAuth 2.0 as
+  `Bearer`, source). `setAuth` leaves the kept methods' `use-auth` as it was (measured: a method saved without it still
+  sends nothing), so after a call that changed the authentication a notice names the methods with `use-auth` false,
+  except the ones the call defined with an explicit `use-auth`. Rejected: switching them on silently; a method may
+  have been saved without authentication on purpose (a public health-check).
+- **Ports the platform cannot call.** The platform sends a SOAP 1.2 action only as a `SOAPAction` header, never as the
+  `action` parameter of `Content-Type`; WCF on a SOAP 1.2 binding dispatches by that parameter and answers every call
+  with `ActionNotSupported` (Action ''); ASMX answers. A binding that requires WS-Addressing gets no `wsa:Action` or
+  `wsa:To` and answers `DestinationUnreachable`: a `wsaw:UsingAddressing`, `wsam:Addressing` or WCF's August 2004
+  `wsap:UsingAddressing` in a policy the binding references (not under `wsp:Optional`), or one directly in the binding
+  with `wsdl:required="true"` (WSDL 1.1 reads an extension without it as optional). A policy with a WS-SecurityPolicy
+  symmetric or asymmetric binding (a default `wsHttpBinding`) cannot be called at all. `read-wsdl` warns on each and
+  names a SOAP 1.1 port of the same port type that needs neither, preferring one of the same service at the same scheme
+  and host; one elsewhere (another host, or http where the warned port is https) is named with that difference and
+  left to the user. A plain SOAP 1.2 port is a definite failure only on WCF, so the SOAP 1.1 port is named to register
+  only when WCF wrote the WSDL (the WCF contract namespace on its root; a `wsaw`/`wsam` Action on a port-type message
+  is no sign, Axis2 and the JAX-WS RI write one too); elsewhere it is named as the way out after a test call that
+  fails because the action is not found, switched with `setType` soap11. The isolated run of TC-32..TC-38 showed why: with an unconditional
+  advice agents registered the ASMX calculator over SOAP 1.1, although it answers SOAP 1.2 (TC-25 expects Studio's
+  pick). With none, the warning gives the workaround measured to work (a request header parameter with the
+  path `Content-Type` carrying `action="..."`, one per method; two `soap-header` parameters with the paths `wsa:Action`
+  and `wsa:To`), whose values come from a system setting or the process because a constant is refused there; none for
+  message security. The scan walks each binding and policy once with the parse clock checked (a hostile WSDL cannot
+  outrun the parse limit); policy normal form with an empty alternative, nested references and port-level policies
+  are not read. `studio-pick` keeps meaning Studio's
+  choice (D12) and is documented as not a recommendation. Rejected: moving `studio-pick` to the SOAP 1.1 port (it would
+  no longer say what Studio does) and a platform-side fix (out of clio's scope; worth a platform ticket).
+
+### D16. A new service's code is its own `read-wsdl` argument (owner, 2026-11-14)
+
+`read-wsdl` takes `code`, the code the user named for a NEW service: the returned arguments carry it instead of the code
+built from the WSDL service name, so they can still be registered as they are. `service-code` stays only for an
+existing SOAP service the operations go into; both together are refused, `code` is checked like a registered code
+(Latin identifier, schema-name prefix), and a `service-code` that names no service is refused before the stand
+downloads the WSDL, pointing to `code`.
+
+Why: in two isolated runs agents passed the new service's code as `service-code` in 5 of 7 WSDL reads, failed, read
+again and then replaced the generated code at registration, against the guide's "register the arguments as they
+are". Rejected: reading an unregistered `service-code` as a new service. It would remove the failed call, but a typo in
+an existing service's code would silently build a second service instead of extending the first.
 
 ## Consequences
 

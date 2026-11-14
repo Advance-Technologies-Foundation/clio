@@ -370,16 +370,343 @@ public static partial class WebServiceSchemaView {
 	/// </summary>
 	public static bool IsSecretLike(ServiceParameterDto parameter) {
 		int placement = parameter.IsSoapHeader == true ? ServiceSchemaCodes.Placements["header"] : parameter.Type;
-		return IsSecretLike(parameter.Name, placement) || IsSecretLike(parameter.Path, placement);
+		string value = parameter.DefValue?.Value;
+		return IsSecretLike(parameter.Name, placement, value) || IsSecretLike(parameter.Path, placement, value);
 	}
+
+	/// <summary>
+	/// As <see cref="IsSecretLike(string, int)"/>, and for a query parameter also a key-length constant under a hosting
+	/// key name (<see cref="IsSecretQueryValue"/>), the rule a key written into a URI follows.
+	/// </summary>
+	/// <param name="parameterName">The parameter code or wire name.</param>
+	/// <param name="placement">The parameter placement.</param>
+	/// <param name="value">The constant default, or null.</param>
+	/// <returns>Whether a constant default there is a secret.</returns>
+	public static bool IsSecretLike(string parameterName, int placement, string value) =>
+		IsSecretLike(parameterName, placement)
+		|| (placement == ServiceSchemaCodes.Placements["query"] && IsSecretQueryValue(parameterName, value));
 
 	/// <summary>Whether a parameter code or wire name looks like a credential (key, token, secret, password, ...).</summary>
 	public static bool IsSecretName(string name) => SecretNamePattern().IsMatch(name ?? string.Empty);
 
+	// Query parameters that carry a key in common hosting and APIs (an Azure SAS signature, an Azure Functions key, an
+	// OpenWeatherMap appid, a request signature) but are not matched by the credential-name pattern.
+	private static readonly HashSet<string> SecretQueryNames = new(StringComparer.OrdinalIgnoreCase) {
+		"sig", "sas", "code", "appid", "sign", "hmac"
+	};
+
+	// A value under a hosting key name at least this long is a key (an Azure SAS signature or Functions key is 40+
+	// characters); a shorter one is an ordinary value (rates?code=USD).
+	private const int MinHostingKeyLength = 16;
+
+	// Where a key may start: after a pair separator, the query mark, or a character a key never holds (a path, a
+	// scheme, user information, or an OData key segment such as Orders(Id=1,Key=2) in front of it).
+	private const string KeyBoundaries = "&;?/@:(,";
+
+	// Where a value in the path (before the first '?') ends: a ;name=value path parameter or an OData key segment
+	// closes at these or at the query mark; a value in the query runs to the next '&'.
+	private const string PathValueEnds = "/;),?";
+
+	// Where the part of a value that decides the hosting-key length ends: rates?code=USD;callback=f keeps USD. Not at
+	// '/', '+' or '=': a base64 key (an Azure SAS signature) holds them.
+	private const string ValueCoreEnds = ";#";
+
+	// Where an echoed key may have been cut by a server that splits there: one more form of each hidden value.
+	private const string EchoFormEnds = ";?@/#";
+
+	/// <summary>
+	/// Whether a URI query parameter name carries a credential, whatever its value: the credential-name pattern, plus
+	/// the key names common hosting and APIs use. read-wsdl uses it, stricter than
+	/// <see cref="IsSecretQueryValue"/>: it refuses a WSDL URL with such a parameter and leaves one out of a base-uri.
+	/// </summary>
+	/// <param name="name">The parameter name, unescaped.</param>
+	/// <returns>Whether a value under it is taken as a secret.</returns>
+	public static bool IsSecretQueryName(string name) =>
+		IsSecretName(name) || SecretQueryNames.Contains(name ?? string.Empty);
+
+	/// <summary>
+	/// Whether a URI query value is a secret: any value under a credential name, or a key-length value (16 characters
+	/// or more) under a hosting key name (<c>sig</c>, <c>sas</c>, <c>code</c>, <c>appid</c>, <c>sign</c>,
+	/// <c>hmac</c>), whose short values are ordinary. One rule for a key written into a URI and for a query parameter's
+	/// constant default: describe-web-service, list-web-services and a test call hide such a value, and register and
+	/// modify-web-service refuse to write one.
+	/// </summary>
+	/// <param name="name">The parameter name, unescaped.</param>
+	/// <param name="value">The value, unescaped.</param>
+	/// <returns>Whether the value is a secret.</returns>
+	public static bool IsSecretQueryValue(string name, string value) =>
+		IsSecretName(name)
+		|| (SecretQueryNames.Contains(name ?? string.Empty) && (value ?? string.Empty).Length >= MinHostingKeyLength);
+
+	/// <summary>
+	/// Whether a query or path value is only a <c>{placeholder}</c>, filled per call rather than a constant, also in
+	/// quotes as an OData string key writes it (<c>Products(ProductKey='{id}')</c>).
+	/// </summary>
+	/// <param name="value">The value as written.</param>
+	/// <returns>Whether the whole value is one placeholder.</returns>
+	public static bool IsPlaceholderValue(string value) => WholePlaceholderPattern().IsMatch(value ?? string.Empty);
+
+	/// <summary>
+	/// The keys of a URI that register and modify-web-service refuse, read exactly as describe-web-service reads them:
+	/// keys whose value is a secret (<see cref="IsSecretQueryValue"/>), and keys whose value holds the mask describe
+	/// shows in place of one.
+	/// </summary>
+	/// <param name="uri">The URI as the agent sent it.</param>
+	/// <returns>The keys, unescaped; empty for no URI.</returns>
+	public static UriQueryKeys FindQueryKeys(string uri) {
+		QueryScan scan = ScanQuery(uri);
+		return new UriQueryKeys(scan.SecretKeys, scan.MaskKeys);
+	}
+
+	/// <summary>
+	/// The path parameters of a method whose constant default fills a key of its URI: their <c>{placeholder}</c> sits
+	/// in the value of a key named like a credential or a hosting key (<c>search?api_key={k}</c>,
+	/// <c>?sig={a}{b}</c>) and the constant is a secret under that key. They are hidden, masked in an echo and refused
+	/// on write like a key written into the URI itself.
+	/// </summary>
+	/// <param name="uri">The method URI as stored or sent.</param>
+	/// <param name="parameters">The method's request parameters.</param>
+	/// <returns>Each such parameter's <c>path</c> with its constant.</returns>
+	public static IReadOnlyDictionary<string, string> SecretPlaceholderPaths(string uri,
+		ServiceItemCollection<ServiceParameterDto> parameters) {
+		var paths = new Dictionary<string, string>(StringComparer.Ordinal);
+		foreach ((string key, string name) in ScanQuery(uri).Placeholders) {
+			ServiceParameterDto filler = parameters?.Items.Values.FirstOrDefault(p =>
+				p.Type == ServiceSchemaCodes.Placements["path"] && string.Equals(p.Path, name, StringComparison.Ordinal));
+			if (filler?.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value: { Length: > 0 } value }
+					&& IsSecretQueryValue(key, value)) {
+				paths[name] = value;
+			}
+		}
+		return paths;
+	}
+
+	/// <summary>
+	/// A stored URI with every secret query value (<see cref="IsSecretQueryValue"/>) replaced by
+	/// <see cref="WebServiceResponseMasker.Mask"/>. Studio stores such a constant (<c>search?api_key=...</c>), so a
+	/// read must not print it. A <c>{placeholder}</c> value is kept.
+	/// </summary>
+	/// <param name="uri">The URI as stored.</param>
+	/// <returns>The URI with its query secrets masked.</returns>
+	public static string MaskUriQuery(string uri) =>
+		string.IsNullOrEmpty(uri) ? uri : ApplySpans(uri, ScanQuery(uri).Spans, 0);
+
+	/// <summary>
+	/// The values <see cref="MaskUriQuery(string)"/> hides, in the forms they go out or come back in: as stored, cut
+	/// at the first <c>;</c>, <c>?</c>, <c>@</c>, <c>/</c> or <c>#</c> (a server may split there), URL-unescaped, and
+	/// with <c>+</c> read as a space.
+	/// </summary>
+	/// <param name="uri">The URI as stored.</param>
+	/// <returns>The secret query values; empty when there are none.</returns>
+	public static IReadOnlyList<string> UriQuerySecrets(string uri) {
+		var values = new List<string>();
+		foreach ((int start, int end) in ScanQuery(uri).Spans) {
+			string value = uri[start..end];
+			int cut = value.IndexOfAny(EchoFormEnds.ToCharArray());
+			string core = cut < 0 ? value : value[..cut];
+			foreach (string form in new[] { value, core }.SelectMany(v =>
+					new[] { v, Uri.UnescapeDataString(v), Uri.UnescapeDataString(v.Replace('+', ' ')) })) {
+				if (form.Length > 0 && !values.Contains(form)) {
+					values.Add(form);
+				}
+			}
+		}
+		return values;
+	}
+
+	/// <summary>
+	/// The display form of a stored base URI: user information hidden as <see cref="StripUserInfo"/> hides it, and
+	/// query secrets masked. The secrets are found in the stored text first, so an <c>@</c> inside the query, where
+	/// <see cref="StripUserInfo"/> cuts, never shows the rest of a secret value.
+	/// </summary>
+	/// <param name="uri">The URI as stored.</param>
+	/// <returns>The URI as list, describe and refusals may show it.</returns>
+	public static string ShownUri(string uri) {
+		if (string.IsNullOrEmpty(uri)) {
+			return uri;
+		}
+		List<(int Start, int End)> spans = ScanQuery(uri).Spans;
+		int scheme = uri.IndexOf("://", StringComparison.Ordinal);
+		int start = scheme < 0 ? 0 : scheme + 3;
+		int at = uri.LastIndexOf('@');
+		return at < start
+			? ApplySpans(uri, spans, 0)
+			: uri[..start] + "[redacted]" + ApplySpans(uri, spans, at);
+	}
+
+	/// <summary>
+	/// The display form of a namespace URI or a SOAP action: user information is hidden only when the value is an
+	/// absolute URI that carries one (<see cref="StripUserInfo"/> would change an <c>urn:</c> value or an action with
+	/// an <c>@</c>), and query secrets always.
+	/// </summary>
+	/// <param name="value">The value as stored.</param>
+	/// <returns>The value as describe shows it.</returns>
+	public static string ShownUriValue(string value) =>
+		WebServiceDefinitionBuilder.HasUserInfo(value) ? ShownUri(value) : MaskUriQuery(value);
+
+	// uri from `from` on, every secret span replaced by the mask. A span that `from` falls inside (the '@' StripUserInfo
+	// cut at sits in a secret value) shows that character and then the mask, so no tail of the value shows.
+	private static string ApplySpans(string uri, List<(int Start, int End)> spans, int from) {
+		var parts = new List<string>();
+		int position = from;
+		foreach ((int start, int end) in spans) {
+			if (end <= position) {
+				continue;
+			}
+			parts.Add(start < position ? uri[position].ToString() : uri[position..start]);
+			parts.Add(WebServiceResponseMasker.Mask);
+			position = end;
+		}
+		parts.Add(uri[position..]);
+		return string.Concat(parts);
+	}
+
+	private sealed record QueryScan(List<(int Start, int End)> Spans, List<string> SecretKeys, List<string> MaskKeys,
+		List<(string Key, string Name)> Placeholders);
+
+	// One linear pass over the whole URI; the read (describe, list, test call) and the write check use it alike. A
+	// pair runs to the next '&' or the end. Inside it a key is the text between the last boundary ('&', ';', '?', '/',
+	// '@', ':', '(', ',') and an '=', so a path, user information or an OData key segment is never part of a key. In
+	// the query a value runs to the end of its pair, so the first key with a secret value hides everything after its
+	// '=' (';', '?', '@' or a fragment included) and no tail of a secret shows; in the path a value ends at '/', ';',
+	// ')' or ','. A pair that holds the mask is reported under the last key before the mask.
+	private static QueryScan ScanQuery(string uri) {
+		var scan = new QueryScan([], [], [], []);
+		if (string.IsNullOrEmpty(uri)) {
+			return scan;
+		}
+		int firstQuestion = uri.IndexOf('?');
+		int pairStart = 0;
+		while (pairStart <= uri.Length) {
+			int pairEnd = uri.IndexOf('&', pairStart);
+			if (pairEnd < 0) {
+				pairEnd = uri.Length;
+			}
+			ScanPair(uri, pairStart, pairEnd, firstQuestion, scan);
+			pairStart = pairEnd + 1;
+		}
+		return scan;
+	}
+
+	// Every key of the pair is read; a key inside a value already hidden is skipped (that span covers it), so path
+	// values, which end before the pair does, are each checked. A placeholder anywhere in the value of a key named like
+	// a credential or a hosting key is recorded for SecretPlaceholderPaths.
+	private static void ScanPair(string uri, int start, int end, int firstQuestion, QueryScan scan) {
+		int maskAt = IndexOfMask(uri, start, end);
+		int keyStart = start;
+		int hiddenUntil = start;
+		string maskKey = null;
+		for (int i = start; i < end; i++) {
+			char c = uri[i];
+			if (c == '=' && keyStart >= 0) {
+				ScanKey(new PairContext(uri, end, firstQuestion, maskAt, scan), keyStart, i, ref hiddenUntil, ref maskKey);
+				keyStart = -1;
+			} else if (KeyBoundaries.Contains(c)) {
+				keyStart = i + 1;
+			}
+		}
+		if (maskKey is not null) {
+			scan.MaskKeys.Add(maskKey);
+		}
+	}
+
+	// The key that ends at the '=' at equalsAt: noted when the mask follows it in the pair, and its value read unless an
+	// earlier hidden value already covers it.
+	private static void ScanKey(PairContext pair, int keyStart, int equalsAt, ref int hiddenUntil, ref string maskKey) {
+		if (equalsAt <= keyStart) {
+			return;
+		}
+		string key = Uri.UnescapeDataString(pair.Uri[keyStart..equalsAt]);
+		if (pair.MaskAt > equalsAt) {
+			maskKey = key;
+		}
+		if (equalsAt >= hiddenUntil) {
+			hiddenUntil = ScanValue(pair.Uri, key, equalsAt, pair.End, pair.FirstQuestion, pair.Scan, hiddenUntil);
+		}
+	}
+
+	// What every key of one pair is read against: the URI, where the pair ends, the first '?', where the mask sits in
+	// the pair (or -1) and the scan the results go into.
+	private readonly record struct PairContext(string Uri, int End, int FirstQuestion, int MaskAt, QueryScan Scan);
+
+	// Reads the value after the '=' at equalsAt: a secret value is hidden (the returned position is where hiding ends), a
+	// placeholder in the value of a credential-like key is recorded. A value after the first '?' runs to the end of the
+	// pair; one in the path ends where a path value does.
+	private static int ScanValue(string uri, string key, int equalsAt, int end, int firstQuestion, QueryScan scan,
+		int hiddenUntil) {
+		int valueEnd = firstQuestion >= 0 && equalsAt > firstQuestion ? end : PathValueEnd(uri, equalsAt + 1, end);
+		if (IsSecretValueAt(key, uri, equalsAt + 1, valueEnd)) {
+			scan.Spans.Add((equalsAt + 1, valueEnd));
+			scan.SecretKeys.Add(key);
+			return valueEnd;
+		}
+		if (IsSecretName(key) || SecretQueryNames.Contains(key)) {
+			AddPlaceholders(uri, equalsAt + 1, valueEnd, key, scan);
+		}
+		return hiddenUntil;
+	}
+
+	private static void AddPlaceholders(string uri, int from, int end, string key, QueryScan scan) {
+		int open = from < end ? uri.IndexOf('{', from, end - from) : -1;
+		while (open >= 0) {
+			int close = open + 1 < end ? uri.IndexOf('}', open + 1, end - open - 1) : -1;
+			if (close < 0) {
+				return;
+			}
+			if (close > open + 1) {
+				scan.Placeholders.Add((key, uri[(open + 1)..close]));
+			}
+			open = close + 1 < end ? uri.IndexOf('{', close + 1, end - close - 1) : -1;
+		}
+	}
+
+	private static int PathValueEnd(string uri, int from, int end) {
+		int stop = uri.IndexOfAny(PathValueEnds.ToCharArray(), from, end - from);
+		return stop < 0 ? end : stop;
+	}
+
+	// The name is checked first, so the value is cut out only for a key that can be a secret. A hosting key name
+	// counts its value only up to a ';', '?', '@', '/' or '#', where a server may end it.
+	private static bool IsSecretValueAt(string key, string uri, int from, int end) {
+		if (end <= from || (!IsSecretName(key) && !SecretQueryNames.Contains(key))) {
+			return false;
+		}
+		string value = uri[from..end];
+		if (IsMask(value) || IsPlaceholderValue(value)) {
+			return false;
+		}
+		int cut = value.IndexOfAny(ValueCoreEnds.ToCharArray());
+		return IsSecretQueryValue(key, Uri.UnescapeDataString(cut < 0 ? value : value[..cut]));
+	}
+
+	private static bool IsMask(string value) =>
+		string.Equals(Uri.UnescapeDataString(value), WebServiceResponseMasker.Mask, StringComparison.OrdinalIgnoreCase);
+
+	// The first "masked" in the pair, any case, after '[' or an escaped "%5B": the mask as describe shows it, or as an
+	// agent escapes it.
+	private static int IndexOfMask(string uri, int start, int end) {
+		int at = start;
+		while (at < end) {
+			int word = uri.IndexOf("masked", at, end - at, StringComparison.OrdinalIgnoreCase);
+			if (word < 0) {
+				return -1;
+			}
+			if ((word > 0 && uri[word - 1] == '[')
+					|| (word >= 3 && string.Compare(uri, word - 3, "%5B", 0, 3, StringComparison.OrdinalIgnoreCase) == 0)) {
+				return word;
+			}
+			at = word + 1;
+		}
+		return -1;
+	}
+
+	[GeneratedRegex(@"^(['""]?)\{[^{}]+\}\1$")]
+	private static partial Regex WholePlaceholderPattern();
+
 	public static WebServiceView From(ServiceSchemaDto schema, string packageName) {
 		bool soap = IsSoap(schema);
 		return new WebServiceView(schema.UId, schema.Name, Localized(schema.Caption), packageName, TypeName(schema.Type),
-			StripUserInfo(schema.BaseUri), schema.RetryCount, Auth(schema.AuthInfo),
+			ShownUri(schema.BaseUri), schema.RetryCount, Auth(schema.AuthInfo),
 			schema.Methods.Items.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
 				.Select(m => Method(m, soap)).ToList(),
 			soap ? Namespaces(schema.Namespaces) : null);
@@ -430,7 +757,7 @@ public static partial class WebServiceSchemaView {
 			.Where(n => n is not null)
 			.OrderByDescending(n => n.IsDefault == true)
 			.ThenBy(n => n.Prefix, StringComparer.Ordinal)
-			.Select(n => new WebServiceNamespaceView(n.Prefix, StripUriUserInfo(n.Name), n.IsDefault == true))
+			.Select(n => new WebServiceNamespaceView(n.Prefix, ShownUriValue(n.Name), n.IsDefault == true))
 			.ToList();
 
 	/// <summary>
@@ -485,36 +812,37 @@ public static partial class WebServiceSchemaView {
 	private static WebServiceMethodView Method(ServiceMethodDto method, bool soap) =>
 		new(method.Name, Localized(method.Caption),
 			ServiceSchemaCodes.HttpMethods.FirstOrDefault(p => p.Value == method.Request.HttpMethodType).Key,
-			soap ? null : method.Request.Uri, method.RequestTimeout,
+			soap ? null : MaskUriQuery(method.Request.Uri), method.RequestTimeout,
 			method.Request.ContentType == ServiceSchemaCodes.ContentTypeXml ? "xml" : "json",
 			method.UseAuthInfo,
-			Parameters(method.Request.Parameters, soap),
+			Parameters(method.Request.Parameters, soap,
+				secretPaths: soap ? null : SecretPlaceholderPaths(method.Request.Uri, method.Request.Parameters)),
 			Parameters(method.Response.Parameters, soap),
-			soap ? method.Request.Uri ?? string.Empty : null,
-			soap ? StripUriUserInfo(method.SoapAction ?? string.Empty) : null);
+			soap ? MaskUriQuery(method.Request.Uri ?? string.Empty) : null,
+			soap ? ShownUriValue(method.SoapAction ?? string.Empty) : null);
 
-	/// <summary>
-	/// Hides <c>user:password@</c> in a namespace URI or a SOAP action only when the value is an absolute URI that
-	/// carries one: <see cref="StripUserInfo"/> hides up to the last <c>@</c> of any text, which would change an
-	/// <c>urn:</c> value or a SOAP action with an <c>@</c> and make describe output differ from what is stored.
-	/// </summary>
-	private static string StripUriUserInfo(string value) =>
-		WebServiceDefinitionBuilder.HasUserInfo(value) ? StripUserInfo(value) : value;
-
+	// Stored order, not sorted: the platform renders a SOAP body and Header in collection order
+	// (Terrasoft.Services ServiceCommunication.BodyParameters), and setMethod stores parameters in the order it gets
+	// them, so describe output sent back must keep that order or the envelope elements are reordered.
+	// secretPaths: the path parameters whose constant fills a key of the method URI (SecretPlaceholderPaths); their
+	// constant is hidden like the key itself.
 	private static IReadOnlyList<WebServiceParameterView> Parameters(
-		ServiceItemCollection<ServiceParameterDto> parameters, bool soap, bool inSoapHeader = false) =>
+		ServiceItemCollection<ServiceParameterDto> parameters, bool soap, bool inSoapHeader = false,
+		IReadOnlyDictionary<string, string> secretPaths = null) =>
 		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
-			.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-			.Select(p => Parameter(p, soap, inSoapHeader))
+			.Select(p => Parameter(p, soap, inSoapHeader, secretPaths))
 			.ToList();
 
 	// The platform renders the items of a SOAP-header parameter under the Header whatever their own flag says, so a
 	// constant there is hidden like a header constant even when an item lacks the flag.
-	private static WebServiceParameterView Parameter(ServiceParameterDto parameter, bool soap, bool inSoapHeader) {
+	private static WebServiceParameterView Parameter(ServiceParameterDto parameter, bool soap, bool inSoapHeader,
+		IReadOnlyDictionary<string, string> secretPaths = null) {
 		ServiceParameterValueDto value = parameter.DefValue;
 		bool isConstant = IsConstant(value);
 		bool header = inSoapHeader || (soap && parameter.IsSoapHeader == true);
-		bool masked = isConstant && (header || IsSecretLike(parameter));
+		bool fillsKey = parameter.Type == ServiceSchemaCodes.Placements["path"]
+			&& secretPaths?.ContainsKey(parameter.Path ?? string.Empty) == true;
+		bool masked = isConstant && (header || fillsKey || IsSecretLike(parameter));
 		// The platform stores isSoapHeader false and sequenceElementName "item" on every SOAP parameter, so only the
 		// values that change the envelope are reported: a SOAP-header flag, and the item name of a SOAP array.
 		bool? soapHeader = soap && parameter.IsSoapHeader == true ? true : null;
@@ -527,3 +855,8 @@ public static partial class WebServiceSchemaView {
 			Parameters(parameter.ItemProperties, soap, header), soapHeader, sequenceElement);
 	}
 }
+
+/// <summary>The query keys of a URI the write check refuses (see <see cref="WebServiceSchemaView.FindQueryKeys"/>).</summary>
+/// <param name="SecretKeys">Keys whose value is a secret.</param>
+/// <param name="MaskKeys">Keys whose value holds the mask describe-web-service shows in place of one.</param>
+public sealed record UriQueryKeys(IReadOnlyList<string> SecretKeys, IReadOnlyList<string> MaskKeys);
