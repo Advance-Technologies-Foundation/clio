@@ -177,8 +177,9 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		CallToolResult notLookup = await CallAsync(context, new Dictionary<string, object?> {
 			["stage-column-name"] = TextColumn
 		});
+		// Two items: an explicit list of one stage is refused by its count (a case keeps 2 to 20) before its values.
 		CallToolResult unknownValue = await CallAsync(context, new Dictionary<string, object?> {
-			["stages"] = new[] { "No such stage" }
+			["stages"] = new[] { "No such stage", "Nor this one" }
 		});
 
 		// Assert
