@@ -138,6 +138,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 	// The namespaces of the wsa:Action and wsa:To headers such a binding expects.
 	private const string WsaNamespace = "http://www.w3.org/2005/08/addressing";
 	private const string WsaAugust2004Namespace = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+	// The namespace WCF declares on every WSDL it writes.
+	private const string WcfContractNamespace = "http://schemas.microsoft.com/ws/2005/12/wsdl/contract";
 	private const int MaxCharactersInDocument = 20_000_000;
 
 	/// <summary>The wizard's longest code; read-wsdl keeps it only for the service code, a schema name (ADR D11).</summary>
@@ -996,17 +998,21 @@ public sealed partial class WsdlParser : IWsdlParser {
 		/// stacks such as WCF dispatch by; a port whose binding requires WS-Addressing gets no wsa:Action or wsa:To in the
 		/// envelope; a port whose policy requires WS-Security message security cannot be called at all. Each warning names
 		/// a SOAP 1.1 port of the same port type that needs neither, preferring one of the same service at the same scheme
-		/// and host; one elsewhere is named with that difference and left to the user.
+		/// and host; one elsewhere is named with that difference and left to the user. A plain SOAP 1.2 port is a definite
+		/// failure only on WCF (an ASMX service answers, measured), so outside a WSDL WCF wrote the SOAP 1.1 port is named
+		/// as the way out after a failed test call, not as the port to register.
 		/// </summary>
 		private void ReportDispatchRisks(XElement definitions, List<PortCandidate> candidates, List<PortCandidate> selected) {
 			var requirements = new BindingRequirements(definitions, CheckClock);
+			bool? wcf = null;
 			foreach (PortCandidate port in selected) {
 				BindingRequirement required = requirements.Of(port.Binding);
 				if (!required.MessageSecurity && required.AddressingNamespace is null
 						&& port.ServiceType != ServiceSchemaCodes.ServiceTypeSoap12) {
 					continue;
 				}
-				string instead = Soap11Alternative(port, candidates, requirements);
+				Soap11Port alternative = Soap11Alternative(port, candidates, requirements);
+				string instead = alternative?.Instead();
 				if (required.MessageSecurity) {
 					Warn($"Port '{port.Name}' requires WS-Security message security (its binding policy), which the platform "
 						+ "cannot produce, so it cannot be called from Creatio." + (instead ?? " Ask the API owner for an "
@@ -1019,23 +1025,59 @@ public sealed partial class WsdlParser : IWsdlParser {
 							+ "give each method two soap-header body parameters (prefixed codes) with the paths wsa:Action (its "
 							+ "soap-action) and wsa:To (the base URI), filled from system settings or the process; then test a "
 							+ "call."));
-				} else {
-					Warn($"Port '{port.Name}' is SOAP 1.2: the platform sends the action only as a SOAPAction header, not as the "
-						+ "action parameter of Content-Type, so a service that dispatches SOAP 1.2 by that parameter (WCF among "
-						+ "them) answers every call with ActionNotSupported (Action ''); an ASMX service answers."
-						+ (instead ?? " Test a call first; if it answers so, give the method a request header parameter (a "
-							+ "prefixed code) with the path Content-Type and the value "
+				} else if (wcf ??= WrittenByWcf(definitions)) {
+					Warn($"Port '{port.Name}' is SOAP 1.2 and the WSDL was written by WCF: the platform sends the action only as "
+						+ "a SOAPAction header, not as the action parameter of Content-Type that WCF dispatches SOAP 1.2 by, so "
+						+ "WCF answers every call with ActionNotSupported (Action '')."
+						+ (instead ?? " If the user needs this port, give each method a request header parameter (a prefixed "
+							+ "code) with the path Content-Type and the value "
 							+ "application/soap+xml;charset=utf-8;action=\"<its soap-action>\", one per method, from a system "
-							+ "setting or the process."));
+							+ "setting or the process; then test a call."));
+				} else {
+					Warn($"Port '{port.Name}' is SOAP 1.2: the platform sends the action only as a SOAPAction header. Most "
+						+ "services answer (ASMX does); one that dispatches SOAP 1.2 by the action parameter of Content-Type "
+						+ "answers ActionNotSupported (Action ''). If a test call answers so, "
+						+ (alternative is null
+							? "give the method a request header parameter (a prefixed code) with the path Content-Type and the "
+								+ "value application/soap+xml;charset=utf-8;action=\"<its soap-action>\" from a system setting or "
+								+ "the process."
+							: $"use port '{alternative.Port.Name}' (SOAP 1.1) instead{alternative.Caveat()}."));
 				}
 			}
 		}
 
-		// The sentence naming a SOAP 1.1 port of the same port type that needs neither WS-Addressing nor message security,
-		// or null when there is none. One of the same service at the warned port's scheme and host is named to register;
-		// one elsewhere only with the difference, because the credentials set up later would go there (readable, when it
-		// is http and the warned port https).
-		private static string Soap11Alternative(PortCandidate port, List<PortCandidate> candidates,
+		/// <summary>
+		/// A SOAP 1.1 port to use instead of a warned one.
+		/// </summary>
+		/// <param name="Port">The SOAP 1.1 port.</param>
+		/// <param name="Difference">
+		/// Null when it is of the same scheme and host as the warned port; otherwise how its address differs, because the
+		/// credentials set up later would go there (readable, when it is http and the warned port https).
+		/// </param>
+		private sealed record Soap11Port(PortCandidate Port, string Difference) {
+			/// <summary>The sentence a definite failure ends with: register it, or ask first when its address differs.</summary>
+			public string Instead() => Difference is null
+				? $" Register port '{Port.Name}' (SOAP 1.1) instead."
+				: $" Port '{Port.Name}' (SOAP 1.1) can be called but has {Difference}: show the user its base-uri and register "
+					+ "it only on their yes.";
+
+			/// <summary>The clause a conditional advice adds when the address differs.</summary>
+			public string Caveat() => Difference is null
+				? string.Empty
+				: $", but it has {Difference}: show the user its base-uri first";
+		}
+
+		// Whether WCF wrote the WSDL: its contract namespace, or an addressing Action on a port-type message (WCF writes
+		// both for every service).
+		private static bool WrittenByWcf(XElement definitions) =>
+			definitions.Attributes().Any(a => a.IsNamespaceDeclaration && a.Value == WcfContractNamespace)
+			|| definitions.Elements().Where(e => Is(e, "portType")).Elements().Elements()
+				.Any(m => m.Attributes().Any(a => a.Name.LocalName == "Action"
+					&& a.Name.NamespaceName is WsawNamespace or WsamNamespace));
+
+		// A SOAP 1.1 port of the same port type that needs neither WS-Addressing nor message security, or null when there is
+		// none: one of the same service at the warned port's scheme and host first, else the first with its difference.
+		private static Soap11Port Soap11Alternative(PortCandidate port, List<PortCandidate> candidates,
 			BindingRequirements requirements) {
 			string portType = LocalPart(Attr(port.Binding, "type"));
 			List<PortCandidate> alternatives = candidates.Where(c => c.ServiceType == ServiceSchemaCodes.ServiceTypeSoap11
@@ -1050,7 +1092,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 				&& string.Equals(a.Scheme, warned.Scheme, StringComparison.OrdinalIgnoreCase)
 				&& string.Equals(a.Host, warned.Host, StringComparison.OrdinalIgnoreCase));
 			if (same is not null) {
-				return $" Register port '{same.Name}' (SOAP 1.1) instead.";
+				return new Soap11Port(same, null);
 			}
 			PortCandidate other = alternatives[0];
 			Uri address = AddressOf(other);
@@ -1060,8 +1102,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 					&& !string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
 					? "an http address where this port's is https, so authentication would travel readable"
 					: $"an address on another host ({Shown(address.Host)})";
-			return $" Port '{other.Name}' (SOAP 1.1) can be called but has {difference}: show the user its base-uri and "
-				+ "register it only on their yes.";
+			return new Soap11Port(other, difference);
 		}
 
 		private static Uri AddressOf(PortCandidate port) =>

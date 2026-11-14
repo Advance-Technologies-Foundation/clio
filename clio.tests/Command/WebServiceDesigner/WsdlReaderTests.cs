@@ -767,4 +767,21 @@ public sealed class WsdlReaderTests {
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the service cannot be read").WithMessage("*was not found*");
 	}
+
+	[Test]
+	[Description("A service-code that names no registered service says the argument is only for an existing service, so the agent drops it for a new one instead of guessing.")]
+	public void Read_Should_Say_ServiceCode_Is_For_An_Existing_Service() {
+		// Arrange
+		string path = GivenFixture("calculator.wsdl");
+		_designer.Describe("UsrTcNew", false).Returns(_ =>
+			throw new ArgumentException("web service 'UsrTcNew' is not registered; list-web-services shows the registered codes."));
+
+		// Act
+		Action act = () => _sut.Read(Files(path) with { ServiceCode = "UsrTcNew" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "no such service exists")
+			.WithMessage("*is not registered*only for an existing SOAP service*without it*",
+				because: "agents passed the code of the service they were about to register (seen in isolated runs)");
+	}
 }

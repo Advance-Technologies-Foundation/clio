@@ -455,14 +455,23 @@ public sealed partial class WsdlReader(
 			.Where(p => p.Operations.Count > 0).ToList();
 	}
 
+	private const string ServiceCodeHint = "service-code is only for an existing SOAP service the operations go into; for "
+		+ "a new service read the WSDL without it and give the code in the register-web-service arguments.";
+
 	private WsdlTargetService ReadTarget(string serviceCode) {
 		if (string.IsNullOrWhiteSpace(serviceCode)) {
 			return null;
 		}
-		WebServiceToolResult described = designer.Describe(serviceCode.Trim(), false);
+		WebServiceToolResult described;
+		try {
+			described = designer.Describe(serviceCode.Trim(), false);
+		} catch (ArgumentException e) {
+			// Agents pass the code they want for a NEW service here; say what the argument is for.
+			throw new ArgumentException($"service-code '{WsdlParser.Shown(serviceCode)}': {e.Message} {ServiceCodeHint}", e);
+		}
 		WebServiceView service = described.Service
 			?? throw new ArgumentException($"service-code '{WsdlParser.Shown(serviceCode)}' could not be read: "
-				+ WsdlParser.ShownUpTo(described.Error ?? "no reason given", 300));
+				+ WsdlParser.ShownUpTo(described.Error ?? "no reason given", 300) + " " + ServiceCodeHint);
 		bool soap = service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap11)
 			|| service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap12);
 		if (!soap) {

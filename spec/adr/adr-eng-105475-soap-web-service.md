@@ -387,7 +387,11 @@ custom binding and `WSHttpBinding` with security mode None); the user decided to
   symmetric or asymmetric binding (a default `wsHttpBinding`) cannot be called at all. `read-wsdl` warns on each and
   names a SOAP 1.1 port of the same port type that needs neither, preferring one of the same service at the same scheme
   and host; one elsewhere (another host, or http where the warned port is https) is named with that difference and
-  left to the user. With none, the warning gives the workaround measured to work (a request header parameter with the
+  left to the user. A plain SOAP 1.2 port is a definite failure only on WCF, so the SOAP 1.1 port is named to register
+  only when WCF wrote the WSDL (its contract namespace or a `wsaw`/`wsam` Action on a port-type message); elsewhere it
+  is named as the way out after a failed test call. The isolated run of TC-32..TC-38 showed why: with an unconditional
+  advice agents registered the ASMX calculator over SOAP 1.1, although it answers SOAP 1.2 (TC-25 expects Studio's
+  pick). With none, the warning gives the workaround measured to work (a request header parameter with the
   path `Content-Type` carrying `action="..."`, one per method; two `soap-header` parameters with the paths `wsa:Action`
   and `wsa:To`), whose values come from a system setting or the process because a constant is refused there; none for
   message security. The scan walks each binding and policy once with the parse clock checked (a hostile WSDL cannot

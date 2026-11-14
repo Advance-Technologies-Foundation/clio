@@ -1174,8 +1174,9 @@ public sealed class WebServiceDesignerTests {
 		// Assert
 		result.Success.Should().BeTrue(because: "Search sends no authentication, so BingSearchProcess's calls stay the same");
 		DidNotScanUsages();
-		result.Notices.Should().Contain(n => n.Contains("Method 'Search' has use-auth false"),
-			because: "the user must hear that the new authentication does not reach Search (measured)");
+		result.Notices.Should().Contain(n => n.Contains("Method 'Search' has use-auth false")
+				&& n.Contains("Ask the user whether it should be; do not change use-auth yourself"),
+			because: "the user must hear that the new authentication does not reach Search (measured) and decide it");
 	}
 
 	[Test]

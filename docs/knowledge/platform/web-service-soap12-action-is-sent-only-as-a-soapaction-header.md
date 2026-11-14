@@ -17,4 +17,5 @@ workarounds: a request header parameter with the path `Content-Type` and the val
 **Why it is this way** — SOAP 1.2 is built like SOAP 1.1 with another content type; WS-Addressing is not implemented.
 
 **What breaks if you ignore it** — Studio's quick setup (and `studio-pick`) chooses the SOAP 1.2 port, so a WCF
-service registered the default way fails every call with a SOAP fault. `read-wsdl` warns and names the SOAP 1.1 port.
+service registered the default way fails every call with a SOAP fault. `read-wsdl` warns and, for a WSDL WCF wrote,
+names the SOAP 1.1 port to register; for others (ASMX answers) only as the way out of a failed test call.

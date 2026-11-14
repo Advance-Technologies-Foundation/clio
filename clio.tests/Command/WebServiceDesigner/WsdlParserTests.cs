@@ -621,7 +621,9 @@ public sealed class WsdlParserTests {
 			because: "the SOAP 1.2 port is warned about").Which;
 		warning.Should().Contain("http address where this port's is https",
 			because: "registering the http port would send the credentials readable");
-		warning.Should().NotContain("instead", because: "such a port is not recommended without the user's yes");
+		warning.Should().NotContain("Register port", because: "such a port is not recommended without the user's yes");
+		warning.Should().Contain("If a test call answers so",
+			because: "outside a WCF WSDL a SOAP 1.2 port usually answers, so the advice is conditional");
 	}
 
 	[Test]
@@ -641,5 +643,32 @@ public sealed class WsdlParserTests {
 		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap' requires WS-Addressing")
 				&& w.Contains("http://schemas.xmlsoap.org/ws/2004/08/addressing "),
 			because: "such a service expects the August 2004 wsa:Action and wsa:To headers");
+	}
+
+	[Test]
+	[Description("On an ASMX WSDL the SOAP 1.2 port is not traded for the SOAP 1.1 one: the warning names the SOAP 1.1 port only as the way out of a failed test call (an ASMX service answers SOAP 1.2, measured).")]
+	public void Parse_Should_Keep_Studio_Pick_For_A_Non_Wcf_Soap12_Port() {
+		// Arrange / Act
+		WsdlDocument document = ParseFixture("calculator.wsdl");
+
+		// Assert
+		document.StudioPort.Should().Be("CalculatorSoap12", because: "Studio's pick is unchanged");
+		string warning = document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'CalculatorSoap12' is SOAP 1.2"),
+			because: "the SOAP 1.2 limit is still stated").Which;
+		warning.Should().Contain("If a test call answers so, use port 'CalculatorSoap' (SOAP 1.1) instead",
+			because: "the SOAP 1.1 port is the way out only after a failed call");
+		warning.Should().NotContain("Register port", because: "an ASMX service is not told to give up SOAP 1.2");
+	}
+
+	[Test]
+	[Description("On a WSDL WCF wrote, the SOAP 1.2 port warning says so and tells the agent to register the SOAP 1.1 port.")]
+	public void Parse_Should_Recognise_A_Wsdl_Written_By_Wcf() {
+		// Arrange / Act
+		WsdlDocument document = ParseFixture("wcf-bindings.wsdl");
+
+		// Assert
+		document.Warnings.Should().Contain(w => w.StartsWith("Port 'CustomBinding_ICalc' is SOAP 1.2 and the WSDL was written by WCF")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc' (SOAP 1.1) instead"),
+			because: "WCF refuses every SOAP 1.2 call the platform makes (measured)");
 	}
 }

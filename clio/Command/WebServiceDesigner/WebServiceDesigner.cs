@@ -678,7 +678,8 @@ public sealed class WebServiceDesigner(
 			+ (without.Count > MaxNamedMethods ? $" and {without.Count - MaxNamedMethods} more" : string.Empty);
 		string subject = without.Count == 1 ? $"Method {named} has" : $"Methods {named} have";
 		return [$"{subject} use-auth false, so the new authentication is not sent with {(without.Count == 1 ? "it" : "them")}. "
-			+ "Tell the user; if it should be, repeat the definition with use-auth true in setMethod."];
+			+ "Ask the user whether it should be; do not change use-auth yourself. Only on their yes, repeat the "
+			+ "definition with use-auth true in setMethod."];
 	}
 
 	/// <summary>The codes of the methods this call defines with an explicit use-auth.</summary>
