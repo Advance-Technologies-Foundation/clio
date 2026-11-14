@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.WebServiceDesigner;
@@ -79,13 +80,26 @@ public sealed class WebServiceSchemaViewTests {
 
 	[TestCase("https://erp.example/svc?sig=SECRET-42-SECRET-42&format=json", "https://erp.example/svc?sig=[masked]&format=json")]
 	[TestCase("https://erp.example/svc?user=a@corp.com&sig=SECRET-42-SECRET-42", "https://[redacted]@corp.com&sig=[masked]")]
-	[TestCase("https://u:pw?token=abc@erp.example/svc?api_key=SECRET-42-SECRET-42", "https://[redacted]@erp.example/svc?api_key=[masked]")]
-	[TestCase("https://erp.example/svc?api%5Fkey=SECRET-42-SECRET-42#top", "https://erp.example/svc?api%5Fkey=[masked]#top")]
+	[TestCase("https://u:pw?token=abc@erp.example/svc?api_key=SECRET-42-SECRET-42", "https://[redacted]@[masked]")]
+	[TestCase("https://erp.example/svc.asmx?password=Pa;ss-SECRET-42", "https://erp.example/svc.asmx?password=[masked]")]
+	[TestCase("https://erp.example/svc.asmx?user=bob&password=ab@cd-SECRET-42", "https://[redacted]@[masked]")]
+	[TestCase("https://erp.example/svc?a/token=SECRET-42-SECRET-42", "https://erp.example/svc?a/token=[masked]")]
+	[TestCase("https://erp.example/svc?api%5Fkey=SECRET-42-SECRET-42#top", "https://erp.example/svc?api%5Fkey=[masked]")]
+	[TestCase("https://erp.example/svc.asmx?user=ops@corp.com&sig=SECRET-42-SECRET-42&ret=/cb?x=1", "https://[redacted]@corp.com&sig=[masked]&ret=/cb?x=1")]
+	[TestCase("https://u:p@erp.example/a=b/svc?sig=SECRET-42-SECRET-42", "https://[redacted]@erp.example/a=b/svc?sig=[masked]")]
+	[TestCase("https://erp.example/svc?format=json;api_key=SECRET-42-SECRET-42", "https://erp.example/svc?format=json;api_key=[masked]")]
+	[TestCase("https://erp.example/orders?x=1#&api_key=SECRET-42-SECRET-42", "https://erp.example/orders?x=1#&api_key=[masked]")]
+	[TestCase("https://erp.example/svc?sig=SECRET-42-SECRET-42?tail", "https://erp.example/svc?sig=[masked]")]
+	[TestCase("https://api.example/weather?q=London&appid=SECRET-42-SECRET-42", "https://api.example/weather?q=London&appid=[masked]")]
 	[TestCase("https://erp.example/svc?api_key={key}", "https://erp.example/svc?api_key={key}")]
 	[TestCase("https://erp.example/svc?api_key={a}SECRET-42-SECRET-42{b}", "https://erp.example/svc?api_key=[masked]")]
 	[TestCase("https://erp.example/svc?format=json", "https://erp.example/svc?format=json")]
 	[TestCase("https://erp.example/rates?code=USD", "https://erp.example/rates?code=USD")]
-	[Description("ShownUri hides user information and every credential-like query value, also when an '@' in the query makes StripUserInfo cut the '?' away; a short value under code stays visible.")]
+	[TestCase("https://erp.example/rates?code=USD;callback=handleResponse", "https://erp.example/rates?code=USD;callback=handleResponse")]
+	[TestCase("https://erp.example/odata/Authors(Id={id})/Books", "https://erp.example/odata/Authors(Id={id})/Books")]
+	[TestCase("http://h.example/Svc;token=SECRET-42-SECRET-42?x=1", "http://h.example/Svc;token=[masked]?x=1")]
+	[TestCase("https://erp.example/svc?api_key=%5BMasked%5D", "https://erp.example/svc?api_key=%5BMasked%5D")]
+	[Description("ShownUri hides user information and every secret query value: after an '@' in the query that StripUserInfo cut at, whatever follows; with ';' separators; after a fragment; when a path with '=' precedes the query. A short value under code stays visible.")]
 	public void ShownUri_Should_Hide_User_Information_And_Query_Secrets(string stored, string expected) {
 		// Act
 		string shown = WebServiceSchemaView.ShownUri(stored);
@@ -93,6 +107,37 @@ public sealed class WebServiceSchemaViewTests {
 		// Assert
 		shown.Should().Be(expected, because: "neither user information nor a key kept in the query may be shown");
 		shown.Should().NotContain("SECRET-42", because: "the secret value never leaves clio");
+	}
+
+	[TestCase("https://u:p?w@erp.example/svc?sig=SECRET-42-SECRET-42")]
+	[TestCase("https://erp.example/orders?api_key=SECRET-42-SECRET-42#part")]
+	[TestCase("https://erp.example/orders?api_key=SECRET%2D42-SECRET-42")]
+	[TestCase("https://erp.example/orders?api_key=SECRET-42+SECRET-42")]
+	[Description("UriQuerySecrets finds the value as it goes out on the wire: behind a '?' in a password, without the fragment, and URL-unescaped, so a test call masks its echo.")]
+	public void UriQuerySecrets_Should_Return_The_Value_As_Sent(string stored) {
+		// Act
+		IReadOnlyList<string> secrets = WebServiceSchemaView.UriQuerySecrets(stored);
+
+		// Assert
+		secrets.Should().Contain(s => s == "SECRET-42-SECRET-42" || s == "SECRET-42 SECRET-42",
+			because: "the echo of a call carries the value as it was sent, a '+' read as a space included");
+	}
+
+	[TestCase("sig", "SECRET-42-SECRET-42", true)]
+	[TestCase("sas", "0123456789abcdef", true)]
+	[TestCase("sign", "0123456789abcde", false)]
+	[TestCase("hmac", "0123456789abcdef", true)]
+	[TestCase("code", "USD", false)]
+	[TestCase("appid", "0123456789abcdef0123", true)]
+	[TestCase("api_key", "x", true)]
+	[TestCase("format", "SECRET-42-SECRET-42", false)]
+	[Description("IsSecretQueryValue takes any value under a credential name and a key-length value under a hosting key name as a secret, and leaves short hosting values and other names alone.")]
+	public void IsSecretQueryValue_Should_Tell_Keys_From_Ordinary_Values(string name, string value, bool expected) {
+		// Act
+		bool secret = WebServiceSchemaView.IsSecretQueryValue(name, value);
+
+		// Assert
+		secret.Should().Be(expected, because: "read masking and the write refusal follow the same rule");
 	}
 
 	[Test]

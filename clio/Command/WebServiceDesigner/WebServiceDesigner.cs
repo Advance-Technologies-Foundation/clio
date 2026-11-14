@@ -252,7 +252,6 @@ public sealed class WebServiceDesigner(
 			throw new ArgumentException($"'{schema.Name}' is a {WebServiceSchemaView.TypeName(schema.Type)} service, "
 				+ "which these tools cannot change; change it in Studio > Web services.");
 		}
-		operations = RestoreMaskedUris(schema, operations);
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		// What decides every call, before the call: compared with the result after the whole call, so a value changed and
@@ -716,34 +715,21 @@ public sealed class WebServiceDesigner(
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
 	/// <summary>
-	/// describe-web-service masks a secret query value of a stored base URI, method URI or SOAP action; sent back
-	/// unchanged, that masked form means the stored value, so the round trip neither stores the placeholder nor loses
-	/// the value.
-	/// </summary>
-	private static List<WebServiceOperationArg> RestoreMaskedUris(ServiceSchemaDto schema,
-		IReadOnlyList<WebServiceOperationArg> operations) =>
-		operations.Select(o => o switch {
-			{ Op: "setBaseUri" } => o with {
-				BaseUri = WebServiceSchemaView.RestoreMaskedUriQuery(o.BaseUri, schema.BaseUri)
-			},
-			{ Op: SetMethodOp, Method: { } method } when FindMethod(schema, method.Code) is { } stored => o with {
-				Method = method with {
-					Uri = WebServiceSchemaView.RestoreMaskedUriQuery(method.Uri, stored.Request?.Uri),
-					SoapAction = WebServiceSchemaView.RestoreMaskedUriQuery(method.SoapAction, stored.SoapAction)
-				}
-			},
-			_ => o
-		}).ToList();
-
-	/// <summary>
-	/// The secrets to mask in a test call's result, plus the secret query values of the stored base URI, method URI
-	/// and SOAP action: they go out on every call and an API may echo them, and describe-web-service hides them too.
+	/// The secrets to mask in a test call's result, plus the keys describe-web-service hides in the stored URIs: the
+	/// base URI, the method URI and SOAP action, the namespace URIs (every envelope declares them, and a response or
+	/// fault may again), and a path parameter's constant that fills a key of the method URI. They go out with the call
+	/// and an API may echo them.
 	/// </summary>
 	private static IReadOnlyList<string> WithUriQuerySecrets(IReadOnlyList<string> secrets, ServiceSchemaDto schema,
 		ServiceMethodDto method) =>
 		secrets.Concat(WebServiceSchemaView.UriQuerySecrets(schema.BaseUri))
 			.Concat(WebServiceSchemaView.UriQuerySecrets(method.Request?.Uri))
 			.Concat(WebServiceSchemaView.UriQuerySecrets(method.SoapAction))
+			.Concat((schema.Namespaces?.Items.Values ?? Enumerable.Empty<ServiceNamespaceDto>())
+				.SelectMany(n => WebServiceSchemaView.UriQuerySecrets(n?.Name)))
+			.Concat(WebServiceSchemaView.SecretPlaceholderPaths(method.Request?.Uri, method.Request?.Parameters)
+				.Select(path => method.Request.Parameters.Items.Values
+					.First(p => string.Equals(p.Path, path, StringComparison.Ordinal)).DefValue.Value))
 			.Where(s => s is { Length: >= WebServiceResponseMasker.MinMaskedLength })
 			.Distinct(StringComparer.Ordinal)
 			.OrderByDescending(s => s.Length)

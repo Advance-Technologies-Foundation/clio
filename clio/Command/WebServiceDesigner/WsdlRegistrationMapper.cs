@@ -160,10 +160,13 @@ public static partial class WsdlRegistrationMapper {
 	// or carries credentials, or an overlong one, is left out (with a warning where the method is built).
 	private static string KeptSoapAction(string action) {
 		string trimmed = action?.Trim();
-		return string.IsNullOrEmpty(trimmed) || !IsPlainValue(trimmed, MaxSoapActionLength)
-			|| WebServiceDefinitionBuilder.HasUserInfo(trimmed)
-			? null
-			: trimmed;
+		if (string.IsNullOrEmpty(trimmed) || !IsPlainValue(trimmed, MaxSoapActionLength)
+				|| WebServiceDefinitionBuilder.HasUserInfo(trimmed)) {
+			return null;
+		}
+		// register refuses a key in an action's query (describe would have to hide it), so such an action is left out.
+		UriQueryKeys keys = WebServiceSchemaView.FindQueryKeys(trimmed);
+		return keys.SecretKeys.Count + keys.MaskKeys.Count > 0 ? null : trimmed;
 	}
 
 	// A value the arguments may carry as written: printable ASCII only (no spaces, control, format or invisible
@@ -183,16 +186,23 @@ public static partial class WsdlRegistrationMapper {
 		foreach (WsdlOperation operation in port.Operations) {
 			WebServiceMethodView match = target.Methods.FirstOrDefault(m => !claimed.Contains(m.Code)
 				&& string.Equals(LocalName(m.MessageElement), operation.StudioMessageElement, StringComparison.Ordinal)
-				// describe masks a key-like query value of the stored action, so the WSDL's action is compared masked too.
-				&& string.Equals(m.SoapAction?.Trim() ?? string.Empty,
-					WebServiceSchemaView.MaskUriQuery(KeptSoapAction(operation.SoapAction)) ?? string.Empty,
-					StringComparison.Ordinal));
+				&& SameSoapAction(m.SoapAction, operation.SoapAction));
 			if (match is not null) {
 				claimed.Add(match.Code);
 				result[operation] = match;
 			}
 		}
 		return result;
+	}
+
+	// The action describe shows equals the one the arguments carry (a read left a bad one out, so the method was
+	// registered without it), or the WSDL's own action masked as describe masks the stored one: a Studio-made method
+	// whose action carries a key matches although read-wsdl leaves that action out.
+	private static bool SameSoapAction(string shown, string wsdlAction) {
+		string stored = shown?.Trim() ?? string.Empty;
+		return string.Equals(stored, KeptSoapAction(wsdlAction) ?? string.Empty, StringComparison.Ordinal)
+			|| (!string.IsNullOrWhiteSpace(wsdlAction)
+				&& string.Equals(stored, WebServiceSchemaView.ShownUriValue(wsdlAction.Trim()), StringComparison.Ordinal));
 	}
 
 	private static string LocalName(string element) {
@@ -416,7 +426,7 @@ public static partial class WsdlRegistrationMapper {
 				}
 				reason = Shown(errors[0]);
 			}
-			string shown = WebServiceSchemaView.StripUserInfo(baseUri.Split('#')[0]);
+			string shown = WebServiceSchemaView.ShownUri(baseUri.Split('#')[0]);
 			Warn($"Port '{port.Name}': its address '{Shown(shown)}' cannot be the base-uri ({reason}), so base-uri was left "
 				+ "out; ask the user for the real endpoint and set base-uri before registering.");
 			return null;
@@ -452,16 +462,31 @@ public static partial class WsdlRegistrationMapper {
 			}
 			int question = result.IndexOf('?');
 			if (question >= 0) {
-				string[] pairs = result[(question + 1)..].Split('&');
-				string[] kept = pairs.Where(pair => {
-					int equals = pair.IndexOf('=');
-					string name = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
-					return !WebServiceSchemaView.IsSecretQueryName(name);
-				}).ToArray();
-				if (kept.Length < pairs.Length) {
-					result = result[..question] + (kept.Length > 0 ? "?" + string.Join('&', kept) : string.Empty);
-					Warn($"Port '{port.Name}': its address carries a key or token in the query; it was left out of base-uri. "
-						+ "Send it as a parameter whose default is a system setting the user fills.");
+				// Pairs and the separators between them ('&' or ';'), so the kept pairs keep the separators they had.
+				string[] tokens = Regex.Split(result[(question + 1)..], "([&;])");
+				var kept = new List<string>();
+				bool removed = false;
+				for (int i = 0; i < tokens.Length; i += 2) {
+					int equals = tokens[i].IndexOf('=');
+					if (WebServiceSchemaView.IsSecretQueryName(
+							Uri.UnescapeDataString(equals < 0 ? tokens[i] : tokens[i][..equals]))) {
+						removed = true;
+						continue;
+					}
+					if (kept.Count > 0) {
+						kept.Add(tokens[i - 1]);
+					}
+					kept.Add(tokens[i]);
+				}
+				if (removed) {
+					result = result[..question] + (kept.Count > 0 ? "?" + string.Concat(kept) : string.Empty);
+					// Any value under these names is taken as a key here, stricter than register; a SOAP request
+					// parameter cannot go in the query.
+					Warn($"Port '{port.Name}': its address carries a query parameter named like a key or token (a credential "
+						+ "name, or sig, sas, code, appid, sign or hmac); it was left out of base-uri. Tell the user the "
+						+ "endpoint may need it: a SOAP service sends no query parameter, so a key is set in Studio > Web "
+						+ "services, unless the API also takes it in a header (a header or soap-header parameter with "
+						+ "default-sys-setting).");
 				}
 			}
 			return result;
@@ -516,9 +541,9 @@ public static partial class WsdlRegistrationMapper {
 			}
 			string action = KeptSoapAction(operation.SoapAction);
 			if (action is null) {
-				Warn($"Operation '{Shown(operation.Caption)}': its soapAction has spaces, a line break, non-ASCII characters "
-					+ $"or credentials, or is longer than {MaxSoapActionLength} characters (a soapAction is a URI), and was "
-					+ "left out; ask the API owner for the right value.");
+				Warn($"Operation '{Shown(operation.Caption)}': its soapAction has spaces, a line break, non-ASCII characters, "
+					+ $"credentials or a key in its query, or is longer than {MaxSoapActionLength} characters (a soapAction "
+					+ "is a URI), and was left out; ask the API owner for the right value.");
 			}
 			return action;
 		}

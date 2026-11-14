@@ -948,46 +948,67 @@ public sealed class WebServiceSoapWriteTests {
 		// Assert
 		_saved.BaseUri.Should().Be("http://x.example/service.asmx", because: "a SOAP call goes to the base URI as given");
 	}
+
 	[Test]
-	[Description("A SOAP base URI sent back as describe-web-service masked it keeps the stored key and is no change, so a calling process does not make it refused.")]
-	public void Modify_Should_Keep_A_Masked_Base_Uri_Sent_Back_From_Describe() {
+	[Description("A SOAP base URI or soap-action sent back with the mask describe-web-service shows for a key kept there is refused and nothing is saved.")]
+	public void Modify_Should_Refuse_A_Masked_Base_Uri_Or_Soap_Action_Sent_Back() {
 		// Arrange
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
 		schema.BaseUri = "http://x.example/svc.asmx?sig=sig-0042-secret-key";
+		schema.Methods.Items.Values.Single().SoapAction = "http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042";
 		GivenRegistered(schema);
-		GivenSelect("SysSchema", ProcessCalling(schema.UId, schema.Methods.Items.Values.Single().Name));
-		string described = WebServiceSchemaView.From(schema, "Custom").BaseUri;
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(view.Methods.Single()));
 
 		// Act
-		WebServiceToolResult result = _sut.Modify(schema.Name,
-			[new WebServiceOperationArg("setBaseUri", BaseUri: described)], null);
+		Action baseUri = () => _sut.Modify(schema.Name, [new WebServiceOperationArg("setBaseUri", BaseUri: view.BaseUri)], null);
+		Action soapAction = () => _sut.Modify(schema.Name, [new WebServiceOperationArg("setMethod", methodArg)], null);
 
 		// Assert
-		described.Should().Be("http://x.example/svc.asmx?sig=[masked]", because: "describe hides the stored key");
-		result.Success.Should().BeTrue(because: $"the base URI describe returned is no change; error: {result.Error}");
-		_saved.BaseUri.Should().Be("http://x.example/svc.asmx?sig=sig-0042-secret-key",
-			because: "the masked form sent back means the stored value");
+		view.BaseUri.Should().Be("http://x.example/svc.asmx?sig=[masked]", because: "describe hides the stored key");
+		view.Methods.Single().SoapAction.Should().Be("http://example.org/UsrSoapR/UsrOp?code=[masked]",
+			because: "describe hides a key-length Functions key in the action");
+		baseUri.Should().Throw<ArgumentException>(because: "the mask would be stored as the key")
+			.WithMessage("*base-uri query 'sig'*cannot write that key back*", because: "the refusal names the key, not its value");
+		soapAction.Should().Throw<ArgumentException>(because: "the mask would be sent as the action's key")
+			.WithMessage("*soap-action query 'code'*", because: "the refusal names the key, not its value");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 
 	[Test]
-	[Description("A SOAP action sent back as describe-web-service masked it keeps the stored key.")]
-	public void Modify_Should_Keep_A_Masked_Soap_Action_Sent_Back_From_Describe() {
-		// Arrange
-		ServiceSchemaDto schema = SoapServiceFixture.Schema();
-		ServiceMethodDto stored = schema.Methods.Items.Values.Single();
-		stored.SoapAction = "http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042";
-		GivenRegistered(schema);
-		WebServiceMethodView view = WebServiceSchemaView.From(schema, "Custom").Methods.Single();
-		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(JsonSerializer.Serialize(view));
-
+	[Description("register refuses a key-length sig in a SOAP base URI by the rule describe masks it with, and keeps a fixed SAP client number.")]
+	public void Register_Should_Refuse_A_Key_In_A_Soap_Base_Uri() {
 		// Act
-		WebServiceToolResult result = _sut.Modify(schema.Name, [new WebServiceOperationArg("setMethod", methodArg)], null);
+		WebServiceToolResult kept = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://x.example/svc?sap-client=100", null, null, [AddMethod()], "soap11", Tem));
+		Action refused = () => _sut.Register("Custom", new WebServiceRegistration("UsrCalc2", null,
+			"http://x.example/svc?sig=sig-0042-secret-key", null, null, [AddMethod()], "soap11", Tem));
 
 		// Assert
-		view.SoapAction.Should().Be("http://example.org/UsrSoapR/UsrOp?code=[masked]",
-			because: "describe hides a key-length Functions key in the action");
-		result.Success.Should().BeTrue(because: $"describe output is valid setMethod input; error: {result.Error}");
-		_saved.Methods.Items.Values.Single().SoapAction.Should().Be("http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042",
-			because: "the masked form sent back means the stored value");
+		kept.Success.Should().BeTrue(because: $"a fixed query value is no key; error: {kept.Error}");
+		refused.Should().Throw<ArgumentException>(because: "a key in a base URI would be a stored constant")
+			.Where(e => !e.Message.Contains("sig-0042-secret-key"), "the refusal never echoes the value")
+			.WithMessage("*base-uri query 'sig' looks like a credential*", because: "the refusal names the key");
+	}
+
+	[Test]
+	[Description("A namespace URI with a key in its query is refused on register, and one stored in Studio is shown masked by describe.")]
+	public void Namespaces_Should_Neither_Take_Nor_Show_A_Key() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		schema.Namespaces.Items.Values.First().Name = "http://example.org/UsrSoapR?sig=sig-0042-secret-key";
+
+		// Act
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+		Action refused = () => _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null,
+			null, [AddMethod()], "soap11", [new("tem", "http://tempuri.org/?sig=sig-0042-secret-key")]));
+
+		// Assert
+		JsonSerializer.Serialize(view.Namespaces).Should().NotContain("sig-0042-secret-key",
+			because: "describe hides a key in a namespace URI like one in the base URI");
+		refused.Should().Throw<ArgumentException>(because: "a namespace URI goes out in every envelope")
+			.Where(e => !e.Message.Contains("sig-0042-secret-key"), "the value is never echoed")
+			.WithMessage("*namespace 'tem'*key in its query*", because: "the refusal names the namespace");
 	}
 }

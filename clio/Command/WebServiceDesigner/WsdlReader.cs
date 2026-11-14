@@ -316,7 +316,7 @@ public sealed partial class WsdlReader(
 		}
 		// The URL travels to the stand and back in its error messages, so a key or token in it is refused like one in a
 		// base URI.
-		bool secretInQuery = parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+		bool secretInQuery = parsed.Query.TrimStart('?').Split(['&', ';'], StringSplitOptions.RemoveEmptyEntries)
 			.Select(pair => (Pair: pair, At: pair.IndexOf('=')))
 			.Any(p => p.At > 0 && p.At < p.Pair.Length - 1
 				&& WebServiceSchemaView.IsSecretQueryName(Uri.UnescapeDataString(p.Pair[..p.At])));

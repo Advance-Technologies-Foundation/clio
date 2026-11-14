@@ -160,7 +160,14 @@ public static partial class WebServiceDefinitionBuilder {
 		if (string.IsNullOrWhiteSpace(arg.Uri) || arg.Uri.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) {
 			return $"namespace '{arg.Prefix}' needs a uri without spaces, e.g. http://tempuri.org/.";
 		}
-		return HasUserInfo(arg.Uri) ? $"namespace '{arg.Prefix}': the uri must not carry credentials (user:password@)." : null;
+		if (HasUserInfo(arg.Uri)) {
+			return $"namespace '{arg.Prefix}': the uri must not carry credentials (user:password@).";
+		}
+		// describe shows a namespace URI through the same masking as a base URI, so a key there would be hidden on read.
+		UriQueryKeys keys = WebServiceSchemaView.FindQueryKeys(arg.Uri);
+		return keys.SecretKeys.Count + keys.MaskKeys.Count > 0
+			? $"namespace '{arg.Prefix}': the uri must not carry a key in its query, or the mask describe shows for one."
+			: null;
 	}
 
 	/// <summary>
@@ -375,11 +382,19 @@ public static partial class WebServiceDefinitionBuilder {
 			errors.Add("base-uri must not carry credentials (user:password@); use auth with system settings.");
 			return baseUri;
 		}
+		// A key anywhere in a base URI (its query, or a ;name=value path parameter) is refused by the rule list and
+		// describe hide one by, read with the same scanner; the agent could never send it back either. A REST base URI
+		// with a query gets the refusal below, which names query parameters instead.
+		int errorsBefore = errors.Count;
+		if (soap || baseUri.IndexOfAny(['?', '#']) < 0) {
+			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
+		}
+		if (errors.Count > errorsBefore) {
+			return baseUri;
+		}
 		if (soap && baseUri.Contains('?') && !baseUri.Contains('#')) {
 			// A SOAP call goes to the base URI as stored, query included (ServiceClientRequest), and SOAP has no query
-			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here. A credential-like key with a
-			// constant value would be printed by list and describe, so that is refused.
-			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
+			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here.
 			if (WsdlQueryKey(baseUri) is { } wsdlKey) {
 				errors.Add($"base-uri: '?{wsdlKey}' is the address of the WSDL, not of the endpoint; every call would be "
 					+ "posted to it. Give the endpoint, the WSDL's soap:address location, usually the same URL without "
@@ -388,7 +403,7 @@ public static partial class WebServiceDefinitionBuilder {
 			}
 		} else if (baseUri.IndexOfAny(['?', '#']) >= 0) {
 			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
-			// method path, and a key in it would be a stored constant that list and describe print.
+			// method path, and a key in it would be a stored constant that list and describe would have to hide.
 			errors.Add(soap
 				? "base-uri must not have a fragment."
 				: "base-uri must not have a query or a fragment; give query values as query parameters "
@@ -503,6 +518,7 @@ public static partial class WebServiceDefinitionBuilder {
 		};
 		ValidatePathPlaceholders(code, uri, baseUri, method.Request.Parameters, errors);
 		ValidateUriQuery($"method '{code}': uri", uri, errors);
+		ValidateKeyPlaceholders(code, uri, method, existing, errors);
 		ValidateBodyRules(code, verb, contentType, method, errors);
 		return method;
 	}
@@ -931,8 +947,8 @@ public static partial class WebServiceDefinitionBuilder {
 			return Empty();
 		}
 		string wireName = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path : arg.Path;
-		if (hasConstant && (WebServiceSchemaView.IsSecretLike(arg.Code, placement)
-				|| WebServiceSchemaView.IsSecretLike(wireName, placement))) {
+		if (hasConstant && (WebServiceSchemaView.IsSecretLike(arg.Code, placement, arg.DefaultValue)
+				|| WebServiceSchemaView.IsSecretLike(wireName, placement, arg.DefaultValue))) {
 			errors.Add($"{owner}: a constant default is refused on a header, cookie or credential-like parameter; "
 				+ "reference a system setting with default-sys-setting and let the user fill its value.");
 			return Empty();
@@ -947,8 +963,8 @@ public static partial class WebServiceDefinitionBuilder {
 		// URL, so that move is refused instead.
 		bool clears = arg.DefaultValue is { Length: 0 };
 		if (previous is not null && !hasConstant && !clears && IsHiddenSecretConstant(previous, previousInSoapHeader)) {
-			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement)
-					&& !WebServiceSchemaView.IsSecretLike(wireName, placement)) {
+			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement, previous.DefValue.Value)
+					&& !WebServiceSchemaView.IsSecretLike(wireName, placement, previous.DefValue.Value)) {
 				errors.Add($"{owner}: it carries a secret constant default that describe hides, and the new placement "
 					+ "or path would show it; reference a system setting with default-sys-setting, or send "
 					+ "default-value \"\" to clear it.");
@@ -974,33 +990,47 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	/// <summary>
-	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a credential-like key there would be a
-	/// stored constant that describe prints and every reader of the schema sees.
+	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a key there would be a stored constant:
+	/// a value <see cref="WebServiceSchemaView.IsSecretQueryValue"/> calls a secret is refused, the same rule by which
+	/// describe-web-service hides one, and so is the mask describe shows in its place.
 	/// </summary>
 	private static void ValidateUriQuery(string owner, string uri, Errors errors) {
-		int question = uri.IndexOf('?');
-		if (question < 0) {
+		// Read exactly as describe reads a stored URI (keys unescaped, since the platform sends api%5Fkey as api_key),
+		// so nothing describe would hide can be written, and the mask cannot be written in place of a key.
+		UriQueryKeys keys = WebServiceSchemaView.FindQueryKeys(uri);
+		foreach (string key in keys.MaskKeys) {
+			errors.Add($"{owner} query '{key}' holds {WebServiceResponseMasker.Mask}, which describe-web-service shows for "
+				+ "a key kept in that URI. The tools cannot write that key back: leave this method or base URI out of the "
+				+ "call, make the key a parameter with default-sys-setting the user fills (REST), or ask the user to "
+				+ "change it in Studio > Web services.");
+		}
+		foreach (string key in keys.SecretKeys) {
+			errors.Add($"{owner} query '{key}' looks like a credential and has a constant value; "
+				+ "make it a parameter with default-sys-setting instead.");
+		}
+	}
+
+	/// <summary>
+	/// A path parameter whose <c>{placeholder}</c> is the whole value of a key in the method URI
+	/// (<c>search?api_key={k}</c>) carries that key: a secret constant there is refused like the key itself, and one
+	/// describe hid (so describe output sent back carries none) is refused rather than erased.
+	/// </summary>
+	private static void ValidateKeyPlaceholders(string code, string uri, ServiceMethodDto method,
+		ServiceMethodDto existing, Errors errors) {
+		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(uri, method.Request.Parameters)) {
+			errors.Add($"method '{code}': path parameter '{path}' fills a key in the uri query and has a constant "
+				+ "default; reference a system setting with default-sys-setting and let the user fill its value.");
+		}
+		if (existing?.Request is null) {
 			return;
 		}
-		foreach (string pair in uri[(question + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries)) {
-			int equals = pair.IndexOf('=');
-			// The platform sends the key unescaped, so api%5Fkey is api_key on the wire.
-			string key = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
-			string value = equals < 0 ? string.Empty : pair[(equals + 1)..];
-			if (Uri.UnescapeDataString(value.Split('#')[0]) == WebServiceResponseMasker.Mask) {
-				// describe-web-service shows a stored secret query value so. modify-web-service puts the stored value back
-				// only when setMethod or setBaseUri of the same service sends the whole URI exactly as describe showed it
-				// (WebServiceSchemaView.RestoreMaskedUriQuery), so here it was changed, or it is new.
-				errors.Add($"{owner} query '{key}' is {WebServiceResponseMasker.Mask}, the placeholder describe-web-service "
-					+ "shows for a hidden value; only setMethod or setBaseUri of the same service that sends the whole URI "
-					+ "exactly as describe returned it keeps the stored value. Otherwise make it a parameter with "
-					+ "default-sys-setting.");
-				continue;
-			}
-			if (value.Length > 0 && !PathPlaceholderPattern().IsMatch(value)
-					&& WebServiceSchemaView.IsSecretLike(key, ServiceSchemaCodes.Placements["query"])) {
-				errors.Add($"{owner} query '{key}' looks like a credential and has a constant value; "
-					+ "make it a parameter with default-sys-setting instead.");
+		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(existing.Request.Uri, existing.Request.Parameters)) {
+			ServiceParameterDto kept = method.Request.Parameters.Items.Values.FirstOrDefault(p =>
+				p.Type == ServiceSchemaCodes.Placements["path"] && string.Equals(p.Path, path, StringComparison.Ordinal));
+			if (kept is not null && string.IsNullOrEmpty(kept.DefValue?.Value)) {
+				errors.Add($"method '{code}': path parameter '{path}' fills a key in the uri query, and its constant, "
+					+ "which describe hides, would be erased; reference a system setting with default-sys-setting the user "
+					+ "fills, or ask the user to change it in Studio > Web services.");
 			}
 		}
 	}

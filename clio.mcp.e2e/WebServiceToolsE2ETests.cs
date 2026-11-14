@@ -5,6 +5,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.WebServiceDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -110,7 +111,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("register, list, describe, test-call and modify a REST web service")]
-	[Description("Registers a REST service with a path parameter, a key-like query value, a system-setting header and a nested response array, finds it through list-web-services, reads it back through describe-web-service with no credential value and the query value masked, sends the described method back unchanged, test-calls a method through the platform and gets a readable failure for an unresolvable host and for an unknown method, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
+	[Description("Registers a REST service with a path parameter, a system-setting header and a nested response array, stores keys in its URI queries as Studio can, finds it through list-web-services and reads it back through describe-web-service with no credential value and the keys masked, refuses the described method sent back with the mask, test-calls a method through the platform and gets a readable failure for an unresolvable host and for an unknown method, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
 	public async Task WebServiceTools_Should_Register_Read_And_Modify_A_Rest_Service() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -131,16 +132,19 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["code"] = _serviceCode,
 				["caption"] = "E2E orders",
 				["base-uri"] = "https://example.invalid/api",
-				["methods"] = new[] { OrdersMethod(withHeader: true, withSignature: true) }
+				["methods"] = new[] { OrdersMethod(withHeader: true) }
 			}, cts.Token);
+		// The tools refuse to write a key into a URI, but Studio stores one; put keys there through the platform's own
+		// save, as a service made in Studio would have them.
+		await WebServiceStand.StoreUrisAsync(settings, _environmentName, _serviceCode,
+			"https://example.invalid/api/?sig=" + HiddenKey, "orders/{id}?api_key=" + HiddenKey, cts.Token);
 		WebServiceListResult listed = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
 			new Dictionary<string, object?> { ["environment-name"] = _environmentName }, cts.Token);
 		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["usages"] = true
 			}, cts.Token);
-		// describe's method sent back as it is: the masked query value must keep the stored one, or the placeholder
-		// would be refused.
+		// describe's method sent back as it is: the mask stands where the key was, and the tools never write a key back.
 		WebServiceToolResult echoed = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode,
@@ -188,17 +192,22 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the designer joins base and method URI verbatim, so the tool stores the base with a trailing slash");
 		listed.Services.Should().Contain(s => s.Code == _serviceCode,
 			because: "the registered service must appear where the Process Designer's picker reads services from");
-		listed.Services!.Single(s => s.Code == _serviceCode).BaseUri.Should().Be("https://example.invalid/api/",
-			because: "the list carries each base URI so an agent can find a service for the same API before registering");
+		listed.Services!.Single(s => s.Code == _serviceCode).BaseUri.Should().Be("https://example.invalid/api/?sig=[masked]",
+			because: "the list carries each base URI, with a key kept in its query hidden");
+		JsonSerializer.Serialize(listed).Should().NotContain(HiddenKey, because: "the list must not print a key kept in a URI");
 		described.Success.Should().BeTrue(because: $"describe must read the service back; error: {described.Error}");
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
-		method.Uri.Should().Be("orders/{id}?sig=[masked]",
-			because: "the method address is stored without a leading slash, and a key-like query value is never returned");
-		JsonSerializer.Serialize(described).Should().NotContain(QuerySignature,
+		method.Uri.Should().Be("orders/{id}?api_key=[masked]",
+			because: "describe never returns a key kept in a method URI's query");
+		described.Service.BaseUri.Should().Be("https://example.invalid/api/?sig=[masked]",
+			because: "a key-length sig in the base URI is hidden the same way");
+		JsonSerializer.Serialize(described).Should().NotContain(HiddenKey,
 			because: "describe must not print a key kept in a URI query");
-		echoed.Success.Should().BeTrue(
-			because: $"describe output sent back keeps the masked query value instead of storing the placeholder; error: {echoed.Error}");
+		echoed.Success.Should().BeFalse(because: "the mask would otherwise be stored and sent as the key");
+		echoed.Error.Should().Contain("cannot write that key back",
+			because: "the refusal tells the agent what to do instead of sending the mask");
+		echoed.Error.Should().NotContain(HiddenKey, because: "a refusal never shows the hidden key");
 		method.RequestParameters.Should().Contain(p => p.Code == Prefixed("ApiKey") && p.DefaultSysSetting == "SchemaNamePrefix",
 			because: "a header bound to a system setting is returned as the setting code, never as its value");
 		method.ResponseParameters.Single(p => p.Code == Prefixed("Items")).Items.Should().ContainSingle(p => p.Code == Prefixed("Number"),
@@ -208,6 +217,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		testCall.Error.Should().NotBeNullOrWhiteSpace(
 			because: "the platform's failure reaches the agent as text, not as a thrown tool error");
 		testCall.ResponseBody.Should().BeNullOrEmpty(because: "no response came back from an unresolvable host");
+		JsonSerializer.Serialize(testCall).Should().NotContain(HiddenKey,
+			because: "the keys kept in the URIs went out with the call, and an error quoting the URL must not show them");
 		unknownMethod.Success.Should().BeFalse(because: "a method the service does not have cannot be called");
 		unknownMethod.Error.Should().Contain(MethodCode,
 			because: "the refusal lists the methods the service does have");
@@ -661,9 +672,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		mappings = new[] { new { elementName = CallerElement, elementParameter = Prefixed("Id") + "_In", value = "1" } }
 	});
 
-	private const string QuerySignature = "e2e-sig-0042-0042-0042";
+	// A key the stand stores in the service's URIs the way Studio can; long enough to count as a key under sig.
+	private const string HiddenKey = "e2e-hidden-key-0042-0042";
 
-	private Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null, bool withSignature = false) {
+	private Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null) {
 		var requestParameters = new List<Dictionary<string, object?>> {
 			new() { ["code"] = Prefixed("Id"), ["in"] = "path", ["path"] = "id" }
 		};
@@ -682,9 +694,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		return new Dictionary<string, object?> {
 			["code"] = MethodCode,
 			["http-method"] = "GET",
-			// A fixed key-length sig value: register keeps it (sig is not in the write-side credential pattern), and
-			// describe masks it.
-			["uri"] = withSignature ? "/orders/{id}?sig=" + QuerySignature : "/orders/{id}",
+			["uri"] = "/orders/{id}",
 			["request-parameters"] = requestParameters,
 			["response-parameters"] = new[] {
 				new Dictionary<string, object?> { ["code"] = Prefixed("Status"), ["path"] = "$.status" },

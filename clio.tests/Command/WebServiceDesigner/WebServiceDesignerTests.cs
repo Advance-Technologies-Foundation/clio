@@ -1409,26 +1409,23 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("A method URI sent back exactly as describe-web-service masked it keeps the stored secret query value.")]
-	public void Modify_Should_Keep_A_Masked_Query_Value_Sent_Back_From_Describe() {
+	[Description("A method sent back from describe-web-service with a key kept in its URI (shown as the mask) is refused without the key and nothing is saved: the tools never write such a key.")]
+	public void Modify_Should_Refuse_A_Hidden_Query_Key_Sent_Back_From_Describe() {
 		// Arrange
 		ServiceSchemaDto schema = BingSchema();
 		schema.Methods.Items.Values.Single().Request.Uri = "search?sig=sig-0042-secret-key&format=json";
 		GivenRegisteredService(schema);
-		GivenSelect("SysSchema");
-		ServiceSchemaDto saved = null;
-		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
 		WebServiceMethodArg described = JsonSerializer.Deserialize<WebServiceMethodArg>(
 			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single()));
 
 		// Act
-		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
-			[new WebServiceOperationArg("setMethod", described)], null);
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", described)], null);
 
 		// Assert
-		result.Success.Should().BeTrue(because: $"describe output is valid setMethod input; error: {result.Error}");
-		saved.Methods.Items.Values.Single().Request.Uri.Should().Be("search?sig=sig-0042-secret-key&format=json",
-			because: "the masked form sent back means the stored value, not the placeholder");
+		act.Should().Throw<ArgumentException>(because: "the mask would be stored and sent as the key")
+			.Where(e => !e.Message.Contains("sig-0042-secret-key"), "the refusal never shows the hidden key")
+			.WithMessage("*cannot write that key back*", because: "the refusal says what the agent can do instead");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 
 	[Test]
@@ -1447,8 +1444,142 @@ public sealed class WebServiceDesignerTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the placeholder would be stored and sent as the key")
-			.WithMessage("*the placeholder describe-web-service shows for a hidden value*",
-				because: "the refusal says how to keep the stored value");
+			.WithMessage("*which describe-web-service shows for a key kept in that URI*",
+				because: "the refusal names the mask");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("search?code=fn-key-0042-0042-0042", false)]
+	[TestCase("search?appid=0123456789abcdef0123", false)]
+	[TestCase("search?format=json;api_key=sk-live-0042", false)]
+	[TestCase("search?api_key=sk{x}", false)]
+	[TestCase("search?ret=/cb?api_key=sk-live-0042", false)]
+	[TestCase("search?a=1?api_key=sk-live-0042", false)]
+	[TestCase("search?sign=0123456789abcdef", false)]
+	[TestCase("search?api_key={key}", true)]
+	[TestCase("rates?code=USD", true)]
+	[TestCase("rates?code=USD;callback=handleResponse", true)]
+	[TestCase("odata/Orders(OrderKey={key})/Items", true)]
+	[Description("register refuses a key kept in a method URI by the same rule describe masks one with, ';' separators and partial placeholders included, and keeps an ordinary short value or a whole placeholder.")]
+	public void Register_Should_Refuse_A_Key_In_A_Method_Uri(string uri, bool accepted) {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		GivenSettingsExist();
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => saved);
+		WebServiceParameterArg[] parameters = uri.Contains("{key}")
+			? [new WebServiceParameterArg("UsrKey", "path", Path: "key", DefaultSysSetting: "UsrErpKey")]
+			: [];
+
+		// Act
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("UsrSearch", "GET", uri, RequestParameters: parameters)]));
+
+		// Assert
+		if (accepted) {
+			act.Should().NotThrow(because: "an ordinary short value or a placeholder filled per call is no stored key");
+		} else {
+			act.Should().Throw<ArgumentException>(because: "a key in a method URI would be a stored constant")
+				.Where(e => !e.Message.Contains("0042") && !e.Message.Contains("0123456789"),
+					"the refusal never echoes the value")
+				.WithMessage("*looks like a credential*", because: "the refusal points at default-sys-setting");
+		}
+	}
+
+	[TestCase("search?ret=/cb?sig=[masked]")]
+	[TestCase("search?x=1?sig=%5Bmasked%5D")]
+	[Description("A method URI that carries the mask anywhere in a pair, after a second '?' or URL-escaped, is refused like the mask itself, so the mask is never stored in place of a key.")]
+	public void Modify_Should_Refuse_The_Mask_Inside_A_Query_Pair(string uri) {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		var changed = new WebServiceMethodArg("Search", "GET", uri, RequestParameters: [new WebServiceParameterArg("q", "query")]);
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", changed)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the mask would be sent as the key")
+			.WithMessage("*query 'sig' holds*", because: "the refusal names the key before the mask");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("appid", "0123456789abcdef0123", false)]
+	[TestCase("code", "USD", true)]
+	[Description("A query parameter's constant default follows the URI key rule: a key-length value under a hosting key name is refused, a short one is kept.")]
+	public void Register_Should_Apply_The_Query_Key_Rule_To_A_Query_Parameter_Default(string path, string value, bool accepted) {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => saved);
+
+		// Act
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("UsrWeather", "GET", "weather", RequestParameters: [
+				new WebServiceParameterArg("UsrUnits", "query", Path: path, DefaultValue: value)
+			])]));
+
+		// Assert
+		if (accepted) {
+			act.Should().NotThrow(because: "a short value under a hosting key name is ordinary");
+		} else {
+			act.Should().Throw<ArgumentException>(because: "an OpenWeatherMap key is a credential, sent in every URL")
+				.Where(e => !e.Message.Contains(value), "the refusal never echoes the value")
+				.WithMessage("*constant default is refused*", because: "the refusal points at default-sys-setting");
+		}
+	}
+
+	[Test]
+	[Description("A path parameter whose placeholder is a key's whole value in the method URI carries that key: a secret constant on it is refused, and one stored is hidden by describe and refused rather than erased when describe output comes back.")]
+	public void Modify_Should_Treat_A_Path_Parameter_That_Fills_A_Key_Like_The_Key() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		ServiceMethodDto stored = schema.Methods.Items.Values.Single();
+		stored.Request.Uri = "search?api_key={k}";
+		var filler = new ServiceParameterDto {
+			UId = Guid.NewGuid(), Name = "k", Path = "k", Type = ServiceSchemaCodes.Placements["path"],
+			DataValueTypeName = "Text", Caption = new() { ["en-US"] = "k" },
+			DefValue = new ServiceParameterValueDto { Value = "sk-live-0042", Source = ServiceSchemaCodes.ValueSourceConst }
+		};
+		stored.Request.Parameters.Items[filler.UId.ToString()] = filler;
+		GivenRegisteredService(schema);
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+		WebServiceMethodArg described = JsonSerializer.Deserialize<WebServiceMethodArg>(JsonSerializer.Serialize(view.Methods.Single()));
+		var literal = new WebServiceMethodArg("Search", "GET", "search?api_key={k}", RequestParameters: [
+			new WebServiceParameterArg("q", "query"), new WebServiceParameterArg("k", "path", Path: "k", DefaultValue: "sk-live-0042")
+		]);
+
+		// Act
+		Action echo = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", described)], null);
+		Action write = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", literal)], null);
+
+		// Assert
+		JsonSerializer.Serialize(view).Should().NotContain("sk-live-0042", because: "the constant is the key of the URI");
+		echo.Should().Throw<ArgumentException>(because: "describe output carries no constant, and erasing it breaks every call")
+			.WithMessage("*fills a key in the uri query*would be erased*", because: "the refusal says why");
+		write.Should().Throw<ArgumentException>(because: "a constant there is a key written into the URL")
+			.Where(e => !e.Message.Contains("sk-live-0042"), "the refusal never echoes the value")
+			.WithMessage("*fills a key in the uri query and has a constant default*", because: "the refusal names the parameter");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("https://erp.example/svc;jsessionid=0123456789abcdef-token")]
+	[TestCase("https://erp.example/svc;token=SECRET-42")]
+	[Description("setBaseUri refuses a key in a ;name=value path parameter of the base URI, which describe would hide.")]
+	public void Modify_Should_Refuse_A_Key_In_The_Base_Uri_Path(string baseUri) {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setBaseUri", BaseUri: baseUri)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "a key in the base URI would be a stored constant")
+			.Where(e => !e.Message.Contains("SECRET-42") && !e.Message.Contains("0123456789"), "the value is never echoed")
+			.WithMessage("*base-uri query*looks like a credential*", because: "the refusal names the key");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 

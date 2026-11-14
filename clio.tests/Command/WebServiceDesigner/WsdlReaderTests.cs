@@ -472,6 +472,7 @@ public sealed class WsdlReaderTests {
 
 	[TestCase("https://f.example.org/api/svc?code=SECRET&wsdl")]
 	[TestCase("https://s.example.org/svc.asmx?wsdl&sig=SECRET")]
+	[TestCase("https://s.example.org/svc.asmx?wsdl;sig=SECRET")]
 	[Description("A key in a query parameter common hosts use (an Azure Functions code, a SAS signature) is refused like any key.")]
 	public void Read_Should_Refuse_A_Hosting_Key_In_The_Query(string url) {
 		// Act
