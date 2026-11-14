@@ -46,6 +46,15 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 	/// <summary>An integer column of the lookup that orders the stages; ignored when <see cref="Stages"/> is given.</summary>
 	public string OrderColumn { get; set; }
 
+	/// <summary>Which new records start the case; <see langword="null"/> for a case without a filter.</summary>
+	public DynamicCaseFilterArgument Filter { get; set; }
+
+	/// <summary>
+	/// The user's yes to disabling the object's enabled cases without a filter, so that this filtered case can start
+	/// next to its siblings.
+	/// </summary>
+	public bool DeactivateUnfiltered { get; set; }
+
 	/// <summary>The case's schema name; the server derives one when empty.</summary>
 	public string Name { get; set; }
 

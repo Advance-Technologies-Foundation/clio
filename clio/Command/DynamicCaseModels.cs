@@ -117,6 +117,41 @@ public sealed record DynamicCaseStageItem(string Value) {
 	public bool? Successful { get; init; }
 }
 
+/// <summary>
+/// A case filter as a tool call named it, normalized: a lookup column of the object and the values whose records start
+/// the case, or its empty value.
+/// </summary>
+/// <param name="Column">The filter column.</param>
+/// <param name="Values">The values by Id or exact display value; empty when <paramref name="Empty"/>.</param>
+/// <param name="Empty">True for the case of records whose filter column is empty.</param>
+public sealed record DynamicCaseFilterArgument(string Column, IReadOnlyList<string> Values, bool Empty);
+
+/// <summary>A case filter on the wire; the server refuses an undeclared key, so an unset member is not written.</summary>
+public sealed record BuildCaseFilterRequest {
+	/// <summary>The filter column.</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; init; }
+
+	/// <summary>The values whose records start the case; <see langword="null"/> for an empty-value case.</summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyList<string> Values { get; init; }
+
+	/// <summary>True for the case of records whose filter column is empty; <see langword="null"/> otherwise.</summary>
+	[JsonPropertyName("empty")]
+	public bool? Empty { get; init; }
+
+	/// <summary>The wire shape of a normalized filter argument.</summary>
+	/// <param name="filter">The argument; <see langword="null"/> for none.</param>
+	public static BuildCaseFilterRequest From(DynamicCaseFilterArgument filter) =>
+		filter is null
+			? null
+			: new BuildCaseFilterRequest {
+				Column = filter.Column,
+				Values = filter.Empty ? null : filter.Values,
+				Empty = filter.Empty ? true : null
+			};
+}
+
 /// <summary>One stage of an explicit order on the wire: the lookup value's Id or exact display value.</summary>
 /// <param name="Value">The lookup value.</param>
 public sealed record BuildCaseStageRequest([property: JsonPropertyName("value")] string Value) {
@@ -161,9 +196,20 @@ public sealed record BuildCaseRequest {
 	[JsonPropertyName("orderColumn")]
 	public string OrderColumn { get; init; }
 
-	/// <summary>The explicit stage order, or <see langword="null"/> for the default order.</summary>
+	/// <summary>The case's stages in order (any 2 to 20 lookup values), or <see langword="null"/> for every value.</summary>
 	[JsonPropertyName("stages")]
 	public IReadOnlyList<BuildCaseStageRequest> Stages { get; init; }
+
+	/// <summary>The case filter, or <see langword="null"/> for a case without one.</summary>
+	[JsonPropertyName("filter")]
+	public BuildCaseFilterRequest Filter { get; init; }
+
+	/// <summary>
+	/// True to disable the object's enabled cases without a filter; <see langword="null"/> otherwise, so a call without
+	/// it reads the same to every package that carries <c>BuildCase</c>.
+	/// </summary>
+	[JsonPropertyName("deactivateUnfiltered")]
+	public bool? DeactivateUnfiltered { get; init; }
 
 	/// <summary>True to answer the missing package dependencies instead of refusing on them.</summary>
 	[JsonPropertyName("allowMissingDependencies")]
@@ -219,6 +265,39 @@ public sealed class DynamicCaseStage {
 	/// <summary>Running cases that sit in this stage now; absent where it was not read.</summary>
 	[JsonPropertyName("runningInstances")]
 	public int? RunningInstances { get; init; }
+}
+
+/// <summary>One value of a case filter: the lookup value's Id and the display value the filter stores with it.</summary>
+public sealed class DynamicCaseFilterValue {
+	/// <summary>The lookup value's Id.</summary>
+	[JsonPropertyName("value")]
+	public string Value { get; init; }
+
+	/// <summary>The display value.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; init; }
+}
+
+/// <summary>
+/// A case's filter as stored: which new records start the case and which case the record page's bar shows. The same
+/// shape in the server's answers and the tools' results.
+/// </summary>
+public sealed class DynamicCaseFilter {
+	/// <summary>The filter column; absent when the stored filter cannot be read.</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; init; }
+
+	/// <summary>The values whose records start the case.</summary>
+	[JsonPropertyName("values")]
+	public List<DynamicCaseFilterValue> Values { get; init; }
+
+	/// <summary>True for the case of records whose filter column is empty.</summary>
+	[JsonPropertyName("empty")]
+	public bool? Empty { get; init; }
+
+	/// <summary>True for a filter in a shape clio's tools cannot change (built in the case designer).</summary>
+	[JsonPropertyName("unreadable")]
+	public bool? Unreadable { get; init; }
 }
 
 /// <summary>
@@ -292,6 +371,10 @@ public sealed class BuildCaseCaseInfo {
 	/// <summary>The case's package does not accept changes: it can be described, not modified in place.</summary>
 	[JsonPropertyName("packageReadOnly")]
 	public bool? PackageReadOnly { get; init; }
+
+	/// <summary>Which new records start the case; absent for a case without a filter, which starts for every record.</summary>
+	[JsonPropertyName("filter")]
+	public DynamicCaseFilter Filter { get; init; }
 }
 
 /// <summary>The settings row and the link row a case needs; the same shape in the server answer and the result.</summary>
@@ -311,6 +394,14 @@ public sealed class DynamicCaseSettings {
 	/// <summary>The package-data bindings the call wrote, by name.</summary>
 	[JsonPropertyName("bindings")]
 	public List<string> Bindings { get; init; }
+
+	/// <summary>The settings row's filter column after the call; absent when it names none.</summary>
+	[JsonPropertyName("filterColumnName")]
+	public string FilterColumnName { get; init; }
+
+	/// <summary>True when the call sets the filter column on a row that had none (planned, on a dry run).</summary>
+	[JsonPropertyName("filterColumnSet")]
+	public bool? FilterColumnSet { get; init; }
 }
 
 /// <summary>What one written artifact needs before it takes effect.</summary>
@@ -384,6 +475,10 @@ public sealed class BuildCaseResponse {
 	/// <summary>What the caller owes after the call.</summary>
 	[JsonPropertyName("obligations")]
 	public DynamicCaseObligations Obligations { get; init; }
+
+	/// <summary>The cases without a filter that <c>deactivateUnfiltered</c> disabled (or would, on a dry run).</summary>
+	[JsonPropertyName("deactivatedCases")]
+	public List<string> DeactivatedCases { get; init; }
 
 	/// <summary>What a failure could not undo, in the order to remove it.</summary>
 	[JsonPropertyName("leftovers")]
@@ -481,6 +576,10 @@ public sealed class DynamicCaseInfo {
 	/// <summary>The case's package does not accept changes: it can be described, not modified in place.</summary>
 	[JsonPropertyName("packageReadOnly")]
 	public bool? PackageReadOnly { get; init; }
+
+	/// <summary>Which new records start the case; absent for a case without a filter.</summary>
+	[JsonPropertyName("filter")]
+	public DynamicCaseFilter Filter { get; init; }
 
 	/// <summary>The case designer link; only for a case that exists.</summary>
 	[JsonPropertyName("designerUrl")]
@@ -625,6 +724,10 @@ public sealed class DynamicCaseResult {
 	/// <summary>What the caller owes after the call, per artifact.</summary>
 	[JsonPropertyName("obligations")]
 	public DynamicCaseObligations Obligations { get; init; }
+
+	/// <summary>The cases without a filter that <c>deactivate-unfiltered</c> disabled (or would, on a dry run).</summary>
+	[JsonPropertyName("deactivatedCases")]
+	public List<string> DeactivatedCases { get; init; }
 
 	/// <summary>What a failure could not undo.</summary>
 	[JsonPropertyName("leftovers")]

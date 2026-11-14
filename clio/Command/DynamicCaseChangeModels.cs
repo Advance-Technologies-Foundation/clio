@@ -77,6 +77,10 @@ public sealed class DynamicCaseSettingsRow {
 	/// <summary>True when the row names a filter column: several cases split by it.</summary>
 	[JsonPropertyName("hasFilterColumn")]
 	public bool HasFilterColumn { get; init; }
+
+	/// <summary>The filter column the row names; absent when it names none.</summary>
+	[JsonPropertyName("filterColumnName")]
+	public string FilterColumnName { get; init; }
 }
 
 /// <summary>The server's <c>DescribeCaseResult</c>.</summary>
@@ -206,6 +210,34 @@ public sealed record ModifyCaseRequest {
 	/// <summary>True to run every check and answer the planned change without writing anything.</summary>
 	[JsonPropertyName("validateOnly")]
 	public bool ValidateOnly { get; init; }
+
+	/// <summary>
+	/// The case's new filter, or its removal; <see langword="null"/> leaves the filter as it is. A removal is sent as
+	/// JSON <c>null</c>, which the serializer's ignore condition would otherwise drop with an absent member.
+	/// </summary>
+	[JsonPropertyName("filter")]
+	public CaseFilterPatch Filter { get; init; }
+}
+
+/// <summary>A change of a case's filter: a new filter, or its removal.</summary>
+/// <param name="NewFilter">The new filter; <see langword="null"/> removes the filter.</param>
+[JsonConverter(typeof(CaseFilterPatchJsonConverter))]
+public sealed record CaseFilterPatch(BuildCaseFilterRequest NewFilter);
+
+/// <summary>Writes a <see cref="CaseFilterPatch"/> as the filter object, or as JSON <c>null</c> for a removal.</summary>
+public sealed class CaseFilterPatchJsonConverter : JsonConverter<CaseFilterPatch> {
+	/// <inheritdoc />
+	public override CaseFilterPatch Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+		throw new NotSupportedException("A filter change is a request member only; the server never answers with one.");
+
+	/// <inheritdoc />
+	public override void Write(Utf8JsonWriter writer, CaseFilterPatch value, JsonSerializerOptions options) {
+		if (value.NewFilter is null) {
+			writer.WriteNullValue();
+			return;
+		}
+		JsonSerializer.Serialize(writer, value.NewFilter, options);
+	}
 }
 
 /// <summary>One changed stage, or the case caption or enabled flag: what it was and what it becomes.</summary>
@@ -264,6 +296,10 @@ public sealed class DynamicCaseDiff {
 	/// <summary>The enabled change, when there is one.</summary>
 	[JsonPropertyName("enabled")]
 	public DynamicCaseStageChange Enabled { get; init; }
+
+	/// <summary>The case filter change in words, when there is one; <c>none</c> for no filter.</summary>
+	[JsonPropertyName("filter")]
+	public DynamicCaseStageChange Filter { get; init; }
 }
 
 /// <summary>Running cases that sit in one stage.</summary>
@@ -321,6 +357,10 @@ public sealed class ModifyCaseResponse {
 	/// <summary>The running cases of the case schema.</summary>
 	[JsonPropertyName("runningInstances")]
 	public DynamicCaseRunningInstances RunningInstances { get; init; }
+
+	/// <summary>The object's settings row when a first filter sets its filter column; absent otherwise.</summary>
+	[JsonPropertyName("settings")]
+	public DynamicCaseSettings Settings { get; init; }
 
 	/// <summary>What the caller owes after the call.</summary>
 	[JsonPropertyName("obligations")]
@@ -403,6 +443,10 @@ public sealed class ModifyDynamicCaseResult {
 	/// <summary>The running cases of the case schema.</summary>
 	[JsonPropertyName("runningInstances")]
 	public DynamicCaseRunningInstances RunningInstances { get; init; }
+
+	/// <summary>The object's settings row when a first filter sets its filter column; absent otherwise.</summary>
+	[JsonPropertyName("settings")]
+	public DynamicCaseSettings Settings { get; init; }
 
 	/// <summary>What the caller owes after the call, per artifact.</summary>
 	[JsonPropertyName("obligations")]

@@ -206,7 +206,10 @@ public sealed class DynamicCaseService(
 			Caption = NullIfBlank(options.Caption),
 			Enabled = options.Enabled,
 			ConfirmRunningInstances = options.ConfirmRunningInstances,
-			ValidateOnly = options.DryRun
+			ValidateOnly = options.DryRun,
+			Filter = options.RemoveFilter
+				? new CaseFilterPatch(null)
+				: options.Filter is null ? null : new CaseFilterPatch(BuildCaseFilterRequest.From(options.Filter))
 		};
 		DynamicCaseReply<ModifyCaseResponse> reply;
 		using (IDynamicCaseSession session = buildCaseClient.OpenSession(options.Environment)) {
@@ -226,6 +229,7 @@ public sealed class DynamicCaseService(
 			Case = response.Case is null ? null : ExistingCaseInfo(options.Environment, response.Case),
 			Diff = response.Diff,
 			RunningInstances = response.RunningInstances,
+			Settings = response.Settings,
 			Obligations = response.Obligations,
 			Leftovers = response.Leftovers ?? [],
 			Notes = response.Notes ?? [],
@@ -245,7 +249,9 @@ public sealed class DynamicCaseService(
 				? options.Stages.Select(stage => new BuildCaseStageRequest(stage.Value) {
 					Group = stage.Group, Successful = stage.Successful
 				}).ToList()
-				: null
+				: null,
+			Filter = BuildCaseFilterRequest.From(options.Filter),
+			DeactivateUnfiltered = options.DeactivateUnfiltered ? true : null
 		};
 
 	private static CaseStageEditRequest StageEdit(DynamicCaseStageItem stage) =>
@@ -442,6 +448,7 @@ public sealed class DynamicCaseService(
 			ErrorMessage = errorMessage,
 			Case = CaseInfo(options, built.Case, designerUrl),
 			Settings = built.Settings,
+			DeactivatedCases = built.DeactivatedCases ?? [],
 			Dependencies = dependencies,
 			Page = page,
 			Obligations = WithPageArtifact(built.Obligations, pageWritten, dependencies?.CompilationRequired == true),
@@ -466,6 +473,7 @@ public sealed class DynamicCaseService(
 		return new DynamicCaseResult {
 			Success = true,
 			Outcome = DynamicCaseOutcomes.Planned,
+			DeactivatedCases = plan.DeactivatedCases ?? [],
 			Case = CaseInfo(options, plan.Case, designerUrl: null),
 			Settings = plan.Settings,
 			Dependencies = Dependencies(plan, missing, [], dependencyStatus, compilationRequired: false),
@@ -511,6 +519,7 @@ public sealed class DynamicCaseService(
 			ErrorMessage = response.ErrorMessage,
 			Case = CaseInfo(options, response.Case, designerUrl: null),
 			Settings = response.Settings,
+			DeactivatedCases = response.DeactivatedCases ?? [],
 			Dependencies = dependencies,
 			Page = page,
 			Obligations = WithPageArtifact(response.Obligations, page: false, dependencies?.CompilationRequired == true),
@@ -698,6 +707,7 @@ public sealed class DynamicCaseService(
 			FinalStages = info.FinalStages,
 			RunningInstances = info.RunningInstances,
 			PackageReadOnly = info.PackageReadOnly,
+			Filter = info.Filter,
 			DesignerUrl = designerUrl
 		};
 

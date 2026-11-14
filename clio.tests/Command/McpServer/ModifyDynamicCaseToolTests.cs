@@ -389,4 +389,28 @@ public sealed class ModifyDynamicCaseToolTests {
 			return exitCode;
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("filter and remove-filter reach the options; naming both is refused before the command runs.")]
+	public void ModifyDynamicCase_ShouldForwardTheFilterChange() {
+		// Arrange
+		ModifyDynamicCaseArgs set = Args("{" + Identity + ",\"filter\":{\"column\":\"UsrType\",\"values\":[\"B2B\"]}}");
+		ModifyDynamicCaseArgs remove = Args("{" + Identity + ",\"remove-filter\":true}");
+		ModifyDynamicCaseArgs both = Args("{" + Identity
+			+ ",\"filter\":{\"column\":\"UsrType\",\"values\":[\"B2B\"]},\"remove-filter\":true}");
+
+		// Act
+		_tool.ModifyDynamicCase(set);
+		DynamicCaseFilterArgument filter = _resolved.Captured!.Filter;
+		_tool.ModifyDynamicCase(remove);
+		bool removeFilter = _resolved.Captured!.RemoveFilter;
+		CommandExecutionResult refused = _tool.ModifyDynamicCase(both);
+
+		// Assert
+		filter.Values.Should().Equal(["B2B"], because: "the new filter is forwarded");
+		removeFilter.Should().BeTrue(because: "a removal is forwarded");
+		refused.ExitCode.Should().NotBe(0, because: "a new filter and its removal contradict each other");
+		TextOf(refused).Should().Contain("invalid-request", because: "the refusal carries a stable code");
+	}
 }

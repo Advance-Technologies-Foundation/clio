@@ -21,7 +21,7 @@ public class ModifyDynamicCaseTool(
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused.</summary>
 	internal const string ValidArgsHint = "Valid: environment-name, case-name, case-uid, entity-schema-name, stages, "
-		+ "caption, enabled, confirm-running-instances, dry-run.";
+		+ "caption, filter, remove-filter, enabled, confirm-running-instances, dry-run.";
 
 	/// <summary>Refusal for a call whose whole argument object is absent.</summary>
 	/// <remarks>
@@ -62,7 +62,9 @@ public class ModifyDynamicCaseTool(
 		 + "before writing. Name the case by case-name or case-uid, or by entity-schema-name when the object has one "
 		 + "case. stages is the WHOLE desired list in order, matched to the stored stages by lookup value: a stage "
 		 + "left out is removed, a new value is added, and an item member left out keeps its stored value. caption "
-		 + "renames the case. enabled=false disables the case and true enables it; send enabled alone, with no other "
+		 + "renames the case. filter gives the case a filter (which new records start it; the object's first filter "
+		 + "splits all its cases by that column) and remove-filter=true removes it; running cases continue. "
+		 + "enabled=false disables the case and true enables it; send enabled alone, with no other "
 		 + "change. A case that has running cases is changed only after the user agreed "
 		 + "(confirm-running-instances). Every refusal answers outcome refused with a stable errorCode and writes "
 		 + "nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and no restart, "
@@ -107,6 +109,14 @@ public class ModifyDynamicCaseTool(
 				out List<DynamicCaseStageItem> stages, out CommandExecutionResult stagesRefusal)) {
 			return stagesRefusal;
 		}
+		if (!DynamicCaseFilterArguments.TryRead(args.Filter ?? default, out DynamicCaseFilterArgument filter,
+				out CommandExecutionResult filterRefusal)) {
+			return filterRefusal;
+		}
+		if (filter is not null && args.RemoveFilter == true) {
+			return CommandExecutionResult.FromValidationError(
+				"filter and remove-filter=true contradict each other: send one of them. [invalid-request]");
+		}
 
 		ModifyDynamicCaseOptions options = new() {
 			Environment = args.EnvironmentName,
@@ -116,6 +126,8 @@ public class ModifyDynamicCaseTool(
 			Stages = stages,
 			Caption = args.Caption?.Trim(),
 			Enabled = args.Enabled,
+			Filter = filter,
+			RemoveFilter = args.RemoveFilter ?? false,
 			ConfirmRunningInstances = args.ConfirmRunningInstances ?? false,
 			DryRun = args.DryRun ?? false
 		};
@@ -189,6 +201,18 @@ public sealed record ModifyDynamicCaseArgs(
 	[property: JsonPropertyName("caption")]
 	[property: Description("Optional new case caption; omit to keep it.")]
 	string Caption = null,
+
+	// JsonElement for the reason stages gives: an object or a string holding one, and an undeclared key refused.
+	[property: JsonPropertyName("filter")]
+	[property: Description("Optional new case filter: {\"column\": \"<lookup column of the object, not the stage "
+		+ "column>\", \"values\": [\"<value Id or exact display value>\", ...]} or {\"column\": \"...\", \"empty\": "
+		+ "true}. It decides which NEW records start the case; omit to keep the filter.")]
+	JsonElement? Filter = null,
+
+	[property: JsonPropertyName("remove-filter")]
+	[property: Description("Optional: true removes the case's filter, so it starts for every new record; refused while "
+		+ "the object's cases are split by a filter column (filter-required).")]
+	bool? RemoveFilter = null,
 
 	[property: JsonPropertyName("enabled")]
 	[property: Description("Optional: false disables the case (running cases continue, new records start none), true "

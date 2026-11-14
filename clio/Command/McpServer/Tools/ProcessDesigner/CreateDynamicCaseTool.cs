@@ -24,8 +24,8 @@ public class CreateDynamicCaseTool(
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused.</summary>
 	internal const string ValidArgsHint = "Valid: environment-name, package-name, entity-schema-name, "
-		+ "stage-column-name, stages, order-column, name, caption, add-progress-bar, save-on-change, "
-		+ "page-schema-name, add-package-dependencies, dry-run.";
+		+ "stage-column-name, stages, filter, deactivate-unfiltered, order-column, name, caption, add-progress-bar, "
+		+ "save-on-change, page-schema-name, add-package-dependencies, dry-run.";
 
 	/// <summary>Refusal for a call whose whole argument object is absent.</summary>
 	/// <remarks>
@@ -60,25 +60,25 @@ public class CreateDynamicCaseTool(
 		 OpenWorld = false),
 	 Description("Create a minimal dynamic case (DCM): one stage per value of an object's lookup column, plus a "
 		 + "record-page progress bar. Read get-guidance name=process-dynamic-case first. "
-		 + "One call writes the case into package-name (one stage per lookup value, every stage reachable from every "
-		 + "other, enabled), its SysDcmSettings and SysDcmSchemaInSettings rows with their package bindings, the "
-		 + "package dependencies the case needs (add-package-dependencies=false refuses instead, listing them in "
-		 + "dependencies.missing), and appends a crt.EntityStageProgressBar to the object's Freedom UI record "
-		 + "page in that page's design package (add-progress-bar=false skips it; page-schema-name names the page, "
-		 + "required when the object opens a different page per record type). save-on-change=true makes a stage click "
-		 + "save the record at once; by default it only sets the field and the user saves. "
-		 + "The default stage order comes from the lookup (an integer Position, StageOrder, Number or StageNumber "
-		 + "column, else the display value) and is reported in case.orderSource: pass stages (lookup value Ids or "
-		 + "exact display values, every value exactly once; items may add group and successful) when the business "
-		 + "order matters. "
+		 + "One call writes the case into package-name with its SysDcmSettings and SysDcmSchemaInSettings rows and "
+		 + "bindings, adds the package dependencies it needs (add-package-dependencies=false refuses instead), and appends "
+		 + "a crt.EntityStageProgressBar to the object's Freedom UI record page (add-progress-bar=false skips it; "
+		 + "page-schema-name is required for an object with a page per record type). save-on-change=true makes a stage "
+		 + "click save the record at once. "
+		 + "stages: 2 to 20 lookup values (Ids or exact display values) in order, items may add group and successful; "
+		 + "values left out are not stages. Without it, every value in the lookup's order, reported in case.orderSource. "
+		 + "filter {column, values | empty} splits an object's cases by one lookup column (e.g. B2B and B2C orders); "
+		 + "filters of one object never share a value (filter-overlap). Next to an enabled case without a filter it is "
+		 + "refused (unfiltered-case-exists): give that case a filter with modify-dynamic-case, or pass "
+		 + "deactivate-unfiltered=true ONLY after the user agreed to disable it. "
 		 + "dry-run=true runs every check, the page write's dry run included, and writes nothing. Nothing is written until "
-		 + "every check passes, and a refusal answers outcome refused with a stable errorCode. An equivalent enabled "
-		 + "case answers already-present and writes nothing to it, so a re-run is safe; any other enabled case on "
-		 + "the object is refused (case-exists): change it with modify-dynamic-case. If the bar cannot be added, "
+		 + "every check passes; a refusal answers outcome refused with a stable errorCode. An equivalent enabled "
+		 + "case answers already-present and writes nothing, so a re-run is safe; another enabled case without a filter "
+		 + "is refused (case-exists): change it with modify-dynamic-case. If the bar cannot be added, "
 		 + "outcome created-page-failed keeps the case and page.retry is the exact update-page call. "
 		 + "A case is interpreted: no compile-creatio and no restart, but open pages of the object need a reload "
-		 + "(F5) to show the bar. Requires a CrtProcessBuilder that carries BuildCase (install-process-builder, after "
-		 + "user approval). Steps inside stages and stage conditions are not supported.")]
+		 + "(F5). Requires a CrtProcessBuilder that carries BuildCase (install-process-builder, after "
+		 + "user approval). Steps inside stages are not supported.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -113,6 +113,14 @@ public class CreateDynamicCaseTool(
 				out List<DynamicCaseStageItem> stages, out CommandExecutionResult stagesRefusal)) {
 			return stagesRefusal;
 		}
+		if (!DynamicCaseFilterArguments.TryRead(args.Filter ?? default, out DynamicCaseFilterArgument filter,
+				out CommandExecutionResult filterRefusal)) {
+			return filterRefusal;
+		}
+		if (args.DeactivateUnfiltered == true && filter is null) {
+			return CommandExecutionResult.FromValidationError("deactivate-unfiltered goes with filter: it disables the "
+				+ "cases without a filter so that a case with one can start next to them. [invalid-request]");
+		}
 
 		CreateDynamicCaseOptions options = new() {
 			Environment = args.EnvironmentName,
@@ -120,6 +128,8 @@ public class CreateDynamicCaseTool(
 			EntitySchemaName = args.EntitySchemaName.Trim(),
 			StageColumnName = args.StageColumnName.Trim(),
 			Stages = stages ?? [],
+			Filter = filter,
+			DeactivateUnfiltered = args.DeactivateUnfiltered ?? false,
 			OrderColumn = args.OrderColumn,
 			Name = args.Name,
 			Caption = args.Caption,
@@ -193,8 +203,9 @@ public sealed record CreateDynamicCaseArgs(
 	// all accepted, and an undeclared item key is refused instead of being dropped by the binder.
 	// Nullable because the schema exporter serializes a parameter's default value, and default(JsonElement) has none.
 	[property: JsonPropertyName("stages")]
-	[property: Description("Optional stage order: an array of {\"value\": \"<lookup value Id or exact display value>\"} "
-		+ "(bare strings are accepted), naming every lookup value exactly once. Omit for the default order. An item "
+	[property: Description("Optional stages in order: an array of {\"value\": \"<lookup value Id or exact display value>\"} "
+		+ "(bare strings are accepted), 2 to 20 values; a value left out is not a stage of this case. Omit for every "
+		+ "value in the default order. An item "
 		+ "may add \"group\": the parent stage's value, a stage of the list in no group itself (one level), and "
 		+ "\"successful\": false for a stage of the final group (the last top-level stage and its members) that ends "
 		+ "the case unsuccessfully.")]
@@ -203,6 +214,20 @@ public sealed record CreateDynamicCaseArgs(
 	[property: JsonPropertyName("order-column")]
 	[property: Description("Optional integer column of the lookup that orders the stages; ignored when stages is given.")]
 	string OrderColumn = null,
+
+	// JsonElement for the reason stages gives: an object or a string holding one, and an undeclared key refused.
+	[property: JsonPropertyName("filter")]
+	[property: Description("Optional case filter, for several cases on one object: {\"column\": \"<lookup column of the "
+		+ "object, not the stage column>\", \"values\": [\"<value Id or exact display value>\", ...]} - the case starts "
+		+ "only for records whose column holds one of them - or {\"column\": \"...\", \"empty\": true} for records whose "
+		+ "column is empty. Omit for a case that starts for every record.")]
+	JsonElement? Filter = null,
+
+	[property: JsonPropertyName("deactivate-unfiltered")]
+	[property: Description("LEAVE IT OUT unless the user agreed to disable the object's enabled case without a filter, "
+		+ "as the case designer does. Goes with filter. The disabled case's running cases are cancelled at their "
+		+ "record's next status change.")]
+	bool? DeactivateUnfiltered = null,
 
 	[property: JsonPropertyName("name")]
 	[property: Description("Optional case schema name; an invalid or taken name is refused, never suffixed.")]

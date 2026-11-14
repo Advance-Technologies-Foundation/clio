@@ -1069,4 +1069,80 @@ public sealed class DynamicCaseServiceTests {
 		result.ErrorMessage.Should().Contain("get-tool-contract modify-dynamic-case",
 			because: "the arguments are what to check");
 	}
+
+	[Test]
+	[Description("A filtered create carries the filter and the user's yes to deactivating onto both passes, and the result passes the case filter, the settings row's filter column and the deactivated cases through.")]
+	public void Create_ShouldCarryTheFilter_AndPassItsAnswerThrough() {
+		// Arrange
+		DynamicCaseReply<BuildCaseResponse> answer(string outcome) => new(DynamicCaseReplyKind.Envelope,
+			new BuildCaseResponse {
+				Success = true, Outcome = outcome,
+				Case = new BuildCaseCaseInfo {
+					Status = outcome, SchemaName = "UsrOrderB2BCase", SchemaUId = CaseUId, Stages = [],
+					Filter = new DynamicCaseFilter { Column = "UsrType", Values = [new DynamicCaseFilterValue { Value = "1", Caption = "B2B" }] }
+				},
+				Settings = new DynamicCaseSettings { Status = "reused", FilterColumnName = "UsrType", FilterColumnSet = true },
+				DeactivatedCases = ["UsrOrderCase"],
+				RequiredPackages = [], MissingDependencies = []
+			}, null);
+		Passes(answer("planned"), answer("created"));
+		CreateDynamicCaseOptions options = Options(addProgressBar: false);
+		options.Filter = new DynamicCaseFilterArgument("UsrType", ["B2B"], false);
+		options.DeactivateUnfiltered = true;
+
+		// Act
+		DynamicCaseResult result = _service.Create(options);
+
+		// Assert
+		_session.Received(2).Build(Arg.Is<BuildCaseRequest>(request =>
+			request.Filter.Column == "UsrType" && request.Filter.Values[0] == "B2B" && request.Filter.Empty == null
+			&& request.DeactivateUnfiltered == true));
+		result.Case.Filter.Values[0].Caption.Should().Be("B2B", because: "the case filter is shown");
+		result.Settings.FilterColumnSet.Should().BeTrue(because: "the settings row got the filter column");
+		result.DeactivatedCases.Should().Equal(["UsrOrderCase"], because: "the disabled case is named");
+	}
+
+	[Test]
+	[Description("A create without a filter sends no filter and no deactivateUnfiltered, as before.")]
+	public void Create_ShouldSendNoFilter_WhenTheCallNamesNone() {
+		// Arrange
+		Passes(Envelope("planned"), Envelope("created"));
+
+		// Act
+		_service.Create(Options(addProgressBar: false));
+
+		// Assert
+		_session.Received(2).Build(Arg.Is<BuildCaseRequest>(request =>
+			request.Filter == null && request.DeactivateUnfiltered == null));
+	}
+
+	[TestCase(true, false)]
+	[TestCase(false, true)]
+	[TestCase(false, false)]
+	[Description("A modify sends a new filter, a removal as a patch without a filter, or no filter key at all; the settings block of the answer is passed through.")]
+	public void Modify_ShouldMapTheFilterChange(bool remove, bool set) {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new ModifyCaseResponse {
+				Success = true, Outcome = "planned",
+				Settings = new DynamicCaseSettings { FilterColumnName = "UsrType", FilterColumnSet = true }
+			}, null));
+		ModifyDynamicCaseOptions options = ModifyOptions(dryRun: true);
+		options.RemoveFilter = remove;
+		options.Filter = set ? new DynamicCaseFilterArgument("UsrType", [], true) : null;
+
+		// Act
+		ModifyDynamicCaseResult result = _service.Modify(options);
+
+		// Assert
+		if (remove) {
+			_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request => request.Filter != null && request.Filter.NewFilter == null));
+		} else if (set) {
+			_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request =>
+				request.Filter.NewFilter.Column == "UsrType" && request.Filter.NewFilter.Empty == true));
+		} else {
+			_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request => request.Filter == null));
+		}
+		result.Settings.FilterColumnName.Should().Be("UsrType", because: "the settings block is passed through");
+	}
 }
