@@ -13,7 +13,12 @@ date: 2026-11-14
 value as `[masked]`, and `register-web-service` / `modify-web-service` refuse to write one. Both sides use one
 scanner, `WebServiceSchemaView.FindQueryKeys` and the scan behind `MaskUriQuery`, and one rule,
 `IsSecretQueryValue`. A `setMethod` or `setBaseUri` that sends `[masked]` back is refused. The stored value is never
-put back in its place.
+put back in place of the mask. Two cases are kept, like a hidden constant default, because nothing is sent in their
+place:
+- a `setMethod` that leaves `soap-action` out keeps a stored action with a key (describe output, or a WSDL operation
+  `read-wsdl` matched to the method, carries none);
+- a path parameter whose constant fills a key (`search?api_key={k}`) keeps that constant while the new `uri` still
+  hides it. `default-value ""` clears it, and a `uri` that would show it is refused.
 
 **Why it is this way** — restoring the stored key when describe's masked text came back unchanged was implemented and
 then removed. Because the write rule refuses exactly what the read rule hides, a restored key is refused on save

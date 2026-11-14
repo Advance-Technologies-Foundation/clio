@@ -529,7 +529,7 @@ public static partial class WebServiceDefinitionBuilder {
 		};
 		ValidatePathPlaceholders(code, uri, baseUri, method.Request.Parameters, errors);
 		ValidateUriQuery($"method '{code}': uri", uri, errors);
-		ValidateKeyPlaceholders(code, uri, method, existing, errors);
+		ValidateKeyPlaceholders(arg, uri, method, existing, errors);
 		ValidateBodyRules(code, verb, contentType, method, errors);
 		return method;
 	}
@@ -539,6 +539,13 @@ public static partial class WebServiceDefinitionBuilder {
 	/// keeps the address, and the SOAP action. Its parameters follow the SOAP placements and element-path rules. The
 	/// method replaces the stored one: an omitted soap-action is empty, as an omitted REST field is reset.
 	/// </summary>
+	// The method's SOAP action: the one sent, else the stored one when it carries a key describe hides (describe output
+	// sent back, or a WSDL operation matched to the method, can carry none, as with a hidden constant), else empty.
+	private static string KeptSoapAction(string sent, string stored) =>
+		sent is null && !string.IsNullOrEmpty(stored) && WebServiceSchemaView.FindQueryKeys(stored).SecretKeys.Count > 0
+			? stored
+			: sent?.Trim() ?? string.Empty;
+
 	private static ServiceMethodDto BuildSoapMethod(WebServiceMethodArg arg, ServiceMethodDto existing,
 		bool serviceHasAuth, Errors errors, string prefix, SoapContext soap) {
 		string code = arg.Code;
@@ -563,7 +570,7 @@ public static partial class WebServiceDefinitionBuilder {
 			RequestTimeout = arg.TimeoutMs is > 0 ? arg.TimeoutMs.Value : existing?.RequestTimeout ?? DefaultTimeoutMs,
 			Caption = Caption(arg.Caption ?? code),
 			UseAuthInfo = arg.UseAuth ?? serviceHasAuth,
-			SoapAction = arg.SoapAction?.Trim() ?? string.Empty,
+			SoapAction = KeptSoapAction(arg.SoapAction, existing?.SoapAction),
 			Extra = existing?.Extra,
 			Request = new ServiceMethodRequestDto {
 				Uri = messageElement, ContentType = ServiceSchemaCodes.ContentTypeXml,
@@ -1023,11 +1030,14 @@ public static partial class WebServiceDefinitionBuilder {
 
 	/// <summary>
 	/// A path parameter whose <c>{placeholder}</c> is the whole value of a key in the method URI
-	/// (<c>search?api_key={k}</c>) carries that key: a secret constant there is refused like the key itself, and one
-	/// describe hid (so describe output sent back carries none) is refused rather than erased.
+	/// (<c>search?api_key={k}</c>) carries that key: a new secret constant there is refused like the key itself. One
+	/// describe hid (so describe output sent back carries none) is kept, as other hidden constants are, while the new
+	/// URI still hides it; <c>default-value ""</c> clears it. Where the new URI would show it, it is refused rather than
+	/// erased.
 	/// </summary>
-	private static void ValidateKeyPlaceholders(string code, string uri, ServiceMethodDto method,
+	private static void ValidateKeyPlaceholders(WebServiceMethodArg arg, string uri, ServiceMethodDto method,
 		ServiceMethodDto existing, Errors errors) {
+		string code = arg.Code;
 		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(uri, method.Request.Parameters).Keys) {
 			errors.Add($"method '{code}': path parameter '{path}' fills a key in the uri query and has a constant "
 				+ "default; reference a system setting with default-sys-setting and let the user fill its value.");
@@ -1035,13 +1045,22 @@ public static partial class WebServiceDefinitionBuilder {
 		if (existing?.Request is null) {
 			return;
 		}
-		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(existing.Request.Uri, existing.Request.Parameters).Keys) {
+		foreach ((string path, string constant) in
+				WebServiceSchemaView.SecretPlaceholderPaths(existing.Request.Uri, existing.Request.Parameters)) {
 			ServiceParameterDto kept = method.Request.Parameters.Items.Values.FirstOrDefault(p =>
 				p.Type == ServiceSchemaCodes.Placements["path"] && string.Equals(p.Path, path, StringComparison.Ordinal));
-			if (kept is not null && string.IsNullOrEmpty(kept.DefValue?.Value)) {
+			bool clears = arg.RequestParameters?.FirstOrDefault(p =>
+				string.Equals(p?.Code, kept?.Name, StringComparison.Ordinal))?.DefaultValue is { Length: 0 };
+			if (kept is null || clears || !string.IsNullOrEmpty(kept.DefValue?.Value)) {
+				continue;
+			}
+			kept.DefValue = new ServiceParameterValueDto { Value = constant, Source = ServiceSchemaCodes.ValueSourceConst };
+			if (!WebServiceSchemaView.SecretPlaceholderPaths(uri, method.Request.Parameters).ContainsKey(path)) {
+				kept.DefValue = Empty();
 				errors.Add($"method '{code}': path parameter '{path}' fills a key in the uri query, and its constant, "
-					+ "which describe hides, would be erased; reference a system setting with default-sys-setting the user "
-					+ "fills, or ask the user to change it in Studio > Web services.");
+					+ "which describe hides, would show in the new uri; keep the key in the uri, send default-value \"\" "
+					+ "to clear the constant, reference a system setting with default-sys-setting the user fills, or ask "
+					+ "the user to change it in Studio > Web services.");
 			}
 		}
 	}

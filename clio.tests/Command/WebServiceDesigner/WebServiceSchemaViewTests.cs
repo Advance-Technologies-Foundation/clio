@@ -97,6 +97,7 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("https://erp.example/rates?code=USD", "https://erp.example/rates?code=USD")]
 	[TestCase("https://erp.example/rates?code=USD;callback=handleResponse", "https://erp.example/rates?code=USD;callback=handleResponse")]
 	[TestCase("https://erp.example/odata/Authors(Id={id})/Books", "https://erp.example/odata/Authors(Id={id})/Books")]
+	[TestCase("https://erp.example/odata/Products(ProductKey='{id}')", "https://erp.example/odata/Products(ProductKey='{id}')")]
 	[TestCase("http://h.example/Svc;token=SECRET-42-SECRET-42?x=1", "http://h.example/Svc;token=[masked]?x=1")]
 	[TestCase("https://erp.example/svc?api_key=%5BMasked%5D", "https://erp.example/svc?api_key=%5BMasked%5D")]
 	[TestCase("http://h.example/Svc;token=SECRET-42-SECRET-42;sig=SECRET-42-SECRET-42/x", "http://h.example/Svc;token=[masked];sig=[masked]/x")]

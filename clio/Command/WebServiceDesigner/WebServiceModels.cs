@@ -438,7 +438,10 @@ public static partial class WebServiceSchemaView {
 		IsSecretName(name)
 		|| (SecretQueryNames.Contains(name ?? string.Empty) && (value ?? string.Empty).Length >= MinHostingKeyLength);
 
-	/// <summary>Whether a query value is only a <c>{placeholder}</c>, filled per call rather than a constant.</summary>
+	/// <summary>
+	/// Whether a query or path value is only a <c>{placeholder}</c>, filled per call rather than a constant, also in
+	/// quotes as an OData string key writes it (<c>Products(ProductKey='{id}')</c>).
+	/// </summary>
 	/// <param name="value">The value as written.</param>
 	/// <returns>Whether the whole value is one placeholder.</returns>
 	public static bool IsPlaceholderValue(string value) => WholePlaceholderPattern().IsMatch(value ?? string.Empty);
@@ -596,7 +599,7 @@ public static partial class WebServiceSchemaView {
 		for (int i = start; i < end; i++) {
 			char c = uri[i];
 			if (c == '=' && keyStart >= 0) {
-				ScanKey(uri, keyStart, i, end, firstQuestion, maskAt, scan, ref hiddenUntil, ref maskKey);
+				ScanKey(new PairContext(uri, end, firstQuestion, maskAt, scan), keyStart, i, ref hiddenUntil, ref maskKey);
 				keyStart = -1;
 			} else if (KeyBoundaries.Contains(c)) {
 				keyStart = i + 1;
@@ -609,19 +612,22 @@ public static partial class WebServiceSchemaView {
 
 	// The key that ends at the '=' at equalsAt: noted when the mask follows it in the pair, and its value read unless an
 	// earlier hidden value already covers it.
-	private static void ScanKey(string uri, int keyStart, int equalsAt, int end, int firstQuestion, int maskAt,
-		QueryScan scan, ref int hiddenUntil, ref string maskKey) {
+	private static void ScanKey(PairContext pair, int keyStart, int equalsAt, ref int hiddenUntil, ref string maskKey) {
 		if (equalsAt <= keyStart) {
 			return;
 		}
-		string key = Uri.UnescapeDataString(uri[keyStart..equalsAt]);
-		if (maskAt > equalsAt) {
+		string key = Uri.UnescapeDataString(pair.Uri[keyStart..equalsAt]);
+		if (pair.MaskAt > equalsAt) {
 			maskKey = key;
 		}
 		if (equalsAt >= hiddenUntil) {
-			hiddenUntil = ScanValue(uri, key, equalsAt, end, firstQuestion, scan, hiddenUntil);
+			hiddenUntil = ScanValue(pair.Uri, key, equalsAt, pair.End, pair.FirstQuestion, pair.Scan, hiddenUntil);
 		}
 	}
+
+	// What every key of one pair is read against: the URI, where the pair ends, the first '?', where the mask sits in
+	// the pair (or -1) and the scan the results go into.
+	private readonly record struct PairContext(string Uri, int End, int FirstQuestion, int MaskAt, QueryScan Scan);
 
 	// Reads the value after the '=' at equalsAt: a secret value is hidden (the returned position is where hiding ends), a
 	// placeholder in the value of a credential-like key is recorded. A value after the first '?' runs to the end of the
@@ -694,7 +700,7 @@ public static partial class WebServiceSchemaView {
 		return -1;
 	}
 
-	[GeneratedRegex(@"^\{[^{}]+\}$")]
+	[GeneratedRegex(@"^(['""]?)\{[^{}]+\}\1$")]
 	private static partial Regex WholePlaceholderPattern();
 
 	public static WebServiceView From(ServiceSchemaDto schema, string packageName) {

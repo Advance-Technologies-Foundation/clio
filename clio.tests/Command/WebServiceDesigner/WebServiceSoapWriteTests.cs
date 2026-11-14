@@ -1011,4 +1011,23 @@ public sealed class WebServiceSoapWriteTests {
 			.Where(e => !e.Message.Contains("sig-0042-secret-key"), "the value is never echoed")
 			.WithMessage("*namespace 'tem'*key in its query*", because: "the refusal names the namespace");
 	}
+
+	[Test]
+	[Description("setMethod without soap-action keeps a stored action that carries a key describe hides, as a WSDL operation matched to the method sends none.")]
+	public void Modify_Should_Keep_A_Hidden_Soap_Action_When_None_Is_Sent() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		const string keyed = "http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042";
+		schema.Methods.Items.Values.Single().SoapAction = keyed;
+		GivenRegistered(schema);
+		WebServiceMethodArg described = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single())) with { SoapAction = null };
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(schema.Name, [new WebServiceOperationArg("setMethod", described)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "nothing about the action was asked to change");
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => s.Methods.Items.Values.Single().SoapAction == keyed));
+	}
 }

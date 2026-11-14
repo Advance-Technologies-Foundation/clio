@@ -1533,7 +1533,7 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("A path parameter whose placeholder is a key's whole value in the method URI carries that key: a secret constant on it is refused, and one stored is hidden by describe and refused rather than erased when describe output comes back.")]
+	[Description("A path parameter whose placeholder is a key's whole value in the method URI carries that key: a new secret constant on it is refused, and one stored is hidden by describe and kept when describe output comes back.")]
 	public void Modify_Should_Treat_A_Path_Parameter_That_Fills_A_Key_Like_The_Key() {
 		// Arrange
 		ServiceSchemaDto schema = BingSchema();
@@ -1558,12 +1558,12 @@ public sealed class WebServiceDesignerTests {
 
 		// Assert
 		JsonSerializer.Serialize(view).Should().NotContain("sk-live-0042", because: "the constant is the key of the URI");
-		echo.Should().Throw<ArgumentException>(because: "describe output carries no constant, and erasing it breaks every call")
-			.WithMessage("*fills a key in the uri query*would be erased*", because: "the refusal says why");
+		echo.Should().NotThrow(because: "the hidden constant is kept, as other hidden constants are");
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => s.Methods.Items.Values.Single().Request.Parameters
+			.Items.Values.Single(p => p.Name == "k").DefValue.Value == "sk-live-0042"));
 		write.Should().Throw<ArgumentException>(because: "a constant there is a key written into the URL")
 			.Where(e => !e.Message.Contains("sk-live-0042"), "the refusal never echoes the value")
 			.WithMessage("*fills a key in the uri query and has a constant default*", because: "the refusal names the parameter");
-		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 
 	[TestCase("https://erp.example/svc;jsessionid=0123456789abcdef-token")]
@@ -1601,5 +1601,57 @@ public sealed class WebServiceDesignerTests {
 		// Assert
 		result.ResponseBody.Should().NotContain("sig-0042-secret-key", because: "describe hides the value, so an echo must too");
 		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+	}
+
+	// The Bing service whose Search method fills api_key from path parameter k, with a constant describe hides.
+	private ServiceSchemaDto GivenKeyPlaceholderService() {
+		ServiceSchemaDto schema = BingSchema();
+		ServiceMethodDto stored = schema.Methods.Items.Values.Single();
+		stored.Request.Uri = "search?api_key={k}";
+		var filler = new ServiceParameterDto {
+			UId = Guid.NewGuid(), Name = "k", Path = "k", Type = ServiceSchemaCodes.Placements["path"],
+			DataValueTypeName = "Text", Caption = new() { ["en-US"] = "k" },
+			DefValue = new ServiceParameterValueDto { Value = "sk-live-0042", Source = ServiceSchemaCodes.ValueSourceConst }
+		};
+		stored.Request.Parameters.Items[filler.UId.ToString()] = filler;
+		GivenRegisteredService(schema);
+		return schema;
+	}
+
+	[Test]
+	[Description("default-value \"\" clears the hidden constant of a path parameter that fills a key.")]
+	public void Modify_Should_Clear_A_Hidden_Key_Placeholder_Constant() {
+		// Arrange
+		GivenKeyPlaceholderService();
+		var clear = new WebServiceMethodArg("Search", "GET", "search?api_key={k}", RequestParameters: [
+			new WebServiceParameterArg("q", "query"), new WebServiceParameterArg("k", "path", Path: "k", DefaultValue: "")
+		]);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", clear)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an explicit empty default clears the constant, as the refusals offer");
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => string.IsNullOrEmpty(s.Methods.Items.Values.Single()
+			.Request.Parameters.Items.Values.Single(p => p.Name == "k").DefValue.Value)));
+	}
+
+	[Test]
+	[Description("A new uri that would show the kept hidden constant of a path parameter is refused, not saved.")]
+	public void Modify_Should_Refuse_A_Uri_That_Would_Show_A_Hidden_Key_Placeholder_Constant() {
+		// Arrange
+		GivenKeyPlaceholderService();
+		var shown = new WebServiceMethodArg("Search", "GET", "search/{k}", RequestParameters: [
+			new WebServiceParameterArg("q", "query"), new WebServiceParameterArg("k", "path", Path: "k")
+		]);
+
+		// Act
+		Action moved = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", shown)], null);
+
+		// Assert
+		moved.Should().Throw<ArgumentException>(because: "the kept constant would be a visible path segment")
+			.Where(e => !e.Message.Contains("sk-live-0042"), "the refusal never echoes the value")
+			.WithMessage("*would show in the new uri*", because: "the refusal says why and how to clear it");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 }
