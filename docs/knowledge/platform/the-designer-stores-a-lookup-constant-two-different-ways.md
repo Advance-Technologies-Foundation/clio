@@ -50,7 +50,7 @@ green and would show an empty field - read from the page source, not measured on
 Send email's recipients are mapping-edited too. Before writing a lookup constant onto a new element, find out which
 editor its properties page uses for that parameter.
 
-**From CrtProcessBuilder 1.6.6.176 the builder stores column-value macros in that form.** A `[#Lookup.…#]` it accepts in
+**From CrtProcessBuilder 1.6.6.177 (the first released cut carrying it) the builder stores column-value macros in that form.** A `[#Lookup.…#]` it accepts in
 column values - `changeData.values`, `addData.values`, `openEditPage.defaultValues`, `chatMessage.columnValues` - is
 stored as `[#Lookup.{object root schema UId}.{record id}#]`, lower case, with a notice ("stored as '…'"), and describe
 reads that canonical text back. So a value sent with the object's name, a replacing schema's UId or other casing comes

@@ -72,7 +72,7 @@ older server refuses the type and block as unknown keys, in a message that does 
 - The contract budgets are close to spent again (create 16, describe 11, modify 31 bytes of headroom after this
   change); the em dashes that paid for it are a finite source.
 - The chat e2e cases prove nothing on a stand without OmnichannelMessaging; Q13 decides whether the lane proves them.
-- The bundled cut changes stored values beyond the chat element: from CrtProcessBuilder 1.6.6.176 a `[#Lookup…#]`
+- The bundled cut changes stored values beyond the chat element: from CrtProcessBuilder 1.6.6.177 (the first released cut carrying it) a `[#Lookup…#]`
   macro accepted in column values is stored canonical - the name or replacing-schema segment becomes the object's root
   schema UId, lower case, with a "stored as" notice - on Modify data (`changeData.values`), Add data
   (`addData.values`), Open edit page (`openEditPage.defaultValues`) and Send chat message (`chatMessage.columnValues`).
