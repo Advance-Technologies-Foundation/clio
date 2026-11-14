@@ -53,6 +53,5 @@ the one the designer would have saved
 - [x] Unit tests TC-U-01 to TC-U-06 and TC-U-09 to TC-U-15 implemented and green.
 - [x] TC-U-07, TC-U-08, TC-U-16, TC-U-17 and TC-U-18 green on the rebundled archive.
 - [x] e2e TC-I-01 to TC-I-10 implemented (skip with a reason without OmnichannelMessaging, a channel or a chat template).
-- [ ] e2e run green on a stand with OmnichannelMessaging and the chat cut installed (TC-I-01 to TC-I-07, TC-I-09 and
-  TC-I-10 green; TC-I-08 waits for the designer fixture).
+- [x] e2e run green on a stand with OmnichannelMessaging and the chat cut installed (TC-I-01 to TC-I-10).
 - [ ] Q13 answered (what the process-designer lane stand carries).
