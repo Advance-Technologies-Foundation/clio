@@ -1094,14 +1094,19 @@ public sealed partial class WsdlParser : IWsdlParser {
 				return new Soap11Port(same, null);
 			}
 			PortCandidate other = alternatives[0];
-			Uri address = AddressOf(other);
-			string difference = address is null || warned is null
-				? "an address that could not be compared with this port's"
-				: string.Equals(warned.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-					&& !string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-					? "an http address where this port's is https, so authentication would travel readable"
-					: $"an address on another host ({Shown(address.Host)})";
-			return new Soap11Port(other, difference);
+			return new Soap11Port(other, AddressDifference(warned, AddressOf(other)));
+		}
+
+		// How the alternative's address differs from the warned port's, as the warning names it.
+		private static string AddressDifference(Uri warned, Uri address) {
+			if (address is null || warned is null) {
+				return "an address that could not be compared with this port's";
+			}
+			bool dropsHttps = string.Equals(warned.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+				&& !string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+			return dropsHttps
+				? "an http address where this port's is https, so authentication would travel readable"
+				: $"an address on another host ({Shown(address.Host)})";
 		}
 
 		private static Uri AddressOf(PortCandidate port) =>
@@ -1178,14 +1183,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 					bool optional = inherited || IsTrue(Attribute(element, "Optional"));
 					bool policy = underPolicy || Is(element, "Policy");
 					if (!optional) {
-						if (addressing is null && AddressingMarkers.TryGetValue(element.Name, out string ns)
-								&& (policy || IsTrue((string)element.Attribute(XName.Get("required", Wsdl11Namespace))))) {
-							addressing = ns;
-						}
-						if (policy && !security && SecurityPolicyNamespaces.Contains(element.Name.NamespaceName)
-								&& element.Name.LocalName is "SymmetricBinding" or "AsymmetricBinding") {
-							security = true;
-						}
+						addressing ??= RequiredAddressing(element, policy);
+						security = security || (policy && IsMessageSecurity(element));
 					}
 					foreach (XElement child in element.Elements()) {
 						stack.Push((child, optional, policy));
@@ -1197,6 +1196,19 @@ public sealed partial class WsdlParser : IWsdlParser {
 				}
 				return found;
 			}
+
+			// The addressing namespace a marker requires: in a policy by its presence, directly in a binding only with
+			// wsdl:required="true" (WSDL 1.1 reads an extension without it as optional). Null for any other element.
+			private static string RequiredAddressing(XElement element, bool inPolicy) =>
+				AddressingMarkers.TryGetValue(element.Name, out string ns)
+				&& (inPolicy || IsTrue((string)element.Attribute(XName.Get("required", Wsdl11Namespace))))
+					? ns
+					: null;
+
+			// A WS-SecurityPolicy symmetric or asymmetric binding: message security (a transport binding is plain HTTPS).
+			private static bool IsMessageSecurity(XElement element) =>
+				SecurityPolicyNamespaces.Contains(element.Name.NamespaceName)
+				&& element.Name.LocalName is "SymmetricBinding" or "AsymmetricBinding";
 
 			// The wsp:Policy elements of the document by their wsu:Id (or xml:id).
 			private Dictionary<string, XElement> PoliciesById() {

@@ -207,8 +207,8 @@ public sealed class WebServiceDesigner(
 		IReadOnlyList<WebServiceUsage> unacknowledged, IReadOnlyCollection<string> everyCallChanges) {
 		var restructured = new HashSet<string>(operations
 			.Select(o => o?.Op switch {
-				"setMethod" => o.Method?.Code,
-				"removeMethod" => o.MethodCode,
+				SetMethodOp => o.Method?.Code,
+				RemoveMethodOp => o.MethodCode,
 				_ => null
 			})
 			.Where(c => !string.IsNullOrWhiteSpace(c)), StringComparer.OrdinalIgnoreCase);
@@ -233,6 +233,11 @@ public sealed class WebServiceDesigner(
 			+ "repeat the call with acknowledge-usages naming them.";
 	}
 
+	// The method operations of modify-web-service, as the agent names them.
+	private const string AddMethodOp = "addMethod";
+	private const string SetMethodOp = "setMethod";
+	private const string RemoveMethodOp = "removeMethod";
+
 	public WebServiceToolResult Modify(string code, IReadOnlyList<WebServiceOperationArg> operations,
 		IReadOnlyList<string> acknowledgedProcesses) {
 		RequireManageSolution();
@@ -255,7 +260,7 @@ public sealed class WebServiceDesigner(
 		string authBefore = AuthSignature(schema.AuthInfo);
 		string namespacesBefore = WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces);
 		// Only a method definition carries codes the prefix rule applies to; skip the read otherwise.
-		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixReader.Read() : null;
+		string prefix = operations.Any(o => o?.Op is AddMethodOp or SetMethodOp) ? prefixReader.Read() : null;
 		IReadOnlyCollection<(string Owner, string Code)> referencesBefore =
 			WebServiceDefinitionBuilder.CollectSysSettingReferences(schema);
 		// Methods are checked against the base URI, the namespaces and the authentication as they are after the whole
@@ -291,18 +296,29 @@ public sealed class WebServiceDesigner(
 		}
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
-		// A switch to SOAP 1.1 makes every method's empty action matter, not only the methods this call built.
-		bool becameSoap11 = typeBefore != schema.Type;
-		IEnumerable<string> soapActionNotices = soap
-			? SoapActionNotices(schema,
-				schema.Methods.Items.Values.Where(m => becameSoap11 || builtMethods.Contains(m.Name ?? "")))
-			: [];
-		IEnumerable<string> authNotices = AuthSignature(schema.AuthInfo) != authBefore
-			? NoAuthMethodNotices(schema, ExplicitUseAuthMethods(operations))
-			: [];
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
 			Usages: affected,
-			Notices: [.. soapActionNotices, .. authNotices, .. Notices(settings, row.Package, missingKept)]);
+			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations),
+				.. Notices(settings, row.Package, missingKept)]);
+	}
+
+	/// <summary>
+	/// The notices a saved change owes the user: empty SOAP actions of the methods it built (of every method after a
+	/// switch to SOAP 1.1), and the methods that send no authentication after it changed the authentication.
+	/// </summary>
+	private static IEnumerable<string> SavedChangeNotices(ServiceSchemaDto schema, bool soap, int typeBefore,
+		ISet<string> builtMethods, string authBefore, IReadOnlyList<WebServiceOperationArg> operations) {
+		var notices = new List<string>();
+		if (soap) {
+			// A switch to SOAP 1.1 makes every method's empty action matter, not only the methods this call built.
+			bool becameSoap11 = typeBefore != schema.Type;
+			notices.AddRange(SoapActionNotices(schema,
+				schema.Methods.Items.Values.Where(m => becameSoap11 || builtMethods.Contains(m.Name ?? ""))));
+		}
+		if (AuthSignature(schema.AuthInfo) != authBefore) {
+			notices.AddRange(NoAuthMethodNotices(schema, ExplicitUseAuthMethods(operations)));
+		}
+		return notices;
 	}
 
 	public WebServiceTestResult TestMethod(string code, string methodCode,
@@ -493,11 +509,11 @@ public sealed class WebServiceDesigner(
 		WebServiceDefinitionBuilder.Errors errors, WebServiceDefinitionBuilder.SoapContext soap) {
 		WebServiceDefinitionBuilder.RejectUnknownFields(operation?.ExtensionData, $"op '{operation?.Op}'", errors);
 		switch (operation?.Op) {
-			case "addMethod":
+			case AddMethodOp:
 				AddMethod(schema, operation.Method, prefix, methodsUseAuth, finalBaseUri, errors, soap);
 				builtMethods.Add(operation.Method?.Code ?? string.Empty);
 				break;
-			case "setMethod":
+			case SetMethodOp:
 				ServiceMethodDto existing = FindMethod(schema, operation.Method?.Code);
 				if (existing is null) {
 					errors.Add($"setMethod: method '{operation.Method?.Code}' does not exist; use addMethod.");
@@ -512,7 +528,7 @@ public sealed class WebServiceDesigner(
 					changedMethods.Add(existing.Name);
 				}
 				break;
-			case "removeMethod":
+			case RemoveMethodOp:
 				ServiceMethodDto removed = FindMethod(schema, operation.MethodCode);
 				if (removed is null) {
 					errors.Add($"removeMethod: method '{operation.MethodCode}' does not exist.");
@@ -684,7 +700,7 @@ public sealed class WebServiceDesigner(
 
 	/// <summary>The codes of the methods this call defines with an explicit use-auth.</summary>
 	private static IReadOnlySet<string> ExplicitUseAuthMethods(IReadOnlyList<WebServiceOperationArg> operations) =>
-		operations.Where(o => o?.Op is "addMethod" or "setMethod" && o.Method?.UseAuth is not null)
+		operations.Where(o => o?.Op is AddMethodOp or SetMethodOp && o.Method?.UseAuth is not null)
 			.Select(o => o.Method.Code ?? string.Empty)
 			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 

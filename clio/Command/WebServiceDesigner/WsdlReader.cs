@@ -148,37 +148,15 @@ public sealed partial class WsdlReader(
 	/// <inheritdoc />
 	public WsdlReadResult Read(WsdlReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		bool fromUrl = !string.IsNullOrWhiteSpace(request.WsdlUrl);
-		bool fromFiles = request.WsdlFiles is { Count: > 0 };
-		if (fromUrl == fromFiles) {
-			throw new ArgumentException("Give wsdl-url (the stand downloads it) or wsdl-files (local absolute paths), not "
-				+ "both and not neither.");
-		}
 		// The arguments are checked before anything is sent to the environment.
-		Uri url = fromUrl ? CheckUrl(request.WsdlUrl) : null;
-		if (fromFiles) {
-			CheckPaths(request.WsdlFiles);
-		}
-		bool newCode = !string.IsNullOrWhiteSpace(request.Code);
-		if (newCode && !string.IsNullOrWhiteSpace(request.ServiceCode)) {
-			throw new ArgumentException("Give code (the user's code for a NEW service) or service-code (an existing SOAP "
-				+ "service the operations go into), not both.");
-		}
+		Uri url = CheckRequest(request);
+		bool fromUrl = url is not null;
 		if (!rights.GetCanExecuteOperation(ManageSolutionOperation, new CreatioRequestOptions())) {
 			throw new UnauthorizedAccessException(
 				"The environment user lacks CanManageSolution, which Studio > Web services requires.");
 		}
 		string prefix = prefixReader.Read();
-		string code = newCode ? request.Code.Trim() : null;
-		if (newCode) {
-			var codeErrors = new WebServiceDefinitionBuilder.Errors();
-			WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, codeErrors);
-			if (codeErrors.Count > 0) {
-				// Built here, not from the shared message, so a value of any length is cut like every other echoed input.
-				throw new ArgumentException($"code '{WsdlParser.Shown(code)}' must be a Latin identifier (letters, digits, "
-					+ "underscore)" + (string.IsNullOrEmpty(prefix) ? "." : $" starting with the schema-name prefix '{prefix}'."));
-			}
-		}
+		string code = CheckNewCode(request.Code, prefix);
 		// The target is read before the WSDL is downloaded and parsed: a wrong service-code is refused before that work,
 		// and also when the result falls back to names.
 		WsdlTargetService target = ReadTarget(request.ServiceCode);
@@ -208,6 +186,42 @@ public sealed partial class WsdlReader(
 				request.EnvironmentName, target, warnings, code));
 		}
 		return Result(services, warnings, Notices(services, target, url));
+	}
+
+	// Checks what needs no environment: one source, a URL or paths that may be read, and code or service-code, not both.
+	// Returns the URL to download, or null for files.
+	private Uri CheckRequest(WsdlReadRequest request) {
+		bool fromUrl = !string.IsNullOrWhiteSpace(request.WsdlUrl);
+		bool fromFiles = request.WsdlFiles is { Count: > 0 };
+		if (fromUrl == fromFiles) {
+			throw new ArgumentException("Give wsdl-url (the stand downloads it) or wsdl-files (local absolute paths), not "
+				+ "both and not neither.");
+		}
+		Uri url = fromUrl ? CheckUrl(request.WsdlUrl) : null;
+		if (fromFiles) {
+			CheckPaths(request.WsdlFiles);
+		}
+		if (!string.IsNullOrWhiteSpace(request.Code) && !string.IsNullOrWhiteSpace(request.ServiceCode)) {
+			throw new ArgumentException("Give code (the user's code for a NEW service) or service-code (an existing SOAP "
+				+ "service the operations go into), not both.");
+		}
+		return url;
+	}
+
+	// The code the user named for a new service, trimmed and checked like a registered code; null when none was given.
+	private static string CheckNewCode(string requested, string prefix) {
+		if (string.IsNullOrWhiteSpace(requested)) {
+			return null;
+		}
+		string code = requested.Trim();
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, errors);
+		if (errors.Count > 0) {
+			// Built here, not from the shared message, so a value of any length is cut like every other echoed input.
+			throw new ArgumentException($"code '{WsdlParser.Shown(code)}' must be a Latin identifier (letters, digits, "
+				+ "underscore)" + (string.IsNullOrEmpty(prefix) ? "." : $" starting with the schema-name prefix '{prefix}'."));
+		}
+		return code;
 	}
 
 	// Whether the result is already one port with one operation, so reading again with port and operations cannot make it
