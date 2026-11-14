@@ -242,6 +242,44 @@ public sealed class SendChatMessageElementToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("TC-I-13: a chat column value sent as [#Lookup.<object name>.<record id>#] (the created chat's Language) builds, comes back with a 'stored as' warning, and describe reads it back as [#Lookup.<root object schema UId>.<record id>#], the form the designer stores - the same rule as Modify data, Add data and Open edit page column values.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process stores a named lookup macro in chat column values in the designer's form")]
+	public async Task CreateBusinessProcess_Should_StoreANamedLookupMacro_InChatColumnValues() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		(string channelId, _) = await ActiveChannelAsync(context);
+		string rootUId = await LookupMacroReads.RootSchemaUIdAsync(context, "SysLanguage");
+		string languageId = await LookupMacroReads.AnyRecordIdAsync(context, "SysLanguage");
+		string canonical = $"[#Lookup.{rootUId}.{languageId}#]";
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("LookupMacro");
+			string descriptor = LinearDescriptor(processName, ContactParameterJson, ChatElementJson("Chat1", $$"""
+				{ "from": { "value": "{{channelId}}" }, "to": { "processParameter": "ContactId" },
+				  "messageSource": "custom", "message": "x",
+				  "columnValues": [ { "column": "Language", "expression": "[#Lookup.SysLanguage.{{languageId}}#]" } ] }
+				"""), "[]");
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName, descriptor);
+
+			// Assert
+			ShouldHaveBuilt(callResult, "a named lookup macro on a chat column is accepted");
+			WarningText(callResult).Should().ContainEquivalentOf($"stored as '{canonical}'",
+				because: "the rewrite to the designer's form is reported, naming what was stored");
+			JsonObject language = (ChatBlock(Element(await DescribeGraphAsync(context, processName), "Chat1"))["columnValues"]
+					as JsonArray ?? []).OfType<JsonObject>()
+				.Should().ContainSingle(entry => Text(entry, "column") == "Language",
+					because: "the one column value sent reads back").Which;
+			(Text(language, "expression") ?? string.Empty).Should().BeEquivalentTo(canonical,
+				because: "describe reads back the canonical macro: the root object schema UId and the record id");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
 	#endregion
 
 	#region Methods: Tests - modify

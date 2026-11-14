@@ -56,6 +56,9 @@ designer fixture `UsrSendChatDesignerFixture`; TC-I-09 needs `McpE2E:AllowDestru
 | TC-I-08 | Read-only parity: the designer fixture's block re-applied to a server-built element reads back the same |
 | TC-I-09 | Run with an empty contact: ignoreErrors true completes with `SendStatus = Error`; false ends in Error |
 | TC-I-10 | Hermetic: the list-user-tasks contract publishes the generic-route refusal |
+| TC-I-11 | A column value sent as `[#Lookup.<object name>.<record id>#]` on Modify data, Add data and Open edit page builds with a "stored as" warning and reads back as `[#Lookup.<root object schema UId>.<record id>#]` (`ColumnValueLookupMacroToolE2ETests`, three cases) |
+| TC-I-12 | A plain record id in `value` on a Lookup column is refused, quoting the exact macro with the column's object UId (`ColumnValueLookupMacroToolE2ETests`) |
+| TC-I-13 | The same rule on chat `columnValues` (the created chat's `Language`) |
 
 ## Not automated here
 
