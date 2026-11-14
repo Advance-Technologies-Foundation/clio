@@ -1034,14 +1034,15 @@ public sealed partial class WsdlParser : IWsdlParser {
 							+ "application/soap+xml;charset=utf-8;action=\"<its soap-action>\", one per method, from a system "
 							+ "setting or the process; then test a call."));
 				} else {
-					Warn($"Port '{port.Name}' is SOAP 1.2: the platform sends the action only as a SOAPAction header. Most "
-						+ "services answer (ASMX does); one that dispatches SOAP 1.2 by the action parameter of Content-Type "
-						+ "answers ActionNotSupported (Action ''). If a test call answers so, "
+					Warn($"Port '{port.Name}' is SOAP 1.2: the platform sends the action only as a SOAPAction header. An ASMX "
+						+ "service answers (measured); one that dispatches SOAP 1.2 by the action parameter of Content-Type "
+						+ "fails because the action or operation is not found (WCF: ActionNotSupported, Action ''). Keep this "
+						+ "port; if a test call fails so, "
 						+ (alternative is null
 							? "give the method a request header parameter (a prefixed code) with the path Content-Type and the "
 								+ "value application/soap+xml;charset=utf-8;action=\"<its soap-action>\" from a system setting or "
 								+ "the process."
-							: $"use port '{alternative.Port.Name}' (SOAP 1.1) instead{alternative.Caveat()}."));
+							: $"switch to port '{alternative.Port.Name}' (SOAP 1.1){alternative.Caveat()}."));
 				}
 			}
 		}
@@ -1061,19 +1062,17 @@ public sealed partial class WsdlParser : IWsdlParser {
 				: $" Port '{Port.Name}' (SOAP 1.1) can be called but has {Difference}: show the user its base-uri and register "
 					+ "it only on their yes.";
 
-			/// <summary>The clause a conditional advice adds when the address differs.</summary>
+			/// <summary>The clause a conditional advice adds: how to switch, and the user's yes when the address differs.</summary>
 			public string Caveat() => Difference is null
-				? string.Empty
-				: $", but it has {Difference}: show the user its base-uri first";
+				? " (modify-web-service setType soap11, and setBaseUri to its base-uri when that differs)"
+				: $", which has {Difference}: show the user its base-uri and switch only on their yes";
 		}
 
-		// Whether WCF wrote the WSDL: its contract namespace, or an addressing Action on a port-type message (WCF writes
-		// both for every service).
+		// Whether WCF wrote the WSDL: WCF declares its contract namespace on every WSDL document it writes (?singleWsdl and
+		// the root of ?wsdl, which the merge keeps). An addressing Action on a port-type message is not a sign: Axis2 and the
+		// JAX-WS RI write one too.
 		private static bool WrittenByWcf(XElement definitions) =>
-			definitions.Attributes().Any(a => a.IsNamespaceDeclaration && a.Value == WcfContractNamespace)
-			|| definitions.Elements().Where(e => Is(e, "portType")).Elements().Elements()
-				.Any(m => m.Attributes().Any(a => a.Name.LocalName == "Action"
-					&& a.Name.NamespaceName is WsawNamespace or WsamNamespace));
+			definitions.Attributes().Any(a => a.IsNamespaceDeclaration && a.Value == WcfContractNamespace);
 
 		// A SOAP 1.1 port of the same port type that needs neither WS-Addressing nor message security, or null when there is
 		// none: one of the same service at the warned port's scheme and host first, else the first with its difference.

@@ -55,7 +55,7 @@ public sealed record WsdlReadResult(
 	IReadOnlyList<WsdlServiceView> Services = null,
 
 	[property: JsonPropertyName("warnings")]
-	[property: Description("What was not read or will need a check: dropped ports, operations and elements, unsupported constructs, and ports the platform may not be able to call (SOAP 1.2, WS-Addressing, message security) with the port to register instead")]
+	[property: Description("What was not read or will need a check: dropped ports, operations and elements, unsupported constructs, and ports the platform may not be able to call (SOAP 1.2, WS-Addressing, message security) with the port to register instead or to switch to after a failed test call")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	IReadOnlyList<string> Warnings = null,
 
@@ -456,7 +456,7 @@ public sealed partial class WsdlReader(
 	}
 
 	private const string ServiceCodeHint = "service-code is only for an existing SOAP service the operations go into; for "
-		+ "a new service read the WSDL without it and give the code in the register-web-service arguments.";
+		+ "a new service read the WSDL without it, and use the code the user named in the register-web-service arguments.";
 
 	private WsdlTargetService ReadTarget(string serviceCode) {
 		if (string.IsNullOrWhiteSpace(serviceCode)) {
@@ -465,8 +465,9 @@ public sealed partial class WsdlReader(
 		WebServiceToolResult described;
 		try {
 			described = designer.Describe(serviceCode.Trim(), false);
-		} catch (ArgumentException e) {
-			// Agents pass the code they want for a NEW service here; say what the argument is for.
+		} catch (ArgumentException e) when (e is not ArgumentNullException and not ArgumentOutOfRangeException) {
+			// Agents pass the code they want for a NEW service here; say what the argument is for. A null or out-of-range
+			// argument is a defect in reading an existing service, not this mistake.
 			throw new ArgumentException($"service-code '{WsdlParser.Shown(serviceCode)}': {e.Message} {ServiceCodeHint}", e);
 		}
 		WebServiceView service = described.Service

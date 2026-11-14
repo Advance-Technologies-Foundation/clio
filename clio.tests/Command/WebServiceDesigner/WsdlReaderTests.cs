@@ -765,7 +765,9 @@ public sealed class WsdlReaderTests {
 		Action act = () => _sut.Read(Files(path) with { ServiceCode = "UsrNope" });
 
 		// Assert
-		act.Should().Throw<ArgumentException>(because: "the service cannot be read").WithMessage("*was not found*");
+		act.Should().Throw<ArgumentException>(because: "the service cannot be read")
+			.WithMessage("*was not found*only for an existing SOAP service*",
+				because: "the reason comes with the hint on what service-code is for");
 	}
 
 	[Test]

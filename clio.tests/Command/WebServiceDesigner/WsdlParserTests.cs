@@ -532,7 +532,7 @@ public sealed class WsdlParserTests {
 		// Assert
 		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2")
 				&& w.Contains("with the path Content-Type") && w.Contains("action=\"<its soap-action>\""),
-			because: "with no SOAP 1.1 port the only way to reach a WCF SOAP 1.2 endpoint is to send the action parameter");
+			because: "with no SOAP 1.1 port the way out of a failed call is to send the action parameter");
 	}
 
 	[Test]
@@ -622,8 +622,8 @@ public sealed class WsdlParserTests {
 		warning.Should().Contain("http address where this port's is https",
 			because: "registering the http port would send the credentials readable");
 		warning.Should().NotContain("Register port", because: "such a port is not recommended without the user's yes");
-		warning.Should().Contain("If a test call answers so",
-			because: "outside a WCF WSDL a SOAP 1.2 port usually answers, so the advice is conditional");
+		warning.Should().Contain("show the user its base-uri and switch only on their yes",
+			because: "the http port would send the credentials readable, so the switch needs the user's yes");
 	}
 
 	[Test]
@@ -655,8 +655,9 @@ public sealed class WsdlParserTests {
 		document.StudioPort.Should().Be("CalculatorSoap12", because: "Studio's pick is unchanged");
 		string warning = document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'CalculatorSoap12' is SOAP 1.2"),
 			because: "the SOAP 1.2 limit is still stated").Which;
-		warning.Should().Contain("If a test call answers so, use port 'CalculatorSoap' (SOAP 1.1) instead",
-			because: "the SOAP 1.1 port is the way out only after a failed call");
+		warning.Should().Contain("Keep this port; if a test call fails so, switch to port 'CalculatorSoap' (SOAP 1.1) "
+				+ "(modify-web-service setType soap11",
+			because: "the SOAP 1.1 port is the way out only after a failed call, reached by switching the registered service");
 		warning.Should().NotContain("Register port", because: "an ASMX service is not told to give up SOAP 1.2");
 	}
 
@@ -670,5 +671,62 @@ public sealed class WsdlParserTests {
 		document.Warnings.Should().Contain(w => w.StartsWith("Port 'CustomBinding_ICalc' is SOAP 1.2 and the WSDL was written by WCF")
 				&& w.Contains("Register port 'BasicHttpBinding_ICalc' (SOAP 1.1) instead"),
 			because: "WCF refuses every SOAP 1.2 call the platform makes (measured)");
+	}
+
+	// A WSDL as WCF declares it: its contract namespace on the root.
+	private static string WcfWsdl(string bindings, string ports) =>
+		BindingWsdl("", bindings, ports).Replace("<wsdl:definitions ",
+			"<wsdl:definitions xmlns:msc=\"http://schemas.microsoft.com/ws/2005/12/wsdl/contract\" ", StringComparison.Ordinal);
+
+	[Test]
+	[Description("An Axis2-style WSDL (a wsaw:Action on the port-type message, no WCF contract namespace) is not taken for WCF: its SOAP 1.2 port keeps the conditional advice.")]
+	public void Parse_Should_Not_Take_A_Wsaw_Action_For_Wcf() {
+		// Arrange
+		string wsdl = BindingWsdl("", Binding("B12", "soap12") + Binding("B11", "soap"),
+				Port("Soap12", "B12", "soap12") + Port("Soap", "B11", "soap"))
+			.Replace("<wsdl:input message=\"tns:PingIn\" />",
+				"<wsdl:input message=\"tns:PingIn\" wsaw:Action=\"urn:Ping\" />", StringComparison.Ordinal);
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		string warning = document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2"),
+			because: "the SOAP 1.2 limit is still stated").Which;
+		warning.Should().NotContain("written by WCF", because: "Axis2 and the JAX-WS RI write wsaw:Action too");
+		warning.Should().Contain("Keep this port", because: "such a service most likely answers SOAP 1.2");
+	}
+
+	[Test]
+	[Description("On a WCF WSDL, a SOAP 1.1 port on another host is named with that difference and left to the user.")]
+	public void Parse_Should_Name_A_Wcf_Alternative_On_Another_Host_With_The_Difference() {
+		// Arrange
+		string ports = "<wsdl:port name=\"Soap12\" binding=\"tns:B12\"><soap12:address location=\"https://api.example/svc\" /></wsdl:port>"
+			+ "<wsdl:port name=\"Soap\" binding=\"tns:B11\"><soap:address location=\"https://other.example/svc\" /></wsdl:port>";
+		string wsdl = WcfWsdl(Binding("B12", "soap12") + Binding("B11", "soap"), ports);
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2 and the WSDL was written by WCF")
+				&& w.Contains("Port 'Soap' (SOAP 1.1) can be called but has an address on another host (other.example)")
+				&& w.Contains("register it only on their yes"),
+			because: "the credentials set up later would go to that host");
+	}
+
+	[Test]
+	[Description("On a WCF WSDL with no SOAP 1.1 port, the SOAP 1.2 warning gives the Content-Type workaround for the user to agree to.")]
+	public void Parse_Should_Give_The_Wcf_Workaround_When_There_Is_No_Soap11_Port() {
+		// Arrange
+		string wsdl = WcfWsdl(Binding("B12", "soap12"), Port("Soap12", "B12", "soap12"));
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2 and the WSDL was written by WCF")
+				&& w.Contains("If the user needs this port") && w.Contains("with the path Content-Type"),
+			because: "WCF refuses every call, and the measured workaround is the only way left");
 	}
 }

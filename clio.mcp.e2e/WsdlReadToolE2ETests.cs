@@ -154,6 +154,8 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 			because: "every SOAP port is returned and the HTTP port is dropped");
 		pick.Port.Should().Be("ClioWizardFeaturesSoap12", because: "Studio's quick setup picks the SOAP 1.2 port");
 		read.Warnings.Should().Contain(w => w.Contains("2 SOAP headers"), because: "SecureCall's second header is not read");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'ClioWizardFeaturesSoap12' is SOAP 1.2") && w.Contains("Keep this port"),
+			because: "outside a WCF WSDL the SOAP 1.2 pick stays, with the SOAP 1.1 port only as the way out of a failed call");
 		registered.Success.Should().BeTrue(because: $"read-wsdl output is valid register input; error: {registered.Error}");
 		described.Success.Should().BeTrue(because: $"the registered service is readable; error: {described.Error}");
 		WebServiceView service = described.Service!;
