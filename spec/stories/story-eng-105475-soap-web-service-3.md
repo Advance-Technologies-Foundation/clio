@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-105475-soap-web-service.md](../prd/spec-eng-105475-soap-web-service.md) - R8
 **ADR**: [adr-eng-105475-soap-web-service.md](../adr/adr-eng-105475-soap-web-service.md) - D1, D9, D11, D12
 **Test plan**: [tp-eng-105475-soap-web-service.md](../test-plans/tp-eng-105475-soap-web-service.md) - TC-U-C*, TC-I-C*
-**Status**: review (D11 and D12 decided by the owner on 2026-11-12)
+**Status**: done (clio PR #1930 merged to master on 2026-11-13; D11 and D12 decided by the owner on 2026-11-12)
 **Size**: L
 **Depends on**: story 2
 **Blocks**: story 5

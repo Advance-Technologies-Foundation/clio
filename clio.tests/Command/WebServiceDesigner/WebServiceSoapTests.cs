@@ -232,6 +232,32 @@ public sealed class WebServiceSoapTests {
 	}
 
 	[Test]
+	[Description("A setting-bound field of an inner array of objects is collected when the inner array went out, and its missing element fails closed only when the call gave that inner array a value, not merely the outer one.")]
+	public void SentSecrets_Should_Judge_A_Missing_Inner_Array_By_Its_Own_Value() {
+		// Arrange
+		ServiceMethodDto method = SoapServiceFixture.MethodWithInnerArray();
+
+		// Act
+		IReadOnlyList<string> filled = WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw,
+			SoapServiceFixture.SentWithInnerItem, false, ["UsrLines", "UsrSubs"], out bool filledUnlocated);
+		WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw, SoapServiceFixture.SentWithItem, false,
+			["UsrLines"], out bool innerLeftOut);
+		WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw, SoapServiceFixture.SentWithItem, false,
+			["UsrLines", "UsrSubs"], out bool innerGiven);
+		WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw, SoapServiceFixture.SentWithItem, false,
+			null, out bool unknown);
+
+		// Assert
+		filled.Should().Contain(SoapServiceFixture.SubKeyValue, because: "a field two arrays deep is found by its local name");
+		filled.Should().Contain(SoapServiceFixture.LineTokenValue, because: "the outer item field is still collected");
+		filledUnlocated.Should().BeFalse(because: "every setting-bound field that went out was found");
+		innerLeftOut.Should().BeFalse(
+			because: "the platform renders an inner array only from a value, so one left out of every item sent no field");
+		innerGiven.Should().BeTrue(because: "an inner array the call filled is rendered, so its missing element is a lookup miss");
+		unknown.Should().BeTrue(because: "without knowing what the call sent, a missing element may be a lookup miss");
+	}
+
+	[Test]
 	[Description("An XML response that carries a DOCTYPE is still masked by its decoded values, so a character-reference form is found.")]
 	public void ApplyToBody_Should_Mask_An_Xml_Response_With_A_Doctype() {
 		// Arrange
