@@ -5115,6 +5115,22 @@ stories:
     depends_on:
       - story-eng-105475-soap-web-service-1
     blocks: []
+  - id: story-eng-105475-soap-web-service-6
+    title: "Follow-up checks of SOAP auth, WCF SOAP 1.2 and the usage guard"
+    feature: "eng-105475-soap-web-service"
+    repo: "clio"
+    size: S
+    # review: the clio PR opened on 2026-11-14 with its clio-knowledge guidance PR.
+    status: review
+    jira: ENG-105475
+    file: spec/stories/story-eng-105475-soap-web-service-6.md
+    prd: spec/prd/spec-eng-105475-soap-web-service.md
+    adr: spec/adr/adr-eng-105475-soap-web-service.md
+    test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
+    depends_on:
+      - story-eng-105475-soap-web-service-2
+      - story-eng-105475-soap-web-service-3
+    blocks: []
   - id: story-eng-105475-soap-web-service-5
     title: "Guidance for SOAP web services"
     feature: "eng-105475-soap-web-service"
