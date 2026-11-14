@@ -17,11 +17,6 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 
 	internal const string ToolName = "register-web-service";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -53,11 +48,6 @@ public sealed class ListWebServicesTool(IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "list-web-services";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -85,11 +75,6 @@ public sealed class DescribeWebServiceTool(IToolCommandResolver commandResolver)
 
 	internal const string ToolName = "describe-web-service";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -114,11 +99,6 @@ public sealed class ModifyWebServiceTool(IToolCommandResolver commandResolver) {
 
 	internal const string ToolName = "modify-web-service";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -149,12 +129,6 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 
 	internal const string ToolName = "test-web-service-method";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("user-confirmed", "false", Effect = McpToolEffect.Read, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -200,12 +174,6 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 	/// <summary>Reads a WSDL into register-web-service arguments on the environment the call names.</summary>
 	/// <param name="args">The arguments.</param>
 	/// <returns>The arguments per SOAP port with warnings and notices, or the refusal as an error.</returns>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
 	// In process, not Worker: wsdl-files is refused over HTTP by reading the host's HttpContext, which a relayed worker
 	// call would not have; and service-code reads through the schema designer, which stays host-resident (ADR D9).

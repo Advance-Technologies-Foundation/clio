@@ -712,11 +712,6 @@ public sealed class ClioRunTool(IClioRunExecutor executor) {
 	/// <summary>
 	/// Runs any clio MCP tool by name with free-form JSON arguments (read or write/destructive).
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.Change)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
 	// The wrapper itself only resolves the inner tool and dispatches it in-process; the router keys on the
 	// UNWRAPPED inner tool name (ADR rule 7), so the inner tool's own metadata decides whether that call is
@@ -755,11 +750,6 @@ public sealed class ClioRunDestructiveTool(IClioRunExecutor executor) {
 	/// <summary>
 	/// Runs any clio MCP tool by name with free-form JSON arguments. Alias of <c>clio-run</c>.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.Change)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
 	// Identical to clio-run: `destructiveSurface: true` is retained on the executor signature for back-compat
 	// but no longer routes or refuses (see ClioRunExecutor.RunAsync), so both names run ONE body and must carry

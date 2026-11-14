@@ -19,11 +19,6 @@ public sealed class CreateRelatedPageAddonTool(
 
 	internal const string ToolName = "create-related-page-addon";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

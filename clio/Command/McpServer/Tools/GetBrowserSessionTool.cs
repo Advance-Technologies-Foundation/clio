@@ -20,11 +20,6 @@ public sealed class GetBrowserSessionTool(IToolCommandResolver commandResolver) 
 	internal const string ToolName = "get-browser-session";
 
 	/// <summary>Obtains (or reuses) an authenticated browser session and returns its file path.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.Read)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	// SharedFileResource: the session (storageState) file under the clio home directory is written by this tool
 	// and read by every agent it hands the path to, so a second process running it concurrently races that file.

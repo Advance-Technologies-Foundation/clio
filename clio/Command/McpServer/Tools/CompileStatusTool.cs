@@ -254,11 +254,6 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// Returns the tracked status of a compile-creatio operation, or, when this session holds no record of it, the
 	/// environment's newest compilation-history rows.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CompileStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

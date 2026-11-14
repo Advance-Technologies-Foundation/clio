@@ -90,11 +90,6 @@ public sealed class BuildThemeTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Build the artifacts of a Creatio theme from brand colours and fonts. " +
 		"Without workspace-directory+package-name: returns { success, css, descriptor, warnings?, error? } — use it when you need the CSS itself. " +

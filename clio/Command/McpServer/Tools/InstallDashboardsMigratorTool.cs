@@ -41,11 +41,6 @@ public sealed class InstallDashboardsMigratorTool(
 	// Idempotent = false (ENG-102116 review): every run that installs is another configuration build and site
 	// restart for every user, which MCP's idempotentHint ("a repeated call has no additional effect") would let a
 	// host repeat unasked. Same reasoning and value as install-process-builder.
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = InstallDashboardsMigratorToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(

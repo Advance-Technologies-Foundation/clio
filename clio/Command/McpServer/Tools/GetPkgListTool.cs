@@ -38,11 +38,6 @@ public sealed class GetPkgListTool(
 	/// <summary>
 	/// Returns environment packages as structured MCP JSON.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GetPkgListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

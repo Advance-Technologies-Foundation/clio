@@ -17,11 +17,6 @@ public sealed class PageGetTool(
 
 	internal const string ToolName = "get-page";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// SharedFileResource: the .clio-pages/{schema}/meta.json baseline this tool writes is the same file
 	// update-page and sync-pages read-modify-write, so once the call runs outside the host two processes can

@@ -96,92 +96,9 @@ public enum McpToolConnections {
 }
 
 /// <summary>
-/// Declares what an MCP tool does, so a host can decide how to treat a call to it without keeping its own list of
-/// tool names. Read by <see cref="McpToolFactsReader"/>, published in <c>tools/list</c> (<c>_meta</c>) and in
-/// <c>get-tool-contract</c>.
+/// The facts for one value of one argument, with every field resolved against the tool's own facts: a field the
+/// catalog entry leaves out takes the tool's value.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The facts are the WIDEST the tool can do, over every argument it takes. When some argument values narrow them
-/// (a composite tool's <c>action: list</c>, a <c>dry-run</c>), declare <see cref="McpToolArgumentFactsAttribute"/>
-/// for those values.
-/// </para>
-/// <para>
-/// Every field is an enum whose zero value is <c>Unspecified</c>, so a field left out is a coverage-test failure
-/// rather than a plausible default. Declared, not derived: the tool's name and its <c>ReadOnly</c> /
-/// <c>Destructive</c> hints are too coarse to derive these from, and the coverage test checks the hints agree.
-/// </para>
-/// </remarks>
-/// <example>
-/// <code>
-/// [McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false)]
-/// [McpToolFacts(
-///     Effect = McpToolEffect.Read,
-///     EnvironmentImpact = McpToolEnvironmentImpact.None,
-///     Scope = McpToolScope.Environment,
-///     Connections = McpToolConnections.None)]
-/// public MyResponse Run(MyArgs args) => ...;
-/// </code>
-/// </example>
-[AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = false)]
-public sealed class McpToolFactsAttribute : Attribute {
-
-	/// <summary>What the call does, at most.</summary>
-	public McpToolEffect Effect { get; set; }
-
-	/// <summary>Whether the call builds or restarts the environment.</summary>
-	public McpToolEnvironmentImpact EnvironmentImpact { get; set; }
-
-	/// <summary>The widest place the call reads or changes.</summary>
-	public McpToolScope Scope { get; set; }
-
-	/// <summary>Whether the call shows or changes clio's connections.</summary>
-	public McpToolConnections Connections { get; set; }
-}
-
-/// <summary>
-/// Narrows a tool's <see cref="McpToolFactsAttribute"/> for one value of one argument: <c>manage-role</c> with
-/// <c>action: list</c> only reads.
-/// </summary>
-/// <remarks>
-/// <see cref="Effect"/> must be declared. A field left <c>Unspecified</c> takes the tool's own value. The coverage
-/// test checks that no field is wider than the tool's, so a host that ignores these entries is never less careful
-/// than one that reads them.
-/// </remarks>
-[AttributeUsage(AttributeTargets.Method, AllowMultiple = true, Inherited = false)]
-public sealed class McpToolArgumentFactsAttribute : Attribute {
-
-	/// <summary>Declares the facts for <paramref name="argument"/> = <paramref name="value"/>.</summary>
-	/// <param name="argument">The argument's name as a caller writes it: inside <c>args</c> for an args-record tool.</param>
-	/// <param name="value">The value, as text; a boolean as <c>true</c> or <c>false</c>.</param>
-	public McpToolArgumentFactsAttribute(string argument, string value) {
-		Argument = argument;
-		Value = value;
-	}
-
-	/// <summary>The argument's name as a caller writes it.</summary>
-	public string Argument { get; }
-
-	/// <summary>The value these facts apply to.</summary>
-	public string Value { get; }
-
-	/// <summary>Whether these facts also apply when the call does not send the argument (the value is its default).</summary>
-	public bool WhenAbsent { get; set; }
-
-	/// <summary>What the call does with this value. Must be declared.</summary>
-	public McpToolEffect Effect { get; set; }
-
-	/// <summary>Whether the call builds or restarts the environment with this value; <c>Unspecified</c> takes the tool's.</summary>
-	public McpToolEnvironmentImpact EnvironmentImpact { get; set; }
-
-	/// <summary>The widest place the call reaches with this value; <c>Unspecified</c> takes the tool's.</summary>
-	public McpToolScope Scope { get; set; }
-
-	/// <summary>Whether the call shows or changes connections with this value; <c>Unspecified</c> takes the tool's.</summary>
-	public McpToolConnections Connections { get; set; }
-}
-
-/// <summary>The facts for one value of one argument, with every field resolved against the tool's own facts.</summary>
 /// <param name="Argument">The argument's name as a caller writes it.</param>
 /// <param name="Value">The value these facts apply to.</param>
 /// <param name="WhenAbsent">Whether they also apply when the call does not send the argument.</param>
@@ -199,8 +116,22 @@ public sealed record McpToolArgumentFacts(
 	McpToolConnections Connections);
 
 /// <summary>
-/// The declared facts of one MCP tool: the widest it does, plus the argument values that narrow them.
+/// The reviewed facts of one MCP tool: the widest it does, plus the argument values that narrow them. Declared in
+/// one catalog, <c>Command/McpServer/Data/mcp-tool-facts.json</c>, read by <see cref="McpToolFactsReader"/> and
+/// published in <c>tools/list</c> (<c>_meta</c>) and by <c>get-tool-contract</c> <c>detail=facts</c>.
 /// </summary>
+/// <remarks>
+/// <para>
+/// The facts are the WIDEST the tool can do, over every argument it takes. <see cref="ByArgument"/> narrows them for
+/// single argument values (a composite tool's <c>action: list</c>, a <c>dry-run</c>); an entry never widens them.
+/// </para>
+/// <para>
+/// One catalog rather than an attribute on each tool method: about 250 near-identical declarations spread over the
+/// tool files read as duplicated code to the quality gate, and one file is also one place to review them. A field
+/// the catalog leaves out reads back as <c>Unspecified</c>, which the coverage test fails on, as it fails on a
+/// served tool with no entry and on an entry for a tool clio does not serve.
+/// </para>
+/// </remarks>
 /// <param name="Effect">What the call does, at most.</param>
 /// <param name="EnvironmentImpact">Whether it builds or restarts the environment.</param>
 /// <param name="Scope">The widest place it reads or changes.</param>

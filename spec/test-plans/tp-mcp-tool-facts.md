@@ -9,7 +9,7 @@
 
 ## Scope
 
-In scope: the `[McpToolFacts]` / `[McpToolArgumentFacts]` declarations on every MCP tool, the reader, the
+In scope: the facts catalog `Command/McpServer/Data/mcp-tool-facts.json` for every MCP tool, the reader, the
 `tools/list` `_meta` publication, `get-tool-contract` `detail=facts`, and the coverage guard.
 Out of scope: host-path facts per argument; a guide's minimum clio version.
 

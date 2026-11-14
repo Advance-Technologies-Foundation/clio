@@ -16,11 +16,6 @@ public sealed class ClientUnitSchemaCreateTool(
 
 	internal const string ToolName = "create-client-unit-schema";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

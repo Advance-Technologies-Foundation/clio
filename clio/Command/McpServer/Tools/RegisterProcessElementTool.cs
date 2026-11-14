@@ -16,11 +16,6 @@ public sealed class RegisterProcessElementTool(IProcessElementRegistration regis
 	/// <summary>Generates both database dialects for an existing workspace user task.</summary>
 	/// <param name="args">Local workspace, package, task identity and initial caption.</param>
 	/// <returns>The command result containing script paths or validation errors.</returns>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,

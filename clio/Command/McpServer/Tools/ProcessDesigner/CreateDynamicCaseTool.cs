@@ -59,12 +59,6 @@ public class CreateDynamicCaseTool(
 	// Destructive: it writes a schema, two data rows, their package bindings, package dependencies and a page.
 	// Idempotent: an equivalent re-run answers already-present and writes nothing to the case, which is what makes a
 	// re-run after a page failure safe. Destructive also keeps it out of the read-response deadline.
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("dry-run", "true", Effect = McpToolEffect.Read)]
 	[McpServerTool(Name = CreateDynamicCaseToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		 OpenWorld = false),
 	 Description("Create a minimal dynamic case (DCM): one stage per value of an object's lookup column, plus a "

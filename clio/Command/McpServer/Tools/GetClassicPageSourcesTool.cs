@@ -24,11 +24,6 @@ public sealed class GetClassicPageSourcesTool(
 	// when it resolves (symlinks followed) inside a trusted workspace anchor or the OS temp directory AND does not
 	// already exist (OutputPathConfinement) — a `..` traversal, absolute system path, symlink escape, or existing
 	// target is rejected before any write, so this MCP-callable tool cannot be steered into overwriting a file.
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// SharedFileResource stays None: the manifest this tool writes lives under a per-schema
 	// .clio-migration/<schema>/ path that only this tool produces, so it is not one of the artifacts two

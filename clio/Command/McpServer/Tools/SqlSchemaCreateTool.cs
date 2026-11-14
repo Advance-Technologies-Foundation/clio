@@ -18,11 +18,6 @@ public sealed class SqlSchemaCreateTool(
 	internal const string ToolName = "create-sql-schema";
 
 	/// <summary>Creates an empty package SQL script using the requested environment.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	// The schema is saved on the server, not into a local workspace, so this is an environment call despite
 	// looking like scaffolding.

@@ -99,11 +99,6 @@ public sealed class SchemaSyncTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("Executes a batch of schema operations in a single call: " +

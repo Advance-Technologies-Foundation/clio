@@ -32,12 +32,6 @@ public class LinkFromRepositoryTool(
 	/// <summary>
 	/// Links repository packages into a Creatio environment resolved by registered environment name.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("dryRun", "true", Effect = McpToolEffect.Read, Scope = McpToolScope.Environment)]
 	[McpServerTool(Name = LinkFromRepositoryByEnvironmentToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
@@ -83,12 +77,6 @@ public class LinkFromRepositoryTool(
 	/// <summary>
 	/// Links repository packages into a Creatio environment package directory resolved by explicit package path.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("dryRun", "true", Effect = McpToolEffect.Read, Scope = McpToolScope.Environment)]
 	[McpServerTool(Name = LinkFromRepositoryByEnvPackagePathToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	// Worker even though skip-preparation=true is a local-only branch: the DEFAULT branch runs the preparation
@@ -134,12 +122,6 @@ public class LinkFromRepositoryTool(
 	/// Queries the Creatio site for unlocked packages and links them from the repository.
 	/// Supports both flat repo structure (PackageName/) and versioned PackageStore (PackageName/branch/version/).
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("dryRun", "true", Effect = McpToolEffect.Read, Scope = McpToolScope.Environment)]
 	[McpServerTool(Name = LinkFromRepositoryUnlockedToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(

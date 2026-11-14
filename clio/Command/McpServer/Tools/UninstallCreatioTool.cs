@@ -26,11 +26,6 @@ public class UninstallCreatioTool(
 	/// <summary>Stable MCP tool name used by discovery and tests.</summary>
 	public const string UninstallCreatioToolName = "uninstall-creatio";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.Change)]
 	[McpServerTool(Name = UninstallCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false )]
 	// Deploy family, same reasoning as deploy-creatio: a generic kill mid-uninstall can leave a
 	// half-removed site/database, so the bound is the authoritative terminal stage. Streams stage events.

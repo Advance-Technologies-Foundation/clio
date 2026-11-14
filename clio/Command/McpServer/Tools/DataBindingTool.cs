@@ -19,11 +19,6 @@ public class CreateDataBindingTool(
 	: BaseTool<CreateDataBindingOptions>(command, logger, commandResolver) {
 	internal const string CreateDataBindingToolName = "create-data-binding";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateDataBindingToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	// Worker even though a built-in offline template can satisfy the call without a round-trip: the other
@@ -65,11 +60,6 @@ public class AddDataBindingRowTool(AddDataBindingRowCommand command, ILogger log
 	: BaseTool<AddDataBindingRowOptions>(command, logger) {
 	internal const string AddDataBindingRowToolName = "add-data-binding-row";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = AddDataBindingRowToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	// In-process, correcting the inventory's file-level Worker signal: AddDataBindingRowOptions is NOT an
@@ -106,11 +96,6 @@ public class RemoveDataBindingRowTool(RemoveDataBindingRowCommand command, ILogg
 	: BaseTool<RemoveDataBindingRowOptions>(command, logger) {
 	internal const string RemoveDataBindingRowToolName = "remove-data-binding-row";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = RemoveDataBindingRowToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	// In-process for the same reason as add-data-binding-row: RemoveDataBindingRowOptions is not an

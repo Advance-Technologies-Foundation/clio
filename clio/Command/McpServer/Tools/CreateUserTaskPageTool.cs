@@ -14,11 +14,6 @@ public sealed class CreateUserTaskPageTool(IUserTaskPageScaffolder scaffolder) {
 	/// <summary>Scaffolds a page, associates it with an existing user task and applies supplied SVG slots.</summary>
 	/// <param name="args">Workspace identity, page name/caption, culture and optional SVG files.</param>
 	/// <returns>Created source path or an actionable validation failure.</returns>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,

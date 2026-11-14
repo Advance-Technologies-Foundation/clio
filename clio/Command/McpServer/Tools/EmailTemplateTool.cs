@@ -28,11 +28,6 @@ public sealed class EmailTemplateTool(IEmailTemplateContentService service) {
 	internal const string UpdateToolName = "update-email-template";
 
 	/// <summary>Reads legacy Content designer and current Beefree content for an email host.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GetToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -64,12 +59,6 @@ public sealed class EmailTemplateTool(IEmailTemplateContentService service) {
 	}
 
 	/// <summary>Updates or creates one guarded email-content variant.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("confirm", "false", Effect = McpToolEffect.Read, WhenAbsent = true)]
 	[McpServerTool(Name = UpdateToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

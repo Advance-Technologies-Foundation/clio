@@ -25,11 +25,6 @@ internal sealed class KnowledgeFeedbackPolicyTools {
 		_service = service ?? throw new ArgumentNullException(nameof(service));
 	}
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GetToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// Reads the local policy service only; it resolves no environment and never reaches Creatio, so there is
 	// nothing for a worker to isolate.
@@ -42,12 +37,6 @@ internal sealed class KnowledgeFeedbackPolicyTools {
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Returns configured and effective knowledge-feedback mode, destination, reporting scope, current reporting-policy hash, standing approval, and any reason auto approval is stale. This is a non-resident tool; invoke it through clio-run.")]
 	public KnowledgeFeedbackPolicy Get() => _service.GetPolicy();
-
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
 
 	[McpServerTool(Name = ConfigureToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	// Writes clio's own local policy configuration; it resolves no environment and never reaches Creatio.

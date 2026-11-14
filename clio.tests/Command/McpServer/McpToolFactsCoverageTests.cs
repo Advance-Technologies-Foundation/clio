@@ -14,7 +14,7 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Keeps every MCP tool saying what it does (<see cref="McpToolFactsAttribute"/>), so a host can treat a call by
+/// Keeps every MCP tool saying what it does (the catalog <c>Command/McpServer/Data/mcp-tool-facts.json</c>), so a host can treat a call by
 /// clio's own facts instead of a list of tool names. A new tool that ships without its facts, or with facts its
 /// standard MCP hints contradict, fails here.
 /// </summary>
@@ -43,11 +43,10 @@ public sealed class McpToolFactsCoverageTests {
 		return new McpToolInvokerRegistry(provider, ProductionAssembly, featureToggle, JsonSerializerOptions.Default);
 	}
 
-	// Every enabled tool with its declared facts (null when it declares none), discovered by the production readers.
+	// Every tool clio serves (every feature on) with its catalog facts, null when the catalog has no entry.
 	private static IReadOnlyList<(string Name, McpServerTool Tool, McpToolFacts Facts)> ReadCatalog() {
 		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
-		IReadOnlyDictionary<string, McpToolFacts> declared = McpToolFactsReader.ReadDeclaredFactsOrNull(
-			McpFeatureToggleFilter.GetAttributedTypes(ProductionAssembly, typeof(McpServerToolTypeAttribute)));
+		IReadOnlyDictionary<string, McpToolFacts> declared = McpToolFactsReader.Declared;
 		return [.. registry.ToolNames
 			.OrderBy(name => name, StringComparer.Ordinal)
 			.Select(name => {
@@ -56,15 +55,41 @@ public sealed class McpToolFactsCoverageTests {
 			})];
 	}
 
-	// The same triples for synthetic tool types: static methods, so the SDK builds them without a target.
+	// A catalog for the synthetic tools below, parsed by the production parser, so the defects it holds are the kind a
+	// real catalog edit can make.
+	private const string SyntheticCatalog = """
+		{
+		  "zz-facts-declared-tool": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none",
+		    "by-argument": [{"argument": "action", "value": "list", "effect": "read"}]},
+		  "zz-facts-partial-tool": {"effect": "read", "rebuilds-environment": false, "scope": "local"},
+		  "zz-facts-hint-contradiction-tool": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+		  "zz-facts-wide-argument-tool": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none",
+		    "by-argument": [{"argument": "mode", "value": "wipe", "effect": "destroy"}, {"argument": "missing", "value": "x", "effect": "read"}]},
+		  "zz-facts-stale-entry": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"}
+		}
+		""";
+
+	// The same triples for synthetic tool types (static methods, so the SDK builds them without a target), with their
+	// facts from SyntheticCatalog.
 	private static IReadOnlyList<(string Name, McpServerTool Tool, McpToolFacts Facts)> ReadSynthetic(params Type[] types) {
+		IReadOnlyDictionary<string, McpToolFacts> catalog = McpToolFactsReader.Parse(SyntheticCatalog);
 		return [.. types
 			.SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
 			.Where(method => method.GetCustomAttribute<McpServerToolAttribute>() is not null)
 			.Select(method => {
 				McpServerTool tool = McpServerTool.Create(method, target: null);
-				return (tool.ProtocolTool.Name, tool, McpToolFactsReader.Read(method));
+				string name = tool.ProtocolTool.Name;
+				return (name, tool, catalog.TryGetValue(name, out McpToolFacts facts) ? facts : null);
 			})];
+	}
+
+	/// <summary>Catalog entries for a tool clio does not serve: a renamed or removed tool must not leave one behind.</summary>
+	internal static IReadOnlyList<string> FindStaleEntries(IEnumerable<string> catalogNames, IEnumerable<string> servedNames) {
+		HashSet<string> served = new(servedNames, StringComparer.OrdinalIgnoreCase);
+		return [.. catalogNames
+			.Where(name => !served.Contains(name))
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.Select(name => $"mcp-tool-facts.json has an entry for '{name}', which clio does not serve.")];
 	}
 
 	#region Checking routine (runs against the real catalog AND against synthetic tools)
@@ -75,7 +100,7 @@ public sealed class McpToolFactsCoverageTests {
 		List<string> failures = [];
 		foreach ((string name, McpServerTool tool, McpToolFacts facts) in tools) {
 			if (facts is null) {
-				failures.Add($"Tool '{name}' declares no [McpToolFacts]: a host cannot tell what a call to it does.");
+				failures.Add($"Tool '{name}' has no entry in Command/McpServer/Data/mcp-tool-facts.json: a host cannot tell what a call to it does.");
 				continue;
 			}
 			if (facts.UnspecifiedFieldNames.Count > 0) {
@@ -164,13 +189,17 @@ public sealed class McpToolFactsCoverageTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Every enabled MCP tool declares all four facts, agrees with its standard readOnlyHint/destructiveHint, " +
-		"and narrows its facts only by its own arguments and only downwards. A new tool without [McpToolFacts] fails here.")]
+		"narrows its facts only by its own arguments and only downwards, and the catalog names no tool clio does not serve. " +
+		"A new tool without a catalog entry fails here.")]
 	public void EveryEnabledTool_ShouldDeclareCompleteAndConsistentFacts() {
 		// Arrange
 		IReadOnlyList<(string Name, McpServerTool Tool, McpToolFacts Facts)> catalog = ReadCatalog();
 
 		// Act
-		IReadOnlyList<string> failures = FindFactsFailures(catalog);
+		IReadOnlyList<string> failures = [
+			.. FindFactsFailures(catalog),
+			.. FindStaleEntries(McpToolFactsReader.Declared.Keys, catalog.Select(entry => entry.Name))
+		];
 
 		// Assert
 		catalog.Count.Should().BeGreaterThan(200,
@@ -199,7 +228,7 @@ public sealed class McpToolFactsCoverageTests {
 		// Assert
 		synthetic.Should().HaveCount(5, because: "every synthetic tool must be discovered, or this proof is itself vacuous");
 		failures.Should().ContainSingle(failure => failure.Contains(UndeclaredFixtureTool.ToolName, StringComparison.Ordinal),
-			because: "a tool with no [McpToolFacts] must be reported");
+			because: "a tool with no catalog entry must be reported");
 		failures.Should().ContainSingle(failure => failure.Contains(PartialFixtureTool.ToolName, StringComparison.Ordinal)
 				&& failure.Contains(nameof(McpToolFacts.Connections), StringComparison.Ordinal),
 			because: "a declaration that leaves a field out must be reported, naming the field");
@@ -214,6 +243,22 @@ public sealed class McpToolFactsCoverageTests {
 			because: "an entry must only narrow, so a host that ignores entries is never less careful than one that reads them");
 		failures.Should().NotContain(failure => failure.Contains(DeclaredFixtureTool.ToolName, StringComparison.Ordinal),
 			because: "a correct declaration is not a failure, otherwise the routine would prove nothing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A catalog entry for a tool clio does not serve is reported, so a renamed or removed tool cannot leave a stale entry.")]
+	public void StaleEntryRoutine_ShouldReportAnEntryForAToolClioDoesNotServe() {
+		// Arrange
+		IReadOnlyDictionary<string, McpToolFacts> catalog = McpToolFactsReader.Parse(SyntheticCatalog);
+
+		// Act
+		IReadOnlyList<string> failures = FindStaleEntries(catalog.Keys, [DeclaredFixtureTool.ToolName, PartialFixtureTool.ToolName,
+			HintContradictionFixtureTool.ToolName, WideArgumentFixtureTool.ToolName]);
+
+		// Assert
+		failures.Should().ContainSingle(because: "only the stale entry names a tool that is not served")
+			.Which.Should().Contain("zz-facts-stale-entry", because: "the failure must name the entry to remove");
 	}
 
 	[Test]
@@ -238,9 +283,6 @@ public sealed class McpToolFactsCoverageTests {
 
 		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true)]
 		[System.ComponentModel.Description("Correctly declared synthetic tool.")]
-		[McpToolFacts(Effect = McpToolEffect.Destroy, EnvironmentImpact = McpToolEnvironmentImpact.None,
-			Scope = McpToolScope.Environment, Connections = McpToolConnections.None)]
-		[McpToolArgumentFacts("action", "list", Effect = McpToolEffect.Read)]
 		public static string Run(string action) => action;
 	}
 
@@ -249,7 +291,7 @@ public sealed class McpToolFactsCoverageTests {
 		internal const string ToolName = "zz-facts-undeclared-tool";
 
 		[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false)]
-		[System.ComponentModel.Description("Synthetic tool with no [McpToolFacts].")]
+		[System.ComponentModel.Description("Synthetic tool with no catalog entry.")]
 		public static string Run() => "undeclared";
 	}
 
@@ -259,7 +301,6 @@ public sealed class McpToolFactsCoverageTests {
 
 		[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false)]
 		[System.ComponentModel.Description("Synthetic tool that leaves Connections out.")]
-		[McpToolFacts(Effect = McpToolEffect.Read, EnvironmentImpact = McpToolEnvironmentImpact.None, Scope = McpToolScope.Local)]
 		public static string Run() => "partial";
 	}
 
@@ -269,8 +310,6 @@ public sealed class McpToolFactsCoverageTests {
 
 		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
 		[System.ComponentModel.Description("Synthetic destroy whose hint says it is not destructive.")]
-		[McpToolFacts(Effect = McpToolEffect.Destroy, EnvironmentImpact = McpToolEnvironmentImpact.None,
-			Scope = McpToolScope.Environment, Connections = McpToolConnections.None)]
 		public static string Run() => "contradiction";
 	}
 
@@ -280,10 +319,6 @@ public sealed class McpToolFactsCoverageTests {
 
 		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
 		[System.ComponentModel.Description("Synthetic tool whose argument entries are unknown or wider than the tool.")]
-		[McpToolFacts(Effect = McpToolEffect.Change, EnvironmentImpact = McpToolEnvironmentImpact.None,
-			Scope = McpToolScope.Environment, Connections = McpToolConnections.None)]
-		[McpToolArgumentFacts("mode", "wipe", Effect = McpToolEffect.Destroy)]
-		[McpToolArgumentFacts("missing", "x", Effect = McpToolEffect.Read)]
 		public static string Run(string mode) => mode;
 	}
 }

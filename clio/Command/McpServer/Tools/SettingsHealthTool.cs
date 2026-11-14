@@ -18,11 +18,6 @@ public sealed class SettingsHealthTool(ISettingsBootstrapService settingsBootstr
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.Read)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Reports the clio bootstrap health for appsettings.json, including auto-repairs, active "
 		+ "environment resolution, and whether environment-scoped tools can execute. An issue with code "

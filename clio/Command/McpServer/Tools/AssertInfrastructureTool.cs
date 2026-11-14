@@ -31,11 +31,6 @@ public sealed class AssertInfrastructureTool
 	/// <summary>
 	/// Executes the full infrastructure assertion sweep and returns the machine-readable result.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = AssertInfrastructureToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

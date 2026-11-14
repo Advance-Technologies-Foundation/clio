@@ -34,11 +34,6 @@ public sealed class ExecuteEsqToFileTool(IToolCommandResolver commandResolver, I
 	// ReadOnly and Idempotent are FALSE because the call creates a local file and refuses an existing one, so a
 	// retry against the same path fails instead of repeating the read - the same classification as
 	// odata-read-to-file.
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	// SharedFileResource is None: output-file is a caller-named path confined to the workspace or the OS temp
 	// root, not one of the stores clio itself coordinates on.

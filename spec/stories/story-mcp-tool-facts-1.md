@@ -10,8 +10,9 @@ destroy; whether it rebuilds the environment; whether it reaches this machine; w
 connections), so I keep no list of clio tool names and a new clio tool works the day it ships.
 
 Acceptance:
-- Every enabled MCP tool declares `[McpToolFacts]` with all four facts, reviewed against its code.
-- Composite tools and flags declare `[McpToolArgumentFacts]` for the values that narrow them; `manage-role`
+- Every served MCP tool has an entry with all four facts in `Command/McpServer/Data/mcp-tool-facts.json`, reviewed
+  against its code.
+- Composite tools and flags have `by-argument` entries for the values that narrow them; `manage-role`
   `action=list` is a read.
 - A resident tool's facts are in its `_meta["clio/facts"]` in `tools/list`.
 - `get-tool-contract` with `detail=facts` answers every served tool (and alias) without `tool-names`, the named

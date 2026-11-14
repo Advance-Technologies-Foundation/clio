@@ -28,11 +28,6 @@ public sealed class RequestInfoToFileTool(RequestInfoTool infoTool, IMcpOutputFi
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>The get-request-info response with <c>documentation</c> replaced by the file path and headings.</returns>
 	// ReadOnly and Idempotent are FALSE because the call creates a local file and refuses an existing one.
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

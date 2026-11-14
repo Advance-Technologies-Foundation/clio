@@ -80,12 +80,6 @@ public sealed class ODataUpdateTool(
 		};
 
 	/// <summary>Updates a single Creatio record using OData v4.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("confirm", "false", Effect = McpToolEffect.Read, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

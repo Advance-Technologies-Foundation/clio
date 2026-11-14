@@ -14,11 +14,6 @@ public sealed class DownloadSysSettingFileTool(ILogger logger, IToolCommandResol
 	internal const string ToolName = "download-sys-setting-file";
 
 	/// <summary>Copies a Binary setting's decoded bytes into the caller's chosen filename.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall, OperationFamily = McpToolOperationFamily.None,

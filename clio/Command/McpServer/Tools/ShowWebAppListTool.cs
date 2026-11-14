@@ -44,11 +44,6 @@ public sealed class ShowWebAppListTool(ShowAppListCommand command, ISettingsRepo
 	/// diagnosing a registration problem. An unreadable file is not an error here: the previously loaded
 	/// list is returned together with a warning.
 	/// </remarks>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.Read)]
 	[McpServerTool(Name = ShowWebAppListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

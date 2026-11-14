@@ -26,11 +26,6 @@ public class StartTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = "start-creatio", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Starts Creatio instance by environment name")]
 	public CommandExecutionResult StartCreatioByName(

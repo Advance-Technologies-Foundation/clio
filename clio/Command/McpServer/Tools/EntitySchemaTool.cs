@@ -57,11 +57,6 @@ public sealed class CreateEntitySchemaTool(
 	/// <summary>
 	/// Creates a remote entity schema in a package on the requested Creatio environment.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -307,11 +302,6 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	/// <summary>
 	/// Creates a remote lookup schema in a package on the requested Creatio environment.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateLookupToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -431,11 +421,6 @@ public sealed class UpdateEntitySchemaTool(
 	/// <summary>
 	/// Applies a batch of add/modify/remove column operations to a remote entity schema.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = UpdateEntitySchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -586,12 +571,6 @@ public sealed class GetEntitySchemaPropertiesTool(
 	/// <summary>
 	/// Returns structured properties for a remote entity schema.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = GetEntitySchemaPropertiesToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -643,12 +622,6 @@ public sealed class SetEntitySchemaPropertiesTool(
 	/// <summary>
 	/// Sets schema-level properties (currently the primary-display column) on a remote entity schema.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = SetEntitySchemaPropertiesToolName, ReadOnly = false, Destructive = true,
 		Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
@@ -701,12 +674,6 @@ public sealed class FindEntitySchemaTool(
 	/// <summary>
 	/// Finds entity schemas by exact name, substring pattern, or UId.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = FindEntitySchemaToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -749,12 +716,6 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 	/// <summary>
 	/// Returns structured properties for a remote entity schema column.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = GetEntitySchemaColumnPropertiesToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
@@ -797,14 +758,6 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 	/// <summary>
 	/// Adds, updates, or removes a remote entity schema column.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("action", "add", Effect = McpToolEffect.Change)]
-	[McpToolArgumentFacts("action", "modify", Effect = McpToolEffect.Change)]
-
 	[McpServerTool(Name = ModifyEntitySchemaColumnToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(

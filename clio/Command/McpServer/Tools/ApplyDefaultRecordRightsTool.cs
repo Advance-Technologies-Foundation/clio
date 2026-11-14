@@ -41,11 +41,6 @@ public sealed class ApplyDefaultRecordRightsTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Apply an object's current default record rules to its EXISTING records — the platform's \"Update record permissions\" (ObjectRecordRightsActualizationProcess) (DESTRUCTIVE, NOT idempotent: every call starts a run). " +
 		"Run it ONLY when the user asked for it: after enabling record permissions or changing rules with set-default-record-rights, ASK the user whether and when to apply them, stating the record count and that the run is heavy on large tables; never run it on your own. " +

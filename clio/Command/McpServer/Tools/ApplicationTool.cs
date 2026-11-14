@@ -34,11 +34,6 @@ public sealed class ApplicationGetListTool(
 	/// <summary>
 	/// Returns installed applications from the requested Creatio environment as structured JSON.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ApplicationGetListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	// RequiresClientRequests = None, not Progress: unlike every other tool in this file this method takes no
@@ -104,11 +99,6 @@ public sealed class ApplicationGetInfoTool(
 	/// <summary>
 	/// Returns primary package and runtime entity metadata for an installed application.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ApplicationGetInfoToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -183,11 +173,6 @@ public sealed class ApplicationCreateTool(
 	/// <summary>
 	/// Creates a Creatio application and returns the same structured payload as get-app-info.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ApplicationCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -350,11 +335,6 @@ public sealed class ApplicationSectionCreateTool(
 	/// <summary>
 	/// Creates a section in an existing Creatio application and returns structured readback data.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ApplicationSectionCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	// One of the five long-running starters: minutes-long, streams progress, and returns an in-progress
@@ -500,11 +480,6 @@ public sealed class ApplicationSectionUpdateTool(
 	/// <summary>
 	/// Updates metadata of a section in an existing Creatio application and returns structured before and after readback data.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ApplicationSectionUpdateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -615,12 +590,6 @@ public sealed class ApplicationSectionDeleteTool(
 	/// <summary>
 	/// Deletes a section from an existing Creatio application and returns structured readback of the deleted section.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = ApplicationSectionDeleteToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -703,12 +672,6 @@ public sealed class ApplicationSectionGetListTool(
 	/// <summary>
 	/// Returns all sections of an existing Creatio application.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = ApplicationSectionGetListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

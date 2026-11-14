@@ -36,11 +36,6 @@ public class CreateBusinessProcessTool(
 	/// </summary>
 	/// <param name="args">The tool arguments; see <see cref="CreateBusinessProcessArgs"/>.</param>
 	/// <returns>The command execution result with the created schema identity in the log output.</returns>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateBusinessProcessToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		 OpenWorld = false),
 	 // The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line

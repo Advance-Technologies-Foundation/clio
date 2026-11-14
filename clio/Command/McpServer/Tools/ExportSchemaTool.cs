@@ -25,11 +25,6 @@ public class ExportSchemaTool(
 	// ReadOnly=false even though nothing on the ENVIRONMENT is touched: the command always writes a bundle
 	// folder on the local disk, and the durable-invocation gate keys silent execution on ReadOnlyHint. This
 	// matches get-schema / get-client-unit-schema / get-page, which read remotely and write locally too.
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ExportSchemaToolName, ReadOnly = false, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

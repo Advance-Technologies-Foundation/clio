@@ -77,12 +77,6 @@ public sealed class PageUpdateTool(
 	private const string AppendFullConfigDocsPointer =
 		" See docs://mcp/guides/page-modification for the append diff-form contract.";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("dry-run", "true", Effect = McpToolEffect.Read)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	// Issues no client requests: the pre-save LLM semantic review (sampling) was removed in ENG-98526, so a
 	// half-duplex relay is sufficient. SharedFileResource is .clio-pages — the IPageBaselineGuard conflict

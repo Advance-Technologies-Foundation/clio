@@ -71,11 +71,6 @@ public sealed class InstallProcessBuilderTool(
 	// effect", and every run that installs is another configuration build and site restart for every user - a
 	// host that auto-retries idempotent tools would repeat exactly what needs the user's approval each time.
 	// compile-creatio, which has the same effect, is false too.
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = InstallProcessBuilderToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	// One of the five long-running starters. Sticky because the install keeps running past the response

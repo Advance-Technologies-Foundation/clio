@@ -20,11 +20,6 @@ public sealed class PageHierarchyGetTool(
 
 	internal const string ToolName = "get-page-hierarchy";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// Reads schema bodies from Creatio and returns them; nothing is written to .clio-pages, unlike get-page.
 	[McpToolExecution(

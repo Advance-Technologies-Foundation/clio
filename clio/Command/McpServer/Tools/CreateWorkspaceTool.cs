@@ -19,11 +19,6 @@ public class CreateWorkspaceTool(
 	/// <summary>
 	/// Creates a new empty workspace under an explicit directory or the configured global workspaces root.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateWorkspaceToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(

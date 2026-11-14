@@ -56,11 +56,6 @@ public sealed class GenerateSourceCodeTool(
 	/// <summary>
 	/// Triggers source code generation for schemas in a registered Creatio environment.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GenerateSourceCodeToolName, ReadOnly = false, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

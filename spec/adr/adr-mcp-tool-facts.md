@@ -39,22 +39,25 @@ makes such a list wrong, and a tool the list has never seen is either refused or
 
 ## Decision
 
-### D1. Each tool declares four facts on its method
+### D1. One reviewed catalog declares four facts per tool
 
-```csharp
-[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true)]
-[McpToolFacts(
-    Effect = McpToolEffect.Destroy,
-    EnvironmentImpact = McpToolEnvironmentImpact.None,
-    Scope = McpToolScope.Environment,
-    Connections = McpToolConnections.None)]
-[McpToolArgumentFacts("action", "list", Effect = McpToolEffect.Read)]
-public ManageRoleResponse ManageRole(ManageRoleArgs args) => ...;
+`clio/Command/McpServer/Data/mcp-tool-facts.json`, embedded in clio, holds one entry per served tool, in the shape a
+host receives (D3):
+
+```json
+"manage-role": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none",
+  "by-argument": [{"argument": "action", "value": "list", "effect": "read"}, ...]}
 ```
 
-Every field is an enum whose zero value is `Unspecified`, as in `[McpToolExecution]`, so a field left out fails the
-coverage test (D6) instead of reading back as a plausible default. The facts are declared after reading what the
-tool's code does, not derived from its name or hints.
+`McpToolFactsReader` parses it into enums whose zero value is `Unspecified`, as in `[McpToolExecution]`: a field the
+entry leaves out, or a value it misspells, reads back as `Unspecified` and fails the coverage test (D6) instead of
+reading back as a plausible default. The facts were declared after reading what each tool's code does, not derived
+from its name or hints.
+
+A catalog, not an attribute on each tool method. The first cut put `[McpToolFacts(...)]` on all 250 methods; the
+quality gate measured 15.3% duplication on new code (limit 3%), because the declarations sit in tool files that are
+already alike, and its duplication engine treats string literals as one token, so no wording separates them. One
+file is also one place to review every tool's facts side by side, and its shape is the published one.
 
 | Fact | Values | Meaning |
 |---|---|---|
@@ -70,11 +73,10 @@ whether clio reads or writes it, is a fact of its own, per argument; it is out o
 
 ### D2. The tool's facts are the widest; argument entries only narrow them
 
-The facts on `[McpToolFacts]` are the widest the tool does over every argument. `[McpToolArgumentFacts(argument,
-value)]` declares narrower facts for one value of one argument: an `action` of a composite tool, or a flag such as
-`dry-run`. An entry must declare its `Effect`; a field it leaves `Unspecified` takes the tool's value, and the
-published entry carries every field resolved. `WhenAbsent = true` marks the value a call gets when it leaves the
-argument out.
+A tool's entry gives the widest facts the tool has over every argument. A `by-argument` entry gives narrower facts
+for one value of one argument: an `action` of a composite tool, or a flag such as `dry-run`. An entry must give its
+`effect`; a field it leaves out takes the tool's value, and the published entry carries every field resolved.
+`when-absent: true` marks the value a call gets when it leaves the argument out.
 
 A host matches an entry when the call's arguments carry `argument` with `value` (compared case-insensitively; a
 boolean as `true`/`false`), or leave `argument` out and the entry is `when-absent`. The argument is named as the
@@ -128,7 +130,8 @@ every discovery call. A host asks for them once.
 
 `McpToolFactsCoverageTests` fails when an enabled tool:
 
-- declares no `[McpToolFacts]`, or leaves a field `Unspecified`;
+- has no catalog entry, or an entry that leaves a field out or misspells a value; and the catalog has no entry
+  for a tool clio does not serve;
 - has `readOnlyHint = true` but an effect other than `read`, or is a `destroy` with `destructiveHint = false`;
 - is a `read` that rebuilds the environment or changes connections (at tool level or in an entry);
 - has an argument entry on an argument it does not take, a duplicate entry, two `when-absent` values for one

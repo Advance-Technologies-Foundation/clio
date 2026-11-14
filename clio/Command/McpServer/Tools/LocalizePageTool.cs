@@ -36,11 +36,6 @@ public sealed class LocalizePageTool(
 	/// </summary>
 	/// <param name="args">Tool arguments.</param>
 	/// <returns>The <c>localize-page</c> result, identical to the CLI output.</returns>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	// SharedFileResource is .clio-pages: after a save the command refreshes the get-page conflict baseline
 	// under .clio-pages/{schema}/meta.json, which two clio processes could otherwise race.

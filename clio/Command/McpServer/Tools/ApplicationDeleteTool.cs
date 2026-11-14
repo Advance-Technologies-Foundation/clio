@@ -26,11 +26,6 @@ public sealed class ApplicationDeleteTool(
 	/// </summary>
 	/// <param name="args">MCP arguments describing the target application and connection.</param>
 	/// <returns>A structured response that reports whether the uninstall completed successfully.</returns>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

@@ -30,11 +30,6 @@ internal sealed class ListEntityClientSchemasToFileTool(
 	/// <summary>Resolves the page-role graph of an entity and writes it to a local file.</summary>
 	// ReadOnly and Idempotent are FALSE because the call creates a local file and refuses an existing one, so a
 	// retry against the same path fails instead of repeating the lookup.
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

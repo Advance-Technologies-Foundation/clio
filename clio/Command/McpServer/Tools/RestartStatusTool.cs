@@ -39,11 +39,6 @@ public sealed class RestartStatusTool(IRestartOperationRegistry registry, IToolC
 	/// <summary>
 	/// Returns the tracked status of a restart readiness wait.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = RestartStatusToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// The status poller of the restart family. It only reads IRestartOperationRegistry, but that registry is
 	// in-process state owned by whichever process ran the restart, so the poll MUST reach the same sticky

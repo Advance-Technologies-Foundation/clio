@@ -22,11 +22,6 @@ public class CreateUserTaskTool(
 	/// <summary>
 	/// Creates a workspace-owned user task and optionally adds initial parameters.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateUserTaskToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -73,11 +68,6 @@ public class ModifyUserTaskParametersTool(
 	/// <summary>
 	/// Adds and/or removes parameters on an existing workspace-owned user task.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ModifyUserTaskParametersToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(

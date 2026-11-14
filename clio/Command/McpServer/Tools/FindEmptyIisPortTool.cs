@@ -34,11 +34,6 @@ public sealed class FindEmptyIisPortTool
 	/// <summary>
 	/// Finds the first free IIS deployment port between 40000 and 42000.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = FindEmptyIisPortToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

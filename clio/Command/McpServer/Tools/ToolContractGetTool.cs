@@ -77,11 +77,6 @@ public sealed class ToolContractGetTool {
 			&& string.Equals(clientInfo.Version, "1.0", StringComparison.Ordinal);
 	}
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// InProcess (the inventory's file-level heuristic said worker): the tool serves the curated static
 	// contract catalog plus IMcpToolInvokerRegistry annotations and resolves no environment anywhere, so it

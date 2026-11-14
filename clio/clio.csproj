@@ -65,6 +65,11 @@
 		<EmbeddedResource Include="Command\McpServer\Data\WebToMobilePageConversionRules.json" />
 	</ItemGroup>
 
+	<ItemGroup Label="ToolFacts">
+		<None Remove="Command\McpServer\Data\mcp-tool-facts.json" />
+		<EmbeddedResource Include="Command\McpServer\Data\mcp-tool-facts.json" />
+	</ItemGroup>
+
 	<ItemGroup Label="AdditionalFiles">
 		<AdditionalFiles Include="..\.sonarlint\clio\CSharp\SonarLint.xml" Link="SonarLint.xml"/>
 		<None Include="img\**"/>

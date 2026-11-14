@@ -24,11 +24,6 @@ public class DownloadConfigurationTool(
 	/// <summary>
 	/// Downloads Creatio configuration into the specified local workspace from a registered environment.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = DownloadConfigurationByEnvironmentToolName, ReadOnly = false, Destructive = false,
 		Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
@@ -51,12 +46,6 @@ public class DownloadConfigurationTool(
 	/// <summary>
 	/// Downloads Creatio configuration into the specified local workspace from a zip file or extracted build directory.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
-
 	[McpServerTool(Name = DownloadConfigurationByBuildToolName, ReadOnly = false, Destructive = false,
 		Idempotent = false, OpenWorld = false)]
 	// Worker even though the build branch never reaches a Creatio environment (Execute short-circuits to

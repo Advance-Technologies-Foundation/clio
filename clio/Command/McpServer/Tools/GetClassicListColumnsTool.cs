@@ -17,11 +17,6 @@ public sealed class GetClassicListColumnsTool(
 	internal const string ToolName = "get-classic-list-columns";
 
 	/// <summary>Resolves a Classic section's effective default list columns without modifying Creatio data.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// InProcess, and NOT because the tool is cheap — it makes a bounded HTTP read like its Worker-classified
 	// neighbours. It is InProcess because of WHAT the read goes through: the hierarchy comes from the schema

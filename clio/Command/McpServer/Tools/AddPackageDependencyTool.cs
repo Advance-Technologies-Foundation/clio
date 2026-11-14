@@ -27,11 +27,6 @@ public sealed class AddPackageDependencyTool(
 	/// <summary>
 	/// Adds one or more package dependencies to a package in a registered Creatio environment.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = AddPackageDependencyToolName, ReadOnly = false, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

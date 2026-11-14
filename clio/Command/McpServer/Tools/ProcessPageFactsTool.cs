@@ -32,11 +32,6 @@ public sealed class ProcessPageFactsTool(
 			["name"] = SchemaNameParam
 		};
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// Classified like the other page READS this tool sits beside: it merges the page's schema chain in
 	// process and returns a projection, touching no file. SharedFileResource stays None for that reason —

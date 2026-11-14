@@ -21,11 +21,6 @@ public sealed class SqlSchemaGetTool(
 	// anchor or the OS temp directory (OutputPathConfinement, symlinks resolved), rejected before any write
 	// otherwise. ReadOnly is not consumed by ClioRing (it parses only {Resident, Destructive}), so this flip
 	// changes no Ring-consumed contract.
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

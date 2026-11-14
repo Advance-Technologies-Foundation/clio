@@ -29,11 +29,6 @@ public sealed class WithdrawTelemetryConsentTool
 	/// <summary>
 	/// Sets local product telemetry consent to denied and purges not-yet-uploaded local events.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Change,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,

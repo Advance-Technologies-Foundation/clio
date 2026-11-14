@@ -13,11 +13,6 @@ public sealed class DataServiceBatchTool(DataServiceBatchCommand command, ILogge
 	: BaseTool<DataServiceBatchOptions>(command, logger, resolver) {
 	internal const string ToolName = "execute-dataservice-batch";
 	/// <summary>Submits a bounded explicit-record batch once.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,

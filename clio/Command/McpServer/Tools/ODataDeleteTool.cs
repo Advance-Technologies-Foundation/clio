@@ -52,13 +52,6 @@ public sealed class ODataDeleteTool(
 	private static readonly TimeSpan IdStartReserve = TimeSpan.FromSeconds(30);
 
 	/// <summary>Deletes Creatio records by id using OData v4.</summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Environment,
-		Connections = McpToolConnections.None)]
-	[McpToolArgumentFacts("dry-run", "true", Effect = McpToolEffect.Read)]
-	[McpToolArgumentFacts("confirm", "false", Effect = McpToolEffect.Read, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

@@ -32,11 +32,6 @@ public sealed class PageValidateTool(
 	private const string NonLocalBodyFileMessage = "body-file must be an absolute local path.";
 	private const string HttpBodyFileMessage = "body-file is supported only by the local stdio MCP transport.";
 
-	[McpToolFacts(
-		Effect = McpToolEffect.Read,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Local,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(

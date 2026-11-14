@@ -36,11 +36,6 @@ public class InstallerCommandTool(
 	/// <summary>
 	/// Deploys Creatio from a zip archive using the same execution path as the CLI command.
 	/// </summary>
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.Change)]
 	[McpServerTool(Name = DeployCreatioToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	// Deploy family: bounded by the authoritative terminal stage, never by a generic kill — a killed deploy

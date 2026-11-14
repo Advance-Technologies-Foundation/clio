@@ -72,23 +72,31 @@ public sealed class McpToolFactsSurfaceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("An argument entry that leaves a field unspecified takes the tool's own value, so a host reads every " +
-		"field of every entry without merging.")]
-	public void Read_ShouldResolveAnArgumentEntrysUnspecifiedFieldsFromTheTool() {
+	[Description("A catalog argument entry that leaves a field out takes the tool's own value, so a host reads every " +
+		"field of every published entry without merging; a field the tool leaves out reads back as Unspecified.")]
+	public void Parse_ShouldResolveAnArgumentEntrysMissingFieldsFromTheTool() {
 		// Arrange
-		System.Reflection.MethodInfo method = typeof(InheritingFixtureTool).GetMethod(nameof(InheritingFixtureTool.Run))!;
+		const string catalog = """
+			{
+			  "zz-tool": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "read",
+			    "by-argument": [{"argument": "dry-run", "value": "true", "effect": "read", "rebuilds-environment": false}]},
+			  "zz-partial": {"effect": "read"}
+			}
+			""";
 
 		// Act
-		McpToolFacts facts = McpToolFactsReader.Read(method);
+		IReadOnlyDictionary<string, McpToolFacts> facts = McpToolFactsReader.Parse(catalog);
 
 		// Assert
-		facts.ByArgument.Should().ContainSingle(because: "the fixture declares one argument entry");
-		McpToolArgumentFacts entry = facts.ByArgument[0];
+		McpToolArgumentFacts entry = facts["zz-tool"].ByArgument.Should().ContainSingle(
+			because: "the entry declares one argument value").Which;
 		entry.Effect.Should().Be(McpToolEffect.Read, because: "the entry declares its own effect");
-		entry.EnvironmentImpact.Should().Be(McpToolEnvironmentImpact.Rebuild,
-			because: "an unspecified impact takes the tool's");
-		entry.Scope.Should().Be(McpToolScope.Machine, because: "an unspecified scope takes the tool's");
-		entry.Connections.Should().Be(McpToolConnections.Read, because: "an unspecified connections fact takes the tool's");
+		entry.EnvironmentImpact.Should().Be(McpToolEnvironmentImpact.None, because: "the entry declares its own impact");
+		entry.Scope.Should().Be(McpToolScope.Machine, because: "a scope the entry leaves out takes the tool's");
+		entry.Connections.Should().Be(McpToolConnections.Read, because: "a connections fact the entry leaves out takes the tool's");
+		facts["ZZ-PARTIAL"].UnspecifiedFieldNames.Should().BeEquivalentTo(
+			[nameof(McpToolFacts.EnvironmentImpact), nameof(McpToolFacts.Scope), nameof(McpToolFacts.Connections)],
+			because: "a field the catalog leaves out must surface for the coverage test, and names match case-insensitively");
 	}
 
 	[Test]
@@ -194,15 +202,5 @@ public sealed class McpToolFactsSurfaceTests {
 		lines.Should().NotContain("\"facts\"", because: "the line index is paid on every discovery call");
 		entries.Should().NotContain("\"facts\"", because: "ClioRing parses index-entries and its budget is pinned");
 		named.Should().NotContain("\"facts\"", because: "a named contract's size is budgeted per fetch");
-	}
-
-	[McpServerToolType]
-	private static class InheritingFixtureTool {
-		[McpServerTool(Name = "zz-facts-inheriting-tool", ReadOnly = false, Destructive = true)]
-		[System.ComponentModel.Description("Synthetic tool whose argument entry inherits three fields.")]
-		[McpToolFacts(Effect = McpToolEffect.Destroy, EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
-			Scope = McpToolScope.Machine, Connections = McpToolConnections.Read)]
-		[McpToolArgumentFacts("dry-run", "true", Effect = McpToolEffect.Read)]
-		public static string Run(bool dryRun) => dryRun.ToString();
 	}
 }

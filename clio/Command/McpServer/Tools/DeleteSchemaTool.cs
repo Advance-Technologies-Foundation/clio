@@ -12,11 +12,6 @@ public class DeleteSchemaTool(
 	IToolCommandResolver commandResolver) : BaseTool<DeleteSchemaOptions>(command, logger, commandResolver) {
 
 	internal const string DeleteSchemaToolName = "delete-schema";
-	[McpToolFacts(
-		Effect = McpToolEffect.Destroy,
-		EnvironmentImpact = McpToolEnvironmentImpact.None,
-		Scope = McpToolScope.Machine,
-		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = DeleteSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
