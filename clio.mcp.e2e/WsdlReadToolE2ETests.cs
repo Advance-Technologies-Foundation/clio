@@ -115,7 +115,7 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 	[AllureTag(ReadWsdlTool.ToolName)]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureName("read-wsdl output registers a SOAP service that describe reads back the same")]
-	[Description("Reads a WSDL shipped with the tests (wsdl-files), expects both SOAP ports with the SOAP 1.2 one as Studio's pick and codes built from the stand's prefix, registers that port's arguments trimmed to three operations (a SOAP-header array, an object array, a complex header with a body) under a throwaway code, and expects describe-web-service to report the same namespaces, message elements, SOAP actions, paths, SOAP-header flags and item elements; a second read with service-code returns the same codes as existing methods.")]
+	[Description("Reads a WSDL shipped with the tests (wsdl-files) with the new service's code given as code, expects both SOAP ports with the SOAP 1.2 one as Studio's pick, that code in the arguments and the other codes built from the stand's prefix, registers that port's arguments trimmed to three operations (a SOAP-header array, an object array, a complex header with a body) under a throwaway code, and expects describe-web-service to report the same namespaces, message elements, SOAP actions, paths, SOAP-header flags and item elements; a second read with service-code returns the same codes as existing methods.")]
 	public async Task ReadWsdl_Output_Should_Register_And_Describe_The_Same_Service() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -127,17 +127,18 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
 		_prefix = await WebServiceStand.ReadPrefixAsync(settings, _environmentName, cts.Token);
 		string[] operations = ["TaggedCall", "GetByRoles", "SecureCall"];
+		string code = _prefix + "E2eWsdl" + Guid.NewGuid().ToString("N")[..12];
 
 		// Act
 		WsdlReadResult read = await CallAsync<WsdlReadResult>(ReadWsdlTool.ToolName, new Dictionary<string, object?> {
 			["environment-name"] = _environmentName, ["wsdl-files"] = new[] { Asset("wizard-features.wsdl") },
-			["operations"] = operations
+			["operations"] = operations, ["code"] = code
 		}, cts.Token);
 		read.Success.Should().BeTrue(because: $"the shipped WSDL is readable; error: {read.Error}");
 		WsdlServiceView pick = read.Services!.Single(s => s.StudioPick);
 		JsonObject arguments = JsonNode.Parse(pick.Arguments!.Value.GetRawText())!.AsObject();
-		string code = _prefix + "E2eWsdl" + Guid.NewGuid().ToString("N")[..12];
-		arguments["code"] = code;
+		arguments["code"]!.GetValue<string>().Should().Be(code,
+			because: "the code the user named for the new service is already in the arguments, which are registered as they are");
 		arguments["package-name"] = PackageName;
 		_serviceCodes.Add(code);
 		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,

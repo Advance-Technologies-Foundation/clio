@@ -401,6 +401,19 @@ custom binding and `WSHttpBinding` with security mode None); the user decided to
   choice (D12) and is documented as not a recommendation. Rejected: moving `studio-pick` to the SOAP 1.1 port (it would
   no longer say what Studio does) and a platform-side fix (out of clio's scope; worth a platform ticket).
 
+### D16. A new service's code is its own `read-wsdl` argument (owner, 2026-11-14)
+
+`read-wsdl` takes `code`, the code the user named for a NEW service: the returned arguments carry it instead of the code
+built from the WSDL service name, so they can still be registered as they are. `service-code` stays only for an
+existing SOAP service the operations go into; both together are refused, `code` is checked like a registered code
+(Latin identifier, schema-name prefix), and a `service-code` that names no service is refused before the stand
+downloads the WSDL, pointing to `code`.
+
+Why: in two isolated runs agents passed the new service's code as `service-code` in 5 of 7 WSDL reads, failed, read
+again and then replaced the generated code at registration, against the guide's "register the arguments as they
+are". Rejected: reading an unregistered `service-code` as a new service. It would remove the failed call, but a typo in
+an existing service's code would silently build a second service instead of extending the first.
+
 ## Consequences
 
 - Slice A changes no write path: register still creates REST only and modify still refuses SOAP until slice B.

@@ -783,7 +783,68 @@ public sealed class WsdlReaderTests {
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "no such service exists")
-			.WithMessage("*is not registered*only for an existing SOAP service*without it*",
+			.WithMessage("*is not registered*only for an existing SOAP service*as code instead*",
 				because: "agents passed the code of the service they were about to register (seen in isolated runs)");
+	}
+
+	[Test]
+	[Description("The code the user named for a new service replaces the code built from the WSDL service name, in every port's arguments.")]
+	public void Read_Should_Put_The_Users_Code_Into_The_Arguments() {
+		// Arrange
+		string path = GivenFixture("calculator.wsdl");
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path) with { Code = "UsrTcCalcW" });
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the code is valid");
+		result.Services.Should().OnlyContain(s => s.Arguments!.Value.GetProperty("code").GetString() == "UsrTcCalcW",
+			because: "the agent registers the arguments as they are, so the user's code must already be in them");
+	}
+
+	[Test]
+	[Description("code and service-code together are refused before anything is read: one asks for a new service, the other for an existing one.")]
+	public void Read_Should_Refuse_Code_With_ServiceCode() {
+		// Arrange
+		string path = GivenFixture("calculator.wsdl");
+
+		// Act
+		Action act = () => _sut.Read(Files(path) with { Code = "UsrNew", ServiceCode = "UsrCalc" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the two arguments ask for different things")
+			.WithMessage("*not both*", because: "the refusal says to give one of them");
+		_designer.DidNotReceiveWithAnyArgs().Describe(default, default);
+	}
+
+	[Test]
+	[Description("A code without the schema-name prefix is refused before the WSDL is read, as register-web-service would refuse it.")]
+	public void Read_Should_Refuse_A_Code_Without_The_Prefix() {
+		// Arrange
+		string path = GivenFixture("calculator.wsdl");
+
+		// Act
+		Action act = () => _sut.Read(Files(path) with { Code = "TcCalc" });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "Studio and register-web-service require the prefix")
+			.WithMessage("*schema-name prefix 'Usr'*", because: "the refusal names the prefix");
+	}
+
+	[Test]
+	[Description("A service-code that names no registered service is refused before the stand downloads the WSDL.")]
+	public void Read_Should_Refuse_An_Unknown_ServiceCode_Before_The_Download() {
+		// Arrange
+		const string url = "http://example.org/calc.asmx?WSDL";
+		_designer.Describe("UsrTcNew", false).Returns(_ =>
+			throw new ArgumentException("web service 'UsrTcNew' is not registered; list-web-services shows the registered codes."));
+
+		// Act
+		Action act = () => _sut.Read(new WsdlReadRequest("dev", url, null, ServiceCode: "UsrTcNew"));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "no such service exists")
+			.WithMessage("*give the code the user named as code*", because: "the hint points to the argument for a new service");
+		_client.DidNotReceiveWithAnyArgs().DownloadWsdl(default);
 	}
 }

@@ -123,9 +123,11 @@ public static partial class WsdlRegistrationMapper {
 	/// <param name="environmentName">The environment the arguments are for.</param>
 	/// <param name="target">An existing service the operations go into, or null for a new service.</param>
 	/// <param name="warnings">The warnings of the call, shared by every port so a message common to them is listed once.</param>
+	/// <param name="newCode">The code the user named for a new service; null builds one from the WSDL service name.</param>
 	/// <returns>The arguments.</returns>
 	public static WsdlServiceArguments Map(WsdlPort port, bool studioPick, string prefix, string environmentName,
-		WsdlTargetService target, WarningLog warnings) {
+		WsdlTargetService target, WarningLog warnings,
+		string newCode = null) {
 		ArgumentNullException.ThrowIfNull(port);
 		prefix ??= string.Empty;
 		var context = new PortContext(port, prefix, target, warnings);
@@ -146,7 +148,8 @@ public static partial class WsdlRegistrationMapper {
 				existing.Add(method.Code);
 			}
 		}
-		string code = target?.Code ?? ServiceCode(prefix, port.ServiceName);
+		// An existing service keeps its code; a new one takes the code the user named, else one built from the WSDL.
+		string code = target?.Code ?? newCode ?? ServiceCode(prefix, port.ServiceName);
 		string type = port.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12 ? "soap12" : "soap11";
 		return new WsdlServiceArguments(port.Name, studioPick,
 			new WsdlRegistrationArgs(environmentName, code, port.ServiceName, baseUri, type, namespaces, methods),

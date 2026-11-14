@@ -162,7 +162,7 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 
 	private const string WsdlUrl = "wsdl-url";
 	private const string WsdlFiles = "wsdl-files";
-	private const string ValidHint = "Valid: environment-name, wsdl-url, wsdl-files, port, service-code, operations.";
+	private const string ValidHint = "Valid: environment-name, wsdl-url, wsdl-files, port, code, service-code, operations.";
 
 	/// <summary>Spellings agents use for the WSDL source, answered with a rename hint (never bound).</summary>
 	internal static readonly IReadOnlyDictionary<string, string> Aliases = WebServiceToolRunner.WithAliases(
@@ -189,10 +189,10 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 
 				 Returns one argument object per SOAP 1.1 and SOAP 1.2 port (studio-pick marks the port Studio would create: the SOAP 1.2 one when both exist; it is not a recommendation, see warnings; HTTP ports are dropped): type, base URI, namespaces, and methods with message-element, soap-action and parameters with element paths, soap-header and sequence-element. Codes are the environment's schema-name prefix plus the full WSDL name in PascalCase (GetCustomerOrders -> UsrGetCustomerOrders; a nested field joins its whole path, wrappers included, customer/name -> UsrCustomerName), the same on every read. warnings list what was not read or needs a test call, and a port the platform may not be able to call as described (SOAP 1.2 dispatched by the Content-Type action, as WCF does; required WS-Addressing; WS-Security message security), naming the SOAP 1.1 port to register instead when there is one (for a plain SOAP 1.2 port only when WCF wrote the WSDL; otherwise as the way out of a failed test call).
 
-				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return whole comes back as operation names: read it again with operations. The caller needs CanManageSolution.
+				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. When the user named the new service's code, pass it as code. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return whole comes back as operation names: read it again with operations. The caller needs CanManageSolution.
 				 """)]
 	public WsdlReadResult ReadWsdl(
-		[Description("Parameters: environment-name, and wsdl-url or wsdl-files (required); port, service-code, operations (optional)")]
+		[Description("Parameters: environment-name, and wsdl-url or wsdl-files (required); port, code (new service) or service-code (existing service), operations (optional)")]
 		[Required]
 		ReadWsdlArgs args) {
 		try {
@@ -209,7 +209,7 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 			IWsdlReader reader = commandResolver.Resolve<IWsdlReader>(
 				new EnvironmentOptions { Environment = args.EnvironmentName });
 			return reader.Read(new WsdlReadRequest(args.EnvironmentName, args.WsdlUrl, args.WsdlFiles, args.Port,
-				args.ServiceCode, args.Operations));
+				args.ServiceCode, args.Operations, args.Code));
 		} catch (Exception exception) {
 			return new WsdlReadResult(false, WebServiceToolRunner.Describe(exception));
 		}
@@ -406,12 +406,16 @@ public sealed record ReadWsdlArgs(
 	string Port = null,
 
 	[property: JsonPropertyName("service-code")]
-	[property: Description("An existing SOAP service the operations go into: methods that match keep their codes")]
+	[property: Description("Only an EXISTING SOAP service the operations go into: methods that match keep their codes. For a new service use code")]
 	string ServiceCode = null,
 
 	[property: JsonPropertyName("operations")]
 	[property: Description("Operation names to return, e.g. [\"Add\"]; all when omitted")]
-	IReadOnlyList<string> Operations = null) {
+	IReadOnlyList<string> Operations = null,
+
+	[property: JsonPropertyName("code")]
+	[property: Description("The code the user named for a NEW service, with the schema-name prefix, e.g. UsrErpOrders; the returned arguments carry it instead of the code built from the WSDL. Not with service-code")]
+	string Code = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

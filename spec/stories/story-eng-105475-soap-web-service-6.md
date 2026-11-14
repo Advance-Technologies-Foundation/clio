@@ -27,7 +27,9 @@ a change I make does not silently alter or break the user's processes.
 3. `read-wsdl` warns about SOAP 1.2 ports, ports requiring WS-Addressing and ports requiring WS-Security message
    security, naming a SOAP 1.1 port to register instead (same service, scheme and host preferred), else the measured
    workaround.
-4. Knowledge records, ADR D15, capability map and the clio-knowledge guidance state the measured platform facts.
+4. `read-wsdl` takes `code` for a new service's code; `service-code` only for an existing service, checked before
+   the download (ADR D16).
+5. Knowledge records, ADR D15, capability map and the clio-knowledge guidance state the measured platform facts.
 
 ## Definition of done
 

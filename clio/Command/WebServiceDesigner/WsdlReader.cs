@@ -19,8 +19,12 @@ namespace Clio.Command.WebServiceDesigner;
 /// <param name="Port">One port to return; all SOAP ports when null.</param>
 /// <param name="ServiceCode">An existing SOAP service the operations are read for; null for a new service.</param>
 /// <param name="Operations">The operations to return; all when null.</param>
+/// <param name="Code">
+/// The code the user named for a NEW service; it replaces the code built from the WSDL service name. Exclusive with
+/// <paramref name="ServiceCode"/>.
+/// </param>
 public sealed record WsdlReadRequest(string EnvironmentName, string WsdlUrl, IReadOnlyList<string> WsdlFiles,
-	string Port = null, string ServiceCode = null, IReadOnlyList<string> Operations = null);
+	string Port = null, string ServiceCode = null, IReadOnlyList<string> Operations = null, string Code = null);
 
 /// <summary>One SOAP port of the WSDL as read-wsdl returns it.</summary>
 public sealed record WsdlServiceView(
@@ -155,11 +159,25 @@ public sealed partial class WsdlReader(
 		if (fromFiles) {
 			CheckPaths(request.WsdlFiles);
 		}
+		bool newCode = !string.IsNullOrWhiteSpace(request.Code);
+		if (newCode && !string.IsNullOrWhiteSpace(request.ServiceCode)) {
+			throw new ArgumentException("Give code (the user's code for a NEW service) or service-code (an existing SOAP "
+				+ "service the operations go into), not both.");
+		}
 		if (!rights.GetCanExecuteOperation(ManageSolutionOperation, new CreatioRequestOptions())) {
 			throw new UnauthorizedAccessException(
 				"The environment user lacks CanManageSolution, which Studio > Web services requires.");
 		}
 		string prefix = prefixReader.Read();
+		string code = newCode ? request.Code.Trim() : null;
+		if (newCode) {
+			var codeErrors = new WebServiceDefinitionBuilder.Errors();
+			WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, codeErrors);
+			codeErrors.ThrowIfAny();
+		}
+		// The target is read before the WSDL is downloaded and parsed: a wrong service-code is refused before that work,
+		// and also when the result falls back to names.
+		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		IReadOnlyList<WsdlSourceFile> files = fromUrl ? Download(url) : ReadFiles(request.WsdlFiles);
 		WsdlDocument document = parser.Parse(files, prefix, new WsdlParseOptions(request.Port, request.Operations));
 		var warnings = new WarningLog();
@@ -172,8 +190,6 @@ public sealed partial class WsdlReader(
 		}
 		warnings.AddDropped(document.WarningsDropped);
 		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document), request.Operations);
-		// The target is read first, so a wrong service-code is refused also when the result falls back to names.
-		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		// Listed by name before anything is mapped: too many parameters, or paths and captions of the parameters the mapper
 		// keeps that alone pass the result limit (each is serialized, so the result could not fit). Ports on one binding share
 		// their operations, so mapping and serializing each would copy the same long paths once per port first.
@@ -185,7 +201,7 @@ public sealed partial class WsdlReader(
 		var services = new List<WsdlServiceArguments>();
 		foreach (WsdlPort port in ports) {
 			services.Add(WsdlRegistrationMapper.Map(port, port.Name == document.StudioPort, prefix,
-				request.EnvironmentName, target, warnings));
+				request.EnvironmentName, target, warnings, code));
 		}
 		return Result(services, warnings, Notices(services, target, url));
 	}
@@ -456,7 +472,7 @@ public sealed partial class WsdlReader(
 	}
 
 	private const string ServiceCodeHint = "service-code is only for an existing SOAP service the operations go into; for "
-		+ "a new service read the WSDL without it, and use the code the user named in the register-web-service arguments.";
+		+ "a new service give the code the user named as code instead.";
 
 	private WsdlTargetService ReadTarget(string serviceCode) {
 		if (string.IsNullOrWhiteSpace(serviceCode)) {
