@@ -59,8 +59,7 @@ internal static class DynamicCaseFilterArguments {
 				+ $"{Shape}.", DynamicCaseStageArguments.UnknownKeysCode);
 			return false;
 		}
-		if (entry[ColumnKey] is not JsonValue columnNode || !columnNode.TryGetValue(out string column)
-				|| string.IsNullOrWhiteSpace(column)) {
+		if (!DynamicCaseStageArguments.TryNonBlank(entry[ColumnKey], out string column)) {
 			refusal = Invalid("filter.column must be the name of a lookup column of the object.");
 			return false;
 		}
@@ -76,7 +75,7 @@ internal static class DynamicCaseFilterArguments {
 				+ $"whose column is empty). A filter is {Shape}.");
 			return false;
 		}
-		filter = new DynamicCaseFilterArgument(column.Trim(), values, empty);
+		filter = new DynamicCaseFilterArgument(column, values, empty);
 		return true;
 	}
 
@@ -102,12 +101,12 @@ internal static class DynamicCaseFilterArguments {
 		}
 		List<JsonNode> items = node is JsonArray array ? [.. array] : new List<JsonNode> { node };
 		foreach (JsonNode item in items) {
-			if (item is not JsonValue scalar || !scalar.TryGetValue(out string text) || string.IsNullOrWhiteSpace(text)) {
+			if (!DynamicCaseStageArguments.TryNonBlank(item, out string text)) {
 				refusal = Invalid("filter.values must be strings: each the Id or the exact display value of a value of the "
 					+ "filter column's lookup.");
 				return false;
 			}
-			values.Add(text.Trim());
+			values.Add(text);
 		}
 		return true;
 	}
@@ -116,5 +115,5 @@ internal static class DynamicCaseFilterArguments {
 		Refuse(message, DynamicCaseStageArguments.InvalidRequestCode);
 
 	private static CommandExecutionResult Refuse(string message, string code) =>
-		CommandExecutionResult.FromValidationError($"{message} [{code}]");
+		DynamicCaseStageArguments.Refuse(message, code);
 }

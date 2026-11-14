@@ -181,7 +181,7 @@ internal static class DynamicCaseStageArguments {
 		return false;
 	}
 
-	private static bool TryNonBlank(JsonNode node, out string text) {
+	internal static bool TryNonBlank(JsonNode node, out string text) {
 		text = null;
 		if (node is not JsonValue scalar || !scalar.TryGetValue(out string raw) || string.IsNullOrWhiteSpace(raw)) {
 			return false;
@@ -190,6 +190,6 @@ internal static class DynamicCaseStageArguments {
 		return true;
 	}
 
-	private static CommandExecutionResult Refuse(string message, string code) =>
+	internal static CommandExecutionResult Refuse(string message, string code) =>
 		CommandExecutionResult.FromValidationError($"{message} [{code}]");
 }
