@@ -24,7 +24,7 @@ public class PackageHotfixTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Unlocks a Creatio package for hotfix editing by starting hotfix state on the remote environment.")]
+	[Description("Unlocks a Creatio package for hotfix editing. It starts hotfix state on the remote environment.")]
 	public CommandExecutionResult UnlockForHotfix(
 		[Description("unlock-for-hotfix parameters")] [Required] PackageHotfixArgs args
 	) {

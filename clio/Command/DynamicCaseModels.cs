@@ -51,6 +51,12 @@ public static class DynamicCaseErrorCodes {
 	public const string ProcessBuilderWithoutBuildCase = "process-builder-without-build-case";
 
 	/// <summary>
+	/// The environment answered <c>DescribeCase</c> or <c>ModifyCase</c> with a 404: the installed package does not
+	/// carry the operations that read and change an existing case.
+	/// </summary>
+	public const string ProcessBuilderWithoutCaseChange = "process-builder-without-case-change";
+
+	/// <summary>
 	/// A <c>BuildCase</c> pass could not be sent or its answer could not be read: on the validate pass nothing was
 	/// written; on the build pass the outcome is <c>unknown</c>.
 	/// </summary>
@@ -86,9 +92,45 @@ public static class DynamicCaseErrorCodes {
 
 #region Wire shape (ProcessDesignService.BuildCase)
 
+/// <summary>
+/// One stage item as a tool call named it, normalized: the members a call left out are <see langword="null"/>, and
+/// <see cref="GroupSent"/> keeps an explicit <c>"group": null</c> apart from an absent key.
+/// </summary>
+/// <param name="Value">The lookup value: its Id or exact display value.</param>
+public sealed record DynamicCaseStageItem(string Value) {
+	/// <summary>The stage caption in the case; <see langword="null"/> when not named.</summary>
+	public string Caption { get; init; }
+
+	/// <summary>The stage colour, <c>#RRGGBB</c>; <see langword="null"/> when not named.</summary>
+	public string Color { get; init; }
+
+	/// <summary>
+	/// Whether the call carried a <c>group</c> key at all, <c>null</c> included: on a change an explicit null takes
+	/// the stage out of its group, while a left-out key keeps the stored group.
+	/// </summary>
+	public bool GroupSent { get; init; }
+
+	/// <summary>The parent stage's lookup value (Id or exact display value); <see langword="null"/> for none.</summary>
+	public string Group { get; init; }
+
+	/// <summary>False for a final stage that ends the case unsuccessfully; <see langword="null"/> when not named.</summary>
+	public bool? Successful { get; init; }
+}
+
 /// <summary>One stage of an explicit order on the wire: the lookup value's Id or exact display value.</summary>
 /// <param name="Value">The lookup value.</param>
-public sealed record BuildCaseStageRequest([property: JsonPropertyName("value")] string Value);
+public sealed record BuildCaseStageRequest([property: JsonPropertyName("value")] string Value) {
+	/// <summary>
+	/// The parent stage's lookup value, for a stage that joins a stage group; omitted when <see langword="null"/>,
+	/// which a build reads as no group.
+	/// </summary>
+	[JsonPropertyName("group")]
+	public string Group { get; init; }
+
+	/// <summary>False for a final stage that ends the case unsuccessfully; omitted when not named.</summary>
+	[JsonPropertyName("successful")]
+	public bool? Successful { get; init; }
+}
 
 /// <summary>
 /// The body of a <c>BuildCase</c> pass, sent wrapped under <c>request</c>. The server refuses an undeclared key, so
@@ -153,11 +195,41 @@ public sealed class DynamicCaseStage {
 	/// <summary>The stage colour.</summary>
 	[JsonPropertyName("color")]
 	public string Color { get; init; }
+
+	/// <summary>The lookup value Id of the parent of this stage's group; absent for a stage in no group.</summary>
+	[JsonPropertyName("group")]
+	public string Group { get; init; }
+
+	/// <summary>False only for a final stage that ends the case unsuccessfully; absent from an older package.</summary>
+	[JsonPropertyName("successful")]
+	public bool? Successful { get; init; }
+
+	/// <summary>A stage of the final group: a record that reaches it completes the case.</summary>
+	[JsonPropertyName("isFinal")]
+	public bool? IsFinal { get; init; }
+
+	/// <summary>The stage holds steps (process elements), so removing it is refused.</summary>
+	[JsonPropertyName("hasSteps")]
+	public bool? HasSteps { get; init; }
+
+	/// <summary>A step condition moves the case to this stage, so removing it is refused.</summary>
+	[JsonPropertyName("isConditionTarget")]
+	public bool? IsConditionTarget { get; init; }
+
+	/// <summary>Running cases that sit in this stage now; absent where it was not read.</summary>
+	[JsonPropertyName("runningInstances")]
+	public int? RunningInstances { get; init; }
 }
 
-/// <summary>The <c>case</c> block of the server's answer.</summary>
+/// <summary>
+/// The case block of the server's answers: <c>case</c> of <c>BuildCase</c> and <c>ModifyCase</c>, and each item of
+/// <c>cases</c> of <c>DescribeCase</c>.
+/// </summary>
 public sealed class BuildCaseCaseInfo {
-	/// <summary><c>created</c>, <c>already-present</c> or <c>planned</c>.</summary>
+	/// <summary>
+	/// <c>created</c>, <c>already-present</c> or <c>planned</c> for a build; <c>existing</c> for a describe;
+	/// <c>modified</c>, <c>unchanged</c> or <c>planned</c> for a change.
+	/// </summary>
 	[JsonPropertyName("status")]
 	public string Status { get; init; }
 
@@ -208,6 +280,18 @@ public sealed class BuildCaseCaseInfo {
 	/// <summary>Directed stage connections.</summary>
 	[JsonPropertyName("connectionCount")]
 	public int ConnectionCount { get; init; }
+
+	/// <summary>The captions of the final group, the stages that complete the case.</summary>
+	[JsonPropertyName("finalStages")]
+	public List<string> FinalStages { get; init; }
+
+	/// <summary>Running cases of this case schema; absent where it was not read.</summary>
+	[JsonPropertyName("runningInstances")]
+	public int? RunningInstances { get; init; }
+
+	/// <summary>The case's package does not accept changes: it can be described, not modified in place.</summary>
+	[JsonPropertyName("packageReadOnly")]
+	public bool? PackageReadOnly { get; init; }
 }
 
 /// <summary>The settings row and the link row a case needs; the same shape in the server answer and the result.</summary>
@@ -329,9 +413,12 @@ public sealed class DynamicCaseConnections {
 	public int Count { get; init; }
 }
 
-/// <summary>The <c>case</c> block of the tool's result: the server's block plus the designer link.</summary>
+/// <summary>The case block of a dynamic-case tool's result: the server's block plus the designer link.</summary>
 public sealed class DynamicCaseInfo {
-	/// <summary><c>created</c>, <c>already-present</c> or <c>planned</c>.</summary>
+	/// <summary>
+	/// <c>created</c>, <c>already-present</c> or <c>planned</c> for a build; <c>existing</c> for a describe;
+	/// <c>modified</c>, <c>unchanged</c> or <c>planned</c> for a change.
+	/// </summary>
 	[JsonPropertyName("status")]
 	public string Status { get; init; }
 
@@ -382,6 +469,18 @@ public sealed class DynamicCaseInfo {
 	/// <summary>The stage connections.</summary>
 	[JsonPropertyName("connections")]
 	public DynamicCaseConnections Connections { get; init; }
+
+	/// <summary>The captions of the final group, the stages that complete the case; absent from an older package.</summary>
+	[JsonPropertyName("finalStages")]
+	public List<string> FinalStages { get; init; }
+
+	/// <summary>Running cases of this case schema; absent where it was not read.</summary>
+	[JsonPropertyName("runningInstances")]
+	public int? RunningInstances { get; init; }
+
+	/// <summary>The case's package does not accept changes: it can be described, not modified in place.</summary>
+	[JsonPropertyName("packageReadOnly")]
+	public bool? PackageReadOnly { get; init; }
 
 	/// <summary>The case designer link; only for a case that exists.</summary>
 	[JsonPropertyName("designerUrl")]

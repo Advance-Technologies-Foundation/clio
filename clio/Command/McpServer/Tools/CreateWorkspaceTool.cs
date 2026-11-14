@@ -29,7 +29,7 @@ public class CreateWorkspaceTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
-				 Creates a new empty clio workspace in a local directory.
+				 Creates a new empty local clio workspace.
 				 
 				 To create a workspace in C:\Projects\Workspaces\son directory, use:
 				 workspaceName: son, directory: C:\Projects\Workspaces

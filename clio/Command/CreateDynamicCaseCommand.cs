@@ -37,8 +37,11 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 	/// <summary>The lookup column whose values become the stages.</summary>
 	public string StageColumnName { get; set; } = string.Empty;
 
-	/// <summary>The explicit stage order (lookup value Ids or exact display values); empty for the default order.</summary>
-	public IReadOnlyList<string> Stages { get; set; } = [];
+	/// <summary>
+	/// The explicit stage order (lookup value Ids or exact display values), each with its optional stage group and
+	/// successful flag; empty for the default order.
+	/// </summary>
+	public IReadOnlyList<DynamicCaseStageItem> Stages { get; set; } = [];
 
 	/// <summary>An integer column of the lookup that orders the stages; ignored when <see cref="Stages"/> is given.</summary>
 	public string OrderColumn { get; set; }

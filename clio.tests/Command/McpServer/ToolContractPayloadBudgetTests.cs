@@ -155,6 +155,16 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "Each line:" and "it may delete" became "may delete". The resident sentence is unchanged.
 	// read-wsdl's line made findable ("Reads a WSDL." -> "Reads a SOAP WSDL.", +5 bytes; an agent on a stand never
 	// reached the tool): paid by the legend's "[aka deprecated names]" -> "[aka old names]".
+	// ENG-106378 (describe-dynamic-case and modify-dynamic-case, two more lines) measured 18826 (138 over). Other
+	// long-tail tools' purpose lines paid for them, not the ceiling: first sentences that the 48-character cut
+	// truncated were shortened to fit it, their qualifier ("on a registered environment", the designer service)
+	// left to the environment-name argument or moved to the next sentence - list-themes, clear-themes-cache,
+	// delete-theme, create-workspace, create-package, generate-process-model, create-schema,
+	// create-client-unit-schema, update-schema, update-sql-schema, remove-package-dependency, unlock-for-hotfix,
+	// install-sql-schema, delete-app and enable-knowledge-source. Measured 18686, 2 bytes under this ceiling; the
+	// same cut kept the object index above at 50172, under its 50432 without a re-pin. Merged with ENG-105475's
+	// read-wsdl line it measured 18695, 7 over: describe-dynamic-case's own first sentence paid, shortened under the
+	// 48-character cut ("Reads a dynamic case (DCM), read-only.").
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

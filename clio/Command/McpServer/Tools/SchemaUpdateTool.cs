@@ -26,7 +26,7 @@ public sealed class SchemaUpdateTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
-		"Update the body of a C# source-code schema on a remote Creatio environment via SourceCodeSchemaDesignerService. " +
+		"Update the body of a C# source-code schema. It saves through SourceCodeSchemaDesignerService. " +
 		"Provide the body inline via `body` or, for large bodies, as an absolute file path via `body-file`. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public SourceCodeSchemaUpdateResponse UpdateSchema(

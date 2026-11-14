@@ -32,7 +32,7 @@ public class ListThemesTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
-	 Description("List the custom Creatio themes available on a registered environment. " +
+	 Description("List the custom Creatio themes. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath }], error? }. " +
 		"An empty themes array means the catalog is empty or the caller lacks the CanCustomizeBranding license. " +

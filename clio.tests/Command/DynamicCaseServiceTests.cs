@@ -24,6 +24,7 @@ public sealed class DynamicCaseServiceTests {
 	private const string CaseUId = "5c58c4c4-134b-4744-9c67-96d9c69c9d55";
 
 	private IBuildCaseClient _client;
+	private IDynamicCaseSession _session;
 	private IDynamicCasePageStep _pageStep;
 	private IPackageDependencyManager _dependencies;
 	private ISettingsRepository _settings;
@@ -33,6 +34,8 @@ public sealed class DynamicCaseServiceTests {
 	[SetUp]
 	public void Setup() {
 		_client = Substitute.For<IBuildCaseClient>();
+		_session = Substitute.For<IDynamicCaseSession>();
+		_client.OpenSession(Env).Returns(_session);
 		_pageStep = Substitute.For<IDynamicCasePageStep>();
 		_dependencies = Substitute.For<IPackageDependencyManager>();
 		_settings = Substitute.For<ISettingsRepository>();
@@ -52,8 +55,10 @@ public sealed class DynamicCaseServiceTests {
 	[TearDown]
 	public void TearDown() {
 		_client.ClearReceivedCalls();
+		_session.ClearReceivedCalls();
 		_pageStep.ClearReceivedCalls();
 		_dependencies.ClearReceivedCalls();
+		_session.Dispose();
 	}
 
 	private static CreateDynamicCaseOptions Options(bool dryRun = false, bool addProgressBar = true,
@@ -71,9 +76,9 @@ public sealed class DynamicCaseServiceTests {
 		SaveOnChange = false
 	};
 
-	private static BuildCaseReply Envelope(string outcome, bool success = true, string errorCode = null,
+	private static DynamicCaseReply<BuildCaseResponse> Envelope(string outcome, bool success = true, string errorCode = null,
 		List<string> missing = null, List<string> leftovers = null) =>
-		new(BuildCaseReplyKind.Envelope, new BuildCaseResponse {
+		new(DynamicCaseReplyKind.Envelope, new BuildCaseResponse {
 			Success = success,
 			Outcome = outcome,
 			ErrorCode = errorCode,
@@ -93,9 +98,9 @@ public sealed class DynamicCaseServiceTests {
 			Notes = ["No compile or restart is needed: a case is interpreted."]
 		}, null);
 
-	private void Passes(BuildCaseReply validate, BuildCaseReply build = null) {
-		_client.Send(Env, Arg.Is<BuildCaseRequest>(request => request.ValidateOnly)).Returns(validate);
-		_client.Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly))
+	private void Passes(DynamicCaseReply<BuildCaseResponse> validate, DynamicCaseReply<BuildCaseResponse> build = null) {
+		_session.Build(Arg.Is<BuildCaseRequest>(request => request.ValidateOnly)).Returns(validate);
+		_session.Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly))
 			.Returns(build ?? Envelope("created"));
 	}
 
@@ -111,9 +116,9 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.Outcome.Should().Be(DynamicCaseOutcomes.Created, because: "both passes and the page succeeded");
 		Received.InOrder(() => {
-			_client.Send(Env, Arg.Is<BuildCaseRequest>(request => request.ValidateOnly && request.AllowMissingDependencies));
+			_session.Build(Arg.Is<BuildCaseRequest>(request => request.ValidateOnly && request.AllowMissingDependencies));
 			_pageStep.Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>());
-			_client.Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly && !request.AllowMissingDependencies));
+			_session.Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly && !request.AllowMissingDependencies));
 			_pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>());
 		});
 	}
@@ -128,7 +133,7 @@ public sealed class DynamicCaseServiceTests {
 		DynamicCaseResult result = _service.Create(Options(addPackageDependencies: false));
 
 		// Assert
-		_client.Received(1).Send(Env, Arg.Is<BuildCaseRequest>(request =>
+		_session.Received(1).Build(Arg.Is<BuildCaseRequest>(request =>
 			request.ValidateOnly && !request.AllowMissingDependencies));
 		result.ErrorCode.Should().Be("dependencies-missing", because: "the server's refusal is passed through");
 		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesMissing,
@@ -150,7 +155,7 @@ public sealed class DynamicCaseServiceTests {
 		result.ErrorCode.Should().Be("rights-missing", because: "the server's code is the contract");
 		result.Success.Should().BeFalse(because: "a refusal is not a success");
 		_pageStep.DidNotReceiveWithAnyArgs().Plan(default!, default!, default!, default!, default!);
-		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
+		_session.DidNotReceive().Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
 	}
 
@@ -170,7 +175,7 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.PageAppendRejected, because: "the page refusal is the answer");
 		result.Outcome.Should().Be(DynamicCaseOutcomes.Refused, because: "nothing was written");
-		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
+		_session.DidNotReceive().Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
 	}
 
@@ -224,7 +229,7 @@ public sealed class DynamicCaseServiceTests {
 		result.Page.Fragment.Should().NotBeNullOrWhiteSpace(because: "the plan shows the fragment it would write");
 		_pageStep.Received(1).Plan(Env, Package, Entity, null, Arg.Any<IReadOnlyList<string>>());
 		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
-		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
+		_session.DidNotReceive().Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		_pageStep.DidNotReceiveWithAnyArgs().Write(default!, default!);
 	}
 
@@ -241,7 +246,7 @@ public sealed class DynamicCaseServiceTests {
 		Received.InOrder(() => {
 			_dependencies.AddDependenciesReportingCompilation(Package, Arg.Is<IEnumerable<PackageDependencySpec>>(specs =>
 				specs.Select(spec => spec.Name).SequenceEqual(new[] { "CrtBase", "CrtCoreBase" })));
-			_client.Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
+			_session.Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		});
 		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesAdded, because: "the add took");
 		result.Dependencies.Added.Should().Equal(["CrtBase", "CrtCoreBase"], because: "the added list is reported");
@@ -261,7 +266,7 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.DependencyCycle, because: "a storage validation error is a cycle");
 		result.Outcome.Should().Be(DynamicCaseOutcomes.Refused, because: "the case was not built");
-		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
+		_session.DidNotReceive().Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		_pageStep.DidNotReceiveWithAnyArgs().Write(default!, default!);
 	}
 
@@ -395,7 +400,7 @@ public sealed class DynamicCaseServiceTests {
 	[Description("A transport failure on the validate pass is request-failed: no page is read and nothing is written.")]
 	public void Create_ShouldReportRequestFailed_WhenTheValidatePassCannotBeSent() {
 		// Arrange
-		Passes(new BuildCaseReply(BuildCaseReplyKind.TransportFailure, null, "timeout"));
+		Passes(new DynamicCaseReply<BuildCaseResponse>(DynamicCaseReplyKind.TransportFailure, null, "timeout"));
 
 		// Act
 		DynamicCaseResult result = _service.Create(Options());
@@ -411,7 +416,7 @@ public sealed class DynamicCaseServiceTests {
 	[Description("WCF's request-deserialization fault on the validate pass is request-failed, not a package without BuildCase: the operation exists and only the request shape was rejected.")]
 	public void Create_ShouldReportRequestFailed_WhenTheServerCannotReadTheRequest() {
 		// Arrange
-		Passes(new BuildCaseReply(BuildCaseReplyKind.NotAnEnvelope, null,
+		Passes(new DynamicCaseReply<BuildCaseResponse>(DynamicCaseReplyKind.NotAnEnvelope, null,
 			"The formatter threw an exception while trying to deserialize the message"));
 
 		// Act
@@ -436,7 +441,7 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.DependencyAddFailed, because: "no validation error came back");
 		result.Dependencies.Status.Should().Be("missing", because: "nothing was added");
-		_client.DidNotReceive().Send(Env, Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
+		_session.DidNotReceive().Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 	}
 
 	[Test]
@@ -469,7 +474,7 @@ public sealed class DynamicCaseServiceTests {
 	[Description("A 404 on the validate pass is process-builder-without-build-case: the installed package passed the floor and still has no BuildCase.")]
 	public void Create_ShouldReportProcessBuilderWithoutBuildCase_WhenTheValidatePassFindsNoOperation() {
 		// Arrange
-		Passes(new BuildCaseReply(BuildCaseReplyKind.RouteMissing, null, "Endpoint not found."));
+		Passes(new DynamicCaseReply<BuildCaseResponse>(DynamicCaseReplyKind.RouteMissing, null, "Endpoint not found."));
 
 		// Act
 		DynamicCaseResult result = _service.Create(Options());
@@ -486,7 +491,7 @@ public sealed class DynamicCaseServiceTests {
 	[Description("A validate-pass body that is not the envelope (a fault from inside BuildCase, an HTML error or login page) is request-failed: only a 404 proves the operation is missing, and a reinstall would restart the site for nothing.")]
 	public void Create_ShouldReportRequestFailed_WhenTheValidatePassAnswersWithSomethingElse() {
 		// Arrange
-		Passes(new BuildCaseReply(BuildCaseReplyKind.NotAnEnvelope, null, "<html>Login</html>"));
+		Passes(new DynamicCaseReply<BuildCaseResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, "<html>Login</html>"));
 
 		// Act
 		DynamicCaseResult result = _service.Create(Options());
@@ -565,7 +570,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldReportUnknown_WhenTheBuildPassReplyIsUnreadable() {
 		// Arrange
 		Passes(Envelope("planned", missing: ["CrtBase"]),
-			new BuildCaseReply(BuildCaseReplyKind.NotAnEnvelope, null, "<html>"));
+			new DynamicCaseReply<BuildCaseResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, "<html>"));
 
 		// Act
 		DynamicCaseResult result = _service.Create(Options());
@@ -607,7 +612,7 @@ public sealed class DynamicCaseServiceTests {
 	public void Create_ShouldCarryTheCompilationIntoTheObligations_WhenTheBuildOutcomeIsUnknown() {
 		// Arrange
 		Passes(Envelope("planned", missing: ["CrtBase"]),
-			new BuildCaseReply(BuildCaseReplyKind.NotAnEnvelope, null, "<html>"));
+			new DynamicCaseReply<BuildCaseResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, "<html>"));
 		_dependencies.AddDependenciesReportingCompilation(Package, Arg.Any<IEnumerable<PackageDependencySpec>>())
 			.Returns(new PackageDependencyAddResult(["CrtBase"], true));
 
@@ -660,7 +665,7 @@ public sealed class DynamicCaseServiceTests {
 		result.Dependencies.Status.Should().Be(DynamicCaseService.DependenciesMissing,
 			because: "after the removal none of them is declared");
 		result.Dependencies.Added.Should().BeEmpty(because: "nothing this call added is left");
-		_client.ReceivedWithAnyArgs(1).Send(default!, default!);
+		_session.ReceivedWithAnyArgs(1).Build(default!);
 	}
 
 	[Test]
@@ -769,5 +774,299 @@ public sealed class DynamicCaseServiceTests {
 		// Assert
 		result.Notes.Should().Contain(note => note.Contains("Deploy 'Custom' together with 'UsrOrders'"),
 			because: "the case and its bar now live in two packages");
+	}
+
+	[Test]
+	[Description("A whole create opens ONE session for its validate and build passes, so the call logs in once, and releases it when the call ends.")]
+	public void Create_ShouldSendBothPassesThroughOneSession() {
+		// Arrange
+		Passes(Envelope("planned"));
+
+		// Act
+		_service.Create(Options());
+
+		// Assert
+		_client.Received(1).OpenSession(Env);
+		_session.ReceivedWithAnyArgs(2).Build(default!);
+		_session.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("A stage that names a group and successful reaches the build request with both, and a stage that names neither carries neither.")]
+	public void Create_ShouldForwardTheStageGroupAndSuccessful_WhenAStageNamesThem() {
+		// Arrange
+		Passes(Envelope("planned"));
+		CreateDynamicCaseOptions options = Options(dryRun: true);
+		options.Stages = [
+			new DynamicCaseStageItem("New"),
+			new DynamicCaseStageItem("Rejected") { GroupSent = true, Group = "New", Successful = false }
+		];
+
+		// Act
+		_service.Create(options);
+
+		// Assert
+		_session.Received(1).Build(Arg.Is<BuildCaseRequest>(request =>
+			request.Stages.Count == 2
+			&& request.Stages[0].Group == null && request.Stages[0].Successful == null
+			&& request.Stages[1].Value == "Rejected" && request.Stages[1].Group == "New"
+			&& request.Stages[1].Successful == false));
+	}
+
+	private static DescribeDynamicCaseOptions DescribeOptions() => new() { Environment = Env, EntitySchemaName = Entity };
+
+	private static ModifyDynamicCaseOptions ModifyOptions(bool dryRun = false) => new() {
+		Environment = Env, CaseName = "UsrOrderCase", DryRun = dryRun
+	};
+
+	private static BuildCaseCaseInfo ExistingCase() => new() {
+		Status = "existing", SchemaName = "UsrOrderCase", SchemaUId = CaseUId, PackageName = Package,
+		EntitySchemaName = Entity, StageColumnName = "UsrStatus", Enabled = true, ActiveVersion = true,
+		ConnectionCount = 2, FinalStages = ["Done"], RunningInstances = 1, PackageReadOnly = false,
+		Stages = [
+			new DynamicCaseStage { Name = "Stage1", Value = "v1", Caption = "New", RunningInstances = 1 },
+			new DynamicCaseStage { Name = "Stage2", Value = "v2", Caption = "Done", IsFinal = true, Successful = true }
+		]
+	};
+
+	[Test]
+	[Description("A describe passes the server's answer through - success, cases, settings rows, notes and warnings - adds the designer link per case, and sends the identity the call named through one session.")]
+	public void Describe_ShouldPassTheServerAnswerThrough_WithTheDesignerLink() {
+		// Arrange
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse {
+				Success = true,
+				Cases = [ExistingCase()],
+				Settings = [new DynamicCaseSettingsRow { SysDcmSettingsId = "s1", StageColumnName = "UsrStatus" }],
+				Notes = ["note"],
+				Warnings = ["warning"]
+			}, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the server read the object");
+		result.Cases.Should().ContainSingle(because: "the object has one case");
+		result.Cases[0].DesignerUrl.Should().Be("http://sandbox/0/Nui/ViewModule.aspx?vm=DcmDesigner#case/" + CaseUId,
+			because: "every described case exists and opens in the designer by UId");
+		result.Cases[0].FinalStages.Should().Equal(["Done"], because: "the final stages are passed through");
+		result.Cases[0].RunningInstances.Should().Be(1, because: "the running cases are passed through");
+		result.Cases[0].Stages[0].RunningInstances.Should().Be(1, because: "the per-stage running cases are passed through");
+		result.Settings.Should().ContainSingle(row => row.SysDcmSettingsId == "s1", because: "the settings rows are passed through");
+		result.Notes.Should().Equal(["note"], because: "the notes are relayed");
+		result.Warnings.Should().Equal(["warning"], because: "the warnings are relayed");
+		_session.Received(1).Describe(Arg.Is<DescribeCaseRequest>(request =>
+			request.EntitySchemaName == Entity && request.CaseName == null && request.CaseUId == null));
+		_session.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("A server refusal of a describe is passed through with its code, and no case is invented.")]
+	public void Describe_ShouldPassTheRefusalThrough_WhenTheServerRefuses() {
+		// Arrange
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse {
+				Success = false, ErrorCode = "case-not-found", ErrorMessage = "No case named UsrNope."
+			}, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the server refused");
+		result.ErrorCode.Should().Be("case-not-found", because: "the server's code is the contract");
+		result.Cases.Should().BeEmpty(because: "nothing was found");
+	}
+
+	[Test]
+	[Description("A 404 to DescribeCase is process-builder-without-case-change, whose message sends the agent to install-process-builder after the user's approval.")]
+	public void Describe_ShouldReportProcessBuilderWithoutCaseChange_WhenTheRouteIsMissing() {
+		// Arrange
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.RouteMissing, null, "Endpoint not found."));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the operation is missing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.ProcessBuilderWithoutCaseChange,
+			because: "only a 404 proves the installed package lacks the operation");
+		result.ErrorMessage.Should().Contain("install-process-builder").And.Contain("Ask the user",
+			because: "the remedy restarts the site, so it needs the user's approval");
+	}
+
+	[TestCase(DynamicCaseReplyKind.TransportFailure, "timeout")]
+	[TestCase(DynamicCaseReplyKind.NotAnEnvelope, "<html>Login</html>")]
+	[Description("Any other describe fault is request-failed and says nothing was changed: a describe never writes.")]
+	public void Describe_ShouldReportRequestFailed_WhenTheAnswerCannotBeRead(DynamicCaseReplyKind kind, string detail) {
+		// Arrange
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(
+			new DynamicCaseReply<DescribeCaseResponse>(kind, null, detail));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the fault does not prove a missing operation");
+		result.ErrorMessage.Should().Contain("nothing was changed").And.Contain(detail, because: "the server's text is relayed");
+	}
+
+	[Test]
+	[Description("A modify maps the call onto the request: the identity, every stage member with an explicit null group kept, the caption, enabled, the user's yes and dry-run as validateOnly.")]
+	public void Modify_ShouldMapTheCallOntoTheRequest() {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new ModifyCaseResponse { Success = true, Outcome = "planned" }, null));
+		ModifyDynamicCaseOptions options = ModifyOptions(dryRun: true);
+		options.Stages = [
+			new DynamicCaseStageItem("New") { GroupSent = true, Group = null },
+			new DynamicCaseStageItem("Done") { Caption = "Closed", Color = "#FF0000", Successful = false }
+		];
+		options.Caption = "Order flow";
+		options.Enabled = null;
+		options.ConfirmRunningInstances = true;
+
+		// Act
+		_service.Modify(options);
+
+		// Assert
+		_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request =>
+			request.CaseName == "UsrOrderCase" && request.EntitySchemaName == null
+			&& request.ValidateOnly && request.ConfirmRunningInstances && request.Enabled == null
+			&& request.Caption == "Order flow"
+			&& request.Stages.Count == 2
+			&& request.Stages[0].GroupSent && request.Stages[0].Group == null
+			&& !request.Stages[1].GroupSent && request.Stages[1].Caption == "Closed"
+			&& request.Stages[1].Color == "#FF0000" && request.Stages[1].Successful == false));
+	}
+
+	[Test]
+	[Description("A modify that names no stages leaves the stages out of the request, so the server keeps them.")]
+	public void Modify_ShouldSendNoStages_WhenTheCallNamesNone() {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new ModifyCaseResponse { Success = true, Outcome = "modified" }, null));
+		ModifyDynamicCaseOptions options = ModifyOptions();
+		options.Enabled = false;
+
+		// Act
+		_service.Modify(options);
+
+		// Assert
+		_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request =>
+			request.Stages == null && request.Enabled == false && !request.ValidateOnly));
+	}
+
+	[TestCase("planned", true)]
+	[TestCase("modified", true)]
+	[TestCase("unchanged", true)]
+	[TestCase("refused", false)]
+	[TestCase("failed-restored", false)]
+	[TestCase("failed-leftover", false)]
+	[Description("A modify passes the server's answer through - outcome, code, case with its designer link, diff, running instances, obligations, leftovers, notes and warnings - and succeeds only for planned, modified and unchanged.")]
+	public void Modify_ShouldPassTheServerAnswerThrough(string outcome, bool success) {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new ModifyCaseResponse {
+				Success = success,
+				Outcome = outcome,
+				ErrorCode = success ? null : "stage-in-use",
+				ErrorMessage = success ? null : "A removed stage holds running cases.",
+				Case = ExistingCase(),
+				Diff = new DynamicCaseDiff { Moved = [new DynamicCaseStageChange { Value = "v1", From = "1", To = "2" }] },
+				RunningInstances = new DynamicCaseRunningInstances { Total = 1 },
+				Obligations = new DynamicCaseObligations { ReloadOpenPages = true },
+				Leftovers = success ? null : ["UsrOrderCase metadata"],
+				Notes = ["Reload (F5) open pages."],
+				Warnings = ["warning"]
+			}, null));
+
+		// Act
+		ModifyDynamicCaseResult result = _service.Modify(ModifyOptions());
+
+		// Assert
+		result.Success.Should().Be(success, because: "only planned, modified and unchanged are a success");
+		result.Outcome.Should().Be(outcome, because: "the server's outcome is passed through");
+		result.ErrorCode.Should().Be(success ? null : "stage-in-use", because: "the server's code is the contract");
+		result.Case.DesignerUrl.Should().EndWith("#case/" + CaseUId, because: "the changed case opens in the designer");
+		result.Diff.Moved.Should().ContainSingle(because: "the diff is passed through");
+		result.RunningInstances.Total.Should().Be(1, because: "the running cases are passed through");
+		result.Obligations.ReloadOpenPages.Should().BeTrue(because: "the obligations are passed through");
+		result.Leftovers.Should().HaveCount(success ? 0 : 1, because: "what a failed restore left is passed through");
+		result.Notes.Should().Equal(["Reload (F5) open pages."], because: "the notes are relayed");
+		result.Warnings.Should().Equal(["warning"], because: "the warnings are relayed");
+		_session.Received(1).Dispose();
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A 404 to ModifyCase is refused as process-builder-without-case-change on a dry run and on a write alike: a missing route proves nothing ran.")]
+	public void Modify_ShouldReportProcessBuilderWithoutCaseChange_WhenTheRouteIsMissing(bool dryRun) {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.RouteMissing, null, "Endpoint not found."));
+
+		// Act
+		ModifyDynamicCaseResult result = _service.Modify(ModifyOptions(dryRun));
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseModifyOutcomes.Refused, because: "a missing operation wrote nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.ProcessBuilderWithoutCaseChange,
+			because: "only a 404 proves the installed package lacks the operation");
+		result.ErrorMessage.Should().Contain("install-process-builder", because: "the remedy is named");
+	}
+
+	[TestCase(DynamicCaseReplyKind.TransportFailure, "timeout")]
+	[TestCase(DynamicCaseReplyKind.NotAnEnvelope, "<html>")]
+	[Description("A write whose answer could not be read is outcome unknown with request-failed, and the message sends the agent to a dry run before deciding.")]
+	public void Modify_ShouldReportUnknown_WhenAWriteReplyCannotBeRead(DynamicCaseReplyKind kind, string detail) {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(kind, null, detail));
+
+		// Act
+		ModifyDynamicCaseResult result = _service.Modify(ModifyOptions());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseModifyOutcomes.Unknown, because: "the write may have been saved");
+		result.Success.Should().BeFalse(because: "an unknown outcome is not a success");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the answer could not be read");
+		result.ErrorMessage.Should().Contain("UNKNOWN").And.Contain("dry-run=true",
+			because: "only a dry run tells what is still to change");
+	}
+
+	[Test]
+	[Description("On a dry run an unreadable answer is refused with request-failed, not unknown: a dry run writes nothing.")]
+	public void Modify_ShouldReportRequestFailed_WhenADryRunReplyCannotBeRead() {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.TransportFailure, null, "timeout"));
+
+		// Act
+		ModifyDynamicCaseResult result = _service.Modify(ModifyOptions(dryRun: true));
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseModifyOutcomes.Refused, because: "a dry run writes nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the answer could not be read");
+		result.ErrorMessage.Should().Contain("nothing was written", because: "the caller must know nothing changed");
+	}
+
+	[Test]
+	[Description("A request WCF could not read is refused with request-failed even on a write: no operation ran, so the outcome is known.")]
+	public void Modify_ShouldReportRequestFailed_WhenTheServerCannotReadTheRequest() {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.NotAnEnvelope, null,
+			"The formatter threw an exception while trying to deserialize the message"));
+
+		// Act
+		ModifyDynamicCaseResult result = _service.Modify(ModifyOptions());
+
+		// Assert
+		result.Outcome.Should().Be(DynamicCaseModifyOutcomes.Refused, because: "an unread request ran nothing");
+		result.ErrorCode.Should().Be(DynamicCaseErrorCodes.RequestFailed, because: "the request could not be read");
+		result.ErrorMessage.Should().Contain("get-tool-contract modify-dynamic-case",
+			because: "the arguments are what to check");
 	}
 }

@@ -9,9 +9,10 @@ using Clio.UserEnvironment;
 namespace Clio.Command;
 
 /// <summary>
-/// Runs <c>create-dynamic-case</c>: a validate pass on the server, the record-page plan and its dry run, the
-/// missing package dependencies, the build pass and the progress-bar write, in an order that writes nothing until
-/// every check of the call has passed.
+/// Runs the dynamic-case tools. <c>create-dynamic-case</c>: a validate pass on the server, the record-page plan and
+/// its dry run, the missing package dependencies, the build pass and the progress-bar write, in an order that writes
+/// nothing until every check of the call has passed. <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c>:
+/// one server call each. Every method sends its server calls through one session, so a tool call logs in once.
 /// </summary>
 public interface IDynamicCaseService {
 	/// <summary>
@@ -20,6 +21,21 @@ public interface IDynamicCaseService {
 	/// </summary>
 	/// <param name="options">The call; the tool has already normalized and checked its arguments.</param>
 	DynamicCaseResult Create(CreateDynamicCaseOptions options);
+
+	/// <summary>
+	/// Reads an existing case, or every case of an object, and returns the server's answer with a designer link per
+	/// case. Changes nothing. Never throws for an expected refusal or a transport fault.
+	/// </summary>
+	/// <param name="options">The call; the tool has already normalized and checked its arguments.</param>
+	DescribeDynamicCaseResult Describe(DescribeDynamicCaseOptions options);
+
+	/// <summary>
+	/// Changes an existing case in place (or plans the change on a dry run) and returns the server's answer with the
+	/// designer link. Never throws for an expected refusal or failure: each is an outcome of the document, and a
+	/// write whose reply could not be read is <see cref="DynamicCaseModifyOutcomes.Unknown"/>.
+	/// </summary>
+	/// <param name="options">The call; the tool has already normalized and checked its arguments.</param>
+	ModifyDynamicCaseResult Modify(ModifyDynamicCaseOptions options);
 }
 
 /// <inheritdoc />
@@ -81,11 +97,12 @@ public sealed class DynamicCaseService(
 	public DynamicCaseResult Create(CreateDynamicCaseOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		BuildCaseRequest request = BuildRequest(options);
+		using IDynamicCaseSession session = buildCaseClient.OpenSession(options.Environment);
 
 		// C2: the server's refusals come first, so a caller without rights never reaches the page reads.
-		BuildCaseReply validate = buildCaseClient.Send(options.Environment,
+		DynamicCaseReply<BuildCaseResponse> validate = session.Build(
 			request with { ValidateOnly = true, AllowMissingDependencies = options.AddPackageDependencies });
-		if (validate.Kind != BuildCaseReplyKind.Envelope) {
+		if (validate.Kind != DynamicCaseReplyKind.Envelope) {
 			return ValidatePassFault(validate);
 		}
 		BuildCaseResponse plan = validate.Response;
@@ -121,9 +138,9 @@ public sealed class DynamicCaseService(
 
 		// C6: the server re-runs every check, so a change since the validate pass is refused rather than saved; a
 		// dependency add that did not take fails closed because missing dependencies are no longer allowed.
-		BuildCaseReply build = buildCaseClient.Send(options.Environment,
+		DynamicCaseReply<BuildCaseResponse> build = session.Build(
 			request with { ValidateOnly = false, AllowMissingDependencies = false });
-		if (build.Kind != BuildCaseReplyKind.Envelope) {
+		if (build.Kind != DynamicCaseReplyKind.Envelope) {
 			return BuildPassUnknown(options, plan, missing, added, compilationRequired, build);
 		}
 		BuildCaseResponse built = build.Response;
@@ -151,6 +168,71 @@ public sealed class DynamicCaseService(
 		return WithPage(options, built, dependencies, pagePlan);
 	}
 
+	/// <inheritdoc />
+	public DescribeDynamicCaseResult Describe(DescribeDynamicCaseOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		DescribeCaseRequest request = new() {
+			CaseName = NullIfBlank(options.CaseName),
+			CaseUId = NullIfBlank(options.CaseUId),
+			EntitySchemaName = NullIfBlank(options.EntitySchemaName)
+		};
+		DynamicCaseReply<DescribeCaseResponse> reply;
+		using (IDynamicCaseSession session = buildCaseClient.OpenSession(options.Environment)) {
+			reply = session.Describe(request);
+		}
+		if (reply.Kind != DynamicCaseReplyKind.Envelope) {
+			return DescribeFault(reply);
+		}
+		DescribeCaseResponse response = reply.Response;
+		return new DescribeDynamicCaseResult {
+			Success = response.Success,
+			ErrorCode = response.ErrorCode,
+			ErrorMessage = response.ErrorMessage,
+			Cases = [.. (response.Cases ?? []).Select(info => ExistingCaseInfo(options.Environment, info))],
+			Settings = response.Settings ?? [],
+			Notes = response.Notes ?? [],
+			Warnings = response.Warnings ?? []
+		};
+	}
+
+	/// <inheritdoc />
+	public ModifyDynamicCaseResult Modify(ModifyDynamicCaseOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		ModifyCaseRequest request = new() {
+			CaseName = NullIfBlank(options.CaseName),
+			CaseUId = NullIfBlank(options.CaseUId),
+			EntitySchemaName = NullIfBlank(options.EntitySchemaName),
+			Stages = options.Stages?.Select(StageEdit).ToList(),
+			Caption = NullIfBlank(options.Caption),
+			Enabled = options.Enabled,
+			ConfirmRunningInstances = options.ConfirmRunningInstances,
+			ValidateOnly = options.DryRun
+		};
+		DynamicCaseReply<ModifyCaseResponse> reply;
+		using (IDynamicCaseSession session = buildCaseClient.OpenSession(options.Environment)) {
+			reply = session.Modify(request);
+		}
+		if (reply.Kind != DynamicCaseReplyKind.Envelope) {
+			return ModifyFault(options.DryRun, reply);
+		}
+		ModifyCaseResponse response = reply.Response;
+		// An answer without an outcome is read as what its success flag says, so a refusal never passes as a write.
+		string outcome = response.Outcome ?? (response.Success ? null : DynamicCaseModifyOutcomes.Refused);
+		return new ModifyDynamicCaseResult {
+			Success = response.Success && DynamicCaseModifyOutcomes.IsSuccess(outcome),
+			Outcome = outcome,
+			ErrorCode = response.ErrorCode,
+			ErrorMessage = response.ErrorMessage,
+			Case = response.Case is null ? null : ExistingCaseInfo(options.Environment, response.Case),
+			Diff = response.Diff,
+			RunningInstances = response.RunningInstances,
+			Obligations = response.Obligations,
+			Leftovers = response.Leftovers ?? [],
+			Notes = response.Notes ?? [],
+			Warnings = response.Warnings ?? []
+		};
+	}
+
 	private static BuildCaseRequest BuildRequest(CreateDynamicCaseOptions options) =>
 		new() {
 			EntitySchemaName = options.EntitySchemaName,
@@ -160,8 +242,20 @@ public sealed class DynamicCaseService(
 			Caption = NullIfBlank(options.Caption),
 			OrderColumn = NullIfBlank(options.OrderColumn),
 			Stages = options.Stages is { Count: > 0 }
-				? options.Stages.Select(value => new BuildCaseStageRequest(value)).ToList()
+				? options.Stages.Select(stage => new BuildCaseStageRequest(stage.Value) {
+					Group = stage.Group, Successful = stage.Successful
+				}).ToList()
 				: null
+		};
+
+	private static CaseStageEditRequest StageEdit(DynamicCaseStageItem stage) =>
+		new() {
+			Value = stage.Value,
+			Caption = stage.Caption,
+			Color = stage.Color,
+			GroupSent = stage.GroupSent,
+			Group = stage.Group,
+			Successful = stage.Successful
 		};
 
 	private static string NullIfBlank(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -426,14 +520,14 @@ public sealed class DynamicCaseService(
 		};
 	}
 
-	private static DynamicCaseResult ValidatePassFault(BuildCaseReply reply) {
+	private static DynamicCaseResult ValidatePassFault(DynamicCaseReply<BuildCaseResponse> reply) {
 		// WCF answers a request it cannot read before any operation runs, so the operation exists: a reinstall would
 		// restart the site and change nothing.
-		bool unreadable = reply.Kind == BuildCaseReplyKind.NotAnEnvelope
+		bool unreadable = reply.Kind == DynamicCaseReplyKind.NotAnEnvelope
 			&& ProcessDesignServerFault.IsUnreadableRequest(reply.Detail);
 		// Only a 404 proves the operation is missing. A body that is not the envelope can be a fault from inside
 		// BuildCase, an HTML error page or a login page, which a reinstall restarting the site would not fix.
-		bool missingOperation = !unreadable && reply.Kind == BuildCaseReplyKind.RouteMissing;
+		bool missingOperation = !unreadable && reply.Kind == DynamicCaseReplyKind.RouteMissing;
 		string message = unreadable
 			? "BuildCase could not read the request, so nothing was written; check the arguments against "
 				+ $"get-tool-contract create-dynamic-case. The server said: {reply.Detail}"
@@ -458,7 +552,7 @@ public sealed class DynamicCaseService(
 	}
 
 	private static DynamicCaseResult BuildPassUnknown(CreateDynamicCaseOptions options, BuildCaseResponse plan,
-		List<string> missing, List<string> added, bool compilationRequired, BuildCaseReply reply) {
+		List<string> missing, List<string> added, bool compilationRequired, DynamicCaseReply<BuildCaseResponse> reply) {
 		// Left in place: if the case WAS written it needs them, and a dry-run re-run tells which.
 		DynamicCaseDependencies dependencies = Dependencies(plan, missing, added,
 			added.Count > 0 ? DependenciesAdded : DependenciesNoneMissing, compilationRequired);
@@ -487,6 +581,77 @@ public sealed class DynamicCaseService(
 		};
 	}
 
+	private static DescribeDynamicCaseResult DescribeFault(DynamicCaseReply<DescribeCaseResponse> reply) {
+		(string errorCode, string message) = CaseChangeFault("DescribeCase", "describe-dynamic-case", reply.Kind,
+			reply.Detail, "Nothing was changed.");
+		return new DescribeDynamicCaseResult {
+			Success = false,
+			ErrorCode = errorCode,
+			ErrorMessage = message ?? "DescribeCase could not be called or its answer could not be read; nothing was "
+				+ $"changed. The server said: {reply.Detail}",
+			Cases = [],
+			Settings = [],
+			Notes = [],
+			Warnings = []
+		};
+	}
+
+	private static ModifyDynamicCaseResult ModifyFault(bool dryRun, DynamicCaseReply<ModifyCaseResponse> reply) {
+		(string errorCode, string message) = CaseChangeFault("ModifyCase", "modify-dynamic-case", reply.Kind,
+			reply.Detail, "Nothing was written.");
+		if (message is null && !dryRun) {
+			// The write was sent and may have been saved before the answer was lost; only a dry run, which writes
+			// nothing, can tell what is still to change.
+			return new ModifyDynamicCaseResult {
+				Success = false,
+				Outcome = DynamicCaseModifyOutcomes.Unknown,
+				ErrorCode = DynamicCaseErrorCodes.RequestFailed,
+				ErrorMessage = "ModifyCase returned a response clio could not read, so whether the case was changed is "
+					+ "UNKNOWN. Re-run this call with dry-run=true before deciding what to do: its diff shows what is "
+					+ "still to change, and a dry run writes nothing. "
+					+ $"The server said: {reply.Detail}",
+				Leftovers = [],
+				Notes = [],
+				Warnings = []
+			};
+		}
+		return new ModifyDynamicCaseResult {
+			Success = false,
+			Outcome = DynamicCaseModifyOutcomes.Refused,
+			ErrorCode = errorCode,
+			ErrorMessage = message ?? "ModifyCase could not be called or its answer could not be read; a dry run writes "
+				+ $"nothing, so nothing was written. The server said: {reply.Detail}",
+			Leftovers = [],
+			Notes = [],
+			Warnings = []
+		};
+	}
+
+	/// <summary>
+	/// The code and the message of a <c>DescribeCase</c> or <c>ModifyCase</c> call that got no envelope back. The
+	/// message is <see langword="null"/> when the fault does not prove that nothing ran: the caller words that case,
+	/// because only it knows whether the call could have written.
+	/// </summary>
+	private static (string ErrorCode, string Message) CaseChangeFault(string operation, string toolName,
+		DynamicCaseReplyKind kind, string detail, string nothingDone) {
+		// WCF answers a request it cannot read before any operation runs, so the operation exists.
+		if (kind == DynamicCaseReplyKind.NotAnEnvelope && ProcessDesignServerFault.IsUnreadableRequest(detail)) {
+			return (DynamicCaseErrorCodes.RequestFailed,
+				$"{operation} could not read the request. {nothingDone} Check the arguments against get-tool-contract "
+				+ $"{toolName}. The server said: {detail}");
+		}
+		// Only a 404 proves the operation is missing; any other body can be a fault from inside the operation, an
+		// HTML error page or a login page, which a reinstall restarting the site would not fix.
+		if (kind == DynamicCaseReplyKind.RouteMissing) {
+			return (DynamicCaseErrorCodes.ProcessBuilderWithoutCaseChange,
+				$"The environment's CrtProcessBuilder answered {operation} with a 404, so the installed package does not "
+				+ "carry the operations that read and change an existing dynamic case although it passed the version "
+				+ $"check. {nothingDone} Ask the user, then run install-process-builder to bring the package up to the "
+				+ $"version this clio ships. The server said: {detail}");
+		}
+		return (DynamicCaseErrorCodes.RequestFailed, null);
+	}
+
 	private static string DependenciesStatusFor(List<string> missing) =>
 		missing.Count == 0 ? DependenciesNoneMissing : DependenciesMissing;
 
@@ -503,27 +668,38 @@ public sealed class DynamicCaseService(
 		};
 
 	private static DynamicCaseInfo CaseInfo(CreateDynamicCaseOptions options, BuildCaseCaseInfo info,
-		string designerUrl) {
-		if (info is null) {
-			return null;
-		}
-		return new DynamicCaseInfo {
+		string designerUrl) =>
+		info is null
+			? null
+			: ToCaseInfo(info, designerUrl, info.PackageName ?? options.PackageName,
+				info.EntitySchemaName ?? options.EntitySchemaName, info.StageColumnName ?? options.StageColumnName);
+
+	// A described or changed case exists in every outcome that answers one, so it always gets its designer link.
+	private DynamicCaseInfo ExistingCaseInfo(string environmentName, BuildCaseCaseInfo info) =>
+		ToCaseInfo(info, DesignerUrl(environmentName, info.SchemaUId), info.PackageName, info.EntitySchemaName,
+			info.StageColumnName);
+
+	private static DynamicCaseInfo ToCaseInfo(BuildCaseCaseInfo info, string designerUrl, string packageName,
+		string entitySchemaName, string stageColumnName) =>
+		new() {
 			Status = info.Status,
 			SchemaName = info.SchemaName,
 			SchemaUId = info.SchemaUId,
 			Caption = info.Caption,
-			PackageName = info.PackageName ?? options.PackageName,
-			EntitySchemaName = info.EntitySchemaName ?? options.EntitySchemaName,
-			StageColumnName = info.StageColumnName ?? options.StageColumnName,
+			PackageName = packageName,
+			EntitySchemaName = entitySchemaName,
+			StageColumnName = stageColumnName,
 			StageLookupSchemaName = info.StageLookupSchemaName,
 			Enabled = info.Enabled,
 			ActiveVersion = info.ActiveVersion,
 			OrderSource = info.OrderSource,
 			Stages = info.Stages ?? [],
 			Connections = new DynamicCaseConnections { Kind = "all-to-all", Count = info.ConnectionCount },
+			FinalStages = info.FinalStages,
+			RunningInstances = info.RunningInstances,
+			PackageReadOnly = info.PackageReadOnly,
 			DesignerUrl = designerUrl
 		};
-	}
 
 	private static DynamicCasePageInfo PageInfo(DynamicCasePagePlan plan, string status) =>
 		plan is null
