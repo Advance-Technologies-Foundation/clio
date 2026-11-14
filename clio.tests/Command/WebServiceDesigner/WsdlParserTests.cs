@@ -626,6 +626,48 @@ public sealed class WsdlParserTests {
 			because: "the http port would send the credentials readable, so the switch needs the user's yes");
 	}
 
+	[TestCase("https://api.example:8443/legacy", "another port on the same host (api.example:8443)")]
+	[TestCase("https://api.example/legacy", null)]
+	[TestCase("http://api.example/svc", "an http address where this port's is https")]
+	[Description("A SOAP 1.1 alternative is recommended outright only at the warned port's scheme, host and port (another path is the same endpoint); another port or scheme is named and left to the user.")]
+	public void Parse_Should_Compare_The_Alternative_By_Scheme_And_Authority(string alternative, string difference) {
+		// Arrange
+		string ports = "<wsdl:port name=\"Soap12\" binding=\"tns:B12\"><soap12:address location=\"https://api.example/svc\" /></wsdl:port>"
+			+ $"<wsdl:port name=\"Soap\" binding=\"tns:B11\"><soap:address location=\"{alternative}\" /></wsdl:port>";
+		string wsdl = BindingWsdl("", Binding("B12", "soap12") + Binding("B11", "soap"), ports);
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		string warning = document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2"),
+			because: "the SOAP 1.2 port is warned about").Which;
+		if (difference is null) {
+			warning.Should().Contain("switch to port 'Soap' (SOAP 1.1) (modify-web-service setType soap11, and setBaseUri",
+				because: "the same scheme and authority on another path is the same endpoint, switched without a separate yes");
+		} else {
+			warning.Should().Contain(difference, because: "the warning names how the address differs");
+			warning.Should().NotContain("Register port", because: "such a port is not recommended without the user's yes");
+		}
+	}
+
+	[Test]
+	[Description("An http SOAP 1.2 port's SOAP 1.1 alternative at https on the same host is named as a scheme difference, not as another host.")]
+	public void Parse_Should_Name_An_Https_Upgrade_As_A_Scheme_Difference() {
+		// Arrange
+		string ports = "<wsdl:port name=\"Soap12\" binding=\"tns:B12\"><soap12:address location=\"http://api.example/svc\" /></wsdl:port>"
+			+ "<wsdl:port name=\"Soap\" binding=\"tns:B11\"><soap:address location=\"https://api.example/svc\" /></wsdl:port>";
+		string wsdl = BindingWsdl("", Binding("B12", "soap12") + Binding("B11", "soap"), ports);
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.Warnings.Should().ContainSingle(w => w.StartsWith("Port 'Soap12' is SOAP 1.2")
+				&& w.Contains("an https address where this port's is http") && !w.Contains("another host"),
+			because: "the same host over https is not another host");
+	}
+
 	[Test]
 	[Description("WCF's WS-Addressing August 2004 marker in a policy counts too, and its workaround names the 2004/08 addressing namespace.")]
 	public void Parse_Should_Detect_Addressing_August_2004() {

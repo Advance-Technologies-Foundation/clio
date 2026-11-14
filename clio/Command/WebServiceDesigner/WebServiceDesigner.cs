@@ -727,9 +727,7 @@ public sealed class WebServiceDesigner(
 			.Concat(WebServiceSchemaView.UriQuerySecrets(method.SoapAction))
 			.Concat((schema.Namespaces?.Items.Values ?? Enumerable.Empty<ServiceNamespaceDto>())
 				.SelectMany(n => WebServiceSchemaView.UriQuerySecrets(n?.Name)))
-			.Concat(WebServiceSchemaView.SecretPlaceholderPaths(method.Request?.Uri, method.Request?.Parameters)
-				.Select(path => method.Request.Parameters.Items.Values
-					.First(p => string.Equals(p.Path, path, StringComparison.Ordinal)).DefValue.Value))
+			.Concat(WebServiceSchemaView.SecretPlaceholderPaths(method.Request?.Uri, method.Request?.Parameters).Values)
 			.Where(s => s is { Length: >= WebServiceResponseMasker.MinMaskedLength })
 			.Distinct(StringComparer.Ordinal)
 			.OrderByDescending(s => s.Length)

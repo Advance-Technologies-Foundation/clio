@@ -1017,14 +1017,14 @@ public static partial class WebServiceDefinitionBuilder {
 	/// </summary>
 	private static void ValidateKeyPlaceholders(string code, string uri, ServiceMethodDto method,
 		ServiceMethodDto existing, Errors errors) {
-		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(uri, method.Request.Parameters)) {
+		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(uri, method.Request.Parameters).Keys) {
 			errors.Add($"method '{code}': path parameter '{path}' fills a key in the uri query and has a constant "
 				+ "default; reference a system setting with default-sys-setting and let the user fill its value.");
 		}
 		if (existing?.Request is null) {
 			return;
 		}
-		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(existing.Request.Uri, existing.Request.Parameters)) {
+		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(existing.Request.Uri, existing.Request.Parameters).Keys) {
 			ServiceParameterDto kept = method.Request.Parameters.Items.Values.FirstOrDefault(p =>
 				p.Type == ServiceSchemaCodes.Placements["path"] && string.Equals(p.Path, path, StringComparison.Ordinal));
 			if (kept is not null && string.IsNullOrEmpty(kept.DefValue?.Value)) {

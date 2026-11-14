@@ -99,6 +99,8 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("https://erp.example/odata/Authors(Id={id})/Books", "https://erp.example/odata/Authors(Id={id})/Books")]
 	[TestCase("http://h.example/Svc;token=SECRET-42-SECRET-42?x=1", "http://h.example/Svc;token=[masked]?x=1")]
 	[TestCase("https://erp.example/svc?api_key=%5BMasked%5D", "https://erp.example/svc?api_key=%5BMasked%5D")]
+	[TestCase("http://h.example/Svc;token=SECRET-42-SECRET-42;sig=SECRET-42-SECRET-42/x", "http://h.example/Svc;token=[masked];sig=[masked]/x")]
+	[TestCase("https://erp.example/svc?sig=SE/CRET+42%2FSECRET42", "https://erp.example/svc?sig=[masked]")]
 	[Description("ShownUri hides user information and every secret query value: after an '@' in the query that StripUserInfo cut at, whatever follows; with ';' separators; after a fragment; when a path with '=' precedes the query. A short value under code stays visible.")]
 	public void ShownUri_Should_Hide_User_Information_And_Query_Secrets(string stored, string expected) {
 		// Act

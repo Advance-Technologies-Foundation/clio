@@ -1075,7 +1075,9 @@ public sealed partial class WsdlParser : IWsdlParser {
 			definitions.Attributes().Any(a => a.IsNamespaceDeclaration && a.Value == WcfContractNamespace);
 
 		// A SOAP 1.1 port of the same port type that needs neither WS-Addressing nor message security, or null when there is
-		// none: one of the same service at the warned port's scheme and host first, else the first with its difference.
+		// none: one of the same service at the warned port's scheme and authority (host and port) first, else the first
+		// with its difference. Another path on the same authority counts as the same endpoint: WCF serves each binding at
+		// its own relative address, and the switch already sets the base-uri when it differs.
 		private static Soap11Port Soap11Alternative(PortCandidate port, List<PortCandidate> candidates,
 			BindingRequirements requirements) {
 			string portType = LocalPart(Attr(port.Binding, "type"));
@@ -1089,7 +1091,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			Uri warned = AddressOf(port);
 			PortCandidate same = alternatives.FirstOrDefault(c => AddressOf(c) is { } a && warned is not null
 				&& string.Equals(a.Scheme, warned.Scheme, StringComparison.OrdinalIgnoreCase)
-				&& string.Equals(a.Host, warned.Host, StringComparison.OrdinalIgnoreCase));
+				&& string.Equals(a.Authority, warned.Authority, StringComparison.OrdinalIgnoreCase));
 			if (same is not null) {
 				return new Soap11Port(same, null);
 			}
@@ -1097,16 +1099,24 @@ public sealed partial class WsdlParser : IWsdlParser {
 			return new Soap11Port(other, AddressDifference(warned, AddressOf(other)));
 		}
 
-		// How the alternative's address differs from the warned port's, as the warning names it.
+		// How the alternative's address differs from the warned port's, as the warning names it: dropping https first (the
+		// credentials would travel readable), then another host, another port on the same host, or another scheme.
 		private static string AddressDifference(Uri warned, Uri address) {
 			if (address is null || warned is null) {
 				return "an address that could not be compared with this port's";
 			}
-			bool dropsHttps = string.Equals(warned.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-				&& !string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
-			return dropsHttps
-				? "an http address where this port's is https, so authentication would travel readable"
-				: $"an address on another host ({Shown(address.Host)})";
+			bool warnedHttps = string.Equals(warned.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+			bool addressHttps = string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+			if (warnedHttps && !addressHttps) {
+				return "an http address where this port's is https, so authentication would travel readable";
+			}
+			if (!string.Equals(address.Host, warned.Host, StringComparison.OrdinalIgnoreCase)) {
+				return $"an address on another host ({Shown(address.Host)})";
+			}
+			if (address.Port != warned.Port && string.Equals(address.Scheme, warned.Scheme, StringComparison.OrdinalIgnoreCase)) {
+				return $"another port on the same host ({Shown(address.Authority)})";
+			}
+			return $"an {Shown(address.Scheme)} address where this port's is {Shown(warned.Scheme)}";
 		}
 
 		private static Uri AddressOf(PortCandidate port) =>

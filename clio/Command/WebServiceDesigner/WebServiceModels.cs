@@ -407,8 +407,12 @@ public static partial class WebServiceSchemaView {
 	// closes at these or at the query mark; a value in the query runs to the next '&'.
 	private const string PathValueEnds = "/;),?";
 
-	// Where the part of a value that decides the hosting-key length ends: rates?code=USD;callback=f keeps USD.
-	private const string ValueCoreEnds = ";?@/#";
+	// Where the part of a value that decides the hosting-key length ends: rates?code=USD;callback=f keeps USD. Not at
+	// '/', '+' or '=': a base64 key (an Azure SAS signature) holds them.
+	private const string ValueCoreEnds = ";#";
+
+	// Where an echoed key may have been cut by a server that splits there: one more form of each hidden value.
+	private const string EchoFormEnds = ";?@/#";
 
 	/// <summary>
 	/// Whether a URI query parameter name carries a credential, whatever its value: the credential-name pattern, plus
@@ -452,22 +456,23 @@ public static partial class WebServiceSchemaView {
 	}
 
 	/// <summary>
-	/// The path parameters of a method whose constant default fills a key of its URI: the whole value of a pair is
-	/// their <c>{placeholder}</c> (<c>search?api_key={k}</c>) and the constant is a secret under that key. They are
-	/// hidden, masked in an echo and refused on write like a key written into the URI itself.
+	/// The path parameters of a method whose constant default fills a key of its URI: their <c>{placeholder}</c> sits
+	/// in the value of a key named like a credential or a hosting key (<c>search?api_key={k}</c>,
+	/// <c>?sig={a}{b}</c>) and the constant is a secret under that key. They are hidden, masked in an echo and refused
+	/// on write like a key written into the URI itself.
 	/// </summary>
 	/// <param name="uri">The method URI as stored or sent.</param>
 	/// <param name="parameters">The method's request parameters.</param>
-	/// <returns>The <c>path</c> names of those parameters.</returns>
-	public static IReadOnlySet<string> SecretPlaceholderPaths(string uri,
+	/// <returns>Each such parameter's <c>path</c> with its constant.</returns>
+	public static IReadOnlyDictionary<string, string> SecretPlaceholderPaths(string uri,
 		ServiceItemCollection<ServiceParameterDto> parameters) {
-		var paths = new HashSet<string>(StringComparer.Ordinal);
+		var paths = new Dictionary<string, string>(StringComparer.Ordinal);
 		foreach ((string key, string name) in ScanQuery(uri).Placeholders) {
 			ServiceParameterDto filler = parameters?.Items.Values.FirstOrDefault(p =>
 				p.Type == ServiceSchemaCodes.Placements["path"] && string.Equals(p.Path, name, StringComparison.Ordinal));
 			if (filler?.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value: { Length: > 0 } value }
 					&& IsSecretQueryValue(key, value)) {
-				paths.Add(name);
+				paths[name] = value;
 			}
 		}
 		return paths;
@@ -494,7 +499,7 @@ public static partial class WebServiceSchemaView {
 		var values = new List<string>();
 		foreach ((int start, int end) in ScanQuery(uri).Spans) {
 			string value = uri[start..end];
-			int cut = value.IndexOfAny(ValueCoreEnds.ToCharArray());
+			int cut = value.IndexOfAny(EchoFormEnds.ToCharArray());
 			string core = cut < 0 ? value : value[..cut];
 			foreach (string form in new[] { value, core }.SelectMany(v =>
 					new[] { v, Uri.UnescapeDataString(v), Uri.UnescapeDataString(v.Replace('+', ' ')) })) {
@@ -580,26 +585,31 @@ public static partial class WebServiceSchemaView {
 		return scan;
 	}
 
+	// Every key of the pair is read; a key inside a value already hidden is skipped (that span covers it), so path
+	// values, which end before the pair does, are each checked. A placeholder anywhere in the value of a key named like
+	// a credential or a hosting key is recorded for SecretPlaceholderPaths.
 	private static void ScanPair(string uri, int start, int end, int firstQuestion, QueryScan scan) {
 		int maskAt = IndexOfMask(uri, start, end);
 		int keyStart = start;
+		int hiddenUntil = start;
 		string maskKey = null;
-		bool secretFound = false;
 		for (int i = start; i < end; i++) {
 			char c = uri[i];
 			if (c == '=' && keyStart >= 0) {
 				if (i > keyStart) {
 					string key = Uri.UnescapeDataString(uri[keyStart..i]);
-					int valueEnd = firstQuestion >= 0 && i > firstQuestion ? end : PathValueEnd(uri, i + 1, end);
 					if (maskAt > i) {
 						maskKey = key;
 					}
-					if (!secretFound && IsSecretValueAt(key, uri, i + 1, valueEnd)) {
-						scan.Spans.Add((i + 1, valueEnd));
-						scan.SecretKeys.Add(key);
-						secretFound = true;
-					} else if (valueEnd > i + 1 && IsPlaceholderValue(uri[(i + 1)..valueEnd])) {
-						scan.Placeholders.Add((key, uri[(i + 2)..(valueEnd - 1)]));
+					if (i >= hiddenUntil) {
+						int valueEnd = firstQuestion >= 0 && i > firstQuestion ? end : PathValueEnd(uri, i + 1, end);
+						if (IsSecretValueAt(key, uri, i + 1, valueEnd)) {
+							scan.Spans.Add((i + 1, valueEnd));
+							scan.SecretKeys.Add(key);
+							hiddenUntil = valueEnd;
+						} else if (IsSecretName(key) || SecretQueryNames.Contains(key)) {
+							AddPlaceholders(uri, i + 1, valueEnd, key, scan);
+						}
 					}
 				}
 				keyStart = -1;
@@ -609,6 +619,20 @@ public static partial class WebServiceSchemaView {
 		}
 		if (maskKey is not null) {
 			scan.MaskKeys.Add(maskKey);
+		}
+	}
+
+	private static void AddPlaceholders(string uri, int from, int end, string key, QueryScan scan) {
+		int open = from < end ? uri.IndexOf('{', from, end - from) : -1;
+		while (open >= 0) {
+			int close = open + 1 < end ? uri.IndexOf('}', open + 1, end - open - 1) : -1;
+			if (close < 0) {
+				return;
+			}
+			if (close > open + 1) {
+				scan.Placeholders.Add((key, uri[(open + 1)..close]));
+			}
+			open = close + 1 < end ? uri.IndexOf('{', close + 1, end - close - 1) : -1;
 		}
 	}
 
@@ -780,7 +804,7 @@ public static partial class WebServiceSchemaView {
 	// constant is hidden like the key itself.
 	private static IReadOnlyList<WebServiceParameterView> Parameters(
 		ServiceItemCollection<ServiceParameterDto> parameters, bool soap, bool inSoapHeader = false,
-		IReadOnlySet<string> secretPaths = null) =>
+		IReadOnlyDictionary<string, string> secretPaths = null) =>
 		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
 			.Select(p => Parameter(p, soap, inSoapHeader, secretPaths))
 			.ToList();
@@ -788,12 +812,12 @@ public static partial class WebServiceSchemaView {
 	// The platform renders the items of a SOAP-header parameter under the Header whatever their own flag says, so a
 	// constant there is hidden like a header constant even when an item lacks the flag.
 	private static WebServiceParameterView Parameter(ServiceParameterDto parameter, bool soap, bool inSoapHeader,
-		IReadOnlySet<string> secretPaths = null) {
+		IReadOnlyDictionary<string, string> secretPaths = null) {
 		ServiceParameterValueDto value = parameter.DefValue;
 		bool isConstant = IsConstant(value);
 		bool header = inSoapHeader || (soap && parameter.IsSoapHeader == true);
 		bool fillsKey = parameter.Type == ServiceSchemaCodes.Placements["path"]
-			&& secretPaths?.Contains(parameter.Path ?? string.Empty) == true;
+			&& secretPaths?.ContainsKey(parameter.Path ?? string.Empty) == true;
 		bool masked = isConstant && (header || fillsKey || IsSecretLike(parameter));
 		// The platform stores isSoapHeader false and sequenceElementName "item" on every SOAP parameter, so only the
 		// values that change the envelope are reported: a SOAP-header flag, and the item name of a SOAP array.
