@@ -462,24 +462,9 @@ public static partial class WsdlRegistrationMapper {
 			}
 			int question = result.IndexOf('?');
 			if (question >= 0) {
-				// Pairs and the separators between them ('&' or ';'), so the kept pairs keep the separators they had.
-				string[] tokens = Regex.Split(result[(question + 1)..], "([&;])");
-				var kept = new List<string>();
-				bool removed = false;
-				for (int i = 0; i < tokens.Length; i += 2) {
-					int equals = tokens[i].IndexOf('=');
-					if (WebServiceSchemaView.IsSecretQueryName(
-							Uri.UnescapeDataString(equals < 0 ? tokens[i] : tokens[i][..equals]))) {
-						removed = true;
-						continue;
-					}
-					if (kept.Count > 0) {
-						kept.Add(tokens[i - 1]);
-					}
-					kept.Add(tokens[i]);
-				}
+				string query = WithoutSecretPairs(result[(question + 1)..], out bool removed);
 				if (removed) {
-					result = result[..question] + (kept.Count > 0 ? "?" + string.Concat(kept) : string.Empty);
+					result = result[..question] + (query.Length > 0 ? "?" + query : string.Empty);
 					// Any value under these names is taken as a key here, stricter than register; a SOAP request
 					// parameter cannot go in the query.
 					Warn($"Port '{port.Name}': its address carries a query parameter named like a key or token (a credential "
@@ -490,6 +475,43 @@ public static partial class WsdlRegistrationMapper {
 				}
 			}
 			return result;
+		}
+
+		// The query without the pairs whose name is a key or token; the kept pairs keep the separators ('&' or ';') they
+		// had between them.
+		private static string WithoutSecretPairs(string query, out bool removed) {
+			List<string> tokens = SplitQuery(query);
+			var kept = new List<string>();
+			removed = false;
+			for (int i = 0; i < tokens.Count; i += 2) {
+				int equals = tokens[i].IndexOf('=');
+				if (WebServiceSchemaView.IsSecretQueryName(
+						Uri.UnescapeDataString(equals < 0 ? tokens[i] : tokens[i][..equals]))) {
+					removed = true;
+					continue;
+				}
+				if (kept.Count > 0) {
+					kept.Add(tokens[i - 1]);
+				}
+				kept.Add(tokens[i]);
+			}
+			return string.Concat(kept);
+		}
+
+		// The pairs of a query and the separators between them, alternating: pair, separator, pair, ... A plain scan, not
+		// a regex, so a hostile address cannot make it run long.
+		private static List<string> SplitQuery(string query) {
+			var tokens = new List<string>();
+			int start = 0;
+			for (int i = 0; i < query.Length; i++) {
+				if (query[i] is '&' or ';') {
+					tokens.Add(query[start..i]);
+					tokens.Add(query[i].ToString());
+					start = i + 1;
+				}
+			}
+			tokens.Add(query[start..]);
+			return tokens;
 		}
 
 		/// <summary>The message element with the prefix of its namespace (Studio stores the bare local name).</summary>

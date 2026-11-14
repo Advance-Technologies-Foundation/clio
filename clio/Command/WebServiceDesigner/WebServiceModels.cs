@@ -602,14 +602,7 @@ public static partial class WebServiceSchemaView {
 						maskKey = key;
 					}
 					if (i >= hiddenUntil) {
-						int valueEnd = firstQuestion >= 0 && i > firstQuestion ? end : PathValueEnd(uri, i + 1, end);
-						if (IsSecretValueAt(key, uri, i + 1, valueEnd)) {
-							scan.Spans.Add((i + 1, valueEnd));
-							scan.SecretKeys.Add(key);
-							hiddenUntil = valueEnd;
-						} else if (IsSecretName(key) || SecretQueryNames.Contains(key)) {
-							AddPlaceholders(uri, i + 1, valueEnd, key, scan);
-						}
+						hiddenUntil = ScanValue(uri, key, i, end, firstQuestion, scan, hiddenUntil);
 					}
 				}
 				keyStart = -1;
@@ -620,6 +613,23 @@ public static partial class WebServiceSchemaView {
 		if (maskKey is not null) {
 			scan.MaskKeys.Add(maskKey);
 		}
+	}
+
+	// Reads the value after the '=' at equalsAt: a secret value is hidden (the returned position is where hiding ends), a
+	// placeholder in the value of a credential-like key is recorded. A value after the first '?' runs to the end of the
+	// pair; one in the path ends where a path value does.
+	private static int ScanValue(string uri, string key, int equalsAt, int end, int firstQuestion, QueryScan scan,
+		int hiddenUntil) {
+		int valueEnd = firstQuestion >= 0 && equalsAt > firstQuestion ? end : PathValueEnd(uri, equalsAt + 1, end);
+		if (IsSecretValueAt(key, uri, equalsAt + 1, valueEnd)) {
+			scan.Spans.Add((equalsAt + 1, valueEnd));
+			scan.SecretKeys.Add(key);
+			return valueEnd;
+		}
+		if (IsSecretName(key) || SecretQueryNames.Contains(key)) {
+			AddPlaceholders(uri, equalsAt + 1, valueEnd, key, scan);
+		}
+		return hiddenUntil;
 	}
 
 	private static void AddPlaceholders(string uri, int from, int end, string key, QueryScan scan) {

@@ -382,32 +382,7 @@ public static partial class WebServiceDefinitionBuilder {
 			errors.Add("base-uri must not carry credentials (user:password@); use auth with system settings.");
 			return baseUri;
 		}
-		// A key anywhere in a base URI (its query, or a ;name=value path parameter) is refused by the rule list and
-		// describe hide one by, read with the same scanner; the agent could never send it back either. A REST base URI
-		// with a query gets the refusal below, which names query parameters instead.
-		int errorsBefore = errors.Count;
-		if (soap || baseUri.IndexOfAny(['?', '#']) < 0) {
-			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
-		}
-		if (errors.Count > errorsBefore) {
-			return baseUri;
-		}
-		if (soap && baseUri.Contains('?') && !baseUri.Contains('#')) {
-			// A SOAP call goes to the base URI as stored, query included (ServiceClientRequest), and SOAP has no query
-			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here.
-			if (WsdlQueryKey(baseUri) is { } wsdlKey) {
-				errors.Add($"base-uri: '?{wsdlKey}' is the address of the WSDL, not of the endpoint; every call would be "
-					+ "posted to it. Give the endpoint, the WSDL's soap:address location, usually the same URL without "
-					+ "the query.");
-				return baseUri;
-			}
-		} else if (baseUri.IndexOfAny(['?', '#']) >= 0) {
-			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
-			// method path, and a key in it would be a stored constant that list and describe would have to hide.
-			errors.Add(soap
-				? "base-uri must not have a fragment."
-				: "base-uri must not have a query or a fragment; give query values as query parameters "
-					+ "(a key or token with default-sys-setting).");
+		if (!CheckBaseUriQuery(baseUri, soap, errors)) {
 			return baseUri;
 		}
 		string trimmed = baseUri.Trim();
@@ -417,6 +392,42 @@ public static partial class WebServiceDefinitionBuilder {
 			return baseUri;
 		}
 		return soap || trimmed.EndsWith('/') ? trimmed : trimmed + "/";
+	}
+
+	// The query and fragment rules of a base URI; false when one refused it (the reason is in errors).
+	private static bool CheckBaseUriQuery(string baseUri, bool soap, Errors errors) {
+		// A key anywhere in a base URI (its query, or a ;name=value path parameter) is refused by the rule list and
+		// describe hide one by, read with the same scanner; the agent could never send it back either. A REST base URI
+		// with a query gets the refusal below, which names query parameters instead.
+		int errorsBefore = errors.Count;
+		bool queryOrFragment = baseUri.IndexOfAny(['?', '#']) >= 0;
+		if (soap || !queryOrFragment) {
+			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
+		}
+		if (errors.Count > errorsBefore) {
+			return false;
+		}
+		if (soap && baseUri.Contains('?') && !baseUri.Contains('#')) {
+			// A SOAP call goes to the base URI as stored, query included (ServiceClientRequest), and SOAP has no query
+			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here.
+			if (WsdlQueryKey(baseUri) is not { } wsdlKey) {
+				return true;
+			}
+			errors.Add($"base-uri: '?{wsdlKey}' is the address of the WSDL, not of the endpoint; every call would be "
+				+ "posted to it. Give the endpoint, the WSDL's soap:address location, usually the same URL without "
+				+ "the query.");
+			return false;
+		}
+		if (queryOrFragment) {
+			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
+			// method path, and a key in it would be a stored constant that list and describe would have to hide.
+			errors.Add(soap
+				? "base-uri must not have a fragment."
+				: "base-uri must not have a query or a fragment; give query values as query parameters "
+					+ "(a key or token with default-sys-setting).");
+			return false;
+		}
+		return true;
 	}
 
 	public static ServiceAuthInfoDto BuildAuth(WebServiceAuthArg auth, Guid? oauthAppId, Errors errors) {
