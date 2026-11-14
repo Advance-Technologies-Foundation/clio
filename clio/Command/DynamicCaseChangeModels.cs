@@ -11,9 +11,9 @@ public static class DynamicCaseChangeRequirement {
 	/// <remarks>
 	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
 	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
-	/// that answers its route with a 404. 1.6.6.178 is the first cut that reads and reports a case's filter.
+	/// that answers its route with a 404. 1.6.6.179 is the first shipped cut that reads and reports a case's filter.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.178";
+	public const string MinimumProcessBuilderVersion = "1.6.6.179";
 }
 
 /// <summary>

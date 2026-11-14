@@ -20,7 +20,7 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 
 	/// <summary>The first CrtProcessBuilder archive whose <c>BuildCase</c> takes a filter and a subset of the stages.</summary>
 	/// <remarks>
-	/// The one place the floor is written. 1.6.6.178 is the first cut whose <c>BuildCase</c> reads <c>filter</c> and
+	/// The one place the floor is written. 1.6.6.179 is the first shipped cut whose <c>BuildCase</c> reads <c>filter</c> and
 	/// <c>deactivateUnfiltered</c> and takes a subset of the stage lookup: an older one refuses those as unknown keys or
 	/// as an incomplete stage list, so the floor names the package that answers them. 1.6.6.165 was the first cut that
 	/// carries <c>BuildCase</c> at all. Every earlier archive has no
@@ -29,7 +29,7 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 	/// reach a package that answers its route with a 404. <c>BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor</c> ties the floor to the archive's
 	/// content, not only its number.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.178";
+	public const string MinimumProcessBuilderVersion = "1.6.6.179";
 
 	/// <summary>The editable package that receives the case and both settings bindings.</summary>
 	public string PackageName { get; set; } = string.Empty;
