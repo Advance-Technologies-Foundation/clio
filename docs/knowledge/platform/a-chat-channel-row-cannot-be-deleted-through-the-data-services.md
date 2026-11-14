@@ -19,4 +19,5 @@ an array bound as a single SQL parameter, which points at a delete-time handler 
 **What breaks if you ignore it** — a fixture that creates a channel and deletes it in teardown fails its cleanup on
 every run and leaves one more channel each time. `SendChatMessageElementToolE2ETests` therefore creates ONE channel,
 named "Clio e2e chat channel", only on a stand with no active channel, and keeps it: the next run finds an active
-channel and creates nothing. A channel left by a measurement can be deactivated, not removed, through the API.
+channel and creates nothing (a deactivated fixture channel is switched back on, not duplicated). A channel left by a
+measurement can be deactivated, not removed, through the API.

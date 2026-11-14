@@ -33,7 +33,8 @@ namespace Clio.Mcp.E2E;
 /// without a chat template the template cases are Ignored. A stand with no active channel (a freshly deployed Studio
 /// has none) gets one SMS channel without messenger settings, named "Clio e2e chat channel", under
 /// <c>McpE2E:AllowDestructiveMcpTests</c> (otherwise the cases that need a channel are Ignored); it is KEPT, because
-/// the platform cannot delete a Channel row through its data services, and later runs reuse it. The read-only parity
+/// the platform cannot delete a Channel row through its data services, and later runs reuse it (switching it back
+/// on if someone deactivated it). The read-only parity
 /// case needs the designer-built process <c>UsrSendChatDesignerFixture</c>; the run cases need
 /// <c>McpE2E:AllowDestructiveMcpTests</c>. Every other case builds its own processes and removes them, newest first,
 /// in <c>finally</c>. Strictly sequential: schema writes in a parallel burst take a .NET Framework stand's app pool
@@ -518,7 +519,8 @@ public sealed class SendChatMessageElementToolE2ETests {
 	/// without messenger settings named <see cref="FixtureChannelName"/> - only under
 	/// <c>McpE2E:AllowDestructiveMcpTests</c>; otherwise the test is ignored with what to create. The channel is KEPT:
 	/// the platform cannot delete a Channel row through its data services (see the knowledge record
-	/// a-chat-channel-row-cannot-be-deleted-through-the-data-services), so later runs find it and create nothing.
+	/// a-chat-channel-row-cannot-be-deleted-through-the-data-services), so later runs find it and create nothing; a
+	/// deactivated fixture channel is switched back on rather than duplicated.
 	/// </summary>
 	private static async Task<(string Id, string Name)> ActiveChannelAsync(ProcessDesignerArrangeContext context) {
 		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("Channel",
@@ -531,14 +533,40 @@ public sealed class SendChatMessageElementToolE2ETests {
 			.Where(row => row.TryGetProperty("IsActive", out JsonElement flag) && flag.ValueKind == JsonValueKind.True)
 			.Select(row => (JsonElement?)row).FirstOrDefault();
 		if (active is not null) {
-			return (active.Value.GetProperty("Id").GetString()!, active.Value.GetProperty("Name").GetString()!);
+			return (active.Value.GetProperty("Id").GetString()!, NameOf(active.Value));
 		}
 		if (!TestConfiguration.Load().AllowDestructiveMcpTests) {
 			Assert.Ignore($"No active Channel on '{context.EnvironmentName}'. Add one in the chat settings (an SMS "
 				+ "provider channel without messenger settings is enough for the build cases), or set "
-				+ "McpE2E:AllowDestructiveMcpTests=true to let the fixture create a disposable one.");
+				+ $"McpE2E:AllowDestructiveMcpTests=true to let the fixture create one named '{FixtureChannelName}', "
+				+ "which it keeps.");
 		}
-		return await CreateChannelAsync(context);
+		JsonElement? kept = rows.EnumerateArray().Select(row => (JsonElement?)row)
+			.FirstOrDefault(row => NameOf(row!.Value) == FixtureChannelName);
+		return kept is null
+			? await CreateChannelAsync(context)
+			: await ReactivateChannelAsync(context, kept.Value.GetProperty("Id").GetString()!);
+	}
+
+	private static string NameOf(JsonElement row) =>
+		row.TryGetProperty("Name", out JsonElement name) && name.ValueKind == JsonValueKind.String
+			? name.GetString()!
+			: string.Empty;
+
+	/// <summary>Switches the fixture's own, deactivated channel back on instead of creating a second one.</summary>
+	private static async Task<(string Id, string Name)> ReactivateChannelAsync(ProcessDesignerArrangeContext context,
+			string id) {
+		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ODataUpdateTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["entity"] = "Channel",
+				["id"] = id,
+				["data"] = new Dictionary<string, object?> { ["IsActive"] = true },
+				["confirm"] = true
+			});
+		ToolText(result).Should().Contain("\"success\":true",
+			because: "the fixture's kept channel must be switched back on; the reply was: {0}", ToolText(result));
+		return (id, FixtureChannelName);
 	}
 
 	/// <summary>
