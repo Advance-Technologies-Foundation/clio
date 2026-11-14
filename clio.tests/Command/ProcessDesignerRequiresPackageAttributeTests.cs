@@ -184,8 +184,8 @@ namespace Clio.Tests
                 because: "the floor of both tools is written in one place, so the rebundle moves one constant");
             PackageVersion.TryParseVersion(requirement.Version, out PackageVersion floor).Should().BeTrue(
                 because: "the checker parses the literal, and an unparseable one throws instead of gating");
-            (floor > PackageVersion.ParseVersion(CreateDynamicCaseOptions.MinimumProcessBuilderVersion)).Should().BeTrue(
-                because: "the archive that first carries BuildCase has no DescribeCase or ModifyCase");
+            (floor >= PackageVersion.ParseVersion(CreateDynamicCaseOptions.MinimumProcessBuilderVersion)).Should().BeTrue(
+                because: "DescribeCase and ModifyCase arrived after BuildCase, so their floor is never below create-dynamic-case's; both are 1.6.6.178, the first cut with case filters");
             requirement.Hint.Should().Be(ExpectedProcessBuilderHint,
                 because: "the install hint must be consistent across all process-designer gates");
         }

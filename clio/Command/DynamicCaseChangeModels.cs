@@ -7,13 +7,13 @@ namespace Clio.Command;
 
 /// <summary>The package floor of <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c>.</summary>
 public static class DynamicCaseChangeRequirement {
-	/// <summary>The first CrtProcessBuilder archive that carries <c>DescribeCase</c> and <c>ModifyCase</c>.</summary>
+	/// <summary>The first CrtProcessBuilder archive whose <c>DescribeCase</c> and <c>ModifyCase</c> carry case filters.</summary>
 	/// <remarks>
 	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
-	/// operations an older package does not carry at all, so presence alone would let a call reach a package that
-	/// answers its route with a 404.
+	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
+	/// that answers its route with a 404. 1.6.6.178 is the first cut that reads and reports a case's filter.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.173";
+	public const string MinimumProcessBuilderVersion = "1.6.6.178";
 }
 
 /// <summary>

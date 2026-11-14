@@ -70,14 +70,15 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>e93b02b9</c>,
-	/// tagged <c>crtprocessbuilder-1.6.6.173</c>): branch <c>feature/ENG-106378-modify-dynamic-case</c> with
-	/// <c>main</c> merged in at 1.6.6.172 (<c>4dbe2270</c>), so the cut carries everything 1.6.6.172 shipped.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>239fb2a7</c>,
+	/// tagged <c>crtprocessbuilder-1.6.6.178</c>): branch <c>feature/ENG-106472-phase-b-filters</c> with
+	/// <c>feature/ENG-106378-modify-dynamic-case</c> merged in at 1.6.6.173 (<c>75404536</c>), which carries
+	/// <c>main</c> at 1.6.6.172, so the cut carries everything 1.6.6.173 shipped.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.173 and packed that commit with it overlaid (395
-	/// entries), and the stamp was committed after it as the child commit <c>1f351231</c>.
-	/// 1.6.6.173 is the first number above every cut in both histories (1.6.6.172 was the highest); whichever package
-	/// branch lands after this one restamps above it.
+	/// marker, the script stamped the package descriptor to 1.6.6.178 and packed that commit with it overlaid (398
+	/// entries), and the stamp was committed after it as the child commit <c>ca09407a</c>.
+	/// 1.6.6.178 is the first number above every cut in both histories (1.6.6.177 was the highest, on another
+	/// branch); whichever package branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -90,20 +91,20 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.171 (ENG-105558): a top-level process parameter that the same build or
-	/// modify creates with no direction, that an element of the process fills and that is not a collection, is saved
-	/// <c>Internal</c> instead of <c>Variable</c>, with a notice; a stated direction is never switched, a FileCollection
-	/// keeps <c>Variable</c> with no advice, a <c>Variable</c> stated for a parameter the request creates and an element
-	/// fills is advised once, and a pre-existing <c>Variable</c> parameter the request makes an element fill keeps
-	/// <c>Variable</c> and gets advice worded as a report that asks for its callers first. The service surface is
-	/// unchanged from 1.6.6.171 (9 operations, 6 design-gate call sites and the one case-gate call site, counted in the
-	/// producing sources). No <c>[RequiresPackage]</c> floor moves (create, modify and modify-as-new-version stay at
-	/// 1.6.6.162, <c>create-dynamic-case</c> at 1.6.6.165): no request key is added, and an older package simply keeps
-	/// <c>Variable</c>. What earlier cuts carried is in this file's git history rather than here: it described archives
-	/// that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.172, the last one shipped: <c>DescribeCase</c> and <c>ModifyCase</c> with
+	/// stage groups (1.6.6.173, ENG-106378), and several dynamic cases on one object split by a filter column
+	/// (ENG-106472). <c>BuildCase</c> and <c>ModifyCase</c> take a <c>filter</c> (a lookup column of the object and its
+	/// values, or <c>empty</c>); the case designer's rules are kept on the server (one filter column per object, no
+	/// value shared by two enabled cases, a case without a filter only alone); the first filter sets the settings row's
+	/// filter column; <c>BuildCase</c> disables the one unfiltered case only on <c>deactivateUnfiltered</c>; and a call
+	/// with a filter needs edit on <c>SysDcmSettings</c>. The service surface is 11 operations, 6 design-gate call sites
+	/// and three case-gate call sites, counted in the producing sources: the filter adds request keys, not operations.
+	/// The <c>[RequiresPackage]</c> floors of <c>create-dynamic-case</c> and of the case describe and modify tools move
+	/// to 1.6.6.178, the first package that reads <c>filter</c>. What earlier cuts carried is in this file's git
+	/// history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6322 passed,
-	/// 0 failed, on <c>dev-nf</c>. <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
+	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6511 passed,
+	/// 0 failed, on <c>dev-nf</c> and on <c>dev-n8</c>.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
@@ -185,7 +186,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"B4725809F38E098B245313BD840EC54302CA3E3AE02E09F20BF86B928EB51A26";
+		"4A5F4222FAE096FD920A82CB2DDAB580DC859980C6BE771068F094B984C636F0";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -213,7 +214,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.173";
+	private const string ExpectedArchiveVersion = "1.6.6.178";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -224,7 +225,7 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 and 1.6.6.173 are script cuts.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173 and 1.6.6.178 are script cuts.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -232,7 +233,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "e93b02b9aa84eeef758fbed430ef2e4e0c408e3f";
+	private const string ExpectedProducingCommit = "239fb2a71804a4f63adf3eb88423e71857dad7df";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -258,7 +259,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794595897000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794653345000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -273,7 +274,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794595721000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794653248000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
