@@ -596,15 +596,7 @@ public static partial class WebServiceSchemaView {
 		for (int i = start; i < end; i++) {
 			char c = uri[i];
 			if (c == '=' && keyStart >= 0) {
-				if (i > keyStart) {
-					string key = Uri.UnescapeDataString(uri[keyStart..i]);
-					if (maskAt > i) {
-						maskKey = key;
-					}
-					if (i >= hiddenUntil) {
-						hiddenUntil = ScanValue(uri, key, i, end, firstQuestion, scan, hiddenUntil);
-					}
-				}
+				ScanKey(uri, keyStart, i, end, firstQuestion, maskAt, scan, ref hiddenUntil, ref maskKey);
 				keyStart = -1;
 			} else if (KeyBoundaries.Contains(c)) {
 				keyStart = i + 1;
@@ -612,6 +604,22 @@ public static partial class WebServiceSchemaView {
 		}
 		if (maskKey is not null) {
 			scan.MaskKeys.Add(maskKey);
+		}
+	}
+
+	// The key that ends at the '=' at equalsAt: noted when the mask follows it in the pair, and its value read unless an
+	// earlier hidden value already covers it.
+	private static void ScanKey(string uri, int keyStart, int equalsAt, int end, int firstQuestion, int maskAt,
+		QueryScan scan, ref int hiddenUntil, ref string maskKey) {
+		if (equalsAt <= keyStart) {
+			return;
+		}
+		string key = Uri.UnescapeDataString(uri[keyStart..equalsAt]);
+		if (maskAt > equalsAt) {
+			maskKey = key;
+		}
+		if (equalsAt >= hiddenUntil) {
+			hiddenUntil = ScanValue(uri, key, equalsAt, end, firstQuestion, scan, hiddenUntil);
 		}
 	}
 
