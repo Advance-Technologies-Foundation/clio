@@ -280,4 +280,178 @@ public sealed class WebServiceResponseMaskerTests {
 		// Assert
 		secrets.Should().BeEmpty(because: "'en' is below the minimum masked length");
 	}
+
+	private static ServiceParameterDto BodyParameter(string name, string path, string setting = null,
+		bool isArray = false, string type = "Text", params ServiceParameterDto[] items) {
+		var parameter = new ServiceParameterDto {
+			UId = Guid.NewGuid(), Name = name, Type = 1, Path = path, DataValueTypeName = type, IsArray = isArray,
+			DefValue = setting is null
+				? new ServiceParameterValueDto()
+				: new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceSysSetting, Value = setting }
+		};
+		foreach (ServiceParameterDto item in items) {
+			parameter.ItemProperties.Items[item.UId.ToString()] = item;
+		}
+		return parameter;
+	}
+
+	private static ServiceMethodDto JsonMethod(params ServiceParameterDto[] parameters) {
+		var method = new ServiceMethodDto { Name = "UsrOp" };
+		foreach (ServiceParameterDto parameter in parameters) {
+			method.Request.Parameters.Items[parameter.UId.ToString()] = parameter;
+		}
+		return method;
+	}
+
+	private const string JsonRaw = "POST https://x/op HTTPS/1.1\r\nContent-Type: application/json\r\nHost: x";
+
+	[Test]
+	[Description("A setting-bound JSON body value is found under the name the platform writes it to, also for an indexed or bracketed path; one missing from the body fails closed, and one sent as null is located.")]
+	public void SentSecrets_Should_Locate_Json_Values_By_The_Platform_Path_Rules() {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(
+			BodyParameter("UsrIndexed", "k[0]", "UsrKeyA"),
+			BodyParameter("UsrBracketed", "$['b']", "UsrKeyB"));
+
+		// Act
+		IReadOnlyList<string> found = WebServiceResponseMasker.SentSecrets(method, JsonRaw,
+			"""{"k":["v-index-11"],"b":"v-bracket-22"}""", false, null, out bool foundUnlocated);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"k":["v-index-11"]}""", false, null,
+			out bool missingUnlocated);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"k":["v-index-11"],"b":null}""", false, null,
+			out bool nullUnlocated);
+
+		// Assert
+		found.Should().Contain(["v-index-11", "v-bracket-22"],
+			because: "k[0] writes the value inside an array under k, and $['b'] writes it under b");
+		foundUnlocated.Should().BeFalse(because: "every setting-bound value was found");
+		missingUnlocated.Should().BeTrue(because: "a top-level body value is always rendered, so a missing one is a lookup miss");
+		nullUnlocated.Should().BeFalse(because: "a value sent as null (an empty setting) carries nothing to hide");
+	}
+
+	[Test]
+	[Description("A bracketed name in double quotes is looked up with its quotes, because the platform strips only single quotes and writes the value under the quoted name; a property named without the quotes is not taken for it.")]
+	public void SentSecrets_Should_Keep_The_Double_Quotes_Of_A_Bracketed_Name() {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(BodyParameter("UsrQuoted", "$[\"api-key\"]", "UsrKeyQ"));
+
+		// Act
+		IReadOnlyList<string> found = WebServiceResponseMasker.SentSecrets(method, JsonRaw,
+			"""{"\"api-key\"":"v-quoted-66","api-key":"decoy-77"}""", false, null, out bool foundUnlocated);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"api-key":"decoy-77"}""", false, null,
+			out bool decoyUnlocated);
+
+		// Assert
+		found.Should().Contain("v-quoted-66", because: "the platform writes $[\"api-key\"] under the name \"api-key\" with its quotes");
+		found.Should().NotContain("decoy-77", because: "a property named without the quotes is not where the value went");
+		foundUnlocated.Should().BeFalse(because: "the value was found under the quoted name");
+		decoyUnlocated.Should().BeTrue(because: "with only the unquoted name in the body the sent value is missing, so the response is withheld");
+	}
+
+	[TestCase("a[b", """{"a":{"[b":"v-open-44"}}""", Description = "a top-level path ending in an unclosed bracket")]
+	[TestCase("a", """{"a":{"x":"v-object-55"}}""", Description = "a name that holds only an object")]
+	[Description("A setting-bound JSON value whose name holds only an object, or whose path ends in an unclosed bracket the platform writes under a name of its own, is not taken as found, so the response is withheld instead of returned unmasked.")]
+	public void SentSecrets_Should_Fail_Closed_When_The_Json_Name_Holds_No_Value(string path, string body) {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(BodyParameter("UsrOdd", path, "UsrKeyOdd"));
+
+		// Act
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, body, false, null, out bool unlocated);
+
+		// Assert
+		unlocated.Should().BeTrue(because: "the value cannot be told apart from the rest of the body, so it cannot be masked");
+	}
+
+	[Test]
+	[Description("A setting-bound field of a JSON array item is found in every item, also when its own placement says header; it fails closed when an item that went out lacks it or the given array is missing, and a setting-bound array or an array left out hides nothing.")]
+	public void SentSecrets_Should_Locate_Json_Array_Item_Fields_And_Fail_Closed() {
+		// Arrange
+		ServiceParameterDto key = BodyParameter("UsrKey", "key", "UsrItemKey");
+		key.Type = ServiceSchemaCodes.Placements["header"];
+		ServiceMethodDto method = JsonMethod(BodyParameter("UsrLines", "lines", type: "Object", isArray: true, items: [
+			key, BodyParameter("UsrTags", "tags", "UsrTagSetting", isArray: true)
+		]));
+
+		// Act
+		IReadOnlyList<string> filled = WebServiceResponseMasker.SentSecrets(method, JsonRaw,
+			"""{"lines":[{"key":"k-item-33"}]}""", false, ["UsrLines"], out bool filledUnlocated);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"lines":[{"sku":"x"}]}""", false, ["UsrLines"],
+			out bool fieldMissing);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, "{}", false, [], out bool arrayLeftOut);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, "{}", false, ["UsrLines"], out bool givenArrayMissing);
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"lines":[]}""", false, ["UsrLines"],
+			out bool emptyArray);
+
+		// Assert
+		filled.Should().Contain("k-item-33",
+			because: "the platform renders every item field into the body, whatever placement the field carries");
+		filledUnlocated.Should().BeFalse(because: "the item field was found, and a body array is never filled from its setting");
+		fieldMissing.Should().BeTrue(because: "an item that went out carries every field, so a missing one is a lookup miss");
+		arrayLeftOut.Should().BeFalse(because: "an array the call left out is not rendered, so its fields were not sent");
+		givenArrayMissing.Should().BeTrue(because: "an array the call filled is rendered, so its absence is a lookup miss");
+		emptyArray.Should().BeFalse(because: "an array sent empty carries no item field");
+	}
+
+	[Test]
+	[Description("A setting-bound field under a single Object inside an array item fails closed when neither it nor the Object is in the body: the Object is never given a value, so whether it went out cannot be told.")]
+	public void SentSecrets_Should_Fail_Closed_For_A_Field_Under_A_Single_Object() {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(BodyParameter("UsrLines", "lines", type: "Object", isArray: true, items: [
+			BodyParameter("UsrSku", "sku"),
+			BodyParameter("UsrMeta", "meta", type: "Object", items: [BodyParameter("UsrKey", "key", "UsrItemKey")])
+		]));
+
+		// Act
+		WebServiceResponseMasker.SentSecrets(method, JsonRaw, """{"lines":[{"sku":"x"}]}""", false, ["UsrLines"],
+			out bool unlocated);
+
+		// Assert
+		unlocated.Should().BeTrue(because: "a field under an Object that may have gone out is a lookup miss, not proof it was not sent");
+	}
+
+	[Test]
+	[Description("An array item field whose path starts with $ is looked for under that name, as the platform keeps an item path as written, so a decoy field of the name without $ is not taken for the setting's value; a top-level $. path still loses its root.")]
+	public void SentSecrets_Should_Keep_The_Root_Sign_Of_An_Item_Field_Path() {
+		// Arrange
+		ServiceMethodDto method = JsonMethod(
+			BodyParameter("UsrToken", "$.token", "UsrTopSetting"),
+			BodyParameter("UsrLines", "lines", type: "Object", isArray: true, items: [
+				BodyParameter("UsrKey", "$apiKey", "UsrItemKey"), BodyParameter("UsrDecoy", "apiKey")
+			]));
+
+		// Act
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, JsonRaw,
+			"""{"token":"top-secret-1","lines":[{"$apiKey":"item-secret-2","apiKey":"decoy-3"}]}""", false,
+			["UsrLines", "UsrDecoy"], out bool unlocated);
+
+		// Assert
+		secrets.Should().Contain("item-secret-2", because: "the item field went out under its path as written, $ included");
+		secrets.Should().Contain("top-secret-1", because: "a top-level path's $. names the body root");
+		secrets.Should().NotContain("decoy-3", because: "the caller's own field is not a setting value");
+		unlocated.Should().BeFalse(because: "every setting value was found where the platform wrote it");
+	}
+
+	[Test]
+	[Description("A setting-bound field of a SOAP array item whose own placement says header is collected from the envelope body, where the platform renders it, instead of being looked for in the headers.")]
+	public void SentSecrets_Should_Find_An_Item_Field_In_The_Body_Whatever_Its_Placement() {
+		// Arrange
+		ServiceMethodDto method = SoapServiceFixture.Method();
+		foreach (ServiceParameterDto lines in method.Request.Parameters.Items.Values) {
+			foreach (ServiceParameterDto field in lines.ItemProperties.Items.Values) {
+				field.Type = ServiceSchemaCodes.Placements["header"];
+			}
+		}
+
+		// Act
+		IReadOnlyList<string> found = WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw,
+			SoapServiceFixture.SentWithItem, false, ["UsrLines"], out bool unlocated);
+		WebServiceResponseMasker.SentSecrets(method, SoapServiceFixture.SentRaw,
+			SoapServiceFixture.SentWithItem.Replace("<tem:Token>", "<tem:Other>").Replace("</tem:Token>", "</tem:Other>"),
+			false, ["UsrLines"], out bool missing);
+
+		// Assert
+		found.Should().Contain(SoapServiceFixture.LineTokenValue, because: "the item field is rendered in the envelope body");
+		unlocated.Should().BeFalse(because: "the item field was found where the platform put it");
+		missing.Should().BeTrue(because: "an item that went out without the field means the lookup missed it");
+	}
 }
