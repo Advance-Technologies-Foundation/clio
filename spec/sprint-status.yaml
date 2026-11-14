@@ -5130,3 +5130,15 @@ stories:
       - story-eng-105475-soap-web-service-2
       - story-eng-105475-soap-web-service-3
     blocks: []
+  - id: story-manage-user-password-file-1
+    title: "manage-user reads the new password from a file"
+    feature: "manage-user-password-file"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-manage-user-password-file-1.md
+    prd: spec/prd/spec-manage-user-password-file.md
+    adr: spec/adr/adr-manage-user-password-file.md
+    test_plan: spec/test-plans/tp-manage-user-password-file.md
+    depends_on: []
+    blocks: []
