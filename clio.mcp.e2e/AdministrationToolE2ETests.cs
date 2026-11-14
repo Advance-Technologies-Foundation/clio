@@ -27,11 +27,12 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 		settings.ProcessEnvironmentVariables[UnrelatedVariable] = _nextPassword;
 	}
 
-	[TestCase(false)]
-	[TestCase(true)]
-	[Description("Creates a disposable account and organizational roles, verifies management and access effects, then removes its owned records.")]
+	[TestCase(false, false)]
+	[TestCase(true, false)]
+	[TestCase(false, true)]
+	[Description("Creates a disposable account and organizational roles, verifies management and access effects, then removes its owned records. The password-file case creates the account from an owner-only file in clio's secrets folder instead of a process variable.")]
 	[AllureName("Agent administration lifecycle against an exclusive sandbox")]
-	public async Task Administration_Lifecycle(bool external) {
+	public async Task Administration_Lifecycle(bool external, bool passwordFile) {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests || string.IsNullOrWhiteSpace(settings.Sandbox.EnvironmentName)
@@ -47,14 +48,26 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 		Guid root = Guid.Parse(external ? "720b771c-e7a7-4f31-9cfb-52cd21c3739f" : "a29a3ba5-4b0d-de11-9a51-005056c00008");
 		bool userCreated = false, divisionCreated = false, functionalCreated = false;
 		bool assertionsCompleted = false;
+		// The server inherits this process's CLIO_HOME, so the file lands in the folder it reads.
+		string secretName = "clio-admin-e2e-" + user.ToString("N");
+		string secretPath = Path.Combine(new ClioSecretFileReader().SecretsFolder, secretName);
+		if (passwordFile) {
+			Directory.CreateDirectory(Path.GetDirectoryName(secretPath)!);
+			await File.WriteAllTextAsync(secretPath, _password + "\n");
+			if (!OperatingSystem.IsWindows()) {
+				File.SetUnixFileMode(secretPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+			}
+		}
 		try {
 			// Act
 			userCreated = true; // Attempt cleanup even when persistence succeeds but the response fails.
-			JsonElement created = await Success(ManageUserTool.ToolName, new() {
+			Dictionary<string, object?> createArgs = new() {
 				["action"] = "create", ["id"] = user, ["user-login"] = login,
-				["contact-id"] = settings.Sandbox.AdministrationContactId, ["password-env"] = PasswordVariable,
+				["contact-id"] = settings.Sandbox.AdministrationContactId,
 				["force-change-password"] = false, ["external"] = external
-			});
+			};
+			createArgs[passwordFile ? "password-file" : "password-env"] = passwordFile ? secretName : PasswordVariable;
+			JsonElement created = await Success(ManageUserTool.ToolName, createArgs);
 			divisionCreated = true;
 			await Success(ManageRoleTool.ToolName, new() {
 				["action"] = "create", ["id"] = division, ["name"] = login + " division", ["type"] = 1,
@@ -173,6 +186,9 @@ public sealed class AdministrationToolE2ETests : McpContractFixtureBase {
 			licenses.ValueKind.Should().Be(JsonValueKind.Array, because: "license inspection must work even on an unlicensed lab");
 			assertionsCompleted = true;
 		} finally {
+			if (passwordFile) {
+				File.Delete(secretPath);
+			}
 			using CancellationTokenSource cleanupBudget = new(TimeSpan.FromMinutes(3));
 			requestToken = cleanupBudget.Token;
 			List<string> cleanupFailures = [];

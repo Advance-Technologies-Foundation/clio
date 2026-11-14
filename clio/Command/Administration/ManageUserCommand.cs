@@ -34,6 +34,9 @@ public sealed class ManageUserOptions : EnvironmentOptions {
 	/// <summary>Name of the process environment variable containing the new password.</summary>
 	[Option("password-env", HelpText = "Name of a populated CLIO_ADMIN_PASSWORD_<SUFFIX> variable; suffix uses uppercase letters, digits or underscores. Never pass the password itself.")]
 	public string PasswordEnvironmentVariable { get; set; }
+	/// <summary>Name of a file in clio's secrets folder that holds only the new password.</summary>
+	[Option("password-file", HelpText = "Name of a file in clio's secrets folder (<clio home>/secrets/<name>, readable by its owner only) that holds only the new password. A name, never a path; never pass the password itself.")]
+	public string PasswordFile { get; set; }
 	/// <summary>Requires a password change on next login.</summary>
 	[Option("force-change-password", Default = true, HelpText = "Require password change on next login; applies to create/password.")]
 	public bool ForceChangePassword { get; set; } = true;
@@ -49,8 +52,13 @@ public sealed class ManageUserOptions : EnvironmentOptions {
 }
 
 /// <summary>Executes validated account operations with safe structured output.</summary>
-public sealed class ManageUserCommand(IAdministrationService administration, ILogger logger)
+public sealed class ManageUserCommand(IAdministrationService administration, ILogger logger, IClioSecretFileReader secrets)
 	: Command<ManageUserOptions> {
+
+	/// <summary>The refusal when a call names both password channels.</summary>
+	internal const string BothReferencesMessage =
+		"Supply one password reference, password-file or password-env, not both.";
+
 	/// <inheritdoc />
 	public override int Execute(ManageUserOptions options) {
 		try {
@@ -88,7 +96,13 @@ public sealed class ManageUserCommand(IAdministrationService administration, ILo
 		}
 	}
 
-	private static string ReadPassword(ManageUserOptions options) {
+	private string ReadPassword(ManageUserOptions options) {
+		if (options.PasswordFile is not null) {
+			if (options.PasswordEnvironmentVariable is not null) {
+				throw new ArgumentException(BothReferencesMessage);
+			}
+			return secrets.Read(options.PasswordFile, "password-file");
+		}
 		const string prefix = "CLIO_ADMIN_PASSWORD_";
 		const string invalidReference = "Supply a populated password reference named CLIO_ADMIN_PASSWORD_<SUFFIX> using uppercase letters, digits or underscores.";
 		string reference = options.PasswordEnvironmentVariable;

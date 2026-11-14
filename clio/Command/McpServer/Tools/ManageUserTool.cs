@@ -34,10 +34,20 @@ public sealed class ManageUserTool(ManageUserCommand command, ILogger logger, IT
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
-	[Description("Manage user administration through native Creatio services. Create and password actions require Creatio 10.1.585.0 or newer because older native services may log passwords. Read get-guidance name=administration first. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
+	[Description("Manage user administration through native Creatio services. Create and password actions require Creatio 10.1.585.0 or newer because older native services may log passwords, and take the new password by reference: password-file (preferred) or password-env, as the host provides; never the password itself. Read get-guidance name=administration first. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
 	public CommandExecutionResult Manage([Required, Description("Environment and exact action parameters.")] ManageUserArgs args) => Execute(args, true);
 
 	private CommandExecutionResult Execute(ManageUserArgs args, bool confirm) {
+		// Checked before the environment is resolved, so a malformed reference is refused without reaching a site and
+		// without repeating the value, which may be a secret pasted by mistake.
+		if (args.PasswordFile is not null) {
+			if (args.PasswordEnvironmentVariable is not null) {
+				return CommandExecutionResult.FromValidationError(ManageUserCommand.BothReferencesMessage);
+			}
+			if (!ClioSecretFileReader.IsValidName(args.PasswordFile)) {
+				return CommandExecutionResult.FromValidationError(ClioSecretFileReader.InvalidNameMessage("password-file"));
+			}
+		}
 		try {
 			return InternalExecute<ManageUserCommand>(new ManageUserOptions {
 				Environment = args.EnvironmentName,
@@ -48,6 +58,7 @@ public sealed class ManageUserTool(ManageUserCommand command, ILogger logger, IT
 				Active = args.Active,
 				External = args.External,
 				PasswordEnvironmentVariable = args.PasswordEnvironmentVariable,
+				PasswordFile = args.PasswordFile,
 				ForceChangePassword = args.ForceChangePassword,
 				Offset = args.Offset,
 				Limit = args.Limit,
@@ -85,6 +96,9 @@ public sealed record ManageUserArgs {
 	/// <summary>Name of a populated CLIO_ADMIN_PASSWORD_&lt;SUFFIX&gt; process variable; suffix uses uppercase letters, digits or underscores. Never supply the password itself.</summary>
 	[JsonPropertyName("password-env"), Description("Name of a populated CLIO_ADMIN_PASSWORD_<SUFFIX> process variable; suffix uses uppercase letters, digits or underscores. Never supply the password itself.")]
 	public string PasswordEnvironmentVariable { get; init; }
+	/// <summary>Name of a password file the host placed in clio's secrets folder; preferred over password-env.</summary>
+	[JsonPropertyName("password-file"), Description("Name of a password file the host placed in clio's secrets folder (<clio home>/secrets/<name>, owner-only). Preferred over password-env: a process variable of a long-running clio can be read by other processes of the same user. Use only a name the host gave you; never a path, never one you invent, never the password itself.")]
+	public string PasswordFile { get; init; }
 	/// <summary>Require a password change at next login.</summary>
 	[JsonPropertyName("force-change-password"), Description("Require a password change at next login.")]
 	public bool ForceChangePassword { get; init; } = true;
