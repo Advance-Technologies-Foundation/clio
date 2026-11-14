@@ -76,9 +76,9 @@ public interface IWsdlReader {
 	/// <param name="request">The request.</param>
 	/// <returns>The ports with warnings, or operation names only when the result would be too large.</returns>
 	/// <exception cref="ArgumentException">
-	/// The request names both or neither source, a URL carries credentials or a key, a path is not a local absolute one, a
-	/// file cannot be read or is too large, the WSDL cannot be read, or the port, an operation or the service code is not
-	/// there.
+	/// The request names both or neither source, or both code and service-code; code is not a Latin identifier with the
+	/// schema-name prefix; a URL carries credentials or a key, a path is not a local absolute one, a file cannot be read or
+	/// is too large, the WSDL cannot be read, or the port, an operation or the service code is not there.
 	/// </exception>
 	/// <exception cref="UnauthorizedAccessException">The environment user lacks CanManageSolution.</exception>
 	/// <exception cref="InvalidOperationException">
@@ -173,7 +173,11 @@ public sealed partial class WsdlReader(
 		if (newCode) {
 			var codeErrors = new WebServiceDefinitionBuilder.Errors();
 			WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, codeErrors);
-			codeErrors.ThrowIfAny();
+			if (codeErrors.Count > 0) {
+				// Built here, not from the shared message, so a value of any length is cut like every other echoed input.
+				throw new ArgumentException($"code '{WsdlParser.Shown(code)}' must be a Latin identifier (letters, digits, "
+					+ "underscore)" + (string.IsNullOrEmpty(prefix) ? "." : $" starting with the schema-name prefix '{prefix}'."));
+			}
 		}
 		// The target is read before the WSDL is downloaded and parsed: a wrong service-code is refused before that work,
 		// and also when the result falls back to names.
@@ -225,8 +229,9 @@ public sealed partial class WsdlReader(
 			notices.AddRange(services.Select(s => s.Arguments.Code).Distinct(StringComparer.OrdinalIgnoreCase)
 				.Where(code => !client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, code))
 				.Select(code => $"The code '{code}' is already used by a web service. Ask the user which way to go, and do not "
-					+ "pick a code yourself: register under a code the user names, or change that service (read the WSDL again "
-					+ $"with service-code '{code}', then use modify-web-service)."));
+					+ "pick a code yourself: register under another code the user names (read the WSDL again with that code as "
+					+ $"code), or change that service (read the WSDL again with service-code '{code}', then use "
+					+ "modify-web-service)."));
 		}
 		// The WSDL names the endpoint the calls (and any credentials set up later) go to; tell the user when it is not the
 		// host the WSDL came from.
@@ -272,7 +277,8 @@ public sealed partial class WsdlReader(
 				? $"The result is too large to return whole (over {MaxResultCharacters} characters) even for one operation of one "
 					+ "port; only its name is listed. Ask the user which fields of it they need and describe the method by hand."
 				: $"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names "
-					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port)."
+					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port), "
+					+ "keeping the same code or service-code."
 		};
 		int remaining = MaxListedOperations;
 		var views = new List<WsdlServiceView>();

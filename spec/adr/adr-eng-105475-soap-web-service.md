@@ -115,7 +115,7 @@ The REST rule "an xml method has no body parameters" applies to REST only.
 Read-only, `OpenWorld = true`. Inputs: `environment-name`, `wsdl-url` or `wsdl-files` (absolute local paths, for a WSDL
 the stand cannot reach or one with non-ASCII text, which the platform download turns into `?`; an import is matched by
 its `schemaLocation` or by that location's file name; at most 100 files of 10 MB, the platform endpoint's own caps),
-optional `port`, `service-code` (D11) and `operations` (names to return; a port with none of them is left out). The URL is fetched through
+optional `port`, `code` (a new service's code, D16), `service-code` (D11) and `operations` (names to return; a port with none of them is left out). The URL is fetched through
 `GetXmlSchemaFilesContent` (CanManageSolution, as Studio; route `DownloadWsdlSchemaFiles`), never by clio itself, so
 clio adds no network reach of its own; only the URL the user gave is fetched (the platform follows the
 `schemaLocation`s), a URL with `user:password@` or a key or token in its query is refused, and the platform's error
