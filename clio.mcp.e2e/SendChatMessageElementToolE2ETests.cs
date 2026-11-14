@@ -27,15 +27,17 @@ namespace Clio.Mcp.E2E;
 /// <para>What only this level can show is the wire and the platform: the block travels as JSON members the server
 /// contract must declare, the channel, contact and chat template resolve against the stand's records, the element is
 /// stored with the shapes the designer stores, and describe reads them back from a real saved schema.</para>
-/// <para>Stand prerequisites. The OmnichannelMessaging package (the <c>SendChatMessageUserTask</c> schema), an
-/// ACTIVE <c>Channel</c> row and, for the template cases, a message template of type "Chat template". Without the
-/// package every case is Ignored with "install OmnichannelMessaging"; without a channel or a chat template the cases
-/// that need one are Ignored with what to create - so a lane stand without the package stays green but proves
-/// nothing for chat (an open question for the lane owner). The read-only parity case needs the designer-built process
-/// <c>UsrSendChatDesignerFixture</c>; the run cases need <c>McpE2E:AllowDestructiveMcpTests</c>. Every other case
-/// builds its own processes and removes them, newest first, in <c>finally</c>. Strictly sequential: schema writes in a
-/// parallel burst take a .NET Framework stand's app pool down. No case creates or deletes a channel, a contact
-/// identity or a system setting.</para>
+/// <para>Stand prerequisites. The OmnichannelMessaging package (the <c>SendChatMessageUserTask</c> schema; current
+/// Studio builds ship it), an ACTIVE <c>Channel</c> row and, for the template cases, a message template of type "Chat
+/// template" (shipped with the package). Without the package every case is Ignored with "install OmnichannelMessaging";
+/// without a chat template the template cases are Ignored. A stand with no active channel (a freshly deployed Studio
+/// has none) gets one SMS channel without messenger settings, named "Clio e2e chat channel", under
+/// <c>McpE2E:AllowDestructiveMcpTests</c> (otherwise the cases that need a channel are Ignored); it is KEPT, because
+/// the platform cannot delete a Channel row through its data services, and later runs reuse it. The read-only parity
+/// case needs the designer-built process <c>UsrSendChatDesignerFixture</c>; the run cases need
+/// <c>McpE2E:AllowDestructiveMcpTests</c>. Every other case builds its own processes and removes them, newest first,
+/// in <c>finally</c>. Strictly sequential: schema writes in a parallel burst take a .NET Framework stand's app pool
+/// down. No case creates a contact identity or a system setting, or sends a message.</para>
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -71,6 +73,15 @@ public sealed class SendChatMessageElementToolE2ETests {
 
 	/// <summary>The designer-built fixture of the parity case.</summary>
 	private const string DesignerFixtureName = "UsrSendChatDesignerFixture";
+
+	/// <summary>The SMS provider of a channel the fixture creates when the stand has no active one.</summary>
+	private const string SmsProviderId = "21af0484-eee0-4f61-8822-f8789838ba66";
+
+	/// <summary>
+	/// The name of the channel this fixture creates on a stand that has no active one. Fixed, so a later run finds and
+	/// reuses it instead of adding another.
+	/// </summary>
+	private const string FixtureChannelName = "Clio e2e chat channel";
 
 	#region Methods: Tests - create and describe
 
@@ -502,7 +513,13 @@ public sealed class SendChatMessageElementToolE2ETests {
 		return context;
 	}
 
-	/// <summary>An active chat channel of the stand; ignores the test, with what to create, when there is none.</summary>
+	/// <summary>
+	/// An active chat channel of the stand. A stand without one (a freshly deployed Studio has none) gets an SMS channel
+	/// without messenger settings named <see cref="FixtureChannelName"/> - only under
+	/// <c>McpE2E:AllowDestructiveMcpTests</c>; otherwise the test is ignored with what to create. The channel is KEPT:
+	/// the platform cannot delete a Channel row through its data services (see the knowledge record
+	/// a-chat-channel-row-cannot-be-deleted-through-the-data-services), so later runs find it and create nothing.
+	/// </summary>
 	private static async Task<(string Id, string Name)> ActiveChannelAsync(ProcessDesignerArrangeContext context) {
 		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("Channel",
 			[
@@ -513,11 +530,39 @@ public sealed class SendChatMessageElementToolE2ETests {
 		JsonElement? active = rows.EnumerateArray()
 			.Where(row => row.TryGetProperty("IsActive", out JsonElement flag) && flag.ValueKind == JsonValueKind.True)
 			.Select(row => (JsonElement?)row).FirstOrDefault();
-		if (active is null) {
-			Assert.Ignore($"No active Channel on '{context.EnvironmentName}'. Add one in the chat settings (an SMS "
-				+ "provider channel without messenger settings is enough for the build cases).");
+		if (active is not null) {
+			return (active.Value.GetProperty("Id").GetString()!, active.Value.GetProperty("Name").GetString()!);
 		}
-		return (active!.Value.GetProperty("Id").GetString()!, active.Value.GetProperty("Name").GetString()!);
+		if (!TestConfiguration.Load().AllowDestructiveMcpTests) {
+			Assert.Ignore($"No active Channel on '{context.EnvironmentName}'. Add one in the chat settings (an SMS "
+				+ "provider channel without messenger settings is enough for the build cases), or set "
+				+ "McpE2E:AllowDestructiveMcpTests=true to let the fixture create a disposable one.");
+		}
+		return await CreateChannelAsync(context);
+	}
+
+	/// <summary>
+	/// Creates an active SMS channel without messenger settings - enough for every build, describe and failure-path
+	/// case, and unable to send anything (the provider client fails before any message leaves).
+	/// </summary>
+	private static async Task<(string Id, string Name)> CreateChannelAsync(ProcessDesignerArrangeContext context) {
+		string id = Guid.NewGuid().ToString();
+		string name = FixtureChannelName;
+		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ODataCreateTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["entity"] = "Channel",
+				["rows"] = new[] {
+					new Dictionary<string, object?> {
+						["Id"] = id, ["Name"] = name, ["ProviderId"] = SmsProviderId, ["IsActive"] = true,
+						["Source"] = "clio-mcp-e2e"
+					}
+				}
+			});
+		EntitySchemaStructuredResultParser.Extract<ODataCreateBatchResponse>(result).Created.Should().Be(1,
+			because: "the stand has no active channel, so the fixture creates one; the reply was: {0}",
+			ToolText(result));
+		return (id, name);
 	}
 
 	/// <summary>The name of a message template of the given type; ignores the test when the stand has none.</summary>
