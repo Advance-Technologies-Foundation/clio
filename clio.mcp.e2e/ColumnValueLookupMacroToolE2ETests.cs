@@ -40,21 +40,21 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 
 	private const string Subject = "column-value lookup macro";
 
-	/// <summary>Where each element kind carries its column values, by element type token.</summary>
-	private static readonly Dictionary<string, (string Block, string Values)> ValuesMember = new() {
-		["changeData"] = ("changeData", "values"),
-		["addData"] = ("addData", "values"),
-		["openEditPage"] = ("openEditPage", "defaultValues")
+	/// <summary>The member of each element's block (named like its type) that carries the column values.</summary>
+	private static readonly Dictionary<string, string> ValuesMember = new() {
+		["changeData"] = "values",
+		["addData"] = "values",
+		["openEditPage"] = "defaultValues"
 	};
 
 	[TestCase("changeData", "Contact", "Type", "ContactType")]
 	[TestCase("addData", "Contact", "Type", "ContactType")]
-	[TestCase("openEditPage", "Account", "AccountCategory", "AccountCategory")]
+	[TestCase("openEditPage", "AccountPageV2", "AccountCategory", "AccountCategory")]
 	[Description("TC-I-11: a fixed lookup value sent as [#Lookup.<object name>.<record id>#] in an element's column values builds, comes back with a 'stored as' warning, and describe reads it back as [#Lookup.<root object schema UId>.<record id>#] - the only form the designer card can show.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process stores a column-value lookup macro in the designer's form")]
 	public async Task CreateBusinessProcess_Should_StoreANamedLookupMacro_InTheDesignersForm(string elementType,
-			string objectName, string column, string referencedObject) {
+			string objectOrPage, string column, string referencedObject) {
 		// Arrange
 		await using ProcessDesignerArrangeContext context =
 			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion, TimeSpan.FromMinutes(8));
@@ -66,7 +66,7 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 		List<string> created = [processName];
 		try {
 			// Act
-			CallToolResult callResult = await CreateAsync(context, Descriptor(processName, elementType, objectName, entry));
+			CallToolResult callResult = await CreateAsync(context, Descriptor(processName, elementType, objectOrPage, entry));
 
 			// Assert
 			ShouldHaveBuilt(callResult, "a named lookup macro on a Lookup column is accepted");
@@ -92,10 +92,14 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 		string recordId = await AnyRecordIdAsync(context, "ContactType");
 		string entry = $$"""{ "column": "Type", "value": "{{recordId}}" }""";
 		string processName = NewProcessName("PlainId");
-		List<string> created = [processName];
+		// Nothing is built when the refusal holds, so there is nothing to clean up unless it does not.
+		List<string> created = [];
 		try {
 			// Act
 			CallToolResult callResult = await CreateAsync(context, Descriptor(processName, "changeData", "Contact", entry));
+			if (LogText(callResult).Contains(CreatedLine, StringComparison.Ordinal)) {
+				created.Add(processName);
+			}
 
 			// Assert
 			ShouldBeRefused(callResult, "a plain constant on a Lookup column cannot be stored in a form the runtime reads");
@@ -113,13 +117,15 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 
 	private static string NewProcessName(string caseName) => $"UsrClioBpLookup{caseName}E2e{Guid.NewGuid():N}";
 
-	/// <summary>Start -> one element of the given kind on the given object, carrying the one column value -> End.</summary>
-	private static string Descriptor(string processName, string elementType, string objectName, string entry) {
+	/// <summary>
+	/// Start -> one element of the given kind carrying the one column value -> End. <paramref name="objectOrPage"/> is
+	/// the data element's object, or the Open edit page element's page.
+	/// </summary>
+	private static string Descriptor(string processName, string elementType, string objectOrPage, string entry) {
 		string block = elementType switch {
-			"changeData" => $$"""{ "source": "{{objectName}}", "values": [ {{entry}} ] }""",
-			"addData" => $$"""{ "source": "{{objectName}}", "values": [ {{entry}} ] }""",
+			"changeData" or "addData" => $$"""{ "source": "{{objectOrPage}}", "values": [ {{entry}} ] }""",
 			"openEditPage" => $$"""
-				{ "page": "AccountPageV2", "editMode": "add", "recommendation": "Check the category",
+				{ "page": "{{objectOrPage}}", "editMode": "add", "recommendation": "Check the category",
 				  "defaultValues": [ {{entry}} ], "completion": { "mode": "onSave" } }
 				""",
 			_ => throw new ArgumentOutOfRangeException(nameof(elementType), elementType, null)
@@ -161,7 +167,8 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 
 	/// <summary>The described column-value entry for <paramref name="column"/> in the element's block.</summary>
 	private static JsonObject ValueEntry(JsonObject element, string elementType, string column) {
-		(string blockKey, string valuesKey) = ValuesMember[elementType];
+		string blockKey = elementType;
+		string valuesKey = ValuesMember[elementType];
 		element[blockKey].Should().BeOfType<JsonObject>(
 			because: $"describe reports the {blockKey} block; what was read: {{0}}", element.ToJsonString());
 		return (element[blockKey]![valuesKey] as JsonArray ?? []).OfType<JsonObject>()
