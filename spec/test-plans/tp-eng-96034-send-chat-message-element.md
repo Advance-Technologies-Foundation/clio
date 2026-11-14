@@ -37,9 +37,12 @@ contracts point only at published guidance; `curated-knowledge-names.json` names
 ## Integration (clio.mcp.e2e, category `McpE2E.ProcessDesigner`)
 
 Class `SendChatMessageElementToolE2ETests`; TC-I-10 in `ListUserTasksToolE2ETests`. Every case except TC-I-10 skips
-with an explicit reason on a stand without OmnichannelMessaging, without an active `Channel`, or (template cases)
-without a uniquely named chat template; TC-I-08 needs the designer fixture `UsrSendChatDesignerFixture`; TC-I-09 needs
-`McpE2E:AllowDestructiveMcpTests`.
+with an explicit reason on a stand without OmnichannelMessaging, or (template cases) without a uniquely named chat
+template. On a stand with no active `Channel` the fixture creates and keeps one SMS channel, "Clio e2e chat channel",
+under `McpE2E:AllowDestructiveMcpTests` (otherwise the cases that need a channel skip); it is never deleted, because a
+Channel row cannot be deleted through the data services
+(`docs/knowledge/platform/a-chat-channel-row-cannot-be-deleted-through-the-data-services.md`). TC-I-08 needs the
+designer fixture `UsrSendChatDesignerFixture`; TC-I-09 needs `McpE2E:AllowDestructiveMcpTests`.
 
 | ID | What |
 |---|---|

@@ -94,7 +94,11 @@ public class BundledProcessBuilderPackageTests {
 	/// <para>What this cut carries over 1.6.6.172 (ENG-96034): the Send chat message element - the <c>sendChatMessage</c>
 	/// element type and its <c>chatMessage</c> block (<c>SendChatMessageDescriptor</c>, read back as
 	/// <c>DescribeSendChatMessageInfo</c>) on build, addElement and setElement, the refusal of the generic userTask route
-	/// naming <c>SendChatMessageUserTask</c>, and the raw-mapping guard on the block-owned chat parameters. The service
+	/// naming <c>SendChatMessageUserTask</c>, and the raw-mapping guard on the block-owned chat parameters. It also
+	/// changes stored values beyond the chat element: a <c>[#Lookup…#]</c> macro accepted in column values is stored
+	/// canonical (the name or replacing-schema segment becomes the object's root schema UId, lower case, with a "stored
+	/// as" notice) on <c>changeData.values</c>, <c>addData.values</c>, <c>openEditPage.defaultValues</c> and
+	/// <c>chatMessage.columnValues</c>, and describe reads that canonical text back. The service
 	/// surface is unchanged from 1.6.6.172 (9 operations, 6 design-gate call sites and the one case-gate call site,
 	/// counted in the shipped archive by the guards below; the entries were not re-audited against the producing commit
 	/// for this cut). The create, modify and modify-as-new-version floors move to 1.6.6.176, because
