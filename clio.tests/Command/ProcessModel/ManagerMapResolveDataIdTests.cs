@@ -83,6 +83,11 @@ public sealed class ManagerMapResolveDataIdTests {
 	[TestCase("objectFileProcessingUserTask", ManagerMap.EventType.UserTask)]
 	[TestCase("processFileProcessingUserTask", ManagerMap.EventType.UserTask)]
 	[TestCase("reportFileProcessingUserTask", ManagerMap.EventType.UserTask)]
+	// The Send chat message element's build token (ENG-96034): it does not end in "usertask" either; its data-id
+	// SendChatMessageUserTask classifies through the fallback arm.
+	[TestCase("sendChatMessage", ManagerMap.EventType.UserTask)]
+	[TestCase("sendchatmessage", ManagerMap.EventType.UserTask)]
+	[TestCase("sendChatMessageUserTask", ManagerMap.EventType.UserTask)]
 	[TestCase("eventSubProcessExpanded", ManagerMap.EventType.EventSubProcess)]
 	public void ResolveDataId_ShouldReturnActivityEventType_WhenActivityDataId(string dataId, ManagerMap.EventType expected) {
 		// Act

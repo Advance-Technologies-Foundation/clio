@@ -483,6 +483,29 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The describe contract and its prompt name the chatMessage block a Send chat message element reads back: the block replays in its write shape and templateName, outputs and issues are describe-only; the prompt says ignoreErrors is always stated, both outputs are listed even unmapped, template mode reports no message, and the connections entries describe lists for the task must never be replayed (setConnections refuses it).")]
+	public void DescribeProcess_ShouldDocumentTheChatMessageBlock_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert
+		toolText.Should().Contain("a sendChatMessage element's chatMessage block (templateName, outputs and issues are describe-only; name=process-send-chat-message owns it)",
+			because: "the contract names the block, its describe-only members and the guide that owns it");
+		prompt.Should().Contain("A `sendChatMessage` element (the designer's \"Send chat message\") carries its `chatMessage` block",
+			because: "the prompt lists every configuration block the tool reports");
+		prompt.Should().Contain("`ignoreErrors` (always stated: `false` means a failed send",
+			because: "an unset chat element stops the process on a failed send, unlike Send email");
+		prompt.Should().Contain("and `SendStatusDetails`, listed even when unmapped)",
+			because: "the outputs carry no direction, so the generic parameters list would hide them");
+		prompt.Should().Contain("`setConnections` refuses this task.",
+			because: "a replayed connections entry for the chat task aborts the edit (Q17)");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The describe contract and its prompt name the webService block a Call web service element reads back (Q14): every write member keeps its write shape, so the block is sent back unchanged, and serviceUId, serviceResolved, methodResolved, issues and parameters - the whole stored tree, unbound inputs included - are describe-only and draw a warning; methodResolved false over a service that could not be read means unchecked, not failing. A describe-then-modify round trip works only when the agent knows the block replays as is.")]
 	public void DescribeProcess_ShouldDocumentTheWebServiceBlock_WhenToolContractIsRead() {
 		// Arrange

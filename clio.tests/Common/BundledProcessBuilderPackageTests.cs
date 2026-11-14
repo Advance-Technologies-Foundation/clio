@@ -70,15 +70,15 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>640acdf8</c>,
-	/// tagged <c>crtprocessbuilder-1.6.6.172</c>): branch <c>feature/ENG-105558-internal-helper-parameter</c> with
-	/// <c>main</c> merged in at 1.6.6.171 (<c>4d89bc98</c>, the merge of <c>e3e7f838</c>), so the cut carries everything
-	/// 1.6.6.171 shipped.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>d9604ba9</c>; the
+	/// stamp is its child <c>f2848b7a</c>, tagged <c>crtprocessbuilder-1.6.6.177</c>): branch <c>feature/ENG-96034-send-chat-message</c>,
+	/// cut from package <c>main</c> at 1.6.6.172 (<c>8a3adb27</c>, the squash of ENG-105558), so the cut carries everything
+	/// 1.6.6.172 shipped.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.172 and packed that commit with it overlaid (386
-	/// entries), and the stamp was committed after it as the child commit <c>88cc8187</c>.
-	/// 1.6.6.172 is the first number above every cut in both histories (1.6.6.171 was the highest); whichever package
-	/// branch lands after this one restamps above it.
+	/// marker, the script stamped the package descriptor to 1.6.6.177 and packed that commit with it overlaid, and the stamp was committed after it as the child commit <c>f2848b7a</c>.
+	/// 1.6.6.177 is the first number above every cut in both histories (1.6.6.173 is ENG-106378's cut on another
+	/// branch; 1.6.6.174 to 1.6.6.176 were earlier cuts of this work, superseded by review fixes and never released); whichever
+	/// package branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -91,21 +91,24 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.171 (ENG-105558): a top-level process parameter that the same build or
-	/// modify creates with no direction, that an element of the process fills and that is not a collection, is saved
-	/// <c>Internal</c> instead of <c>Variable</c>, with a notice; a stated direction is never switched, a FileCollection
-	/// keeps <c>Variable</c> with no advice, a <c>Variable</c> stated for a parameter the request creates and an element
-	/// fills is advised once, and a pre-existing <c>Variable</c> parameter the request makes an element fill keeps
-	/// <c>Variable</c> and gets advice worded as a report that asks for its callers first. The service surface is
-	/// unchanged from 1.6.6.171 (9 operations, 6 design-gate call sites and the one case-gate call site, counted in the
-	/// producing sources). No <c>[RequiresPackage]</c> floor moves (create, modify and modify-as-new-version stay at
-	/// 1.6.6.162, <c>create-dynamic-case</c> at 1.6.6.165): no request key is added, and an older package simply keeps
-	/// <c>Variable</c>. What earlier cuts carried is in this file's git history rather than here: it described archives
-	/// that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.172 (ENG-96034): the Send chat message element - the <c>sendChatMessage</c>
+	/// element type and its <c>chatMessage</c> block (<c>SendChatMessageDescriptor</c>, read back as
+	/// <c>DescribeSendChatMessageInfo</c>) on build, addElement and setElement, the refusal of the generic userTask route
+	/// naming <c>SendChatMessageUserTask</c>, and the raw-mapping guard on the block-owned chat parameters. It also
+	/// changes stored values beyond the chat element: a <c>[#Lookup…#]</c> macro accepted in column values is stored
+	/// canonical (the name or replacing-schema segment becomes the object's root schema UId, lower case, with a "stored
+	/// as" notice) on <c>changeData.values</c>, <c>addData.values</c>, <c>openEditPage.defaultValues</c> and
+	/// <c>chatMessage.columnValues</c>, and describe reads that canonical text back. The service
+	/// surface is unchanged from 1.6.6.172 (9 operations, 6 design-gate call sites and the one case-gate call site,
+	/// counted in the shipped archive by the guards below; the entries were not re-audited against the producing commit
+	/// for this cut). The create, modify and modify-as-new-version floors move to 1.6.6.177, because
+	/// an older server refuses the new type and block as undeclared keys; <c>create-dynamic-case</c> stays at 1.6.6.165.
+	/// What earlier cuts carried is in this file's git history rather than here: it described archives that are no
+	/// longer shipped.</para>
 	/// <para>
-	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6322 passed,
+	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6466 passed,
 	/// 0 failed, on <c>dev-nf</c>. <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
-	/// That matters beyond hygiene, because skipping the suite
+	/// Running the suite matters beyond hygiene, because skipping it
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
 	/// </para>
@@ -186,7 +189,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"48D00E48CA4F50C93EE08080312286202548B86577076BBCF44F2679EE615752";
+		"DDD49FB6F4A0DCAE3516BBE9709A058A75E935820E1B7319218C8891770399A0";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -214,7 +217,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.172";
+	private const string ExpectedArchiveVersion = "1.6.6.177";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -225,7 +228,7 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 a script cut.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 (ENG-105558) and 1.6.6.177 (ENG-96034) script cuts (1.6.6.174 to 1.6.6.176, also ENG-96034, were superseded before release).
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -233,7 +236,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "640acdf80cd6691a2cbbdd0b832e70147d965fdd";
+	private const string ExpectedProducingCommit = "d9604ba9ea599aac4cb1b02bee230e763f9b1894";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +262,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794574773000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794640037000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -274,7 +277,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794574650000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794639906000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -1693,6 +1696,32 @@ public class BundledProcessBuilderPackageTests {
 		}
 	}
 
+
+	[Test]
+	[Description("clio checks the chatMessage block's keys before sending it and TYPES its describe block, and its create, modify and modify-as-new-version floors are a version number only: a later cut from a package tree that lacks the Send chat message sources would satisfy that number while dropping the block. This probes the archive for every chatMessage wire name clio sends or reads, each on its NAMED type.")]
+	public void BundledArchive_ShouldDeclareTheSendChatMessageWireNamesClioReads() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "ProcessElementDescriptor", "chatMessage").Should().BeTrue(
+			because: "create-business-process and addElement send the block on this member");
+		DeclaresMemberOn(archive, "ProcessElementUpdateDescriptor", "chatMessage").Should().BeTrue(
+			because: "setElement sends the block on this member; without it the server refuses or drops the update");
+		DeclaresMemberOn(archive, "DescribeProcessElement", "chatMessage").Should().BeTrue(
+			because: "DescribedElement.ChatMessage reads the block off this member");
+		foreach (string member in new[] {
+				"from", "to", "messageSource", "template", "message", "ignoreErrors", "columnValues" }) {
+			DeclaresMemberOn(archive, "SendChatMessageDescriptor", member).Should().BeTrue(
+				because: $"the chatMessage key set sends '{member}'");
+		}
+		foreach (string member in new[] {
+				"from", "to", "messageSource", "template", "templateName", "message", "ignoreErrors", "columnValues",
+				"outputs", "issues" }) {
+			DeclaresMemberOn(archive, "DescribeSendChatMessageInfo", member).Should().BeTrue(
+				because: $"DescribedChatMessage reads '{member}'");
+		}
+	}
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector

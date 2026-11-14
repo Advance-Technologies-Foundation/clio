@@ -21,7 +21,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for ENG-105557 over the real MCP path: several records of one lookup column are ONE filter
 /// condition (<c>values</c>), built the way the process designer stores its multi-select and read back whole by
 /// describe, on a signal start, Read data and Modify data alike. NOT in CI - run manually against a stand carrying
-/// CrtProcessBuilder 1.6.6.162 or newer (the cut that reads <c>values</c>, and the create and modify floor). The
+/// CrtProcessBuilder 1.6.6.162 or newer (the cut that reads <c>values</c>; clio's create and modify floor is now 1.6.6.177). The
 /// records are the platform's own Country rows (Algeria, Andorra, Armenia), named by display name; the run check
 /// takes the two countries that hold the most contacts on the stand instead, so it counts real records.
 /// </summary>

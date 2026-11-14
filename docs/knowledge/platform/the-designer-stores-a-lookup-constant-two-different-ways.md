@@ -1,11 +1,12 @@
 ---
-description: the designer stores a lookup constant on an ELEMENT PARAMETER as ConstValue + bare Guid, and as a [#Lookup...#] macro in a CHANGE-DATA COLUMN MAPPING and on the Process file element's record ConnectedObjectId — so the macro found in a designer-authored schema must not be carried across to any other element parameter
+description: the designer stores a lookup constant on a VALUE-edited ELEMENT PARAMETER as ConstValue + bare Guid, and as a [#Lookup...#] macro in a CHANGE-DATA COLUMN MAPPING and on MAPPING-edited element parameters (Process file record ConnectedObjectId, Send chat message Channel/Contact/Template) — which editor the properties page uses decides the form, so the macro must not be carried across to a value-edited parameter, nor the bare Guid to a mapping-edited one
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
+  - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-96325
-date: 2026-09-01
+date: 2026-11-13
 ---
 
 **What is true** — both encodings are the designer's own, and which one is correct depends on WHERE
@@ -16,6 +17,7 @@ the value sits, not on its type. Measured over 1658 designer-authored process sc
 |---|---|---|---|
 | Element parameter (`ActivityCategory`, `ActivityPriority`, …) | `ConstValue` | bare record Guid | the record's NAME (`To do`), or absent |
 | Change-data column mapping (`RecordColumnValues`) | `Script` | `[#Lookup.{objectUId}.{recordId}#]` | `[#Lookup.{object caption}.{record name}.{recordId}#]` |
+| MAPPING-edited element parameter (Process file `ConnectedObjectId`; Send chat message `Channel`, `Contact`, `Template`) | `Script` | `[#Lookup.{root objectUId}.{recordId}#]` | display macro |
 
 The `Source` / `Value` columns are near-universal; the `DisplayValue` column is NOT, and the record must not
 be read as saying it is. Among Lookup-typed `ConstValue` + bare-Guid element parameters whose resource key
@@ -35,7 +37,24 @@ For the three elements where a human actually picks a category, it is overwhelmi
 `[#Lookup.{record object UId}.{record id}#]` with the display macro - measured on a stand on 2026-10-17 against a
 designer-built twin (ENG-96505; "The designer's stored form" in crt-process-builder's
 `docs/process-file-element-capture.md`). CrtProcessBuilder writes it that way from 1.6.6.101. It is that one
-parameter's form, not precedent for another element parameter.
+parameter's form, not precedent for a VALUE-edited element parameter.
+
+**The rule is the editor, not the element.** The table's first row was measured on parameters the properties page
+edits as a VALUE (a combo box writes the picked record's id). A parameter the page edits through the MAPPING window
+stores whatever that window produced, and for a picked record that is the `Script` lookup macro (the process
+designer's `ProcessSchemaParametersEditMixin`). Measured for the Send chat message element on 2026-11-13 (ENG-96034,
+designer captures C-T1 and C-CH on a stand): `Channel`, `Contact` and `Template` constants are `Script`
+`[#Lookup.{root object UId}.{record id}#]` (the stored form is measured). The element's properties page parses a
+constant only in that form, so a `ConstValue` Guid there (Send email's `EmailTemplateId` write copied across) saves
+green and would show an empty field - read from the page source, not measured on a stand.
+Send email's recipients are mapping-edited too. Before writing a lookup constant onto a new element, find out which
+editor its properties page uses for that parameter.
+
+**From CrtProcessBuilder 1.6.6.177 (the first released cut carrying it) the builder stores column-value macros in that form.** A `[#Lookup.…#]` it accepts in
+column values - `changeData.values`, `addData.values`, `openEditPage.defaultValues`, `chatMessage.columnValues` - is
+stored as `[#Lookup.{object root schema UId}.{record id}#]`, lower case, with a notice ("stored as '…'"), and describe
+reads that canonical text back. So a value sent with the object's name, a replacing schema's UId or other casing comes
+back different from what was sent - by design, not a lost write.
 
 Where the `[#Lookup...#]` macro DOES sit on an `ActivityCategory` parameter, it is not a designer
 choice. On `CallUserTask`, `EmailUserTask` and `EmailTemplateUserTask` it always carries that

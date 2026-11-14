@@ -300,7 +300,7 @@ public sealed class CreateDynamicCaseToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		description.Should().Contain("Read get-guidance name=process-dynamic-case first.",
-			because: "the article owns the workflow, and clio-knowledge 1.15.210 (the pinned curated library) publishes it");
+			because: "the article owns the workflow, and clio-knowledge 1.15.210 and every later pinned generation publish it");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
 		firstSentence.Should().StartWith("Create a minimal dynamic case (DCM)", because: "the index line says what it does");
 		description.Should().Contain("not supported", because: "what the tool cannot do yet is stated");

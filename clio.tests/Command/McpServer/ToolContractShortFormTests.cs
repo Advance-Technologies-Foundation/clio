@@ -766,7 +766,7 @@ public sealed class ToolContractShortFormTests {
 	}
 
 	[TestCase("BuildProcessRequest", "isTracing")]
-	[TestCase("ProcessElementDescriptor", "scriptTask")]
+	[TestCase("ProcessElementDescriptor", "chatMessage")]
 	[TestCase("ProcessFlowDescriptor", "results")]
 	[TestCase("ProcessParameterDescriptor", "mergeFrom")]
 	[TestCase("ProcessMappingDescriptor", "sourceColumn")]

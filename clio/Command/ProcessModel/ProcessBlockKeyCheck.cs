@@ -34,7 +34,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
 /// and it covers a host whose server check reports itself unavailable. Every caller requires the create/modify floor
-/// (1.6.6.162 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
+/// (1.6.6.177 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
 /// only while that line stamps lower numbers - should it ever stamp that floor or above without the ENG-95244 check, a
 /// replayed read-back member would be dropped there with no word from either side. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
 /// payloads.</para>
@@ -43,7 +43,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// here by a stale list. Fields <c>describe-business-process</c> reports but the write path does not take
 /// (<c>sourceSchemaUId</c>, <c>outputs</c>, <c>position</c>, ...) are DERIVED read-backs: a described block fed
 /// back keeps building. clio tolerates them and says nothing: the server they reach (every caller requires
-/// the create/modify floor, 1.6.6.162 today) ignores them and names them in its own "Read-only fields copied from describe were
+/// the create/modify floor, 1.6.6.177 today) ignores them and names them in its own "Read-only fields copied from describe were
 /// ignored" warning, which names them and, where it can, the key that changes each. A second warning from clio about
 /// the same fields only doubled the noise of a describe -> setElement round trip. The accepted cost: on a host whose
 /// server check reports itself unavailable, the server's warning says the request was not checked and may name none of
@@ -326,6 +326,21 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet WebServiceBlock = new KeySet("WebServiceDescriptor", "webService", "DescribeWebServiceInfo",
 		"service method timeoutSeconds ignoreErrors", "serviceUId serviceResolved methodResolved issues parameters");
 
+	// The Send chat message block (ENG-96034). 'from' and 'to' take the shared value-source vocabulary of the
+	// fileProcessing block; 'columnValues' entries are changeData values entries, named here for the block they sit in.
+	// Describe reports every write member in its write shape, so a described block replays unchanged and its three
+	// describe-only members are tolerated, never refused.
+	private static readonly KeySet ChatMessageBlock = new KeySet("SendChatMessageDescriptor", "chatMessage",
+			"DescribeSendChatMessageInfo", "from to messageSource template message ignoreErrors columnValues",
+			"templateName outputs issues",
+			PointerMap(
+				("body", "the chat text is 'message' (plain text; a formula goes through mappings on Message)"),
+				("channel", "the channel the message is sent from is 'from'"),
+				("contact", "the contact the message is sent to is 'to'")))
+		.With("from to", FileProcessingValueSource)
+		.With("columnValues", new KeySet(ColumnValue.ContractType, "columnValues entry", null,
+			string.Join(" ", ColumnValue.Keys)));
+
 	/// <summary>
 	/// The element's configuration blocks, each linked under its own label into both the create element and the
 	/// <c>setElement</c> update; the drift test catches a block the server gained on either side only.
@@ -333,7 +348,7 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet[] Blocks = [
 		ReadDataBlock, ChangeDataBlock, AddDataBlock, DeleteDataBlock, EmailBlock, TaskPerformer, AccessRightsBlock,
 		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock,
-		FileProcessingBlock, WebServiceBlock
+		FileProcessingBlock, WebServiceBlock, ChatMessageBlock
 	];
 
 	private static readonly string BlockKeys = string.Join(" ", Blocks.Select(block => block.Label));
@@ -567,6 +582,9 @@ internal static class ProcessBlockKeyCheck {
 			if (child == WebServiceBlock && value is JsonObject webService) {
 				RefuseFractionalTimeout(webService, where, prefix + key);
 			}
+			if (child == ChatMessageBlock && value is JsonObject chatMessage) {
+				RefuseChatValueSourceShape(chatMessage, where, prefix + key);
+			}
 			if (value is JsonObject nested) {
 				Visit(nested, child, where, $"{prefix}{key}.", placement, depth + 1);
 				return;
@@ -578,6 +596,42 @@ internal static class ProcessBlockKeyCheck {
 					}
 				}
 			}
+		}
+
+		// chatMessage.from and chatMessage.to are ONE value-source object each on the server's contract. A list - the
+		// shape an agent reaches for to message several contacts - is bound by the server as an unknown 'item' key of
+		// that object, which the package refuses (with its own one-contact hint for 'to'); a bare string the serializer
+		// cannot read at all, and the whole request fails. This check refuses both before anything is sent, names the
+		// path, and covers 'from' as well (owner decision Q4: an array is refused with a hint).
+		private void RefuseChatValueSourceShape(JsonObject chatMessage, string where, string blockPath) {
+			foreach (string member in new[] { "from", "to" }) {
+				JsonNode value;
+				try {
+					if (!chatMessage.TryGetPropertyValue(member, out value) || value is null or JsonObject) {
+						continue;
+					}
+				} catch (ArgumentException) {
+					// A repeated key: the walk of the block reports it with its path.
+					return;
+				}
+				string path = $"{blockPath}.{member}";
+				string example = $"\"{member}\": {{\"processParameter\": \"...\"}}";
+				RefuseShape(value is JsonArray
+					? member == "to"
+						? $"{where}: '{path}' is a list, but it takes ONE value-source object: a Send chat message element sends to "
+							+ $"ONE contact. Send one value source, for example {example}; to message several contacts, add "
+							+ "one element per contact or run the element in a multi-instance sub-process over the list."
+						: $"{where}: '{path}' is a list, but it takes ONE value-source object: a Send chat message element sends from "
+							+ $"ONE channel. Send one value source, for example {example}."
+					: $"{where}: '{path}' is {Echo(value)}, which the server cannot read: it takes "
+						+ $"ONE value-source object, for example \"{member}\": {{\"value\": {Echo(value)}}}.");
+			}
+		}
+
+		// A caller's value echoed into a refusal, cut so a large one does not swamp the message.
+		private static string Echo(JsonNode value) {
+			string text = value.ToJsonString(ReadableJson);
+			return text.Length <= 200 ? text : text[..200] + "...";
 		}
 
 		// A filter condition's 'value' is ONE string on the server's contract and 'values' a LIST of strings

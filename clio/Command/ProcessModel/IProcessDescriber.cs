@@ -865,6 +865,18 @@ public sealed class DescribedElement {
 	public DescribedWebService WebService { get; set; }
 
 	/// <summary>
+	/// For a Send chat message element (<c>SendChatMessageUserTask</c>, <c>buildType</c> <c>sendchatmessage</c>): its
+	/// <c>chatMessage</c> block read from the element. <c>null</c> for every other element and on a server that
+	/// predates the element.
+	/// <para>Every write member reads back in a form the write side accepts, so the block is sent back unchanged; the
+	/// describe-only members - <c>templateName</c>, <c>outputs</c> and <c>issues</c> - draw a warning there. In template
+	/// mode <c>message</c> is not reported (the designer copies the template body into it and the run ignores it).
+	/// See <see cref="DescribedChatMessage"/>.</para>
+	/// </summary>
+	[JsonPropertyName("chatMessage")]
+	public DescribedChatMessage ChatMessage { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
 	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
 	/// verbatim instead of being discarded without a trace.
@@ -2773,6 +2785,78 @@ public sealed class DescribedWebServiceParameter {
 	public List<DescribedWebServiceParameter> Items { get; set; }
 
 	/// <summary>Anything the server reports about a parameter that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// A Send chat message element read back in the <c>chatMessage</c> block vocabulary. Mirrors the server's
+/// <c>DescribeSendChatMessageInfo</c>. Every write member reads back in a form the write side accepts, so a described
+/// block replays unchanged - a provider (WhatsApp) template id included, which re-applies as a no-op on setElement
+/// although a NEW one cannot be written; <see cref="TemplateName"/>, <see cref="Outputs"/> and <see cref="Issues"/> are
+/// describe-only.
+/// </summary>
+public sealed class DescribedChatMessage {
+
+	/// <summary>
+	/// The chat channel the message is sent from (the element's <c>Channel</c>), in the shared value-source shape: a
+	/// constant channel reads back as its record id in <c>value</c> with its name in the describe-only <c>display</c>, a
+	/// system setting as its <c>[#SysSettings.…#]</c> expression.
+	/// </summary>
+	[JsonPropertyName("from")]
+	public DescribedFileProcessingValueSource From { get; set; }
+
+	/// <summary>The ONE contact the message is sent to (the element's <c>Contact</c>), in the same shape as <see cref="From"/>.</summary>
+	[JsonPropertyName("to")]
+	public DescribedFileProcessingValueSource To { get; set; }
+
+	/// <summary><c>template</c> or <c>custom</c>; an unset message type runs as <c>template</c>.</summary>
+	[JsonPropertyName("messageSource")]
+	public string MessageSource { get; set; }
+
+	/// <summary>
+	/// The chat template as stored: the <c>[#Lookup.…#]</c> macro of a message template of type "Chat template". A
+	/// provider (WhatsApp) template picked in the designer is reported as its raw id; re-sent unchanged it is a no-op, but
+	/// this tool cannot write a new one. Not reported when the message type is bound to a source other than a constant,
+	/// because the mode is then decided at run time.
+	/// </summary>
+	[JsonPropertyName("template")]
+	public string Template { get; set; }
+
+	/// <summary>Describe-only: the template's name.</summary>
+	[JsonPropertyName("templateName")]
+	public string TemplateName { get; set; }
+
+	/// <summary>The custom message text in the profile culture; not reported in template mode.</summary>
+	[JsonPropertyName("message")]
+	public string Message { get; set; }
+
+	/// <summary>
+	/// The stored ignore-errors flag. Always stated: <c>false</c> - the designer's untouched box included - means a
+	/// failed send stops the process.
+	/// </summary>
+	[JsonPropertyName("ignoreErrors")]
+	public bool? IgnoreErrors { get; set; }
+
+	/// <summary>
+	/// The column values set on the created chat (<c>OmniChat</c>), in the <c>changeData</c> values-entry shape; kept
+	/// as raw JSON because clio declares no typed model of that entry.
+	/// </summary>
+	[JsonPropertyName("columnValues")]
+	public List<JsonElement> ColumnValues { get; set; }
+
+	/// <summary>Describe-only: the element's outputs, <c>SendStatus</c> (<c>Sent</c> or <c>Error</c>) and <c>SendStatusDetails</c>, listed even when unmapped.</summary>
+	[JsonPropertyName("outputs")]
+	public List<string> Outputs { get; set; }
+
+	/// <summary>Describe-only: what is left unconfigured (no channel, no contact, no template, an empty message).</summary>
+	[JsonPropertyName("issues")]
+	public List<string> Issues { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare, so a field a later
+	/// CrtProcessBuilder adds reaches the caller instead of being dropped on re-serialization.
+	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }

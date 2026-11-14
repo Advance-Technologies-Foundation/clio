@@ -232,7 +232,9 @@ namespace Clio.Command;
 // CreateBusinessProcessOptions.
 // Raised to 1.6.6.162 by ENG-105557 for `values` on a setFilter / setElement filter condition; the rationale is on
 // CreateBusinessProcessOptions.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.162",
+// Raised to 1.6.6.177 by ENG-96034 for the sendChatMessage element type and its chatMessage block on addElement /
+// setElement; the rationale is on CreateBusinessProcessOptions.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.177",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

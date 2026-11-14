@@ -536,8 +536,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.162 (for values, mergeFrom, webService, email.attachments, itemProperties, isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block, then by mergeFrom)");
+		toolDescription.Should().Contain("this clio requires 1.6.6.177 (for chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block, then by mergeFrom, then by filter-condition values, then by the chatMessage block)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}
@@ -595,7 +595,7 @@ public class CreateBusinessProcessToolTests {
 		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
 
 		// Assert
-		toolDescription.Should().Contain("|scriptTask|fileProcessing|webService (aliases ",
+		toolDescription.Should().Contain("|scriptTask|fileProcessing|webService|sendChatMessage (aliases ",
 			because: "the element type list is where an agent learns which type tokens a build accepts");
 		toolDescription.Should().NotContain("processFile",
 			because: "the server accepts processFile on build but never emits it, and it reads like the Process-parameter variant, so the contract names only fileProcessing");
@@ -632,7 +632,7 @@ public class CreateBusinessProcessToolTests {
 		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
 
 		// Assert
-		toolDescription.Should().Contain("|fileProcessing|webService (aliases ",
+		toolDescription.Should().Contain("|fileProcessing|webService|sendChatMessage (aliases ",
 			because: "the element type list is where an agent learns which type tokens a build accepts");
 		toolDescription.Should().Contain("webService? (webService elements only - a registered REST/SOAP service and its method; get-guidance name=process-web-service owns the block)",
 			because: "the block clause names what the block selects, that the service must already be registered, and the guide that owns the block");
@@ -645,6 +645,33 @@ public class CreateBusinessProcessToolTests {
 		prompt.Should().Contain("that is not registered cannot be called from here - tell the user to register it in Studio > Web",
 			because: "registering a service is outside the builder, so the agent stops and tells the user");
 		prompt.Should().Contain("Read `get-guidance name=process-web-service` before writing it",
+			because: "the guide owns the block's members, notices and refusals");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract names the sendChatMessage type, its chatMessage block and the guide that owns it, and the prompt keeps the agent off the generic SendChatMessageUserTask route the server refuses (Q1) - the contract carries only the type, the block and the pointer (Q10), the guide everything else.")]
+	public void CreateBusinessProcessTool_ShouldOfferTheSendChatMessageElementAndRouteToItsGuide() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		toolDescription.Should().Contain("|webService|sendChatMessage (aliases ",
+			because: "the element type list is where an agent learns which type tokens a build accepts");
+		toolDescription.Should().Contain("chatMessage? (sendChatMessage elements only - get-guidance name=process-send-chat-message owns the block)",
+			because: "the block clause names the element type and the guide that owns the block");
+		prompt.Should().Contain("and except `SendChatMessageUserTask` (Send chat message), which is built as a `sendChatMessage` element;",
+			because: "the list-user-tasks step must not hand the agent the chat task for a generic userTask");
+		prompt.Should().Contain("`userTask` naming `SendChatMessageUserTask`, which is refused.",
+			because: "the prompt must keep the agent off the generic route the server refuses");
+		prompt.Should().Contain("personalised text is a formula mapped onto the element's `Message`",
+			because: "a constant message is sent verbatim, so personalisation goes through a mapping");
+		prompt.Should().Contain("Read `get-guidance name=process-send-chat-message` before",
 			because: "the guide owns the block's members, notices and refusals");
 	}
 
