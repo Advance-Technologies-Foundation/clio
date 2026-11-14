@@ -21,7 +21,7 @@ check.
 (`IExtensibleDataObject` on every request contract plus a refusal when `ExtensionData` is not empty) shipped in
 1.6.6.136, but the client check stays: it answers before anything is sent ("Nothing was sent") with where the
 key belongs, and it covers a host that reports the server check unavailable. Since ENG-92710's follow-up the
-write commands now require at least 1.6.6.176 (raised from 1.6.6.150 to 1.6.6.153 by ENG-103990, to 1.6.6.162 by ENG-105557 and to 1.6.6.176 by ENG-96034), so an older package never receives these payloads, and clio no longer warns
+write commands now require at least 1.6.6.177 (raised from 1.6.6.150 to 1.6.6.153 by ENG-103990, to 1.6.6.162 by ENG-105557 and to 1.6.6.177 by ENG-96034), so an older package never receives these payloads, and clio no longer warns
 about describe read-back members itself: it tolerates them and the server names them. The floor compares numbers
 only, so the other package line is kept out only while it stamps lower numbers. The client key lists are a copy of the
 server contracts; `ProcessBlockKeyCheckTests` holds every list equal to the `[DataMember]` names of the

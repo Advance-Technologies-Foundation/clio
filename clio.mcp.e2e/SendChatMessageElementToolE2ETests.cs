@@ -55,7 +55,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 	/// every case is Ignored, because an older package does not declare the block and refuses it as an unknown key.
 	/// Raise it when a case starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.176";
+	private const string MinimumPackageVersion = "1.6.6.177";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send chat message element";

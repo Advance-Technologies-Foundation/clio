@@ -308,13 +308,13 @@ namespace Clio.Command;
 // Raised to 1.6.6.162 by ENG-105557: `values` on a filter condition (several records of one lookup column, one In
 // condition). For the same reason as mergeFrom: a 1.6.6.153 server refuses the undeclared FilterConditionDescriptor
 // key in a message that does not say an update cures it, and this clio's contract names it.
-// Raised to 1.6.6.176 by ENG-96034 for the Send chat message element: the `sendChatMessage` element type and its
+// Raised to 1.6.6.177 by ENG-96034 for the Send chat message element: the `sendChatMessage` element type and its
 // `chatMessage` block. An older server from 1.6.6.136 refuses both as undeclared keys, in a message that does not say an
 // update cures it; the literal turns that into the install hint before anything is sent. 1.6.6.173 is another branch's
-// cut (ENG-106378), never this work; 1.6.6.174 and 1.6.6.175 were cuts of this work that were never released.
+// cut (ENG-106378), never this work; 1.6.6.174 to 1.6.6.176 were cuts of this work that were never released.
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.176",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.177",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
