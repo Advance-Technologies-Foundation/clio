@@ -25,6 +25,11 @@ public sealed class DbTemplatePruneTool {
 	}
 
 	/// <summary>Inventories clio-managed templates on one configured PostgreSQL server.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ListDbTemplatesToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
@@ -40,6 +45,11 @@ public sealed class DbTemplatePruneTool {
 		_pruneService.Inventory(args.DbServerName);
 
 	/// <summary>Deletes only explicitly named, freshly revalidated clio-managed templates.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = PruneDbTemplatesToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(

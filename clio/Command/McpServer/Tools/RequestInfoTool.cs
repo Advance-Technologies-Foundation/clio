@@ -84,6 +84,11 @@ public sealed class RequestInfoTool(
 	/// <param name="args">Tool arguments that select either list or detail mode.</param>
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured response with a request list or a full request definition.</returns>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// Worker, not in-process: the catalog itself is a CDN/cache read, but an environment-name/uri call probes
 	// the environment through cliogate (GetSysInfo) to resolve the platform version, so it can block on Creatio.

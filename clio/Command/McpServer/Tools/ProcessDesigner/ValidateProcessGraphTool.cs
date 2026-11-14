@@ -95,6 +95,11 @@ public sealed class ValidateProcessGraphTool {
 	/// </summary>
 	/// <param name="args">The planned graph (nodes by <c>data-id</c>, edges by flow kind).</param>
 	/// <returns>The validation response (success flag, has-errors, findings).</returns>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// Worker despite the graph itself being validated in memory: the method first resolves the requested
 	// environment and queries its installed packages through IRequiredPackageChecker, so it CAN block on

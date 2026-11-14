@@ -29,6 +29,11 @@ public sealed class CreateEntityBusinessRuleTool(
 	/// the environment cannot be resolved. The typed values are always delivered through the MCP text
 	/// Content channel; schema-strict clients should not rely on a single SDK-derived output schema.
 	/// </remarks>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -634,6 +639,11 @@ public sealed class CreatePageBusinessRuleTool(
 	/// the environment cannot be resolved. The typed values are always delivered through the MCP text
 	/// Content channel; schema-strict clients should not rely on a single SDK-derived output schema.
 	/// </remarks>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = BusinessRuleCreateToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -785,6 +795,11 @@ public sealed class ReadEntityBusinessRuleTool(
 
 	internal const string ToolName = "read-entity-business-rules";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -837,6 +852,11 @@ public sealed class ReadPageBusinessRuleTool(
 
 	internal const string ToolName = "read-page-business-rules";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -894,6 +914,11 @@ public sealed class UpdateEntityBusinessRuleTool(
 
 	internal const string ToolName = "update-entity-business-rules";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -961,6 +986,11 @@ public sealed class UpdatePageBusinessRuleTool(
 
 	internal const string ToolName = "update-page-business-rules";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -1030,6 +1060,12 @@ public sealed class DeleteEntityBusinessRuleTool(
 
 	internal const string ToolName = "delete-entity-business-rules";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -1096,6 +1132,12 @@ public sealed class DeletePageBusinessRuleTool(
 	: BaseTool<EnvironmentNameOptions>(null, logger, commandResolver) {
 
 	internal const string ToolName = "delete-page-business-rules";
+
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]

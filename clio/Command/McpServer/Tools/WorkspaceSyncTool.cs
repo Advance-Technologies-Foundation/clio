@@ -114,6 +114,11 @@ public sealed class PushWorkspaceTool(
 	/// <summary>
 	/// Pushes the current local workspace to the specified Creatio environment.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = PushWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	// Local workspace files are only the payload: the call installs them into the resolved environment, so it
@@ -154,6 +159,11 @@ public sealed class RestoreWorkspaceTool(
 	/// <summary>
 	/// Restores the packages listed in the local workspace settings from the specified Creatio environment.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = RestoreWorkspaceToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	// Pulls package content out of the resolved environment into the local workspace, so it can block on

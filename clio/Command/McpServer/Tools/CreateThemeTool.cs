@@ -66,6 +66,11 @@ public class CreateThemeTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true),
 	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +

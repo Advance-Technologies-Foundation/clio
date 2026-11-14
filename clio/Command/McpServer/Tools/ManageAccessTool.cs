@@ -19,6 +19,11 @@ public sealed class ManageAccessTool(ManageAccessCommand command, ILogger logger
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = InspectToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Inspect access administration. Actions: ip-list, delegations, operations, operation-grants. Read get-guidance name=administration before interpreting inheritance, managers, passwords, licenses or access rules.")]
 	public CommandExecutionResult Inspect([Required, Description("Environment and exact action parameters.")] ManageAccessArgs args) {
@@ -32,6 +37,24 @@ public sealed class ManageAccessTool(ManageAccessCommand command, ILogger logger
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("action", "ip-list", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "ip-create", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "ip-update", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "ip-delete", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "delegations", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "delegate", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "revoke-delegation", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "operations", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "operation-grants", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "grant-operation", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "deny-operation", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "revoke-operation", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "operation-position", Effect = McpToolEffect.Change)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Manage access administration through native Creatio services. Operation-position requires Creatio 10.1.585.0 and ClioGate 2.0.0.52 or newer to invalidate native rights caches. Read get-guidance name=administration first. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
 	public CommandExecutionResult Manage([Required, Description("Environment and exact action parameters.")] ManageAccessArgs args) => Execute(args, true);

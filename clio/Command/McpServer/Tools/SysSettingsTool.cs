@@ -14,6 +14,11 @@ public sealed class SysSettingGetTool(IToolCommandResolver commandResolver,
 
 	internal const string GetSysSettingToolName = "get-sys-setting";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GetSysSettingToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -51,6 +56,11 @@ public sealed class SysSettingsListTool(IToolCommandResolver commandResolver,
 
 	internal const string ListSysSettingsToolName = "list-sys-settings";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ListSysSettingsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -89,6 +99,11 @@ public sealed class SysSettingCreateTool(IToolCommandResolver commandResolver,
 
 	internal const string CreateSysSettingToolName = "create-sys-setting";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateSysSettingToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -133,6 +148,11 @@ public sealed class SysSettingUpdateTool(IToolCommandResolver commandResolver,
 
 	internal const string UpdateSysSettingToolName = "update-sys-setting";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = UpdateSysSettingToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

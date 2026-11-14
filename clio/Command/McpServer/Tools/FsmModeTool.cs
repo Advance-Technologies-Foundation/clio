@@ -30,6 +30,11 @@ public sealed class FsmModeTool(
 	/// <summary>
 	/// Gets the current FSM mode from the Creatio GetApplicationInfo endpoint.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GetFsmModeToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -48,6 +53,11 @@ public sealed class FsmModeTool(
 	/// <summary>
 	/// Turns FSM mode on or off for a registered environment.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = SetFsmModeToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

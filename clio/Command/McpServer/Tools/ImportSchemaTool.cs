@@ -22,6 +22,12 @@ public class ImportSchemaTool(
 	/// </summary>
 	/// <param name="args">Import parameters.</param>
 	/// <returns>The command result, naming the action taken.</returns>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("dry-run", "true", Effect = McpToolEffect.Read)]
 	[McpServerTool(Name = ImportSchemaToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(

@@ -43,6 +43,13 @@ public sealed class SetDefaultRecordRightsTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("preview", "true", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("revoke", "false", Effect = McpToolEffect.Change, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Turn RECORD permissions on/off for ONE object and grant or revoke ONE of its default record rules — the \"Use record permissions\" layer of Object permissions (DESTRUCTIVE — changes access rights). " +
 		"A default rule says: records created by members of author get read/edit/delete for grantee. Rules have no order and add up. One call changes at most one rule (one author+grantee pair) and/or the switch; every other rule is kept exactly as read, and the read-back proves it. " +

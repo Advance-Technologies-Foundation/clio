@@ -41,6 +41,12 @@ public sealed class PageSmokeTool(
 		};
 
 	/// <summary>Runs one page check.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("click", "", Effect = McpToolEffect.Change, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	// Destructive although the default call only reads: the annotation is per tool, and `click` can press Delete or
 	// Save on any page, so the index marks it (D) and a host that sees it must confirm it, as for trigger-smoke. See

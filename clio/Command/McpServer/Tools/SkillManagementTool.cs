@@ -24,6 +24,11 @@ public sealed class InstallSkillsTool(InstallSkillsCommand command, ILogger logg
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Installs the Creatio AI App Development Toolkit skill for all detected coding agents "
 		+ "(claude, codex, cursor, copilot) using each agent's native plugin mechanism, or one agent via target")]
@@ -55,6 +60,11 @@ public sealed class UpdateSkillTool(UpdateSkillCommand command, ILogger logger)
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Updates the Creatio AI App Development Toolkit skill for all detected coding agents "
 		+ "(claude, codex, cursor, copilot), or one agent via target")]
@@ -86,6 +96,12 @@ public sealed class DeleteSkillTool(DeleteSkillCommand command, ILogger logger)
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Uninstalls the Creatio AI App Development Toolkit skill from all detected coding agents, "
 		+ "or one agent via target. Leaves the shared clio MCP server entry in place")]

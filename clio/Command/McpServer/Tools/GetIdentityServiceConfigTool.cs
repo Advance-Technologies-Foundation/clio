@@ -34,6 +34,11 @@ public sealed class GetIdentityServiceConfigTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GetIdentityServiceConfigToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[Description("""

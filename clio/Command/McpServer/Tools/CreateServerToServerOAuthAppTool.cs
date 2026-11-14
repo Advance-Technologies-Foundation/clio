@@ -27,6 +27,11 @@ public sealed class CreateServerToServerOAuthAppTool(
 	/// <summary>
 	/// Creates a server-to-server (client_credentials) OAuth app in Creatio over REST.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.Change)]
 	[McpServerTool(Name = CreateServerToServerOAuthAppToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(

@@ -24,6 +24,11 @@ public class RegWebAppTool(RegAppCommand command, ILogger logger) : BaseTool<Reg
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.Change)]
 	[McpServerTool(Name = "reg-web-app", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[Description("""
 				 Registers or updates a local clio web application configuration.

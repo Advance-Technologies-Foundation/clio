@@ -72,6 +72,11 @@ public sealed class ExportComponentRegistryTool(
 	// retry/backoff layer that re-issuing after a perceived timeout is harmless when it in fact turns a
 	// completed export into an "already exists" failure. One boolean cannot describe both shapes, so it
 	// carries the safe value for the non-repeatable one.
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

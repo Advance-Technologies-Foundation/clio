@@ -19,6 +19,11 @@ public sealed class ManageLicenseTool(ManageLicenseCommand command, ILogger logg
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = InspectToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Inspect license administration. Actions: user-list, role-list. Read get-guidance name=administration before interpreting inheritance, managers, passwords, licenses or access rules.")]
 	public CommandExecutionResult Inspect([Required, Description("Environment and exact action parameters.")] ManageLicenseArgs args) {
@@ -32,6 +37,18 @@ public sealed class ManageLicenseTool(ManageLicenseCommand command, ILogger logg
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("action", "user-list", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "user-assign", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "user-remove", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "role-list", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "role-assign", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "role-remove", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "role-redistribute", Effect = McpToolEffect.Destroy)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Manage license administration through native Creatio services. Read get-guidance name=administration first. role-redistribute requires ClioGate 2.0.0.50 or newer in the selected environment; use install-gate to satisfy the requirement. Scheduling is not proof of completed user assignments. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
 	public CommandExecutionResult Manage([Required, Description("Environment and exact action parameters.")] ManageLicenseArgs args) => Execute(args, true);

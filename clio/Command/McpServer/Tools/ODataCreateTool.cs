@@ -148,6 +148,11 @@ public sealed class ODataCreateTool(
 		+ "(and an image with upload-image).";
 
 	/// <summary>Creates one or more Creatio records using OData v4.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

@@ -18,6 +18,11 @@ public sealed class ClearBrowserSessionTool(IToolCommandResolver commandResolver
 	internal const string ToolName = "clear-browser-session";
 
 	/// <summary>Deletes the cached browser session for the environment.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Local,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	// Deletes the cached storageState under the clio home directory, which get-browser-session writes — two
 	// processes could otherwise race that cache, hence the browser-session-cache file gate.

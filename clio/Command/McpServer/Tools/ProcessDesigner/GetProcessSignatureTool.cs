@@ -36,6 +36,11 @@ public sealed class GetProcessSignatureTool(
 	/// </remarks>
 	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

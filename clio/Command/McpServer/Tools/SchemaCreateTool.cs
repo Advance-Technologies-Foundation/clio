@@ -23,6 +23,11 @@ public sealed class SchemaCreateTool(
 	/// <summary>Reports all name validation errors before resolving the target environment.</summary>
 	/// <param name="args">Schema metadata and connection arguments.</param>
 	/// <returns>The created schema metadata or an actionable validation failure.</returns>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

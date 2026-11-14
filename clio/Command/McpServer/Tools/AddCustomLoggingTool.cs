@@ -18,6 +18,12 @@ public sealed class AddCustomLoggingTool(
 	internal const string ToolName = "add-custom-logging";
 
 	/// <summary>Adds an idempotent logger rule and file target to a registered local Creatio installation.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("restart-environment", "false", Effect = McpToolEffect.Change, EnvironmentImpact = McpToolEnvironmentImpact.None, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

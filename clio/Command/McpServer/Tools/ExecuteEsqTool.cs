@@ -34,6 +34,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		"\"columns\":{\"items\":{\"Id\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}}}}}";
 
 	/// <summary>Executes a raw ESQ SelectQuery and returns the resulting rows.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

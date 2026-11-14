@@ -49,6 +49,11 @@ public class SetActiveProcessVersionTool(
 	// write, idempotent or not — a deadline that abandoned this call would leave the family mid-switch with
 	// nobody reading it back. Idempotent=true is about REPEATING it, which is safe and lands in the same
 	// state; it is not a claim that an abandoned call is safe to retry blindly.
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = SetActiveProcessVersionToolName, ReadOnly = false, Destructive = true,
 		 Idempotent = true, OpenWorld = false),
 	 Description("Make one version of a Creatio business process the ACTUAL one — the product's UI word for "

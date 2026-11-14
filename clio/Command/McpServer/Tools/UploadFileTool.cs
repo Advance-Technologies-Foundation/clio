@@ -37,6 +37,11 @@ public class UploadFileTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Upload a local file into a Creatio file entity (for example ContactFile, AccountFile or " +
 		"KnowledgeBaseFile) and attach it to a record. Use it instead of odata-create for a file: OData cannot " +

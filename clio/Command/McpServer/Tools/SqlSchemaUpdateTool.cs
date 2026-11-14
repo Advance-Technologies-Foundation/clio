@@ -16,6 +16,12 @@ public sealed class SqlSchemaUpdateTool(
 
 	internal const string ToolName = "update-sql-schema";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("dry-run", "true", Effect = McpToolEffect.Read)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

@@ -31,6 +31,11 @@ public sealed class ShowPassingInfrastructureTool
 	/// <summary>
 	/// Returns only passing infrastructure choices and deployment recommendations.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ShowPassingInfrastructureToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	// In-process: the passing-infrastructure service probes deployment prerequisites (Kubernetes context,

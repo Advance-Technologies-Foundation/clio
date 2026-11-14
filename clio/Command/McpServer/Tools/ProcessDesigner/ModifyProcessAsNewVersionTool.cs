@@ -50,6 +50,11 @@ public class ModifyProcessAsNewVersionTool(
 	// a setTracing beside real edits (ENG-102111): it switches tracing for the whole family at once, the running
 	// version included, so the description tells the caller to put that to the user first - it changes what each
 	// run records, not which version runs.
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ModifyProcessAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Edit an existing Creatio business process and save the result as a NEW VERSION of it, leaving "

@@ -38,6 +38,11 @@ internal sealed class KnowledgeManagementTools {
 	// the clio home directory). None of them resolves a Creatio environment, so none can block on one — the
 	// remote transports they contact are GitHub / NuGet, not Creatio. Rule 11 also keeps the knowledge
 	// lifecycle host-side, since a worker inherits the parent's frozen knowledge/tool generation.
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = InstallKnowledgeToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,
@@ -51,6 +56,11 @@ internal sealed class KnowledgeManagementTools {
 		KnowledgeSourceSelectorArgs args,
 		CancellationToken cancellationToken = default) => _service.Install(args.Source, cancellationToken);
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = UpdateKnowledgeToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,
@@ -63,6 +73,12 @@ internal sealed class KnowledgeManagementTools {
 	public KnowledgeSourceBatchResult Update(
 		KnowledgeSourceSelectorArgs args,
 		CancellationToken cancellationToken = default) => _service.Update(args.Source, cancellationToken);
+
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 
 	[McpServerTool(Name = InfoKnowledgeToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[McpToolExecution(
@@ -78,6 +94,13 @@ internal sealed class KnowledgeManagementTools {
 		CancellationToken cancellationToken = default) =>
 		_service.GetInfo(args.Source, args.CheckUpdates, cancellationToken);
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("confirmed", "false", Effect = McpToolEffect.Read, Scope = McpToolScope.Local)]
+
 	[McpServerTool(Name = DeleteKnowledgeToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,
@@ -91,6 +114,13 @@ internal sealed class KnowledgeManagementTools {
 		KnowledgeConfirmedSourceArgs args,
 		CancellationToken cancellationToken = default) =>
 		_service.Delete(args.Source, args.Confirmed, cancellationToken);
+
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("confirmed", "false", Effect = McpToolEffect.Read)]
 
 	[McpServerTool(Name = AddKnowledgeSourceToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true)]
 	[McpToolExecution(
@@ -124,6 +154,13 @@ internal sealed class KnowledgeManagementTools {
 		args.Priority,
 		args.Participation));
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("confirmed", "false", Effect = McpToolEffect.Read)]
+
 	[McpServerTool(Name = RemoveKnowledgeSourceToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,
@@ -136,6 +173,12 @@ internal sealed class KnowledgeManagementTools {
 	public KnowledgeSourceCommandResult Remove(KnowledgeConfirmedAliasArgs args) =>
 		_service.Remove(args.Alias, args.Confirmed);
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = EnableKnowledgeSourceToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,
@@ -146,6 +189,12 @@ internal sealed class KnowledgeManagementTools {
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Enables a configured knowledge source without deleting or reinstalling its cache.")]
 	public KnowledgeSourceCommandResult Enable(KnowledgeAliasArgs args) => _service.Enable(args.Alias);
+
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 
 	[McpServerTool(Name = DisableKnowledgeSourceToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
@@ -158,6 +207,12 @@ internal sealed class KnowledgeManagementTools {
 	[Description("Immediately stops serving a configured knowledge source while retaining its cache.")]
 	public KnowledgeSourceCommandResult Disable(KnowledgeAliasArgs args) => _service.Disable(args.Alias);
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = ListKnowledgeSourcesToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,
@@ -168,6 +223,12 @@ internal sealed class KnowledgeManagementTools {
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Lists all configured knowledge sources, including disabled sources.")]
 	public KnowledgeSourceListResult List() => _service.List();
+
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 
 	[McpServerTool(Name = ListKnowledgeExamplesToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(

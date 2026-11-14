@@ -49,6 +49,12 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 		};
 
 	/// <summary>Places the section, grants the roles, binds every row, and reads the result back.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("mode", "none", Effect = McpToolEffect.Read)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

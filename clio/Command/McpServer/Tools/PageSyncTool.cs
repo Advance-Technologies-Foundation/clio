@@ -53,6 +53,11 @@ public sealed class PageSyncTool(
 
 	internal const string ToolName = "sync-pages";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	// Issues no client requests: the pre-save LLM semantic review (sampling) was removed in ENG-98526, so a

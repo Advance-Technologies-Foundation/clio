@@ -33,6 +33,11 @@ public sealed class WatchCompilationTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = WatchCompilationToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Long-running, may block for several minutes (bounded by give-up-after-seconds); observes Creatio's compilation history to report when a compilation started OUTSIDE clio (Studio UI, another user/process, or an IIS recycle after a package install) has finished. Never triggers a compile - use compile-creatio for that. Exit codes: 0 settled successfully (or already idle), 1 finished with confirmed (non-warning) compilation errors, 2 gave up after give-up-after-seconds - either nothing settled at all, or activity was observed but a full-compile finish could not be confirmed, 3 could not read compilation history at all.")]
 	public CommandExecutionResult WatchCompilation(

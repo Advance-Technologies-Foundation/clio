@@ -29,6 +29,11 @@ public sealed class CreatioArtifactMergeTool(ICreatioArtifactMergeService mergeS
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Local,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Preview-only semantic three-way merge for supported Creatio EntitySchema, ClientUnit, " +
 	             "ServiceSchema, Addon, descriptor, properties, resource, and data-binding artifacts. " +

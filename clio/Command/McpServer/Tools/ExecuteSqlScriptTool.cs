@@ -21,6 +21,11 @@ public sealed class ExecuteSqlScriptTool(
 	/// <summary>Executes explicit SQL in the requested environment and optionally exports its result.</summary>
 	/// <param name="args">SQL input, environment, and output options.</param>
 	/// <returns>The command exit code and execution log.</returns>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

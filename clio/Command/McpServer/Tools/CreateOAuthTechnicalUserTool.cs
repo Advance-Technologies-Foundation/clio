@@ -35,6 +35,11 @@ public sealed class CreateOAuthTechnicalUserTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateOAuthTechnicalUserToolName, ReadOnly = false, Destructive = true,
 		Idempotent = false, OpenWorld = false)]
 	[Description("""

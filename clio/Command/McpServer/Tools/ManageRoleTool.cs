@@ -19,6 +19,11 @@ public sealed class ManageRoleTool(ManageRoleCommand command, ILogger logger, IT
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = InspectToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Inspect role administration. Actions: list, memberships, members, functional-roles. Read get-guidance name=administration before interpreting inheritance, managers, passwords, licenses or access rules.")]
 	public CommandExecutionResult Inspect([Required, Description("Environment and exact action parameters.")] ManageRoleArgs args) {
@@ -32,6 +37,23 @@ public sealed class ManageRoleTool(ManageRoleCommand command, ILogger logger, IT
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("action", "list", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "create", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "update", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "delete", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "ensure-manager", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "add-member", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "remove-member", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "memberships", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "members", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "functional-roles", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "add-functional", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "remove-functional", Effect = McpToolEffect.Destroy)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Manage role administration through native Creatio services. Read get-guidance name=administration first. Functional parents must be functional roles or the All employees/All external users anchor. remove-functional requires ClioGate 2.0.0.50 or newer in the selected environment; use install-gate to satisfy the requirement. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
 	public CommandExecutionResult Manage([Required, Description("Environment and exact action parameters.")] ManageRoleArgs args) => Execute(args, true);

@@ -32,6 +32,11 @@ public sealed class AdviseThemePaletteTool(IThemePaletteAdvisor advisor) {
 	};
 
 	/// <summary>Runs one colour-advisory operation and returns its verdict packet.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Local,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,

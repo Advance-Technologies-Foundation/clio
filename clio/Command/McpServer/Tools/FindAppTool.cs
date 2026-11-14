@@ -28,6 +28,11 @@ public sealed class FindAppTool(
 	/// <summary>
 	/// Finds installed applications (and their sections) by name, code, or substring pattern.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = FindAppToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

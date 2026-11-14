@@ -29,6 +29,12 @@ public sealed class ExperimentalTool : BaseTool<ExperimentalOptions> {
 	/// <param name="enable">When <c>true</c>, enables the feature named by <paramref name="name"/>.</param>
 	/// <param name="disable">When <c>true</c>, disables the feature named by <paramref name="name"/>.</param>
 	/// <returns>The structured command execution result.</returns>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("name", "", Effect = McpToolEffect.Read, Scope = McpToolScope.Local, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.InProcess,

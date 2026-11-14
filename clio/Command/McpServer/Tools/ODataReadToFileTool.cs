@@ -53,6 +53,11 @@ public sealed class ODataReadToFileTool(
 	// landed but before the response returned, the retry would be refused by the "already exists" guard and
 	// the agent would be stuck with a file it was told was never written. Same reasoning as get-page.
 	// Idempotent is FALSE for the same reason: a second call to the same output-file is rejected, not a no-op.
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	// Same execution classification as odata-read: one bounded OData GET per call in a supervised worker.
 	// SharedFileResource is None even though the call writes a file - output-file is a caller-named path

@@ -19,6 +19,11 @@ public sealed class SchemaNamePrefixTool(IToolCommandResolver commandResolver,
 	/// <summary>
 	/// Returns the active SchemaNamePrefix system setting for the environment.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = GetSchemaNamePrefixToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

@@ -27,6 +27,11 @@ public sealed class ResolveOAuthSystemUserTool(
 	/// <summary>
 	/// Resolves a Creatio system user (SysAdminUnit) by name or id over DataService REST.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ResolveOAuthSystemUserToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(

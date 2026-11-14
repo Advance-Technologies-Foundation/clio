@@ -70,6 +70,11 @@ public class MobilePageConversionGuideTool {
 
 	internal const string ToolName = "get-mobile-page-conversion-guide";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// Advisory-only in what it WRITES (nothing), but it READS the source page and probes the environment's
 	// platform version, so it can block on Creatio and must run in a worker.

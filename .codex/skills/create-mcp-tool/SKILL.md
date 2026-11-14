@@ -37,10 +37,13 @@ The constants must be visible to the E2E test project. Do not duplicate tool-nam
 5. Keep descriptions useful.
 Use `[McpServerTool(Name = ...)]` with concise descriptions and argument descriptions that explain what a human needs to provide.
 
-6. Review prompt and resource updates.
+6. Declare what the tool does.
+Put `[McpToolFacts]` on the tool method with all four facts (effect, environment impact, scope, connections), read off what the command's code does, not its name; add `[McpToolArgumentFacts]` for argument values that narrow them (a composite `action`, a `dry-run`). Keep `ReadOnly` / `Destructive` consistent with them. `McpToolFactsCoverageTests` fails until it is complete. Design: `spec/adr/adr-mcp-tool-facts.md`.
+
+7. Review prompt and resource updates.
 If the command already has an MCP prompt or resource, keep them aligned with the tool contract. If there is no prompt/resource, explicitly decide whether one is needed.
 
-7. Plan the test work immediately.
+8. Plan the test work immediately.
 Every new or updated MCP tool must also get end-to-end coverage in `clio.mcp.e2e`, not only unit mapping tests in `clio.tests`.
 
 ## Required Checks

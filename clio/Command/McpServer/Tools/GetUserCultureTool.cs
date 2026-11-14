@@ -40,6 +40,11 @@ public sealed class GetUserCultureTool(
 	/// <param name="args">Tool arguments selecting the target environment.</param>
 	/// <param name="cancellationToken">Cancellation token propagated by the MCP host.</param>
 	/// <returns>A structured culture-resolution signal.</returns>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

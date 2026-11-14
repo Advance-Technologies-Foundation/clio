@@ -26,6 +26,11 @@ public sealed class GetEntityConnectionsTool(
 	internal const string ValidArguments =
 		"Valid: entity-schema-name, package-name, environment-name, uri, login, password.";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -95,6 +100,11 @@ public sealed class UpdateEntityConnectionsTool(
 		"Valid: entity-schema-name, package-name, connections, environment-name, uri, login, password.";
 
 	// Destructive: a column left out of `connections` is removed from the object's Connections.
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

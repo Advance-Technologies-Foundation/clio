@@ -19,6 +19,11 @@ public sealed class ManageUserTool(ManageUserCommand command, ILogger logger, IT
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = InspectToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[Description("Inspect user administration. Actions: list, lock-status. Read get-guidance name=administration before interpreting inheritance, managers, passwords, licenses or access rules.")]
 	public CommandExecutionResult Inspect([Required, Description("Environment and exact action parameters.")] ManageUserArgs args) {
@@ -33,6 +38,18 @@ public sealed class ManageUserTool(ManageUserCommand command, ILogger logger, IT
 	[McpToolExecution(Location = McpToolExecutionLocation.InProcess, Lifetime = McpToolExecutionLifetime.NotApplicable,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None, SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("action", "list", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "create", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "update", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "delete", Effect = McpToolEffect.Destroy)]
+	[McpToolArgumentFacts("action", "lock-status", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("action", "unlock", Effect = McpToolEffect.Change)]
+	[McpToolArgumentFacts("action", "password", Effect = McpToolEffect.Change)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Manage user administration through native Creatio services. Create and password actions require Creatio 10.1.585.0 or newer because older native services may log passwords. Read get-guidance name=administration first. Mutations verify persisted state; inspect after a failure before retrying because partial changes may exist.")]
 	public CommandExecutionResult Manage([Required, Description("Environment and exact action parameters.")] ManageUserArgs args) => Execute(args, true);

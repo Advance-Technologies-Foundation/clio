@@ -16,6 +16,11 @@ public class CreateDataBindingDbTool(
 	: BaseTool<CreateDataBindingDbOptions>(command, logger, commandResolver) {
 	internal const string CreateDataBindingDbToolName = "create-data-binding-db";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateDataBindingDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -53,6 +58,11 @@ public class UpsertDataBindingRowDbTool(
 	: BaseTool<UpsertDataBindingRowDbOptions>(command, logger, commandResolver) {
 	internal const string UpsertDataBindingRowDbToolName = "upsert-data-binding-row-db";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = UpsertDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -86,6 +96,12 @@ public class RemoveDataBindingRowDbTool(
 	IToolCommandResolver commandResolver)
 	: BaseTool<RemoveDataBindingRowDbOptions>(command, logger, commandResolver) {
 	internal const string RemoveDataBindingRowDbToolName = "remove-data-binding-row-db";
+
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 
 	[McpServerTool(Name = RemoveDataBindingRowDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
@@ -125,6 +141,12 @@ public class ReadDataBindingDbTool(
 	/// <summary>
 	///     Reads a binding's shipped column set from the environment.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = ReadDataBindingDbToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

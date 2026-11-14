@@ -42,6 +42,11 @@ public sealed class GetCreatioInfoTool(
 	/// Describes the target Creatio environment and returns the combined report through the standard
 	/// <see cref="CommandExecutionResult"/> log channel.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

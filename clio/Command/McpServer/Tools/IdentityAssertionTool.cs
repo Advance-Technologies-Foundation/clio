@@ -42,6 +42,11 @@ public class GetIdentityAssertionTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.Read)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false),
 	 Description("Issue a short-lived signed identity assertion (JWT) for the current authorized user. " +
 		"This is the token the Creatio frontend passes to the AI chat to start the Identity Service V3 " +
@@ -86,6 +91,11 @@ public class GetIdentityPublicJwkTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Get the instance public key (JWK) used to verify identity assertions in Identity Service V3. " +
 		"Register this key once with Identity Service V3 at onboarding. Requires the " +
@@ -130,6 +140,11 @@ public class RegenerateIdentitySigningKeyTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Regenerate the instance identity-assertion signing key pair. DESTRUCTIVE: assertions signed " +
 		"with the previous key stop validating and the new public key must be re-registered with Identity " +
@@ -175,6 +190,12 @@ public class CheckAuthCodeFlowTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("Check whether the environment can use the OAuth authorization code flow with the Identity " +
 		"Service. Useful as a quick diagnostic when setting up the AI chat identity flow.")]

@@ -16,6 +16,11 @@ public class PackageHotfixTool(
 	internal const string FinishHotfixToolName = "finish-hotfix";
 
 	// Destructive: it changes the editability of a package on a shared environment, so the host must confirm it.
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = UnlockForHotfixToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -35,6 +40,12 @@ public class PackageHotfixTool(
 		};
 		return InternalExecute<PackageHotFixCommand>(options);
 	}
+
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 
 	[McpServerTool(Name = FinishHotfixToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(

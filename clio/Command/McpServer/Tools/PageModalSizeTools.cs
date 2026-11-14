@@ -22,6 +22,11 @@ public sealed class GetPageModalSizeTool(
 	internal const string ValidArguments =
 		"Valid arguments: page-schema-name, package-name, environment-name (uri, login, password as an emergency fallback).";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -82,6 +87,11 @@ public sealed class SetPageModalSizeTool(
 	internal const string ValidArguments =
 		"Valid arguments: page-schema-name, package-name, size, environment-name (uri, login, password as an emergency fallback).";
 
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

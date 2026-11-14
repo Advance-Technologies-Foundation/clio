@@ -13,6 +13,11 @@ public sealed class SequenceEnrollmentTool(SequenceEnrollmentCommand command, IL
 	: BaseTool<SequenceEnrollmentOptions>(command, logger, resolver) {
 	internal const string ToolName = "enroll-sequence-participants";
 	/// <summary>Enrolls an explicit bounded audience using the native engine.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(Location = McpToolExecutionLocation.Worker, Lifetime = McpToolExecutionLifetime.PerCall,
 		OperationFamily = McpToolOperationFamily.None, BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,

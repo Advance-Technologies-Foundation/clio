@@ -27,6 +27,11 @@ public sealed class VerifyOAuthAppTool(
 	/// <summary>
 	/// Verifies a server-to-server OAuth app end to end over REST.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.Read)]
 	[McpServerTool(Name = VerifyOAuthAppToolName, ReadOnly = true, Destructive = false,
 		Idempotent = true, OpenWorld = false)]
 	[McpToolExecution(

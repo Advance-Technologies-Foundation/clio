@@ -33,6 +33,11 @@ public class LoadPackagesTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = LoadPackagesToFileSystemToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Loads package definitions from the configuration database into the file system on a Creatio web application. Requires file system development mode (FSM): the call fails when FSM is disabled or the platform reports per-item synchronization errors.")]
 	public CommandExecutionResult LoadPackagesToFileSystem(
@@ -58,6 +63,12 @@ public class LoadPackagesTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = LoadPackagesToDbToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description("Loads package definitions (schemas, resources, descriptors) from the file system into the configuration database on a Creatio web application. It does not install package data: a Data/ binding folder is applied only by package installation (push-pkg, push-workspace) or by the DB-first tools create-data-binding-db / upsert-data-binding-row-db. Requires file system development mode (FSM): the call fails when FSM is disabled or the platform reports per-item synchronization errors.")]
 	public CommandExecutionResult LoadPackagesToDb(

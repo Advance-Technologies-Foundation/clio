@@ -19,6 +19,11 @@ public class WorkspacePackageTool(
 	/// <summary>
 	/// Adds a package to the specified workspace and optionally bootstraps follow-up configuration download.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = AddPackageToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -71,6 +76,11 @@ public class CreateTestProjectTool(
 	/// <summary>
 	/// Creates a new test project for a package in the specified workspace.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Local,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
 	// InProcess (the inventory's file-level heuristic said worker, and §4 pre-flagged this row):
@@ -112,6 +122,12 @@ public class CreateIntegrationTestProjectTool(
 	internal const string ToolName = "new-integration-test-project";
 
 	/// <summary>Creates a scenario-neutral integration-test project in a local clio workspace.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Local,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false,
 		Idempotent = false, OpenWorld = false)]
 	// InProcess (the inventory's file-level heuristic said worker): CreateIntegrationTestProjectOptions does

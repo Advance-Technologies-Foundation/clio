@@ -34,6 +34,11 @@ public sealed class RemovePackageDependencyTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = RemovePackageDependencyToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
 	[Description("""

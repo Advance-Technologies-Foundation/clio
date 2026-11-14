@@ -25,6 +25,11 @@ public sealed class TriggerSmokeTool(
 	internal const string ValidArgsHint = "Valid: environment-name, entity, values, watch, process, timeout, cleanup.";
 
 	/// <summary>Runs one trigger smoke check.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

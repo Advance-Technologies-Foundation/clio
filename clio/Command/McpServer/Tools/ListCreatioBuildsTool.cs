@@ -40,6 +40,11 @@ public sealed class ListCreatioBuildsTool {
 	/// Lists Creatio build archives (.zip) discovered under the configured creatio-products folder so an
 	/// agent can pick a deploy-creatio zipFile deterministically instead of globbing the filesystem.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ListCreatioBuildsToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		OpenWorld = false)]
 	[McpToolExecution(

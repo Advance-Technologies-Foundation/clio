@@ -22,6 +22,11 @@ public class DeleteThemeTool(
 	internal const string ToolName = "delete-theme";
 
 	/// <summary>Deletes the addressed theme from the target environment.</summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
 	 Description("Delete a custom Creatio theme from a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +

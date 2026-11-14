@@ -21,6 +21,11 @@ public sealed class GetSchemaTool(
 	// anchor or the OS temp directory (OutputPathConfinement, symlinks resolved), rejected before any write
 	// otherwise. ReadOnly is not consumed by ClioRing (it parses only {Resident, Destructive}), so this flip
 	// changes no Ring-consumed contract.
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
 	// SharedFileResource stays None: the optional output-file write is caller-chosen and confined, and no other
 	// tool reads it back, so there is no shared artifact two processes would read-modify-write.

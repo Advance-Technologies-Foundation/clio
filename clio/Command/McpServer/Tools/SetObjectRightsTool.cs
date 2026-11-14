@@ -49,6 +49,13 @@ public sealed class SetObjectRightsTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("preview", "true", Effect = McpToolEffect.Read)]
+	[McpToolArgumentFacts("remove-row", "false", Effect = McpToolEffect.Change, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object, or move or remove that role's row — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Works like the Object permissions designer, one object per call, for ANY role. To cover an object's lookups, read them with get-object-rights include-connected, decide per object, and make one call per object. " +

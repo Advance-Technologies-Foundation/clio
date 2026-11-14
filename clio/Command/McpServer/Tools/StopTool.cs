@@ -22,6 +22,11 @@ public class StopTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = "stop-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Stops Creatio instance by environment name")]
 	public CommandExecutionResult StopCreatioByName(
@@ -45,6 +50,12 @@ public class StopTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = "stop-all-creatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("Stops all Creatio instances")]
 	public CommandExecutionResult StopAllCreatio(
@@ -71,6 +82,12 @@ public class StopTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None,
 		AliasOf = "stop-all-creatio")]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+
 	[McpServerTool(Name = "StopAllCreatio", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
 	 Description("[Deprecated: use stop-all-creatio] Stops all Creatio instances")]
 	public CommandExecutionResult StopAllCreatioLegacy(

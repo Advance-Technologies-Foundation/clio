@@ -37,6 +37,11 @@ public sealed class CreatePackageTool(
 	/// <summary>
 	/// Creates a new package in a registered Creatio environment and returns its readback.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Change,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreatePackageToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(

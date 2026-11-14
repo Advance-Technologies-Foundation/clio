@@ -37,6 +37,12 @@ public class RestoreDbTool(
 	/// <summary>
 	/// Restores a database using a configured clio environment.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("asTemplate", "true", Effect = McpToolEffect.Change, EnvironmentImpact = McpToolEnvironmentImpact.None)]
 	[McpServerTool(Name = RestoreDbByEnvironmentToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -63,6 +69,11 @@ public class RestoreDbTool(
 	/// <summary>
 	/// Restores a database using explicit database server URI and credentials.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = RestoreDbByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(
@@ -92,6 +103,12 @@ public class RestoreDbTool(
 	/// <summary>
 	/// Restores a database to a configured local database server.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.Rebuild,
+		Scope = McpToolScope.Machine,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("dropIfExists", "false", Effect = McpToolEffect.Change, WhenAbsent = true)]
 	[McpServerTool(Name = RestoreDbToLocalServerToolName, ReadOnly = false, Destructive = true, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(

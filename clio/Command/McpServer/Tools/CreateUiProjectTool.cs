@@ -25,6 +25,11 @@ public class CreateUiProjectTool(
 	/// <summary>
 	/// Creates a new Angular (Freedom UI remote module) project inside the supplied clio workspace.
 	/// </summary>
+	[McpToolFacts(
+		Effect = McpToolEffect.Read,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
 	[McpServerTool(Name = CreateUiProjectToolName, ReadOnly = false, Destructive = false, Idempotent = false,
 		OpenWorld = false)]
 	[McpToolExecution(

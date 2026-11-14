@@ -25,6 +25,12 @@ public sealed class SetRecordRightsTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpToolFacts(
+		Effect = McpToolEffect.Destroy,
+		EnvironmentImpact = McpToolEnvironmentImpact.None,
+		Scope = McpToolScope.Environment,
+		Connections = McpToolConnections.None)]
+	[McpToolArgumentFacts("revoke", "false", Effect = McpToolEffect.Change, WhenAbsent = true)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Change who can access a record or dashboard — grant or revoke a record-level access right on a single Creatio record (DESTRUCTIVE — " +
 		"changes only the specified grant; other grants are untouched). " +
