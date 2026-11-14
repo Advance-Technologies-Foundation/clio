@@ -77,6 +77,46 @@ public sealed class WebServiceSchemaViewTests {
 		view.Should().Contain("\"constant-credentials-masked\":true", because: "the reader learns a constant credential exists");
 	}
 
+	[TestCase("https://erp.example/svc?sig=SECRET-42-SECRET-42&format=json", "https://erp.example/svc?sig=[masked]&format=json")]
+	[TestCase("https://erp.example/svc?user=a@corp.com&sig=SECRET-42-SECRET-42", "https://[redacted]@corp.com&sig=[masked]")]
+	[TestCase("https://u:pw?token=abc@erp.example/svc?api_key=SECRET-42-SECRET-42", "https://[redacted]@erp.example/svc?api_key=[masked]")]
+	[TestCase("https://erp.example/svc?api%5Fkey=SECRET-42-SECRET-42#top", "https://erp.example/svc?api%5Fkey=[masked]#top")]
+	[TestCase("https://erp.example/svc?api_key={key}", "https://erp.example/svc?api_key={key}")]
+	[TestCase("https://erp.example/svc?api_key={a}SECRET-42-SECRET-42{b}", "https://erp.example/svc?api_key=[masked]")]
+	[TestCase("https://erp.example/svc?format=json", "https://erp.example/svc?format=json")]
+	[TestCase("https://erp.example/rates?code=USD", "https://erp.example/rates?code=USD")]
+	[Description("ShownUri hides user information and every credential-like query value, also when an '@' in the query makes StripUserInfo cut the '?' away; a short value under code stays visible.")]
+	public void ShownUri_Should_Hide_User_Information_And_Query_Secrets(string stored, string expected) {
+		// Act
+		string shown = WebServiceSchemaView.ShownUri(stored);
+
+		// Assert
+		shown.Should().Be(expected, because: "neither user information nor a key kept in the query may be shown");
+		shown.Should().NotContain("SECRET-42", because: "the secret value never leaves clio");
+	}
+
+	[Test]
+	[Description("A method's parameters are listed in stored order, the order the platform renders them in, not sorted by name.")]
+	public void From_Should_List_Parameters_In_Stored_Order() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Send", "POST", "send",
+			RequestParameters: [new WebServiceParameterArg("Zeta"), new WebServiceParameterArg("Alpha")]), null, false, errors);
+		var schema = new ServiceSchemaDto {
+			UId = Guid.NewGuid(), Name = "UsrOrdered", Type = ServiceSchemaCodes.ServiceTypeRest,
+			BaseUri = "https://erp.example/"
+		};
+		schema.Methods.Items[method.UId.ToString()] = method;
+
+		// Act
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+
+		// Assert
+		errors.Count.Should().Be(0, because: "the method is valid");
+		view.Methods.Single().RequestParameters.Select(p => p.Code).Should().Equal(["Zeta", "Alpha"],
+			because: "describe output sent back as setMethod must keep the order, or a SOAP envelope is reordered");
+	}
+
 	[Test]
 	[Description("A harmless constant default on a query parameter stays visible.")]
 	public void From_Should_Keep_Non_Secret_Constant_Default() {

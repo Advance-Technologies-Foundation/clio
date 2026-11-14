@@ -81,9 +81,41 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ReadWsdlTool.ToolName)]
+	[AllureName("read-wsdl warns about WCF ports the platform cannot call and names the SOAP 1.1 port")]
+	[Description("Reads a WSDL written by a WCF host (wsdl-files) with a SOAP 1.1, a SOAP 1.2, a SOAP 1.2 WS-Addressing and a wsHttpBinding port, and expects all four ports back with a warning on each of the last three that names the SOAP 1.1 port to register instead; nothing is saved.")]
+	public async Task ReadWsdl_Should_Warn_About_Wcf_Ports_The_Platform_Cannot_Call() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the read-wsdl E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(3));
+
+		// Act
+		WsdlReadResult read = await CallAsync<WsdlReadResult>(ReadWsdlTool.ToolName, new Dictionary<string, object?> {
+			["environment-name"] = _environmentName, ["wsdl-files"] = new[] { Asset("wcf-bindings.wsdl") }
+		}, cts.Token);
+
+		// Assert
+		read.Success.Should().BeTrue(because: $"the shipped WCF WSDL is readable; error: {read.Error}");
+		read.Services!.Select(s => s.Port).Should().Equal(
+			["BasicHttpBinding_ICalc", "CustomBinding_ICalc", "CustomBinding_ICalc1", "WSHttpBinding_ICalc"],
+			because: "every SOAP port is still returned");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'CustomBinding_ICalc' is SOAP 1.2")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "WCF refuses the platform's SOAP 1.2 call, which carries the action only in a SOAPAction header");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'CustomBinding_ICalc1' requires WS-Addressing")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "the platform writes no wsa:Action or wsa:To");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'WSHttpBinding_ICalc' requires WS-Addressing")
+				&& w.Contains("Register port 'BasicHttpBinding_ICalc'"),
+			because: "a wsHttpBinding requires WS-Addressing");
+	}
+
+	[Test]
+	[AllureTag(ReadWsdlTool.ToolName)]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureName("read-wsdl output registers a SOAP service that describe reads back the same")]
-	[Description("Reads a WSDL shipped with the tests (wsdl-files), expects both SOAP ports with the SOAP 1.2 one as Studio's pick and codes built from the stand's prefix, registers that port's arguments trimmed to three operations (a SOAP-header array, an object array, a complex header with a body) under a throwaway code, and expects describe-web-service to report the same namespaces, message elements, SOAP actions, paths, SOAP-header flags and item elements; a second read with service-code returns the same codes as existing methods.")]
+	[Description("Reads a WSDL shipped with the tests (wsdl-files) with the new service's code given as code, expects both SOAP ports with the SOAP 1.2 one as Studio's pick, that code in the arguments and the other codes built from the stand's prefix, registers that port's arguments trimmed to three operations (a SOAP-header array, an object array, a complex header with a body) under a throwaway code, and expects describe-web-service to report the same namespaces, message elements, SOAP actions, paths, SOAP-header flags and item elements; a second read with service-code returns the same codes as existing methods.")]
 	public async Task ReadWsdl_Output_Should_Register_And_Describe_The_Same_Service() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -95,17 +127,18 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
 		_prefix = await WebServiceStand.ReadPrefixAsync(settings, _environmentName, cts.Token);
 		string[] operations = ["TaggedCall", "GetByRoles", "SecureCall"];
+		string code = _prefix + "E2eWsdl" + Guid.NewGuid().ToString("N")[..12];
 
 		// Act
 		WsdlReadResult read = await CallAsync<WsdlReadResult>(ReadWsdlTool.ToolName, new Dictionary<string, object?> {
 			["environment-name"] = _environmentName, ["wsdl-files"] = new[] { Asset("wizard-features.wsdl") },
-			["operations"] = operations
+			["operations"] = operations, ["code"] = code
 		}, cts.Token);
 		read.Success.Should().BeTrue(because: $"the shipped WSDL is readable; error: {read.Error}");
 		WsdlServiceView pick = read.Services!.Single(s => s.StudioPick);
 		JsonObject arguments = JsonNode.Parse(pick.Arguments!.Value.GetRawText())!.AsObject();
-		string code = _prefix + "E2eWsdl" + Guid.NewGuid().ToString("N")[..12];
-		arguments["code"] = code;
+		arguments["code"]!.GetValue<string>().Should().Be(code,
+			because: "the code the user named for the new service is already in the arguments, which are registered as they are");
 		arguments["package-name"] = PackageName;
 		_serviceCodes.Add(code);
 		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
@@ -122,6 +155,8 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 			because: "every SOAP port is returned and the HTTP port is dropped");
 		pick.Port.Should().Be("ClioWizardFeaturesSoap12", because: "Studio's quick setup picks the SOAP 1.2 port");
 		read.Warnings.Should().Contain(w => w.Contains("2 SOAP headers"), because: "SecureCall's second header is not read");
+		read.Warnings.Should().Contain(w => w.Contains("Port 'ClioWizardFeaturesSoap12' is SOAP 1.2") && w.Contains("Keep this port"),
+			because: "outside a WCF WSDL the SOAP 1.2 pick stays, with the SOAP 1.1 port only as the way out of a failed call");
 		registered.Success.Should().BeTrue(because: $"read-wsdl output is valid register input; error: {registered.Error}");
 		described.Success.Should().BeTrue(because: $"the registered service is readable; error: {described.Error}");
 		WebServiceView service = described.Service!;

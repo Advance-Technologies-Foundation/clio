@@ -376,10 +376,125 @@ public static partial class WebServiceSchemaView {
 	/// <summary>Whether a parameter code or wire name looks like a credential (key, token, secret, password, ...).</summary>
 	public static bool IsSecretName(string name) => SecretNamePattern().IsMatch(name ?? string.Empty);
 
+	// Query parameters that carry a key in common hosting (an Azure SAS signature, an Azure Functions key) but are not
+	// matched by the credential-name pattern.
+	private static readonly HashSet<string> SecretQueryNames = new(StringComparer.OrdinalIgnoreCase) { "sig", "sas", "code" };
+
+	// A sig, sas or code value at least this long is a key (an Azure SAS signature or Functions key is 40+ characters);
+	// a shorter one is an ordinary value (rates?code=USD) that a stored URI may carry.
+	private const int MinHostingKeyLength = 16;
+
+	/// <summary>
+	/// Whether a URI query parameter name carries a credential: the credential-name pattern, plus the key names common
+	/// hosting uses. read-wsdl refuses a WSDL URL with one and leaves it out of a base-uri.
+	/// </summary>
+	/// <param name="name">The parameter name, unescaped.</param>
+	/// <returns>Whether a value under it is a secret.</returns>
+	public static bool IsSecretQueryName(string name) =>
+		IsSecretName(name) || SecretQueryNames.Contains(name ?? string.Empty);
+
+	// What a stored URI hides: a value under a credential name (the names register refuses a constant under), or a
+	// key-length value under a hosting key name, which register stores because the name alone is ambiguous.
+	private static bool IsSecretQueryValue(string name, string value) =>
+		IsSecretName(name) || (SecretQueryNames.Contains(name ?? string.Empty) && value.Length >= MinHostingKeyLength);
+
+	/// <summary>
+	/// A stored URI with the value of every credential-like query parameter replaced by
+	/// <see cref="WebServiceResponseMasker.Mask"/>: under a credential name (<c>search?api_key=...</c>, which Studio
+	/// stores and clio refuses to write), or a key-length value under <c>sig</c>, <c>sas</c> or <c>code</c>. A
+	/// <c>{placeholder}</c> value is kept.
+	/// </summary>
+	/// <param name="uri">The URI as stored, or a display form of it.</param>
+	/// <returns>The URI with its query secrets masked; the same instance when there are none.</returns>
+	public static string MaskUriQuery(string uri) => MaskUriQuery(uri, null);
+
+	/// <summary>The values <see cref="MaskUriQuery(string)"/> hides, as stored and URL-unescaped.</summary>
+	/// <param name="uri">The URI as stored.</param>
+	/// <returns>The secret query values; empty when there are none.</returns>
+	public static IReadOnlyList<string> UriQuerySecrets(string uri) {
+		var values = new List<string>();
+		MaskUriQuery(uri, values);
+		return values;
+	}
+
+	/// <summary>
+	/// The stored URI when <paramref name="sent"/> is its masked form as describe-web-service shows it, so describe
+	/// output sent back keeps the hidden value; otherwise <paramref name="sent"/> unchanged.
+	/// </summary>
+	/// <param name="sent">The URI the agent sent.</param>
+	/// <param name="stored">The URI as stored.</param>
+	/// <returns>The URI to apply.</returns>
+	public static string RestoreMaskedUriQuery(string sent, string stored) {
+		if (sent is null || stored is null) {
+			return sent;
+		}
+		string masked = MaskUriQuery(stored);
+		return !ReferenceEquals(masked, stored) && string.Equals(sent.Trim(), masked, StringComparison.Ordinal)
+			? stored
+			: sent;
+	}
+
+	private const string RedactedUserInfo = "[redacted]@";
+
+	/// <summary>
+	/// The display form of a stored base URI: user information hidden (<see cref="StripUserInfo"/>) and query secrets
+	/// masked (<see cref="MaskUriQuery(string)"/>).
+	/// </summary>
+	/// <param name="uri">The URI as stored.</param>
+	/// <returns>The URI as list, describe and refusals may show it.</returns>
+	public static string ShownUri(string uri) => MaskShown(StripUserInfo(uri));
+
+	// StripUserInfo hides up to the LAST '@', which may sit inside the query (?user=a@corp.com&sig=...); the '?' is then
+	// gone, so the rest of the query after that '@' is masked pair by pair. Masking first instead could remove the '@'
+	// itself (a masked value that held it) and leave user information visible.
+	private static string MaskShown(string shown) {
+		if (string.IsNullOrEmpty(shown)) {
+			return shown;
+		}
+		int redacted = shown.IndexOf(RedactedUserInfo, StringComparison.Ordinal);
+		return shown.IndexOf('?') < 0 && redacted >= 0
+			? MaskQueryPairs(shown, redacted + RedactedUserInfo.Length, null)
+			: MaskUriQuery(shown, null);
+	}
+
+	private static string MaskUriQuery(string uri, List<string> values) {
+		int question = uri?.IndexOf('?') ?? -1;
+		return question < 0 ? uri : MaskQueryPairs(uri, question + 1, values);
+	}
+
+	// Masks the credential-like key=value pairs of uri from start up to a '#'; a value that is only a {placeholder}
+	// is a path value, not a constant.
+	private static string MaskQueryPairs(string uri, int start, List<string> values) {
+		int hash = uri.IndexOf('#', start);
+		int end = hash < 0 ? uri.Length : hash;
+		string[] pairs = uri[start..end].Split('&');
+		bool masked = false;
+		for (int i = 0; i < pairs.Length; i++) {
+			int equals = pairs[i].IndexOf('=');
+			string value = equals < 0 ? string.Empty : pairs[i][(equals + 1)..];
+			string unescaped = Uri.UnescapeDataString(value);
+			if (equals <= 0 || value.Length == 0 || value == WebServiceResponseMasker.Mask
+					|| WholePlaceholderPattern().IsMatch(value)
+					|| !IsSecretQueryValue(Uri.UnescapeDataString(pairs[i][..equals]), unescaped)) {
+				continue;
+			}
+			values?.Add(value);
+			if (values is not null && unescaped != value) {
+				values.Add(unescaped);
+			}
+			pairs[i] = pairs[i][..(equals + 1)] + WebServiceResponseMasker.Mask;
+			masked = true;
+		}
+		return masked ? uri[..start] + string.Join('&', pairs) + uri[end..] : uri;
+	}
+
+	[GeneratedRegex(@"^\{[^{}]+\}$")]
+	private static partial Regex WholePlaceholderPattern();
+
 	public static WebServiceView From(ServiceSchemaDto schema, string packageName) {
 		bool soap = IsSoap(schema);
 		return new WebServiceView(schema.UId, schema.Name, Localized(schema.Caption), packageName, TypeName(schema.Type),
-			StripUserInfo(schema.BaseUri), schema.RetryCount, Auth(schema.AuthInfo),
+			ShownUri(schema.BaseUri), schema.RetryCount, Auth(schema.AuthInfo),
 			schema.Methods.Items.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
 				.Select(m => Method(m, soap)).ToList(),
 			soap ? Namespaces(schema.Namespaces) : null);
@@ -485,13 +600,13 @@ public static partial class WebServiceSchemaView {
 	private static WebServiceMethodView Method(ServiceMethodDto method, bool soap) =>
 		new(method.Name, Localized(method.Caption),
 			ServiceSchemaCodes.HttpMethods.FirstOrDefault(p => p.Value == method.Request.HttpMethodType).Key,
-			soap ? null : method.Request.Uri, method.RequestTimeout,
+			soap ? null : MaskUriQuery(method.Request.Uri), method.RequestTimeout,
 			method.Request.ContentType == ServiceSchemaCodes.ContentTypeXml ? "xml" : "json",
 			method.UseAuthInfo,
 			Parameters(method.Request.Parameters, soap),
 			Parameters(method.Response.Parameters, soap),
-			soap ? method.Request.Uri ?? string.Empty : null,
-			soap ? StripUriUserInfo(method.SoapAction ?? string.Empty) : null);
+			soap ? MaskUriQuery(method.Request.Uri ?? string.Empty) : null,
+			soap ? MaskShown(StripUriUserInfo(method.SoapAction ?? string.Empty)) : null);
 
 	/// <summary>
 	/// Hides <c>user:password@</c> in a namespace URI or a SOAP action only when the value is an absolute URI that
@@ -501,10 +616,12 @@ public static partial class WebServiceSchemaView {
 	private static string StripUriUserInfo(string value) =>
 		WebServiceDefinitionBuilder.HasUserInfo(value) ? StripUserInfo(value) : value;
 
+	// Stored order, not sorted: the platform renders a SOAP body and Header in collection order
+	// (Terrasoft.Services ServiceCommunication.BodyParameters), and setMethod stores parameters in the order it gets
+	// them, so describe output sent back must keep that order or the envelope elements are reordered.
 	private static IReadOnlyList<WebServiceParameterView> Parameters(
 		ServiceItemCollection<ServiceParameterDto> parameters, bool soap, bool inSoapHeader = false) =>
 		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
-			.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
 			.Select(p => Parameter(p, soap, inSoapHeader))
 			.ToList();
 

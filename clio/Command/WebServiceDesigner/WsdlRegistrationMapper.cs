@@ -123,9 +123,11 @@ public static partial class WsdlRegistrationMapper {
 	/// <param name="environmentName">The environment the arguments are for.</param>
 	/// <param name="target">An existing service the operations go into, or null for a new service.</param>
 	/// <param name="warnings">The warnings of the call, shared by every port so a message common to them is listed once.</param>
+	/// <param name="newCode">The code the user named for a new service; null builds one from the WSDL service name.</param>
 	/// <returns>The arguments.</returns>
 	public static WsdlServiceArguments Map(WsdlPort port, bool studioPick, string prefix, string environmentName,
-		WsdlTargetService target, WarningLog warnings) {
+		WsdlTargetService target, WarningLog warnings,
+		string newCode = null) {
 		ArgumentNullException.ThrowIfNull(port);
 		prefix ??= string.Empty;
 		var context = new PortContext(port, prefix, target, warnings);
@@ -146,7 +148,8 @@ public static partial class WsdlRegistrationMapper {
 				existing.Add(method.Code);
 			}
 		}
-		string code = target?.Code ?? ServiceCode(prefix, port.ServiceName);
+		// An existing service keeps its code; a new one takes the code the user named, else one built from the WSDL.
+		string code = target?.Code ?? newCode ?? ServiceCode(prefix, port.ServiceName);
 		string type = port.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12 ? "soap12" : "soap11";
 		return new WsdlServiceArguments(port.Name, studioPick,
 			new WsdlRegistrationArgs(environmentName, code, port.ServiceName, baseUri, type, namespaces, methods),
@@ -180,7 +183,9 @@ public static partial class WsdlRegistrationMapper {
 		foreach (WsdlOperation operation in port.Operations) {
 			WebServiceMethodView match = target.Methods.FirstOrDefault(m => !claimed.Contains(m.Code)
 				&& string.Equals(LocalName(m.MessageElement), operation.StudioMessageElement, StringComparison.Ordinal)
-				&& string.Equals(m.SoapAction?.Trim() ?? string.Empty, KeptSoapAction(operation.SoapAction) ?? string.Empty,
+				// describe masks a key-like query value of the stored action, so the WSDL's action is compared masked too.
+				&& string.Equals(m.SoapAction?.Trim() ?? string.Empty,
+					WebServiceSchemaView.MaskUriQuery(KeptSoapAction(operation.SoapAction)) ?? string.Empty,
 					StringComparison.Ordinal));
 			if (match is not null) {
 				claimed.Add(match.Code);
@@ -451,7 +456,7 @@ public static partial class WsdlRegistrationMapper {
 				string[] kept = pairs.Where(pair => {
 					int equals = pair.IndexOf('=');
 					string name = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
-					return !WsdlReader.IsSecretQueryName(name);
+					return !WebServiceSchemaView.IsSecretQueryName(name);
 				}).ToArray();
 				if (kept.Length < pairs.Length) {
 					result = result[..question] + (kept.Length > 0 ? "?" + string.Join('&', kept) : string.Empty);

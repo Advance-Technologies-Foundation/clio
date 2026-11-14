@@ -46,7 +46,9 @@ public interface IWebServiceDesigner {
 	/// <param name="code">The service code.</param>
 	/// <param name="operations">
 	/// addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, setAuth; for a SOAP service also setNamespaces
-	/// and setType (1.1 / 1.2), which change every call and so count as changing every method for the usage guard.
+	/// and setType (1.1 / 1.2). A new base URI, SOAP version or namespace list changes every call, so it counts as
+	/// changing every method for the usage guard; new authentication counts for the methods that send it (use-auth);
+	/// setRetryCount changes no request and does not. Each is judged by the service before and after the whole call.
 	/// </param>
 	/// <param name="acknowledgedProcesses">Process codes the user agreed to affect.</param>
 	/// <returns>The saved service, or a refusal listing the affected processes.</returns>
@@ -114,7 +116,7 @@ public sealed class WebServiceDesigner(
 		try {
 			JsonNode root = JsonNode.Parse(metadata.TrimStart('\uFEFF'));
 			return root?["MetaData"]?["Schema"]?["IQ1"] is JsonValue value && value.TryGetValue(out string uri)
-				? WebServiceSchemaView.StripUserInfo(uri)
+				? WebServiceSchemaView.ShownUri(uri)
 				: null;
 		} catch (JsonException) {
 			return null;
@@ -196,15 +198,17 @@ public sealed class WebServiceDesigner(
 
 	/// <summary>
 	/// The refusal of the usage guard. A changed or removed method leaves its callers' elements with mappings that point
-	/// at nothing; a new SOAP version or new namespaces leave the elements as they are (measured: element unchanged in the
-	/// designer, the run returned the result) but change every call they make. Both need the user's yes.
+	/// at nothing; a new base URI, authentication, SOAP version or namespace list leaves the elements as they are
+	/// (measured for the SOAP version and namespaces: element unchanged in the designer, the run returned the result) but
+	/// changes the calls they make. Both need the user's yes.
 	/// </summary>
+	/// <param name="everyCallChanges">What this call changes for every call, as named to the user (e.g. "base URI").</param>
 	private static string UsageRefusal(IReadOnlyList<WebServiceOperationArg> operations,
-		IReadOnlyList<WebServiceUsage> unacknowledged) {
+		IReadOnlyList<WebServiceUsage> unacknowledged, IReadOnlyCollection<string> everyCallChanges) {
 		var restructured = new HashSet<string>(operations
 			.Select(o => o?.Op switch {
-				"setMethod" => o.Method?.Code,
-				"removeMethod" => o.MethodCode,
+				SetMethodOp => o.Method?.Code,
+				RemoveMethodOp => o.MethodCode,
 				_ => null
 			})
 			.Where(c => !string.IsNullOrWhiteSpace(c)), StringComparer.OrdinalIgnoreCase);
@@ -217,13 +221,22 @@ public sealed class WebServiceDesigner(
 			reasons.Add("the changed or removed methods are called by processes that would break silently (their "
 				+ "elements lose their parameters on the next designer load and fail at run time)");
 		}
-		if (unacknowledged.Any(u => !Breaks(u))) {
-			reasons.Add("the new SOAP version or namespaces change every call the other listed processes make (their "
-				+ "elements keep their parameters); re-run those processes afterwards to check them");
+		// Named whenever the call makes one, also to a process whose method breaks: the user must hear that the address
+		// or the credentials change too, not only that a method does.
+		if (everyCallChanges.Count > 0) {
+			string what = string.Join(" and ", everyCallChanges);
+			string verb = everyCallChanges.Count > 1 ? "change" : "changes";
+			reasons.Add($"the new {what} {verb} every call the listed processes make (an element whose method is not "
+				+ "changed keeps its parameters); re-run those processes afterwards to check them");
 		}
 		return $"Refused: {string.Join("; and ", reasons)}. Show these processes to the user and, only on their yes, "
 			+ "repeat the call with acknowledge-usages naming them.";
 	}
+
+	// The method operations of modify-web-service, as the agent names them.
+	private const string AddMethodOp = "addMethod";
+	private const string SetMethodOp = "setMethod";
+	private const string RemoveMethodOp = "removeMethod";
 
 	public WebServiceToolResult Modify(string code, IReadOnlyList<WebServiceOperationArg> operations,
 		IReadOnlyList<string> acknowledgedProcesses) {
@@ -239,10 +252,17 @@ public sealed class WebServiceDesigner(
 			throw new ArgumentException($"'{schema.Name}' is a {WebServiceSchemaView.TypeName(schema.Type)} service, "
 				+ "which these tools cannot change; change it in Studio > Web services.");
 		}
+		operations = RestoreMaskedUris(schema, operations);
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		var changedMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		// What decides every call, before the call: compared with the result after the whole call, so a value changed and
+		// changed back, or describe output sent back, is not a change.
+		string baseUriBefore = schema.BaseUri;
+		string authBefore = AuthSignature(schema.AuthInfo);
+		string namespacesBefore = WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces);
+		Dictionary<string, bool> useAuthBefore = UseAuthByMethod(schema);
 		// Only a method definition carries codes the prefix rule applies to; skip the read otherwise.
-		string prefix = operations.Any(o => o?.Op is "addMethod" or "setMethod") ? prefixReader.Read() : null;
+		string prefix = operations.Any(o => o?.Op is AddMethodOp or SetMethodOp) ? prefixReader.Read() : null;
 		IReadOnlyCollection<(string Owner, string Code)> referencesBefore =
 			WebServiceDefinitionBuilder.CollectSysSettingReferences(schema);
 		// Methods are checked against the base URI, the namespaces and the authentication as they are after the whole
@@ -259,9 +279,10 @@ public sealed class WebServiceDesigner(
 			lastSetBaseUri is null ? null : schema.BaseUri, soap && lastSetNamespaces is not null);
 		var builtMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		foreach (WebServiceOperationArg operation in operations) {
-			Apply(schema, operation, prefix, methodsUseAuth, finalBaseUri, builtMethods, changedMethods, errors,
-				soapContext);
+			Apply(schema, operation, prefix, methodsUseAuth, finalBaseUri, builtMethods, changedMethods, errors, soapContext);
 		}
+		List<string> everyCallChanges = EveryCallChanges(schema, changedMethods, baseUriBefore, authBefore,
+			namespacesBefore, typeBefore);
 		ValidateKeptMethods(schema, builtMethods, before, errors);
 		(IReadOnlyCollection<string> settings, IReadOnlyList<string> missingKept) =
 			RequireSysSettings(schema, referencesBefore, errors);
@@ -272,18 +293,35 @@ public sealed class WebServiceDesigner(
 		var acknowledged = new HashSet<string>(acknowledgedProcesses ?? [], StringComparer.OrdinalIgnoreCase);
 		List<WebServiceUsage> unacknowledged = affected.Where(u => !acknowledged.Contains(u.Process)).ToList();
 		if (unacknowledged.Count > 0) {
-			return new WebServiceToolResult(false, UsageRefusal(operations, unacknowledged), Usages: unacknowledged);
+			return new WebServiceToolResult(false, UsageRefusal(operations, unacknowledged, everyCallChanges),
+				Usages: unacknowledged);
 		}
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
-		// A switch to SOAP 1.1 makes every method's empty action matter, not only the methods this call built.
-		bool becameSoap11 = typeBefore != schema.Type;
-		IEnumerable<string> soapActionNotices = soap
-			? SoapActionNotices(schema,
-				schema.Methods.Items.Values.Where(m => becameSoap11 || builtMethods.Contains(m.Name ?? "")))
-			: [];
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
-			Usages: affected, Notices: [.. soapActionNotices, .. Notices(settings, row.Package, missingKept)]);
+			Usages: affected,
+			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations, useAuthBefore),
+				.. Notices(settings, row.Package, missingKept)]);
+	}
+
+	/// <summary>
+	/// The notices a saved change owes the user: empty SOAP actions of the methods it built (of every method after a
+	/// switch to SOAP 1.1), and the methods that send no authentication after it changed the authentication.
+	/// </summary>
+	private static IEnumerable<string> SavedChangeNotices(ServiceSchemaDto schema, bool soap, int typeBefore,
+		ISet<string> builtMethods, string authBefore, IReadOnlyList<WebServiceOperationArg> operations,
+		IReadOnlyDictionary<string, bool> useAuthBefore) {
+		var notices = new List<string>();
+		if (soap) {
+			// A switch to SOAP 1.1 makes every method's empty action matter, not only the methods this call built.
+			bool becameSoap11 = typeBefore != schema.Type;
+			notices.AddRange(SoapActionNotices(schema,
+				schema.Methods.Items.Values.Where(m => becameSoap11 || builtMethods.Contains(m.Name ?? ""))));
+		}
+		if (AuthSignature(schema.AuthInfo) != authBefore) {
+			notices.AddRange(NoAuthMethodNotices(schema, ExplicitUseAuthMethods(operations, useAuthBefore)));
+		}
+		return notices;
 	}
 
 	public WebServiceTestResult TestMethod(string code, string methodCode,
@@ -308,8 +346,9 @@ public sealed class WebServiceDesigner(
 		}
 		// The codes the call gave a value, nested ones included, tell an array the platform skipped from one the
 		// lookup missed.
-		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, result.RequestRawData,
-			result.RequestBody, HasAuth(schema), call.SentCodes, out bool secretUnlocated);
+		IReadOnlyList<string> secrets = WithUriQuerySecrets(WebServiceResponseMasker.SentSecrets(method,
+			result.RequestRawData, result.RequestBody, HasAuth(schema), call.SentCodes, out bool secretUnlocated),
+			schema, method);
 		if (!string.IsNullOrEmpty(result.Error) && string.IsNullOrEmpty(result.RequestRawData)
 			&& string.IsNullOrEmpty(result.RequestBody) && WebServiceResponseMasker.HasCredentialResponseDefault(method)) {
 			// A failure with nothing reported as sent may come from converting a response default after the call (a
@@ -474,11 +513,11 @@ public sealed class WebServiceDesigner(
 		WebServiceDefinitionBuilder.Errors errors, WebServiceDefinitionBuilder.SoapContext soap) {
 		WebServiceDefinitionBuilder.RejectUnknownFields(operation?.ExtensionData, $"op '{operation?.Op}'", errors);
 		switch (operation?.Op) {
-			case "addMethod":
+			case AddMethodOp:
 				AddMethod(schema, operation.Method, prefix, methodsUseAuth, finalBaseUri, errors, soap);
 				builtMethods.Add(operation.Method?.Code ?? string.Empty);
 				break;
-			case "setMethod":
+			case SetMethodOp:
 				ServiceMethodDto existing = FindMethod(schema, operation.Method?.Code);
 				if (existing is null) {
 					errors.Add($"setMethod: method '{operation.Method?.Code}' does not exist; use addMethod.");
@@ -493,7 +532,7 @@ public sealed class WebServiceDesigner(
 					changedMethods.Add(existing.Name);
 				}
 				break;
-			case "removeMethod":
+			case RemoveMethodOp:
 				ServiceMethodDto removed = FindMethod(schema, operation.MethodCode);
 				if (removed is null) {
 					errors.Add($"removeMethod: method '{operation.MethodCode}' does not exist.");
@@ -510,21 +549,13 @@ public sealed class WebServiceDesigner(
 					errors.Add("setNamespaces: a REST service has no namespaces.");
 					break;
 				}
-				string before = WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces);
 				schema.Namespaces = WebServiceDefinitionBuilder.BuildNamespaces(operation.Namespaces, schema.Namespaces, errors);
-				// describe output sent back unchanged is not a change of every call.
-				if (WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces) != before) {
-					ChangeEveryMethod(schema, changedMethods);
-				}
 				break;
 			case "setType":
-				int typeBefore = schema.Type;
 				SetType(schema, operation.Type, soap is not null, errors);
-				if (schema.Type != typeBefore) {
-					ChangeEveryMethod(schema, changedMethods);
-				}
 				break;
 			case "setRetryCount":
+				// Retries change no request the API receives, so no caller has to agree.
 				schema.RetryCount = Math.Max(operation.RetryCount ?? 0, 0);
 				break;
 			case "setAuth":
@@ -598,13 +629,133 @@ public sealed class WebServiceDesigner(
 	}
 
 	/// <summary>
-	/// The namespaces and the SOAP version decide every call of the service, so changing them counts as changing every
-	/// method for the usage guard.
+	/// What the call changed for the calls processes make, judged by the service before and after the whole call. The base
+	/// URI, the namespaces and the SOAP version decide every call, so each counts as changing every method. The
+	/// authentication is attached only by a method with use-auth (measured), so new authentication counts as changing the
+	/// methods that send it after the call; a method that sends none makes the same request as before.
 	/// </summary>
-	private static void ChangeEveryMethod(ServiceSchemaDto schema, ISet<string> changedMethods) {
-		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
-			changedMethods.Add(method.Name);
+	/// <returns>What changed, as the refusal names it to the user.</returns>
+	private static List<string> EveryCallChanges(ServiceSchemaDto schema, ISet<string> changedMethods, string baseUriBefore,
+		string authBefore, string namespacesBefore, int typeBefore) {
+		var changes = new List<string>();
+		void Every(string what) {
+			foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+				changedMethods.Add(method.Name);
+			}
+			changes.Add(what);
 		}
+		if (!string.Equals(schema.BaseUri, baseUriBefore, StringComparison.Ordinal)) {
+			Every("base URI");
+		}
+		if (WebServiceDefinitionBuilder.NamespaceSignature(schema.Namespaces) != namespacesBefore) {
+			Every("namespace list");
+		}
+		if (schema.Type != typeBefore) {
+			Every("SOAP version");
+		}
+		if (AuthSignature(schema.AuthInfo) != authBefore) {
+			List<string> sending = schema.Methods.Items.Values.Where(m => m.UseAuthInfo).Select(m => m.Name).ToList();
+			if (sending.Count > 0) {
+				changedMethods.UnionWith(sending);
+				changes.Add("authentication");
+			}
+		}
+		return changes;
+	}
+
+	/// <summary>
+	/// The authentication as one comparable string: its type and every value with its source. No authentication and
+	/// type none read the same, as the platform sends nothing for either.
+	/// </summary>
+	private static string AuthSignature(ServiceAuthInfoDto auth) {
+		if (auth is null || auth.AuthType == ServiceSchemaCodes.AuthNone) {
+			return string.Empty;
+		}
+		IEnumerable<string> values = (auth.Values?.Items ?? [])
+			.OrderBy(v => v.Key, StringComparer.OrdinalIgnoreCase)
+			.Select(v => $"{v.Key.ToLowerInvariant()}={v.Value?.Source}:{v.Value?.Value}");
+		return $"{auth.AuthType}|{string.Join("|", values)}";
+	}
+
+	// The most method names one notice lists; the rest are counted.
+	private const int MaxNamedMethods = 20;
+
+	/// <summary>
+	/// After a call that changed the authentication and left the service with some: the methods with use-auth false, which
+	/// still send no Authorization header (the platform attaches it per method; measured on SOAP 1.2, the same code path
+	/// for REST). A method this call defined with an explicit use-auth is left out: that was the agent's choice.
+	/// </summary>
+	private static IEnumerable<string> NoAuthMethodNotices(ServiceSchemaDto schema, IReadOnlySet<string> explicitUseAuth) {
+		if (!HasAuth(schema)) {
+			return [];
+		}
+		List<string> without = schema.Methods.Items.Values.Where(m => !m.UseAuthInfo && !explicitUseAuth.Contains(m.Name ?? ""))
+			.Select(m => m.Name).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+		if (without.Count == 0) {
+			return [];
+		}
+		string named = string.Join(", ", without.Take(MaxNamedMethods).Select(n => $"'{n}'"))
+			+ (without.Count > MaxNamedMethods ? $" and {without.Count - MaxNamedMethods} more" : string.Empty);
+		string subject = without.Count == 1 ? $"Method {named} has" : $"Methods {named} have";
+		return [$"{subject} use-auth false, so the new authentication is not sent with {(without.Count == 1 ? "it" : "them")}. "
+			+ "Ask the user whether it should be; do not change use-auth yourself. Only on their yes, repeat the "
+			+ "definition with use-auth true in setMethod."];
+	}
+
+	/// <summary>
+	/// The codes of the methods this call defines with an explicit use-auth: an addMethod that gives one (a method
+	/// removed and added again included), or a setMethod whose use-auth differs from the stored value. describe-web-service prints use-auth on every method, so a
+	/// setMethod copied from it carries the stored value, which is not a choice the agent made.
+	/// </summary>
+	private static IReadOnlySet<string> ExplicitUseAuthMethods(IReadOnlyList<WebServiceOperationArg> operations,
+		IReadOnlyDictionary<string, bool> useAuthBefore) =>
+		operations.Where(o => o?.Op is AddMethodOp or SetMethodOp && o.Method?.UseAuth is { } useAuth
+				&& (o.Op == AddMethodOp || !useAuthBefore.TryGetValue(o.Method.Code ?? string.Empty, out bool stored)
+					|| stored != useAuth))
+			.Select(o => o.Method.Code ?? string.Empty)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// describe-web-service masks a secret query value of a stored base URI, method URI or SOAP action; sent back
+	/// unchanged, that masked form means the stored value, so the round trip neither stores the placeholder nor loses
+	/// the value.
+	/// </summary>
+	private static List<WebServiceOperationArg> RestoreMaskedUris(ServiceSchemaDto schema,
+		IReadOnlyList<WebServiceOperationArg> operations) =>
+		operations.Select(o => o switch {
+			{ Op: "setBaseUri" } => o with {
+				BaseUri = WebServiceSchemaView.RestoreMaskedUriQuery(o.BaseUri, schema.BaseUri)
+			},
+			{ Op: SetMethodOp, Method: { } method } when FindMethod(schema, method.Code) is { } stored => o with {
+				Method = method with {
+					Uri = WebServiceSchemaView.RestoreMaskedUriQuery(method.Uri, stored.Request?.Uri),
+					SoapAction = WebServiceSchemaView.RestoreMaskedUriQuery(method.SoapAction, stored.SoapAction)
+				}
+			},
+			_ => o
+		}).ToList();
+
+	/// <summary>
+	/// The secrets to mask in a test call's result, plus the secret query values of the stored base URI, method URI
+	/// and SOAP action: they go out on every call and an API may echo them, and describe-web-service hides them too.
+	/// </summary>
+	private static IReadOnlyList<string> WithUriQuerySecrets(IReadOnlyList<string> secrets, ServiceSchemaDto schema,
+		ServiceMethodDto method) =>
+		secrets.Concat(WebServiceSchemaView.UriQuerySecrets(schema.BaseUri))
+			.Concat(WebServiceSchemaView.UriQuerySecrets(method.Request?.Uri))
+			.Concat(WebServiceSchemaView.UriQuerySecrets(method.SoapAction))
+			.Where(s => s is { Length: >= WebServiceResponseMasker.MinMaskedLength })
+			.Distinct(StringComparer.Ordinal)
+			.OrderByDescending(s => s.Length)
+			.ToList();
+
+	/// <summary>Each method's stored use-auth by code, read before a change is applied.</summary>
+	private static Dictionary<string, bool> UseAuthByMethod(ServiceSchemaDto schema) {
+		var result = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+			result[method.Name ?? string.Empty] = method.UseAuthInfo;
+		}
+		return result;
 	}
 
 	/// <summary>Switches a SOAP service between 1.1 and 1.2; Studio offers no other change of type.</summary>

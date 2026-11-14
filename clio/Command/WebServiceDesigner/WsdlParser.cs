@@ -75,7 +75,10 @@ public sealed record WsdlPort(string Name, string ServiceName, int ServiceType, 
 /// <summary>The SOAP ports of a WSDL and what the parser could not read.</summary>
 /// <param name="Ports">The SOAP 1.1 and SOAP 1.2 ports, in WSDL order.</param>
 /// <param name="StudioPort">The port Studio's quick setup picks: the first SOAP 1.2 one, else the first; null when none.</param>
-/// <param name="Warnings">Ports dropped, elements not read and constructs the wizard does not support.</param>
+/// <param name="Warnings">
+/// Ports dropped, elements not read, constructs the wizard does not support, and ports the platform may not be able to
+/// call (SOAP 1.2, WS-Addressing, message security).
+/// </param>
 /// <param name="WarningsDropped">How many more distinct warnings there were past <see cref="WsdlParser.MaxWarnings"/>.</param>
 /// <param name="DroppedNamesWithQuestionMark">
 /// Whether a name left out for not being an XML name contained '?', which is what the platform's ASCII download makes of a
@@ -123,8 +126,20 @@ public sealed partial class WsdlParser : IWsdlParser {
 	internal const string Soap11BindingNamespace = "http://schemas.xmlsoap.org/wsdl/soap/";
 	internal const string Soap12BindingNamespace = "http://schemas.xmlsoap.org/wsdl/soap12/";
 	private const string Wsdl20Namespace = "http://www.w3.org/ns/wsdl";
+	// WSDL 1.1, whose wsdl:required marks an extension element in a binding as required.
+	private const string Wsdl11Namespace = "http://schemas.xmlsoap.org/wsdl/";
 	private const string XmlSchemaNamespace = "http://www.w3.org/2001/XMLSchema";
 	private const string MimeNamespace = "http://schemas.xmlsoap.org/wsdl/mime/";
+	// WS-Addressing markers a binding's policy carries (WCF writes wsaw:UsingAddressing; WS-Policy 1.5 uses wsam:Addressing).
+	private const string WsawNamespace = "http://www.w3.org/2006/05/addressing/wsdl";
+	private const string WsamNamespace = "http://www.w3.org/2007/05/addressing/metadata";
+	// WCF's marker for WS-Addressing August 2004 (MessageVersion.Soap12WSAddressingAugust2004).
+	private const string WsapNamespace = "http://schemas.xmlsoap.org/ws/2004/08/addressing/policy";
+	// The namespaces of the wsa:Action and wsa:To headers such a binding expects.
+	private const string WsaNamespace = "http://www.w3.org/2005/08/addressing";
+	private const string WsaAugust2004Namespace = "http://schemas.xmlsoap.org/ws/2004/08/addressing";
+	// The namespace WCF declares on every WSDL it writes.
+	private const string WcfContractNamespace = "http://schemas.microsoft.com/ws/2005/12/wsdl/contract";
 	private const int MaxCharactersInDocument = 20_000_000;
 
 	/// <summary>The wizard's longest code; read-wsdl keeps it only for the service code, a schema name (ADR D11).</summary>
@@ -754,6 +769,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 			string studioPort = (candidates.FirstOrDefault(p => p.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12)
 				?? candidates.FirstOrDefault())?.Name;
 			List<PortCandidate> selected = SelectPorts(candidates, studioPort);
+			ReportDispatchRisks(definitions, candidates, selected);
 			List<WsdlPort> ports = selected.Select(c => BuildPort(definitions, c)).ToList();
 			CheckWantedOperations(definitions, candidates, selected, ports);
 			return new WsdlDocument(ports, studioPort, _warnings, _warningsDropped, _droppedNamesWithQuestionMark);
@@ -974,6 +990,254 @@ public sealed partial class WsdlParser : IWsdlParser {
 				}
 			}
 			return (_namespaces.ToList(), built.Select(b => b.Operation).ToList());
+		}
+
+		/// <summary>
+		/// Warns about ports the platform may not be able to call as the WSDL describes them (measured against WCF): a SOAP
+		/// 1.2 port gets its action only as a SOAPAction header, never as the action parameter of Content-Type that SOAP 1.2
+		/// stacks such as WCF dispatch by; a port whose binding requires WS-Addressing gets no wsa:Action or wsa:To in the
+		/// envelope; a port whose policy requires WS-Security message security cannot be called at all. Each warning names
+		/// a SOAP 1.1 port of the same port type that needs neither, preferring one of the same service at the same scheme
+		/// and host; one elsewhere is named with that difference and left to the user. A plain SOAP 1.2 port is a definite
+		/// failure only on WCF (an ASMX service answers, measured), so outside a WSDL WCF wrote the SOAP 1.1 port is named
+		/// as the way out after a failed test call, not as the port to register.
+		/// </summary>
+		private void ReportDispatchRisks(XElement definitions, List<PortCandidate> candidates, List<PortCandidate> selected) {
+			var requirements = new BindingRequirements(definitions, CheckClock);
+			bool? wcf = null;
+			foreach (PortCandidate port in selected) {
+				BindingRequirement required = requirements.Of(port.Binding);
+				if (!required.MessageSecurity && required.AddressingNamespace is null
+						&& port.ServiceType != ServiceSchemaCodes.ServiceTypeSoap12) {
+					continue;
+				}
+				Soap11Port alternative = Soap11Alternative(port, candidates, requirements);
+				string instead = alternative?.Instead();
+				if (required.MessageSecurity) {
+					Warn($"Port '{port.Name}' requires WS-Security message security (its binding policy), which the platform "
+						+ "cannot produce, so it cannot be called from Creatio." + (instead ?? " Ask the API owner for an "
+							+ "endpoint without message security (for WCF, a basicHttpBinding)."));
+				} else if (required.AddressingNamespace is not null) {
+					Warn($"Port '{port.Name}' requires WS-Addressing (its binding): the platform writes no wsa:Action or "
+						+ "wsa:To into the envelope, so such a service (WCF wsHttpBinding with security mode None among them) "
+						+ "refuses every call (DestinationUnreachable, To '')."
+						+ (instead ?? $" If the user needs this port, declare the namespace {required.AddressingNamespace} and "
+							+ "give each method two soap-header body parameters (prefixed codes) with the paths wsa:Action (its "
+							+ "soap-action) and wsa:To (the base URI), filled from system settings or the process; then test a "
+							+ "call."));
+				} else if (wcf ??= WrittenByWcf(definitions)) {
+					Warn($"Port '{port.Name}' is SOAP 1.2 and the WSDL was written by WCF: the platform sends the action only as "
+						+ "a SOAPAction header, not as the action parameter of Content-Type that WCF dispatches SOAP 1.2 by, so "
+						+ "WCF answers every call with ActionNotSupported (Action '')."
+						+ (instead ?? " If the user needs this port, give each method a request header parameter (a prefixed "
+							+ "code) with the path Content-Type and the value "
+							+ "application/soap+xml;charset=utf-8;action=\"<its soap-action>\", one per method, from a system "
+							+ "setting or the process; then test a call."));
+				} else {
+					Warn($"Port '{port.Name}' is SOAP 1.2: the platform sends the action only as a SOAPAction header. An ASMX "
+						+ "service answers (measured); one that dispatches SOAP 1.2 by the action parameter of Content-Type "
+						+ "fails because the action or operation is not found (WCF: ActionNotSupported, Action ''). Keep this "
+						+ "port; if a test call fails so, "
+						+ (alternative is null
+							? "give the method a request header parameter (a prefixed code) with the path Content-Type and the "
+								+ "value application/soap+xml;charset=utf-8;action=\"<its soap-action>\" from a system setting or "
+								+ "the process."
+							: $"switch to port '{alternative.Port.Name}' (SOAP 1.1){alternative.Caveat()}."));
+				}
+			}
+		}
+
+		/// <summary>
+		/// A SOAP 1.1 port to use instead of a warned one.
+		/// </summary>
+		/// <param name="Port">The SOAP 1.1 port.</param>
+		/// <param name="Difference">
+		/// Null when it is of the same scheme and host as the warned port; otherwise how its address differs, because the
+		/// credentials set up later would go there (readable, when it is http and the warned port https).
+		/// </param>
+		private sealed record Soap11Port(PortCandidate Port, string Difference) {
+			/// <summary>The sentence a definite failure ends with: register it, or ask first when its address differs.</summary>
+			public string Instead() => Difference is null
+				? $" Register port '{Port.Name}' (SOAP 1.1) instead."
+				: $" Port '{Port.Name}' (SOAP 1.1) can be called but has {Difference}: show the user its base-uri and register "
+					+ "it only on their yes.";
+
+			/// <summary>The clause a conditional advice adds: how to switch, and the user's yes when the address differs.</summary>
+			public string Caveat() => Difference is null
+				? " (modify-web-service setType soap11, and setBaseUri to its base-uri when that differs)"
+				: $", which has {Difference}: show the user its base-uri and switch only on their yes";
+		}
+
+		// Whether WCF wrote the WSDL: WCF declares its contract namespace on every WSDL document it writes (?singleWsdl and
+		// the root of ?wsdl, which the merge keeps). An addressing Action on a port-type message is not a sign: Axis2 and the
+		// JAX-WS RI write one too.
+		private static bool WrittenByWcf(XElement definitions) =>
+			definitions.Attributes().Any(a => a.IsNamespaceDeclaration && a.Value == WcfContractNamespace);
+
+		// A SOAP 1.1 port of the same port type that needs neither WS-Addressing nor message security, or null when there is
+		// none: one of the same service at the warned port's scheme and host first, else the first with its difference.
+		private static Soap11Port Soap11Alternative(PortCandidate port, List<PortCandidate> candidates,
+			BindingRequirements requirements) {
+			string portType = LocalPart(Attr(port.Binding, "type"));
+			List<PortCandidate> alternatives = candidates.Where(c => c.ServiceType == ServiceSchemaCodes.ServiceTypeSoap11
+					&& LocalPart(Attr(c.Binding, "type")) == portType && requirements.Of(c.Binding).IsPlain)
+				.OrderBy(c => c.Service == port.Service ? 0 : 1)
+				.ToList();
+			if (alternatives.Count == 0) {
+				return null;
+			}
+			Uri warned = AddressOf(port);
+			PortCandidate same = alternatives.FirstOrDefault(c => AddressOf(c) is { } a && warned is not null
+				&& string.Equals(a.Scheme, warned.Scheme, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(a.Host, warned.Host, StringComparison.OrdinalIgnoreCase));
+			if (same is not null) {
+				return new Soap11Port(same, null);
+			}
+			PortCandidate other = alternatives[0];
+			return new Soap11Port(other, AddressDifference(warned, AddressOf(other)));
+		}
+
+		// How the alternative's address differs from the warned port's, as the warning names it.
+		private static string AddressDifference(Uri warned, Uri address) {
+			if (address is null || warned is null) {
+				return "an address that could not be compared with this port's";
+			}
+			bool dropsHttps = string.Equals(warned.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+				&& !string.Equals(address.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+			return dropsHttps
+				? "an http address where this port's is https, so authentication would travel readable"
+				: $"an address on another host ({Shown(address.Host)})";
+		}
+
+		private static Uri AddressOf(PortCandidate port) =>
+			Uri.TryCreate(Attr(port.Address, "location"), UriKind.Absolute, out Uri uri) ? uri : null;
+
+		/// <summary>What a binding requires that the platform cannot send.</summary>
+		/// <param name="AddressingNamespace">The WS-Addressing namespace its headers would need; null when not required.</param>
+		/// <param name="MessageSecurity">Whether its policy requires WS-Security message security.</param>
+		private sealed record BindingRequirement(string AddressingNamespace, bool MessageSecurity) {
+			public bool IsPlain => AddressingNamespace is null && !MessageSecurity;
+		}
+
+		/// <summary>
+		/// Reads what a binding requires from markers in the binding itself and in the wsp:Policy elements it references by
+		/// <c>wsp:PolicyReference URI="#id"</c>. In a policy a marker is required unless it is under wsp:Optional="true";
+		/// an extension element directly in the binding (not in a policy) only with wsdl:required="true", as WSDL 1.1 reads
+		/// extensions. Each binding and each policy is walked once, top-down, with the parse clock checked, so a hostile WSDL
+		/// cannot make the scan outrun the parse limit. Policy normal form with an empty alternative, nested policy
+		/// references and policies attached to a port are not read.
+		/// </summary>
+		private sealed class BindingRequirements(XElement definitions, Action checkClock) {
+			// The WS-Addressing markers and the addressing namespace the envelope headers would need for each.
+			private static readonly Dictionary<XName, string> AddressingMarkers = new() {
+				[XName.Get("UsingAddressing", WsawNamespace)] = WsaNamespace,
+				[XName.Get("Addressing", WsamNamespace)] = WsaNamespace,
+				[XName.Get("UsingAddressing", WsapNamespace)] = WsaAugust2004Namespace
+			};
+
+			// WS-SecurityPolicy assertions for message security (a transport binding is plain HTTPS and is not one).
+			private static readonly HashSet<string> SecurityPolicyNamespaces = new(StringComparer.Ordinal) {
+				"http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200702",
+				"http://docs.oasis-open.org/ws-sx/ws-securitypolicy/200512",
+				"http://schemas.xmlsoap.org/ws/2005/07/securitypolicy"
+			};
+
+			private readonly Dictionary<XElement, BindingRequirement> _byScope = new();
+			private Dictionary<string, XElement> _policies;
+			private int _visited;
+
+			/// <summary>What the binding requires, its policies included.</summary>
+			public BindingRequirement Of(XElement binding) {
+				if (_byScope.TryGetValue(binding, out BindingRequirement known)) {
+					return known;
+				}
+				BindingRequirement result = Scan(binding, inPolicy: false);
+				_policies ??= PoliciesById();
+				foreach (string id in binding.Descendants().Where(e => Is(e, "PolicyReference"))
+						.Select(r => Attr(r, "URI"))
+						.Where(uri => uri is { Length: > 1 } && uri[0] == '#')
+						.Select(uri => uri[1..])
+						.Distinct(StringComparer.Ordinal)) {
+					Tick();
+					if (_policies.TryGetValue(id, out XElement policy)) {
+						BindingRequirement fromPolicy = Scan(policy, inPolicy: true);
+						result = new BindingRequirement(result.AddressingNamespace ?? fromPolicy.AddressingNamespace,
+							result.MessageSecurity || fromPolicy.MessageSecurity);
+					}
+				}
+				_byScope[binding] = result;
+				return result;
+			}
+
+			private BindingRequirement Scan(XElement scope, bool inPolicy) {
+				if (inPolicy && _byScope.TryGetValue(scope, out BindingRequirement cached)) {
+					return cached;
+				}
+				string addressing = null;
+				bool security = false;
+				var stack = new Stack<(XElement Element, bool Optional, bool InPolicy)>();
+				stack.Push((scope, false, inPolicy));
+				while (stack.Count > 0 && (addressing is null || !security)) {
+					Tick();
+					(XElement element, bool inherited, bool underPolicy) = stack.Pop();
+					bool optional = inherited || IsTrue(Attribute(element, "Optional"));
+					bool policy = underPolicy || Is(element, "Policy");
+					if (!optional) {
+						addressing ??= RequiredAddressing(element, policy);
+						security = security || (policy && IsMessageSecurity(element));
+					}
+					foreach (XElement child in element.Elements()) {
+						stack.Push((child, optional, policy));
+					}
+				}
+				var found = new BindingRequirement(addressing, security);
+				if (inPolicy) {
+					_byScope[scope] = found;
+				}
+				return found;
+			}
+
+			// The addressing namespace a marker requires: in a policy by its presence, directly in a binding only with
+			// wsdl:required="true" (WSDL 1.1 reads an extension without it as optional). Null for any other element.
+			private static string RequiredAddressing(XElement element, bool inPolicy) =>
+				AddressingMarkers.TryGetValue(element.Name, out string ns)
+				&& (inPolicy || IsTrue((string)element.Attribute(XName.Get("required", Wsdl11Namespace))))
+					? ns
+					: null;
+
+			// A WS-SecurityPolicy symmetric or asymmetric binding: message security (a transport binding is plain HTTPS).
+			private static bool IsMessageSecurity(XElement element) =>
+				SecurityPolicyNamespaces.Contains(element.Name.NamespaceName)
+				&& element.Name.LocalName is "SymmetricBinding" or "AsymmetricBinding";
+
+			// The wsp:Policy elements of the document by their wsu:Id (or xml:id).
+			private Dictionary<string, XElement> PoliciesById() {
+				var policies = new Dictionary<string, XElement>(StringComparer.Ordinal);
+				foreach (XElement policy in definitions.Descendants()) {
+					Tick();
+					if (!Is(policy, "Policy")) {
+						continue;
+					}
+					string id = policy.Attributes().FirstOrDefault(a => a.Name.LocalName is "Id" or "id")?.Value;
+					if (!string.IsNullOrEmpty(id)) {
+						policies.TryAdd(id, policy);
+					}
+				}
+				return policies;
+			}
+
+			private static string Attribute(XElement element, string localName) =>
+				element.Attributes().FirstOrDefault(a => a.Name.LocalName == localName)?.Value;
+
+			// xs:boolean true: "true" or "1".
+			private static bool IsTrue(string value) =>
+				value is not null && (value.Trim() == "1" || string.Equals(value.Trim(), "true", StringComparison.OrdinalIgnoreCase));
+
+			private void Tick() {
+				if ((++_visited & 1023) == 0) {
+					checkClock();
+				}
+			}
 		}
 
 		private void ReportBindingStyle(string portName, XElement binding) {

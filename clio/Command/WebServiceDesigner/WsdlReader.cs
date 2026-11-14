@@ -19,15 +19,19 @@ namespace Clio.Command.WebServiceDesigner;
 /// <param name="Port">One port to return; all SOAP ports when null.</param>
 /// <param name="ServiceCode">An existing SOAP service the operations are read for; null for a new service.</param>
 /// <param name="Operations">The operations to return; all when null.</param>
+/// <param name="Code">
+/// The code the user named for a NEW service; it replaces the code built from the WSDL service name. Exclusive with
+/// <paramref name="ServiceCode"/>.
+/// </param>
 public sealed record WsdlReadRequest(string EnvironmentName, string WsdlUrl, IReadOnlyList<string> WsdlFiles,
-	string Port = null, string ServiceCode = null, IReadOnlyList<string> Operations = null);
+	string Port = null, string ServiceCode = null, IReadOnlyList<string> Operations = null, string Code = null);
 
 /// <summary>One SOAP port of the WSDL as read-wsdl returns it.</summary>
 public sealed record WsdlServiceView(
 	[property: JsonPropertyName("port")] string Port,
 
 	[property: JsonPropertyName("studio-pick")]
-	[property: Description("True for the port Studio's quick setup would create: the SOAP 1.2 one when the WSDL has both")]
+	[property: Description("True for the port Studio's quick setup would create: the SOAP 1.2 one when the WSDL has both. Not a recommendation: a warning names the port to register when the platform cannot call this one")]
 	bool StudioPick,
 
 	[property: JsonPropertyName("arguments")]
@@ -55,7 +59,7 @@ public sealed record WsdlReadResult(
 	IReadOnlyList<WsdlServiceView> Services = null,
 
 	[property: JsonPropertyName("warnings")]
-	[property: Description("What was not read or will need a check: dropped ports, operations and elements, unsupported constructs")]
+	[property: Description("What was not read or will need a check: dropped ports, operations and elements, unsupported constructs, and ports the platform may not be able to call (SOAP 1.2, WS-Addressing, message security) with the port to register instead or to switch to after a failed test call")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	IReadOnlyList<string> Warnings = null,
 
@@ -72,9 +76,9 @@ public interface IWsdlReader {
 	/// <param name="request">The request.</param>
 	/// <returns>The ports with warnings, or operation names only when the result would be too large.</returns>
 	/// <exception cref="ArgumentException">
-	/// The request names both or neither source, a URL carries credentials or a key, a path is not a local absolute one, a
-	/// file cannot be read or is too large, the WSDL cannot be read, or the port, an operation or the service code is not
-	/// there.
+	/// The request names both or neither source, or both code and service-code; code is not a Latin identifier with the
+	/// schema-name prefix; a URL carries credentials or a key, a path is not a local absolute one, a file cannot be read or
+	/// is too large, the WSDL cannot be read, or the port, an operation or the service code is not there.
 	/// </exception>
 	/// <exception cref="UnauthorizedAccessException">The environment user lacks CanManageSolution.</exception>
 	/// <exception cref="InvalidOperationException">
@@ -111,10 +115,6 @@ public sealed partial class WsdlReader(
 	/// <summary>The most characters of a platform download error shown.</summary>
 	private const int MaxShownErrorLength = 500;
 
-	// Query parameters that carry a key in common hosting (an Azure SAS signature, an Azure Functions key) but are not
-	// matched by the credential-name pattern.
-	private static readonly HashSet<string> SecretQueryNames = new(StringComparer.OrdinalIgnoreCase) { "sig", "sas", "code" };
-
 	// Cloud metadata host names that resolve to a link-local address on the stand's own network.
 	private static readonly HashSet<string> MetadataHosts = new(StringComparer.OrdinalIgnoreCase) {
 		"metadata", "metadata.google.internal", "metadata.azure.internal", "instance-data", "instance-data.ec2.internal"
@@ -124,15 +124,6 @@ public sealed partial class WsdlReader(
 	private static readonly HashSet<System.Net.IPAddress> MetadataAddresses = [
 		System.Net.IPAddress.Parse("fd00:ec2::254"), System.Net.IPAddress.Parse("100.100.100.200") // NOSONAR S1313
 	];
-
-	/// <summary>
-	/// Whether a query parameter name carries a credential: the credential-name pattern of the web service tools, plus the
-	/// key names common hosting uses. One rule for a WSDL URL (refused) and a WSDL address (left out of base-uri).
-	/// </summary>
-	/// <param name="name">The parameter name, unescaped.</param>
-	/// <returns>Whether a value under it is a secret.</returns>
-	internal static bool IsSecretQueryName(string name) =>
-		WebServiceSchemaView.IsSecretName(name) || SecretQueryNames.Contains(name ?? string.Empty);
 
 	[GeneratedRegex(@"^[A-Za-z]:[\\/]")]
 	private static partial Regex DriveRootedPath();
@@ -144,22 +135,18 @@ public sealed partial class WsdlReader(
 	/// <inheritdoc />
 	public WsdlReadResult Read(WsdlReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
-		bool fromUrl = !string.IsNullOrWhiteSpace(request.WsdlUrl);
-		bool fromFiles = request.WsdlFiles is { Count: > 0 };
-		if (fromUrl == fromFiles) {
-			throw new ArgumentException("Give wsdl-url (the stand downloads it) or wsdl-files (local absolute paths), not "
-				+ "both and not neither.");
-		}
 		// The arguments are checked before anything is sent to the environment.
-		Uri url = fromUrl ? CheckUrl(request.WsdlUrl) : null;
-		if (fromFiles) {
-			CheckPaths(request.WsdlFiles);
-		}
+		Uri url = CheckRequest(request);
+		bool fromUrl = url is not null;
 		if (!rights.GetCanExecuteOperation(ManageSolutionOperation, new CreatioRequestOptions())) {
 			throw new UnauthorizedAccessException(
 				"The environment user lacks CanManageSolution, which Studio > Web services requires.");
 		}
 		string prefix = prefixReader.Read();
+		string code = CheckNewCode(request.Code, prefix);
+		// The target is read before the WSDL is downloaded and parsed: a wrong service-code is refused before that work,
+		// and also when the result falls back to names.
+		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		IReadOnlyList<WsdlSourceFile> files = fromUrl ? Download(url) : ReadFiles(request.WsdlFiles);
 		WsdlDocument document = parser.Parse(files, prefix, new WsdlParseOptions(request.Port, request.Operations));
 		var warnings = new WarningLog();
@@ -172,8 +159,6 @@ public sealed partial class WsdlReader(
 		}
 		warnings.AddDropped(document.WarningsDropped);
 		IReadOnlyList<WsdlPort> ports = SelectOperations(SelectPorts(document), request.Operations);
-		// The target is read first, so a wrong service-code is refused also when the result falls back to names.
-		WsdlTargetService target = ReadTarget(request.ServiceCode);
 		// Listed by name before anything is mapped: too many parameters, or paths and captions of the parameters the mapper
 		// keeps that alone pass the result limit (each is serialized, so the result could not fit). Ports on one binding share
 		// their operations, so mapping and serializing each would copy the same long paths once per port first.
@@ -185,9 +170,45 @@ public sealed partial class WsdlReader(
 		var services = new List<WsdlServiceArguments>();
 		foreach (WsdlPort port in ports) {
 			services.Add(WsdlRegistrationMapper.Map(port, port.Name == document.StudioPort, prefix,
-				request.EnvironmentName, target, warnings));
+				request.EnvironmentName, target, warnings, code));
 		}
 		return Result(services, warnings, Notices(services, target, url));
+	}
+
+	// Checks what needs no environment: one source, a URL or paths that may be read, and code or service-code, not both.
+	// Returns the URL to download, or null for files.
+	private Uri CheckRequest(WsdlReadRequest request) {
+		bool fromUrl = !string.IsNullOrWhiteSpace(request.WsdlUrl);
+		bool fromFiles = request.WsdlFiles is { Count: > 0 };
+		if (fromUrl == fromFiles) {
+			throw new ArgumentException("Give wsdl-url (the stand downloads it) or wsdl-files (local absolute paths), not "
+				+ "both and not neither.");
+		}
+		Uri url = fromUrl ? CheckUrl(request.WsdlUrl) : null;
+		if (fromFiles) {
+			CheckPaths(request.WsdlFiles);
+		}
+		if (!string.IsNullOrWhiteSpace(request.Code) && !string.IsNullOrWhiteSpace(request.ServiceCode)) {
+			throw new ArgumentException("Give code (the user's code for a NEW service) or service-code (an existing SOAP "
+				+ "service the operations go into), not both.");
+		}
+		return url;
+	}
+
+	// The code the user named for a new service, trimmed and checked like a registered code; null when none was given.
+	private static string CheckNewCode(string requested, string prefix) {
+		if (string.IsNullOrWhiteSpace(requested)) {
+			return null;
+		}
+		string code = requested.Trim();
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceDefinitionBuilder.ValidateServiceCode(code, prefix, errors);
+		if (errors.Count > 0) {
+			// Built here, not from the shared message, so a value of any length is cut like every other echoed input.
+			throw new ArgumentException($"code '{WsdlParser.Shown(code)}' must be a Latin identifier (letters, digits, "
+				+ "underscore)" + (string.IsNullOrEmpty(prefix) ? "." : $" starting with the schema-name prefix '{prefix}'."));
+		}
+		return code;
 	}
 
 	// Whether the result is already one port with one operation, so reading again with port and operations cannot make it
@@ -209,8 +230,9 @@ public sealed partial class WsdlReader(
 			notices.AddRange(services.Select(s => s.Arguments.Code).Distinct(StringComparer.OrdinalIgnoreCase)
 				.Where(code => !client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, code))
 				.Select(code => $"The code '{code}' is already used by a web service. Ask the user which way to go, and do not "
-					+ "pick a code yourself: register under a code the user names, or change that service (read the WSDL again "
-					+ $"with service-code '{code}', then use modify-web-service)."));
+					+ "pick a code yourself: register under another code the user names (read the WSDL again with that code as "
+					+ $"code), or change that service (read the WSDL again with service-code '{code}', then use "
+					+ "modify-web-service)."));
 		}
 		// The WSDL names the endpoint the calls (and any credentials set up later) go to; tell the user when it is not the
 		// host the WSDL came from.
@@ -256,7 +278,8 @@ public sealed partial class WsdlReader(
 				? $"The result is too large to return whole (over {MaxResultCharacters} characters) even for one operation of one "
 					+ "port; only its name is listed. Ask the user which fields of it they need and describe the method by hand."
 				: $"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names "
-					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port)."
+					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port), "
+					+ "keeping the same code or service-code."
 		};
 		int remaining = MaxListedOperations;
 		var views = new List<WsdlServiceView>();
@@ -296,7 +319,7 @@ public sealed partial class WsdlReader(
 		bool secretInQuery = parsed.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
 			.Select(pair => (Pair: pair, At: pair.IndexOf('=')))
 			.Any(p => p.At > 0 && p.At < p.Pair.Length - 1
-				&& IsSecretQueryName(Uri.UnescapeDataString(p.Pair[..p.At])));
+				&& WebServiceSchemaView.IsSecretQueryName(Uri.UnescapeDataString(p.Pair[..p.At])));
 		if (secretInQuery) {
 			throw new ArgumentException("wsdl-url carries a key or token in its query; download the WSDL yourself and pass "
 				+ "it as wsdl-files.");
@@ -455,14 +478,24 @@ public sealed partial class WsdlReader(
 			.Where(p => p.Operations.Count > 0).ToList();
 	}
 
+	private const string ServiceCodeHint = "service-code is only for an existing SOAP service the operations go into; for "
+		+ "a new service give the code the user named as code instead.";
+
 	private WsdlTargetService ReadTarget(string serviceCode) {
 		if (string.IsNullOrWhiteSpace(serviceCode)) {
 			return null;
 		}
-		WebServiceToolResult described = designer.Describe(serviceCode.Trim(), false);
+		WebServiceToolResult described;
+		try {
+			described = designer.Describe(serviceCode.Trim(), false);
+		} catch (ArgumentException e) when (e is not ArgumentNullException and not ArgumentOutOfRangeException) {
+			// Agents pass the code they want for a NEW service here; say what the argument is for. A null or out-of-range
+			// argument is a defect in reading an existing service, not this mistake.
+			throw new ArgumentException($"service-code '{WsdlParser.Shown(serviceCode)}': {e.Message} {ServiceCodeHint}", e);
+		}
 		WebServiceView service = described.Service
 			?? throw new ArgumentException($"service-code '{WsdlParser.Shown(serviceCode)}' could not be read: "
-				+ WsdlParser.ShownUpTo(described.Error ?? "no reason given", 300));
+				+ WsdlParser.ShownUpTo(described.Error ?? "no reason given", 300) + " " + ServiceCodeHint);
 		bool soap = service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap11)
 			|| service.Type == WebServiceSchemaView.TypeName(ServiceSchemaCodes.ServiceTypeSoap12);
 		if (!soap) {
