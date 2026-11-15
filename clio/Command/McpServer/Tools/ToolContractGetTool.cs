@@ -780,6 +780,10 @@ internal static class ToolContractCatalog {
 	private const string IncludeOperationsFieldName = "include-operations";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
+	private const string DataBindingPackageNameDescription = "Target package name: a plain folder name under packages/, without path separators or '..'.";
+
+	private const string DataBindingBindingNameDescription = "Binding folder name under the package Data folder: a plain folder name, without path separators or '..'.";
+
 	private const string DataBindingWorkspacePathDescription = "Absolute local workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
 	private const string DataForgePlatformRequirementDescription =
@@ -5422,13 +5426,13 @@ internal static class ToolContractCatalog {
 				[PackageNameFieldName, SchemaNameFieldName, WorkspacePathFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
-						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
 						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
-						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
+						Field(BindingNameFieldName, StringType, "Optional binding folder name; defaults to the schema name. A plain folder name, without path separators or '..'."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
 					],
 					Validators: [
 						new ToolContractValidator(
@@ -5496,11 +5500,11 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 					[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, ValuesFieldName],
 					[
-						Field(PackageNameFieldName, StringType, PackageNameDescription),
-						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
+						Field(BindingNameFieldName, StringType, DataBindingBindingNameDescription),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(ValuesFieldName, StringType, "JSON object keyed by column name for the row to add or replace."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name.")
 					]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -5535,8 +5539,8 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, KeyValueFieldName],
 				[
-						Field(PackageNameFieldName, StringType, PackageNameDescription),
-						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
+						Field(BindingNameFieldName, StringType, DataBindingBindingNameDescription),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
 					]),

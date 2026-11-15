@@ -298,7 +298,15 @@ public class FileSystem(Ms.IFileSystem msFileSystem) : IFileSystem {
 			}
 			//Attributes of a path that does not exist come back as (FileAttributes)(-1), which carries
 			//every bit including ReparsePoint, so existence has to be settled before they are read.
-			return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) != 0;
+			if (!info.Exists || (info.Attributes & FileAttributes.ReparsePoint) == 0) {
+				return false;
+			}
+			//A reparse point whose target could not be read. On Windows that is a dangling or cyclic link, or
+			//an entry no pathname follows: a cloud-files placeholder (OneDrive), a dedup or ProjFS entry. Only
+			//a symbolic link or a junction leads elsewhere, so ask the tag; an unreadable tag fails closed.
+			return !OperatingSystem.IsWindows()
+				|| !WindowsConfinedFileAccess.TryGetReparseTag(path, out uint tag)
+				|| tag is WindowsConfinedFileAccess.ReparseTagSymlink or WindowsConfinedFileAccess.ReparseTagMountPoint;
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
 			or ArgumentException or NotSupportedException or NotImplementedException) {
