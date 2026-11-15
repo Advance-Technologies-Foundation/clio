@@ -100,19 +100,19 @@ public sealed class SkillInstallService(
 	/// </summary>
 	private void RecordSucceededAgents(SkillOperationKind kind, AgentOperationContext context,
 		IReadOnlyList<AgentOutcome> outcomes) {
-		List<AgentOutcome> succeeded = outcomes.Where(outcome => outcome.Status == AgentOutcomeStatus.Succeeded).ToList();
-		if (succeeded.Count == 0) {
+		string[] succeeded = AgentIds(outcomes, AgentOutcomeStatus.Succeeded);
+		if (succeeded.Length == 0) {
 			return;
 		}
 
 		ManagedSkillsManifest manifest = _manifestStore.Read();
 		DateTimeOffset now = DateTimeOffset.UtcNow;
-		foreach (AgentOutcome outcome in succeeded) {
+		foreach (string agentId in succeeded) {
 			if (kind == SkillOperationKind.Delete) {
-				manifest.Remove(outcome.AgentId);
+				manifest.Remove(agentId);
 			}
 			else {
-				manifest.Upsert(outcome.AgentId, context.MarketplaceUrl, now);
+				manifest.Upsert(agentId, context.MarketplaceUrl, now);
 			}
 		}
 
