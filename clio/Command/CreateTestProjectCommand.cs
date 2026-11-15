@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Common;
 using Clio.Workspace;
 using Clio.Workspaces;
@@ -260,6 +261,13 @@ public class CreateTestProjectCommand : Command<CreateTestProjectOptions>{
 				: options.PackageName.Split(",", StringSplitOptions.RemoveEmptyEntries);
 			const string solutionName = "UnitTests";
 			const string mainSolutionName = "MainSolution";
+			//Each name becomes a folder below the packages and the tests folders, so it has to be a plain name:
+			//a separator, '..' or a rooted value would read a project and write a test project outside the workspace.
+			string unsafePackageName = packages.FirstOrDefault(name => !DataBindingPathGuard.IsPlainName(name));
+			if (unsafePackageName is not null) {
+				_logger.WriteError($"Package name '{unsafePackageName}' is not a plain folder name. Use the name of a package of this workspace, without path separators, '..', a drive or a root. Nothing was written.");
+				return 1;
+			}
 			foreach (string packageName in packages) {
 				string packageProjectPath = _context.BuildPackageProjectPath(packageName);
 				if (!_infrastructure.ExistsFile(packageProjectPath)) {
