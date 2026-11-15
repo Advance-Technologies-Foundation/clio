@@ -257,48 +257,46 @@ public sealed record McpToolFacts(
 	public JsonObject ToJson() {
 		JsonObject json = WriteFields(new JsonObject(), Effect, EnvironmentImpact, Scope, Connections);
 		if (ByArgument.Count > 0) {
-			JsonArray entries = [];
-			foreach (McpToolArgumentFacts entry in ByArgument) {
-				JsonObject item = new() {
-					["argument"] = entry.Argument,
-					["value"] = entry.Value
-				};
-				if (entry.WhenAbsent) {
-					item["when-absent"] = true;
-				}
-				entries.Add(WriteFields(item, entry.Effect, entry.EnvironmentImpact, entry.Scope, entry.Connections));
-			}
-			json["by-argument"] = entries;
+			json["by-argument"] = new JsonArray([.. ByArgument.Select(WriteArgumentEntry)]);
 		}
 		if (HostPaths.Count > 0) {
-			JsonArray paths = [];
-			foreach (McpToolHostPath path in HostPaths) {
-				JsonObject item = new() {
-					["argument"] = path.Argument,
-					["kind"] = Name(path.Kind),
-					["access"] = Name(path.Access)
-				};
-				if (path.List) {
-					item["list"] = true;
-				}
-				if (!string.IsNullOrEmpty(path.Or)) {
-					item["or"] = path.Or;
-				}
-				paths.Add(item);
-			}
-			json["host-paths"] = paths;
+			json["host-paths"] = new JsonArray([.. HostPaths.Select(WriteHostPath)]);
 		}
 		if (NotHostPaths.Count > 0) {
-			JsonArray notPaths = [];
-			foreach (McpToolNotHostPath notPath in NotHostPaths) {
-				notPaths.Add(new JsonObject {
-					["argument"] = notPath.Argument,
-					["why"] = notPath.Why
-				});
-			}
-			json["not-host-paths"] = notPaths;
+			json["not-host-paths"] = new JsonArray([.. NotHostPaths.Select(notPath => new JsonObject {
+				["argument"] = notPath.Argument,
+				["why"] = notPath.Why
+			})]);
 		}
 		return json;
+	}
+
+	private const string UnspecifiedName = "unspecified";
+
+	private static JsonNode WriteArgumentEntry(McpToolArgumentFacts entry) {
+		JsonObject item = new() {
+			["argument"] = entry.Argument,
+			["value"] = entry.Value
+		};
+		if (entry.WhenAbsent) {
+			item["when-absent"] = true;
+		}
+		return WriteFields(item, entry.Effect, entry.EnvironmentImpact, entry.Scope, entry.Connections);
+	}
+
+	private static JsonNode WriteHostPath(McpToolHostPath path) {
+		JsonObject item = new() {
+			["argument"] = path.Argument,
+			["kind"] = Name(path.Kind),
+			["access"] = Name(path.Access)
+		};
+		if (path.List) {
+			item["list"] = true;
+		}
+		if (!string.IsNullOrEmpty(path.Or)) {
+			item["or"] = path.Or;
+		}
+		return item;
 	}
 
 	/// <summary>The published name of an effect: <c>read</c>, <c>change</c> or <c>destroy</c>.</summary>
@@ -306,7 +304,7 @@ public sealed record McpToolFacts(
 		McpToolEffect.Read => "read",
 		McpToolEffect.Change => "change",
 		McpToolEffect.Destroy => "destroy",
-		_ => "unspecified"
+		_ => UnspecifiedName
 	};
 
 	/// <summary>The published name of a scope: <c>local</c>, <c>environment</c> or <c>machine</c>.</summary>
@@ -314,7 +312,7 @@ public sealed record McpToolFacts(
 		McpToolScope.Local => "local",
 		McpToolScope.Environment => "environment",
 		McpToolScope.Machine => "machine",
-		_ => "unspecified"
+		_ => UnspecifiedName
 	};
 
 	/// <summary>The published name of a connections fact: <c>none</c>, <c>read</c> or <c>change</c>.</summary>
@@ -322,7 +320,7 @@ public sealed record McpToolFacts(
 		McpToolConnections.None => "none",
 		McpToolConnections.Read => "read",
 		McpToolConnections.Change => "change",
-		_ => "unspecified"
+		_ => UnspecifiedName
 	};
 
 	/// <summary>The published name of a host-path kind: <c>file</c>, <c>folder</c> or <c>file-or-folder</c>.</summary>
@@ -330,7 +328,7 @@ public sealed record McpToolFacts(
 		McpHostPathKind.File => "file",
 		McpHostPathKind.Folder => "folder",
 		McpHostPathKind.FileOrFolder => "file-or-folder",
-		_ => "unspecified"
+		_ => UnspecifiedName
 	};
 
 	/// <summary>The published name of a host-path access: <c>read</c>, <c>write</c> or <c>read-write</c>.</summary>
@@ -338,7 +336,7 @@ public sealed record McpToolFacts(
 		McpHostPathAccess.Read => "read",
 		McpHostPathAccess.Write => "write",
 		McpHostPathAccess.ReadWrite => "read-write",
-		_ => "unspecified"
+		_ => UnspecifiedName
 	};
 
 	private static JsonObject WriteFields(
