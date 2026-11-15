@@ -13,17 +13,19 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 	private const string Unknown = "unknown (metadata unavailable)";
 	private const string Missing = "not installed";
 	private const string PluginsDirectory = "plugins";
+	private const string ClaudeAgentId = "claude";
+	private const string CodexAgentId = "codex";
 	private const long MaximumMetadataBytes = 1024 * 1024;
 
 	/// <inheritdoc />
 	public IReadOnlyDictionary<string, string> Read() {
 		Dictionary<string, string> result = new(StringComparer.Ordinal);
-		foreach (string agent in new[] { "claude", "codex", "cursor", "copilot" }) {
+		foreach (string agent in new[] { ClaudeAgentId, CodexAgentId, "cursor", "copilot" }) {
 			try {
 				string home = GetAgentHome(agent);
 				result[agent] = agent switch {
-					"claude" => ReadClaude(home),
-					"codex" => ReadCodex(home),
+					ClaudeAgentId => ReadClaude(home),
+					CodexAgentId => ReadCodex(home),
 					"cursor" => ReadManifest(fileSystem.Combine(home, PluginsDirectory, "local", ToolkitDistribution.PluginName),
 						[".cursor-plugin/plugin.json", ".claude-plugin/plugin.json", "plugin.json"]),
 					_ => ReadManifest(fileSystem.Combine(home, "installed-plugins", ToolkitDistribution.MarketplaceName,
@@ -43,8 +45,8 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 	public string ReadInstalledCommit(string agentId) {
 		try {
 			return agentId switch {
-				"claude" => ReadClaudeCommit(GetAgentHome("claude")),
-				"codex" => ReadGitHeadCommit(SelectCodexPayload(GetAgentHome("codex"))),
+				ClaudeAgentId => ReadClaudeCommit(GetAgentHome(ClaudeAgentId)),
+				CodexAgentId => ReadGitHeadCommit(SelectCodexPayload(GetAgentHome(CodexAgentId))),
 				_ => null
 			};
 		}
@@ -57,8 +59,8 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 
 	private string GetAgentHome(string agent) {
 		string variable = agent switch {
-			"codex" => "CODEX_HOME",
-			"claude" => "CLAUDE_CONFIG_DIR",
+			CodexAgentId => "CODEX_HOME",
+			ClaudeAgentId => "CLAUDE_CONFIG_DIR",
 			_ => null
 		};
 		string customHome = variable is null ? null : Environment.GetEnvironmentVariable(variable);

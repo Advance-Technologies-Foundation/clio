@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace Clio.Common.Skills;
 
@@ -19,16 +20,8 @@ internal static class GitCommitId {
 	/// <param name="value">Candidate text; surrounding whitespace is ignored.</param>
 	public static string Normalize(string value) {
 		string candidate = value?.Trim();
-		if (candidate is null || candidate.Length != Sha1Length) {
-			return null;
-		}
-
-		foreach (char character in candidate) {
-			if (!Uri.IsHexDigit(character)) {
-				return null;
-			}
-		}
-
-		return candidate.ToLowerInvariant();
+		return candidate is { Length: Sha1Length } && candidate.All(Uri.IsHexDigit)
+			? candidate.ToLowerInvariant()
+			: null;
 	}
 }

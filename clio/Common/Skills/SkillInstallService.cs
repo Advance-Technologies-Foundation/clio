@@ -45,14 +45,8 @@ public sealed class SkillInstallService(
 	private SkillCommandResult Run(SkillOperationKind kind, string target, string repositoryOverride,
 		bool skipAgentsOnRelease) {
 		string normalizedTarget = target?.Trim();
-		if (!string.IsNullOrEmpty(normalizedTarget)
-			&& !_agents.Any(agent => string.Equals(agent.AgentId, normalizedTarget, StringComparison.OrdinalIgnoreCase))) {
-			string valid = string.Join(", ", _agents.Select(agent => agent.AgentId));
-			return Invalid($"Unknown target '{target}'. Valid agents: {valid}.");
-		}
-
-		if (!RepositorySource.TryValidate(repositoryOverride, out string repositoryError)) {
-			return Invalid(repositoryError);
+		if (Validate(normalizedTarget, target, repositoryOverride) is SkillCommandResult invalid) {
+			return invalid;
 		}
 
 		using IDisposable operationHandle = _operationLock.TryAcquire();
@@ -60,54 +54,69 @@ public sealed class SkillInstallService(
 			return NotRun(OperationInProgressMessage);
 		}
 
-		List<ICodingAgent> selected = string.IsNullOrEmpty(normalizedTarget)
-			? _agents.ToList()
-			: _agents.Where(agent => string.Equals(agent.AgentId, normalizedTarget, StringComparison.OrdinalIgnoreCase)).ToList();
-
 		AgentOperationContext context = new(kind, repositoryOverride);
 		// Only the default source has a published release commit to compare against.
 		bool checkUpToDate = skipAgentsOnRelease && string.IsNullOrWhiteSpace(repositoryOverride);
 		Lazy<string> releaseCommit = new(_releaseProbe.ReadReleaseCommit);
-		ManagedSkillsManifest manifest = _manifestStore.Read();
-		DateTimeOffset now = DateTimeOffset.UtcNow;
-		List<AgentOutcome> outcomes = [];
-		bool manifestChanged = false;
-
-		foreach (ICodingAgent agent in selected) {
-			if (!agent.Detect()) {
-				outcomes.Add(AgentOutcome.Skipped(agent.AgentId,
-					$"{agent.DisplayName} is not installed; nothing to do."));
-				continue;
-			}
-
-			if (checkUpToDate && TryGetUpToDateOutcome(agent, releaseCommit) is AgentOutcome upToDate) {
-				outcomes.Add(upToDate);
-				continue;
-			}
-
-			AgentOutcome outcome = Dispatch(agent, kind, context);
-			outcomes.Add(outcome);
-
-			if (outcome.Status != AgentOutcomeStatus.Succeeded) {
-				continue;
-			}
-
-			if (kind == SkillOperationKind.Delete) {
-				manifest.Remove(agent.AgentId);
-			}
-			else {
-				manifest.Upsert(agent.AgentId, context.MarketplaceUrl, now);
-			}
-
-			manifestChanged = true;
-		}
-
-		if (manifestChanged) {
-			_manifestStore.Save(manifest);
-		}
+		List<AgentOutcome> outcomes = SelectAgents(normalizedTarget)
+			.Select(agent => RunForAgent(agent, context, checkUpToDate, releaseCommit))
+			.ToList();
+		RecordSucceededAgents(kind, context, outcomes);
 
 		int exitCode = outcomes.Any(outcome => outcome.Status == AgentOutcomeStatus.Failed) ? 1 : 0;
 		return new SkillCommandResult(exitCode, outcomes, BuildSummary(kind, outcomes));
+	}
+
+	private SkillCommandResult Validate(string normalizedTarget, string target, string repositoryOverride) {
+		if (!string.IsNullOrEmpty(normalizedTarget) && !SelectAgents(normalizedTarget).Any()) {
+			string valid = string.Join(", ", _agents.Select(agent => agent.AgentId));
+			return Invalid($"Unknown target '{target}'. Valid agents: {valid}.");
+		}
+
+		return RepositorySource.TryValidate(repositoryOverride, out string repositoryError)
+			? null
+			: Invalid(repositoryError);
+	}
+
+	private IEnumerable<ICodingAgent> SelectAgents(string normalizedTarget) =>
+		string.IsNullOrEmpty(normalizedTarget)
+			? _agents
+			: _agents.Where(agent => string.Equals(agent.AgentId, normalizedTarget, StringComparison.OrdinalIgnoreCase));
+
+	private AgentOutcome RunForAgent(ICodingAgent agent, AgentOperationContext context, bool checkUpToDate,
+		Lazy<string> releaseCommit) {
+		if (!agent.Detect()) {
+			return AgentOutcome.Skipped(agent.AgentId, $"{agent.DisplayName} is not installed; nothing to do.");
+		}
+
+		return checkUpToDate && TryGetUpToDateOutcome(agent, releaseCommit) is AgentOutcome upToDate
+			? upToDate
+			: Dispatch(agent, context.Operation, context);
+	}
+
+	/// <summary>
+	/// Records every agent that changed state in the managed-skills manifest, saving it only when one did.
+	/// Up-to-date and skipped agents are not recorded: nothing was installed for them.
+	/// </summary>
+	private void RecordSucceededAgents(SkillOperationKind kind, AgentOperationContext context,
+		IReadOnlyList<AgentOutcome> outcomes) {
+		List<AgentOutcome> succeeded = outcomes.Where(outcome => outcome.Status == AgentOutcomeStatus.Succeeded).ToList();
+		if (succeeded.Count == 0) {
+			return;
+		}
+
+		ManagedSkillsManifest manifest = _manifestStore.Read();
+		DateTimeOffset now = DateTimeOffset.UtcNow;
+		foreach (AgentOutcome outcome in succeeded) {
+			if (kind == SkillOperationKind.Delete) {
+				manifest.Remove(outcome.AgentId);
+			}
+			else {
+				manifest.Upsert(outcome.AgentId, context.MarketplaceUrl, now);
+			}
+		}
+
+		_manifestStore.Save(manifest);
 	}
 
 	/// <summary>
