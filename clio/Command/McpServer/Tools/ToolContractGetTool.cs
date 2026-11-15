@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Command.BusinessRules;
@@ -357,6 +358,10 @@ public sealed record ToolContractGetArgs(
 /// The default answer to a request without names: one line per tool, built from the same entries as
 /// <paramref name="Index"/> (see <see cref="ToolContractCatalog.BuildToolIndexLine"/>).
 /// </param>
+/// <param name="Facts">
+/// What each tool does (<see cref="McpToolFacts.ToJson"/>), by tool name; present only for
+/// <c>detail=</c><see cref="ToolContractCatalog.FactsDetail"/>.
+/// </param>
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("tools")] IReadOnlyList<ToolContractDefinition>? Tools = null,
@@ -367,7 +372,9 @@ public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("legend"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	string? Legend = null,
 	[property: JsonPropertyName("tool-index"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	IReadOnlyList<string>? ToolIndex = null
+	IReadOnlyList<string>? ToolIndex = null,
+	[property: JsonPropertyName("facts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyDictionary<string, JsonObject>? Facts = null
 );
 
 /// <summary>One requested tool name that could not be resolved.</summary>
@@ -1115,9 +1122,82 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry = null,
 		string? detail = null,
 		bool legacyNoNamesFullShape = false) {
+		// Ahead of everything else, the legacy-client shape included: an explicit request names its shape.
+		if (ToolContractShortForm.IsDetail(detail, FactsDetail)) {
+			return ResolveFacts(toolNames, toolInvokerRegistry);
+		}
 		return toolNames is null || toolNames.Count == 0
 			? ResolveNoNamesContracts(toolInvokerRegistry, detail, legacyNoNamesFullShape)
 			: ResolveNamedContracts(toolNames, toolInvokerRegistry, detail);
+	}
+
+	/// <summary>
+	/// The <c>detail</c> value that answers with what each tool does (<see cref="McpToolFacts"/>) under <c>facts</c>,
+	/// by tool name: every tool for a request without names, the named ones otherwise. Meant for a host deciding how
+	/// to treat a call, so it never touches the index, the contracts or their byte budgets. An older clio ignores the
+	/// unknown value and returns the index, which carries no <c>facts</c>; that absence is how a host tells.
+	/// </summary>
+	internal const string FactsDetail = "facts";
+
+	/// <summary>
+	/// Resolves <c>detail=facts</c>. Without names: every tool the index lists, plus get-tool-contract itself, and
+	/// each deprecated alias under its own name, so a host can look up whatever name a call carries. With names: those
+	/// tools, a name that is no tool reported in <c>not-found</c> as a contract lookup reports it.
+	/// </summary>
+	private static ToolContractGetResponse ResolveFacts(
+		IReadOnlyList<string>? toolNames,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		// Only the tools this server serves: a feature-gated-off tool stays invisible here as on every surface.
+		HashSet<string> served = new(BuildIndexToolNames(toolInvokerRegistry), StringComparer.OrdinalIgnoreCase) {
+			ToolContractGetTool.ToolName
+		};
+		Dictionary<string, string> canonicalByAlias = new(StringComparer.OrdinalIgnoreCase);
+		foreach ((string canonical, IReadOnlyList<string> aliases) in McpToolCompatibilityCatalog.SeedAliasesByCanonical) {
+			foreach (string alias in aliases) {
+				canonicalByAlias.TryAdd(alias, canonical);
+			}
+		}
+		SortedDictionary<string, JsonObject> facts = new(StringComparer.Ordinal);
+		if (toolNames is null || toolNames.Count == 0) {
+			foreach (string name in served) {
+				AddFacts(facts, name, name);
+			}
+			foreach ((string alias, string canonical) in canonicalByAlias) {
+				if (served.Contains(canonical)) {
+					AddFacts(facts, alias, canonical);
+				}
+			}
+			return new ToolContractGetResponse(true, Facts: facts);
+		}
+		List<ToolContractNotFound> notFound = [];
+		foreach (string requested in toolNames
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Select(name => name.Trim())
+			.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			string canonical = canonicalByAlias.TryGetValue(requested, out string target) ? target : requested;
+			if (served.Contains(canonical) && AddFacts(facts, requested, canonical)) {
+				continue;
+			}
+			notFound.Add(new ToolContractNotFound(
+				requested,
+				new ToolContractError(
+					"tool-not-found",
+					$"Tool '{requested}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
+					BuildSuggestions(requested, toolInvokerRegistry))));
+		}
+		return new ToolContractGetResponse(
+			facts.Count > 0,
+			Error: facts.Count == 0 && notFound.Count > 0 ? notFound[0].Error : null,
+			NotFound: notFound.Count > 0 ? notFound : null,
+			Facts: facts);
+	}
+
+	private static bool AddFacts(IDictionary<string, JsonObject> facts, string key, string toolName) {
+		if (!McpToolFactsReader.TryGet(toolName, out McpToolFacts declared)) {
+			return false;
+		}
+		facts[key] = declared.ToJson();
+		return true;
 	}
 
 	/// <summary>
@@ -1197,8 +1277,21 @@ internal static class ToolContractCatalog {
 	internal static readonly string ToolIndexLegend =
 		$"Each line: name (R)(D) [aka old names]: purpose, cut to {MaxToolIndexPurposeLength} chars. "
 		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
-		+ "A tool without (R) is called through clio-run {\"command\":\"<name>\",\"args\":{...}}. "
+		+ "Without (R), call it via clio-run {\"command\":\"<name>\",\"args\":{...}}. "
 		+ "(D) = destructive: may delete or overwrite data; a line without (D) can still write.";
+
+	/// <summary>
+	/// Explains one <c>facts</c> entry (<see cref="McpToolFacts.ToJson"/>). The same object sits in a resident tool's
+	/// <c>_meta</c> under <see cref="McpToolFacts.MetaKey"/> in <c>tools/list</c>.
+	/// </summary>
+	internal const string FactsFieldDescription =
+		"effect (read | change | destroy: removes, overwrites more than the call names, or runs code or SQL), "
+		+ "rebuilds-environment (compiles, restarts or installs: every user feels it), scope (local | environment | "
+		+ "machine: this computer beyond the files the call names) and connections (none | read | change: clio's "
+		+ "registered environments and credentials). by-argument lists argument values that narrow these: argument "
+		+ "as the caller writes it (inside args for an args-record tool), value compared case-insensitively, "
+		+ "when-absent when it also applies to a call that leaves the argument out; when several match, take the "
+		+ "widest of each fact. A resident tool carries the same object in tools/list under _meta clio/facts.";
 
 	/// <summary>
 	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the
@@ -1556,7 +1649,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their contracts, fitted to one reply (detail=full for all in full)."),
-					Field(DetailFieldName, StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index as tool-index lines; 'index-entries' returns it as index objects; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
+					Field(DetailFieldName, StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index as tool-index lines; 'index-entries' returns it as index objects; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form. 'facts' (with or without tool-names) returns, under facts, what each tool does, for a host deciding how to treat a call.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1569,6 +1662,7 @@ internal static class ToolContractCatalog {
 				Field("index", ArrayType, "Compact tool index as objects (name, purpose, contract-available, resident, destructive, aliases); populated for a no-names request with detail=index-entries. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run — never wrap a resident tool in clio-run."),
 				Field("tool-index", ArrayType, $"The default answer to a no-names request: one line per tool, 'name (R)(D) [aka old names]: purpose', the purpose cut to {MaxToolIndexPurposeLength} characters; legend explains the (R) and (D) markers."),
 				Field("legend", StringType, "Explains the tool-index line format and markers; returned only with tool-index."),
+				Field("facts", ObjectType, "Returned only for detail=facts: by tool name (and deprecated alias), what the tool does at most - " + FactsFieldDescription),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
 			CommonErrorContract,
@@ -1578,6 +1672,9 @@ internal static class ToolContractCatalog {
 				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
 				Example("Return the compact index as per-tool objects with the resident and destructive flags", new Dictionary<string, object?> {
 					[DetailFieldName] = IndexEntriesDetail
+				}),
+				Example("Return what every tool does (effect, rebuilds-environment, scope, connections), for a host", new Dictionary<string, object?> {
+					[DetailFieldName] = FactsDetail
 				}),
 				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
 					[DetailFieldName] = ToolContractShortForm.FullDetail

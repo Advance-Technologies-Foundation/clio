@@ -155,6 +155,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "Each line:" and "it may delete" became "may delete". The resident sentence is unchanged.
 	// read-wsdl's line made findable ("Reads a WSDL." -> "Reads a SOAP WSDL.", +5 bytes; an agent on a stand never
 	// reached the tool): paid by the legend's "[aka deprecated names]" -> "[aka old names]".
+	// mcp-tool-facts: create-user-task gained (D), a destroy whose hint said otherwise (it loads every file-system
+	// package into the database). Paid ahead by the legend: "A tool without (R) is called through clio-run" ->
+	// "Without (R), call it via clio-run", 12 bytes for the marker's 3.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

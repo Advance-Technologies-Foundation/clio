@@ -189,6 +189,10 @@ When adding or updating an MCP tool, also review:
 - unit tests in `clio.tests\Command\McpServer`
 - end-to-end tests in `clio.mcp.e2e`
 - tool descriptions and safety flags (`ReadOnly`, `Destructive`, `Idempotent`, `OpenWorld`)
+- the tool's entry in `Data/mcp-tool-facts.json`, with any `by-argument` entries: what a call does (read, change, destroy),
+  whether it rebuilds the environment, whether it reaches this machine, whether it touches clio's connections.
+  Hosts decide how to treat a call from them, so declare them from the code, not the name
+  (`spec/adr/adr-mcp-tool-facts.md`; `McpToolFactsCoverageTests` enforces them)
 
 ## Test requirement
 

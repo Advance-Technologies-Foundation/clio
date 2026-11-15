@@ -29,6 +29,10 @@ is discovered through `get-tool-contract`, not `tools/list`:
   `destructive` and `aliases` fields for `detail: "index-entries"` (ENG-102796); a named lookup is FITTED to one
   inline reply, returning the largest contracts in a short form (`detail: "short"`) unless the caller
   passes `detail: "full"` (ENG-100154, `ToolContractShortForm`)
+- what each tool does, for a host deciding how to treat a call (`McpToolFacts`: effect read / change / destroy,
+  rebuilds-environment, scope local / environment / machine, connections, and the argument values that narrow
+  them): in each resident tool's `_meta["clio/facts"]` in `tools/list`, and for every tool and alias through
+  `get-tool-contract` with `detail: "facts"` (`spec/adr/adr-mcp-tool-facts.md`)
 - `67` prompts
 - a small fixed set of CLI-help and mechanical resources
 - a dynamic, paginated resource catalog supplied by active trusted knowledge libraries

@@ -1691,6 +1691,8 @@ public class BindingsModule {
 				});
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
 			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
+		// After the SDK fills the tool collection: each listed tool's _meta carries what it does (McpToolFacts).
+		services.PostConfigure<McpServerOptions>(McpToolFactsListing.Attach);
 		return mcpServerBuilder;
 	}
 
