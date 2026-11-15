@@ -95,6 +95,67 @@ public enum McpToolConnections {
 	Change = 3
 }
 
+/// <summary>Whether a host path names a file, a folder, or either.</summary>
+public enum McpHostPathKind {
+	/// <summary>No value declared. Never a valid declaration: the coverage test fails on it.</summary>
+	Unspecified = 0,
+
+	/// <summary>A file.</summary>
+	File = 1,
+
+	/// <summary>A folder, with everything below it.</summary>
+	Folder = 2,
+
+	/// <summary>A file or a folder, depending on the value.</summary>
+	FileOrFolder = 3
+}
+
+/// <summary>What clio does at a host path, at most. Ordered from the narrowest to the widest.</summary>
+public enum McpHostPathAccess {
+	/// <summary>No value declared. Never a valid declaration: the coverage test fails on it.</summary>
+	Unspecified = 0,
+
+	/// <summary>clio only reads there.</summary>
+	Read = 1,
+
+	/// <summary>clio creates or replaces what the path names, and reads nothing that was there.</summary>
+	Write = 2,
+
+	/// <summary>
+	/// clio reads and writes there, or deletes there; also a folder clio only stores, for later calls to read and
+	/// write in.
+	/// </summary>
+	ReadWrite = 3
+}
+
+/// <summary>
+/// One argument whose value names a file or folder on the machine clio runs on, which clio reads or writes as the
+/// person running it: a full path, or a path relative to clio's working folder.
+/// </summary>
+/// <param name="Argument">The argument's name as a caller writes it: inside <c>args</c> for an args-record tool.</param>
+/// <param name="Kind">Whether it names a file, a folder, or either.</param>
+/// <param name="Access">What clio does there, at most.</param>
+/// <param name="List">
+/// Whether the value holds several paths: a JSON array of them, or one string with the paths separated by commas.
+/// </param>
+/// <param name="Or">
+/// What the value may be instead of a path, which clio tells from a path by the value's look: <c>name</c> (a name
+/// clio looks up, such as a registered environment) or <c>url</c>. <see langword="null"/> when it is always a path.
+/// </param>
+public sealed record McpToolHostPath(string Argument, McpHostPathKind Kind, McpHostPathAccess Access, bool List, string Or) {
+
+	/// <summary>The value may instead be a name clio looks up.</summary>
+	public const string OrName = "name";
+
+	/// <summary>The value may instead be a URL.</summary>
+	public const string OrUrl = "url";
+}
+
+/// <summary>An argument whose name reads like a path but whose value is not a path on this machine.</summary>
+/// <param name="Argument">The argument's name as a caller writes it.</param>
+/// <param name="Why">What the value is instead: a URL, a path inside a package on the environment, a flag.</param>
+public sealed record McpToolNotHostPath(string Argument, string Why);
+
 /// <summary>
 /// The facts for one value of one argument, with every field resolved against the tool's own facts: a field the
 /// catalog entry leaves out takes the tool's value.
@@ -137,19 +198,26 @@ public sealed record McpToolArgumentFacts(
 /// <param name="Scope">The widest place it reads or changes.</param>
 /// <param name="Connections">Whether it shows or changes clio's connections.</param>
 /// <param name="ByArgument">The argument values that narrow these facts, ordered by argument and value.</param>
+/// <param name="HostPaths">The arguments that name a file or folder on this machine, ordered by argument.</param>
+/// <param name="NotHostPaths">
+/// The arguments whose name reads like a path but that are not one on this machine, ordered by argument.
+/// </param>
 public sealed record McpToolFacts(
 	McpToolEffect Effect,
 	McpToolEnvironmentImpact EnvironmentImpact,
 	McpToolScope Scope,
 	McpToolConnections Connections,
-	IReadOnlyList<McpToolArgumentFacts> ByArgument) {
+	IReadOnlyList<McpToolArgumentFacts> ByArgument,
+	IReadOnlyList<McpToolHostPath> HostPaths,
+	IReadOnlyList<McpToolNotHostPath> NotHostPaths) {
 
 	/// <summary>The key the facts sit under in a tool's <c>_meta</c> in <c>tools/list</c>.</summary>
 	public const string MetaKey = "clio/facts";
 
 	/// <summary>
 	/// The names of the tool-level fields left <c>Unspecified</c>, plus each argument entry that leaves its
-	/// <c>Effect</c> unspecified. Empty when the declaration is complete.
+	/// <c>Effect</c> unspecified and each host path that leaves its kind or access unspecified. Empty when the
+	/// declaration is complete.
 	/// </summary>
 	public IReadOnlyList<string> UnspecifiedFieldNames {
 		get {
@@ -169,13 +237,22 @@ public sealed record McpToolFacts(
 			missing.AddRange(ByArgument
 				.Where(entry => entry.Effect == McpToolEffect.Unspecified)
 				.Select(entry => $"{entry.Argument}={entry.Value}: {nameof(Effect)}"));
+			foreach (McpToolHostPath path in HostPaths) {
+				if (path.Kind == McpHostPathKind.Unspecified) {
+					missing.Add($"host path {path.Argument}: {nameof(McpToolHostPath.Kind)}");
+				}
+				if (path.Access == McpHostPathAccess.Unspecified) {
+					missing.Add($"host path {path.Argument}: {nameof(McpToolHostPath.Access)}");
+				}
+			}
 			return missing;
 		}
 	}
 
 	/// <summary>
-	/// The facts as published: <c>effect</c>, <c>rebuilds-environment</c>, <c>scope</c>, <c>connections</c> and, when
-	/// some argument values narrow them, <c>by-argument</c> with every field resolved.
+	/// The facts as published: <c>effect</c>, <c>rebuilds-environment</c>, <c>scope</c>, <c>connections</c>; when
+	/// some argument values narrow them, <c>by-argument</c> with every field resolved; when some arguments name a
+	/// file or folder on this machine, <c>host-paths</c>; and when some only read like one, <c>not-host-paths</c>.
 	/// </summary>
 	public JsonObject ToJson() {
 		JsonObject json = WriteFields(new JsonObject(), Effect, EnvironmentImpact, Scope, Connections);
@@ -192,6 +269,34 @@ public sealed record McpToolFacts(
 				entries.Add(WriteFields(item, entry.Effect, entry.EnvironmentImpact, entry.Scope, entry.Connections));
 			}
 			json["by-argument"] = entries;
+		}
+		if (HostPaths.Count > 0) {
+			JsonArray paths = [];
+			foreach (McpToolHostPath path in HostPaths) {
+				JsonObject item = new() {
+					["argument"] = path.Argument,
+					["kind"] = Name(path.Kind),
+					["access"] = Name(path.Access)
+				};
+				if (path.List) {
+					item["list"] = true;
+				}
+				if (!string.IsNullOrEmpty(path.Or)) {
+					item["or"] = path.Or;
+				}
+				paths.Add(item);
+			}
+			json["host-paths"] = paths;
+		}
+		if (NotHostPaths.Count > 0) {
+			JsonArray notPaths = [];
+			foreach (McpToolNotHostPath notPath in NotHostPaths) {
+				notPaths.Add(new JsonObject {
+					["argument"] = notPath.Argument,
+					["why"] = notPath.Why
+				});
+			}
+			json["not-host-paths"] = notPaths;
 		}
 		return json;
 	}
@@ -217,6 +322,22 @@ public sealed record McpToolFacts(
 		McpToolConnections.None => "none",
 		McpToolConnections.Read => "read",
 		McpToolConnections.Change => "change",
+		_ => "unspecified"
+	};
+
+	/// <summary>The published name of a host-path kind: <c>file</c>, <c>folder</c> or <c>file-or-folder</c>.</summary>
+	public static string Name(McpHostPathKind value) => value switch {
+		McpHostPathKind.File => "file",
+		McpHostPathKind.Folder => "folder",
+		McpHostPathKind.FileOrFolder => "file-or-folder",
+		_ => "unspecified"
+	};
+
+	/// <summary>The published name of a host-path access: <c>read</c>, <c>write</c> or <c>read-write</c>.</summary>
+	public static string Name(McpHostPathAccess value) => value switch {
+		McpHostPathAccess.Read => "read",
+		McpHostPathAccess.Write => "write",
+		McpHostPathAccess.ReadWrite => "read-write",
 		_ => "unspecified"
 	};
 
