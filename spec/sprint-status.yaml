@@ -5158,3 +5158,15 @@ stories:
     test_plan: spec/test-plans/tp-manage-user-password-file.md
     depends_on: []
     blocks: []
+  - id: story-data-binding-path-confinement-1
+    title: "Data-binding commands keep every path inside the workspace"
+    feature: "data-binding-path-confinement"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-data-binding-path-confinement-1.md
+    prd: spec/prd/spec-data-binding-path-confinement.md
+    adr: spec/adr/adr-data-binding-path-confinement.md
+    test_plan: spec/test-plans/tp-data-binding-path-confinement.md
+    depends_on: []
+    blocks: []

@@ -3,6 +3,7 @@ description: On Windows FileInfo.LinkTarget and DirectoryInfo.LinkTarget return 
 applies-to:
   - clio/Command/OutputPathConfinement.cs
   - clio/Common/WindowsConfinedFileAccess.cs
+  - clio/Common/FileSystem.cs
 ticket: "1221"
 date: 2026-09-04
 ---
