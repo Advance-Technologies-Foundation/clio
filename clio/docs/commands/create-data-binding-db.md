@@ -43,6 +43,8 @@ A requested row that already exists in the table is adopted into the binding ins
 re-inserted — matched by Name when the schema has a Name column, otherwise by its Id. This
 lets you bind an existing keyed row (e.g. a `SysSchemaAdminUnitRight` grant) by passing its Id
 without creating a duplicate.
+Every item of `--rows` carries its columns under `values`. An item without a `values` object (for
+example the columns given directly) is refused before anything is written.
 
 ### Translations
 
