@@ -26,6 +26,12 @@ Clio also has independent knowledge and toolkit policies. On an eligible
 command startup, each due enabled policy advances its `next-run` timestamp and
 calls the existing updater on a best-effort basis.
 
+A due **toolkit** update starts `clio update-toolkit` as a detached background process, so it
+never delays the command that triggered it, and agents that already have the latest toolkit release
+are left untouched (see [`update-toolkit`](update-toolkit.md)). It is not started in the same run as
+the clio self-update, which replaces the binaries the child would load: the toolkit policy then keeps
+its `next-run` and starts on the next command.
+
 The MCP verbs (`mcp-server`, `mcp-http`) are excluded from that startup check, so the `knowledge`
 policy is additionally evaluated **when guidance is read**: a `get-guidance` lookup answers from the
 active generation and, when the cache is due for verification, starts the refresh beside the answer
@@ -83,7 +89,9 @@ autoupdate --enable
   The deferral prints `clio self-update deferred: MCP host pid <N> (version <X>) is running` to
   stderr (stdout keeps only the command's own output) and leaves `next-run` untouched, so the update
   happens at the next start with no host running.
-  Knowledge and toolkit updates are never deferred, and `clio update-cli` always updates now
+  Knowledge and toolkit updates are never deferred by an MCP host, and `clio update-cli` always updates now
+- A due toolkit update runs as a detached `clio update-toolkit` process and skips agents already on the
+  latest release; it waits for the next command when the same run started the clio self-update
 - While `appsettings.json` holds a member this clio build cannot bind, clio refuses every settings
   write — including the automatic update schedule — and says so once per run
 

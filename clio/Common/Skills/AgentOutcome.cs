@@ -19,7 +19,13 @@ public enum AgentOutcomeStatus {
 	/// <summary>
 	/// The operation was attempted and failed. Contributes to a non-zero exit code.
 	/// </summary>
-	Failed
+	Failed,
+
+	/// <summary>
+	/// An update was not performed because the agent already has the published release commit.
+	/// Does not contribute to a non-zero exit code and does not touch the managed-skills manifest.
+	/// </summary>
+	UpToDate
 }
 
 /// <summary>
@@ -47,4 +53,10 @@ public sealed record AgentOutcome(string AgentId, AgentOutcomeStatus Status, str
 	/// </summary>
 	public static AgentOutcome Failed(string agentId, string message) =>
 		new(agentId, AgentOutcomeStatus.Failed, message);
+
+	/// <summary>
+	/// Creates an <see cref="AgentOutcomeStatus.UpToDate"/> outcome.
+	/// </summary>
+	public static AgentOutcome UpToDate(string agentId, string message) =>
+		new(agentId, AgentOutcomeStatus.UpToDate, message);
 }

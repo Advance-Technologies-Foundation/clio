@@ -63,6 +63,24 @@ public sealed class SkillManagementToolTests {
 		result.ExitCode.Should().Be(0, because: "the tool should forward a valid command payload");
 		command.CapturedOptions!.Target.Should().Be("cursor", because: "the requested target must be preserved");
 		command.CapturedOptions.Repo.Should().Be("url", because: "the requested repo must be preserved");
+		command.CapturedOptions.Force.Should().BeFalse(because: "an omitted force argument keeps the up-to-date check");
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Category("Unit")]
+	[Description("Maps the optional update-toolkit force argument into the --force command option.")]
+	public void UpdateSkill_ShouldMapForceArgument(bool force) {
+		// Arrange
+		FakeUpdateSkillCommand command = new();
+		UpdateSkillTool tool = new(command, ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.UpdateSkill(new UpdateSkillArgs(Force: force));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "the tool should forward a valid command payload");
+		command.CapturedOptions!.Force.Should().Be(force, because: "force=true must bypass the up-to-date check");
 	}
 
 	[Test]

@@ -39,6 +39,22 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 		return result;
 	}
 
+	/// <inheritdoc />
+	public string ReadInstalledCommit(string agentId) {
+		try {
+			return agentId switch {
+				"claude" => ReadClaudeCommit(GetAgentHome("claude")),
+				"codex" => ReadGitHeadCommit(SelectCodexPayload(GetAgentHome("codex"))),
+				_ => null
+			};
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// Anything unreadable is unknown, never "up to date", and must not fail the update: the caller
+			// falls back to a full update.
+			return null;
+		}
+	}
+
 	private string GetAgentHome(string agent) {
 		string variable = agent switch {
 			"codex" => "CODEX_HOME",
@@ -71,19 +87,94 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 	}
 
 	private string ReadCodex(string home) {
+		string active = SelectCodexPayload(home);
+		return active is null
+			? Missing
+			: ReadManifest(active, [".codex-plugin/plugin.json", ".claude-plugin/plugin.json", "plugin.json"]);
+	}
+
+	/// <summary>Returns the Codex cache payload Codex itself loads, or <c>null</c> when none is installed.</summary>
+	private string SelectCodexPayload(string home) {
 		string root = fileSystem.Combine(home, PluginsDirectory, "cache", ToolkitDistribution.MarketplaceName,
 			ToolkitDistribution.PluginName);
 		if (!fileSystem.ExistsDirectory(root)) {
-			return Missing;
+			return null;
 		}
 		string[] directories = fileSystem.GetDirectories(root);
 		if (directories.Length == 0) {
-			return Missing;
+			return null;
 		}
 		// Codex prefers "local", otherwise the greatest cache version (semver, with ordinal fallback).
 		Array.Sort(directories, (left, right) => CompareCacheVersions(Path.GetFileName(left), Path.GetFileName(right)));
-		string active = directories.FirstOrDefault(path => Path.GetFileName(path) == "local") ?? directories[^1];
-		return ReadManifest(active, [".codex-plugin/plugin.json", ".claude-plugin/plugin.json", "plugin.json"]);
+		return directories.FirstOrDefault(path => Path.GetFileName(path) == "local") ?? directories[^1];
+	}
+
+	private string ReadClaudeCommit(string home) {
+		string path = fileSystem.Combine(home, PluginsDirectory, "installed_plugins.json");
+		if (!fileSystem.ExistsFile(path)) {
+			return null;
+		}
+		using JsonDocument document = ReadJson(path);
+		if (!document.RootElement.TryGetProperty(PluginsDirectory, out JsonElement plugins)
+			|| !plugins.TryGetProperty(ToolkitDistribution.PluginSource, out JsonElement entries)
+			|| entries.ValueKind != JsonValueKind.Array) {
+			return null;
+		}
+		List<string> commits = [];
+		foreach (JsonElement entry in entries.EnumerateArray().Where(entry => StringProperty(entry, "scope") == "user")) {
+			string installPath = StringProperty(entry, "installPath");
+			if (string.IsNullOrWhiteSpace(installPath) || !fileSystem.ExistsDirectory(installPath)) {
+				// A registry entry whose payload is gone is not an installation that can be up to date.
+				return null;
+			}
+			string commit = GitCommitId.Normalize(StringProperty(entry, "gitCommitSha"));
+			if (commit is null) {
+				return null;
+			}
+			commits.Add(commit);
+		}
+		List<string> distinct = commits.Distinct(StringComparer.Ordinal).ToList();
+		return distinct.Count == 1 ? distinct[0] : null;
+	}
+
+	/// <summary>
+	/// Reads the commit a payload directory's own <c>.git</c> points at, without discovering any parent
+	/// repository: <c>HEAD</c> holds either a commit or <c>ref: refs/...</c>, resolved through the loose ref
+	/// file and then <c>packed-refs</c>.
+	/// </summary>
+	private string ReadGitHeadCommit(string payloadDirectory) {
+		if (payloadDirectory is null) {
+			return null;
+		}
+		string gitDirectory = fileSystem.Combine(payloadDirectory, ".git");
+		string headPath = fileSystem.Combine(gitDirectory, "HEAD");
+		if (!fileSystem.ExistsDirectory(gitDirectory) || !fileSystem.ExistsFile(headPath)) {
+			return null;
+		}
+		string head = ReadBoundedText(headPath).Trim();
+		const string refPrefix = "ref:";
+		if (!head.StartsWith(refPrefix, StringComparison.Ordinal)) {
+			return GitCommitId.Normalize(head);
+		}
+		string refName = head[refPrefix.Length..].Trim();
+		if (!refName.StartsWith("refs/", StringComparison.Ordinal) || refName.Contains("..", StringComparison.Ordinal)) {
+			return null;
+		}
+		string loosePath = fileSystem.Combine(gitDirectory, refName.Replace('/', Path.DirectorySeparatorChar));
+		if (fileSystem.ExistsFile(loosePath)) {
+			return GitCommitId.Normalize(ReadBoundedText(loosePath));
+		}
+		string packedRefsPath = fileSystem.Combine(gitDirectory, "packed-refs");
+		if (!fileSystem.ExistsFile(packedRefsPath)) {
+			return null;
+		}
+		foreach (string line in ReadBoundedText(packedRefsPath).Split('\n')) {
+			string[] parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+			if (parts.Length == 2 && parts[1] == refName) {
+				return GitCommitId.Normalize(parts[0]);
+			}
+		}
+		return null;
 	}
 
 	private static int CompareCacheVersions(string left, string right) {
@@ -110,11 +201,13 @@ public sealed class InstalledToolkitVersions(IFileSystem fileSystem, IUserHomePr
 		return Unknown;
 	}
 
-	private JsonDocument ReadJson(string path) {
+	private JsonDocument ReadJson(string path) => JsonDocument.Parse(ReadBoundedText(path));
+
+	private string ReadBoundedText(string path) {
 		if (fileSystem.GetFilesInfos(path).Length > MaximumMetadataBytes) {
 			throw new InvalidOperationException("Toolkit metadata exceeds the read limit.");
 		}
-		return JsonDocument.Parse(fileSystem.ReadAllText(path));
+		return fileSystem.ReadAllText(path);
 	}
 
 	private static string VersionProperty(JsonElement element) {

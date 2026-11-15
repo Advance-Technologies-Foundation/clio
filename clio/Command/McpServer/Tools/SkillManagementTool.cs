@@ -57,12 +57,14 @@ public sealed class UpdateSkillTool(UpdateSkillCommand command, ILogger logger)
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
 	[Description("Updates the Creatio AI App Development Toolkit skill for all detected coding agents "
-		+ "(claude, codex, cursor, copilot), or one agent via target")]
+		+ "(claude, codex, cursor, copilot), or one agent via target. An agent already on the latest release "
+		+ "is reported as up to date and left untouched; pass force=true to reinstall it anyway")]
 	public CommandExecutionResult UpdateSkill(
 		[Description("Update-skill parameters")] [Required] UpdateSkillArgs args) {
 		UpdateSkillOptions options = new() {
 			Target = args.Target,
-			Repo = args.Repo
+			Repo = args.Repo,
+			Force = args.Force ?? false
 		};
 		return InternalExecute(options);
 	}
@@ -123,7 +125,11 @@ public sealed record UpdateSkillArgs(
 	[property: JsonPropertyName("repo")]
 	[property: Description("Optional source override. Marketplace git URL for claude/codex/copilot; "
 		+ "local path or git URL for cursor. Defaults to the public toolkit marketplace")]
-	string Repo = null
+	string Repo = null,
+
+	[property: JsonPropertyName("force")]
+	[property: Description("Optional. true reinstalls even when an agent already has the latest release. Default: false")]
+	bool? Force = null
 );
 
 /// <summary>

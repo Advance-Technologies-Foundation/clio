@@ -1883,10 +1883,12 @@ internal class Program {
 		// push the clio update a whole frequency window into the future. Deferring must leave the update
 		// due, so that the next cold start - with no resident worker - performs it.
 		McpHostPresenceMarker residentHost = TryFindResidentMcpHost(serviceProvider);
+		bool clioUpdateLaunched = false;
 		if (residentHost is null) {
 			RunIfDue(settingsRepository, AutoUpdateTarget.Clio, () => {
 				IAppUpdater appUpdater = serviceProvider.GetRequiredService<IAppUpdater>();
 				appUpdater.UpdateInBackgroundAsync().GetAwaiter().GetResult();
+				clioUpdateLaunched = true;
 			});
 		}
 		else if (IsClioAutoupdateDue(settingsRepository)) {
@@ -1900,12 +1902,20 @@ internal class Program {
 				$"clio self-update deferred: MCP host pid {residentHost.ProcessId} "
 				+ $"(version {residentHost.ClioVersion}) is running");
 		}
-		// Knowledge and toolkit updates are data-only: they replace no loaded assembly and no settings
-		// section, so a resident worker does not make them unsafe.
+		// Knowledge and toolkit updates replace data, not the binaries or settings a resident MCP host has
+		// loaded, so a resident host does not make them unsafe. (The toolkit child does load clio.dll
+		// itself, which is why it waits for a run without a clio self-update - see below.)
 		RunIfDue(settingsRepository, AutoUpdateTarget.Knowledge,
 			() => serviceProvider.GetRequiredService<IKnowledgeSourceManagementService>().Update(sourceAlias: null));
-		RunIfDue(settingsRepository, AutoUpdateTarget.Toolkit,
-			() => serviceProvider.GetRequiredService<ISkillInstallService>().Update(target: null, repo: null));
+		// The toolkit update runs as a detached `clio update-toolkit` child (issue #1950): in-process it
+		// held the requested command for ~15 s once per window. Not in a run that has just started the clio
+		// self-update - the child would load clio.dll while `dotnet tool update` replaces it. That decision
+		// is made BEFORE RunIfDue on purpose: TryScheduleAutoupdate advances next-run as it answers, so a
+		// skip inside the callback would burn the whole window instead of leaving the update due.
+		if (!clioUpdateLaunched) {
+			RunIfDue(settingsRepository, AutoUpdateTarget.Toolkit,
+				() => serviceProvider.GetRequiredService<IToolkitAutoUpdateLauncher>().Launch());
+		}
 	}
 
 	private static bool IsClioAutoupdateDue(ISettingsRepository settingsRepository) {

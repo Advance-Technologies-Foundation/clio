@@ -67,6 +67,12 @@ public class InstallSkillsOptions : SkillCommandOptions {
 [Verb("update-toolkit", Aliases = ["update-skill"],
 	HelpText = "Update the Creatio AI App Development Toolkit for all detected coding agents")]
 public class UpdateSkillOptions : SkillCommandOptions {
+	/// <summary>
+	/// Reinstalls every selected agent even when it already has the published release commit.
+	/// </summary>
+	[Option("force", Required = false,
+		HelpText = "Reinstall even when an agent already has the latest release. Also restores the agent configuration an update repairs.")]
+	public bool Force { get; set; }
 }
 
 /// <summary>
@@ -137,7 +143,8 @@ public class UpdateSkillCommand(ISkillInstallService skillInstallService, ILogge
 			return 1;
 		}
 
-		return SkillCommandReporting.Report(logger, skillInstallService.Update(options.Target, options.Repo));
+		return SkillCommandReporting.Report(logger,
+			skillInstallService.Update(options.Target, options.Repo, options.Force));
 	}
 }
 

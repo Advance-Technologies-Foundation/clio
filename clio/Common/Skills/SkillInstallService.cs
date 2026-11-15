@@ -11,26 +11,39 @@ namespace Clio.Common.Skills;
 /// </summary>
 public sealed class SkillInstallService(
 	IEnumerable<ICodingAgent> agents,
-	IManagedSkillsManifestStore manifestStore)
+	IManagedSkillsManifestStore manifestStore,
+	IInstalledToolkitVersions installedVersions,
+	IToolkitReleaseProbe releaseProbe,
+	IToolkitOperationLock operationLock)
 	: ISkillInstallService {
+	private const int ShortCommitLength = 7;
+
+	internal const string OperationInProgressMessage =
+		"Another Creatio toolkit install, update, or removal is already running in another clio process. "
+		+ "Run the command again when it finishes.";
+
 	private readonly IReadOnlyList<ICodingAgent> _agents = agents
 		.OrderBy(agent => agent.AgentId, StringComparer.OrdinalIgnoreCase)
 		.ToList();
 	private readonly IManagedSkillsManifestStore _manifestStore = manifestStore;
+	private readonly IInstalledToolkitVersions _installedVersions = installedVersions;
+	private readonly IToolkitReleaseProbe _releaseProbe = releaseProbe;
+	private readonly IToolkitOperationLock _operationLock = operationLock;
 
 	/// <inheritdoc />
 	public SkillCommandResult Install(string target, string repo) =>
-		Run(SkillOperationKind.Install, target, repo);
+		Run(SkillOperationKind.Install, target, repo, skipAgentsOnRelease: false);
 
 	/// <inheritdoc />
-	public SkillCommandResult Update(string target, string repo) =>
-		Run(SkillOperationKind.Update, target, repo);
+	public SkillCommandResult Update(string target, string repo, bool force = false) =>
+		Run(SkillOperationKind.Update, target, repo, skipAgentsOnRelease: !force);
 
 	/// <inheritdoc />
 	public SkillCommandResult Delete(string target) =>
-		Run(SkillOperationKind.Delete, target, repositoryOverride: null);
+		Run(SkillOperationKind.Delete, target, repositoryOverride: null, skipAgentsOnRelease: false);
 
-	private SkillCommandResult Run(SkillOperationKind kind, string target, string repositoryOverride) {
+	private SkillCommandResult Run(SkillOperationKind kind, string target, string repositoryOverride,
+		bool skipAgentsOnRelease) {
 		string normalizedTarget = target?.Trim();
 		if (!string.IsNullOrEmpty(normalizedTarget)
 			&& !_agents.Any(agent => string.Equals(agent.AgentId, normalizedTarget, StringComparison.OrdinalIgnoreCase))) {
@@ -42,11 +55,19 @@ public sealed class SkillInstallService(
 			return Invalid(repositoryError);
 		}
 
+		using IDisposable operationHandle = _operationLock.TryAcquire();
+		if (operationHandle is null) {
+			return NotRun(OperationInProgressMessage);
+		}
+
 		List<ICodingAgent> selected = string.IsNullOrEmpty(normalizedTarget)
 			? _agents.ToList()
 			: _agents.Where(agent => string.Equals(agent.AgentId, normalizedTarget, StringComparison.OrdinalIgnoreCase)).ToList();
 
 		AgentOperationContext context = new(kind, repositoryOverride);
+		// Only the default source has a published release commit to compare against.
+		bool checkUpToDate = skipAgentsOnRelease && string.IsNullOrWhiteSpace(repositoryOverride);
+		Lazy<string> releaseCommit = new(_releaseProbe.ReadReleaseCommit);
 		ManagedSkillsManifest manifest = _manifestStore.Read();
 		DateTimeOffset now = DateTimeOffset.UtcNow;
 		List<AgentOutcome> outcomes = [];
@@ -56,6 +77,11 @@ public sealed class SkillInstallService(
 			if (!agent.Detect()) {
 				outcomes.Add(AgentOutcome.Skipped(agent.AgentId,
 					$"{agent.DisplayName} is not installed; nothing to do."));
+				continue;
+			}
+
+			if (checkUpToDate && TryGetUpToDateOutcome(agent, releaseCommit) is AgentOutcome upToDate) {
+				outcomes.Add(upToDate);
 				continue;
 			}
 
@@ -84,7 +110,31 @@ public sealed class SkillInstallService(
 		return new SkillCommandResult(exitCode, outcomes, BuildSummary(kind, outcomes));
 	}
 
-	private static SkillCommandResult Invalid(string message) =>
+	/// <summary>
+	/// Returns an up-to-date outcome when the agent's own recorded commit equals the published release
+	/// commit; otherwise <c>null</c>, which means "update". The installed commit is read first so an agent
+	/// that records no commit (Cursor, Copilot) never costs a network call.
+	/// </summary>
+	private AgentOutcome TryGetUpToDateOutcome(ICodingAgent agent, Lazy<string> releaseCommit) {
+		string installed = _installedVersions.ReadInstalledCommit(agent.AgentId);
+		if (installed is null) {
+			return null;
+		}
+
+		string published = releaseCommit.Value;
+		if (published is null || !string.Equals(installed, published, StringComparison.Ordinal)) {
+			return null;
+		}
+
+		return AgentOutcome.UpToDate(agent.AgentId,
+			$"{agent.DisplayName} already has the latest {ToolkitDistribution.PluginName} "
+			+ $"({published[..ShortCommitLength]}); nothing to update.");
+	}
+
+	private static SkillCommandResult Invalid(string message) => NotRun(message);
+
+	/// <summary>A non-zero result with no per-agent outcomes: the operation did not reach any agent.</summary>
+	private static SkillCommandResult NotRun(string message) =>
 		new(1, Array.Empty<AgentOutcome>(), message);
 
 	private static AgentOutcome Dispatch(ICodingAgent agent, SkillOperationKind kind, AgentOperationContext context) {
@@ -104,17 +154,23 @@ public sealed class SkillInstallService(
 	}
 
 	private static string BuildSummary(SkillOperationKind kind, IReadOnlyList<AgentOutcome> outcomes) {
-		string[] succeeded = outcomes
-			.Where(outcome => outcome.Status == AgentOutcomeStatus.Succeeded)
-			.Select(outcome => outcome.AgentId)
-			.ToArray();
+		string[] succeeded = AgentIds(outcomes, AgentOutcomeStatus.Succeeded);
+		string[] upToDate = AgentIds(outcomes, AgentOutcomeStatus.UpToDate);
+		string upToDateText = upToDate.Length == 0
+			? string.Empty
+			: $"{ToolkitDistribution.PluginName} is already up to date for: {string.Join(", ", upToDate)}.";
 
 		if (succeeded.Length == 0) {
-			return $"No agents were {PastVerb(kind)}.";
+			return upToDate.Length == 0 ? $"No agents were {PastVerb(kind)}." : upToDateText;
 		}
 
-		return $"{Capitalize(PastVerb(kind))} {ToolkitDistribution.PluginName} for: {string.Join(", ", succeeded)}.";
+		string succeededText =
+			$"{Capitalize(PastVerb(kind))} {ToolkitDistribution.PluginName} for: {string.Join(", ", succeeded)}.";
+		return upToDate.Length == 0 ? succeededText : $"{succeededText} {upToDateText}";
 	}
+
+	private static string[] AgentIds(IReadOnlyList<AgentOutcome> outcomes, AgentOutcomeStatus status) =>
+		outcomes.Where(outcome => outcome.Status == status).Select(outcome => outcome.AgentId).ToArray();
 
 	private static string Verb(SkillOperationKind kind) => kind switch {
 		SkillOperationKind.Install => "install",
