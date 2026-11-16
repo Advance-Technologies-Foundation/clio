@@ -56,7 +56,9 @@ public sealed class McpToolFactsSurfaceTests {
 					McpToolEnvironmentImpact.None, McpToolScope.Environment, McpToolConnections.None),
 				new McpToolArgumentFacts("dry-run", "true", true, McpToolEffect.Read,
 					McpToolEnvironmentImpact.None, McpToolScope.Environment, McpToolConnections.None)
-			]);
+			],
+			[],
+			[]);
 
 		// Act
 		string json = facts.ToJson().ToJsonString();
@@ -68,6 +70,44 @@ public sealed class McpToolFactsSurfaceTests {
 			+ "{\"argument\":\"action\",\"value\":\"list\",\"effect\":\"read\",\"rebuilds-environment\":false,\"scope\":\"environment\",\"connections\":\"none\"},"
 			+ "{\"argument\":\"dry-run\",\"value\":\"true\",\"when-absent\":true,\"effect\":\"read\",\"rebuilds-environment\":false,\"scope\":\"environment\",\"connections\":\"none\"}]}",
 			because: "a host parses this shape, so its field names and values are the contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The published facts name each argument that is a path on this machine with its kind and access, " +
+		"list and or only where they are set, and each argument that only reads like a path with what it is instead; a tool " +
+		"with neither publishes neither field.")]
+	public void ToJson_ShouldPublishHostPathsAndNotHostPaths_OnlyWhenDeclared() {
+		// Arrange
+		const string catalog = """
+			{
+			  "zz-paths": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none",
+			    "host-paths": [
+			      {"argument": "repoPath", "kind": "folder", "access": "read"},
+			      {"argument": "environmentName", "kind": "folder", "access": "read-write", "or": "name"},
+			      {"argument": "build", "kind": "file-or-folder", "access": "write", "list": true}],
+			    "not-host-paths": [{"argument": "file-path", "why": "a path inside a package on the environment"}]},
+			  "zz-no-paths": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"}
+			}
+			""";
+
+		// Act
+		IReadOnlyDictionary<string, McpToolFacts> facts = McpToolFactsReader.Parse(catalog);
+		string withPaths = facts["zz-paths"].ToJson().ToJsonString();
+		string withoutPaths = facts["zz-no-paths"].ToJson().ToJsonString();
+
+		// Assert
+		withPaths.Should().Be(
+			"{\"effect\":\"change\",\"rebuilds-environment\":false,\"scope\":\"machine\",\"connections\":\"none\","
+			+ "\"host-paths\":["
+			+ "{\"argument\":\"build\",\"kind\":\"file-or-folder\",\"access\":\"write\",\"list\":true},"
+			+ "{\"argument\":\"environmentName\",\"kind\":\"folder\",\"access\":\"read-write\",\"or\":\"name\"},"
+			+ "{\"argument\":\"repoPath\",\"kind\":\"folder\",\"access\":\"read\"}],"
+			+ "\"not-host-paths\":[{\"argument\":\"file-path\",\"why\":\"a path inside a package on the environment\"}]}",
+			because: "a host parses this shape, so its field names, values and order by argument are the contract");
+		withoutPaths.Should().Be(
+			"{\"effect\":\"read\",\"rebuilds-environment\":false,\"scope\":\"local\",\"connections\":\"none\"}",
+			because: "a tool that names no path publishes what it published before");
 	}
 
 	[Test]
@@ -182,6 +222,30 @@ public sealed class McpToolFactsSurfaceTests {
 		byArgument.Should().Contain(entry => (string)entry!["argument"]! == "action"
 				&& (string)entry["value"]! == "list" && (string)entry["effect"]! == "read",
 			because: "listing roles only reads, which is what the host needs to stop asking for a change approval");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("detail=facts tells a host which arguments are paths on this machine: set-logo's logo, whose name " +
+		"does not say so, is a file clio reads; get-package-file's file-path, whose name says so, is not one.")]
+	public void GetToolContract_ShouldAnswerHostPaths_WhenDetailIsFacts() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistry();
+
+		// Act
+		ToolContractGetResponse response = ToolContractCatalog.GetContracts(
+			["set-logo", "get-package-file"], registry, detail: ToolContractCatalog.FactsDetail);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "both names are served tools");
+		response.Facts!["set-logo"]["host-paths"]!.AsArray().Should().Contain(path => (string)path!["argument"]! == "logo"
+				&& (string)path["kind"]! == "file" && (string)path["access"]! == "read",
+			because: "clio reads the image the argument names from this machine, whatever the argument is called");
+		response.Facts["get-package-file"]["host-paths"].Should().BeNull(
+			because: "the tool reads a file inside a package on the environment, nothing on this machine");
+		response.Facts["get-package-file"]["not-host-paths"]!.AsArray().Should().ContainSingle(
+				path => (string)path!["argument"]! == "file-path",
+			because: "a host that guesses by name needs clio's word that this one is not a path here");
 	}
 
 	[Test]

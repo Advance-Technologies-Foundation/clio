@@ -30,8 +30,8 @@ is discovered through `get-tool-contract`, not `tools/list`:
   inline reply, returning the largest contracts in a short form (`detail: "short"`) unless the caller
   passes `detail: "full"` (ENG-100154, `ToolContractShortForm`)
 - what each tool does, for a host deciding how to treat a call (`McpToolFacts`: effect read / change / destroy,
-  rebuilds-environment, scope local / environment / machine, connections, and the argument values that narrow
-  them): in each resident tool's `_meta["clio/facts"]` in `tools/list`, and for every tool and alias through
+  rebuilds-environment, scope local / environment / machine, connections, the argument values that narrow
+  them, and which arguments are a file or folder on this machine with read / write access): in each resident tool's `_meta["clio/facts"]` in `tools/list`, and for every tool and alias through
   `get-tool-contract` with `detail: "facts"` (`spec/adr/adr-mcp-tool-facts.md`)
 - `67` prompts
 - a small fixed set of CLI-help and mechanical resources

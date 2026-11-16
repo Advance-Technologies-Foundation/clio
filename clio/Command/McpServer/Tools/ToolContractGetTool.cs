@@ -1293,7 +1293,11 @@ internal static class ToolContractCatalog {
 		+ "registered environments and credentials). by-argument lists argument values that narrow these: argument "
 		+ "as the caller writes it (inside args for an args-record tool), value compared case-insensitively, "
 		+ "when-absent when it also applies to a call that leaves the argument out; when several match, take the "
-		+ "widest of each fact. A resident tool carries the same object in tools/list under _meta clio/facts.";
+		+ "widest of each fact. host-paths lists the arguments whose value is a path on the machine clio runs on "
+		+ "(full, or relative to clio's working folder): kind (file | folder | file-or-folder), access (read | write | "
+		+ "read-write: also deletes there, or stores the folder for later calls), list when the value holds several "
+		+ "paths, or (name | url) when the value may be that instead. not-host-paths lists arguments that only read "
+		+ "like a path, with why. A resident tool carries the same object in tools/list under _meta clio/facts.";
 
 	/// <summary>
 	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the
