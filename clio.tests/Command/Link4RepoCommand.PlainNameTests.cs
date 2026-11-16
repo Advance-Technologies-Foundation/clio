@@ -215,7 +215,7 @@ public class Link4RepoCommandPlainNameTests : BaseCommandTests<Link4RepoOptions>
 
 	#region Tests: --unlocked
 
-	[TestCaseSource(nameof(HostileNames))]
+	[TestCaseSource(nameof(HostileEnvironmentNames))]
 	[Description("--unlocked on a versioned repository refuses a package name returned by the environment that is not a plain name, before the first delete or link, even when it follows valid packages.")]
 	public void Execute_Unlocked_Versioned_EnvironmentPackageNameNotPlain_NothingDeletedOrLinked(string hostileName) {
 		// Arrange
@@ -266,7 +266,7 @@ public class Link4RepoCommandPlainNameTests : BaseCommandTests<Link4RepoOptions>
 			because: "the refused version must never be joined into a path or probed on disk");
 	}
 
-	[TestCaseSource(nameof(HostileNames))]
+	[TestCaseSource(nameof(HostileEnvironmentNames))]
 	[Description("--unlocked --dry-run on a versioned repository refuses a package name that is not a plain name without probing it on disk.")]
 	public void Execute_Unlocked_DryRun_EnvironmentPackageNameNotPlain_IsNotProbed(string hostileName) {
 		// Arrange
@@ -287,7 +287,7 @@ public class Link4RepoCommandPlainNameTests : BaseCommandTests<Link4RepoOptions>
 			because: "a dry run must not probe a path built from a refused name either");
 	}
 
-	[TestCaseSource(nameof(HostileNames))]
+	[TestCaseSource(nameof(HostileEnvironmentNames))]
 	[Description("--unlocked on a flat repository refuses a package name returned by the environment that is not a plain name and links nothing.")]
 	public void Execute_Unlocked_Flat_EnvironmentPackageNameNotPlain_NothingLinked(string hostileName) {
 		// Arrange
@@ -330,6 +330,68 @@ public class Link4RepoCommandPlainNameTests : BaseCommandTests<Link4RepoOptions>
 			Path.Combine(EnvPkgPath, "Pkg.B_1"), Path.Combine(RepoPath, "Pkg.B_1", "main", "8.1.0.5"));
 	}
 
+	[TestCase("")]
+	[TestCase(null)]
+	[Description("--unlocked on a versioned repository skips a package the environment returned without a version: its folder is neither deleted nor linked to the branch folder, and the other packages are still linked.")]
+	public void Execute_Unlocked_Versioned_EnvironmentPackageWithoutVersion_IsSkippedAndOthersAreLinked(
+		string emptyVersion) {
+		// Arrange
+		_packageListProvider.GetPackages(Arg.Any<string>()).Returns(new List<PackageInfo> {
+			CreatePackageInfo("PkgA", "1.2.3"),
+			CreatePackageInfo("PkgNoVersion", emptyVersion),
+			CreatePackageInfo("Pkg.B_1", "8.1.0.5")
+		});
+		Link4RepoOptions options = CreateUnlockedOptions();
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a package without a version is ordinary and must not fail the run");
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+		_fileSystem.DidNotReceive().DeleteDirectory(Path.Combine(EnvPkgPath, "PkgNoVersion"), Arg.Any<bool>());
+		_fileSystem.DidNotReceive().CreateDirectorySymLink(Path.Combine(EnvPkgPath, "PkgNoVersion"), Arg.Any<string>());
+		_fileSystem.DidNotReceive().CreateDirectorySymLink(
+			Arg.Any<string>(), Path.Combine(RepoPath, "PkgNoVersion", "main"));
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m =>
+			m.Contains("'PkgNoVersion'") && m.Contains("not found in repository") && m.Contains("skipping")));
+		_fileSystem.Received(1).DeleteDirectory(Path.Combine(EnvPkgPath, "PkgA"), true);
+		_fileSystem.Received(1).CreateDirectorySymLink(
+			Path.Combine(EnvPkgPath, "PkgA"), Path.Combine(RepoPath, "PkgA", "main", "1.2.3"));
+		_fileSystem.Received(1).DeleteDirectory(Path.Combine(EnvPkgPath, "Pkg.B_1"), true);
+		_fileSystem.Received(1).CreateDirectorySymLink(
+			Path.Combine(EnvPkgPath, "Pkg.B_1"), Path.Combine(RepoPath, "Pkg.B_1", "main", "8.1.0.5"));
+		_logger.Received(1).WriteInfo("Linking completed: 2 linked, 1 skipped");
+	}
+
+	[TestCase("")]
+	[TestCase(null)]
+	[Description("--unlocked --dry-run on a versioned repository reports a package the environment returned without a version as not found, not as a link from the branch folder, and changes nothing.")]
+	public void Execute_Unlocked_Versioned_DryRun_EnvironmentPackageWithoutVersion_IsReportedAsSkipped(
+		string emptyVersion) {
+		// Arrange
+		_packageListProvider.GetPackages(Arg.Any<string>()).Returns(new List<PackageInfo> {
+			CreatePackageInfo("PkgA", "1.2.3"),
+			CreatePackageInfo("PkgNoVersion", emptyVersion)
+		});
+		Link4RepoOptions options = CreateUnlockedOptions();
+		options.DryRun = true;
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a package without a version is ordinary and must not fail the dry run");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(m =>
+			m.Contains("[dry-run]") && m.Contains("'PkgNoVersion'")
+			&& m.Contains("not found in repository, would skip")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(m =>
+			m.Contains("'PkgNoVersion'") && m.Contains("would link")));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(m =>
+			m.Contains("'PkgA'") && m.Contains("would link from " + Path.Combine(RepoPath, "PkgA", "main", "1.2.3"))));
+		AssertNothingDeletedOrLinked();
+	}
+
 	[Test]
 	[Description("--unlocked on a flat repository does not check versions, which are not path segments there, and links the packages found in the repository.")]
 	public void Execute_Unlocked_Flat_VersionIsNotAPathSegment_IsLinked() {
@@ -361,6 +423,16 @@ public class Link4RepoCommandPlainNameTests : BaseCommandTests<Link4RepoOptions>
 		yield return "sub/Pkg";
 		yield return @"sub\Pkg";
 		yield return GetRootedPath("rooted", "Outside");
+		// Windows drops a trailing dot, so the folder used would not be the folder named.
+		yield return "PkgDot.";
+		// A drive-relative name: refused for its ':' on every OS.
+		yield return "C:Pkg";
+	}
+
+	// A name the environment returned is used as it is. A name from --packages is trimmed when the list is split,
+	// so surrounding spaces can only reach a path from the environment.
+	private static IEnumerable<string> HostileEnvironmentNames() {
+		return HostileNames().Append("PkgSpace ").Append(" PkgSpace");
 	}
 
 	private static IEnumerable<string> HostileVersions() {

@@ -265,8 +265,8 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// </summary>
 	/// <param name="environmentPackages">Packages returned by the environment.</param>
 	/// <param name="versionsArePathSegments"><see langword="true"/> for a versioned repository, where the package
-	/// version names a folder. A package with no version is not refused: it has no folder to find and is skipped
-	/// by the lookup as before.</param>
+	/// version names a folder. A package with no version is not refused: it has no version folder to find, and
+	/// <see cref="FindPackageVersionPath"/> answers "not found" for it, so it is skipped with a warning.</param>
 	/// <returns><see langword="true"/> when the list was refused and the error was logged.</returns>
 	private bool RefuseNonPlainEnvironmentPackages(IEnumerable<PackageInfo> environmentPackages,
 		bool versionsArePathSegments) {
@@ -448,7 +448,16 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// Structure: repoPath/{PackageName}/{branch}/{version}/
 	/// Returns the first matching version found in any branch.
 	/// </summary>
+	/// <returns>The version folder, or <see langword="null"/> when the package has no such version in the repository
+	/// or <paramref name="packageVersion"/> is empty.</returns>
 	private string FindPackageVersionPath(string repoPath, string packageName, string packageVersion) {
+		// A package without a version has no version folder. Joining an empty version would answer the branch
+		// folder itself, and the caller would delete the environment package folder and link it to a folder of
+		// version folders.
+		if (string.IsNullOrWhiteSpace(packageVersion)) {
+			return null;
+		}
+
 		string packageDir = _fileSystem.Combine(repoPath, packageName);
 		if (!_fileSystem.ExistsDirectory(packageDir)) {
 			return null;
