@@ -5,10 +5,13 @@ Usage: clio execute-dataservice-batch -e <environment> --input <operations.json>
 --input  Required JSON array of 1–100 insert/update/delete operations; each has
          operation, schema-name, record-id, and values for insert/update.
          Values use {"data-value-type": 1, "value": "text"}.
-         A datetime (7), date (8) or time (9) value is a plain string, for
-         example {"data-value-type": 7, "value": "2026-01-31T09:00:00.000"};
-         clio sends it to DataService as a quoted JSON string. A number,
-         object, boolean or empty string there is refused before any request.
+         A datetime (7), date (8) or time (9) value is a plain string, in the
+         shape {"data-value-type": 7, "value": "2026-01-31T09:00:00.000"};
+         clio adds the JSON quoting DataService needs. The example shows the
+         shape only: clio does not parse the text, the accepted formats are
+         DataService's, and only a full timestamp under type 7 is confirmed
+         on a site. A number, object, boolean or empty string there is
+         refused before any request.
 
 Continues after item errors. No atomicity guarantee or automatic retry.
 Inspect completed/failed/unknown item outcomes; verify records before retrying.

@@ -164,20 +164,47 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 
 	private static bool IsDateOrTime(int dataValueType) => dataValueType is 7 or 8 or 9;
 
-	private static bool IsDateOrTimeValue(JsonElement element) => element.ValueKind == JsonValueKind.Null
-		|| (element.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(UnwrapJsonStringLiteral(element.GetString()) ?? element.GetString()));
+	private static bool IsDateOrTimeValue(JsonElement element) {
+		if (element.ValueKind == JsonValueKind.Null) { return true; }
+		if (element.ValueKind != JsonValueKind.String || !TryGetText(element, out string text)) { return false; }
+		return ReadJsonStringLiteral(text, out _, out string inner) ? !string.IsNullOrWhiteSpace(inner) : !string.IsNullOrWhiteSpace(text);
+	}
 
 	/// <summary>
-	/// Returns the text inside <paramref name="text"/> when it is itself a JSON string literal (starts and ends with a
-	/// double quote and parses as a JSON string); otherwise <c>null</c>.
+	/// Reads the text of a JSON string element; <c>false</c> when it cannot be decoded (an escaped lone surrogate
+	/// such as <c>\uD800</c> makes <see cref="JsonElement.GetString"/> throw).
 	/// </summary>
-	private static string UnwrapJsonStringLiteral(string text) {
-		if (text is null || text.Length < 2 || text[0] != '"' || text[^1] != '"') { return null; }
+	private static bool TryGetText(JsonElement element, out string text) {
 		try {
-			using JsonDocument document = JsonDocument.Parse(text);
-			return document.RootElement.ValueKind == JsonValueKind.String ? document.RootElement.GetString() : null;
+			text = element.GetString();
+			return true;
+		} catch (InvalidOperationException) {
+			text = null;
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Tells whether <paramref name="text"/>, without the whitespace around it, is itself a JSON string literal:
+	/// it starts and ends with a double quote and parses as one JSON string.
+	/// </summary>
+	/// <param name="text">The caller's value.</param>
+	/// <param name="literal">The trimmed literal, the form that is forwarded to DataService.</param>
+	/// <param name="inner">
+	/// The text inside the literal; <c>null</c> when the literal cannot be decoded (an escaped lone surrogate), which
+	/// validation refuses like an empty value.
+	/// </param>
+	private static bool ReadJsonStringLiteral(string text, out string literal, out string inner) {
+		literal = text?.Trim();
+		inner = null;
+		if (literal is null || literal.Length < 2 || literal[0] != '"' || literal[^1] != '"') { return false; }
+		try {
+			using JsonDocument document = JsonDocument.Parse(literal);
+			if (document.RootElement.ValueKind != JsonValueKind.String) { return false; }
+			TryGetText(document.RootElement, out inner);
+			return true;
 		} catch (JsonException) {
-			return null;
+			return false;
 		}
 	}
 
@@ -188,12 +215,13 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 	/// A DateTime (7), Date (8) or Time (9) parameter is read by DataService as JSON, so the text has to arrive as a
 	/// quoted JSON string. Bare text is refused there: <c>2026-01-01</c> as "Input string '2026-01-01' is not a valid
 	/// number" and <c>2026-01-01T00:00:00</c> as "Value cannot be null". A caller that already passed the JSON string
-	/// literal is forwarded unchanged, so the value is never quoted twice. Null and every other type pass through.
+	/// literal is forwarded as that literal, without the whitespace around it, so the value is never quoted twice.
+	/// Null and every other type pass through.
 	/// </remarks>
 	private static object BuildParameterValue(DataServiceBatchValue value) {
 		if (!IsDateOrTime(value.DataValueType) || value.Value.ValueKind != JsonValueKind.String) { return value.Value; }
 		string text = value.Value.GetString();
-		return UnwrapJsonStringLiteral(text) is null ? JsonSerializer.Serialize(text) : text;
+		return ReadJsonStringLiteral(text, out string literal, out _) ? literal : JsonSerializer.Serialize(text);
 	}
 
 	private static bool IsIdentifier(string value) => value is not null && Regex.IsMatch(value, "^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));

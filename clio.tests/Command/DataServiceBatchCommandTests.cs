@@ -169,6 +169,7 @@ public sealed class DataServiceBatchCommandTests : BaseCommandTests<DataServiceB
 	[TestCase("update", 8, "2026-01-01")]
 	[TestCase("insert", 9, "09:30:00")]
 	[TestCase("update", 9, "09:30:00")]
+	[TestCase("insert", 7, "2026-01-31T09:00:00+02:00")]
 	[Description("A plain DateTime, Date or Time string is sent as a quoted JSON string, the form DataService reads.")]
 	public void ExecuteBatch_ShouldSendDateOrTimeValueAsQuotedJsonString_WhenValueIsPlainText(string action, int type, string text) {
 		// Arrange
@@ -235,6 +236,63 @@ public sealed class DataServiceBatchCommandTests : BaseCommandTests<DataServiceB
 			.Which.Message.Should().Contain("'StartDate'", because: "the caller needs to know which column to fix")
 			.And.Contain($"'{typeName}'", because: "the caller needs to know which type the value has to match")
 			.And.Contain($"data-value-type {type}", because: "the message uses the argument name the caller passed");
+		_client.ReceivedCalls().Should().BeEmpty(because: "the whole batch is validated before the first write");
+	}
+
+	[TestCase(" \"2026-01-01T00:00:00\" ")]
+	[TestCase("\"2026-01-01T00:00:00\"\n")]
+	[TestCase("\r\n\t\"2026-01-01T00:00:00\"")]
+	[Description("A JSON string literal with whitespace around it, such as one read from a file with a trailing newline, reaches DataService as the same single literal and is not quoted a second time.")]
+	public void ExecuteBatch_ShouldSendTheTrimmedLiteral_WhenAJsonStringLiteralHasWhitespaceAroundIt(string value) {
+		// Arrange
+		var operation = Operation() with { Values = new() { ["StartDate"] = new(7, JsonSerializer.SerializeToElement(value)) } };
+		// Act
+		JsonElement parameter = SubmitAndReadParameter(operation, "StartDate");
+		// Assert
+		string wireValue = parameter.GetProperty("value").GetString();
+		wireValue.Should().Be("\"2026-01-01T00:00:00\"", because: "the literal is forwarded without the whitespace around it, as one JSON string literal");
+		using JsonDocument inner = JsonDocument.Parse(wireValue);
+		inner.RootElement.ValueKind.Should().Be(JsonValueKind.String, because: "DataService reads the parameter as JSON and must find a string");
+		inner.RootElement.GetString().Should().Be("2026-01-01T00:00:00", because: "a second quoting would leave the caller's quotes inside the date text");
+	}
+
+	[TestCase(7, true)]
+	[TestCase(8, true)]
+	[TestCase(9, true)]
+	[TestCase(7, false)]
+	[Description("A date or time text with an escaped lone surrogate, quoted by the caller or plain, cannot be decoded and is refused by validation with the ordinary message instead of failing with an unrelated exception.")]
+	public void ExecuteBatch_ShouldRejectBeforeAnyRequest_WhenDateOrTimeTextHasALoneSurrogateEscape(int type, bool quotedByCaller) {
+		// Arrange
+		// The escape is assembled from parts so that no tool or editor can decode it into a raw lone surrogate.
+		string escape = "\\" + "uD800";
+		string json = quotedByCaller ? "\"\\\"\\" + escape + "\\\"\"" : "\"" + escape + "\"";
+		var operation = Operation() with { Values = new() { ["StartDate"] = new(type, JsonSerializer.Deserialize<JsonElement>(json)) } };
+		// Act
+		Action act = () => _command.ExecuteBatch([operation]);
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "an undecodable text is an invalid value, not an internal error")
+			.Which.Message.Should().Contain("'StartDate'", because: "the caller needs to know which column to fix")
+			.And.Contain($"data-value-type {type}", because: "the refusal is the ordinary date and time validation message");
+		_client.ReceivedCalls().Should().BeEmpty(because: "the whole batch is validated before the first write");
+	}
+
+	[TestCase(7, "DateTime")]
+	[TestCase(8, "Date")]
+	[TestCase(9, "Time")]
+	[Description("A date or time value object with no value property is refused before any request, naming the column and the type.")]
+	public void ExecuteBatch_ShouldRejectBeforeAnyRequest_WhenDateOrTimeValueObjectHasNoValue(int type, string typeName) {
+		// Arrange
+		DataServiceBatchOperation[] operations = JsonSerializer.Deserialize<DataServiceBatchOperation[]>(
+			"[{\"operation\":\"update\",\"schema-name\":\"Contact\",\"record-id\":\"11111111-1111-1111-1111-111111111111\","
+			+ "\"values\":{\"StartDate\":{\"data-value-type\":" + type + "}}}]");
+		// Act
+		Action act = () => _command.ExecuteBatch(operations);
+		// Assert
+		operations[0].Values["StartDate"].Value.ValueKind.Should().Be(JsonValueKind.Undefined, because: "the test is about a value object that has no value property");
+		act.Should().Throw<ArgumentException>(because: "a missing value is neither a date text nor an explicit null")
+			.Which.Message.Should().Contain("'StartDate'", because: "the caller needs to know which column to fix")
+			.And.Contain($"'{typeName}'", because: "the caller needs to know which type the value has to match")
+			.And.Contain("JSON kind Undefined", because: "the message says what was received");
 		_client.ReceivedCalls().Should().BeEmpty(because: "the whole batch is validated before the first write");
 	}
 
