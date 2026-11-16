@@ -1244,7 +1244,7 @@ public sealed class PageSyncToolTests {
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		Clio.EnvironmentOptions capturedGetOptions = null;
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
@@ -1285,7 +1285,7 @@ public sealed class PageSyncToolTests {
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		Clio.EnvironmentOptions capturedGetOptions = null;
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
@@ -1323,7 +1323,7 @@ public sealed class PageSyncToolTests {
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
@@ -1364,7 +1364,7 @@ public sealed class PageSyncToolTests {
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
@@ -1400,7 +1400,7 @@ public sealed class PageSyncToolTests {
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
 		commandResolver.Resolve<PageGetCommand>(Arg.Any<Clio.EnvironmentOptions>()).Returns(getCommand);
@@ -1439,7 +1439,7 @@ public sealed class PageSyncToolTests {
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		Clio.EnvironmentOptions captured = null;
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
@@ -1507,7 +1507,7 @@ public sealed class PageSyncToolTests {
 		]);
 		PageGetCommand getCommand = new(getAppClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(), hierarchyClient,
 			new PageSchemaBodyParser(), new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out IApplicationClient updateAppClient);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
@@ -1646,7 +1646,7 @@ public sealed class PageSyncToolTests {
 			hierarchyClient,
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			CreatePassthroughPageFileWriter());
+			CreatePassthroughPageFileWriter(), Substitute.For<IPageLayerInspector>());
 	}
 
 	private static PageGetCommand CreateFailingPageGetCommand() {
@@ -1667,7 +1667,7 @@ public sealed class PageSyncToolTests {
 			Substitute.For<IPageDesignerHierarchyClient>(),
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			CreatePassthroughPageFileWriter());
+			CreatePassthroughPageFileWriter(), Substitute.For<IPageLayerInspector>());
 	}
 
 	private static IPageFileWriter CreatePassthroughPageFileWriter() {

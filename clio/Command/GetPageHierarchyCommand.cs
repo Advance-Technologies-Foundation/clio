@@ -179,6 +179,7 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IPageDesignerHierarchyClient _hierarchyClient;
+	private readonly IPageLayerInspector _layerInspector;
 	private readonly ILogger _logger;
 
 	/// <summary>
@@ -187,15 +188,18 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 	/// <param name="applicationClient">Remote Creatio client.</param>
 	/// <param name="serviceUrlBuilder">Service URL builder.</param>
 	/// <param name="hierarchyClient">Designer hierarchy client that returns the full chain with bodies.</param>
+	/// <param name="layerInspector">Reads the lock state of the chain's packages.</param>
 	/// <param name="logger">Logger used for CLI output.</param>
 	public GetPageHierarchyCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IPageDesignerHierarchyClient hierarchyClient,
+		IPageLayerInspector layerInspector,
 		ILogger logger) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_hierarchyClient = hierarchyClient;
+		_layerInspector = layerInspector;
 		_logger = logger;
 	}
 
@@ -232,8 +236,8 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 				};
 				return false;
 			}
-			(IReadOnlyDictionary<string, bool?> packageLocks, string lockError) = ReadPackageLocks(effectiveFirst);
-			response = BuildResponse(options, effectiveFirst, packageLocks, lockError);
+			PagePackageLockRead lockRead = _layerInspector.ReadPackageLocks(effectiveFirst);
+			response = BuildResponse(options, effectiveFirst, lockRead.Locks, lockRead.Warning);
 			return true;
 		}
 		catch (Exception ex) {
@@ -317,7 +321,7 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 			ReturnedCount = page.Count,
 			HasMore = offset + page.Count < total,
 			BodiesOmittedForSize = omitBodiesForSize,
-			Warning = JoinWarnings(
+			Warning = PageWarningText.Join(
 				omitBodiesForSize
 					? $"Bodies omitted: the selected window exceeds the {DefaultBodySizeBudgetChars}-char response budget. "
 						+ "Re-request with --metadata-only, or page with --offset/--limit, or fetch a single schema body via get-page."
@@ -327,81 +331,8 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		};
 	}
 
-	private static string JoinWarnings(params string[] warnings) {
-		string joined = string.Join(" ", warnings.Where(warning => !string.IsNullOrWhiteSpace(warning)));
-		return joined.Length == 0 ? null : joined;
-	}
-
-	/// <summary>
-	/// Reads the lock state of every package in the chain with one <c>SysPackage</c> query.
-	/// </summary>
-	/// <param name="chain">The resolved chain.</param>
-	/// <returns>
-	/// Lock state by package UId, or <c>null</c> when the query failed, plus a warning for every lock state left
-	/// unknown: a failed query, a package <c>SysPackage</c> did not return, or a chain entry without a package UId.
-	/// A failed read never fails the hierarchy itself: the chain is still returned, with <c>packageLocked</c> unknown.
-	/// A timeout (<see cref="OperationCanceledException"/>) is a failed read too: no cancellation token reaches it.
-	/// </returns>
-	private (IReadOnlyDictionary<string, bool?> locks, string error) ReadPackageLocks(
-		IReadOnlyList<PageDesignerHierarchySchema> chain) {
-		List<string> packageUIds = chain
-			.Select(schema => schema.PackageUId)
-			.Where(uId => !string.IsNullOrWhiteSpace(uId))
-			.Distinct(StringComparer.OrdinalIgnoreCase)
-			.ToList();
-		List<string> schemasWithoutPackage = chain
-			.Where(schema => string.IsNullOrWhiteSpace(schema.PackageUId))
-			.Select(schema => schema.Name)
-			.ToList();
-		string noPackageWarning = schemasWithoutPackage.Count == 0
-			? null
-			: "Package lock state is unknown (packageLocked is null) for schemas without a package UId: "
-				+ $"{string.Join(", ", schemasWithoutPackage)}.";
-		Dictionary<string, bool?> locks = new(StringComparer.OrdinalIgnoreCase);
-		if (packageUIds.Count == 0) {
-			return (locks, noPackageWarning);
-		}
-		try {
-			PackageLockSelectResponse answer = SelectQueryHelper.ExecuteSelectQuery<PackageLockSelectResponse>(
-				_applicationClient, _serviceUrlBuilder,
-				SelectQueryHelper.BuildSelectQueryWithInFilter(
-					"SysPackage", PackageLockColumns, "UId", packageUIds, SelectQueryHelper.GuidDataValueType));
-			foreach (PackageLockRow row in answer.Rows.Where(row => !string.IsNullOrWhiteSpace(row.UId))) {
-				locks[row.UId] = PackageTargetResolver.IsLockedInstallType(row.InstallType);
-			}
-			List<string> unknown = packageUIds.Where(uId => locks.GetValueOrDefault(uId) is null).ToList();
-			return (locks, JoinWarnings(
-				unknown.Count == 0
-					? null
-					: $"Package lock state is unknown (packageLocked is null) for packages: {string.Join(", ", unknown)}.",
-				noPackageWarning));
-		}
-		catch (Exception ex) {
-			return (null, $"Package lock state could not be read, so packageLocked is null for every schema: {ex.Message}");
-		}
-	}
-
-	private static readonly IReadOnlyList<SelectQueryHelper.SelectQueryColumnDefinition> PackageLockColumns = [
-		new("UId", "UId"),
-		new("InstallType", "InstallType")
-	];
-
-	private sealed class PackageLockSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
-		[JsonPropertyName("rows")]
-		public List<PackageLockRow> Rows { get; init; } = [];
-	}
-
-	private sealed class PackageLockRow {
-		[JsonPropertyName("UId")]
-		public string UId { get; init; }
-
-		[JsonPropertyName("InstallType")]
-		public int? InstallType { get; init; }
-	}
-
 	// NOTE (ENG-93249): mirrors PageGetCommand's chain resolution (metadata -> design package -> full
-	// hierarchy from the root). Kept as a focused copy rather than refactoring the working get-page
-	// path; unifying both onto one resolver is tracked as ENG-93249.
+	// hierarchy from the root); the root-variant re-read itself is the shared PageHierarchyChain rule.
 	/// <summary>
 	/// Resolves the replacing-schema chain for <paramref name="schemaName"/>, classifying the outcome into three
 	/// states so that a call which never produced an answer is never reported as an answer about the page
@@ -447,13 +378,8 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 		// get-page does: the name->UId metadata lookup can resolve to an arbitrary replacing variant
 		// (a page replaced across packages has one SysSchema row per package), so anchoring on the
 		// root variant yields the same complete, deterministic chain get-page merges.
-		string rootSchemaUId = FindRootSchemaUId(initialHierarchy, schemaName) ?? schemaUId;
-		if (string.Equals(rootSchemaUId, schemaUId, StringComparison.OrdinalIgnoreCase)) {
-			return (initialHierarchy, null);
-		}
-		IReadOnlyList<PageDesignerHierarchySchema> fullHierarchy =
-			_hierarchyClient.GetParentSchemas(rootSchemaUId, designPackageUId);
-		return (fullHierarchy.Count > 0 ? fullHierarchy : initialHierarchy, null);
+		return (PageHierarchyChain.ReadFromRootVariant(
+			_hierarchyClient, schemaName, schemaUId, designPackageUId, initialHierarchy), null);
 	}
 
 	/// <summary>
@@ -498,15 +424,6 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 	/// <returns><see langword="true"/> when the service answered and rejected the lookup.</returns>
 	private static bool IsAnsweredRejection(Exception exception) =>
 		exception is InvalidOperationException and not NonJsonServiceResponseException;
-
-	private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
-		for (int i = hierarchy.Count - 1; i >= 0; i--) {
-			if (string.Equals(hierarchy[i].Name, schemaName, StringComparison.OrdinalIgnoreCase)) {
-				return hierarchy[i].UId;
-			}
-		}
-		return null;
-	}
 
 	/// <inheritdoc />
 	public override int Execute(GetPageHierarchyOptions options) {

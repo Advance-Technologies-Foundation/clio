@@ -90,15 +90,41 @@ public sealed class WorkerTerminalStageProtocolTests {
 	/// The silence bound the LONG-STAGE test runs with, and the one number it is really about.
 	/// </summary>
 	/// <remarks>
-	/// This test's subject is a HEALTHY run, so the gap between two liveness refreshes — a third of this
-	/// bound — must never be able to expire it. The child's single stage then runs for
-	/// <see cref="LongStageDuration"/> — three times this bound — which is what makes the test
-	/// discriminating: nothing but an in-stage liveness refresh can carry a run across that gap.
+	/// <para>
+	/// This test's subject is a HEALTHY run, so the gap between two liveness refreshes — a tenth of this
+	/// bound, the ratio the shipped numbers hold (30 s inside 300 s) — must never be able to expire it. The
+	/// child's single stage then runs for <see cref="LongStageDuration"/> — one and a half times this bound
+	/// — which is what makes the test discriminating: nothing but an in-stage liveness refresh can carry a
+	/// run across that gap.
+	/// </para>
+	/// <para>
+	/// The bound was one second with a refresh every third of it, which left a beat 667 ms to cross two
+	/// relay hops. Each hop needs a thread-pool thread, and with three fixtures running at once (the
+	/// assembly's LevelOfParallelism) on a small agent the pool hands one out late: the beat arrived after
+	/// the bound and a healthy run was reported as an error. This test and the streaming one below together
+	/// failed about one build in nineteen. Four seconds with a refresh every 400 ms leaves 3.6 s: after a
+	/// beat is observed the next nine fall due inside the bound, so nine beats in a row have to be late
+	/// before it can expire.
+	/// </para>
 	/// </remarks>
-	private static readonly TimeSpan LongStageSilenceBound = TimeSpan.FromSeconds(1);
+	private static readonly TimeSpan LongStageSilenceBound = TimeSpan.FromSeconds(4);
 
-	/// <summary>How long the child's one long stage takes: three silence windows.</summary>
-	private static readonly TimeSpan LongStageDuration = TimeSpan.FromSeconds(3);
+	/// <summary>How long the child's one long stage takes: one and a half silence windows.</summary>
+	private static readonly TimeSpan LongStageDuration = TimeSpan.FromSeconds(6);
+
+	/// <summary>
+	/// The silence bound of the test whose healthy run keeps streaming stage events past the ordinary budget.
+	/// </summary>
+	/// <remarks>
+	/// Longer than any one gap between two stage events (<see cref="StreamingStageGap"/>) and shorter than
+	/// the gaps together, so only a timer that restarts on every stage event lets the run finish. The gap
+	/// used to be 500 ms inside a 1.2 s bound; 700 ms of slack is what a starved thread pool on a loaded
+	/// agent spent before the event was observed, and the healthy run was killed. The slack is now 3.5 s.
+	/// </remarks>
+	private static readonly TimeSpan StreamingSilenceBound = TimeSpan.FromSeconds(6);
+
+	/// <summary>The pause before each stage event of the streaming child; three of them outlast the bound.</summary>
+	private static readonly TimeSpan StreamingStageGap = TimeSpan.FromMilliseconds(2500);
 
 	/// <summary>The post-terminal exit grace the fixture runs with — the 30 s default, scaled down.</summary>
 	private static readonly TimeSpan ExitGrace = TimeSpan.FromMilliseconds(400);
@@ -163,14 +189,15 @@ public sealed class WorkerTerminalStageProtocolTests {
 		using StageStreamingWorkerChild worker = ArrangeWorker(ChildBehaviour.StreamsPastTheOrdinaryBudget);
 		RecordingClientSession client = new();
 		McpWorkerCallDispatcher sut = CreateSut(ordinaryBudget: TimeSpan.FromMilliseconds(1),
-			silenceBound: TimeSpan.FromMilliseconds(1200));
+			silenceBound: StreamingSilenceBound);
 
 		// Act
 		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
 
 		// Assert
 		result.IsError.Should().NotBeTrue(
-			because: "the deploy completed; a generic kill at the 1 ms budget would have answered with a timeout envelope instead and left the environment half-installed");
+			because: "the deploy completed; a generic kill at the 1 ms budget would have answered with a timeout envelope instead and left the environment half-installed. "
+				+ $"Actual result: {ReadStructured(result)?.ToJsonString()}");
 		_supervisor.DidNotReceive().KillContained(Arg.Any<IWorkerLease>());
 		worker.EmittedStageIds.Should().Contain(ClioStageEventContract.EventTypes.RunCompleted,
 			because: "the run must actually have reached its terminal stage, or this test would be asserting that nothing was killed during a call that ended for some other reason");
@@ -578,11 +605,11 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A single stage that runs three times longer than the whole silence bound is carried by the emitter's in-stage liveness refresh: the healthy worker answers for itself and is never killed, so a long database restore can no longer be reported as a possibly half-installed environment.")]
+	[Description("A single stage that outlasts the whole silence bound by half is carried by the emitter's in-stage liveness refresh: the healthy worker answers for itself and is never killed, so a long database restore can no longer be reported as a possibly half-installed environment.")]
 	public async Task DispatchAsync_ShouldReturnTheWorkersOwnAnswer_WhenOneStageOutlastsTheSilenceBound() {
 		// Arrange — the child drives the PRODUCTION StageEventEmitter over the pipe, so what keeps this run
 		// alive is the shipped emitter rather than a beat the fixture scripted for itself. Its one long
-		// stage sleeps for three silence windows while the worker is perfectly healthy.
+		// stage sleeps for one and a half silence windows while the worker is perfectly healthy.
 		using StageStreamingWorkerChild worker =
 			ArrangeWorker(ChildBehaviour.RunsOneLongStageThroughTheProductionEmitter, LongStageSilenceBound);
 		RecordingClientSession client = new();
@@ -593,7 +620,8 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 		// Assert
 		result.IsError.Should().NotBeTrue(
-			because: "the deploy was healthy throughout; an error here is the parent reporting a working run as INDETERMINATE because one of its stages was long");
+			because: "the deploy was healthy throughout; an error here is the parent reporting a working run as INDETERMINATE because one of its stages was long. "
+				+ $"Actual result: {ReadStructured(result)?.ToJsonString()}");
 		ReadStructured(result)?["answered-by"]?.GetValue<string>().Should().Be("worker",
 			because: "the worker answered its own call, and a result composed by the parent instead means the call was resolved by the silence bound rather than by the run");
 		ReadStructured(result)?["outcome"]?.GetValue<string>().Should()
@@ -755,7 +783,7 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 		/// <summary>
 		/// Runs a real manifest through the PRODUCTION <see cref="StageEventEmitter"/>, one of whose
-		/// stages takes three silence windows, then answers the call.
+		/// stages takes one and a half silence windows, then answers the call.
 		/// </summary>
 		RunsOneLongStageThroughTheProductionEmitter,
 
@@ -1027,7 +1055,7 @@ public sealed class WorkerTerminalStageProtocolTests {
 						// Each gap is comfortably UNDER the silence bound the test arranges, while three of them
 						// add up to comfortably OVER it — so a silence timer that failed to reset on each stage
 						// event would expire here, and so would any bound derived from the 1 ms ordinary budget.
-						await Task.Delay(TimeSpan.FromMilliseconds(500)).ConfigureAwait(false);
+						await Task.Delay(StreamingStageGap).ConfigureAwait(false);
 						await EmitStageAsync(toParent, progressToken, StageIdAt(index), index).ConfigureAwait(false);
 					}
 					await EmitRunCompletedAsync(toParent, progressToken,
@@ -1098,15 +1126,15 @@ public sealed class WorkerTerminalStageProtocolTests {
 		/// way <see cref="StageEventProgressForwarder"/> wires it inside a real worker.
 		/// </summary>
 		/// <remarks>
-		/// The refresh interval is scaled to a third of the silence bound — the same RATIO the shipped
+		/// The refresh interval is scaled to a tenth of the silence bound — the same RATIO the shipped
 		/// numbers hold (30 s inside 300 s) at a size a unit test can wait out. Nothing else about the
-		/// emitter is arranged: if the shipped emitter stops refreshing, this child falls silent for three
-		/// whole silence windows and the parent kills it.
+		/// emitter is arranged: if the shipped emitter stops refreshing, this child falls silent for one
+		/// and a half silence windows and the parent kills it.
 		/// </remarks>
 		/// <param name="toParent">The child's output.</param>
 		/// <param name="progressToken">The token the call carried.</param>
 		private void RunProductionEmitterScript(StreamWriter toParent, JsonNode progressToken) {
-			StageEventEmitter emitter = new() { LivenessRefreshInterval = _silenceBound / 3 };
+			StageEventEmitter emitter = new() { LivenessRefreshInterval = _silenceBound / 10 };
 			emitter.Begin(ClioStageEventContract.Operations.Deploy, [
 				new StageDescriptor(FirstStage, "Unpack", false),
 				new StageDescriptor(LastStageBeforeSilence, "Restore database", false),

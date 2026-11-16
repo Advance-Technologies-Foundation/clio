@@ -17,6 +17,7 @@ internal static class McpServerInstructions
 		- get-guidance name=core-rules - the non-negotiable invariants (compile/restart, long-running await, profile culture, destructive confirmation, verification in browser preference, correlation-id); apply them to every action.
 		- get-guidance name=routing - the routing map from the task (pages, entities, data, applications) to the exact guide(s) to read before acting.
 		name=list returns the guide catalog.
+		Business wording counts: a request about a record type's statuses (their order or outcomes), stages, fields or pages is Creatio work - read both before answering it or offering a drawing.
 
 		## Product telemetry (for AI-assisted Creatio work you do here; skip only for non-agent use - plain scripts or CI)
 		Note the scope: an agent doing Creatio work through this server is IN scope even when no skill file is loaded. "No skill loaded" is not "ad-hoc use".

@@ -294,6 +294,15 @@ conflicted page included), `not-applied` when it was saved without that comparis
 `force: true`, or no checksum on the server). It is omitted when the page failed before its target was
 resolved.
 
+## Pages customized in more than one package
+
+`sync-pages` cannot name a target package and always writes to the default design package.
+A page that another unlocked (or lock-unknown) package also customizes is therefore refused
+with `package-choice-required`, listing the page's replacing layers; the other pages of the
+batch are unaffected. Ask the user which package to change and write that page through
+`update-page` with `target-package-uid` (see `update-page`, "Pages customized in more than
+one package").
+
 ## Error Handling
 
 Pages are independent, so **processing continues** even if one page fails. The overall

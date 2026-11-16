@@ -2,6 +2,7 @@
 description: GetDesignPackageUId sends a Freedom UI page save to the topmost UNLOCKED replacing layer of the page, silently, even when another unlocked package also holds a layer; get-page-hierarchy sees every layer
 applies-to:
   - clio/Command/GetPageHierarchyCommand.cs
+  - clio/Command/PageLayerInspector.cs
   - clio/Command/PageUpdateOptions.cs
 ticket: ENG-105680
 date: 2026-11-07
@@ -29,3 +30,13 @@ choice among several editable layers is the platform's, not the caller's.
 page is customized in one package, while another unlocked package also changes it. The change lands in one of
 them and the user does not learn that the page's customization is split. Detecting the case takes the whole chain
 plus each layer's `SysPackage.InstallType`: the chain alone cannot tell an editable layer from a vendor one.
+
+Guidance alone does not stop an agent from saving past an editable layer, so clio enforces the choice: `get-page`
+returns `page.packageChoice`, and `update-page` / `sync-pages` refuse a write with no target package while another editable
+layer exists (`package-choice-required`). Two traps in finding the layers: the base page is the LOWEST chain entry
+carrying the page name — the chain root at level 0 is a platform template (`BaseTemplate`), so "level 0 is the base"
+offers the base page as a layer; and the chain must be read from the page's root variant, because one anchored on a
+replacing variant can miss layers. A retry into a layer other than the default target must be an append:
+`get-page` returns the default target's body, so a `replace` save of it into another layer would erase that
+layer's own changes; `update-page` refuses replacing an existing non-default replacing layer with `package-choice-replace-refused`
+unless `force`. A package with no layer yet has no own body to erase and can receive a replace without `force`.
