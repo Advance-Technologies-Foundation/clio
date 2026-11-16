@@ -475,11 +475,16 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		}
 	}
 
+	// The site name also becomes the target folder name next to the environment folder when --identity-path is
+	// omitted, so it must be a plain folder name too: the character rule alone admits "." and "..", which would
+	// name the parent of the environment folder or the folder above it.
 	private static void ValidateSiteName(string siteName) {
 		if (string.IsNullOrWhiteSpace(siteName)
-			|| !Regex.IsMatch(siteName, @"^[A-Za-z0-9._-]+$", RegexOptions.CultureInvariant, SiteNameRegexTimeout)) {
+			|| !Regex.IsMatch(siteName, @"^[A-Za-z0-9._-]+$", RegexOptions.CultureInvariant, SiteNameRegexTimeout)
+			|| !DataBindingPathGuard.IsPlainName(siteName)) {
 			throw new ArgumentException(
-				"IdentityService site name may contain only letters, digits, dot, underscore, and hyphen.",
+				"IdentityService site name may contain only letters, digits, dot, underscore, and hyphen, " +
+				"and must not be '.' or '..' or end with a dot.",
 				nameof(siteName));
 		}
 	}
@@ -510,10 +515,32 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 		string nestedPath = identityArchivePathInBundle.Replace('/', Path.DirectorySeparatorChar)
 			.Replace('\\', Path.DirectorySeparatorChar);
 		string exactPath = Path.Combine(environment.EnvironmentPath, nestedPath);
+		// Here the argument is a path below EnvironmentPath, not an entry name in an archive: a rooted value or a
+		// ".." segment would pick any zip on the machine as the IdentityService archive.
+		if (Path.IsPathRooted(nestedPath)
+			|| nestedPath.Split(Path.DirectorySeparatorChar).Contains("..")
+			|| !DataBindingPathGuard.IsStrictlyInside(
+				Path.GetFullPath(environment.EnvironmentPath), Path.GetFullPath(exactPath))) {
+			throw new ArgumentException(
+				$"IdentityService archive path '{identityArchivePathInBundle}' must be a relative path inside " +
+				$"EnvironmentPath '{environment.EnvironmentPath}' when --zip-file is omitted: no drive or root and " +
+				"no '..' segment. Pass --zip-file to use an archive from another location.",
+				nameof(identityArchivePathInBundle));
+		}
+		// The file name is also the search pattern of the fallback below. An empty one (a value that ends with a
+		// separator) is searched as "*", and one with a wildcard matches any file: the first match anywhere under
+		// EnvironmentPath would be taken as the IdentityService archive.
+		string fileName = Path.GetFileName(nestedPath);
+		if (string.IsNullOrWhiteSpace(fileName) || fileName.IndexOfAny(['*', '?']) >= 0) {
+			throw new ArgumentException(
+				$"IdentityService archive path '{identityArchivePathInBundle}' must name one archive file when " +
+				"--zip-file is omitted: its file name is empty or has a wildcard character ('*' or '?'). Pass the " +
+				"path of the archive relative to EnvironmentPath, or pass --zip-file.",
+				nameof(identityArchivePathInBundle));
+		}
 		if (File.Exists(exactPath)) {
 			return exactPath;
 		}
-		string fileName = Path.GetFileName(nestedPath);
 		string discoveredPath = Directory
 			.EnumerateFiles(environment.EnvironmentPath, fileName, SearchOption.AllDirectories)
 			.OrderBy(path => path, StringComparer.OrdinalIgnoreCase)

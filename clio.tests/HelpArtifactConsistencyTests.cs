@@ -82,6 +82,25 @@ internal class HelpArtifactConsistencyTests {
 	}
 
 	[Test]
+	[Description("delete-data-binding-db is explicitly classified in the same help group as its sibling remove-data-binding-row-db, so its position at the end of the options array does not fallback-classify it as General.")]
+	public void DeleteDataBindingDb_ShouldShareTheGroupOfRemoveDataBindingRowDb_WhenCatalogBuilt() {
+		// Arrange
+		CommandHelpCatalog catalog = new();
+
+		// Act
+		bool deleteFound = catalog.TryGetCommand("delete-data-binding-db", out HelpCommandMetadata deleteCommand);
+		bool removeFound = catalog.TryGetCommand("remove-data-binding-row-db", out HelpCommandMetadata removeCommand);
+
+		// Assert
+		deleteFound.Should().BeTrue(because: "the new command must be present in the canonical help catalog");
+		removeFound.Should().BeTrue(because: "the sibling command must be present in the canonical help catalog");
+		deleteCommand.GroupId.Should().Be(removeCommand.GroupId,
+			because: "the DB-first data-binding commands must be listed together in the help");
+		deleteCommand.GroupId.Should().Be(HelpGroupId.Development,
+			because: "the command must be classified explicitly, not by its source index (which would be General)");
+	}
+
+	[Test]
 	[Description("The Creatio artifact merge command is explicitly classified under Development.")]
 	public void MergeCreatioArtifact_ShouldUseDevelopmentGroup_WhenCatalogBuilt() {
 		// Arrange

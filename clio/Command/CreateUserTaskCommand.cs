@@ -384,6 +384,9 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 				"Current directory is not a workspace. Please run this command from a workspace directory.");
 		}
 
+		//The name becomes a folder below the workspace's packages folder, so it has to be a plain name: a separator,
+		//'..' or a rooted value would read a descriptor outside the workspace and send its identity to Creatio.
+		DataBindingPathGuard.RequirePlainName(packageName, "Package name");
 		string packagePath = _workspacePathBuilder.BuildPackagePath(packageName);
 		string packageDescriptorPath = PackageUtilities.BuildPackageDescriptorPath(packagePath);
 		if (!_fileSystem.ExistsDirectory(packagePath) || !_fileSystem.ExistsFile(packageDescriptorPath)) {

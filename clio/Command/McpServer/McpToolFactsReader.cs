@@ -36,7 +36,8 @@ public static class McpToolFactsReader {
 
 	/// <summary>
 	/// Parses a catalog: an object whose properties are tool names and whose values have the published shape. An
-	/// argument entry's fields other than <c>effect</c> may be left out and take the tool's value.
+	/// argument entry's fields other than <c>effect</c> may be left out and take the tool's value. <c>host-paths</c>
+	/// and <c>not-host-paths</c> may be left out and read back empty.
 	/// </summary>
 	/// <param name="json">The catalog text.</param>
 	/// <returns>The facts by tool name (case-insensitive), argument entries ordered by argument and value.</returns>
@@ -67,7 +68,18 @@ public static class McpToolFactsReader {
 			}
 			map[tool.Name] = new McpToolFacts(effect, impact, scope, connections, [.. byArgument
 				.OrderBy(entry => entry.Argument, StringComparer.Ordinal)
-				.ThenBy(entry => entry.Value, StringComparer.Ordinal)]);
+				.ThenBy(entry => entry.Value, StringComparer.Ordinal)],
+				[.. ReadEntries(value, "host-paths")
+					.Select(entry => new McpToolHostPath(
+						ReadString(entry, "argument"),
+						ReadKind(entry),
+						ReadAccess(entry),
+						entry.TryGetProperty("list", out JsonElement list) && list.ValueKind == JsonValueKind.True,
+						ReadString(entry, "or")))
+					.OrderBy(path => path.Argument, StringComparer.Ordinal)],
+				[.. ReadEntries(value, "not-host-paths")
+					.Select(entry => new McpToolNotHostPath(ReadString(entry, "argument"), ReadString(entry, "why")))
+					.OrderBy(path => path.Argument, StringComparer.Ordinal)]);
 		}
 		return map;
 	}
@@ -78,6 +90,25 @@ public static class McpToolFactsReader {
 		using StreamReader reader = new(stream);
 		return Parse(reader.ReadToEnd());
 	}
+
+	private static IEnumerable<JsonElement> ReadEntries(JsonElement element, string name) =>
+		element.TryGetProperty(name, out JsonElement entries) && entries.ValueKind == JsonValueKind.Array
+			? entries.EnumerateArray()
+			: [];
+
+	private static McpHostPathKind ReadKind(JsonElement element) => ReadString(element, "kind") switch {
+		"file" => McpHostPathKind.File,
+		"folder" => McpHostPathKind.Folder,
+		"file-or-folder" => McpHostPathKind.FileOrFolder,
+		_ => McpHostPathKind.Unspecified
+	};
+
+	private static McpHostPathAccess ReadAccess(JsonElement element) => ReadString(element, "access") switch {
+		"read" => McpHostPathAccess.Read,
+		"write" => McpHostPathAccess.Write,
+		"read-write" => McpHostPathAccess.ReadWrite,
+		_ => McpHostPathAccess.Unspecified
+	};
 
 	private static string ReadString(JsonElement element, string name) =>
 		element.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
