@@ -191,6 +191,9 @@ Start the same MCP server using the short alias.
 Use your MCP client to call get-tool-contract {}.
 Discover what tools exist with a compact index - one line per tool, "name (R)(D) [aka old-name]: purpose" with the purpose cut to 48 characters and the markers explained by a legend - without paying for full schemas, then call get-tool-contract with specific tool-names to load only the contracts you need. Pass {"detail":"index-entries"} for the same index as objects with the resident and destructive flags, or {"detail":"full"} to expand every tool's full contract at once (legacy behavior).
 
+Use your MCP client to call get-tool-contract {"detail":"facts"}.
+For an MCP host deciding how to treat a call: returns, under facts and by tool name (deprecated aliases included), what each tool does - effect (read, change or destroy), rebuilds-environment, scope (local, environment or machine) and connections (none, read or change) - plus by-argument entries for the argument values that narrow them, such as manage-role with action list, host-paths for the arguments whose value is a file or folder on the machine clio runs on (kind, read / write / read-write access) and not-host-paths for arguments that only read like one. Add tool-names to get only those tools. A resident tool carries the same object in tools/list under _meta "clio/facts".
+
 Use your MCP client to call get-tool-contract {"tool-names":["list-apps","get-app-info","get-page","sync-pages"]}.
 Bootstrap an existing-app or page workflow from the authoritative contract before invoking discovery or mutation tools.
 

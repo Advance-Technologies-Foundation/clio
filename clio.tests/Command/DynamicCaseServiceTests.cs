@@ -85,7 +85,8 @@ public sealed class DynamicCaseServiceTests {
 			ErrorMessage = errorCode is null ? null : $"{errorCode} happened",
 			Case = new BuildCaseCaseInfo {
 				Status = success ? outcome : null, SchemaName = "UsrOrderCase", SchemaUId = CaseUId,
-				ConnectionCount = 6, Stages = [new DynamicCaseStage { Name = "Stage1", Color = "#0C8701" }]
+				ConnectionCount = 6, Stages = [new DynamicCaseStage { Name = "Stage1", Color = "#0C8701" },
+					new DynamicCaseStage { Name = "Stage2" }, new DynamicCaseStage { Name = "Stage3" }]
 			},
 			RequiredPackages = ["UsrOrders", "CrtBase"],
 			MissingDependencies = missing ?? [],
@@ -819,10 +820,10 @@ public sealed class DynamicCaseServiceTests {
 		Environment = Env, CaseName = "UsrOrderCase", DryRun = dryRun
 	};
 
-	private static BuildCaseCaseInfo ExistingCase() => new() {
+	private static BuildCaseCaseInfo ExistingCase(int connectionCount = 2) => new() {
 		Status = "existing", SchemaName = "UsrOrderCase", SchemaUId = CaseUId, PackageName = Package,
 		EntitySchemaName = Entity, StageColumnName = "UsrStatus", Enabled = true, ActiveVersion = true,
-		ConnectionCount = 2, FinalStages = ["Done"], RunningInstances = 1, PackageReadOnly = false,
+		ConnectionCount = connectionCount, FinalStages = ["Done"], RunningInstances = 1, PackageReadOnly = false,
 		Stages = [
 			new DynamicCaseStage { Name = "Stage1", Value = "v1", Caption = "New", RunningInstances = 1 },
 			new DynamicCaseStage { Name = "Stage2", Value = "v2", Caption = "Done", IsFinal = true, Successful = true }
@@ -859,6 +860,25 @@ public sealed class DynamicCaseServiceTests {
 		_session.Received(1).Describe(Arg.Is<DescribeCaseRequest>(request =>
 			request.EntitySchemaName == Entity && request.CaseName == null && request.CaseUId == null));
 		_session.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("A described case made in the designer with fewer connections than every ordered pair of stages reports restricted connections, not all-to-all.")]
+	public void Describe_ShouldReportRestrictedConnections_WhenNotEveryPairIsConnected() {
+		// Arrange
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse {
+				Success = true,
+				Cases = [ExistingCase(connectionCount: 1)]
+			}, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Cases[0].Connections.Count.Should().Be(1, because: "the server's connection count is reported");
+		result.Cases[0].Connections.Kind.Should().Be("restricted",
+			because: "two stages have two ordered pairs, and only one of them is connected");
 	}
 
 	[Test]

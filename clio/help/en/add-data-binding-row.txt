@@ -48,11 +48,14 @@ EXAMPLES
 NOTES
     - --workspace-path is the workspace root containing .clio/workspaceSettings.json,
       not the package directory. Clio resolves packages/{package-name} beneath that root.
+    - --package and --binding-name must be plain folder names: no path separators, '..', drive or root, characters that are invalid in a file name, leading or trailing spaces, or a trailing dot
+    - --localizations keys must be culture names such as en-US (letters, digits and hyphens); each one becomes the file Localization/data.<culture>.json
+    - A binding path that passes through a symbolic link or a junction anywhere below the workspace root, the packages folder included, is refused before any file changes
     - The binding must already exist locally
     - The row key is the primary column marked in descriptor.json
     - If that primary key is Guid-based and omitted or null in --values, add-data-binding-row generates it automatically
     - For non-null lookup and image-reference columns, use {"value":"...","displayValue":"..."} so data.json keeps both Value and DisplayValue
-    - For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
+    - For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json. A path outside the workspace is refused whether or not the file exists (a valid base64 value is kept as it is), and so is a file reached through a symbolic link or a junction
     - Unknown columns in --values or --localizations are rejected
     - Existing rows with the same primary key are replaced instead of duplicated
 

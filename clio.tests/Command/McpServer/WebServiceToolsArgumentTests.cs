@@ -170,19 +170,19 @@ public sealed class WebServiceToolsArgumentTests {
 	}
 
 	[Test]
-	[Description("read-wsdl refuses an unknown key with the valid argument list, and a bare code is not taken for service-code.")]
+	[Description("read-wsdl refuses an unknown key with the valid argument list.")]
 	public void ReadWsdl_Should_Refuse_Unknown_Keys() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		var tool = new ReadWsdlTool(resolver);
-		var args = new ReadWsdlArgs("dev", "http://x/a?wsdl") { ExtensionData = Extra("code") };
+		var args = new ReadWsdlArgs("dev", "http://x/a?wsdl") { ExtensionData = Extra("service-name") };
 
 		// Act
 		WsdlReadResult result = tool.ReadWsdl(args);
 
 		// Assert
-		result.Error.Should().Contain("Unknown args: 'code'", because: "code could mean the new service's code, not a target");
-		result.Error.Should().Contain("Valid: environment-name, wsdl-url, wsdl-files, port, service-code, operations.",
+		result.Error.Should().Contain("Unknown args: 'service-name'", because: "an argument read-wsdl does not have is refused");
+		result.Error.Should().Contain("Valid: environment-name, wsdl-url, wsdl-files, port, code, service-code, operations.",
 			because: "the valid fields are listed");
 	}
 
@@ -204,6 +204,24 @@ public sealed class WebServiceToolsArgumentTests {
 		reader.Received(1).Read(Arg.Is<WsdlReadRequest>(r => r.EnvironmentName == "dev" && r.WsdlUrl == null
 			&& r.WsdlFiles.Single() == "/tmp/a.wsdl" && r.Port == "Soap" && r.ServiceCode == "UsrCalc"
 			&& r.Operations.Single() == "Add"));
+	}
+
+	[Test]
+	[Description("read-wsdl passes the code the user named for a new service to the reader.")]
+	public void ReadWsdl_Should_Pass_The_New_Service_Code() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IWsdlReader reader = Substitute.For<IWsdlReader>();
+		resolver.Resolve<IWsdlReader>(Arg.Any<EnvironmentOptions>()).Returns(reader);
+		reader.Read(Arg.Any<WsdlReadRequest>()).Returns(new WsdlReadResult(true));
+		var tool = new ReadWsdlTool(resolver);
+
+		// Act
+		WsdlReadResult result = tool.ReadWsdl(new ReadWsdlArgs("dev", "http://x/a?wsdl") { Code = "UsrTcCalcW" });
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the reader's result is returned");
+		reader.Received(1).Read(Arg.Is<WsdlReadRequest>(r => r.Code == "UsrTcCalcW" && r.ServiceCode == null));
 	}
 
 	[Test]

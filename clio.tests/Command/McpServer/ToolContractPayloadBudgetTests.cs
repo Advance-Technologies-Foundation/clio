@@ -165,6 +165,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// same cut kept the object index above at 50172, under its 50432 without a re-pin. Merged with ENG-105475's
 	// read-wsdl line it measured 18695, 7 over: describe-dynamic-case's own first sentence paid, shortened under the
 	// 48-character cut ("Reads a dynamic case (DCM), read-only.").
+	// mcp-tool-facts: create-user-task gained (D), a destroy whose hint said otherwise (it loads every file-system
+	// package into the database). Paid ahead by the legend: "A tool without (R) is called through clio-run" ->
+	// "Without (R), call it via clio-run", 12 bytes for the marker's 3.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

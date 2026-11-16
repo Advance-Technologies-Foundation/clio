@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Mcp.E2E.Support.Configuration;
 using FluentAssertions;
 
@@ -65,6 +66,51 @@ internal static class WebServiceStand {
 			}
 		}
 		failures.Should().BeEmpty(because: "every throwaway web service is removed from the shared stand");
+	}
+
+	/// <summary>
+	/// Stores a base URI and the URI of every method of a registered service through the platform's own read and save
+	/// (<c>ServiceSchemaRequest</c>, <c>ServiceDataContract</c>), so a test can hold a constant key in a query the way a
+	/// service made in Studio can; the web service tools refuse to write one.
+	/// </summary>
+	/// <param name="settings">The E2E settings.</param>
+	/// <param name="environmentName">The registered stand.</param>
+	/// <param name="code">The service code.</param>
+	/// <param name="baseUri">The base URI to store.</param>
+	/// <param name="methodUri">The URI to store on every method.</param>
+	/// <param name="token">Cancels the CLI calls.</param>
+	public static async Task StoreUrisAsync(McpE2ESettings settings, string environmentName, string code,
+		string baseUri, string methodUri, CancellationToken token) {
+		ClioCliCommandResult rows = await ClioCliCommandRunner.RunAsync(settings, [
+			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
+			"-b", SelectByName(code)
+		], cancellationToken: token);
+		rows.ExitCode.Should().Be(0, because: $"the service must be found; output: {rows.StandardError}");
+		using JsonDocument found = ParseJson(rows, $"the lookup of {code}");
+		JsonElement row = found.RootElement.GetProperty("rows").EnumerateArray().ToList().Should().ContainSingle(
+			because: $"the service {code} must be registered before its URIs are stored").Subject;
+		ClioCliCommandResult read = await ClioCliCommandRunner.RunAsync(settings, [
+			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/ServiceSchemaRequest",
+			"-b", JsonSerializer.Serialize(new {
+				uId = row.GetProperty("UId").GetString(), packageUId = row.GetProperty("PackageUId").GetString()
+			})
+		], cancellationToken: token);
+		read.ExitCode.Should().Be(0, because: $"the schema must be read; output: {read.StandardError}");
+		int json = read.StandardOutput.IndexOf('{');
+		json.Should().BeGreaterThanOrEqualTo(0, because: $"the schema read answers JSON; output: {read.StandardOutput}");
+		JsonNode schema = JsonNode.Parse(read.StandardOutput[json..])!["schema"]!;
+		schema["baseUri"] = baseUri;
+		foreach (KeyValuePair<string, JsonNode?> method in schema["methods"]!["Items"]!.AsObject()) {
+			method.Value!["request"]!["uri"] = methodUri;
+		}
+		ClioCliCommandResult saved = await ClioCliCommandRunner.RunAsync(settings, [
+			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/ServiceDataContract",
+			"-b", schema.ToJsonString()
+		], cancellationToken: token);
+		saved.ExitCode.Should().Be(0, because: $"the schema must be saved; output: {saved.StandardError}");
+		using JsonDocument answer = ParseJson(saved, "the schema save");
+		answer.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(
+			because: $"the platform must accept the schema; output: {saved.StandardOutput}");
 	}
 
 	private static JsonDocument ParseJson(ClioCliCommandResult result, string what) {

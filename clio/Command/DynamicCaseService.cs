@@ -703,7 +703,10 @@ public sealed class DynamicCaseService(
 			ActiveVersion = info.ActiveVersion,
 			OrderSource = info.OrderSource,
 			Stages = info.Stages ?? [],
-			Connections = new DynamicCaseConnections { Kind = "all-to-all", Count = info.ConnectionCount },
+			Connections = new DynamicCaseConnections {
+				Kind = DynamicCaseConnections.KindOf(info.Stages?.Count ?? 0, info.ConnectionCount),
+				Count = info.ConnectionCount
+			},
 			FinalStages = info.FinalStages,
 			RunningInstances = info.RunningInstances,
 			PackageReadOnly = info.PackageReadOnly,

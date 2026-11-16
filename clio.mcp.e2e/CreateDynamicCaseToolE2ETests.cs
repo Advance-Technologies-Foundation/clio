@@ -264,7 +264,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("A reorder is written in place: modified, the stored order follows the list and every stage keeps its UId; the same call again answers unchanged.")]
+	[Description("A reorder is written in place: modified, the case schema UId stays, the stored order follows the list, every stage keeps its UId and every stage still connects to every other; the same call again answers unchanged.")]
 	[AllureName("modify-dynamic-case reorders in place and a re-run is unchanged")]
 	public async Task ModifyDynamicCase_ShouldReorderInPlace_ThenAnswerUnchanged() {
 		// Arrange
@@ -292,6 +292,10 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			StageValues(after).Should().Equal(reordered, because: "the stored order follows the list");
 			StageUIdsByValue(after).Should().Equal(uidsBefore,
 				because: "a stage that stays keeps its UId, so a running case keeps its place");
+			Text(after, "schemaUId").Should().Be(Text(created["case"]!.AsObject(), "schemaUId"),
+				because: "the save is in place: the same case schema, not a new version");
+			after["connections"]!["count"]!.GetValue<int>().Should().Be(reordered.Length * (reordered.Length - 1),
+				because: "every stage still connects to every other and no connection is left dangling");
 			ShouldHaveLanded(secondCall, "the same call again is a success");
 			Text(ResultOf(secondCall), "outcome").Should().Be("unchanged", because: "nothing is left to change");
 		} finally {
@@ -392,6 +396,46 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			grouped["successful"]!.GetValue<bool>().Should().BeFalse(because: "IsSuccessful was stored as false");
 			StageOf(after, parent)["isFinal"]!.GetValue<bool>().Should().BeTrue(because: "the parent heads the final group");
 			grouped["isFinal"]!.GetValue<bool>().Should().BeTrue(because: "a member of the final group is final");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("create-dynamic-case with group and successful on a stage builds the final group: describe-dynamic-case reads the member's group and successful=false, and both stages final.")]
+	[AllureName("create-dynamic-case builds a final group")]
+	public async Task CreateDynamicCase_ShouldBuildTheFinalGroup_WhenAStageNamesItsGroup() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult plannedCall = await CallAsync(context, new Dictionary<string, object?> {
+				["dry-run"] = true, ["add-progress-bar"] = false
+			});
+			IgnoreWhenProcessBuilderIsBehind(ToolText(plannedCall), MinimumPackageVersion);
+			ShouldHaveLanded(plannedCall, "the seeded object takes a case");
+			List<string> values = StageValues(ResultOf(plannedCall)["case"]!.AsObject());
+			string parent = values[^2];
+			string member = values[^1];
+
+			// Act
+			CallToolResult createCall = await CallAsync(context, new Dictionary<string, object?> {
+				["add-progress-bar"] = false,
+				["stages"] = values.Select<string, object>(value => value == member
+					? new Dictionary<string, object?> { ["value"] = value, ["group"] = parent, ["successful"] = false }
+					: value).ToArray()
+			});
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), CaseChangePackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the last two stages can form the final group on create");
+			JsonObject after = await DescribeCaseAsync(context, created);
+			JsonObject grouped = StageOf(after, member);
+			Text(grouped, "group").Should().Be(parent, because: "the member's stored ParentStageUId points at the parent");
+			grouped["successful"]!.GetValue<bool>().Should().BeFalse(because: "IsSuccessful was stored as false");
+			grouped["isFinal"]!.GetValue<bool>().Should().BeTrue(because: "a member of the final group is final");
+			StageOf(after, parent)["isFinal"]!.GetValue<bool>().Should().BeTrue(because: "the parent heads the final group");
 		} finally {
 			await CleanUpAsync(context, created, null, null, string.Empty);
 		}
