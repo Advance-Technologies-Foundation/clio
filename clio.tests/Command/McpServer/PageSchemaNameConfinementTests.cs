@@ -579,7 +579,7 @@ public sealed class PageSchemaNameConfinementTests {
 		PageGetCommand command = new(
 			_applicationClient, CreateServiceUrlBuilder(), _logger,
 			Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
-			Substitute.For<IPageBundleBuilder>(), writer);
+			Substitute.For<IPageBundleBuilder>(), writer, Substitute.For<IPageLayerInspector>());
 		_commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(command);
 		PageGetTool tool = new(command, _logger, _commandResolver, writer);
 
