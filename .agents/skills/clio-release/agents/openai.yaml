@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clio Release"
+  short_description: "Publish clio releases and verify NuGet delivery"
+  default_prompt: "Use $clio-release to publish the next clio release from tested master and verify NuGet publication."

@@ -20,6 +20,11 @@ source. Use `--target` to limit to one agent.
 
 The default source is the public toolkit marketplace. Use `--repo` to override it
 (marketplace git URL for claude/codex/copilot; local path or git URL for cursor).
+For cursor a git URL is cached in a folder of the clio settings folder named after the
+URL's last segment (`https://host/org/repo` and `https://host/org/repo.git` both use
+`repo`). A URL is refused when that segment is empty, consists only of dots and spaces,
+or ends with a dot, and when a folder of that name already exists there and is not a
+git clone.
 
 update-toolkit is idempotent and reports a per-agent outcome. A detected agent whose
 CLI is not on PATH is skipped with a warning and does not fail the command.

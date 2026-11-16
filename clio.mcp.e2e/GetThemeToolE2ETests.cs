@@ -124,6 +124,7 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 	private const string ThemeCssClassName = "e2e-hermetic-theme";
 	private const string ThemeCssContent = ".e2e-hermetic-theme{color:#003366}";
 	private const string EnvironmentName = "get-theme-hermetic-stub";
+	private const string BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
 
 	// The catalog-published cssFilePath, including the cache-busting query the real service appends. The tool
 	// builds the CSS URL from this value, so the stub must answer the identical path AND query.
@@ -137,8 +138,8 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 	private RuntimeDetectionStubServer? _stubServer;
 
 	private static string BuildCatalogJson() =>
-		$$"""
-		{"success":true,"values":[{"id":"{{ThemeId}}","caption":"{{ThemeCaption}}","cssClassName":"{{ThemeCssClassName}}","cssFilePath":"{{ThemeCssFilePath}}"}]}
+		$$$"""
+		{"success":true,"values":[{"id":"{{{ThemeId}}}","caption":"{{{ThemeCaption}}}","cssClassName":"{{{ThemeCssClassName}}}","cssFilePath":"{{{ThemeCssFilePath}}}","background":{"mode":"Image","imageId":"{{{BackgroundImageId}}}","color":null}}]}
 		""";
 
 	/// <inheritdoc />
@@ -193,7 +194,7 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 	[AllureTag(GetThemeTool.ToolName)]
 	[AllureName("get-theme returns theme metadata and CSS content through the real MCP server")]
 	[AllureDescription("Serves the theme catalog and theme.css from a local stub inside an isolated CLIO_HOME, then calls get-theme through the real clio MCP server and verifies the successful envelope.")]
-	[Description("Verifies the get-theme happy path end to end against a stubbed Creatio: the envelope carries success, id, caption, cssClassName, cssContent and cssContentLength.")]
+	[Description("Verifies the get-theme happy path end to end against a stubbed Creatio: the envelope carries success, id, caption, cssClassName, cssContent, cssContentLength and background.")]
 	public async Task GetTheme_Should_Return_MetadataAndContent_When_CatalogAndCssAreServed() {
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
@@ -223,5 +224,34 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 			because: "the CSS served at the catalog-reported cssFilePath must be returned byte-for-byte");
 		response.CssContentLength.Should().Be(ThemeCssContent.Length,
 			because: "the reported length must match the returned content");
+		response.Background.Should().BeEquivalentTo(
+			new ThemeBackground { Mode = "Image", ImageId = BackgroundImageId },
+			because: "the theme's declared background must survive the whole MCP transport unchanged");
+	}
+
+	[Test]
+	[AllureTag(ListThemesTool.ToolName)]
+	[AllureName("list-themes returns a theme's background through the real MCP server")]
+	[AllureDescription("Serves a theme catalog whose theme declares an image background from a local stub inside an isolated CLIO_HOME, then calls list-themes through the real clio MCP server and verifies the theme carries that background.")]
+	[Description("Verifies list-themes carries a theme's declared background over the real MCP transport.")]
+	public async Task ListThemes_Should_Return_The_Background_When_Catalog_Declares_It() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ListThemesTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = EnvironmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ListThemesResult result = EntitySchemaStructuredResultParser.Extract<ListThemesResult>(callResult);
+
+		// Assert
+		result.Themes.Should().ContainSingle().Which.Background.Should().BeEquivalentTo(
+			new ThemeBackground { Mode = "Image", ImageId = BackgroundImageId },
+			because: $"the declared background must survive the whole MCP transport unchanged (error: {result.Error})");
 	}
 }

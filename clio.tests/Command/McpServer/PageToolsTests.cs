@@ -4036,7 +4036,7 @@ public class PageToolsTests
 			hierarchyClient ?? new PageDesignerHierarchyClient(applicationClient, serviceUrlBuilder),
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			CreatePassthroughPageFileWriter());
+			CreatePassthroughPageFileWriter(), Substitute.For<IPageLayerInspector>());
 	}
 
 	private static IPageFileWriter CreatePassthroughPageFileWriter() {
@@ -4938,7 +4938,7 @@ public class PageToolsTests
 		};
 		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(metadataResponse.ToString());
-		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder, CreatePassthroughPageFileWriter());
+		var command = new PageGetCommand(applicationClient, serviceUrlBuilder, logger, hierarchyClient, bodyParser, bundleBuilder, CreatePassthroughPageFileWriter(), Substitute.For<IPageLayerInspector>());
 
 		bool ok = command.TryGetPage(new PageGetOptions { SchemaName = "Leads_ListPage" }, out PageGetResponse response);
 

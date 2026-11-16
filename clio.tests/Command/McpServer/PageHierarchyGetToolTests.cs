@@ -66,7 +66,8 @@ public class PageHierarchyGetToolTests {
 				new() { UId = "schema-uid", Name = "UsrLeaf_FormPage", Body = "leaf-body" }
 			});
 		GetPageHierarchyCommand resolvedCommand = new(
-			applicationClient, urlBuilder, hierarchyClient, Substitute.For<ILogger>());
+			applicationClient, urlBuilder, hierarchyClient,
+			new PageLayerInspector(applicationClient, urlBuilder, new PageSchemaBodyParser()), Substitute.For<ILogger>());
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<GetPageHierarchyCommand>(Arg.Any<GetPageHierarchyOptions>())
 			.Returns(resolvedCommand);
@@ -93,6 +94,7 @@ public class PageHierarchyGetToolTests {
 				Substitute.For<IApplicationClient>(),
 				Substitute.For<IServiceUrlBuilder>(),
 				Substitute.For<IPageDesignerHierarchyClient>(),
+				Substitute.For<IPageLayerInspector>(),
 				Substitute.For<ILogger>()) {
 		}
 
