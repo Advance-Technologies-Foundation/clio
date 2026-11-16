@@ -800,6 +800,46 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("setAuth none clears use-auth on every method after the usage guard, so Studio does not show a ticked, disabled flag.")]
+	public void Modify_SetAuth_None_Should_Clear_Use_Auth() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(
+			new WebServiceAuthArg("basic", UsernameSysSetting: "UsrUser", PasswordSysSetting: "UsrPassword"), null,
+			new WebServiceDefinitionBuilder.Errors());
+		GivenRegisteredService(schema);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("none"))], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service in this test");
+		saved.Methods.Items.Values.Should().OnlyContain(m => !m.UseAuthInfo,
+			because: "a service without authentication sends none, and the flag would show ticked and disabled in Studio");
+	}
+
+	[Test]
+	[Description("setDescription sets and clears the service description, and describe shows it.")]
+	public void Modify_SetDescription_Should_Set_And_Clear_The_Description() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		var saved = new List<string>();
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>()))
+			.Do(call => saved.Add(string.Join("|", call.Arg<ServiceSchemaDto>().Description.Values)));
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "Orders API of the ERP")], null);
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "")], null);
+
+		// Assert
+		saved[0].Should().Be("Orders API of the ERP", because: "the description is stored like Studio's");
+		saved[1].Should().BeEmpty(because: "an empty description clears it");
+	}
+
+	[Test]
 	[Description("A method that keeps use-auth after the service authentication was removed sends no Authorization, so nothing is withheld for it.")]
 	public void TestMethod_Should_Not_Withhold_When_The_Service_Has_No_Authentication() {
 		// Arrange

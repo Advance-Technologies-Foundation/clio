@@ -687,6 +687,23 @@ public static partial class WebServiceDefinitionBuilder {
 
 	public static Dictionary<string, string> Caption(string text) => new() { ["en-US"] = text };
 
+	/// <summary>
+	/// The caption a parameter gets when none is sent: the name the API sees (the last segment of its path, without a
+	/// JSONPath root or a namespace prefix), as Studio's quick setup names it, and the code only when there is no path.
+	/// The code carries the schema prefix and reads poorly on the Call web service element.
+	/// </summary>
+	/// <param name="path">The parameter path.</param>
+	/// <param name="code">The parameter code.</param>
+	/// <returns>The caption text.</returns>
+	public static string DefaultParameterCaption(string path, string code) {
+		string trimmed = (path ?? string.Empty).Trim().TrimStart('$').TrimStart('.');
+		string last = trimmed.Split(['.', '/']).LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
+		int colon = last.IndexOf(':');
+		last = colon >= 0 ? last[(colon + 1)..] : last;
+		last = last.Trim('{', '}', '[', ']', '*');
+		return last.Length > 0 ? last : code;
+	}
+
 	/// <summary>Where a parameter list is built: request or response, its owner for messages, nesting and the SOAP rules.</summary>
 	private sealed record ParameterScope(bool IsRequest, string Owner, Errors Errors, string Prefix,
 		bool Nested = false, SoapContext Soap = null, bool InSoapHeader = false, bool PreviousInSoapHeader = false);
@@ -802,7 +819,7 @@ public static partial class WebServiceDefinitionBuilder {
 			IsArray = arg.Array ?? false,
 			IsRequired = arg.Required ?? placement == ServiceSchemaCodes.Placements["path"],
 			DefValue = defValue,
-			Caption = Caption(arg.Caption ?? arg.Code),
+			Caption = Caption(arg.Caption ?? DefaultParameterCaption(path, arg.Code)),
 			// SOAP: the parameter is rebuilt as given, with the defaults Studio writes (not a SOAP header, item
 			// elements named "item"); a SOAP-header parameter passes the flag to its items, as Studio does. REST: the
 			// typed members the platform sent are carried like the extension bag, so a save keeps them as read.
@@ -1069,18 +1086,22 @@ public static partial class WebServiceDefinitionBuilder {
 		ServiceItemCollection<ServiceParameterDto> parameters, Errors errors) {
 		// Ordinal: the platform substitutes "{" + Path + "}" with a case-sensitive Replace, so {Id} is never
 		// filled from a parameter whose path is "id". It fills placeholders in the base URI too.
-		var placeholders = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value)
-			.Concat(PathPlaceholderPattern().Matches(baseUri ?? string.Empty).Select(m => m.Groups[1].Value))
+		var inUri = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+		var inBase = PathPlaceholderPattern().Matches(baseUri ?? string.Empty).Select(m => m.Groups[1].Value)
 			.ToHashSet(StringComparer.Ordinal);
 		var pathParameters = parameters.Items.Values
 			.Where(p => p.Type == ServiceSchemaCodes.Placements["path"])
 			.Select(p => p.Path)
 			.ToHashSet(StringComparer.Ordinal);
-		foreach (string missing in placeholders.Except(pathParameters)) {
+		foreach (string missing in inUri.Except(pathParameters)) {
 			errors.Add($"method '{code}': uri placeholder {{{missing}}} has no path parameter.");
 		}
-		foreach (string unused in pathParameters.Except(placeholders)) {
-			errors.Add($"method '{code}': path parameter '{unused}' has no {{{unused}}} placeholder in the uri.");
+		// A placeholder in the base URI is the service's, so the message names where it is.
+		foreach (string missing in inBase.Except(inUri).Except(pathParameters)) {
+			errors.Add($"method '{code}': base-uri placeholder {{{missing}}} has no path parameter.");
+		}
+		foreach (string unused in pathParameters.Except(inUri).Except(inBase)) {
+			errors.Add($"method '{code}': path parameter '{unused}' has no {{{unused}}} placeholder in the uri or the base-uri.");
 		}
 	}
 

@@ -137,8 +137,8 @@ public sealed class WebServiceDesigner(
 	public WebServiceToolResult Register(string packageName, WebServiceRegistration registration) {
 		ArgumentNullException.ThrowIfNull(registration);
 		(string code, string caption, string baseUri, int? retryCount, WebServiceAuthArg auth,
-			IReadOnlyList<WebServiceMethodArg> methods, string type, IReadOnlyList<WebServiceNamespaceArg> namespaces) =
-			registration;
+			IReadOnlyList<WebServiceMethodArg> methods, string type, IReadOnlyList<WebServiceNamespaceArg> namespaces,
+			string description) = registration;
 		RequireManageSolution();
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		int serviceType = WebServiceDefinitionBuilder.ParseServiceType(type, errors);
@@ -164,6 +164,9 @@ public sealed class WebServiceDesigner(
 			RetryCount = Math.Max(retryCount ?? 0, 0),
 			AuthInfo = WebServiceDefinitionBuilder.BuildAuth(auth, FindOAuthApp(auth), errors)
 		};
+		if (!string.IsNullOrWhiteSpace(description)) {
+			schema.Description = WebServiceDefinitionBuilder.Caption(description.Trim());
+		}
 		if (soap) {
 			schema.Namespaces = WebServiceDefinitionBuilder.BuildNamespaces(namespaces, null, errors);
 		}
@@ -179,6 +182,7 @@ public sealed class WebServiceDesigner(
 		}
 		(IReadOnlyCollection<string> settings, _) = RequireSysSettings(schema, [], errors);
 		errors.ThrowIfAny();
+		ClearUseAuthWithoutAuthentication(schema);
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
@@ -295,6 +299,7 @@ public sealed class WebServiceDesigner(
 			return new WebServiceToolResult(false, UsageRefusal(operations, unacknowledged, everyCallChanges),
 				Usages: unacknowledged);
 		}
+		ClearUseAuthWithoutAuthentication(schema);
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
@@ -579,12 +584,18 @@ public sealed class WebServiceDesigner(
 				// Retries change no request the API receives, so no caller has to agree.
 				schema.RetryCount = Math.Max(operation.RetryCount ?? 0, 0);
 				break;
+			case "setDescription":
+				// Shown in Studio only; no request changes, so no caller has to agree.
+				schema.Description = string.IsNullOrWhiteSpace(operation.Description)
+					? new Dictionary<string, string>()
+					: WebServiceDefinitionBuilder.Caption(operation.Description.Trim());
+				break;
 			case "setAuth":
 				schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(operation.Auth, FindOAuthApp(operation.Auth), errors);
 				break;
 			default:
 				errors.Add($"op '{operation?.Op}' must be addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, "
-					+ "setAuth, setNamespaces or setType.");
+					+ "setAuth, setDescription, setNamespaces or setType.");
 				break;
 		}
 	}
@@ -688,6 +699,20 @@ public sealed class WebServiceDesigner(
 	/// The authentication as one comparable string: its type and every value with its source. No authentication and
 	/// type none read the same, as the platform sends nothing for either.
 	/// </summary>
+	/// <summary>
+	/// A service without authentication sends none, yet Studio shows "Use authentication" ticked and disabled on a
+	/// method that keeps the flag. Cleared only after the usage guard ran, which reads the flag to find the callers
+	/// the removed authentication changes.
+	/// </summary>
+	private static void ClearUseAuthWithoutAuthentication(ServiceSchemaDto schema) {
+		if (schema.AuthInfo is not (null or { AuthType: ServiceSchemaCodes.AuthNone })) {
+			return;
+		}
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+			method.UseAuthInfo = false;
+		}
+	}
+
 	private static string AuthSignature(ServiceAuthInfoDto auth) {
 		if (auth is null || auth.AuthType == ServiceSchemaCodes.AuthNone) {
 			return string.Empty;

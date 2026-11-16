@@ -39,7 +39,8 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 		WebServiceToolRunner.Run(commandResolver, args?.EnvironmentName, args?.ExtensionData,
 			"Valid: environment-name, package-name, code, base-uri, methods, caption, retry-count, auth, type, namespaces.",
 			designer => designer.Register(args.PackageName, new WebServiceRegistration(
-				args.Code, args.Caption, args.BaseUri, args.RetryCount, args.Auth, args.Methods, args.Type, args.Namespaces)));
+				args.Code, args.Caption, args.BaseUri, args.RetryCount, args.Auth, args.Methods, args.Type, args.Namespaces,
+				args.Description)));
 }
 
 /// <summary>Lists registered web services with code, caption, type, package and base URI; method trees come from describe-web-service.</summary>
@@ -338,7 +339,11 @@ public sealed record RegisterWebServiceArgs(
 
 	[property: JsonPropertyName("namespaces")]
 	[property: Description("SOAP only, at least one: the namespaces the envelope declares, e.g. [{\"prefix\": \"tem\", \"uri\": \"http://tempuri.org/\"}]; the first is the default unless one is marked default")]
-	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null) {
+	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null,
+
+	[property: JsonPropertyName("description")]
+	[property: Description("Optional description Studio shows on the service")]
+	string Description = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

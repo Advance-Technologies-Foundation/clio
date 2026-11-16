@@ -744,4 +744,33 @@ public sealed class WebServiceDefinitionBuilderTests {
 		collection!.Items.Remove("ab12cd34-0000-0000-0000-000000000001").Should().BeTrue(
 			because: "the platform's key case must not decide whether setMethod replaces or duplicates a method");
 	}
+
+	[TestCase("customer.name", "UsrCustomerName", "name")]
+	[TestCase("$.items[*].number", "UsrNumber", "number")]
+	[TestCase("tem:total/ns0:amount", "UsrTotalAmount", "amount")]
+	[TestCase("X-Api-Key", "UsrApiKey", "X-Api-Key")]
+	[TestCase(null, "UsrPage", "UsrPage")]
+	[Description("A parameter sent without a caption is captioned with the name the API sees, and with its code only when it has no path.")]
+	public void DefaultParameterCaption_Should_Use_The_Wire_Name(string path, string code, string expected) {
+		// Act
+		string caption = WebServiceDefinitionBuilder.DefaultParameterCaption(path, code);
+
+		// Assert
+		caption.Should().Be(expected, because: "the prefixed code reads poorly on the Call web service element");
+	}
+
+	[Test]
+	[Description("A base-URI placeholder no path parameter fills is reported as a base-uri placeholder, not as one of the method uri.")]
+	public void BuildMethod_Should_Name_A_Missing_Base_Uri_Placeholder_As_Such() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Orders", "GET", "orders"),
+			null, false, errors, null, "https://api.example.com/{version}/");
+
+		// Assert
+		errors.Should().ContainSingle(because: "{version} has no path parameter")
+			.Which.Should().Contain("base-uri placeholder {version}", because: "the message names where the placeholder is");
+	}
 }

@@ -131,6 +131,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["package-name"] = PackageName,
 				["code"] = _serviceCode,
 				["caption"] = "E2E orders",
+				["description"] = "Orders API used by the E2E suite",
 				["base-uri"] = "https://example.invalid/api",
 				["methods"] = new[] { OrdersMethod(withHeader: true) }
 			}, cts.Token);
@@ -196,6 +197,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the list carries each base URI, with a key kept in its query hidden");
 		JsonSerializer.Serialize(listed).Should().NotContain(HiddenKey, because: "the list must not print a key kept in a URI");
 		described.Success.Should().BeTrue(because: $"describe must read the service back; error: {described.Error}");
+		described.Service!.Description.Should().Be("Orders API used by the E2E suite",
+			because: "the description given at registration is stored and read back as Studio shows it");
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
 		method.Uri.Should().Be("orders/{id}?api_key=[masked]",
