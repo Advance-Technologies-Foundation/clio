@@ -182,11 +182,12 @@ public sealed class WebServiceDesigner(
 		}
 		(IReadOnlyCollection<string> settings, _) = RequireSysSettings(schema, [], errors);
 		errors.ThrowIfAny();
-		ClearUseAuthWithoutAuthentication(schema);
+		IReadOnlyList<string> cleared = ClearUseAuthWithoutAuthentication(schema);
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
-			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName)]);
+			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName),
+				.. ClearedUseAuthNotices(cleared)]);
 	}
 
 	/// <summary>
@@ -299,13 +300,16 @@ public sealed class WebServiceDesigner(
 			return new WebServiceToolResult(false, UsageRefusal(operations, unacknowledged, everyCallChanges),
 				Usages: unacknowledged);
 		}
-		ClearUseAuthWithoutAuthentication(schema);
+		// Only the call that removes the authentication clears the flags; any other change leaves them as they are.
+		IReadOnlyList<string> cleared = authBefore.Length > 0 && AuthSignature(schema.AuthInfo).Length == 0
+			? ClearUseAuthWithoutAuthentication(schema)
+			: [];
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
 			Usages: affected,
 			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations, useAuthBefore),
-				.. Notices(settings, row.Package, missingKept)]);
+				.. Notices(settings, row.Package, missingKept), .. ClearedUseAuthNotices(cleared)]);
 	}
 
 	/// <summary>
@@ -586,8 +590,15 @@ public sealed class WebServiceDesigner(
 				break;
 			case "setDescription":
 				// Shown in Studio only; no request changes, so no caller has to agree.
+				if (operation.Description is null) {
+					errors.Add("setDescription: give description (\"\" clears it).");
+					break;
+				}
+				// An empty dictionary leaves the stored text in place (measured): the platform clears a culture only
+				// when that culture is sent with an empty value, so every culture the service has is sent empty.
 				schema.Description = string.IsNullOrWhiteSpace(operation.Description)
-					? new Dictionary<string, string>()
+					? (schema.Description is { Count: > 0 } ? schema.Description.Keys.ToList() : ["en-US"])
+						.ToDictionary(culture => culture, _ => string.Empty)
 					: WebServiceDefinitionBuilder.Caption(operation.Description.Trim());
 				break;
 			case "setAuth":
@@ -696,23 +707,35 @@ public sealed class WebServiceDesigner(
 	}
 
 	/// <summary>
-	/// The authentication as one comparable string: its type and every value with its source. No authentication and
-	/// type none read the same, as the platform sends nothing for either.
-	/// </summary>
-	/// <summary>
 	/// A service without authentication sends none, yet Studio shows "Use authentication" ticked and disabled on a
 	/// method that keeps the flag. Cleared only after the usage guard ran, which reads the flag to find the callers
 	/// the removed authentication changes.
 	/// </summary>
-	private static void ClearUseAuthWithoutAuthentication(ServiceSchemaDto schema) {
+	/// <returns>The codes of the methods whose flag was cleared.</returns>
+	private static IReadOnlyList<string> ClearUseAuthWithoutAuthentication(ServiceSchemaDto schema) {
 		if (schema.AuthInfo is not (null or { AuthType: ServiceSchemaCodes.AuthNone })) {
-			return;
+			return [];
 		}
-		foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+		var cleared = new List<string>();
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values.Where(m => m.UseAuthInfo)) {
 			method.UseAuthInfo = false;
+			cleared.Add(method.Name);
+		}
+		return cleared;
+	}
+
+	private static IEnumerable<string> ClearedUseAuthNotices(IReadOnlyList<string> cleared) {
+		if (cleared.Count > 0) {
+			yield return $"The service has no authentication, so use-auth was cleared on {string.Join(", ", cleared)}. "
+				+ "If authentication is added later, these methods send none until the user agrees to set use-auth on "
+				+ "each of them again (setMethod with use-auth: true).";
 		}
 	}
 
+	/// <summary>
+	/// The authentication as one comparable string: its type and every value with its source. No authentication and
+	/// type none read the same, as the platform sends nothing for either.
+	/// </summary>
 	private static string AuthSignature(ServiceAuthInfoDto auth) {
 		if (auth is null || auth.AuthType == ServiceSchemaCodes.AuthNone) {
 			return string.Empty;

@@ -67,6 +67,7 @@ public sealed record WebServiceMethodArg(
 /// <param name="Methods">At least one method.</param>
 /// <param name="Type">rest (default), soap11 or soap12.</param>
 /// <param name="Namespaces">SOAP only, at least one: the namespaces the envelope declares.</param>
+/// <param name="Description">Optional description Studio shows on the service.</param>
 public sealed record WebServiceRegistration(string Code, string Caption, string BaseUri, int? RetryCount,
 	WebServiceAuthArg Auth, IReadOnlyList<WebServiceMethodArg> Methods, string Type = null,
 	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null, string Description = null);

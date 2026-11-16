@@ -725,7 +725,7 @@ public sealed class WsdlReaderTests {
 		_client.Select("VwWebServiceV2", Arg.Any<IReadOnlyList<string>>(),
 				Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Caption") && f["Caption"] == "Calculator"),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
-			.Returns([new System.Text.Json.Nodes.JsonObject { ["Name"] = "UsrCalculatorStudio" }]);
+			.Returns([new JsonObject { ["Name"] = "UsrCalculatorStudio" }]);
 
 		// Act
 		WsdlReadResult result = _sut.Read(Files(path));

@@ -745,15 +745,21 @@ public sealed class WebServiceDefinitionBuilderTests {
 			because: "the platform's key case must not decide whether setMethod replaces or duplicates a method");
 	}
 
-	[TestCase("customer.name", "UsrCustomerName", "name")]
-	[TestCase("$.items[*].number", "UsrNumber", "number")]
-	[TestCase("tem:total/ns0:amount", "UsrTotalAmount", "amount")]
-	[TestCase("X-Api-Key", "UsrApiKey", "X-Api-Key")]
-	[TestCase(null, "UsrPage", "UsrPage")]
-	[Description("A parameter sent without a caption is captioned with the name the API sees, and with its code only when it has no path.")]
-	public void DefaultParameterCaption_Should_Use_The_Wire_Name(string path, string code, string expected) {
+	[TestCase("customer.name", "UsrCustomerName", true, false, "name")]
+	[TestCase("$.items[*].number", "UsrNumber", true, false, "number")]
+	[TestCase("$.items[0]", "UsrItems", true, false, "items")]
+	[TestCase("$['first name']", "UsrFirstName", true, false, "first name")]
+	[TestCase("tem:total/ns0:amount", "UsrTotalAmount", true, true, "amount")]
+	[TestCase("tem:Order.Id", "UsrOrderId", true, true, "Order.Id")]
+	[TestCase("X-Api-Key", "UsrApiKey", false, false, "X-Api-Key")]
+	[TestCase("$filter", "UsrFilter", false, false, "$filter")]
+	[TestCase("page[size]", "UsrPageSize", false, false, "page[size]")]
+	[TestCase("api.version", "UsrApiVersion", false, false, "api.version")]
+	[TestCase(null, "UsrPage", false, false, "UsrPage")]
+	[Description("A parameter sent without a caption is captioned with the name the API sees: only a body or SOAP element path is split, a query, header, cookie or path name is kept as given, and the code is used only without a path.")]
+	public void DefaultParameterCaption_Should_Use_The_Wire_Name(string path, string code, bool body, bool soap, string expected) {
 		// Act
-		string caption = WebServiceDefinitionBuilder.DefaultParameterCaption(path, code);
+		string caption = WebServiceDefinitionBuilder.DefaultParameterCaption(path, code, body, soap);
 
 		// Assert
 		caption.Should().Be(expected, because: "the prefixed code reads poorly on the Call web service element");

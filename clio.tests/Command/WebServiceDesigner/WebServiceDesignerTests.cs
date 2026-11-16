@@ -819,10 +819,43 @@ public sealed class WebServiceDesignerTests {
 		result.Success.Should().BeTrue(because: "no process calls the service in this test");
 		saved.Methods.Items.Values.Should().OnlyContain(m => !m.UseAuthInfo,
 			because: "a service without authentication sends none, and the flag would show ticked and disabled in Studio");
+		result.Notices.Should().Contain(n => n.Contains("use-auth was cleared on Search"),
+			because: "the user learns which methods must be set again if authentication comes back");
 	}
 
 	[Test]
-	[Description("setDescription sets and clears the service description, and describe shows it.")]
+	[Description("A change that does not remove the authentication leaves use-auth as it was.")]
+	public void Modify_Should_Not_Clear_Use_Auth_Without_Removing_Authentication() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true)));
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setRetryCount", RetryCount: 1)], null);
+
+		// Assert
+		saved.Methods.Items.Values.Single().UseAuthInfo.Should().BeTrue(
+			because: "only the call that removes the authentication clears the flags");
+	}
+
+	[Test]
+	[Description("setDescription without a description is refused instead of clearing it by accident.")]
+	public void Modify_SetDescription_Should_Refuse_A_Missing_Description() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription")], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "an omitted description is not a request to clear it")
+			.WithMessage("*setDescription*", because: "the refusal names the operation");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("setDescription sets the service description and an empty one clears it.")]
 	public void Modify_SetDescription_Should_Set_And_Clear_The_Description() {
 		// Arrange
 		GivenRegisteredService(BingSchema());
@@ -836,7 +869,7 @@ public sealed class WebServiceDesignerTests {
 
 		// Assert
 		saved[0].Should().Be("Orders API of the ERP", because: "the description is stored like Studio's");
-		saved[1].Should().BeEmpty(because: "an empty description clears it");
+		saved[1].Should().BeEmpty(because: "an empty description clears it, sent as an empty value per culture");
 	}
 
 	[Test]

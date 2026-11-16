@@ -183,7 +183,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode,
 				["operations"] = new[] {
 					new Dictionary<string, object?> { ["op"] = "setMethod", ["method"] = OrdersMethod(withHeader: false) },
-					new Dictionary<string, object?> { ["op"] = "setRetryCount", ["retry-count"] = 2 }
+					new Dictionary<string, object?> { ["op"] = "setRetryCount", ["retry-count"] = 2 },
+					new Dictionary<string, object?> { ["op"] = "setDescription", ["description"] = "" }
 				}
 			}, cts.Token);
 
@@ -231,6 +232,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		literalKey.Error.Should().NotContain("sk-live-123", because: "a refused credential value is never echoed back");
 		modified.Success.Should().BeTrue(because: $"a valid setMethod must save; error: {modified.Error}");
 		modified.Service!.RetryCount.Should().Be(2, because: "setRetryCount is applied in the same call");
+		modified.Service.Description.Should().BeNull(because: "setDescription with an empty text clears the description on the stand");
 		modified.Service.Methods.Single().RequestParameters.Select(p => p.Code).Should().BeEquivalentTo([Prefixed("Id")],
 			because: "setMethod replaces the whole method definition, so the dropped header is gone");
 	}

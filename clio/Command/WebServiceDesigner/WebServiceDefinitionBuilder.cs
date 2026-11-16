@@ -688,20 +688,36 @@ public static partial class WebServiceDefinitionBuilder {
 	public static Dictionary<string, string> Caption(string text) => new() { ["en-US"] = text };
 
 	/// <summary>
-	/// The caption a parameter gets when none is sent: the name the API sees (the last segment of its path, without a
-	/// JSONPath root or a namespace prefix), as Studio's quick setup names it, and the code only when there is no path.
-	/// The code carries the schema prefix and reads poorly on the Call web service element.
+	/// The caption a parameter gets when none is sent: the name the API sees, as Studio's quick setup names it, and
+	/// the code only when there is none. Only a path that is itself a path is split: a REST body path (dotted, or a
+	/// response JSONPath) gives its last field, a SOAP element path its last element without the namespace prefix;
+	/// a query, header, cookie or path name is the name as given. The code carries the schema prefix and reads
+	/// poorly on the Call web service element.
 	/// </summary>
 	/// <param name="path">The parameter path.</param>
 	/// <param name="code">The parameter code.</param>
+	/// <param name="body">Whether the parameter is in the body.</param>
+	/// <param name="soap">Whether the service is SOAP.</param>
 	/// <returns>The caption text.</returns>
-	public static string DefaultParameterCaption(string path, string code) {
-		string trimmed = (path ?? string.Empty).Trim().TrimStart('$').TrimStart('.');
-		string last = trimmed.Split(['.', '/']).LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
-		int colon = last.IndexOf(':');
-		last = colon >= 0 ? last[(colon + 1)..] : last;
-		last = last.Trim('{', '}', '[', ']', '*');
-		return last.Length > 0 ? last : code;
+	public static string DefaultParameterCaption(string path, string code, bool body = true, bool soap = false) {
+		string text = (path ?? string.Empty).Trim();
+		if (soap) {
+			// A dot belongs to a SOAP element name; the separator is '/'.
+			string element = text.Split('/').LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
+			int colon = element.IndexOf(':');
+			text = colon >= 0 ? element[(colon + 1)..] : element;
+		} else if (body) {
+			string field = text.StartsWith('$') ? text[1..] : text;
+			int quoted = field.LastIndexOf("['", StringComparison.Ordinal);
+			if (quoted >= 0 && field.EndsWith("']", StringComparison.Ordinal)) {
+				text = field[(quoted + 2)..^2];
+			} else {
+				text = field.Split('.').LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
+				int bracket = text.IndexOf('[');
+				text = bracket >= 0 ? text[..bracket] : text;
+			}
+		}
+		return text.Length > 0 ? text : code;
 	}
 
 	/// <summary>Where a parameter list is built: request or response, its owner for messages, nesting and the SOAP rules.</summary>
@@ -819,7 +835,8 @@ public static partial class WebServiceDefinitionBuilder {
 			IsArray = arg.Array ?? false,
 			IsRequired = arg.Required ?? placement == ServiceSchemaCodes.Placements["path"],
 			DefValue = defValue,
-			Caption = Caption(arg.Caption ?? DefaultParameterCaption(path, arg.Code)),
+			Caption = Caption(arg.Caption ?? DefaultParameterCaption(path, arg.Code,
+				placement == ServiceSchemaCodes.Placements["body"], scope.Soap is not null)),
 			// SOAP: the parameter is rebuilt as given, with the defaults Studio writes (not a SOAP header, item
 			// elements named "item"); a SOAP-header parameter passes the flag to its items, as Studio does. REST: the
 			// typed members the platform sent are carried like the extension bag, so a save keeps them as read.
