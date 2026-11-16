@@ -26,40 +26,40 @@ Run `/release` in GitHub Copilot Chat. The prompt follows the same shared
 `8.0.1.42` → `8.0.1.43`), publish from tested master with meaningful notes, and
 verify NuGet delivery.
 
-## Альтернативные способы
+## Alternative methods
 
-### Автоматические скрипты
+### Automated scripts
 
-Скрипты автоматически создают тег и GitHub release:
+The scripts create a tag and a GitHub release:
 
 #### PowerShell (Windows/macOS/Linux):
 ```powershell
-# Интерактивный режим (создает тег + GitHub release)
+# Interactive mode (creates a tag and a GitHub release)
 .\create-release.ps1
 
-# Автоматический режим (без подтверждения)
+# Automatic mode (skips confirmation)
 .\create-release.ps1 -Force
 ```
 
 #### Bash (macOS/Linux):
 ```bash
-# Интерактивный режим (создает тег + GitHub release)
+# Interactive mode (creates a tag and a GitHub release)
 ./create-release.sh
 
-# Автоматический режим (без подтверждения)
+# Automatic mode (skips confirmation)
 ./create-release.sh --force
 ```
 
-**Что делают скрипты:**
-- Находят последний тег
-- Инкрементируют версию (X.Y.Z.W → X.Y.Z.W+1)
-- Создают и пушат новый тег
-- Создают GitHub release (если установлен GitHub CLI)
-- Автоматически запускают NuGet публикацию
+**What the scripts do:**
+- Find the latest tag
+- Increment the last version component (`X.Y.Z.W` → `X.Y.Z.(W+1)`)
+- Create and push the new tag
+- Create a GitHub release if GitHub CLI is available and authenticated
+- Trigger NuGet publication when the GitHub release is published
 
-## Ручной способ: создание релиза
+## Manual release process
 
-### 1. Pre-release checklist
+### Pre-release checklist
 
 Before creating a release tag, verify the following:
 
@@ -77,34 +77,34 @@ Before creating a release tag, verify the following:
 **Documentation**
 - [ ] Command docs updated (`clio/docs/commands/`, `clio/help/en/`, `clio/Commands.md`)
 - [ ] AGENTS.md updated if any new policies were introduced
-- [ ] What's new draft ready (see [Release Notes](#6-обязательные-release-notes-whats-new) below)
+- [ ] What's new draft ready (see [Release Notes](#6-required-release-notes-whats-new) below)
 
-### 1. Подготовка
+### 1. Preparation
 
-Убедитесь, что все изменения готовы и протестированы в master ветке.
+Ensure all changes are ready and tested on `master`. Record the verified full commit SHA for the release.
 
-### 2. Создание релиза
+### 2. Create the release
 
-1. **Создайте тег версии** в формате `X.Y.Z.W`:
+1. **Create a version tag** in `X.Y.Z.W` format at the verified full master SHA:
    ```bash
    git tag 8.0.1.43 <verified-full-master-sha>
    git push origin refs/tags/8.0.1.43
    ```
 
-2. **Создайте GitHub Release**:
+2. **Create a GitHub release** with the prepared release notes:
    
-   **Вариант A: GitHub CLI (рекомендуется)**
+   **Option A: GitHub CLI (recommended)**
    ```bash
    gh release create 8.0.1.43 --verify-tag --target <verified-full-master-sha> \
      --title "Release 8.0.1.43" --notes-file <release-notes-file>
    ```
    
-   **Вариант B: Веб-интерфейс**
-   - Перейдите на страницу [Releases](https://github.com/Advance-Technologies-Foundation/clio/releases)
-   - Нажмите "Create a new release"
-   - Выберите созданный тег
-   - Заполните описание релиза
-   - Нажмите "Publish release"
+   **Option B: Web interface**
+   - Open the [Releases page](https://github.com/Advance-Technologies-Foundation/clio/releases)
+   - Click "Create a new release"
+   - Select the tag you created
+   - Enter the release notes
+   - Click "Publish release"
 
 ### 3. Automatic publishing
 
@@ -144,51 +144,52 @@ and fails on a non-zero exit code. Spell the filter `TestCategory`, never the `C
 ([why](docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md)). If option B is adopted,
 update this section and the comment above the gate step in the workflow.
 
-### 4. Требования к версии
+### 4. Version requirements
 
-- **Правильные форматы**: `8.0.1.43`, `v8.0.1.43`
-- **Неправильные форматы**: `8.0.1`, `v8.0`, `release-8.0.1.43`
+- **Valid formats**: `8.0.1.43`, `v8.0.1.43`
+- **Invalid formats**: `8.0.1`, `v8.0`, `release-8.0.1.43`
 
-### 5. Локальная сборка с версией
+### 5. Build locally with a specific version
 
-Для локальной сборки с определенной версией:
+To build a local package with a specific version:
 
-```bash
+```powershell
 dotnet pack .\clio\clio.csproj -c Release --output ./output /p:AssemblyVersion=8.0.1.43 /p:FileVersion=8.0.1.43 /p:Version=8.0.1.43
 ```
 
-### 6. Обязательные Release Notes (What's new)
+### 6. Required release notes (What's new)
 
-> **ВАЖНО:** Каждый релиз **обязан** содержать описание изменений (What's new) в GitHub Release.
-> Эти заметки отображаются пользователям при выполнении команды `clio update`.
+> Every GitHub release **must** include release notes (What's new).
+> Users see these notes when they run `clio update`.
 
-При разработке через кодинг-агенты (GitHub Copilot, Claude Code и др.) агент **обязан**:
+When coding agents such as Codex, GitHub Copilot or Claude Code prepare a release, they **must**:
 
-1. **Вести список изменений** в процессе разработки — каждый значимый коммит должен содержать понятное описание
-2. **Формировать What's new** при создании релиза — краткий, понятный список изменений на английском языке
-3. **Включать What's new в GitHub Release** — через параметр `--notes` в `gh release create`
+1. **Track changes** during development: each meaningful commit should have a clear description.
+2. **Prepare release notes** when creating the release: a concise, clear list of changes in English.
+3. **Include the notes in the GitHub release** using `gh release create --notes-file`.
 
-**Формат What's new:**
+**Release note format:**
 ```markdown
 - Add feature X for better Y
 - Fix issue with Z when doing W
 - Improve performance of operation Q
 ```
 
-**Пример создания релиза с What's new:**
+**Example of a release with notes:**
 ```bash
-gh release create 8.0.2.65 --title "Release 8.0.2.65" --notes "$(cat <<'EOF'
-- Fix player name display in environment list
-- Add interactive quiz easter egg
-- Improve update command UX with spinner and release notes
+cat > release-notes.md <<'EOF'
+- Fix player name display in the environment list
+- Add an interactive quiz easter egg
+- Improve the update command with a spinner and release notes
 EOF
-)"
+gh release create 8.0.2.65 --verify-tag --target <verified-full-master-sha> \
+  --title "Release 8.0.2.65" --notes-file release-notes.md
 ```
 
-**Без What's new** пользователи команды `clio update` не увидят описание изменений, что снижает доверие к обновлениям.
+Without release notes, users running `clio update` cannot see what changed in the update.
 
-### 7. Примечания
+### 7. Notes
 
-- **cliogate проект** остается без изменений версионирования
-- **Только clio пакет** получает версию из тега релиза
-- При локальной разработке используется версия по умолчанию `8.0.1.42`
+- The **cliogate project** keeps its own version.
+- Only the **clio package** receives the version from the release tag.
+- Local development uses the default version declared in `clio/clio.csproj`.
