@@ -1272,6 +1272,7 @@ public class BindingsModule {
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();
+		services.AddTransient<IProcessResultSourceClassifier, ProcessResultSourceClassifier>();
 		services.AddTransient<IProcessModelWriter, ProcessModelWriter>();
 		services.AddTransient<IZipBasedApplicationDownloader, ZipBasedApplicationDownloader>();
 		services.AddTransient<ICreatioHostService, CreatioHostService>();

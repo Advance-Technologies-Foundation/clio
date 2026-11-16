@@ -282,7 +282,12 @@ public sealed record RunProcessArgs {
 	[JsonPropertyName("result-parameters")]
 	[Description("Codes of the parameters to read back after the run; a non-empty list forces a "
 		+ "background-mode process to run synchronously. The values come back only when the run ends within the "
-		+ "MCP response deadline.")]
+		+ "MCP response deadline. A value that may hold what a Call web service element received (its Response or a "
+		+ "response parameter, directly, through a formula, or from a sub-process that calls a web service or could "
+		+ "not be checked in time; every value when a Script task shares the process with one) comes back as "
+		+ "\"[withheld]\" and is listed in "
+		+ "`withheldResultParameters`: an API can echo the credentials it was sent. Success and StatusCode are "
+		+ "returned. Do not try to read a withheld value another way; the user sees it in Creatio's process log.")]
 	public string[]? ResultParameters { get; init; }
 
 	[JsonPropertyName("timeout")]

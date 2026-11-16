@@ -515,7 +515,7 @@ public sealed class WebServiceElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-08: a built process calls UsrWscEcho at run time and its result parameters land: Success, StatusCode and Response are mapped into process parameters and come back as the run's result values. Reduced to the result parameters, because the service's base URI is the stand root and no endpoint echoes the request. Ignored without McpE2E:AllowDestructiveMcpTests.")]
+	[Description("TC-I-08: a built process calls UsrWscEcho at run time and its result parameters land: Success and StatusCode come back as the run's result values, while Response comes back as [withheld] and is listed in withheldResultParameters, because an API may echo the credentials it was sent. Reduced to the result parameters, because the service's base URI is the stand root and no endpoint echoes the request. Compiles the process first on a stand whose core does not interpret new processes. Ignored without McpE2E:AllowDestructiveMcpTests.")]
 	[AllureTag(RunProcessTool.ToolName)]
 	[AllureName("run-process calls the web service and reads its result parameters")]
 	public async Task RunProcess_Should_CallTheService_AndReadTheResponse() {
@@ -530,7 +530,8 @@ public sealed class WebServiceElementToolE2ETests {
 				"the process that calls the service");
 
 			// Act
-			RunProcessEnvelope run = await RunAsync(context, processName, "CallSucceeded", "CallStatus", "CallResponse");
+			RunProcessEnvelope run = await ProcessPublishE2ESupport.RunCompilingWhenRequiredAsync(context, processName,
+				() => RunAsync(context, processName, "CallSucceeded", "CallStatus", "CallResponse"));
 
 			// Assert
 			run.Error.Should().BeNull(because: "the call reaches the stand and the element completes: {0}", run.Error);
@@ -542,6 +543,12 @@ public sealed class WebServiceElementToolE2ETests {
 				.Should().BeTrue(because: "StatusCode lands as an integer");
 			statusCode.Should().BePositive(
 				because: "an HTTP status code is written only when the call reached a web server; with ignoreErrors a call with no answer still completes, so the run's status alone proves nothing");
+			Convert.ToString(run.ResultParameterValues!["CallResponse"], CultureInfo.InvariantCulture).Should().Be("[withheld]",
+				because: "the response body may echo what the call sent - the Authorization header, a key from a system setting - so run-process never returns it");
+			run.WithheldResultParameters.Should().Equal(["CallResponse"],
+				because: "the answer names exactly the value it withheld, and Success and StatusCode cannot carry an echo");
+			(run.Warnings ?? []).Should().Contain(w => w.Contains("withheld", StringComparison.Ordinal),
+				because: "the caller is told why the value is missing and where the user can see it");
 			JsonSerializer.Serialize(run).Should().NotContain(HeaderDefault,
 				because: "the header default stored in the service never reaches builder output");
 		} finally {

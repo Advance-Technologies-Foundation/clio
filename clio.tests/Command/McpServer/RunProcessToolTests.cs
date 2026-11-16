@@ -64,12 +64,14 @@ public sealed class RunProcessToolTests {
 	private static Harness BuildHarness(List<ProcessParameter> signature, string platformResponseJson = null,
 			IProcessRunLogReader processRunLogReader = null, IProcessVersionLibReader versionLibReader = null,
 			IProcessRunMonitor runMonitor = null, ICreatedRecordWatcher recordWatcher = null,
-			ICreatedRecordCleaner recordCleaner = null, IRunRecordProvenance provenance = null, bool isNetCore = false) {
+			ICreatedRecordCleaner recordCleaner = null, IRunRecordProvenance provenance = null, bool isNetCore = false,
+			List<FlowElement> flowElements = null, IProcessResultSourceClassifier resultSources = null) {
 		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
 		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
 			.Returns(_ => new ProcessModelType(Guid.NewGuid(), ProcessCode) {
 				Name = "Migrate dashboards process",
-				Parameters = signature
+				Parameters = signature,
+				FlowElements = flowElements
 			});
 
 		List<string> bodies = [];
@@ -97,7 +99,8 @@ public sealed class RunProcessToolTests {
 				recordWatcher ?? Substitute.For<ICreatedRecordWatcher>(),
 				recordCleaner ?? Substitute.For<ICreatedRecordCleaner>(),
 				provenance ?? TiesEverything()),
-			new EnvironmentSettings { IsNetCore = isNetCore }) { Sleep = _ => { } };
+			new EnvironmentSettings { IsNetCore = isNetCore },
+			resultSources ?? new ProcessResultSourceClassifier(generator, versionLibReader)) { Sleep = _ => { } };
 		return new Harness(command, applicationClient, serviceUrlBuilder, versionLibReader, bodies, timeouts, attempts);
 	}
 
@@ -396,7 +399,7 @@ public sealed class RunProcessToolTests {
 		RunProcessCommand command = new(generator, applicationClient, Substitute.For<IServiceUrlBuilder>(),
 			NothingLogged(), reader, ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
 			Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything()),
-			new EnvironmentSettings());
+			new EnvironmentSettings(), Substitute.For<IProcessResultSourceClassifier>());
 
 		// Act
 		command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
@@ -1380,7 +1383,7 @@ public sealed class RunProcessToolTests {
 		: RunProcessCommand(generator, applicationClient, serviceUrlBuilder, processRunLogReader, ActiveVersion(),
 			ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
 				Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything()),
-			new EnvironmentSettings()) {
+			new EnvironmentSettings(), Substitute.For<IProcessResultSourceClassifier>()) {
 
 		public override bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
 			try {
@@ -2173,6 +2176,177 @@ public sealed class RunProcessToolTests {
 		ok.Should().BeFalse(because: "a cancelled run did not finish");
 		response.Status.Should().Be("cancelled", because: "the status is reported as read");
 		response.Error.Should().Contain("cancelled while clio waited", because: "the error says what happened");
+	}
+
+	#endregion
+
+	#region ENG-105475 - values a web service returned
+
+	private static readonly Guid EchoElementUId = Guid.Parse("d5f11818-8bd4-46bd-8cb9-8be67cf164c9");
+	private static readonly Guid EchoResponseUId = Guid.Parse("98eae92c-bdad-44a3-ba31-bd888de74000");
+	private static readonly Guid EchoStatusCodeUId = Guid.Parse("8d810ddc-59b7-4ce1-af53-207549f8316b");
+
+	// "probe-user:fake-pass-0000", a test value.
+	private const string EchoedBasicToken = "cHJvYmUtdXNlcjpmYWtlLXBhc3MtMDAwMA==";
+
+	private static string EchoPath(Guid parameter) =>
+		$"[#[IsOwnerSchema:false].[IsSchema:false].[Element:{{{EchoElementUId}}}].[Parameter:{{{parameter}}}]#]";
+
+	private static ProcessParameter MappedOutput(string name, string typeUId, string value) {
+		ProcessParameter parameter = Parameter(name, typeUId, ProcessParameterDirection.Output);
+		parameter.UId = Guid.NewGuid();
+		parameter.SourceValue = new SourceValue { Source = 3, Value = value };
+		return parameter;
+	}
+
+	private static List<ProcessParameter> EchoSignature() => [
+		MappedOutput("ResponseText", TextTypeUId, EchoPath(EchoResponseUId)),
+		MappedOutput("Code", "6b6b74e2-820d-490e-a017-2b73d4ccf2b0", EchoPath(EchoStatusCodeUId)),
+		MappedOutput("Plain", TextTypeUId, null)
+	];
+
+	private static List<FlowElement> EchoElements() => [
+		new FlowElement {
+			Name = "CallEcho",
+			UId = EchoElementUId,
+			ManagerItemUId = Guid.Parse("652B598D-CDD5-49D5-A86D-AAFAC88213F3"),
+			Parameters = [
+				new FlowElementParameter { Name = "Response", UId = EchoResponseUId.ToString(), SourceValue = new SourceValue() },
+				new FlowElementParameter { Name = "StatusCode", UId = EchoStatusCodeUId.ToString(), SourceValue = new SourceValue() }
+			]
+		}
+	];
+
+	private const string EchoRunResponse = """
+		{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":2,"success":true,
+		 "resultParameterValues":{"ResponseText":"{\"headers\":{\"X-Api-Key\":\"fake-probe-key-7731\"}}","Code":200,
+		 "Plain":"sent Basic cHJvYmUtdXNlcjpmYWtlLXBhc3MtMDAwMA=="}}
+		""";
+
+	[Test]
+	[Category("Unit")]
+	[Description("A result mapped from a Call web service element's Response is withheld with a marker and a note; StatusCode is returned.")]
+	public void TryRun_Should_Withhold_A_Result_That_Comes_From_A_WebService_Response() {
+		// Arrange
+		Harness harness = BuildHarness(EchoSignature(), EchoRunResponse, flowElements: EchoElements());
+
+		// Act
+		bool succeeded = harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, ResultParameters = ["ResponseText", "Code", "Plain"]
+		}, out RunProcessResponse response);
+
+		// Assert
+		succeeded.Should().BeTrue(because: "withholding a value does not fail the run");
+		response.ResultParameterValues["ResponseText"].Should().Be(ProcessResultSources.WithheldMarker,
+			because: "the response body can echo the key a system setting supplied, and clio never returns it");
+		response.WithheldResultParameters.Should().Equal(["ResponseText"],
+			because: "the answer names exactly the values it withheld");
+		response.ResultParameterValues["Code"].ToString().Should().Be("200",
+			because: "a status code cannot carry an echoed credential");
+		response.Warnings.Should().Contain(w => w.Contains("'ResponseText' (from the Call web service element 'CallEcho')")
+				&& w.Contains("process log"),
+			because: "the caller learns why the value is missing and where the user can see it");
+		JsonSerializer.Serialize(response).Should().NotContain("fake-probe-key-7731",
+			because: "the echoed key must not reach the answer in any field");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A Basic credential in a value that is not withheld is still hidden by its shape.")]
+	public void TryRun_Should_Mask_A_Basic_Credential_In_A_Returned_Value() {
+		// Arrange
+		Harness harness = BuildHarness(EchoSignature(), EchoRunResponse, flowElements: EchoElements());
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, ResultParameters = ["Plain"]
+		}, out RunProcessResponse response);
+
+		// Assert
+		response.ResultParameterValues["Plain"].ToString().Should().Be("sent Basic [redacted]",
+			because: "a value no web service fed can still quote a credential, for example one a Script task wrote");
+		response.WithheldResultParameters.Should().NotContain("Plain", because: "the value itself was not withheld by source");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the source check itself fails, every requested result is withheld.")]
+	public void TryRun_Should_Withhold_Every_Result_When_The_Source_Check_Fails() {
+		// Arrange
+		IProcessResultSourceClassifier classifier = Substitute.For<IProcessResultSourceClassifier>();
+		classifier.FindWebServiceFed(Arg.Any<ProcessModelType>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<DateTimeOffset>())
+			.Returns(_ => throw new InvalidOperationException("schema read failed"));
+		Harness harness = BuildHarness(EchoSignature(), EchoRunResponse, flowElements: EchoElements(),
+			resultSources: classifier);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, ResultParameters = ["Code", "Plain"]
+		}, out RunProcessResponse response);
+
+		// Assert
+		response.WithheldResultParameters.Should().BeEquivalentTo(["ResponseText", "Code", "Plain"],
+			because: "a value whose source could not be checked is not proven free of a credential, and one not asked for was not checked");
+		response.ResultParameterValues.Values.Select(v => v.ToString()).Should().AllBe(ProcessResultSources.WithheldMarker,
+			because: "every withheld value is replaced by the marker");
+		response.Warnings.Should().Contain(w => w.Contains("could not check", StringComparison.Ordinal),
+			because: "the note says the source could not be checked rather than naming a web service");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A credential the platform's error quotes is hidden by its shape.")]
+	public void TryRun_Should_Mask_A_Credential_In_The_Platform_Error() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature(),
+			$$$"""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"errorCode":"WebException","message":"Request with Authorization: Basic {{{EchoedBasicToken}}} failed"}}""");
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		response.Error.Should().NotContain(EchoedBasicToken, because: "an error can quote the request a web service element sent");
+	}
+
+
+	[Test]
+	[Category("Unit")]
+	[Description("A value the platform returns for a name that was not requested is withheld: only requested names are checked.")]
+	public void TryRun_Should_Withhold_A_Value_That_Was_Not_Requested() {
+		// Arrange
+		Harness harness = BuildHarness(EchoSignature(), EchoRunResponse, flowElements: EchoElements());
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, ResultParameters = ["Code"]
+		}, out RunProcessResponse response);
+
+		// Assert
+		response.WithheldResultParameters.Should().BeEquivalentTo(["ResponseText", "Plain"],
+			because: "neither name was asked for, so neither source was checked");
+		response.ResultParameterValues["Code"].ToString().Should().Be("200", because: "the requested status code is clean");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A collection value is masked string by string: a Basic credential inside it is hidden and the rest of the collection stays readable.")]
+	public void TryRun_Should_Mask_A_Credential_Inside_A_Collection_Value() {
+		// Arrange
+		Harness harness = BuildHarness(EchoSignature(),
+			$$$"""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":2,"success":true,"resultParameterValues":{"Plain":[{"Note":"Server: \"prod\"","Header":"Basic {{{EchoedBasicToken}}}","ApiKey":"fake-probe-key-7731"}]}}""",
+			flowElements: EchoElements());
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, ResultParameters = ["Plain"]
+		}, out RunProcessResponse response);
+
+		// Assert
+		string plain = JsonSerializer.Serialize(response.ResultParameterValues["Plain"]);
+		plain.Should().NotContain(EchoedBasicToken, because: "the credential inside the row is hidden");
+		plain.Should().NotContain("fake-probe-key-7731", because: "a column named as a secret is hidden whole");
+		plain.Should().Contain("prod", because: "an ordinary value of the same row stays readable");
+		response.WithheldResultParameters.Should().BeNull(because: "the collection was masked, not withheld");
 	}
 
 	#endregion
