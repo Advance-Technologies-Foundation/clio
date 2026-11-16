@@ -34,22 +34,19 @@ public class CreateDynamicCaseTool(
 	/// </remarks>
 	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
-	/// <summary>Error code of a stage item that carries steps; the guidance names it with its remedy.</summary>
-	internal const string StepsNotSupportedCode = "steps-not-supported";
-
-	/// <summary>Error code of a stage item that carries a key other than <c>value</c>.</summary>
-	internal const string UnknownKeysCode = "unknown-keys";
-
-	/// <summary>Error code of a stage item of the wrong shape.</summary>
-	internal const string InvalidRequestCode = "invalid-request";
-
 	/// <summary>Minimal valid <c>args</c> object, used by the mini-contract.</summary>
 	internal const string MinimalExample =
 		"{\"environment-name\":\"<env>\",\"package-name\":\"<package>\",\"entity-schema-name\":\"UsrOrder\","
 		+ "\"stage-column-name\":\"UsrStatus\"}";
 
-	private const string StageValueKey = "value";
-	private const string StageStepsKey = "steps";
+	/// <summary>The stage item shape named back when an item carries an undeclared key.</summary>
+	internal const string StageShape =
+		"{\"value\": \"<lookup value Id or exact display value>\", \"group\"?: \"<parent stage value>\", "
+		+ "\"successful\"?: false}";
+
+	private static readonly string[] StageKeys = [
+		DynamicCaseStageArguments.ValueKey, DynamicCaseStageArguments.GroupKey, DynamicCaseStageArguments.SuccessfulKey
+	];
 
 	/// <summary>
 	/// Creates the case, or plans it on a dry run, on the specified environment.
@@ -68,19 +65,20 @@ public class CreateDynamicCaseTool(
 		 + "package dependencies the case needs (add-package-dependencies=false refuses instead, listing them in "
 		 + "dependencies.missing), and appends a crt.EntityStageProgressBar to the object's Freedom UI record "
 		 + "page in that page's design package (add-progress-bar=false skips it; page-schema-name names the page, "
-		 + "required when the object opens a different page per record type). The bar's default mode: a stage click "
-		 + "only sets the field and the user saves; save-on-change=true makes a click save the record at once. "
+		 + "required when the object opens a different page per record type). save-on-change=true makes a stage click "
+		 + "save the record at once; by default it only sets the field and the user saves. "
 		 + "The default stage order comes from the lookup (an integer Position, StageOrder, Number or StageNumber "
 		 + "column, else the display value) and is reported in case.orderSource: pass stages (lookup value Ids or "
-		 + "exact display values, every value exactly once) when the business order matters. "
+		 + "exact display values, every value exactly once; items may add group and successful) when the business "
+		 + "order matters. "
 		 + "dry-run=true runs every check, the page write's dry run included, and writes nothing. Nothing is written until "
 		 + "every check passes, and a refusal answers outcome refused with a stable errorCode. An equivalent enabled "
-		 + "case answers already-present and writes nothing to it, so a re-run is safe; a different enabled case on "
-		 + "the object is refused (case-exists). When the case is created but the bar cannot be added, outcome "
-		 + "created-page-failed keeps the case and page.retry is the exact update-page call. "
+		 + "case answers already-present and writes nothing to it, so a re-run is safe; any other enabled case on "
+		 + "the object is refused (case-exists): change it with modify-dynamic-case. If the bar cannot be added, "
+		 + "outcome created-page-failed keeps the case and page.retry is the exact update-page call. "
 		 + "A case is interpreted: no compile-creatio and no restart, but open pages of the object need a reload "
 		 + "(F5) to show the bar. Requires a CrtProcessBuilder that carries BuildCase (install-process-builder, after "
-		 + "user approval). Steps inside stages, stage conditions and changing an existing case are not supported.")]
+		 + "user approval). Steps inside stages and stage conditions are not supported.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -111,8 +109,8 @@ public class CreateDynamicCaseTool(
 				CommandExecutionResult.FromValidationError($"{missing[0]} is required and cannot be empty."),
 				missing, ForCreateDynamicCase);
 		}
-		if (!TryReadStages(args.Stages ?? default, out List<string> stages,
-				out CommandExecutionResult stagesRefusal)) {
+		if (!DynamicCaseStageArguments.TryRead(args.Stages ?? default, StageKeys, StageShape,
+				out List<DynamicCaseStageItem> stages, out CommandExecutionResult stagesRefusal)) {
 			return stagesRefusal;
 		}
 
@@ -121,7 +119,7 @@ public class CreateDynamicCaseTool(
 			PackageName = args.PackageName.Trim(),
 			EntitySchemaName = args.EntitySchemaName.Trim(),
 			StageColumnName = args.StageColumnName.Trim(),
-			Stages = stages,
+			Stages = stages ?? [],
 			OrderColumn = args.OrderColumn,
 			Name = args.Name,
 			Caption = args.Caption,
@@ -148,89 +146,6 @@ public class CreateDynamicCaseTool(
 			"optional: stages, page-schema-name, dry-run and the rest in the tool description"
 		],
 		MinimalExample);
-
-	/// <summary>
-	/// Normalizes <c>stages</c>: an array of <c>{"value": ...}</c> objects, an array of strings, or a string holding
-	/// either. A key other than <c>value</c> is refused here because the normalized list carries values only, and a
-	/// dropped key would be a stage built differently from the one described.
-	/// </summary>
-	/// <param name="value">The bound argument.</param>
-	/// <param name="stages">The stage values in order; empty when the argument was not supplied.</param>
-	/// <param name="refusal">The refusal, when the argument cannot be read.</param>
-	internal static bool TryReadStages(JsonElement value, out List<string> stages, out CommandExecutionResult refusal) {
-		stages = [];
-		refusal = null;
-		if (McpToolArgumentSupport.IsAbsentJsonDocument(value)) {
-			return true;
-		}
-		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(value, JsonValueKind.Array, "stages",
-				out string json, out refusal)) {
-			return false;
-		}
-		JsonNode parsed;
-		try {
-			parsed = JsonNode.Parse(json);
-		} catch (JsonException exception) {
-			refusal = Refuse($"stages is not valid JSON: {exception.Message}", InvalidRequestCode);
-			return false;
-		}
-		if (parsed is not JsonArray items) {
-			refusal = Refuse("stages must be a JSON array.", InvalidRequestCode);
-			return false;
-		}
-		for (int index = 0; index < items.Count; index++) {
-			if (!TryReadStage(items[index], index, out string stage, out refusal)) {
-				return false;
-			}
-			stages.Add(stage);
-		}
-		return true;
-	}
-
-	private static bool TryReadStage(JsonNode item, int index, out string stage, out CommandExecutionResult refusal) {
-		stage = null;
-		refusal = null;
-		string text;
-		switch (item) {
-			case JsonValue scalar when scalar.TryGetValue(out text):
-				break;
-			case JsonObject entry: {
-				if (entry.ContainsKey(StageStepsKey)) {
-					refusal = Refuse($"stages[{index}] carries steps: steps inside stages are not supported yet. "
-						+ "Create the case without them.", StepsNotSupportedCode);
-					return false;
-				}
-				string[] unknown = entry.Select(property => property.Key)
-					.Where(key => !string.Equals(key, StageValueKey, StringComparison.Ordinal))
-					.Select(McpToolArgumentSupport.DescribeCallerKey)
-					.ToArray();
-				if (unknown.Length > 0) {
-					refusal = Refuse($"stages[{index}] carries unknown keys: {McpToolArgumentSupport.JoinCallerKeys(unknown)}. "
-						+ "A stage is {\"value\": \"<lookup value Id or exact display value>\"}.", UnknownKeysCode);
-					return false;
-				}
-				if (entry[StageValueKey] is not JsonValue valueNode || !valueNode.TryGetValue(out text)) {
-					refusal = Refuse($"stages[{index}].value must be a string: the lookup value Id or its exact "
-						+ "display value.", InvalidRequestCode);
-					return false;
-				}
-				break;
-			}
-			default:
-				refusal = Refuse($"stages[{index}] must be a string or an object {{\"value\": \"...\"}}.",
-					InvalidRequestCode);
-				return false;
-		}
-		if (string.IsNullOrWhiteSpace(text)) {
-			refusal = Refuse($"stages[{index}] is empty.", InvalidRequestCode);
-			return false;
-		}
-		stage = text.Trim();
-		return true;
-	}
-
-	private static CommandExecutionResult Refuse(string message, string code) =>
-		CommandExecutionResult.FromValidationError($"{message} [{code}]");
 
 	private static List<string> MissingRequired(CreateDynamicCaseArgs args) {
 		List<string> missing = [];
@@ -274,12 +189,15 @@ public sealed record CreateDynamicCaseArgs(
 	[property: Required]
 	string StageColumnName,
 
-	// JsonElement, not a typed list: an array of {"value": ...} objects, an array of strings and a string holding
-	// either are all accepted, and a key other than value is refused instead of being dropped by the binder.
+	// JsonElement, not a typed list: an array of stage objects, an array of strings and a string holding either are
+	// all accepted, and an undeclared item key is refused instead of being dropped by the binder.
 	// Nullable because the schema exporter serializes a parameter's default value, and default(JsonElement) has none.
 	[property: JsonPropertyName("stages")]
 	[property: Description("Optional stage order: an array of {\"value\": \"<lookup value Id or exact display value>\"} "
-		+ "(bare strings are accepted), naming every lookup value exactly once. Omit for the default order.")]
+		+ "(bare strings are accepted), naming every lookup value exactly once. Omit for the default order. An item "
+		+ "may add \"group\": the parent stage's value, a stage of the list in no group itself (one level), and "
+		+ "\"successful\": false for a stage of the final group (the last top-level stage and its members) that ends "
+		+ "the case unsuccessfully.")]
 	JsonElement? Stages = null,
 
 	[property: JsonPropertyName("order-column")]

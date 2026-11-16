@@ -147,7 +147,46 @@ public sealed class CreateDynamicCaseToolTests {
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "every accepted form is a valid call");
-		_resolved.Captured!.Stages.Should().Equal(["New", "Done"], because: "the order is kept and the shape normalised");
+		_resolved.Captured!.Stages.Select(stage => stage.Value).Should().Equal(["New", "Done"],
+			because: "the order is kept and the shape normalised");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A stage may name its stage group by the parent stage's value and successful=false; both reach the options, and a stage that names neither carries neither.")]
+	public void CreateDynamicCase_ShouldMapTheStageGroupAndSuccessful() {
+		// Arrange
+		CreateDynamicCaseArgs args = Args("{" + Required + ",\"stages\":[\"New\",{\"value\":\"Done\"},"
+			+ "{\"value\":\"Rejected\",\"group\":\"Done\",\"successful\":false}]}");
+
+		// Act
+		CommandExecutionResult result = _tool.CreateDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "group and successful are declared stage keys");
+		DynamicCaseStageItem grouped = _resolved.Captured!.Stages[2];
+		grouped.Group.Should().Be("Done", because: "the parent stage is named by its lookup value");
+		grouped.Successful.Should().BeFalse(because: "false ends the case unsuccessfully");
+		_resolved.Captured.Stages[1].Group.Should().BeNull(because: "a stage that names no group joins none");
+		_resolved.Captured.Stages[1].Successful.Should().BeNull(because: "successful is sent only when named");
+	}
+
+	[TestCase("{\"value\":\"Done\",\"successful\":\"no\"}")]
+	[TestCase("{\"value\":\"Done\",\"group\":5}")]
+	[TestCase("{\"value\":\"Done\",\"group\":\" \"}")]
+	[Category("Unit")]
+	[Description("A successful that is not a boolean and a group that is not a lookup value are refused as invalid-request before the command runs.")]
+	public void CreateDynamicCase_ShouldRefuseAMalformedGroupOrSuccessful(string stageJson) {
+		// Arrange
+		CreateDynamicCaseArgs args = Args("{" + Required + ",\"stages\":[\"New\"," + stageJson + "]}");
+
+		// Act
+		CommandExecutionResult result = _tool.CreateDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "the stage cannot be read as described");
+		TextOf(result).Should().Contain("[invalid-request]", because: "the stable code is named");
+		_resolver.DidNotReceiveWithAnyArgs().Resolve<CreateDynamicCaseCommand>(default!);
 	}
 
 	[Test]
@@ -304,6 +343,10 @@ public sealed class CreateDynamicCaseToolTests {
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
 		firstSentence.Should().StartWith("Create a minimal dynamic case (DCM)", because: "the index line says what it does");
 		description.Should().Contain("not supported", because: "what the tool cannot do yet is stated");
+		description.Should().Contain("(case-exists): change it with modify-dynamic-case",
+			because: "an existing case is changed by its own tool, which the refusal points at");
+		description.Length.Should().BeLessThanOrEqualTo(1975,
+			because: "naming the change tool and stage groups was paid for inside the description's earlier length");
 	}
 
 	[Test]
