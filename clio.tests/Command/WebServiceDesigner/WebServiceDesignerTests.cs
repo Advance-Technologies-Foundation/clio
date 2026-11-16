@@ -824,6 +824,45 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("Registering a method with use-auth but no authentication saves it without use-auth and names it in a notice.")]
+	public void Register_Should_Clear_Use_Auth_Without_Authentication() {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => saved);
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrErp", null,
+			"https://erp.example/", null, null, [new WebServiceMethodArg("UsrGetOrders", "GET", "orders", UseAuth: true)]));
+
+		// Assert
+		saved.Methods.Items.Values.Single().UseAuthInfo.Should().BeFalse(
+			because: "a service without authentication sends none, so the flag would only show ticked and disabled in Studio");
+		result.Notices.Should().Contain(n => n.Contains("use-auth was cleared on UsrGetOrders"),
+			because: "the caller asked for use-auth and learns why it was not kept");
+	}
+
+	[Test]
+	[Description("setDescription writes the new text into every culture the service already has, so no culture keeps the old one.")]
+	public void Modify_SetDescription_Should_Replace_Every_Culture() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Description = new Dictionary<string, string> { ["uk-UA"] = "Old text" };
+		GivenRegisteredService(schema);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "New text")], null);
+
+		// Assert
+		saved.Description.Should().BeEquivalentTo(new Dictionary<string, string> { ["uk-UA"] = "New text", ["en-US"] = "New text" },
+			because: "the platform keeps a culture the contract does not send, which would show the old text in that culture");
+	}
+
+	[Test]
 	[Description("A change that does not remove the authentication leaves use-auth as it was.")]
 	public void Modify_Should_Not_Clear_Use_Auth_Without_Removing_Authentication() {
 		// Arrange

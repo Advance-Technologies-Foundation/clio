@@ -404,9 +404,10 @@ public sealed class WebServiceDesigner(
 			+ "credentials it would have carried could not be located to mask.";
 		return method.UseAuthInfo && schema.AuthInfo is { AuthType: ServiceSchemaCodes.AuthOAuth20 }
 			? lead + " The service uses OAuth 2.0, and a call that fails before sending usually means the access token "
-				+ "could not be retrieved (or the API host is unreachable): ask the user to check the OAuth application (client id and secret, scope, "
-				+ "token URL; when the token endpoint refuses a Basic header, set Send client credentials to In request "
-				+ "body) and to send the test request in Studio > Web services, which shows the platform's error."
+				+ "could not be retrieved (or the API host is unreachable): ask the user to check the OAuth application "
+				+ "(client id and secret, scope, token URL; when the token endpoint refuses a Basic header, set Send client "
+				+ "credentials to In request body) and to send the test request in Studio > Web services, which shows the "
+				+ "platform's error."
 			: lead + " Typical causes: the host is unreachable or refuses the connection, the call timed out, or the "
 				+ "authentication could not be prepared. Studio > Web services shows the platform's error for the same "
 				+ "test request.";
@@ -594,12 +595,13 @@ public sealed class WebServiceDesigner(
 					errors.Add("setDescription: give description (\"\" clears it).");
 					break;
 				}
-				// An empty dictionary leaves the stored text in place (measured): the platform clears a culture only
-				// when that culture is sent with an empty value, so every culture the service has is sent empty.
-				schema.Description = string.IsNullOrWhiteSpace(operation.Description)
-					? (schema.Description is { Count: > 0 } ? schema.Description.Keys.ToList() : ["en-US"])
-						.ToDictionary(culture => culture, _ => string.Empty)
-					: WebServiceDefinitionBuilder.Caption(operation.Description.Trim());
+				// The platform changes only the cultures the contract sends and keeps the others (measured: an empty
+				// dictionary keeps the stored text), so every culture the service has gets the new value, en-US
+				// included; an empty value clears it.
+				string text = string.IsNullOrWhiteSpace(operation.Description) ? string.Empty : operation.Description.Trim();
+				schema.Description = (schema.Description?.Keys ?? Enumerable.Empty<string>()).Append("en-US")
+					.Distinct(StringComparer.OrdinalIgnoreCase)
+					.ToDictionary(culture => culture, _ => text);
 				break;
 			case "setAuth":
 				schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(operation.Auth, FindOAuthApp(operation.Auth), errors);
