@@ -59,15 +59,7 @@ MEASURED against the budget:
   below report.
 - The short `create-business-process` and `modify-business-process` contracts also carry a `SHAPE:` block
   (`ToolContractShortForm.CallShapes`, ENG-102797), about 0.9 KB each and mostly names and nesting: the
-  descriptor fields and element blocks, and every modify operation with its fields. Its few words of prose
-  are failure modes seen in agent runs, and one of them is a contract with another repository: the gloss on
-  the create element's `filter?` is the sentence the `process-data-source-filters` guide (clio-knowledge)
-  quotes as its gate for `values`, "any of several lookup records is ONE condition with values". Reworded,
-  it fails only its two pins, in `ToolContractShortFormTests` and `ToolContractGetToolE2ETests`. The guide
-  treats a silent short form as proving nothing, so agents then pay a `detail=full` read before every
-  multi-value filter; reworded in the full description too, it sends them to an `or` group of `equal`
-  conditions, as an ENG-105557 dev-testing run did in November 2026, when the short form was silent and the
-  guide did not yet say its silence proves nothing. It is appended after
+  descriptor fields and element blocks, and every modify operation with its fields. It is appended after
   the kept lead and safety sentences, so fitting never cuts it. With both shapes the seven-contract bundle
   stays over 18 432 bytes as Fit measures it (default encoder) even all short, so Fit returns all seven
   short - as before - about 1.2 KB over its own budget. That is a trade accepted on purpose: no contract
