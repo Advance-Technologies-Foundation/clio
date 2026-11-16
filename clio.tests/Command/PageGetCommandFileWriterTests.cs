@@ -46,7 +46,7 @@ public sealed class PageGetCommandFileWriterTests {
 			hierarchyClient ?? new PageDesignerHierarchyClient(_applicationClient, _serviceUrlBuilder),
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			_writer);
+			_writer, Substitute.For<IPageLayerInspector>());
 
 	[Test]
 	[Description("Execute must persist page files through the file writer after a successful get-page, passing the output-directory.")]

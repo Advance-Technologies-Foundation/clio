@@ -191,7 +191,10 @@ When adding or updating an MCP tool, also review:
 - tool descriptions and safety flags (`ReadOnly`, `Destructive`, `Idempotent`, `OpenWorld`)
 - the tool's entry in `Data/mcp-tool-facts.json`, with any `by-argument` entries: what a call does (read, change, destroy),
   whether it rebuilds the environment, whether it reaches this machine, whether it touches clio's connections.
-  Hosts decide how to treat a call from them, so declare them from the code, not the name
+  Hosts decide how to treat a call from them, so declare them from the code, not the name.
+  In the same entry, `host-paths` for every argument whose value is a file or folder on this machine (kind, access;
+  whatever the argument is called) and `not-host-paths`, with why, for one that only reads like a path. A name
+  joined into a path must be validated as a plain name in the command; do not declare it instead
   (`spec/adr/adr-mcp-tool-facts.md`; `McpToolFactsCoverageTests` enforces them)
 
 ## Test requirement

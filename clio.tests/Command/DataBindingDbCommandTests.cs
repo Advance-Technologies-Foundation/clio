@@ -29,6 +29,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private UpsertDataBindingRowDbCommand _upsertCommand = null!;
 	private RemoveDataBindingRowDbCommand _removeCommand = null!;
 	private ReadDataBindingDbCommand _readCommand = null!;
+	private DeleteDataBindingDbCommand _deleteCommand = null!;
 	private IApplicationClient _applicationClient = null!;
 	private ILogger _logger = null!;
 	private IApplicationPackageListProvider _packageListProvider = null!;
@@ -40,6 +41,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private string? _entityIdProbeResponseJson;
 	private string _schemaResponseJson = string.Empty;
 	private string _saveSchemaResponseJson = """{"success":true}""";
+	private string _deletePackageSchemaDataResponseJson = """{"success":true}""";
 	private string _settingValueTypesJson = NoSettingRowsJson;
 	private const string NoSettingRowsJson = """{"rows":[],"success":true}""";
 	private const string SecureTextSettingRowsJson = """{"rows":[{"Code":"UsrApiKey","ValueTypeName":"SecureText"}],"success":true}""";
@@ -51,6 +53,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_readCommand = Container.GetRequiredService<ReadDataBindingDbCommand>();
 		_upsertCommand = Container.GetRequiredService<UpsertDataBindingRowDbCommand>();
 		_removeCommand = Container.GetRequiredService<RemoveDataBindingRowDbCommand>();
+		_deleteCommand = Container.GetRequiredService<DeleteDataBindingDbCommand>();
 		_bindingLookupResponseJson = BuildBindingLookupResponse("SysSettings");
 		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
 			new Dictionary<string, object?> {
@@ -61,6 +64,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_schemaResponseJson = SchemaResponseJson;
 		_entityIdProbeResponseJson = null;
 		_saveSchemaResponseJson = """{"success":true}""";
+		_deletePackageSchemaDataResponseJson = """{"success":true}""";
 		_settingValueTypesJson = NoSettingRowsJson;
 		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(false);
 	}
@@ -888,6 +892,42 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		return parameter?["dataValueType"]?.GetValue<int>() == dataValueType
 			? parameter["value"]?.GetValue<string>()
 			: null;
+	}
+
+	[TestCase("""[{"Name":"Flat row","Code":"UsrFlat"}]""", "#1")]
+	[TestCase("""[{"values":{"Name":"First row"}},{"Name":"Flat row"}]""", "#2")]
+	[TestCase("""[{"values":"Name"}]""", "#1")]
+	[TestCase("""["Flat row"]""", "#1")]
+	[Description("Refuses a rows item that does not carry its columns under 'values' before create-data-binding-db issues any remote write, instead of skipping it and saving a binding without that row.")]
+	public void CreateDataBindingDb_Should_Refuse_A_Row_Without_A_Values_Object_Before_Any_Remote_Write(string rowsJson, string item) {
+		// Arrange
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrSysSettingsBinding",
+			RowsJson = rowsJson
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a row clio cannot read must fail the call, not vanish from a binding reported as saved");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains($"item {item}") && message.Contains("'values'")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
 	}
 
 	[Test]
@@ -1775,7 +1815,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		}
 
 		if (url.Contains("DeletePackageSchemaDataRequest", StringComparison.Ordinal)) {
-			return """{"success":true}""";
+			return _deletePackageSchemaDataResponseJson;
 		}
 
 		if (url.Contains("InsertQuery", StringComparison.Ordinal)) {
@@ -1922,6 +1962,256 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		result.Should().Be(1,
 			because: "a binding that is absent is a different outcome from a binding that ships nothing");
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("SysWorkplace_Missing")));
+	}
+
+	[Test]
+	[Description("Deletes a binding that holds rows through delete-data-binding-db: posts DeletePackageSchemaDataRequest with the package UId and binding name, sends no DeleteQuery, InsertQuery, UpdateQuery or SaveSchema request, and reports the row count and that the records stay in the table.")]
+	public void DeleteDataBindingDb_Should_Delete_Only_The_Package_Schema_Data_When_Binding_Has_Rows() {
+		// Arrange
+		Guid secondRowId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = ExistingRowId,
+				["Name"] = "First row"
+			},
+			new Dictionary<string, object?> {
+				["Id"] = secondRowId,
+				["Name"] = "Second row"
+			}
+		});
+		DeleteDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "delete-data-binding-db should delete a binding that still holds rows");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/DeletePackageSchemaDataRequest",
+			Arg.Is<string>(body =>
+				body.Contains("\"packageSchemaDataName\":\"SysSettings\"") &&
+				body.Contains("\"packageUId\":\"" + PackageUId + "\"")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("DeleteQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("UpdateQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_logger.Received(1).WriteInfo(
+			"Deleted binding 'SysSettings' from package 'TestPkg' (2 bound rows). The records stay in the table.");
+		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Deletes a binding that holds no rows through delete-data-binding-db, the case remove-data-binding-row-db cannot reach: exits 0 and posts the same DeletePackageSchemaDataRequest.")]
+	public void DeleteDataBindingDb_Should_Delete_The_Package_Schema_Data_When_Binding_Has_No_Rows() {
+		// Arrange
+		_boundSchemaDataItemsJson = "[]";
+		DeleteDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "an empty binding is exactly what delete-data-binding-db exists to remove");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/DeletePackageSchemaDataRequest",
+			Arg.Is<string>(body =>
+				body.Contains("\"packageSchemaDataName\":\"SysSettings\"") &&
+				body.Contains("\"packageUId\":\"" + PackageUId + "\"")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("DeleteQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("UpdateQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("SaveSchema")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_logger.Received(1).WriteInfo(
+			"Deleted binding 'SysSettings' from package 'TestPkg' (0 bound rows). The records stay in the table.");
+	}
+
+	[Test]
+	[Description("Fails delete-data-binding-db with exit code 1 when the package has no binding of that name: the error names the binding and the package and says nothing was deleted, and no DeletePackageSchemaDataRequest is sent.")]
+	public void DeleteDataBindingDb_Should_Fail_And_Delete_Nothing_When_Binding_Is_Not_In_The_Package() {
+		// Arrange
+		_bindingLookupResponseJson = """{"rows": [], "success": true}""";
+		DeleteDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrMissingBinding"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a binding that is absent from the package cannot be deleted and must not be reported as deleted");
+		_logger.Received(1).WriteError(
+			"Binding 'UsrMissingBinding' was not found in package 'TestPkg'. Nothing was deleted.");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("DeletePackageSchemaDataRequest")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("DeleteQuery")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Fails delete-data-binding-db when neither an environment nor a URI is provided, before any request is sent.")]
+	public void DeleteDataBindingDb_Should_Fail_Without_Environment() {
+		// Arrange
+		DeleteDataBindingDbOptions options = new() {
+			PackageName = PackageName,
+			BindingName = "SysSettings"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "delete-data-binding-db always works against a remote environment");
+		_logger.Received(1).WriteError("--environment or --uri is required.");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Fails delete-data-binding-db with exit code 1 when the server rejects DeletePackageSchemaDataRequest with success:false: the server's message is surfaced as the error and the binding is not reported as deleted.")]
+	public void DeleteDataBindingDb_Should_Fail_And_Surface_The_Error_When_Server_Rejects_The_Delete() {
+		// Arrange
+		_deletePackageSchemaDataResponseJson =
+			"""{"success":false,"errorInfo":{"message":"Package is locked"}}""";
+		DeleteDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a delete the server refused must not be reported as a success");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/DeletePackageSchemaDataRequest",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("DeletePackageSchemaDataRequest failed") &&
+			message.Contains("Package is locked")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.Contains("Deleted binding")));
+	}
+
+	[Test]
+	[Description("delete-data-binding-db looks the binding up with a select on SysPackageSchemaData that filters by BOTH the binding name and the package UId, combined with AND, so a same-named binding in another package cannot be found and deleted.")]
+	public void DeleteDataBindingDb_Should_Filter_The_Binding_Lookup_By_Name_And_Package_UId() {
+		// Arrange
+		DeleteDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the lookup must find the binding registered in the requested package");
+		List<JsonNode> lookupBodies = _applicationClient.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Select(call => call.GetArguments())
+			.Where(arguments => ((string)arguments[0]!).Contains("SelectQuery", StringComparison.Ordinal))
+			.Select(arguments => JsonNode.Parse((string)arguments[1]!)!)
+			.Where(body => body["rootSchemaName"]?.GetValue<string>() == "SysPackageSchemaData")
+			.ToList();
+		lookupBodies.Should().ContainSingle(
+			because: "the delete looks the binding up exactly once before it deletes anything");
+		JsonNode filters = lookupBodies[0]["filters"]!;
+		filters["logicalOperation"]!.GetValue<int>().Should().Be(0,
+			because: "the name and package filters must be combined with AND, not OR");
+		Dictionary<string, string?> filterValueByColumn = filters["items"]!.AsObject()
+			.ToDictionary(
+				item => item.Value!["leftExpression"]!["columnPath"]!.GetValue<string>(),
+				item => item.Value!["rightExpression"]!["parameter"]!["value"]?.GetValue<string>());
+		filterValueByColumn.Should().HaveCount(2,
+			because: "the lookup is keyed by exactly the binding name and the package");
+		filterValueByColumn.Should().Contain("Name", "SysSettings",
+			because: "the lookup must be restricted to the requested binding name");
+		filterValueByColumn.Should().Contain("SysPackage.UId", PackageUId.ToString(),
+			because: "the lookup must be restricted to the requested package, so a same-named binding in another package is not found");
+		foreach (KeyValuePair<string, JsonNode?> item in filters["items"]!.AsObject()) {
+			item.Value!["isEnabled"]!.GetValue<bool>().Should().BeTrue(
+				because: $"the '{item.Key}' filter must be active");
+			item.Value!["comparisonType"]!.GetValue<int>().Should().Be(3,
+				because: $"the '{item.Key}' filter must be an equality comparison");
+		}
 	}
 
 	private static string BuildBindingLookupResponse(string schemaName, string? bindingName = null) {

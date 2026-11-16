@@ -127,6 +127,30 @@ public class CreateTestProjectCommandTests : BaseCommandTests<CreateTestProjectO
 		_infrastructure.ReceivedCalls().Should().BeEmpty(because: "invalid workspaces must fail before file writes");
 	}
 
+	[TestCase("../../Outside")]
+	[TestCase("Acme,..")]
+	[TestCase("sub/Acme")]
+	[TestCase("sub\\Acme")]
+	[TestCase("/rooted/Acme")]
+	[TestCase("Acme, Other")]
+	[TestCase("Acme.")]
+	[TestCase("C:Acme")]
+	[Description("Rejects a package name that is not a plain folder name before reading any project or writing any test scaffold, so a name with a separator, '..' or a root cannot leave the workspace.")]
+	public void Execute_ShouldFailBeforeAnyFileAccess_WhenAPackageNameIsNotAPlainName(string packages) {
+		// Arrange
+		_infrastructure.ExistsFile(Arg.Any<string>()).Returns(true);
+
+		// Act
+		int result = _command.Execute(new CreateTestProjectOptions { PackageName = packages });
+
+		// Assert
+		result.Should().Be(1, because: "a package name is joined into paths the command reads and writes");
+		_context.DidNotReceive().BuildPackageProjectPath(Arg.Any<string>());
+		_infrastructure.ReceivedCalls().Should().BeEmpty(
+			because: "the refusal must come before any file is probed, created or written");
+		_solutions.ReceivedCalls().Should().BeEmpty(because: "no solution may be changed for a refused name");
+	}
+
 	[Test]
 	[Description("Rejects a missing package project before writing test scaffolds or dangling solution entries.")]
 	public void Execute_ShouldFailBeforeWrites_WhenPackageProjectIsMissing() {

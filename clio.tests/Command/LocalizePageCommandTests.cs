@@ -926,4 +926,28 @@ public sealed class LocalizePageCommandTests : BaseCommandTests<LocalizePageOpti
 		response.Coverage.CaptionInherited.Should().BeTrue(
 			because: "the es-ES title is the template's, although the direct parent carries the same en-US title as the page");
 	}
+
+	[TestCase("../../Outside")]
+	[TestCase("..")]
+	[TestCase("sub/Page")]
+	[TestCase("/abs/Outside")]
+	[TestCase("sub\\Page")]
+	[Description("A schema name that is not a plain name is refused before the culture or the schema is read from Creatio and before the .clio-pages baseline is looked up.")]
+	public void Execute_ShouldRefuseWithoutCreatioOrBaselineCall_WhenSchemaNameIsNotAPlainName(string hostileName) {
+		// Arrange
+		LocalizePageOptions options = new() {
+			SchemaName = hostileName, Culture = "es-ES", Resources = """{"UsrLabLabel_caption":"Etiqueta"}""",
+			Environment = "dev"
+		};
+
+		// Act
+		LocalizePageResponse response = _command.Localize(options);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the name would anchor the baseline refresh outside .clio-pages");
+		response.Error.Should().Contain("is not a plain page schema name",
+			because: "the caller has to learn which argument to fix");
+		_calls.Should().BeEmpty(because: "the refusal comes before any request to Creatio");
+		_baselineGuard.ReceivedCalls().Should().BeEmpty(because: "no baseline file is looked up for a refused name");
+	}
 }
