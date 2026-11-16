@@ -320,8 +320,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("register-web-service links an existing OAuth 2.0 application")]
-	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, describe returning the same reference, and a setAuth rebuilt from that describe reply linking the same application.")]
+	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, describe returning the same reference, a setAuth rebuilt from that describe reply linking the same application, and a test call that cannot get a token being withheld with a message that points at the OAuth application.")]
 	public async Task RegisterWebService_Should_Link_An_Existing_OAuth_Application() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();

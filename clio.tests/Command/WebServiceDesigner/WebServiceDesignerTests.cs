@@ -761,6 +761,44 @@ public sealed class WebServiceDesignerTests {
 		result.ResponseBody.Should().BeNull(because: "nothing of the platform's answer is returned");
 	}
 
+	[TestCase(true, "Typical causes")]
+	[TestCase(false, "system setting could not be located")]
+	[Description("A withheld call names the right cause: nothing sent without OAuth lists typical causes; something sent keeps the system-setting wording.")]
+	public void TestMethod_Should_Word_The_Withheld_Answer_By_What_Was_Sent(bool nothingSent, string expected) {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", RequestParameters: [
+			new WebServiceParameterArg("UsrToken", Path: "token", DefaultSysSetting: "UsrBingToken")])));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "timeout", nothingSent ? null : "POST https://x/search HTTPS/1.1",
+				nothingSent ? null : "token=plain text, neither JSON nor XML"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "the answer stays withheld in both cases");
+		result.Error.Should().Contain(expected, because: "the message matches what the platform reported as sent");
+	}
+
+	[Test]
+	[Description("An OAuth service's method that does not use the authentication gets no OAuth hint when it sent nothing.")]
+	public void TestMethod_Should_Not_Blame_OAuth_For_A_Method_Without_Authentication() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: false,
+			RequestParameters: [new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")]));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "host unreachable"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().NotContain("OAuth application", because: "the method requests no token")
+			.And.Contain("Typical causes", because: "the generic causes still apply");
+	}
+
 	[Test]
 	[Description("A method that keeps use-auth after the service authentication was removed sends no Authorization, so nothing is withheld for it.")]
 	public void TestMethod_Should_Not_Withhold_When_The_Service_Has_No_Authentication() {
