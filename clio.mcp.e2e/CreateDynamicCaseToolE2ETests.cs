@@ -194,6 +194,45 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
+	[Description("The filter arguments are bound over stdio and refused before any write: deactivate-unfiltered without a filter and filter with remove-filter as invalid-request by clio, a filter on a text column as filter-column-invalid by the server.")]
+	[AllureName("create-dynamic-case and modify-dynamic-case refuse wrong filter arguments")]
+	public async Task DynamicCase_ShouldRefuseWrongFilterArguments_AndWriteNothing() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		int casesBefore = (await CaseSchemaRowsAsync(context)).GetArrayLength();
+		int settingsBefore = (await SettingsRowsAsync(context)).GetArrayLength();
+
+		// Act
+		CallToolResult deactivateAlone = await CallAsync(context, new Dictionary<string, object?> {
+			["dry-run"] = true, ["deactivate-unfiltered"] = true
+		});
+		CallToolResult textFilter = await CallAsync(context, new Dictionary<string, object?> {
+			["dry-run"] = true,
+			["filter"] = new Dictionary<string, object?> { ["column"] = TextColumn, ["values"] = new[] { "x" } }
+		});
+		CallToolResult filterAndRemove = await ProcessDesignerE2EArrange.CallToolAsync(context,
+			ModifyDynamicCaseTool.ModifyDynamicCaseToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["entity-schema-name"] = Entity,
+				["dry-run"] = true,
+				["filter"] = new Dictionary<string, object?> { ["column"] = TextColumn, ["values"] = new[] { "x" } },
+				["remove-filter"] = true
+			});
+
+		// Assert
+		IgnoreWhenProcessBuilderIsBehind(ToolText(textFilter), MinimumPackageVersion);
+		ShouldBeRefused(deactivateAlone, "deactivate-unfiltered disables a case only to let a filtered one start");
+		LogText(deactivateAlone).Should().Contain("[invalid-request]", because: "clio names the stable code");
+		ShouldBeRefused(textFilter, "a filter column must be a lookup of the object");
+		Text(ResultOf(textFilter), "errorCode").Should().Be("filter-column-invalid", because: "the code names the reason");
+		ShouldBeRefused(filterAndRemove, "a filter and its removal contradict each other");
+		LogText(filterAndRemove).Should().Contain("[invalid-request]", because: "clio names the stable code");
+		(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(casesBefore, because: "a refusal writes nothing");
+		(await SettingsRowsAsync(context)).GetArrayLength().Should().Be(settingsBefore,
+			because: "a refusal writes no settings row");
+	}
+
+	[Test]
 	[Description("describe-dynamic-case by object reads the case create wrote: one case, enabled, the stages in the UsrPosition order, no running case and no stage group.")]
 	[AllureName("describe-dynamic-case reads a case by its object")]
 	public async Task DescribeDynamicCase_ShouldReadTheCase_ByItsObject() {

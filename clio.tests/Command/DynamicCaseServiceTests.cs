@@ -77,7 +77,7 @@ public sealed class DynamicCaseServiceTests {
 	};
 
 	private static DynamicCaseReply<BuildCaseResponse> Envelope(string outcome, bool success = true, string errorCode = null,
-		List<string> missing = null, List<string> leftovers = null) =>
+		List<string> missing = null, List<string> leftovers = null, List<string> deactivated = null) =>
 		new(DynamicCaseReplyKind.Envelope, new BuildCaseResponse {
 			Success = success,
 			Outcome = outcome,
@@ -96,6 +96,7 @@ public sealed class DynamicCaseServiceTests {
 					new DynamicCaseArtifactObligation { Kind = "settings-data" }]
 			},
 			Leftovers = leftovers,
+			DeactivatedCases = deactivated,
 			Notes = ["No compile or restart is needed: a case is interpreted."]
 		}, null);
 
@@ -232,6 +233,20 @@ public sealed class DynamicCaseServiceTests {
 		_dependencies.DidNotReceiveWithAnyArgs().AddDependenciesReportingCompilation(default!, default!);
 		_session.DidNotReceive().Build(Arg.Is<BuildCaseRequest>(request => !request.ValidateOnly));
 		_pageStep.DidNotReceiveWithAnyArgs().Write(default!, default!);
+	}
+
+	[Test]
+	[Description("A dry run with deactivate-unfiltered names the cases it would disable, so the agent can show them before the user's yes.")]
+	public void Create_ShouldReportTheCasesItWouldDisable_OnADryRun() {
+		// Arrange
+		Passes(Envelope("planned", deactivated: ["UsrOrderCase_Old"]));
+
+		// Act
+		DynamicCaseResult result = _service.Create(Options(dryRun: true));
+
+		// Assert
+		result.DeactivatedCases.Should().Equal(["UsrOrderCase_Old"],
+			because: "the plan names the unfiltered case the write would disable");
 	}
 
 	[Test]
@@ -820,10 +835,11 @@ public sealed class DynamicCaseServiceTests {
 		Environment = Env, CaseName = "UsrOrderCase", DryRun = dryRun
 	};
 
-	private static BuildCaseCaseInfo ExistingCase(int connectionCount = 2) => new() {
+	private static BuildCaseCaseInfo ExistingCase(int connectionCount = 2, DynamicCaseFilter filter = null) => new() {
 		Status = "existing", SchemaName = "UsrOrderCase", SchemaUId = CaseUId, PackageName = Package,
 		EntitySchemaName = Entity, StageColumnName = "UsrStatus", Enabled = true, ActiveVersion = true,
 		ConnectionCount = connectionCount, FinalStages = ["Done"], RunningInstances = 1, PackageReadOnly = false,
+		Filter = filter,
 		Stages = [
 			new DynamicCaseStage { Name = "Stage1", Value = "v1", Caption = "New", RunningInstances = 1 },
 			new DynamicCaseStage { Name = "Stage2", Value = "v2", Caption = "Done", IsFinal = true, Successful = true }
@@ -879,6 +895,32 @@ public sealed class DynamicCaseServiceTests {
 		result.Cases[0].Connections.Count.Should().Be(1, because: "the server's connection count is reported");
 		result.Cases[0].Connections.Kind.Should().Be("restricted",
 			because: "two stages have two ordered pairs, and only one of them is connected");
+	}
+
+	[Test]
+	[Description("A describe passes each case's filter through, the unreadable designer-built one included, and the settings row's filter column.")]
+	public void Describe_ShouldPassTheFiltersThrough() {
+		// Arrange
+		DynamicCaseFilter b2b = new() {
+			Column = "UsrType", Values = [new DynamicCaseFilterValue { Value = "t1", Caption = "B2B" }]
+		};
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse {
+				Success = true,
+				Cases = [ExistingCase(filter: b2b), ExistingCase(filter: new DynamicCaseFilter { Unreadable = true })],
+				Settings = [new DynamicCaseSettingsRow {
+					SysDcmSettingsId = "s1", StageColumnName = "UsrStatus", HasFilterColumn = true,
+					FilterColumnName = "UsrType"
+				}]
+			}, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Cases[0].Filter.Should().BeSameAs(b2b, because: "the case's filter is passed through as the server read it");
+		result.Cases[1].Filter.Unreadable.Should().BeTrue(because: "a designer-built filter is reported, not dropped");
+		result.Settings[0].FilterColumnName.Should().Be("UsrType", because: "the settings row names the filter column");
 	}
 
 	[Test]
