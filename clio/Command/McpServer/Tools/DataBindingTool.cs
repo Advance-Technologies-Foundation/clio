@@ -134,12 +134,15 @@ internal static class DataBindingToolPathValidator {
 				"Provide a full path such as C:\\Projects\\MyWorkspace.");
 		}
 
-		if (workspacePath.StartsWith(@"\\", StringComparison.Ordinal)) {
+		// Tested on the full path too: Windows also reads "//host/share" and "/\host\share" as a share, and keeps an
+		// NT path such as "\??\UNC\host\share" as it is.
+		string fullPath = Path.GetFullPath(workspacePath);
+		if (workspacePath.StartsWith(@"\\", StringComparison.Ordinal) || fullPath.StartsWith(@"\\", StringComparison.Ordinal)
+			|| fullPath.StartsWith(@"\??\", StringComparison.Ordinal)) {
 			throw new InvalidOperationException(
 				$"Workspace path must be a local absolute path, not a network share: {workspacePath}");
 		}
 
-		string fullPath = Path.GetFullPath(workspacePath);
 		if (!Directory.Exists(fullPath)) {
 			throw new InvalidOperationException(
 				$"Workspace path not found: {fullPath}. " +
@@ -155,7 +158,7 @@ internal static class DataBindingToolPathValidator {
 /// </summary>
 public sealed record CreateDataBindingArgs(
 	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name inside the workspace")]
+	[property: Description("Target package name inside the workspace; a plain folder name under packages/, without path separators or '..'")]
 	[property: Required]
 	string PackageName,
 
@@ -170,7 +173,7 @@ public sealed record CreateDataBindingArgs(
 	string WorkspacePath,
 
 	[property: JsonPropertyName("binding-name")]
-	[property: Description("Optional binding folder name; defaults to <schema>")]
+	[property: Description("Optional binding folder name; defaults to <schema>. A plain folder name under the package Data folder, without path separators or '..'")]
 	string? BindingName = null,
 
 	[property: JsonPropertyName("install-type")]
@@ -178,11 +181,11 @@ public sealed record CreateDataBindingArgs(
 	int? InstallType = null,
 
 	[property: JsonPropertyName("values")]
-	[property: Description("Optional JSON object keyed by column name for the initial row. If the GUID primary key is omitted or null, create-data-binding generates it automatically. For lookup and image-reference columns, pass either a scalar value or an object like {\"value\":\"...\",\"displayValue\":\"...\"}; if displayValue is omitted, create-data-binding resolves it from Creatio when runtime lookup data is available. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file.")]
+	[property: Description("Optional JSON object keyed by column name for the initial row. If the GUID primary key is omitted or null, create-data-binding generates it automatically. For lookup and image-reference columns, pass either a scalar value or an object like {\"value\":\"...\",\"displayValue\":\"...\"}; if displayValue is omitted, create-data-binding resolves it from Creatio when runtime lookup data is available. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file; a path outside the workspace or through a symbolic link is refused.")]
 	string? ValuesJson = null,
 
 	[property: JsonPropertyName("localizations")]
-	[property: Description("Optional JSON object keyed by culture then column name. Columns may appear only here; they are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")]
+	[property: Description("Optional JSON object keyed by culture name (for example en-US) then column name. Columns may appear only here; they are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")]
 	string? LocalizationsJson = null,
 	[property: JsonPropertyName("environment-name")]
 	[property: Description("Optional Creatio environment name used only when the schema is not covered by a built-in offline template")]
@@ -194,12 +197,12 @@ public sealed record CreateDataBindingArgs(
 /// </summary>
 public sealed record AddDataBindingRowArgs(
 	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name inside the workspace")]
+	[property: Description("Target package name inside the workspace; a plain folder name under packages/, without path separators or '..'")]
 	[property: Required]
 	string PackageName,
 
 	[property: JsonPropertyName("binding-name")]
-	[property: Description("Binding folder name under package Data")]
+	[property: Description("Binding folder name under package Data; a plain folder name, without path separators or '..'")]
 	[property: Required]
 	string BindingName,
 
@@ -209,12 +212,12 @@ public sealed record AddDataBindingRowArgs(
 	string WorkspacePath,
 
 	[property: JsonPropertyName("values")]
-	[property: Description("JSON object keyed by column name for the row to add or replace. If the GUID primary key is omitted or null, add-data-binding-row generates it automatically. For non-null lookup and image-reference columns, pass an object like {\"value\":\"...\",\"displayValue\":\"...\"}. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file.")]
+	[property: Description("JSON object keyed by column name for the row to add or replace. If the GUID primary key is omitted or null, add-data-binding-row generates it automatically. For non-null lookup and image-reference columns, pass an object like {\"value\":\"...\",\"displayValue\":\"...\"}. For image-content columns, pass either an existing base64 string or a local file path inside the workspace and clio will encode that file; a path outside the workspace or through a symbolic link is refused.")]
 	[property: Required]
 	string ValuesJson,
 
 	[property: JsonPropertyName("localizations")]
-	[property: Description("Optional JSON object keyed by culture then column name")]
+	[property: Description("Optional JSON object keyed by culture name (for example en-US) then column name")]
 	string? LocalizationsJson = null
 );
 
@@ -223,12 +226,12 @@ public sealed record AddDataBindingRowArgs(
 /// </summary>
 public sealed record RemoveDataBindingRowArgs(
 	[property: JsonPropertyName("package-name")]
-	[property: Description("Target package name inside the workspace")]
+	[property: Description("Target package name inside the workspace; a plain folder name under packages/, without path separators or '..'")]
 	[property: Required]
 	string PackageName,
 
 	[property: JsonPropertyName("binding-name")]
-	[property: Description("Binding folder name under package Data")]
+	[property: Description("Binding folder name under package Data; a plain folder name, without path separators or '..'")]
 	[property: Required]
 	string BindingName,
 

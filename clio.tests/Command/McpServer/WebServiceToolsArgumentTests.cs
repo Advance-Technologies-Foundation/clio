@@ -25,7 +25,9 @@ public sealed class WebServiceToolsArgumentTests {
 	[TestCase("methodCode", "method")]
 	[TestCase("service-code", "code")]
 	[TestCase("Service-Code", "code")]
-	[Description("test-web-service-method answers a guessed method or service argument name with the canonical name, before touching any environment.")]
+	[TestCase("confirmed", "user-confirmed")]
+	[TestCase("userConfirmed", "user-confirmed")]
+	[Description("test-web-service-method answers a guessed method, service or confirmation argument name with the canonical name, before touching any environment, so a confirmation under another name is never taken as the user's yes.")]
 	public void TestWebServiceMethod_Should_Hint_The_Canonical_Argument(string guessed, string canonical) {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
@@ -39,6 +41,50 @@ public sealed class WebServiceToolsArgumentTests {
 		result.Success.Should().BeFalse(because: "a guessed argument name is refused, not bound");
 		result.Error.Should().Contain($"'{guessed}' -> '{canonical}'", because: "the refusal names the argument to use");
 		resolver.DidNotReceiveWithAnyArgs().Resolve<IWebServiceDesigner>(default);
+	}
+
+	[Test]
+	[Description("test-web-service-method passes parameters to the designer as given, arrays and arrays of objects included.")]
+	public void TestWebServiceMethod_Should_Pass_Array_Values_To_The_Designer() {
+		// Arrange
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		TestWebServiceMethodTool tool = TestMethodTool(designer);
+		Dictionary<string, JsonElement> parameters = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
+			"""{"UsrTags": ["a", "b"], "UsrLines": [{"UsrSku": "S1", "UsrSubs": [{"UsrNote": "n"}]}]}""");
+
+		// Act
+		WebServiceTestResult result = tool.TestWebServiceMethod(new TestWebServiceMethodArgs("dev", "UsrErp", "UsrGet", parameters));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "arrays are checked against the method by the designer, not refused by the tool");
+		designer.Received(1).TestMethod("UsrErp", "UsrGet", Arg.Is<IReadOnlyDictionary<string, JsonElement>>(
+			p => ReferenceEquals(p, parameters)), false);
+	}
+
+	[TestCase(null, false)]
+	[TestCase(false, false)]
+	[TestCase(true, true)]
+	[Description("test-web-service-method passes the user's confirmation to the designer only when user-confirmed is true.")]
+	public void TestWebServiceMethod_Should_Pass_User_Confirmed_Only_When_True(bool? userConfirmed, bool expected) {
+		// Arrange
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		TestWebServiceMethodTool tool = TestMethodTool(designer);
+
+		// Act
+		WebServiceTestResult result = tool.TestWebServiceMethod(
+			new TestWebServiceMethodArgs("dev", "UsrErp", "UsrPost", null, UserConfirmed: userConfirmed));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the designer's answer is returned as it is");
+		designer.Received(1).TestMethod("UsrErp", "UsrPost", null, expected);
+	}
+
+	private static TestWebServiceMethodTool TestMethodTool(IWebServiceDesigner designer) {
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
+		designer.TestMethod(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, JsonElement>>(),
+			Arg.Any<bool>()).Returns(new WebServiceTestResult(true));
+		return new TestWebServiceMethodTool(resolver);
 	}
 
 	[Test]
@@ -124,19 +170,19 @@ public sealed class WebServiceToolsArgumentTests {
 	}
 
 	[Test]
-	[Description("read-wsdl refuses an unknown key with the valid argument list, and a bare code is not taken for service-code.")]
+	[Description("read-wsdl refuses an unknown key with the valid argument list.")]
 	public void ReadWsdl_Should_Refuse_Unknown_Keys() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		var tool = new ReadWsdlTool(resolver);
-		var args = new ReadWsdlArgs("dev", "http://x/a?wsdl") { ExtensionData = Extra("code") };
+		var args = new ReadWsdlArgs("dev", "http://x/a?wsdl") { ExtensionData = Extra("service-name") };
 
 		// Act
 		WsdlReadResult result = tool.ReadWsdl(args);
 
 		// Assert
-		result.Error.Should().Contain("Unknown args: 'code'", because: "code could mean the new service's code, not a target");
-		result.Error.Should().Contain("Valid: environment-name, wsdl-url, wsdl-files, port, service-code, operations.",
+		result.Error.Should().Contain("Unknown args: 'service-name'", because: "an argument read-wsdl does not have is refused");
+		result.Error.Should().Contain("Valid: environment-name, wsdl-url, wsdl-files, port, code, service-code, operations.",
 			because: "the valid fields are listed");
 	}
 
@@ -158,6 +204,24 @@ public sealed class WebServiceToolsArgumentTests {
 		reader.Received(1).Read(Arg.Is<WsdlReadRequest>(r => r.EnvironmentName == "dev" && r.WsdlUrl == null
 			&& r.WsdlFiles.Single() == "/tmp/a.wsdl" && r.Port == "Soap" && r.ServiceCode == "UsrCalc"
 			&& r.Operations.Single() == "Add"));
+	}
+
+	[Test]
+	[Description("read-wsdl passes the code the user named for a new service to the reader.")]
+	public void ReadWsdl_Should_Pass_The_New_Service_Code() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IWsdlReader reader = Substitute.For<IWsdlReader>();
+		resolver.Resolve<IWsdlReader>(Arg.Any<EnvironmentOptions>()).Returns(reader);
+		reader.Read(Arg.Any<WsdlReadRequest>()).Returns(new WsdlReadResult(true));
+		var tool = new ReadWsdlTool(resolver);
+
+		// Act
+		WsdlReadResult result = tool.ReadWsdl(new ReadWsdlArgs("dev", "http://x/a?wsdl") { Code = "UsrTcCalcW" });
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the reader's result is returned");
+		reader.Received(1).Read(Arg.Is<WsdlReadRequest>(r => r.Code == "UsrTcCalcW" && r.ServiceCode == null));
 	}
 
 	[Test]

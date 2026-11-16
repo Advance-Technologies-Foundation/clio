@@ -5053,8 +5053,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: M
-    # review: the clio PR (#1925) opened on 2026-11-12.
-    status: review
+    # done: the clio PR (#1925) merged to master on 2026-11-13.
+    status: done
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-1.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
@@ -5069,7 +5069,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: L
-    status: review
+    # done: the clio PR (#1928) merged to master on 2026-11-13.
+    status: done
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-2.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
@@ -5085,7 +5086,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: L
-    status: review
+    # done: the clio PR (#1930) merged to master on 2026-11-13.
+    status: done
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-3.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
@@ -5103,7 +5105,8 @@ stories:
     feature: "eng-105475-soap-web-service"
     repo: "clio"
     size: S
-    status: ready-for-dev
+    # review: the clio PR opened on 2026-11-13 with its clio-knowledge guidance PR.
+    status: review
     jira: ENG-105475
     file: spec/stories/story-eng-105475-soap-web-service-4.md
     prd: spec/prd/spec-eng-105475-soap-web-service.md
@@ -5111,6 +5114,22 @@ stories:
     test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
     depends_on:
       - story-eng-105475-soap-web-service-1
+    blocks: []
+  - id: story-eng-105475-soap-web-service-6
+    title: "Follow-up checks of SOAP auth, WCF SOAP 1.2 and the usage guard"
+    feature: "eng-105475-soap-web-service"
+    repo: "clio"
+    size: S
+    # review: the clio PR opened on 2026-11-14 with its clio-knowledge guidance PR.
+    status: review
+    jira: ENG-105475
+    file: spec/stories/story-eng-105475-soap-web-service-6.md
+    prd: spec/prd/spec-eng-105475-soap-web-service.md
+    adr: spec/adr/adr-eng-105475-soap-web-service.md
+    test_plan: spec/test-plans/tp-eng-105475-soap-web-service.md
+    depends_on:
+      - story-eng-105475-soap-web-service-2
+      - story-eng-105475-soap-web-service-3
     blocks: []
   - id: story-eng-105475-soap-web-service-5
     title: "Guidance for SOAP web services"
@@ -5126,4 +5145,53 @@ stories:
     depends_on:
       - story-eng-105475-soap-web-service-2
       - story-eng-105475-soap-web-service-3
+    blocks: []
+  - id: story-mcp-tool-facts-1
+    title: "Each MCP tool says what it does"
+    feature: "mcp-tool-facts"
+    repo: "clio"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-tool-facts-1.md
+    prd: spec/prd/spec-mcp-tool-facts.md
+    adr: spec/adr/adr-mcp-tool-facts.md
+    test_plan: spec/test-plans/tp-mcp-tool-facts.md
+    depends_on: []
+    blocks: []
+  - id: story-mcp-tool-facts-2
+    title: "Each MCP tool says which arguments are paths on this machine"
+    feature: "mcp-tool-facts"
+    repo: "clio"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-tool-facts-2.md
+    prd: spec/prd/spec-mcp-tool-facts.md
+    adr: spec/adr/adr-mcp-tool-facts.md
+    test_plan: spec/test-plans/tp-mcp-tool-facts.md
+    depends_on:
+      - story-mcp-tool-facts-1
+    blocks: []
+  - id: story-manage-user-password-file-1
+    title: "manage-user reads the new password from a file"
+    feature: "manage-user-password-file"
+    repo: "clio"
+    size: S
+    status: done
+    file: spec/stories/story-manage-user-password-file-1.md
+    prd: spec/prd/spec-manage-user-password-file.md
+    adr: spec/adr/adr-manage-user-password-file.md
+    test_plan: spec/test-plans/tp-manage-user-password-file.md
+    depends_on: []
+    blocks: []
+  - id: story-data-binding-path-confinement-1
+    title: "Data-binding commands keep every path inside the workspace"
+    feature: "data-binding-path-confinement"
+    repo: "clio"
+    size: S
+    status: review
+    file: spec/stories/story-data-binding-path-confinement-1.md
+    prd: spec/prd/spec-data-binding-path-confinement.md
+    adr: spec/adr/adr-data-binding-path-confinement.md
+    test_plan: spec/test-plans/tp-data-binding-path-confinement.md
+    depends_on: []
     blocks: []

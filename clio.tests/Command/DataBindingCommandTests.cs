@@ -43,9 +43,170 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		return new MockFileSystem(new Dictionary<string, MockFileData> {
 			[WorkspacePath(".clio", "workspaceSettings.json")] = new("{}"),
 			[WorkspacePath("packages", PackageName, "descriptor.json")] = new("{}"),
+			[WorkspacePath("packages", PackageName, "Localization", "keep.json")] = new("{}"),
 			[WorkspacePath("assets", "icon.png")] = new(new byte[] { 1, 2, 3 }),
-			[Path.Combine(Path.GetTempPath(), "outside", "icon.png")] = new(new byte[] { 9, 9, 9 })
+			[Path.Combine(Path.GetTempPath(), "outside", "icon.png")] = new(new byte[] { 9, 9, 9 }),
+			[Path.Combine(OutsideRoot, "Data", "keep.json")] = new("{}")
 		}, WorkspaceRoot);
+	}
+
+	private static readonly string OutsideRoot = Path.Combine(Path.GetTempPath(), $"clio-create-data-binding-outside-{Guid.NewGuid():N}");
+
+	private void AssertRefused(int result, string expectedMessagePart, string because) =>
+		DataBindingRefusedInput.AssertRefused(_logger, result, expectedMessagePart, because);
+
+	private static CreateDataBindingOptions ImageBindingOptions(string imageValue) => new() {
+		Environment = "dev",
+		PackageName = PackageName,
+		SchemaName = "UsrImageBinding",
+		ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
+			["Name"] = "UsrImageBinding row",
+			["UsrImage"] = imageValue
+		})
+	};
+
+	[TestCaseSource(typeof(DataBindingRefusedInput), nameof(DataBindingRefusedInput.NameCases), new object[] { true })]
+	[Description("Refuses a package or binding name that is not a plain folder name before reading or writing any file, so the binding cannot land outside packages/<package-name>/Data, and '..' cannot turn the recursive Localization delete on the package folder.")]
+	public void Execute_ShouldRefuseName_WhenItIsNotAPlainFolderName(string argument, string value) {
+		// Arrange
+		Dictionary<string, string> before = DataBindingRefusedInput.Snapshot(FileSystem);
+		CreateDataBindingOptions options = argument == "package"
+			? new() { PackageName = value, SchemaName = BindingName }
+			: new() { PackageName = PackageName, SchemaName = BindingName, BindingName = value };
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		AssertRefused(result, "is not a plain folder name", "the name becomes a folder under the workspace packages folder");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "a refused name must not create, change or delete any file");
+	}
+
+	[Test]
+	[Description("Refuses a schema name that would become the binding folder name when binding-name is omitted, before any Creatio request.")]
+	public void Execute_ShouldRefuseSchemaNameAsBindingName_WhenItIsNotAPlainFolderName() {
+		// Arrange
+		CreateDataBindingOptions options = new() { Environment = "dev", PackageName = PackageName, SchemaName = "../Escape" };
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		AssertRefused(result, "is not a plain folder name", "the schema name is the default binding folder name");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[TestCaseSource(typeof(DataBindingRefusedInput), nameof(DataBindingRefusedInput.NotCultureNames))]
+	[Description("Refuses a localization key that is not a culture name before writing any file, because the key becomes the file name data.<culture>.json.")]
+	public void Execute_ShouldRefuseLocalizationCulture_WhenItIsNotACultureName(string culture) {
+		// Arrange
+		Dictionary<string, string> before = DataBindingRefusedInput.Snapshot(FileSystem);
+		CreateDataBindingOptions options = new() {
+			PackageName = PackageName, SchemaName = BindingName,
+			ValuesJson = """{"Code":"UsrLocalized"}""",
+			LocalizationsJson = DataBindingRefusedInput.LocalizationsFor(culture)
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		AssertRefused(result, "is not a culture name", "the culture key becomes part of a file name");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "a refused culture must not create, change or delete any file");
+	}
+
+	[TestCase("packages")]
+	[TestCase("package")]
+	[Description("Refuses a packages folder or a package folder that is a symbolic link out of the workspace before writing any binding file through it: the MCP caller names the workspace and can plant either link.")]
+	public void Execute_ShouldRefuseLinkedFolder_WhenItLeadsOutOfTheWorkspace(string linkedFolder) {
+		// Arrange
+		string workspace = linkedFolder == "packages" ? Path.Combine(OutsideRoot, "linked-workspace") : WorkspaceRoot;
+		if (linkedFolder == "packages") {
+			FileSystem.AddFile(Path.Combine(workspace, ".clio", "workspaceSettings.json"), new MockFileData("{}"));
+			FileSystem.AddDirectory(Path.Combine(OutsideRoot, "elsewhere", "LinkedPkg"));
+			FileSystem.Directory.CreateSymbolicLink(Path.Combine(workspace, "packages"), Path.Combine(OutsideRoot, "elsewhere"));
+		} else {
+			FileSystem.Directory.CreateSymbolicLink(WorkspacePath("packages", "LinkedPkg"), Path.Combine(OutsideRoot, "Data"));
+		}
+		Dictionary<string, string> before = DataBindingRefusedInput.Snapshot(FileSystem);
+		CreateDataBindingOptions options = new() { PackageName = "LinkedPkg", SchemaName = BindingName, WorkspacePath = workspace };
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		AssertRefused(result, "symbolic link", "a write through the link would land outside the workspace");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "the refusal comes before any folder or file is created");
+	}
+
+	[Test]
+	[Description("Refuses an existing binding whose Localization folder is a symbolic link out of the workspace, before the recursive Localization delete could run on the link's target.")]
+	public void Execute_ShouldRefuseLocalizationFolder_WhenItIsASymbolicLink() {
+		// Arrange
+		FileSystem.AddFile(WorkspacePath("packages", PackageName, "Data", BindingName, "data.json"), new MockFileData("{}"));
+		FileSystem.Directory.CreateSymbolicLink(
+			WorkspacePath("packages", PackageName, "Data", BindingName, "Localization"), Path.Combine(OutsideRoot, "Data"));
+		Dictionary<string, string> before = DataBindingRefusedInput.Snapshot(FileSystem);
+		CreateDataBindingOptions options = new() { PackageName = PackageName, SchemaName = BindingName, ValuesJson = """{"Code":"UsrLinked"}""" };
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		AssertRefused(result, "symbolic link", "deleting or writing through the link would reach outside the workspace");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "the file at the link's target and the binding must stay as they were");
+	}
+
+	[TestCase("icon.png")]
+	[TestCase("missing.png")]
+	[Description("Refuses an image path outside the workspace with the same message whether or not the file exists, so the answer does not reveal which files exist outside the workspace.")]
+	public void Execute_ShouldRefuseImagePathOutsideWorkspace_WhetherOrNotTheFileExists(string fileName) {
+		// Arrange
+		string outsidePath = Path.Combine(Path.GetTempPath(), "outside", fileName);
+
+		// Act
+		int result = _command.Execute(ImageBindingOptions(outsidePath));
+
+		// Assert
+		AssertRefused(result, $"Image file path must stay inside the workspace: {outsidePath}",
+			"the confinement decision comes before any look at the file");
+	}
+
+	[Test]
+	[Description("Keeps a base64 image value that starts with '/', as JPEG data does, instead of reading it as a path outside the workspace.")]
+	public void Execute_ShouldKeepBase64ImageValue_WhenItLooksLikeARootedPath() {
+		// Arrange
+		const string base64Jpeg = "/9j/4AAQSkZJRg==";
+
+		// Act
+		int result = _command.Execute(ImageBindingOptions(base64Jpeg));
+
+		// Assert
+		result.Should().Be(0, because: "an image-content column accepts base64 data as it is");
+		FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", "UsrImageBinding", "data.json"))
+			.Should().Contain($"\"Value\": \"{base64Jpeg}\"", because: "the base64 value is written unchanged");
+	}
+
+	[TestCase("linked.png")]
+	[TestCase("missing.png")]
+	[Description("Refuses an image path that passes through a symbolic link inside the workspace, the same way whether or not a file exists behind it, so the binding cannot copy an outside file into data.json or reveal it.")]
+	public void Execute_ShouldRefuseImagePath_WhenItPassesThroughASymbolicLink(string fileName) {
+		// Arrange
+		FileSystem.File.CreateSymbolicLink(WorkspacePath("assets", "linked.png"), Path.Combine(Path.GetTempPath(), "outside", "icon.png"));
+		FileSystem.Directory.CreateSymbolicLink(WorkspacePath("linked-folder"), Path.Combine(Path.GetTempPath(), "outside"));
+		string imagePath = fileName == "linked.png" ? Path.Combine("assets", fileName) : Path.Combine("linked-folder", fileName);
+
+		// Act
+		int result = _command.Execute(ImageBindingOptions(imagePath));
+
+		// Assert
+		AssertRefused(result, "symbolic link", "the link's target is outside the workspace");
+		FileSystem.Directory.Exists(WorkspacePath("packages", PackageName, "Data", "UsrImageBinding")).Should().BeFalse(
+			because: "the refusal comes before any binding file is written");
 	}
 
 	private static string WorkspacePath(params string[] segments) {
@@ -366,15 +527,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	[Description("Base64-encodes a local file path when create-data-binding writes a generic runtime image-content column instead of requiring the caller to supply an already encoded string.")]
 	public void Execute_Should_Encode_Image_File_For_Runtime_Image_Content_Column() {
 		// Arrange
-		CreateDataBindingOptions options = new() {
-			Environment = "dev",
-			PackageName = PackageName,
-			SchemaName = "UsrImageBinding",
-			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
-				["Name"] = "UsrImageBinding row",
-				["UsrImage"] = Path.Combine("assets", "icon.png")
-			})
-		};
+		CreateDataBindingOptions options = ImageBindingOptions(Path.Combine("assets", "icon.png"));
 
 		// Act
 		int result = _command.Execute(options);
@@ -387,29 +540,6 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 			because: "the selected image-content column should be written to the row payload");
 		dataJson.Should().Contain("\"Value\": \"AQID\"",
 			because: "the command should base64-encode the file bytes for image-content values");
-	}
-
-	[Test]
-	[Description("Rejects image-content file paths that point outside the resolved workspace so data-binding cannot read arbitrary local files.")]
-	public void Execute_Should_Reject_Image_File_Outside_Workspace() {
-		// Arrange
-		CreateDataBindingOptions options = new() {
-			Environment = "dev",
-			PackageName = PackageName,
-			SchemaName = "UsrImageBinding",
-			ValuesJson = JsonSerializer.Serialize(new Dictionary<string, string> {
-				["Name"] = "UsrImageBinding row",
-				["UsrImage"] = Path.Combine(Path.GetTempPath(), "outside", "icon.png")
-			})
-		};
-
-		// Act
-		int result = _command.Execute(options);
-
-		// Assert
-		result.Should().Be(1,
-			because: "image-content file input must stay inside the resolved workspace");
-		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must stay inside the workspace")));
 	}
 
 	[Test]
@@ -952,6 +1082,100 @@ internal sealed class AddDataBindingRowCommandTests : BaseCommandTests<AddDataBi
 			message.Contains("StatusId") &&
 			message.Contains("requires displayValue")));
 	}
+
+	private void AssertRefused(int result, string expectedMessagePart, string because) =>
+		DataBindingRefusedInput.AssertRefused(_logger, result, expectedMessagePart, because);
+
+	private int ExecuteAndSnapshot(AddDataBindingRowOptions options, out Dictionary<string, string> before) {
+		before = DataBindingRefusedInput.Snapshot(FileSystem);
+		return _command.Execute(options);
+	}
+
+	[TestCaseSource(typeof(DataBindingRefusedInput), nameof(DataBindingRefusedInput.NameCases), new object[] { false })]
+	[Description("Refuses a package or binding name that is not a plain folder name before reading or writing any file, so data.json is never rewritten in another folder.")]
+	public void Execute_ShouldRefuseName_WhenItIsNotAPlainFolderName(string argument, string value) {
+		// Arrange
+		AddDataBindingRowOptions options = new() {
+			PackageName = argument == "package" ? value : PackageName,
+			BindingName = argument == "binding" ? value : BindingName,
+			ValuesJson = """{"Name":"Row"}"""
+		};
+
+		// Act
+		int result = ExecuteAndSnapshot(options, out Dictionary<string, string> before);
+
+		// Assert
+		AssertRefused(result, "is not a plain folder name", "the name becomes a folder under the workspace packages folder");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "a refused name must not change any file");
+	}
+
+	[TestCaseSource(typeof(DataBindingRefusedInput), nameof(DataBindingRefusedInput.NotCultureNames))]
+	[Description("Refuses a localization key that is not a culture name before data.json is written, so an existing JSON file elsewhere is never read and replaced.")]
+	public void Execute_ShouldRefuseLocalizationCulture_WhenItIsNotACultureName(string culture) {
+		// Arrange
+		FileSystem.AddFile(DataBindingRefusedInput.OutsideVictimPath, new MockFileData("""{"PackageData":[]}"""));
+		AddDataBindingRowOptions options = new() {
+			PackageName = PackageName, BindingName = BindingName,
+			ValuesJson = """{"Name":"Row"}""",
+			LocalizationsJson = DataBindingRefusedInput.LocalizationsFor(culture)
+		};
+
+		// Act
+		int result = ExecuteAndSnapshot(options, out Dictionary<string, string> before);
+
+		// Assert
+		AssertRefused(result, "is not a culture name", "the culture key becomes part of a file name");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "neither data.json nor a file outside the binding may change");
+	}
+
+	[TestCase("data.json", null)]
+	[TestCase("Localization", "data.de-DE.json")]
+	[Description("Refuses data.json or a culture file that is a symbolic link out of the workspace before anything is written, so the row is not merged into the link's target.")]
+	public void Execute_ShouldRefuseBindingFile_WhenItIsASymbolicLink(string folderOrFile, string? cultureFile) {
+		// Arrange
+		FileSystem.AddFile(DataBindingRefusedInput.OutsideVictimPath, new MockFileData("""{"PackageData":[]}"""));
+		string linkPath = cultureFile is null
+			? WorkspacePath("packages", PackageName, "Data", BindingName, folderOrFile)
+			: WorkspacePath("packages", PackageName, "Data", BindingName, folderOrFile, cultureFile);
+		FileSystem.File.Delete(linkPath);
+		FileSystem.File.CreateSymbolicLink(linkPath, DataBindingRefusedInput.OutsideVictimPath);
+		AddDataBindingRowOptions options = new() {
+			PackageName = PackageName, BindingName = BindingName,
+			ValuesJson = """{"Name":"Row"}""",
+			LocalizationsJson = """{"de-DE":{"Name":"Zeile"}}"""
+		};
+
+		// Act
+		int result = ExecuteAndSnapshot(options, out Dictionary<string, string> before);
+
+		// Assert
+		AssertRefused(result, "symbolic link", "a write through the link would land outside the workspace");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "the refusal comes before data.json or any culture file is written");
+	}
+
+	[Test]
+	[Description("Refuses a localized image path outside the workspace before data.json is written, so a refused culture value leaves no half-applied row behind.")]
+	public void Execute_ShouldRefuseLocalizedImagePath_BeforeDataJsonIsWritten() {
+		// Arrange
+		AddDataBindingRowOptions options = new() {
+			PackageName = PackageName, BindingName = "UsrImageBinding",
+			ValuesJson = """{"Name":"Row"}""",
+			LocalizationsJson = JsonSerializer.Serialize(new Dictionary<string, Dictionary<string, string>> {
+				["en-US"] = new() { ["UsrImage"] = Path.Combine(Path.GetTempPath(), "outside", "missing.png") }
+			})
+		};
+
+		// Act
+		int result = ExecuteAndSnapshot(options, out Dictionary<string, string> before);
+
+		// Assert
+		AssertRefused(result, "Image file path must stay inside the workspace", "the localized value is a path outside the workspace");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "every localized value is converted before data.json is written");
+	}
 }
 
 [TestFixture]
@@ -1088,5 +1312,51 @@ internal sealed class RemoveDataBindingRowCommandTests : BaseCommandTests<Remove
 			because: "the main data file should no longer contain the removed primary-key row");
 		localizationJson.Should().NotContain("Old name",
 			because: "localized rows for the removed primary key should be deleted too");
+	}
+
+	private void AssertRefused(int result, string expectedMessagePart, string because) =>
+		DataBindingRefusedInput.AssertRefused(_logger, result, expectedMessagePart, because);
+
+	[TestCaseSource(typeof(DataBindingRefusedInput), nameof(DataBindingRefusedInput.NameCases), new object[] { false })]
+	[Description("Refuses a package or binding name that is not a plain folder name before reading or writing any file.")]
+	public void Execute_ShouldRefuseName_WhenItIsNotAPlainFolderName(string argument, string value) {
+		// Arrange
+		Dictionary<string, string> before = DataBindingRefusedInput.Snapshot(FileSystem);
+		RemoveDataBindingRowOptions options = new() {
+			PackageName = argument == "package" ? value : PackageName,
+			BindingName = argument == "binding" ? value : BindingName,
+			KeyValue = "4f41bcc2-7ed0-45e8-a1fd-474918966d15"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		AssertRefused(result, "is not a plain folder name", "the name becomes a folder under the workspace packages folder");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "a refused name must not change any file");
+	}
+
+	[Test]
+	[Description("Refuses a culture file that is a symbolic link out of the workspace before data.json is written, so the row is not removed from the link's target.")]
+	public void Execute_ShouldRefuseLocalizationFile_WhenItIsASymbolicLink() {
+		// Arrange
+		FileSystem.AddFile(DataBindingRefusedInput.OutsideVictimPath, new MockFileData(
+			FileSystem.File.ReadAllText(WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.en-US.json"))));
+		FileSystem.File.CreateSymbolicLink(
+			WorkspacePath("packages", PackageName, "Data", BindingName, "Localization", "data.de-DE.json"),
+			DataBindingRefusedInput.OutsideVictimPath);
+		Dictionary<string, string> before = DataBindingRefusedInput.Snapshot(FileSystem);
+		RemoveDataBindingRowOptions options = new() {
+			PackageName = PackageName, BindingName = BindingName, KeyValue = "4f41bcc2-7ed0-45e8-a1fd-474918966d15"
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		AssertRefused(result, "symbolic link", "a write through the link would land outside the workspace");
+		DataBindingRefusedInput.Snapshot(FileSystem).Should().BeEquivalentTo(before,
+			because: "the refusal comes before data.json or any culture file is written");
 	}
 }

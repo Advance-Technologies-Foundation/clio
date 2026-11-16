@@ -31,6 +31,8 @@ EXAMPLES
 NOTES
     - --workspace-path is the workspace root containing .clio/workspaceSettings.json,
       not the package directory. Clio resolves packages/{package-name} beneath that root.
+    - --package and --binding-name must be plain folder names: no path separators, '..', drive or root, characters that are invalid in a file name, leading or trailing spaces, or a trailing dot
+    - A binding path that passes through a symbolic link or a junction anywhere below the workspace root, the packages folder included, is refused before any file changes
     - The binding must already exist locally
     - The command fails if the supplied key does not exist
     - Localization rows that share the same primary key are removed together
