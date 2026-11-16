@@ -18,8 +18,12 @@
   answers `detail=facts` with the index, which has no `facts`.
 - Guard: a coverage test fails when a tool ships without its facts, when they contradict its standard hints, or
   when an argument entry names an argument the tool does not take or is wider than the tool.
-- Out of scope here: which arguments name a file or folder on the host (a separate change), and a guide's
-  minimum clio version (a knowledge-library change).
+- Host paths: a tool's entry also lists the arguments whose value is a file or folder on the machine clio runs on
+  (`host-paths`: kind, read / write / read-write, `list`, `or` name / url), and the arguments that only read like
+  one (`not-host-paths`, with why). A host keeps such a path inside the folder it allows without guessing from the
+  argument's name.
+- Out of scope here: where clio reads or writes when a path argument is omitted, and a guide's minimum clio
+  version (a knowledge-library change).
 - Proof: unit tests over the real catalog and over synthetic tools; `tools/list` and `get-tool-contract` read
   through the real `clio mcp-server` in `clio.mcp.e2e`.
 - Design: [adr-mcp-tool-facts.md](../adr/adr-mcp-tool-facts.md).
