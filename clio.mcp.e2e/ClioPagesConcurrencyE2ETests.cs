@@ -10,6 +10,8 @@ using Allure.NUnit.Attributes;
 using Clio.Common;
 using Clio.Common.BrowserSession;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
+using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
 
 namespace Clio.Mcp.E2E;
@@ -40,7 +42,7 @@ public sealed class ClioPagesConcurrencyE2ETests {
 
 	// The page seeded on the sandbox stand for the page fixtures; reused here so this test needs no
 	// schema creation of its own.
-	private const string SeededPageSchemaName = "ClioMcp_BlankPageToSave";
+	private const string SeededPageSchemaName = SeededBlankPage.SchemaName;
 	private const string FallbackEnvironmentName = "d2";
 
 	[Test]
@@ -103,6 +105,31 @@ public sealed class ClioPagesConcurrencyE2ETests {
 				because: "the surviving baseline must carry the post-save checksum the next save will compare against");
 			checksum.GetString().Should().NotBeNullOrWhiteSpace(
 				because: "a blank checksum would disarm conflict detection for this page — the silent loss this story removes");
+
+			// Tripwire, deliberate: on a fresh site the page has no editable schema in its design package
+			// before this test, and update-page decides "create the replacing schema" by a lookup with no
+			// lock around lookup-and-save. If both processes took that branch, the package now holds two
+			// schemas of the page, and get-page / update-page (name lookup, one row, no order) can address
+			// different ones afterwards - the leading explanation of the page e2e failures of TeamCity
+			// builds 16330337 and 16330482. The rows are written to the output in every run.
+			await using McpServerSession session = await McpServerSession.StartAsync(settings, cancellation.Token);
+			(SeededBlankPage.PageObservation pageRead, SeededBlankPage.StoredRows stored) =
+				await SeededBlankPage.ReadStoredStateAsync(session, environmentName, cancellation.Token);
+			string storedDescription = SeededBlankPage.DescribeStoredRows(stored);
+			TestContext.Out.WriteLine(
+				$"[seed-page] after two simultaneous saves, get-page resolves: {pageRead.Describe()}");
+			TestContext.Out.WriteLine(
+				$"[seed-page] stored schemas of '{SeededPageSchemaName}' after two simultaneous saves:{Environment.NewLine}{storedDescription}");
+			TestContext.Progress.WriteLine(
+				$"[seed-page] stored schemas of '{SeededPageSchemaName}' after two simultaneous saves:{Environment.NewLine}{storedDescription}");
+			SeededBlankPage.JudgeStoredRows(stored, pageRead.DesignPackageUId, requireOneInDesignPackage: true,
+					unreadableIsFailure: true)
+				.Should().BeNull(
+					because: "both saves succeeded, so the design package {0} ({1}) must hold exactly ONE stored schema "
+						+ "named '{2}'. A second row means the two processes each created a replacing schema of the page: "
+						+ "from then on a read and a write can resolve different schemas, so a completed save is not what "
+						+ "the next get-page returns - the defect behind the page e2e clusters. Rows: {3}",
+					pageRead.DesignPackageName, pageRead.DesignPackageUId, SeededPageSchemaName, storedDescription);
 		} finally {
 			DeleteDirectoryQuietly(anchor);
 		}

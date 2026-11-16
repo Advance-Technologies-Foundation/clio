@@ -35,8 +35,11 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	private SeededBlankPage.Lease? _seededPageLease;
 
 	/// <summary>
-	/// Brings the shared page back to its blank body after a test that wrote it, and fails that test when the
-	/// reset is refused or cannot be read back. In <c>[TearDown]</c>, not in a <c>finally</c> block of the test:
+	/// Ends the lease of a test that wrote the shared page. When the test failed, the lease first writes what
+	/// the stand holds for the page, and what the test's saves reported, to the test output. It then always
+	/// resets the page to its blank body and fails the test when the reset is refused or when the FIRST read
+	/// after it does not show it (an editable schema with the checksum the reset save reported, blank body).
+	/// In <c>[TearDown]</c>, not in a <c>finally</c> block of the test:
 	/// NUnit reports a teardown failure next to the assertion that failed in the test, while an exception
 	/// thrown in <c>finally</c> replaces it.
 	/// </summary>
