@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json.Nodes;
@@ -246,6 +247,38 @@ public sealed class BuildCaseClientTests {
 		reply.Response.Cases[0].Stages[0].HasSteps.Should().BeTrue(because: "a stage with steps is reported");
 		reply.Response.Settings.Should().ContainSingle(row => row.StageColumnName == "UsrStatus",
 			because: "the settings rows are read");
+	}
+
+	[Test]
+	[Description("The filter fields keep their wire names: a describe answer's case filter (values, empty, unreadable) and the settings row's filterColumnName, and a build answer's deactivatedCases.")]
+	public void Replies_ShouldReadTheFilterFields_ByTheirWireNames() {
+		// Arrange
+		_client.ExecutePostRequest(DescribeCaseUrl, Arg.Any<string>()).Returns(
+			"{\"DescribeCaseResult\":{\"success\":true,\"cases\":["
+			+ "{\"schemaName\":\"B2bCase\",\"filter\":{\"column\":\"UsrType\",\"values\":[{\"value\":\"t1\",\"caption\":\"B2B\"}]}},"
+			+ "{\"schemaName\":\"EmptyCase\",\"filter\":{\"column\":\"UsrType\",\"empty\":true}},"
+			+ "{\"schemaName\":\"DesignerCase\",\"filter\":{\"unreadable\":true}}],"
+			+ "\"settings\":[{\"sysDcmSettingsId\":\"s1\",\"hasFilterColumn\":true,\"filterColumnName\":\"UsrType\"}]}}");
+		_client.ExecutePostRequest(BuildCaseUrl, Arg.Any<string>()).Returns(
+			"{\"BuildCaseResult\":{\"success\":true,\"outcome\":\"planned\",\"deactivatedCases\":[\"OldCase\"]}}");
+
+		// Act
+		DynamicCaseReply<DescribeCaseResponse> described;
+		DynamicCaseReply<BuildCaseResponse> built;
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			described = session.Describe(new DescribeCaseRequest { EntitySchemaName = "UsrOrder" });
+			built = session.Build(new BuildCaseRequest { ValidateOnly = true });
+		}
+
+		// Assert
+		List<BuildCaseCaseInfo> cases = described.Response.Cases;
+		cases[0].Filter.Column.Should().Be("UsrType", because: "the filter column is read");
+		cases[0].Filter.Values.Should().ContainSingle(value => value.Value == "t1" && value.Caption == "B2B",
+			because: "each filter value carries its Id and display value");
+		cases[1].Filter.Empty.Should().BeTrue(because: "the empty-value case is read");
+		cases[2].Filter.Unreadable.Should().BeTrue(because: "a designer-built filter is reported, not dropped");
+		described.Response.Settings[0].FilterColumnName.Should().Be("UsrType", because: "the settings row names it");
+		built.Response.DeactivatedCases.Should().Equal(["OldCase"], because: "the cases the build disables are read");
 	}
 
 	[Test]
