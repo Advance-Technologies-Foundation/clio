@@ -9,9 +9,11 @@ Codex discovers it directly. A thin `.claude/skills/clio-release/SKILL.md` wrapp
 and the Copilot release prompt point to that same procedure. The wrapper works
 on Windows without requiring symlink support; edit the canonical procedure
 rather than creating agent-specific copies.
+This location applies to `clio-release`; this change does not migrate the existing
+skills under `.ai/skills`.
 Codex discovers repository skills in `.agents/skills`; if the new skill does not
 appear after the file changes, restart Codex
-([official skill documentation](https://learn.chatgpt.com/docs/build-skills)).
+([official skill documentation](https://developers.openai.com/codex/skills/)).
 
 The skill selects a verified full `origin/master` commit, waits for its master-push
 `Build` run, increments the last version component, writes English release notes,
