@@ -934,6 +934,7 @@ internal static class ToolContractCatalog {
 			[CreateDataBindingDbTool.CreateDataBindingDbToolName] = BuildCreateDataBindingDb(),
 			[UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName] = BuildUpsertDataBindingRowDb(),
 			[RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName] = BuildRemoveDataBindingRowDb(),
+			[DeleteDataBindingDbTool.DeleteDataBindingDbToolName] = BuildDeleteDataBindingDb(),
 			[PlaceSectionInWorkplaceTool.ToolName] = BuildPlaceSectionInWorkplace(),
 			[PageSmokeTool.ToolName] = BuildPageSmoke(),
 			[GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName] = BuildGetEntitySchemaProperties(),
@@ -1028,6 +1029,7 @@ internal static class ToolContractCatalog {
 		CreateDataBindingDbTool.CreateDataBindingDbToolName,
 		UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
 		RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
+		DeleteDataBindingDbTool.DeleteDataBindingDbToolName,
 		FindEntitySchemaTool.FindEntitySchemaToolName,
 		GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
@@ -1275,9 +1277,9 @@ internal static class ToolContractCatalog {
 	/// and the line index had no room left under the spill line for a tool and the sentence together (ENG-105556).
 	/// </summary>
 	internal static readonly string ToolIndexLegend =
-		$"Each line: name (R)(D) [aka old names]: purpose, cut to {MaxToolIndexPurposeLength} chars. "
-		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
-		+ "Without (R), call it via clio-run {\"command\":\"<name>\",\"args\":{...}}. "
+		$"Each line: name (R)(D) [aka old names]: purpose, max {MaxToolIndexPurposeLength} chars. "
+		+ "(R) = resident, resident=true in detail=index-entries: call it directly. "
+		+ "No (R): call via clio-run {\"command\":\"<name>\",\"args\":{...}}. "
 		+ "(D) = destructive: may delete or overwrite data; a line without (D) can still write.";
 
 	/// <summary>
@@ -5245,6 +5247,41 @@ internal static class ToolContractCatalog {
 				})
 			],
 			Flow([RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName], "Standalone DB-first binding maintenance."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildDeleteDataBindingDb() {
+		return new ToolContractDefinition(
+			DeleteDataBindingDbTool.DeleteDataBindingDbToolName,
+			"Deletes a binding, keeps its records. " +
+			"Removes the package schema data record of the named DB-first binding from the package; the records it bound stay in the table and no row is deleted or changed. " +
+			"Works for a binding that holds rows and for an empty one, so use it to drop a binding created by mistake or left empty; the next package export ships without it. " +
+			"Fails without deleting anything when the binding does not exist in that package. " +
+			"To delete a live record together with its binding row, use remove-data-binding-row-db instead. " +
+			"For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName],
+				EnvironmentPackageFields(
+					Field(BindingNameFieldName, StringType, BindingNameDescription))),
+			CommandExecutionOutput(),
+			new ToolErrorContract([
+				..CommonErrorContract.Codes,
+				new ToolErrorCodeContract("binding-not-found",
+					"The specified binding does not exist in that package on the remote environment. Nothing was deleted.")
+			]),
+			EnvironmentPackageAliases(
+				BindingNameParameterAlias()),
+			[],
+			[
+				Example("Delete a binding and keep its records", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[BindingNameFieldName] = ExampleTaskStatusSchemaName
+				})
+			],
+			Flow([ReadDataBindingDbTool.ReadDataBindingDbToolName, DeleteDataBindingDbTool.DeleteDataBindingDbToolName],
+				"read-data-binding-db → delete-data-binding-db: check what the binding ships, then delete it."),
 			[],
 			[]);
 	}

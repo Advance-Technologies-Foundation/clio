@@ -168,6 +168,12 @@ public sealed class ToolContractPayloadBudgetTests {
 	// mcp-tool-facts: create-user-task gained (D), a destroy whose hint said otherwise (it loads every file-system
 	// package into the database). Paid ahead by the legend: "A tool without (R) is called through clio-run" ->
 	// "Without (R), call it via clio-run", 12 bytes for the marker's 3.
+	// delete-data-binding-db, one more long-tail tool and so one more line: measured 18743 with the purpose
+	// "Deletes a binding, keeps its records." (the shortest that still tells it from remove-data-binding-row-db,
+	// which deletes the record), 55 over. Paid by the legend, as the 73-step note above requires: "cut to 48 chars"
+	// -> "max 48 chars"; "it is in tools/list, call it directly, never through clio-run" -> "call it directly"
+	// (the next sentence names clio-run for the other lines); "Without (R), call it via clio-run" -> "No (R): call
+	// via clio-run". The resident sentence the toolkit mirrors and the (D) sentence are unchanged.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
