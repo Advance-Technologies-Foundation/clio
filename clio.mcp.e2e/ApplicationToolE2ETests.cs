@@ -74,15 +74,10 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
-		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Assert
-		listResult.CallResult.IsError.Should().NotBeTrue(
-			because: $"a valid list-apps request should return a structured MCP payload instead of a transport-level error. Actual result: {DescribeCallResult(listResult.CallResult)}");
-		listResult.Result.Success.Should().BeTrue(
-			because: "list-apps should succeed before the seeded installed application can be validated. "
-				+ $"Actual list-apps error: '{listResult.Result.Error}'. "
-				+ $"Actual list-apps payload: {DescribeCallResult(listResult.CallResult)}");
+		AssertListAppsSucceeded(listResult);
+		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, ApplicationCode, arrangeContext.EnvironmentName);
 		installedApplication.Id.Should().NotBeNullOrWhiteSpace(
 			because: "installed application list items should expose an id for follow-up MCP targeting");
 		installedApplication.Code.Should().NotBeNullOrWhiteSpace(
@@ -109,6 +104,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
+		AssertListAppsSucceeded(listResult);
 		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Act
@@ -208,6 +204,7 @@ public sealed class ApplicationToolE2ETests {
 			arrangeContext.Session,
 			arrangeContext.CancellationTokenSource.Token,
 			arrangeContext.EnvironmentName);
+		AssertListAppsSucceeded(listResult);
 		ApplicationListItemEnvelope installedApplication = SeededApplicationResolver.GetOrIgnore(listResult.Result, ApplicationCode, arrangeContext.EnvironmentName);
 
 		// Act
@@ -1191,6 +1188,21 @@ public sealed class ApplicationToolE2ETests {
 		await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(
 			settings,
 			$"application MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
+
+	/// <summary>
+	/// Fails the test when list-apps itself failed. Call it BEFORE
+	/// <see cref="SeededApplicationResolver.GetOrIgnore"/>: a failed list-apps carries no application list,
+	/// so the resolver would otherwise report the test as ignored ("install the seed package") and the
+	/// tool's own error would never be printed.
+	/// </summary>
+	private static void AssertListAppsSucceeded(ApplicationListActResult listResult) {
+		listResult.CallResult.IsError.Should().NotBeTrue(
+			because: $"a valid list-apps request should return a structured MCP payload instead of a transport-level error. Actual result: {DescribeCallResult(listResult.CallResult)}");
+		listResult.Result.Success.Should().BeTrue(
+			because: "list-apps should succeed before the seeded installed application can be validated. "
+				+ $"Actual list-apps error: '{listResult.Result.Error}'. "
+				+ $"Actual list-apps payload: {DescribeCallResult(listResult.CallResult)}");
+	}
 
 	private static async Task<ApplicationListActResult> ActListAsync(
 		McpServerSession session,
