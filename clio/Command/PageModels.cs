@@ -333,6 +333,18 @@ public sealed record PageMetadataInfo {
 	public bool WillCreateReplacingInDesignPackage { get; init; }
 
 	/// <summary>
+	/// Gets the page's replacing layers and whether a write must name its target package. When
+	/// <see cref="PagePackageChoice.Required"/> is <c>true</c> another unlocked (or lock-unknown) package also
+	/// customizes the page: ask the user which package to change, then pass the chosen layer's <c>packageUId</c> —
+	/// or <see cref="DesignPackageUId"/> to keep the default — as <c>target-package-uid</c>. <c>update-page</c> and
+	/// <c>sync-pages</c> refuse such a write without it.
+	/// </summary>
+	[JsonProperty("packageChoice", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("packageChoice")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PagePackageChoice PackageChoice { get; init; }
+
+	/// <summary>
 	/// Gets or sets the root schema identifier — the base schema in the hierarchy that all
 	/// replacing schemas ultimately extend. Pass this as the parent when creating a new
 	/// replacing schema via update-page to match the designer's ApplyParent behaviour.
@@ -1106,6 +1118,16 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("page")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public PageMetadataInfo? Page { get; set; }
+
+	/// <summary>
+	/// Gets or sets the page's replacing layers when the write was refused because it named no target package
+	/// while another editable package also customizes the page (<c>package-choice-required</c>).
+	/// </summary>
+	[DataMember(Name = "packageChoice", EmitDefaultValue = false)]
+	[JsonProperty("packageChoice", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("packageChoice")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PagePackageChoice? PackageChoice { get; set; }
 
 	/// <summary>
 	/// Gets or sets a value indicating whether the save was blocked because the schema was
