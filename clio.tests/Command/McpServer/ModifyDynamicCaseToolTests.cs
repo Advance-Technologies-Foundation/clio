@@ -341,8 +341,8 @@ public sealed class ModifyDynamicCaseToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
-		description.Should().Contain("Read get-guidance name=process-dynamic-case first.",
-			because: "the article owns the workflow");
+		description.Should().Contain("Read get-guidance name=process-dynamic-case-change first.",
+			because: "the change article owns the workflow");
 		description.Should().Contain("describe-dynamic-case").And.Contain("dry-run=true")
 			.And.Contain("ask before writing", because: "the user sees the planned diff before anything is written");
 		description.Should().Contain("WHOLE desired list").And.Contain("left out is removed",

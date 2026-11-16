@@ -57,7 +57,7 @@ public class ModifyDynamicCaseTool(
 	// again finds nothing to change and answers unchanged. Destructive also keeps it out of the read-response deadline.
 	[McpServerTool(Name = ModifyDynamicCaseToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		 OpenWorld = false),
-	 Description("Change an existing dynamic case (DCM) in place. Read get-guidance name=process-dynamic-case first. "
+	 Description("Change an existing dynamic case (DCM) in place. Read get-guidance name=process-dynamic-case-change first. "
 		 + "Call describe-dynamic-case, then this tool with dry-run=true, show the user the planned diff and ask "
 		 + "before writing. Name the case by case-name or case-uid, or by entity-schema-name when the object has one "
 		 + "case. stages is the WHOLE desired list in order, matched to the stored stages by lookup value: a stage "
