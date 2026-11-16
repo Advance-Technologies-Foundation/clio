@@ -38,6 +38,34 @@ internal class ReauthExecutorTests {
 		return new ReauthExecutor(login);
 	}
 
+	// Runs a caller on its own thread instead of the thread pool: the test assembly runs several
+	// fixtures at once, and a pool that is busy with their work can hold a queued Task.Run (or a
+	// task continuation) back for seconds. Nothing here touches the pool, and the thread is exposed
+	// so a test can observe that the caller is blocked.
+	private sealed class DedicatedCaller {
+		private string _result;
+		private Exception _failure;
+
+		public DedicatedCaller(Func<string> body) {
+			Thread = new Thread(() => {
+				try {
+					Volatile.Write(ref _result, body());
+				} catch (Exception exception) {
+					Volatile.Write(ref _failure, exception);
+				}
+			}) {
+				IsBackground = true
+			};
+			Thread.Start();
+		}
+
+		public Thread Thread { get; }
+
+		public string Result => Volatile.Read(ref _result);
+
+		public Exception Failure => Volatile.Read(ref _failure);
+	}
+
 	#endregion
 
 	#region Tests: Execute
@@ -142,43 +170,97 @@ internal class ReauthExecutorTests {
 
 	[Test]
 	[Description("Execute deduplicates Login when two threads concurrently observe a login page")]
-	public async Task Execute_ShouldDedupeLogin_WhenTwoCallersHitLoginPageConcurrently() {
-		// Arrange — drive the timeline with two ManualResetEventSlim gates rather than
-		// sleeps: thread A enters the Login callback, signals 'aEnteredLogin', then parks
-		// on 'releaseLogin'. While A holds the reauth lock, the test starts thread B; B
-		// observes the login page on its first call and blocks on the same lock. Releasing
-		// 'releaseLogin' lets A finish Login + bump the version + release the lock, after
-		// which B enters the lock, sees the bumped version, skips Login, and retries.
+	public void Execute_ShouldDedupeLogin_WhenTwoCallersHitLoginPageConcurrently() {
+		// Arrange — every step of the timeline waits on an explicit signal, never on the scheduler:
+		// caller A enters the Login callback (signal 'aEnteredLogin') and parks there holding the
+		// reauth lock; only then is caller B started. B receives the login page (signal
+		// 'bObservedLoginPage'), captures the still-unbumped version and blocks on the lock A holds
+		// (observed as B's thread entering WaitSleepJoin). Only then is Login released: A finishes
+		// Login, the simulated server becomes authenticated, A bumps the version and leaves the lock;
+		// B enters it, sees the bumped version, skips Login and retries.
+		// Both callers run on dedicated threads, so a busy thread pool cannot delay their start, and
+		// the timeout below only bounds a failing run — a passing run never waits for it.
+		TimeSpan signalTimeout = TimeSpan.FromSeconds(30);
 		int loginCallCount = 0;
-		ManualResetEventSlim aEnteredLogin = new(false);
-		ManualResetEventSlim releaseLogin = new(false);
+		int loginPageResponseCount = 0;
+		bool serverAuthenticated = false;
+		bool loginReleasedBySignal = true;
+		using ManualResetEventSlim aEnteredLogin = new(false);
+		using ManualResetEventSlim bObservedLoginPage = new(false);
+		using ManualResetEventSlim releaseLogin = new(false);
 		ReauthExecutor sut = CreateExecutor(() => {
 			aEnteredLogin.Set();
-			releaseLogin.Wait(TimeSpan.FromSeconds(5));
+			if (!releaseLogin.Wait(signalTimeout)) {
+				Volatile.Write(ref loginReleasedBySignal, false);
+			}
 			Interlocked.Increment(ref loginCallCount);
+			// Login is what makes the session valid again, exactly as on a real server.
+			Volatile.Write(ref serverAuthenticated, true);
 		});
-		bool serverAuthenticated = false;
-		string Call() => Volatile.Read(ref serverAuthenticated) ? "{}" : LoginPageBody;
+		string Call(ManualResetEventSlim loginPageObserved) {
+			if (Volatile.Read(ref serverAuthenticated)) {
+				return "{}";
+			}
+			Interlocked.Increment(ref loginPageResponseCount);
+			loginPageObserved?.Set();
+			return LoginPageBody;
+		}
+		DedicatedCaller a = null;
+		DedicatedCaller b = null;
+		bool aEntered;
+		bool bObserved = false;
+		bool bBlockedOnReauthLock = false;
 
 		// Act
-		Task<string> a = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true));
-		aEnteredLogin.Wait(TimeSpan.FromSeconds(2));
-		// A is now parked inside Login() while holding the reauth lock with versionAtStart
-		// still equal to the executor's current version.
-		Task<string> b = Task.Run(() => sut.Execute(Call, ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true));
-		// Flip the simulated server state to authenticated BEFORE releasing A, so that the
-		// retry call() returns JSON regardless of which thread reaches it first.
-		Volatile.Write(ref serverAuthenticated, true);
-		releaseLogin.Set();
-		await Task.WhenAll(a, b);
+		try {
+			a = new DedicatedCaller(
+				() => sut.Execute(() => Call(null), ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true));
+			aEntered = aEnteredLogin.Wait(signalTimeout);
+			if (aEntered) {
+				// A is now parked inside Login() while holding the reauth lock, and the executor's
+				// version is still the one B is about to capture.
+				b = new DedicatedCaller(
+					() => sut.Execute(() => Call(bObservedLoginPage), ReauthExecutor.IsSessionExpiredResponse,
+						replayAllowed: true));
+				bObserved = bObservedLoginPage.Wait(signalTimeout);
+				// Between returning the login page and blocking on the lock B takes no other wait,
+				// so WaitSleepJoin after 'bObservedLoginPage' means B is queued behind A.
+				Thread observedThread = b.Thread;
+				bBlockedOnReauthLock = bObserved && SpinWait.SpinUntil(
+					() => (observedThread.ThreadState & ThreadState.WaitSleepJoin) != 0, signalTimeout);
+			}
+		} finally {
+			// Always release Login so a failing run does not leave a caller parked.
+			releaseLogin.Set();
+		}
+		bool aCompleted = a.Thread.Join(signalTimeout);
+		bool bCompleted = b is not null && b.Thread.Join(signalTimeout);
 
 		// Assert
+		aEntered.Should().BeTrue(
+			because: $"caller A must reach the Login callback within {signalTimeout.TotalSeconds:0} s before caller B is started; login calls so far: {Volatile.Read(ref loginCallCount)}, login-page responses so far: {Volatile.Read(ref loginPageResponseCount)}");
+		bObserved.Should().BeTrue(
+			because: $"caller B must receive the login page while caller A is still inside Login; login-page responses so far: {Volatile.Read(ref loginPageResponseCount)}");
+		bBlockedOnReauthLock.Should().BeTrue(
+			because: $"caller B must queue on the reauth lock that caller A holds before Login is released; B's thread state was {b.Thread.ThreadState}");
+		aCompleted.Should().BeTrue(
+			because: $"caller A must finish once Login is released; its thread state was {a.Thread.ThreadState}");
+		bCompleted.Should().BeTrue(
+			because: $"caller B must finish once caller A has left the reauth lock; its thread state was {b.Thread.ThreadState}");
+		Volatile.Read(ref loginReleasedBySignal).Should().BeTrue(
+			because: "Login must be released by the test's signal, not by the safety timeout inside the callback");
+		a.Failure.Should().BeNull(
+			because: "caller A must not throw");
+		b.Failure.Should().BeNull(
+			because: "caller B must not throw");
 		a.Result.Should().Be("{}",
 			because: "thread A must surface the post-reauth JSON response");
 		b.Result.Should().Be("{}",
 			because: "thread B must also surface the post-reauth JSON response");
-		loginCallCount.Should().Be(1,
-			because: "a concurrent burst of expired-session responses must trigger exactly one Login");
+		Volatile.Read(ref loginPageResponseCount).Should().Be(2,
+			because: "each of the two callers must have observed the expired session exactly once — otherwise the burst the dedupe exists for never happened");
+		Volatile.Read(ref loginCallCount).Should().Be(1,
+			because: $"a concurrent burst of expired-session responses must trigger exactly one Login; login-page responses observed: {Volatile.Read(ref loginPageResponseCount)}, executor login version: {sut.LoginVersion}");
 	}
 
 	[Test]
