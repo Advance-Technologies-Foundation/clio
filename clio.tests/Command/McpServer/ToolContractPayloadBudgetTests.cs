@@ -450,6 +450,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-103990 (2026-11-10, rebased onto ENG-92710) re-measured by lowering this guard: "mergeFrom?" in the create
 	// call shape's parameter shape, which is never cut, brings the bundle to 18855 bytes - 145 under this guard. Its
 	// description text carries no safety marker, so no short form keeps it. Unchanged on the 1.6.6.152 base (2026-11-11).
+	//
+	// ENG-105557 follow-up (2026-11-16) re-measured by lowering this guard: the gloss on "filter?" in the create call
+	// shape's element shape, which is never cut, is the sentence the process-data-source-filters guide's gate quotes
+	// ("any of several lookup records is ONE condition with values"). It adds 61 bytes and brings the bundle to 18914
+	// bytes - 86 under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]
