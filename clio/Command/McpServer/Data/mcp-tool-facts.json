@@ -61,6 +61,7 @@
   "dataforge-update": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "delete-app": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "delete-app-section": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "delete-data-binding-db": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "delete-entity-business-rules": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "delete-knowledge": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "confirmed", "value": "false", "effect": "read", "scope": "local"}

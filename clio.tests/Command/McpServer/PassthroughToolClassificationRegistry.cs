@@ -293,6 +293,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["dataforge-status"] = PassthroughClassification.NotApplicable,
 			["dataforge-update"] = PassthroughClassification.NotApplicable,
 			["delete-app"] = PassthroughClassification.NotApplicable,
+			["delete-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["delete-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["delete-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["delete-schema"] = PassthroughClassification.NotApplicable,

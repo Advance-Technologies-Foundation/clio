@@ -1027,6 +1027,7 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
+		services.AddTransient<DeleteDataBindingDbCommand>();
 		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
 		services.AddTransient<IWorkplaceRepository, WorkplaceRepository>();
 		services.AddTransient<IWorkplacePlacementService, WorkplacePlacementService>();

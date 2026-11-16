@@ -551,6 +551,7 @@ DB-first binding tools:
 - `create-data-binding-db`
 - `upsert-data-binding-row-db`
 - `remove-data-binding-row-db`
+- `delete-data-binding-db`
 
 What an external AI can practically do here:
 
