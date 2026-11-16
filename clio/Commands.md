@@ -656,7 +656,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="flush-themes"></a>
 - [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache (Creatio 10.0.0+), `flush-themes`
 <a id="create-theme"></a>
-- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
+- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment, optionally with its background (Creatio 10.0.0+)
 <a id="delete-theme"></a>
 - [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
 <a id="get-theme"></a>
@@ -668,7 +668,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="apply-user-theme"></a>
 - [`set-user-theme`](docs/commands/set-user-theme.md) - Apply a theme to the current user's profile on an environment (Creatio 10.0.0+), `apply-user-theme`
 <a id="update-theme"></a>
-- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment, or change its background (Creatio 10.0.0+)
 
 ## Branding
 

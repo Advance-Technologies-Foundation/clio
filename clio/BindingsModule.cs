@@ -555,6 +555,8 @@ public class BindingsModule {
 		services.AddTransient<IDynamicCasePageStep, DynamicCasePageStep>();
 		services.AddTransient<IDynamicCaseService, DynamicCaseService>();
 		services.AddTransient<CreateDynamicCaseCommand>();
+		services.AddTransient<DescribeDynamicCaseCommand>();
+		services.AddTransient<ModifyDynamicCaseCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -1086,6 +1088,8 @@ public class BindingsModule {
 		services.AddTransient<IThemeCatalog, ListThemesCommand>();
 		services.AddTransient<GetThemeCommand>();
 		services.AddTransient<CreateThemeCommand>();
+		services.AddTransient<IBrandingBackgroundService, BrandingBackgroundService>();
+		services.AddTransient<IThemeBackgroundWriter, ThemeBackgroundWriter>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
