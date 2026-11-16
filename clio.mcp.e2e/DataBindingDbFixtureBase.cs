@@ -29,6 +29,7 @@ public abstract class DataBindingDbFixtureBase : McpContractFixtureBase {
 	protected const string UpsertRowDbToolName = UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName;
 	protected const string RemoveRowDbToolName = RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName;
 	protected const string ReadDbToolName = ReadDataBindingDbTool.ReadDataBindingDbToolName;
+	protected const string DeleteDbToolName = DeleteDataBindingDbTool.DeleteDataBindingDbToolName;
 	protected const string ODataCreateToolName = ODataCreateTool.ToolName;
 	protected const string CreateEntitySchemaToolName = CreateEntitySchemaTool.CreateEntitySchemaToolName;
 	protected const string ODataReadToolName = ODataReadTool.ToolName;

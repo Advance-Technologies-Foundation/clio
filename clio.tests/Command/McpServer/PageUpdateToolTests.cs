@@ -168,7 +168,7 @@ public sealed class PageUpdateToolTests {
 			_applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), hierarchyClient,
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			passthroughWriter);
+			passthroughWriter, Substitute.For<IPageLayerInspector>());
 		_commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(getCommand);
 	}
 
@@ -409,7 +409,7 @@ public sealed class PageUpdateToolTests {
 			PageGetCommand getCommand = new(getClient, Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>(),
 				Substitute.For<IPageDesignerHierarchyClient>(), new PageSchemaBodyParser(),
 				new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-				Substitute.For<IPageFileWriter>());
+				Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 			_commandResolver.Resolve<PageGetCommand>(Arg.Do<EnvironmentOptions>(o => captured = o)).Returns(getCommand);
 
 			PageUpdateArgs args = new(SchemaName, mobileBody, null, true, Mode: mode) { EnvironmentName = "dev" };
