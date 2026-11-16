@@ -19,7 +19,9 @@ The input file is a JSON array:
 ]
 ```
 
-Operations are `insert`, `update`, or `delete`. Insert/update require 1–50 values; delete has no values. `Id` comes from `record-id` and cannot appear in values. Supported scalar DataService types: 0 UUID; 1–3 text; 4 integer; 5 decimal; 6 money; 7–9 date/time strings; 10 lookup UUID; 11 enum integer; 12 boolean. JSON null clears a value where the platform permits it. Schema and column names must be identifiers. Input and encoded request are each limited to 200000 UTF-8 bytes.
+Operations are `insert`, `update`, or `delete`. Insert/update require 1–50 values; delete has no values. `Id` comes from `record-id` and cannot appear in values. Supported scalar DataService types: 0 UUID; 1–3 text; 4 integer; 5 decimal; 6 money; 7 datetime, 8 date and 9 time strings; 10 lookup UUID; 11 enum integer; 12 boolean. JSON null clears a value where the platform permits it.
+
+Pass a datetime, date or time value as a plain string, for example `{"data-value-type": 7, "value": "2026-01-31T09:00:00.000"}`, `{"data-value-type": 8, "value": "2026-01-31"}` or `{"data-value-type": 9, "value": "09:00:00"}`. DataService reads these parameters as JSON, so clio sends the text as a quoted JSON string. A value that is already a JSON string literal (`"\"2026-01-31T09:00:00.000\""`) is sent unchanged. A number, object, boolean or empty string under types 7–9 is refused before any request, with the column and the type in the message. Schema and column names must be identifiers. Input and encoded request are each limited to 200000 UTF-8 bytes.
 
 The batch continues after item failures. Atomicity is not guaranteed. Each result includes the zero-based input index, record UUID, `completed`, `failed` or `unknown` state, optional rows affected and sanitized error. Aggregate counts describe only established outcomes. Missing or ambiguous native results are unknown; no retry is made. A zero-row successful update is reported as completed with zero rows affected, not proof the record exists. Results are platform acknowledgements, not independent readback. Verify affected records before resubmitting unknown items.
 
