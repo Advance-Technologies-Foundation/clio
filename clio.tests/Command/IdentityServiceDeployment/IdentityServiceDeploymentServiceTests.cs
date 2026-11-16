@@ -713,6 +713,138 @@ public sealed class IdentityServiceDeploymentServiceTests
 		artifactsExistedWhenRecorded.Should().BeFalse(because: "recording precedes creation of identity artifacts");
 	}
 
+	[TestCase(".")]
+	[TestCase("..")]
+	[TestCase("...")]
+	[TestCase("identity.")]
+	[TestCase("identity\n")]
+	[Description("Deploy refuses a site name that is not a plain folder name before it builds, reserves or records the target path, because the name becomes the target folder next to the environment folder when identity-path is omitted.")]
+	public void Deploy_ShouldRefuseSiteName_WhenItIsNotPlainFolderName(string siteName) {
+		// Arrange
+		string archive = CreateIdentityArchive();
+		ISettingsRepository settings = CreateSettingsRepository();
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(Arg.Any<string>(), Arg.Any<string>()).Returns(archive);
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		lifecycle.When(service => service.RecordDeployment(
+				Arg.Any<string>(), Arg.Any<IdentityServiceAttachment>(), Arg.Any<bool>()))
+			.Do(_ => throw new DeploymentStoppedByTestException());
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, lifecycle: lifecycle);
+
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank", ZipFile = archive,
+			IdentitySitePort = 40086, IdentitySiteName = siteName, NoApp = true });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				because: "'.' and '..' and a name Windows would rewrite name another folder than the one asked for")
+			.WithMessage("*site name*", because: "the caller should learn which argument was refused");
+		lifecycle.DidNotReceiveWithAnyArgs().RecordDeployment(default!, default!, default);
+		resolver.DidNotReceiveWithAnyArgs().Resolve(default!, default!);
+	}
+
+	[TestCase("chosen-identity")]
+	[TestCase("site.v2")]
+	[TestCase("my_site-1")]
+	[Description("Deploy still places the target folder next to the environment folder under an ordinary site name when identity-path is omitted.")]
+	public void Deploy_ShouldRecordSiblingFolderNamedAfterSite_WhenSiteNameIsOrdinary(string siteName) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		string archive = CreateIdentityArchive();
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(archive, "IdentityService.zip").Returns(archive);
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		IdentityServiceAttachment recorded = null;
+		lifecycle.When(service => service.RecordDeployment(
+				"bank", Arg.Any<IdentityServiceAttachment>(), Arg.Any<bool>()))
+			.Do(call => {
+				recorded = call.ArgAt<IdentityServiceAttachment>(1);
+				throw new DeploymentStoppedByTestException();
+			});
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, lifecycle: lifecycle);
+
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank", ZipFile = archive,
+			IdentitySitePort = 40086, IdentitySiteName = siteName, NoApp = true });
+
+		// Assert
+		act.Should().Throw<DeploymentStoppedByTestException>(
+			because: "the test stops the deployment at the recording step, before any artifact is created");
+		recorded.Should().NotBeNull(because: "an ordinary site name must pass validation and reach the recording step");
+		recorded.EnvironmentPath.Should().Be(Path.Combine(RealTempPath, siteName),
+			because: "the default target is the folder named after the site next to the environment folder");
+		recorded.IisTarget.Should().Be(siteName, because: "the site name is used unchanged");
+	}
+
+	[TestCase("../{0}/IdentityService.zip")]
+	[TestCase("..\\{0}\\IdentityService.zip")]
+	[TestCase("nested/../../{0}/IdentityService.zip")]
+	[TestCase("{1}")]
+	[Description("Deploy refuses an archive path that leaves EnvironmentPath when zip-file is omitted, before any archive outside it is opened or the target is recorded.")]
+	public void Deploy_ShouldRefuseArchivePath_WhenItLeavesEnvironmentPathAndZipFileIsOmitted(string pathTemplate) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		string outsideFolderName = $"outside-{Guid.NewGuid():N}";
+		string outsideFolder = Path.Combine(RealTempPath, outsideFolderName);
+		Directory.CreateDirectory(outsideFolder);
+		string outsideArchive = CreateIdentityArchive(outsideFolder);
+		string archivePathInBundle = string.Format(pathTemplate, outsideFolderName, outsideArchive);
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new DeploymentStoppedByTestException());
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, lifecycle: lifecycle);
+
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank",
+			IdentityArchivePathInBundle = archivePathInBundle, IdentitySitePort = 40086,
+			IdentityPath = CreateIdentityTargetPath(), NoApp = true });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				because: "without zip-file the argument is a path below EnvironmentPath and must not reach a file outside it")
+			.WithMessage("*inside*EnvironmentPath*", because: "the caller should learn why the path was refused");
+		resolver.DidNotReceiveWithAnyArgs().Resolve(default!, default!);
+		lifecycle.DidNotReceiveWithAnyArgs().RecordDeployment(default!, default!, default);
+	}
+
+	[TestCase(null, "IdentityService.zip")]
+	[TestCase("nested/IdentityService.zip", "nested/IdentityService.zip")]
+	[TestCase("nested\\IdentityService.zip", "nested/IdentityService.zip")]
+	[TestCase("nested/..bundle/IdentityService.zip", "nested/..bundle/IdentityService.zip")]
+	[Description("Deploy still takes the archive from the given relative path below EnvironmentPath, sub-folders included, when zip-file is omitted.")]
+	public void Deploy_ShouldUseArchiveBelowEnvironmentPath_WhenArchivePathIsOrdinaryAndZipFileIsOmitted(
+		string archivePathInBundle, string relativeLocation) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		string archiveFolder = Path.GetDirectoryName(Path.Combine(crmPath, relativeLocation.Replace('/', Path.DirectorySeparatorChar)))!;
+		Directory.CreateDirectory(archiveFolder);
+		string expectedArchive = CreateIdentityArchive(archiveFolder);
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new DeploymentStoppedByTestException());
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver);
+
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank",
+			IdentityArchivePathInBundle = archivePathInBundle, IdentitySitePort = 40086,
+			IdentityPath = CreateIdentityTargetPath(), NoApp = true });
+
+		// Assert
+		act.Should().Throw<DeploymentStoppedByTestException>(
+			because: "the test stops the deployment once the archive location is resolved");
+		resolver.Received(1).Resolve(expectedArchive, archivePathInBundle ?? "IdentityService.zip");
+	}
+
+	/// <summary>Stops a deployment under test at a known step, before it creates any artifact.</summary>
+	private sealed class DeploymentStoppedByTestException : Exception;
+
 	private static string CreateIdentityArchive(string directory)
 	{
 		string archivePath = Path.Combine(directory, "IdentityService.zip");
