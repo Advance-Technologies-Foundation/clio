@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Common;
 using Clio.Package;
@@ -732,6 +733,163 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+	}
+
+	[TestCase(7, "2026-01-01T00:00:00.000")]
+	[TestCase(8, "2026-01-01")]
+	[TestCase(9, "09:00:00")]
+	[Description("Sends a DateTime, Date or Time row value as a quoted JSON string when create-data-binding-db inserts the row, because DataService reads the parameter as JSON and refuses bare date text.")]
+	public void CreateDataBindingDb_Should_Send_A_Date_Or_Time_Value_As_A_Quoted_Json_String(int dataValueType, string text) {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrLicensedFrom", dataValueType));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = $$$"""[{"values":{"Name":"Dated account","UsrLicensedFrom":"{{{text}}}"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a date or time given as text is a supported row value");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Is<string>(body => ReadParameterValue(body, "UsrLicensedFrom", dataValueType) == $"\"{text}\""),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Sends a DateTime value as a quoted JSON string when upsert-data-binding-row-db updates an existing row, because the update goes through the same DataService parameter rule as the insert.")]
+	public void UpsertDataBindingRowDb_Should_Send_A_DateTime_Value_As_A_Quoted_Json_String_On_Update() {
+		// Arrange
+		Guid rowId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrLicensedFrom", 7));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = rowId,
+				["Name"] = "Existing account"
+			}
+		});
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrAccountBinding",
+			ValuesJson = $$"""{"Id":"{{rowId}}","UsrLicensedFrom":"2026-11-12T09:00:00.000"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "setting a date on a bound row is a legitimate update");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Is<string>(body => ReadParameterValue(body, "UsrLicensedFrom", 7) == "\"2026-11-12T09:00:00.000\""),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Writes an explicit null date as null rather than an empty string, so clearing a date column does not send text DataService cannot read as a date.")]
+	public void UpsertDataBindingRowDb_Should_Preserve_Null_For_A_Date_Column() {
+		// Arrange
+		Guid rowId = Guid.Parse("bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrLicensedFrom", 8));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
+			new Dictionary<string, object?> {
+				["Id"] = rowId,
+				["Name"] = "Existing account"
+			}
+		});
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "UsrAccountBinding",
+			ValuesJson = $$"""{"Id":"{{rowId}}","UsrLicensedFrom":null}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "clearing a date column is a legitimate update");
+		_applicationClient.Received().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/UpdateQuery",
+			Arg.Is<string>(body =>
+				body.Contains("\"dataValueType\":8") &&
+				body.Contains("\"value\":null")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Rejects a numeric value for a Date column before create-data-binding-db issues any remote write, so an earlier row of the same call is not left inserted when a later one cannot be written.")]
+	public void CreateDataBindingDb_Should_Reject_A_Numeric_Date_Value_Before_Any_Remote_Write() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"Account",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrLicensedFrom", 8));
+		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "Account",
+			BindingName = "UsrAccountBinding",
+			RowsJson = """[{"values":{"Name":"First row","UsrLicensedFrom":"2026-01-01"}},{"values":{"Name":"Second row","UsrLicensedFrom":20260101}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a number is not a date DataService can read, and guessing its meaning would write a wrong day");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("UsrLicensedFrom") && message.Contains("'Date'")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	// The value a DataService Insert/Update body carries for one column, or null when the column is absent or its
+	// parameter has another data value type.
+	private static string? ReadParameterValue(string body, string columnName, int dataValueType) {
+		JsonNode? parameter = JsonNode.Parse(body)?["columnValues"]?["items"]?[columnName]?["parameter"];
+		return parameter?["dataValueType"]?.GetValue<int>() == dataValueType
+			? parameter["value"]?.GetValue<string>()
+			: null;
 	}
 
 	[Test]
