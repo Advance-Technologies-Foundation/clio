@@ -219,13 +219,19 @@ public class ProcessExecutorIntegrationTests {
 			// Act
 			ProcessExecutionResult result = await sut.ExecuteAndCaptureAsync(options);
 			elapsed.Stop();
-			descendantIdentity = ReadDescendantIdentity(descendantIdentityPath);
 
 			// Assert
+			// Whether the descendant grew the checkout at all tells a monitor that stopped watching (grown,
+			// then TimedOut) from a descendant that never reached its growth (not grown, then TimedOut).
 			string observed = $"observed: elapsed {elapsed.Elapsed.TotalMilliseconds:0} ms, "
 				+ $"ResourceLimitExceeded={result.ResourceLimitExceeded}, TimedOut={result.TimedOut}, "
 				+ $"Canceled={result.Canceled}, Started={result.Started}, ExitCode={result.ExitCode}, "
-				+ $"stdout length {result.StandardOutput.Length}, stderr length {result.StandardError.Length}";
+				+ $"stdout length {result.StandardOutput.Length}, stderr length {result.StandardError.Length}, "
+				+ $"checkout grown={File.Exists(Path.Combine(monitoredDirectory, "late-growth.bin"))}, "
+				+ $"descendant identity recorded={File.Exists(descendantIdentityPath)}";
+			File.Exists(descendantIdentityPath).Should().BeTrue(
+				because: $"the immediate parent must record the descendant that inherited its redirected handles ({observed})");
+			descendantIdentity = ReadDescendantIdentity(descendantIdentityPath);
 			result.ResourceLimitExceeded.Should().BeTrue(
 				because: $"a descendant must remain subject to the checkout limit while stream draining is pending ({observed})");
 			result.TimedOut.Should().BeFalse(
