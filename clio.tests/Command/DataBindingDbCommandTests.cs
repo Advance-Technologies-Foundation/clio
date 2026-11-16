@@ -890,6 +890,42 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			: null;
 	}
 
+	[TestCase("""[{"Name":"Flat row","Code":"UsrFlat"}]""", "#1")]
+	[TestCase("""[{"values":{"Name":"First row"}},{"Name":"Flat row"}]""", "#2")]
+	[TestCase("""[{"values":"Name"}]""", "#1")]
+	[TestCase("""["Flat row"]""", "#1")]
+	[Description("Refuses a rows item that does not carry its columns under 'values' before create-data-binding-db issues any remote write, instead of skipping it and saving a binding without that row.")]
+	public void CreateDataBindingDb_Should_Refuse_A_Row_Without_A_Values_Object_Before_Any_Remote_Write(string rowsJson, string item) {
+		// Arrange
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrSysSettingsBinding",
+			RowsJson = rowsJson
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a row clio cannot read must fail the call, not vanish from a binding reported as saved");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains($"item {item}") && message.Contains("'values'")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
 	[Test]
 	[Description("Removes the last bound row through remove-data-binding-row-db, deletes the runtime row, and removes the package schema data record when no bound rows remain.")]
 	public void RemoveDataBindingRowDb_Should_Delete_Remote_Row_And_Package_Schema_Data_When_Last_Row_Is_Removed() {
