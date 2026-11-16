@@ -494,6 +494,9 @@ internal sealed class DataBindingDbService(
 
 	/// <summary>Creatio runtime <c>dataValueType</c> of a native Color column.</summary>
 	private const int ColorRuntimeDataValueType = 18;
+	private const int DateTimeRuntimeDataValueType = 7;
+	private const int DateRuntimeDataValueType = 8;
+	private const int TimeRuntimeDataValueType = 9;
 
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -965,9 +968,15 @@ internal sealed class DataBindingDbService(
 	}
 
 	/// <summary>
-	/// Shapes a row value for an Insert/Update query parameter, applying the Color rules at the DataService boundary.
+	/// Shapes a row value for an Insert/Update query parameter, applying the Color and the date and time rules at the
+	/// DataService boundary.
 	/// </summary>
 	/// <remarks>
+	/// <para>
+	/// A DateTime, Date or Time parameter is read by DataService as JSON, so the text has to arrive as a quoted JSON
+	/// string. Bare text is refused there: <c>2026-01-01</c> as "Input string '2026-01-01' is not a valid number" and
+	/// <c>2026-01-01T00:00:00</c> as "Value cannot be null".
+	/// </para>
 	/// Every other column is written the way it always was - the JSON node stringified, null collapsed to an
 	/// empty string. Color cannot use that rule: the parameter keeps <c>dataValueType</c> 18, so a number
 	/// would be POSTed as "123", an object as its JSON text, and a null as "", none of which is a valid
@@ -975,9 +984,38 @@ internal sealed class DataBindingDbService(
 	/// the DB-first create and upsert paths.
 	/// </remarks>
 	private static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
-		dataValueType == ColorRuntimeDataValueType
-			? ConvertColorValue(columnName, value)
-			: value?.ToString() ?? "";
+		dataValueType switch {
+			ColorRuntimeDataValueType => ConvertColorValue(columnName, value),
+			_ when IsDateOrTimeDataValueType(dataValueType) => ConvertDateOrTimeValue(columnName, value, dataValueType),
+			_ => value?.ToString() ?? ""
+		};
+
+	private static bool IsDateOrTimeDataValueType(int dataValueType) =>
+		dataValueType is DateTimeRuntimeDataValueType or DateRuntimeDataValueType or TimeRuntimeDataValueType;
+
+	/// <summary>
+	/// Returns a DateTime, Date or Time value as the quoted JSON string DataService reads, preserving null, and
+	/// rejects any other wire shape.
+	/// </summary>
+	private static string? ConvertDateOrTimeValue(string columnName, JsonNode? value, int dataValueType) {
+		if (value is null) {
+			//Preserved as null rather than "": an empty string is not a date, and DataService cannot read it as one.
+			return null;
+		}
+
+		if (value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) && !string.IsNullOrWhiteSpace(text)) {
+			return JsonSerializer.Serialize(text);
+		}
+
+		string typeName = dataValueType switch {
+			DateRuntimeDataValueType => "Date",
+			TimeRuntimeDataValueType => "Time",
+			_ => "DateTime"
+		};
+		throw new InvalidOperationException(
+			$"Column '{columnName}' value '{value.ToJsonString()}' is not valid for data type '{typeName}'. "
+			+ "Pass it as a string, for example \"2026-01-31T09:00:00.000\".");
+	}
 
 	/// <summary>
 	/// Returns the hex literal of a Color value, preserving null, and rejects any other wire shape.
@@ -1086,6 +1124,10 @@ internal sealed class DataBindingDbService(
 					//the first POST: validating only inside InsertEntityRow would leave earlier rows of the
 					//same create already inserted on the stand when a later one carries a malformed Color.
 					ConvertColorValue(requested.Key, requested.Value);
+				}
+				else if (IsDateOrTimeDataValueType(column.DataValueType)) {
+					//Same reason as Color: a number or an object under a date column is refused before the first POST.
+					ConvertDateOrTimeValue(requested.Key, requested.Value, column.DataValueType);
 				}
 			}
 		}
