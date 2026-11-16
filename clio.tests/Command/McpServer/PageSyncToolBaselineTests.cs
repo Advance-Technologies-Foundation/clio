@@ -331,7 +331,7 @@ public sealed class PageSyncToolBaselineTests
 			hierarchyClient,
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			CreatePassthroughPageFileWriter());
+			CreatePassthroughPageFileWriter(), Substitute.For<IPageLayerInspector>());
 	}
 
 	[Test]

@@ -2,7 +2,7 @@
 description: package data bindings are keyed by row Id, so PackageDataBinder.BindRow must never be handed a row this run created or a lookup row whose Id the install target customizes
 applies-to:
   - clio/Command/PackageDataBinder.cs
-  - clio/Command/Branding/SetBackgroundImageCommand.cs
+  - clio/Command/Branding/BrandingBackgroundService.cs
   - clio/Command/FeatureStateService.cs
 ticket: ENG-93848
 date: 2026-08-19
@@ -12,7 +12,7 @@ date: 2026-08-19
 install resolves the row on the target by that same `Id`. A row is therefore deliverable only when
 every environment shares its `Id`: a product-shipped definition qualifies, anything created locally
 does not. `BindRow` is generic and enforces nothing beyond "the row exists here" — the two callers
-carry the checks. `SetBackgroundImageCommand` refuses the `SysImageInTag` membership when this
+carry the checks. `BrandingBackgroundService` refuses the `SysImageInTag` membership when this
 environment's `ShellBackground` tag `Id` differs from the product one, and `FeatureStateService`
 exposes `defineIfMissing` off by default precisely so a caller that also binds the state row cannot
 have a definition materialized for it first.

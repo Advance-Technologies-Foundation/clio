@@ -5158,6 +5158,19 @@ stories:
     test_plan: spec/test-plans/tp-mcp-tool-facts.md
     depends_on: []
     blocks: []
+  - id: story-mcp-tool-facts-2
+    title: "Each MCP tool says which arguments are paths on this machine"
+    feature: "mcp-tool-facts"
+    repo: "clio"
+    size: M
+    status: review
+    file: spec/stories/story-mcp-tool-facts-2.md
+    prd: spec/prd/spec-mcp-tool-facts.md
+    adr: spec/adr/adr-mcp-tool-facts.md
+    test_plan: spec/test-plans/tp-mcp-tool-facts.md
+    depends_on:
+      - story-mcp-tool-facts-1
+    blocks: []
   - id: story-manage-user-password-file-1
     title: "manage-user reads the new password from a file"
     feature: "manage-user-password-file"
