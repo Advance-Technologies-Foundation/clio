@@ -179,30 +179,39 @@ internal class ReauthExecutorTests {
 		// Login, the simulated server becomes authenticated, A bumps the version and leaves the lock;
 		// B enters it, sees the bumped version, skips Login and retries.
 		// Both callers run on dedicated threads, so a busy thread pool cannot delay their start, and
-		// the timeout below only bounds a failing run — a passing run never waits for it.
+		// the deadline below only bounds a failing run — a passing run never waits for it. It is one
+		// deadline for the whole timeline, so a failing run ends within it rather than once per wait.
+		// B announces the login page with a plain flag, not an event: setting an event can itself block
+		// briefly on the event's own lock, which would look like B queuing on the reauth lock.
 		TimeSpan signalTimeout = TimeSpan.FromSeconds(30);
+		System.Diagnostics.Stopwatch timeline = System.Diagnostics.Stopwatch.StartNew();
+		TimeSpan Remaining() => signalTimeout - timeline.Elapsed > TimeSpan.Zero
+			? signalTimeout - timeline.Elapsed
+			: TimeSpan.Zero;
 		int loginCallCount = 0;
 		int loginPageResponseCount = 0;
 		bool serverAuthenticated = false;
 		bool loginReleasedBySignal = true;
 		using ManualResetEventSlim aEnteredLogin = new(false);
-		using ManualResetEventSlim bObservedLoginPage = new(false);
+		int bObservedLoginPage = 0;
 		using ManualResetEventSlim releaseLogin = new(false);
 		ReauthExecutor sut = CreateExecutor(() => {
 			aEnteredLogin.Set();
-			if (!releaseLogin.Wait(signalTimeout)) {
+			if (!releaseLogin.Wait(Remaining())) {
 				Volatile.Write(ref loginReleasedBySignal, false);
 			}
 			Interlocked.Increment(ref loginCallCount);
 			// Login is what makes the session valid again, exactly as on a real server.
 			Volatile.Write(ref serverAuthenticated, true);
 		});
-		string Call(ManualResetEventSlim loginPageObserved) {
+		string Call(bool announce) {
 			if (Volatile.Read(ref serverAuthenticated)) {
 				return "{}";
 			}
 			Interlocked.Increment(ref loginPageResponseCount);
-			loginPageObserved?.Set();
+			if (announce) {
+				Volatile.Write(ref bObservedLoginPage, 1);
+			}
 			return LoginPageBody;
 		}
 		DedicatedCaller a = null;
@@ -214,33 +223,34 @@ internal class ReauthExecutorTests {
 		// Act
 		try {
 			a = new DedicatedCaller(
-				() => sut.Execute(() => Call(null), ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true));
-			aEntered = aEnteredLogin.Wait(signalTimeout);
+				() => sut.Execute(() => Call(false), ReauthExecutor.IsSessionExpiredResponse, replayAllowed: true));
+			aEntered = aEnteredLogin.Wait(Remaining());
 			if (aEntered) {
 				// A is now parked inside Login() while holding the reauth lock, and the executor's
 				// version is still the one B is about to capture.
 				b = new DedicatedCaller(
-					() => sut.Execute(() => Call(bObservedLoginPage), ReauthExecutor.IsSessionExpiredResponse,
+					() => sut.Execute(() => Call(true), ReauthExecutor.IsSessionExpiredResponse,
 						replayAllowed: true));
-				bObserved = bObservedLoginPage.Wait(signalTimeout);
-				// Between returning the login page and blocking on the lock B takes no other wait,
-				// so WaitSleepJoin after 'bObservedLoginPage' means B is queued behind A.
+				bObserved = SpinWait.SpinUntil(() => Volatile.Read(ref bObservedLoginPage) == 1, Remaining());
+				// After raising the flag B only returns the body, classifies it and captures the version
+				// (no event, no sleep, no other lock), so WaitSleepJoin from here on means B is queued
+				// on the reauth lock behind A.
 				Thread observedThread = b.Thread;
 				bBlockedOnReauthLock = bObserved && SpinWait.SpinUntil(
-					() => (observedThread.ThreadState & ThreadState.WaitSleepJoin) != 0, signalTimeout);
+					() => (observedThread.ThreadState & ThreadState.WaitSleepJoin) != 0, Remaining());
 			}
 		} finally {
 			// Always release Login so a failing run does not leave a caller parked.
 			releaseLogin.Set();
 		}
-		bool aCompleted = a.Thread.Join(signalTimeout);
-		bool bCompleted = b is not null && b.Thread.Join(signalTimeout);
+		bool aCompleted = a.Thread.Join(Remaining());
+		bool bCompleted = b is not null && b.Thread.Join(Remaining());
 
 		// Assert
 		aEntered.Should().BeTrue(
-			because: $"caller A must reach the Login callback within {signalTimeout.TotalSeconds:0} s before caller B is started; login calls so far: {Volatile.Read(ref loginCallCount)}, login-page responses so far: {Volatile.Read(ref loginPageResponseCount)}");
+			because: $"caller A must reach the Login callback within {signalTimeout.TotalSeconds:0} s before caller B is started; login calls so far: {Volatile.Read(ref loginCallCount)}, login-page responses so far: {Volatile.Read(ref loginPageResponseCount)}, caller A's exception: {a.Failure?.ToString() ?? "none"}");
 		bObserved.Should().BeTrue(
-			because: $"caller B must receive the login page while caller A is still inside Login; login-page responses so far: {Volatile.Read(ref loginPageResponseCount)}");
+			because: $"caller B must receive the login page while caller A is still inside Login; login-page responses so far: {Volatile.Read(ref loginPageResponseCount)}, caller B's exception: {b?.Failure?.ToString() ?? "none"}");
 		bBlockedOnReauthLock.Should().BeTrue(
 			because: $"caller B must queue on the reauth lock that caller A holds before Login is released; B's thread state was {b.Thread.ThreadState}");
 		aCompleted.Should().BeTrue(
