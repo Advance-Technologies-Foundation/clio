@@ -18,6 +18,13 @@ namespace Clio.Workspaces
 
 		void SaveWorkspaceSettings();
 		void Create(string environmentName, bool isAddedPackageNames = false, bool force = false);
+
+		/// <summary>
+		/// The local checks <see cref="Create"/> runs first - not inside an existing workspace, no conflicting
+		/// template folders - so a caller can run them before a step that needs the environment.
+		/// </summary>
+		/// <exception cref="System.InvalidOperationException">A check failed; the message says which.</exception>
+		void ValidateCanCreate(bool force = false);
 		void Restore(WorkspaceOptions restoreWorkspaceOptions);
 		void Install(string creatioPackagesZipName = null, bool useApplicationInstaller = false,
 			bool createBackup = true);

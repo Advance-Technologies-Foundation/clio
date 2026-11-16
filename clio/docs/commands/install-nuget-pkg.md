@@ -8,6 +8,8 @@ install-nuget-pkg - Install NuGet package to a web application
 
 Installs the specified NuGet package into the target Creatio environment.
 
+When the environment reports the installation as failed, the installer writes `Package installation failed: <reason>`, the command closes with `NuGet packages may not have been installed: <packages>.`, and it exits with `1`.
+
 ## Synopsis
 
 ```bash

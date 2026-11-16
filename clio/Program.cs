@@ -1133,7 +1133,8 @@ internal class Program {
 					Thread.Sleep(2000);
 					again = !bool.Parse(client.ExecutePostRequest(ExistsPackageZipUrl, string.Empty));
 					if (++count > 600) {
-						throw new TimeoutException("Timeout exception");
+						throw new TimeoutException(
+							$"The archive of package {packageName} was not ready after 20 minutes of polling, so it was not downloaded.");
 					}
 				} while (again);
 				Thread.Sleep(1000);
@@ -1143,6 +1144,8 @@ internal class Program {
 		}
 		catch (Exception) {
 			Console.WriteLine("Download packages ({0}) not completed.", packageName);
+			// Rethrown: swallowing it here let pull-pkg print Done and exit 0 for a download that never happened.
+			throw;
 		}
 	}
 
@@ -1643,7 +1646,9 @@ internal class Program {
 			return 0;
 		}
 		catch (Exception e) {
-			Console.WriteLine(e);
+			// The CLI's readable rendering - credentials scrubbed, a refused connection worded as such - instead of
+			// the raw exception with its stack trace; --debug still adds the detail.
+			ConsoleLogger.Instance.WriteError(e.GetReadableMessageException(IsDebugMode));
 			return 1;
 		}
 	}

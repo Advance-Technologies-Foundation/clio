@@ -567,13 +567,13 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
 		callResult.IsError.Should().BeTrue(
 			because: "a condition without its required field member does not bind");
-		responseText.Should().Contain("At filters.all[0]: missing required member 'field'.",
+		responseText.Should().Contain("At `filters.all[0]`: missing required member 'field'.",
 			because: "the refusal must point at the condition that failed and the member it lacks");
 		responseText.Should().Contain("'operator' (did you mean 'op'?)",
 			because: "the unknown keys are named back with the member they most likely meant");
 		responseText.Should().Contain("an object with field (required), op, value, in",
 			because: "the caller must learn the condition's members without reading the full contract");
-		responseText.Should().Contain("Example filters:",
+		responseText.Should().Contain("Example `filters`:",
 			because: "the example documented on the filters argument travels with the refusal");
 	}
 
@@ -612,10 +612,46 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
 		callResult.IsError.Should().BeTrue(
 			because: "resources is a JSON string member, so an object does not bind");
-		responseText.Should().Contain("At pages[0].resources: expected a string, received an object.",
+		responseText.Should().Contain("At `pages[0].resources`: expected a string, received an object.",
 			because: "the refusal must name the nested member and the JSON kind it takes");
 		responseText.Should().Contain("send it as one JSON string",
 			because: "the member takes its JSON document as text");
+	}
+
+	[Test]
+	[AllureTag("clio-run")]
+	[AllureTag("get-user-culture")]
+	[AllureName("A wrong-kind password member keeps its hint after clio-run's failure redaction")]
+	[Description("Sends get-user-culture through clio-run with password as a number and verifies the real server answers with the password member's About hint intact. Unquoted, clio-run's credential redaction read 'About password: Direct password ...' as a secret pair and sent 'About password=[redacted] password ...'.")]
+	public async Task ClioRun_ShouldKeepThePasswordHintIntact_WhenGetUserCulturePasswordIsANumber()
+	{
+		// Arrange
+		await using ArrangeContext arrangeContext = Arrange();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ClioRunTool.ToolName,
+			new Dictionary<string, object?> {
+				["command"] = GetUserCultureTool.ToolName,
+				["args"] = new Dictionary<string, object?> {
+					["uri"] = "http://e2e-not-contacted.example",
+					["login"] = "e2e",
+					["password"] = 5
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+
+		// Assert
+		string responseText = string.Join("\n",
+			callResult.Content.OfType<TextContentBlock>().Select(b => b.Text));
+		callResult.IsError.Should().BeTrue(
+			because: "a number does not bind to the password string member");
+		responseText.Should().Contain("argument 'password' for MCP tool 'get-user-culture' must be a string. Received a number.",
+			because: "the refusal names the member and the JSON kind it takes");
+		responseText.Should().Contain("About `password`: Direct password paired with uri",
+			because: "the member's description must survive clio-run's credential redaction");
+		responseText.Should().NotContain("[redacted]",
+			because: "the refusal echoes member names only, never a value, so nothing in it is a secret");
 	}
 
 	/// <summary>

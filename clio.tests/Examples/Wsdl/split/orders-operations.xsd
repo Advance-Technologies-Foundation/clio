@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic schema for clio's read-wsdl tests: the request and response elements of orders.wsdl. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="http://example.org/clio/orders/"
+	elementFormDefault="qualified" targetNamespace="http://example.org/clio/orders/">
+	<xs:import namespace="http://example.org/clio/money" schemaLocation="orders-money.xsd" />
+	<xs:element name="PlaceOrder">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="customer" type="xs:string" />
+				<xs:element name="lines" type="tns:ArrayOfLine" />
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+	<xs:element name="PlaceOrderResponse">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="orderNumber" type="xs:long" />
+				<xs:element name="total" xmlns:m="http://example.org/clio/money" type="m:Money" />
+			</xs:sequence>
+		</xs:complexType>
+	</xs:element>
+</xs:schema>

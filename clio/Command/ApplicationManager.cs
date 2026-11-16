@@ -69,14 +69,26 @@ namespace Clio.Command
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				string archivePath = Path.Combine(tempDirectory, $"{name}.zip");
 				Download(name, sourceEnvironment, archivePath);
-				Install(archivePath, destinationEnvironmentCode);
+				Install(name, archivePath, destinationEnvironmentCode);
 			});
 			
 		}
 
-		private void Install(string archivePath, string destinationEnvironmentCode) {
+		/// <summary>Installs a downloaded application archive into the destination environment.</summary>
+		/// <param name="name">The application's name, for the error.</param>
+		/// <param name="archivePath">The downloaded archive.</param>
+		/// <param name="destinationEnvironmentCode">The registered destination environment.</param>
+		/// <exception cref="InvalidOperationException">
+		/// The installer reported the installation as failed; it has already logged the reason.
+		/// </exception>
+		internal void Install(string name, string archivePath, string destinationEnvironmentCode) {
 			var destinationEnvironment = _settingsRepository.GetEnvironment(destinationEnvironmentCode);
-			_applicationInstallerserviceUrlBuilder.Install(archivePath, destinationEnvironment);
+			// The installer answers false after logging why; dropping the answer let deploy-app exit 0 for an
+			// application that was not installed in the destination.
+			if (!_applicationInstallerserviceUrlBuilder.Install(archivePath, destinationEnvironment)) {
+				throw new InvalidOperationException(
+					$"Application {name} may not have been installed in {destinationEnvironmentCode}.");
+			}
 		}
 	}
 }

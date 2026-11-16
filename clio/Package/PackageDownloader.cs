@@ -78,8 +78,10 @@ namespace Clio.Package
 			return _abstractionsFileSystem.Path.Combine(destinationPath, $"{safePackageName}.zip");
 		}
 
+		// A failed download always throws: the "not completed" line alone used to let DownloadZipPackages return
+		// normally, so a caller carried on with a missing archive - the defect class pull-pkg had.
 		private void DownloadZipPackagesInternal(string packageName, EnvironmentSettings environmentSettings,
-				string destinationPath, bool throwOnError = false) {
+				string destinationPath) {
 			string safePackageName = GetSafePackageName(packageName);
 			try {
 				_logger.WriteLine($"Start download packages ({safePackageName}).");
@@ -95,10 +97,7 @@ namespace Clio.Package
 				_logger.WriteError(e.Message+"\r\n"+e.StackTrace);
 #endif
 				_logger.WriteLine($"Download packages ({safePackageName}) not completed.");
-				if(throwOnError) {
-					throw;
-				}
-				
+				throw;
 			}
 		}
 
@@ -123,13 +122,20 @@ namespace Clio.Package
 		public void DownloadPackages(IEnumerable<string> packagesNames, EnvironmentSettings environmentSettings = null,
 				string destinationPath = null) {
 			environmentSettings ??= _environmentSettings;
-			if (!_applicationPing.Ping(environmentSettings)) {
-				return;
-			}
+			// The ping keeps an unreachable environment from touching the destination at all. It used to RETURN
+			// here, so restore-workspace logged "Done" and exited 0 for a wrong password or a stopped site while
+			// restoring nothing; the failure is now the caller's to report.
+			EnsureEnvironmentAnswers(environmentSettings);
+			DownloadPackagesFromAnsweredEnvironment(packagesNames, environmentSettings, destinationPath);
+		}
+
+		public void DownloadPackagesFromAnsweredEnvironment(IEnumerable<string> packagesNames,
+				EnvironmentSettings environmentSettings = null, string destinationPath = null) {
+			environmentSettings ??= _environmentSettings;
 			destinationPath = _fileSystem.GetCurrentDirectoryIfEmpty(destinationPath);
 			_workingDirectoriesProvider.CreateTempDirectory(tempDirectory => {
 				foreach (string packageName in packagesNames) {
-					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory, true);
+					DownloadZipPackagesInternal(packageName, environmentSettings, tempDirectory);
 				}
 				// Each requested package directory is overwritten by PackageArchiver.Unpack. Clearing the shared
 				// destination root here would also delete ignored, external, and placeholder content.
@@ -146,6 +152,9 @@ namespace Clio.Package
 				string destinationPath = null) {
 			DownloadPackages(new [] { packageName }, environmentSettings, destinationPath);
 		}
+
+		public void EnsureEnvironmentAnswers(EnvironmentSettings environmentSettings = null) =>
+			_applicationPing.EnsureAnswers(environmentSettings ?? _environmentSettings, "Packages were not downloaded");
 
 		#endregion
 

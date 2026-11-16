@@ -29,6 +29,10 @@ namespace Clio.Workspaces
 		/// packed before the first call to the environment, so nothing was reset or installed, and the exception
 		/// names the folders of all packages.
 		/// </exception>
+		/// <exception cref="InvalidOperationException">
+		/// The installer reported the installation as failed. It has already logged the reason ("Package
+		/// installation failed: &lt;reason&gt;"); the exception names the packages that were not installed.
+		/// </exception>
 		void Install(IEnumerable<string> packages, string creatioPackagesZipName = null,
 			bool useApplicationInstaller = false, bool createBackup = true);
 
@@ -198,17 +202,29 @@ namespace Clio.Workspaces
 			return applicationZip;
 		}
 
-		private void InstallApplication(string applicationZip, bool useApplicationInstaller = false,
-			bool createBackup = true){
+		private void InstallApplication(string applicationZip, IReadOnlyList<string> packageNames,
+			bool useApplicationInstaller = false, bool createBackup = true){
+			bool installed;
 			if (useApplicationInstaller && _applicationInstaller != null) {
 				_logger.WriteInfo($"Installing workspace packages using ApplicationInstaller...");
-				_applicationInstaller.Install(applicationZip, _environmentSettings, createBackup: createBackup);
-				_logger.WriteInfo("Installation completed successfully.");
+				installed = _applicationInstaller.Install(applicationZip, _environmentSettings, createBackup: createBackup);
 			} else {
 				_logger.WriteInfo($"Installing workspace packages using PackageInstaller...");
-				_packageInstaller.Install(applicationZip, _environmentSettings, createBackup: createBackup);
+				installed = _packageInstaller.Install(applicationZip, _environmentSettings, createBackup: createBackup);
+			}
+			// Both installers answer false after logging "Package installation failed: <reason>". The answer used
+			// to be dropped, so push-workspace logged Done and exited 0 for a failed installation - and the
+			// application-installer path even logged "Installation completed successfully." first.
+			if (!installed) {
+				// Names what failed only: the installer has already logged why, as "Package installation failed:
+				// <reason>", together with the installation log.
+				throw new InvalidOperationException(InstallFailureMessages.NotInstalled("Workspace packages", packageNames));
+			}
+			if (useApplicationInstaller && _applicationInstaller != null) {
+				_logger.WriteInfo("Installation completed successfully.");
 			}
 		}
+
 
 		private void BuildStandalonePackagesIfNeeded(){
 			if (_osPlatformChecker.IsWindowsEnvironment || _environmentSettings.IsNetCore) {
@@ -243,7 +259,7 @@ namespace Clio.Workspaces
 					ResetSchemaChangeStateServiceUrlByPackage(packageName);
 				}
 				var applicationZip = ZipPackages(creatioPackagesZipName, tempDirectory, rootPackedPackagePath);
-				InstallApplication(applicationZip, useApplicationInstaller, createBackup);
+				InstallApplication(applicationZip, packageNames, useApplicationInstaller, createBackup);
 				BuildStandalonePackagesIfNeeded();
 			});
 		}

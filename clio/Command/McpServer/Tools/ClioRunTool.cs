@@ -286,6 +286,14 @@ public sealed class ClioRunExecutor(
 				out CallToolResult? argumentErrorResult)) {
 				return argumentErrorResult;
 			}
+			// A required argument the args object leaves out - most often a flat camelCase parameter sent in
+			// kebab-case - is refused here with the argument named, instead of the SDK's "The arguments
+			// dictionary is missing a value for the required parameter" thrown out of InvokeAsync below.
+			if (McpToolErrorFilter.TryCreateMissingArgumentError(
+				callContext,
+				out CallToolResult? missingArgumentResult)) {
+				return missingArgumentResult;
+			}
 			return await tool.InvokeAsync(callContext, cancellationToken).ConfigureAwait(false);
 		}
 		catch (OperationCanceledException) {

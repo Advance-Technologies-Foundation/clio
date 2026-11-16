@@ -10,6 +10,17 @@ DESCRIPTION
     By default, the command can connect to a Creatio environment (via -e/--uri)
     to download editable packages and populate workspace settings.
 
+    With an environment, the command checks everything before it writes
+    anything: first the folder (not inside an existing workspace, no conflicting
+    template folders), then the environment, then what it reads from it (the
+    package list, or the application with --AppCode). When the environment does
+    not answer (a rejected login, a stopped site), the command writes nothing,
+    prints "Workspace was not created: the environment did not answer (<reason>)"
+    and exits with a non-zero code. Check the environment with ping-app and
+    correct its registered credentials with reg-web-app. For a name that is not
+    registered it prints "Workspace was not created: environment '<name>' is not
+    registered" instead.
+
     Use --empty to create a new workspace in a subfolder without connecting to
     any environment (no credentials required).
 

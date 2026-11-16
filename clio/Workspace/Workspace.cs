@@ -156,6 +156,8 @@ public class Workspace : IWorkspace{
 		_workspaceCreator.Create(environmentName, isAddingPackageNames, force);
 	}
 
+	public void ValidateCanCreate(bool force = false) => _workspaceCreator.ValidateCanCreate(force);
+
 	public IEnumerable<string> GetFilteredPackages() {
 		IEnumerable<string> filtered = _workspacePackageFilter.FilterPackages(WorkspaceSettings.Packages, WorkspaceSettings);
 		IList<string> externalPackages = WorkspaceSettings.ExternalPackages;

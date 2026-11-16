@@ -104,7 +104,17 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-pinned for ENG-105681: get-page-modal-size and set-page-modal-size are two more long-tail tools. Measured
 	// 49486 bytes with them registered (78 over 49408), after shortening their first sentences so the line index
 	// below still fits; next 256-byte step is 49664 (194).
-	private const int MaxCompactIndexSerializedBytes = 194 * 256;
+	// Re-pinned for ENG-105475: register-, list-, describe-, modify-web-service and test-web-service-method are five
+	// more long-tail tools. Measured 50352 bytes with them registered (944 over 49408); next 256-byte step is 50432 (197).
+	// Merged with ENG-105681 on the ENG-105475 branch: with both sets registered and the web service tools'
+	// first sentences shortened for the line index, under 50176 (196).
+	// Re-pinned for ENG-105556: create-dynamic-case is one more long-tail tool. Measured 50380 bytes with it on top
+	// of the web service and page-modal-size tools (204 over 50176); next 256-byte step is 50432 (197).
+	// Re-pinned for ENG-105475 slice C: read-wsdl is one more long-tail tool. Measured 50250 bytes with it registered
+	// (74 over 50176); next 256-byte step is 50432 (197).
+	// Merged with ENG-105556 on the ENG-105475 slice C branch: read-wsdl and create-dynamic-case together measured
+	// 50480 bytes (48 over 50432); next 256-byte step is 50688 (198).
+	private const int MaxCompactIndexSerializedBytes = 198 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -128,7 +138,27 @@ public sealed class ToolContractPayloadBudgetTests {
 	//
 	// Re-pinned for ENG-101678: get-entity-connections and update-entity-connections add two lines. Measured
 	// 18244 bytes (68 over 18176); next 256-byte step is 18432 (72), 568 bytes under the 19000-byte spill line.
-	private const int MaxToolIndexSerializedBytes = 72 * 256;
+	//
+	// Re-pinned for ENG-105475: the five web service tools add five lines. Measured 18688 bytes (256 over 18432),
+	// exactly the next 256-byte step 18688 (73), 312 bytes under the 19000-byte spill line: the next re-pin past
+	// it has to shorten the legend or the purpose cut instead.
+	// Merged with ENG-105681 (two more lines): the web service tools' first sentences were shortened to stay
+	// within 18688 instead of raising it.
+	// ENG-105556 (create-dynamic-case, one more line) measured 18767 (79 over). As the note above asks, the legend
+	// paid for it instead of the ceiling: its last sentence, which repeated get-tool-contract's own description,
+	// is gone.
+	// ENG-105475 slice C (read-wsdl, one more line): measured 18709, 21 over, on a branch where the legend still had the
+	// last sentence ENG-105556 later dropped. Paid by the legend then, not by a raise; of that payment only "characters"
+	// -> "chars" is still in the legend, and the tool's purpose is the short "Reads a WSDL.".
+	// Merged with ENG-105556 on the ENG-105475 slice C branch: both lines together measured 18696, 8 over, after
+	// ENG-105556 dropped the legend's last sentence. Paid by the legend again: "One line per tool:" became
+	// "Each line:" and "it may delete" became "may delete". The resident sentence is unchanged.
+	// read-wsdl's line made findable ("Reads a WSDL." -> "Reads a SOAP WSDL.", +5 bytes; an agent on a stand never
+	// reached the tool): paid by the legend's "[aka deprecated names]" -> "[aka old names]".
+	// mcp-tool-facts: create-user-task gained (D), a destroy whose hint said otherwise (it loads every file-system
+	// package into the database). Paid ahead by the legend: "A tool without (R) is called through clio-run" ->
+	// "Without (R), call it via clio-run", 12 bytes for the marker's 3.
+	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -367,6 +397,17 @@ public sealed class ToolContractPayloadBudgetTests {
 	// describe 35067 - 7, 35 and 5 bytes of headroom. Rebased again onto ENG-92710's 1.6.6.152 follow-up (2026-11-11)
 	// and moved to the 1.6.6.153 floor (same length): re-measured by lowering the ceiling, create 35065, modify 35037,
 	// describe 35069 - 7, 35 and 3 bytes of headroom.
+	//
+	// ENG-105557 (2026-11-11, filter-condition values; the 1.6.6.162 floor is the same length) named `values` in all three:
+	// create's and modify's floor clauses ('values, ', +8 each), create's signal-start right side and one rule line
+	// ('any of several lookup records is ONE condition with values'), modify's setFilter condition sources and its
+	// signal-start right side, and describe's raw-filter clause ('a lookup value list reads back as values'). Paid by
+	// SWAP, no ceiling raise: em dashes became ' - ' (five bytes each) - fourteen in create's approval and openEditPage
+	// clauses, six in modify's flow and formula clauses, nine in describe's element clause. Re-measured by lowering the
+	// ceiling: describe 35066, create 35065, modify 35062 - 6, 7 and 10 bytes of headroom. Rebased (2026-11-12) onto
+	// ENG-106247's approval outcome codes, whose wording added 5 bytes to create and 18 to modify: modify measured 35080,
+	// 8 bytes over. Paid by SWAP again: four em dashes in modify's formula and page clauses became ' - '. Re-measured by
+	// lowering the ceiling: create 35070, describe 35066, modify 35060 - 2, 6 and 12 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

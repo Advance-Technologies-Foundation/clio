@@ -29,6 +29,8 @@ Fetches bound rows via GetBoundSchemaData to locate the target row.
 Deletes the entity record via DeleteQuery.
 When rows remain, rebuilds SaveSchema metadata from the primary key plus the columns
 present in the remaining bound rows.
+On a SysSettingsValue binding, a remaining row of a SecureText setting refuses the
+removal before anything is deleted, so its secret never ships.
 When no rows remain, deletes the binding schema data record via DeletePackageSchemaDataRequest.
 After remote mutation, read back from Creatio instead of treating the request payload
 or install log as proof.

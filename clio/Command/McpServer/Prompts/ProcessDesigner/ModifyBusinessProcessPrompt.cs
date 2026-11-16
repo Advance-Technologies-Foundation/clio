@@ -62,8 +62,9 @@ public static class ModifyBusinessProcessPrompt {
 		 dialog and Auto-generated page enumerate results too.
 		 The list is NOT closed - other platform and custom elements qualify - but `sendEmail` is NOT one
 		 despite its server-side schema declaring results, so branch that one with a condition.
-		 On a source that DOES enumerate them the branch is declared with `results`: the result captions
-		 (`["Positive"]` on an approval), written by `setFlowResults` (`source` + `target` + a non-empty
+		 On a source that DOES enumerate them the branch is declared with `results`: the result captions or record ids; on an
+		 approval the outcome codes `Positive` / `Negative` / `Canceled`, which do not depend on the profile
+		 culture (`["Positive"]`), written by `setFlowResults` (`source` + `target` + a non-empty
 		 `results`) or by `results` on `addFlow`. Everywhere else the dialect is a `condition` formula. A
 		 formula on a result-enumerating connector is REFUSED - it would run while the connector's card
 		 opened empty, a card the designer's own Change-type action offers no way to fill - and the
@@ -72,7 +73,7 @@ public static class ModifyBusinessProcessPrompt {
 		 hop only, so two chained gateways take a formula. The two slots are mutually exclusive on
 		 one flow and `results` clears any stored condition. There is no way to CLEAR a selection - a
 		 conditional flow carrying neither is stored as the literal `true` and always taken - so call
-		 `setFlowResults` again to change which results select the branch. An unknown caption is refused WITH
+		 `setFlowResults` again to change which results select the branch. An unknown name is refused WITH
 		 the set the element offers, which is the only way to discover them, and `describe-business-process`
 		 reads a selection back as `results` + `resultsActivity`. `get-guidance
 		 name=process-branch-conditions` routes to the article that owns this rule. Both `addFlow` and `setFlow` also take `label` — the text drawn ON the

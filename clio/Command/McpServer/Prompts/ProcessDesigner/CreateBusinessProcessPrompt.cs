@@ -65,9 +65,10 @@ public static class CreateBusinessProcessPrompt {
 		 the author one also taking a nested `recipient`); use
 		 that dedicated type rather than a generic `userTask` named ApprovalUserTask, which cannot carry any of it.
 		 BRANCHING on the verdict needs no gateway and is declared on the FLOW: give each outgoing flow
-		 `kind: "conditional"` plus `results` with the captions that select it - exactly `Positive`,
-		 `Negative` and `Canceled`, the final VisaStatus values, and all THREE, since a two-way split drops
-		 the canceled case. A `condition` formula there is REFUSED: the designer edits a connector leaving an
+		 `kind: "conditional"` plus `results` with the outcome codes that select it - exactly `Positive`,
+		 `Negative` and `Canceled`, one per final VisaStatus record, and all THREE, since a two-way split drops
+		 the canceled case. The codes do not depend on the profile culture; the localized caption the
+		 profile shows is accepted as an alias. A `condition` formula there is REFUSED: the designer edits a connector leaving an
 		 approval as a result SELECTION and shows no formula field, so a formula would run while the card
 		 opened empty. The refusal lists the results to pass instead. The same applies to every element that enumerates results - `performTask`, `preconfiguredPage`,
 		 `openEditPage` with results by column - see `get-guidance name=process-branch-conditions`, which routes on to the article that owns it.

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Common;
 using Clio.Package;
 using Clio.Project.NuGet;
@@ -28,7 +29,9 @@ public class WorkspaceCreatorTests {
 
 	#region Fields: Private
 
+	private IApplicationPackageListProvider _applicationPackageListProvider;
 	private ICreatioSdk _creatioSdk;
+	private ITemplateProvider _templateProvider;
 	private IJsonConverter _jsonConverter;
 	private ILogger _logger;
 	private WorkspaceCreator _workspaceCreator;
@@ -44,8 +47,9 @@ public class WorkspaceCreatorTests {
 		workspacePathBuilder.WorkspaceSettingsPath.Returns(WorkspaceSettingsPath);
 		workspacePathBuilder.IsWorkspace.Returns(false);
 		_creatioSdk = Substitute.For<ICreatioSdk>();
-		ITemplateProvider templateProvider = Substitute.For<ITemplateProvider>();
-		templateProvider.GetTemplateDirectories("workspace").Returns([]);
+		_templateProvider = Substitute.For<ITemplateProvider>();
+		_templateProvider.GetTemplateDirectories("workspace").Returns([]);
+		_applicationPackageListProvider = Substitute.For<IApplicationPackageListProvider>();
 		_jsonConverter = Substitute.For<IJsonConverter>();
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.GetDirectories(RootPath).Returns([]);
@@ -54,8 +58,8 @@ public class WorkspaceCreatorTests {
 		// Windows short-circuits the executable-permissions step, which is irrelevant to what is asserted here.
 		osPlatformChecker.IsWindowsEnvironment.Returns(true);
 		_logger = Substitute.For<ILogger>();
-		_workspaceCreator = new WorkspaceCreator(workspacePathBuilder, _creatioSdk, templateProvider,
-			_jsonConverter, fileSystem, Substitute.For<IApplicationPackageListProvider>(),
+		_workspaceCreator = new WorkspaceCreator(workspacePathBuilder, _creatioSdk, _templateProvider,
+			_jsonConverter, fileSystem, _applicationPackageListProvider,
 			Substitute.For<IExecutablePermissionsActualizer>(), osPlatformChecker, _logger);
 	}
 
@@ -64,6 +68,26 @@ public class WorkspaceCreatorTests {
 		_creatioSdk.ClearReceivedCalls();
 		_jsonConverter.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+		_templateProvider.ClearReceivedCalls();
+		_applicationPackageListProvider.ClearReceivedCalls();
+	}
+
+	[Test]
+	[Description("The package list is read from the environment before the template is copied, so a login that passes but a list that cannot be read (no cliogate, no rights) leaves no skeleton behind.")]
+	public void Create_ShouldWriteNothing_WhenThePackageListCannotBeRead() {
+		// Arrange
+		_applicationPackageListProvider.GetPackages(Arg.Any<string>())
+			.Returns(_ => throw new InvalidOperationException("cliogate is not installed"));
+
+		// Act
+		Action act = () => _workspaceCreator.Create("dev", isAddingPackageNames: true);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a workspace without its package list must not be reported as created");
+		_templateProvider.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ITemplateProvider.CopyTemplateFolder))
+			.Should().BeEmpty(because: "the template is copied only after everything read from the environment is in hand");
+		_jsonConverter.ReceivedCalls().Should().BeEmpty(because: "no settings file is written for a workspace that was not created");
 	}
 
 	[Test]

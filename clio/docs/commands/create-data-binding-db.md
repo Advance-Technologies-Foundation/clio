@@ -33,10 +33,19 @@ update the binding schema data record in the DB.
 SaveSchema metadata is projected to the primary key plus the columns referenced by
 currently bound or requested rows, so unrelated runtime-only columns do not block
 Account-like schemas. Explicitly requested unsupported runtime columns still fail.
+A `SysSettingsValue` binding always carries `SysSettings` and `TextValue` as well, even when
+the rows omit them: the platform reads both while it saves that binding and fails with
+`Value "TextValue" was not found.` without them. Only projected columns ship: name the value
+column the setting uses (for example `FloatValue`, `GuidValue`) in the row. A row of a SecureText
+setting is refused before anything is written, so its secret never ships; ship only
+`SysSettings_<Code>` for such a setting and set the value on each environment.
 A requested row that already exists in the table is adopted into the binding instead of
 re-inserted — matched by Name when the schema has a Name column, otherwise by its Id. This
 lets you bind an existing keyed row (e.g. a `SysSchemaAdminUnitRight` grant) by passing its Id
 without creating a duplicate.
+A DateTime, Date or Time column takes its value as a JSON string, for example
+`"2026-01-31T09:00:00.000"`, `"2026-01-31"` or `"09:00:00"`; `null` clears it. A number or an
+object under such a column is refused before anything is written.
 
 ### Translations
 

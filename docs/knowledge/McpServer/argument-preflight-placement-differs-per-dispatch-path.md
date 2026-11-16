@@ -16,6 +16,11 @@ required non-nullable parameter, and the JSON-encoded-object shape error) and ne
 `JsonException` out of `InvokeAsync` before the tool body runs. The call-tool filter
 (`HandleCallToolErrorsCore`) keeps running the FULL preflight up front for a direct call.
 
+The missing-required-argument refusal (`TryCreateMissingArgumentError`, 2026-11-12) follows the same split. It
+runs last among the direct path's checks, still before routing, and in `DispatchAsync` after the shape half,
+before `InvokeAsync`. It reads only the tool's input schema, so it costs nothing to run up front on both
+paths. See [[a-missing-required-argument-is-refused-from-the-tools-own-input-schema]].
+
 **Why it is this way** — the explicit-null guard cannot move: `{"args":null}` binds to null and the
 tool body runs, so nothing is thrown to react to. The direct path cannot adopt the nested path's
 arrangement either: between that preflight and `next` sit the fail-closed execution-routing decision

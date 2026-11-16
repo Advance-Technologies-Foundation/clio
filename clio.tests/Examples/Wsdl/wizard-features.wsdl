@@ -1,0 +1,479 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic WSDL written for clio's read-wsdl tests. Each operation exercises one rule of Studio's web service
+     wizard: element references, nested namespaces, flattened objects, scalar and object arrays (wrapped and in the
+     response root), the XSD type map, recursion, SOAP headers (simple, complex, array, two at once), a long element
+     name, dotted names and typed message parts. Its expected output is in wizard-features.expected.json. -->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+	xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+	xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+	xmlns:http="http://schemas.xmlsoap.org/wsdl/http/"
+	xmlns:xs="http://www.w3.org/2001/XMLSchema"
+	xmlns:tns="http://example.org/clio/wizard/"
+	targetNamespace="http://example.org/clio/wizard/" name="ClioWizardFeatures">
+	<wsdl:types>
+		<xs:schema elementFormDefault="qualified" targetNamespace="http://example.org/clio/wizard/">
+			<xs:import namespace="http://example.org/clio/types" />
+			<xs:import namespace="http://example.org/clio/meta" />
+			<xs:element name="GetByRef">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="request" nillable="true" xmlns:q1="http://example.org/clio/types" type="q1:ArrayOfRoleRef" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetByRefResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="GetByRefResult" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetNested">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="data" xmlns:q1="http://example.org/clio/types" type="q1:Role" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetNestedResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="GetNestedResult" type="xs:int" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetComplex">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="msg" xmlns:q1="http://example.org/clio/types" type="q1:Member" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetComplexResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="GetComplexResult" type="xs:boolean" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetByArray">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="tags" xmlns:q1="http://example.org/clio/types" type="q1:ArrayOfstring" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetByArrayResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="GetByArrayResult" type="xs:int" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetByRoles">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="msg" xmlns:q1="http://example.org/clio/types" type="q1:RoleList" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetByRolesResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="1" name="GetByRolesResult" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetRegions">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="0" name="countryCode" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetRegionsResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="0" maxOccurs="unbounded" name="Region">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Region_Id" type="xs:int" />
+									<xs:element name="Region_Name" type="xs:string" />
+									<xs:element name="Country_Code" type="xs:string" />
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetCatalog">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="category" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetCatalogResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="items">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element minOccurs="0" maxOccurs="unbounded" name="item">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="title" type="xs:string" />
+												<xs:element name="short_description" type="xs:string" />
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:simpleType name="Level">
+				<xs:restriction base="xs:int">
+					<xs:enumeration value="1" />
+					<xs:enumeration value="2" />
+				</xs:restriction>
+			</xs:simpleType>
+			<xs:element name="GetManyTypes">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="name" type="xs:string" />
+						<xs:element name="count" type="xs:int" />
+						<xs:element name="total" type="xs:long" />
+						<xs:element name="big" type="xs:unsignedLong" />
+						<xs:element name="percents" type="xs:decimal" />
+						<xs:element name="date" type="xs:dateTime" />
+						<xs:element name="day" type="xs:date" />
+						<xs:element name="uid" xmlns:q3="http://example.org/clio/serialization" type="q3:guid" />
+						<xs:element name="level" type="tns:Level" />
+						<xs:element name="code">
+							<xs:simpleType>
+								<xs:restriction base="xs:string">
+									<xs:maxLength value="10" />
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="GetManyTypesResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="GetManyTypesResult" type="xs:boolean" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:complexType name="Address">
+				<xs:sequence>
+					<xs:element name="Street" type="xs:string" />
+					<xs:element name="City" type="xs:string" />
+				</xs:sequence>
+			</xs:complexType>
+			<xs:complexType name="Person">
+				<xs:sequence>
+					<xs:element name="Name" type="xs:string" />
+					<xs:element name="Home" type="tns:Address" />
+					<xs:element name="Spouse" type="tns:Person" />
+				</xs:sequence>
+			</xs:complexType>
+			<xs:element name="FindPerson">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="id" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="FindPersonResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="FindPersonResult" type="tns:Person" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AuthHeader">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="UserName" type="xs:string" />
+						<xs:element name="Token" type="xs:string" />
+						<xs:element name="Scope">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Tenant" type="xs:string" />
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TraceHeader" type="xs:string" />
+			<xs:element name="TagsHeader">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="0" maxOccurs="unbounded" name="Tag" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SecureCall">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="order">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="id" type="xs:int" />
+									<xs:element name="note" type="xs:string" />
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SecureCallResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SecureCallResult" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TaggedCall">
+				<xs:complexType>
+					<xs:sequence />
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TaggedCallResponse">
+				<xs:complexType>
+					<xs:sequence />
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="PingWithAVeryLongRequestElementNameThatKeepsGoingPastTheLimitOfTwoHundredCharactersWhichStudioCutsFromTheStartSoTheEndOfTheNameSurvivesAndTheSchemaNamePrefixIsLostOnTheWayUnlessClioKeepsItInFrontOfTheTailEveryTime">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="payload_with_a_very_long_lower_case_parameter_name_that_has_no_capitalized_word_so_the_wizard_keeps_it_whole_and_then_cuts_it_to_the_last_two_hundred_characters_which_drops_the_schema_name_prefix_from_the_front_of_the_code" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="PingResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="PingResult" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="getBank.Method">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="blz.method-parameter" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="getBank.MethodResponse">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="details">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="bezeichnung" type="xs:string" />
+									<xs:element name="bic" type="xs:string" />
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="CheckPhoneResult" type="xs:string" />
+		</xs:schema>
+		<xs:schema elementFormDefault="qualified" targetNamespace="http://example.org/clio/types"
+			xmlns:tns="http://example.org/clio/types">
+			<xs:import namespace="http://example.org/clio/meta" />
+			<xs:element name="RoleRef">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element minOccurs="0" name="identifier" type="xs:string" />
+						<xs:element minOccurs="0" name="roleName" type="xs:string" />
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:complexType name="ArrayOfRoleRef">
+				<xs:sequence>
+					<xs:element minOccurs="0" maxOccurs="unbounded" name="RoleObject" ref="tns:RoleRef" />
+				</xs:sequence>
+			</xs:complexType>
+			<xs:complexType name="Role">
+				<xs:sequence>
+					<xs:element minOccurs="0" name="identifier" type="xs:string" />
+					<xs:element minOccurs="0" name="metadata" xmlns:q2="http://example.org/clio/meta" type="q2:Metadata" />
+					<xs:element minOccurs="0" name="roleName" type="xs:string" />
+				</xs:sequence>
+			</xs:complexType>
+			<xs:complexType name="Member">
+				<xs:sequence>
+					<xs:element minOccurs="0" name="id" type="xs:string" />
+					<xs:element minOccurs="0" name="role" type="tns:Role" />
+					<xs:element minOccurs="0" name="active" type="xs:boolean" />
+				</xs:sequence>
+			</xs:complexType>
+			<xs:complexType name="ArrayOfstring">
+				<xs:sequence>
+					<xs:element minOccurs="0" maxOccurs="unbounded" name="string" type="xs:string" />
+				</xs:sequence>
+			</xs:complexType>
+			<xs:complexType name="ArrayOfRoleObject">
+				<xs:sequence>
+					<xs:element minOccurs="0" maxOccurs="unbounded" name="RoleObject" type="tns:Role" />
+				</xs:sequence>
+			</xs:complexType>
+			<xs:complexType name="RoleList">
+				<xs:sequence>
+					<xs:element minOccurs="0" name="owner" type="xs:string" />
+					<xs:element minOccurs="0" name="roles" type="tns:ArrayOfRoleObject" />
+				</xs:sequence>
+			</xs:complexType>
+		</xs:schema>
+		<xs:schema elementFormDefault="qualified" targetNamespace="http://example.org/clio/meta">
+			<xs:complexType name="Metadata">
+				<xs:sequence>
+					<xs:element minOccurs="0" name="schema" type="xs:string" />
+				</xs:sequence>
+			</xs:complexType>
+		</xs:schema>
+		<xs:schema elementFormDefault="qualified" targetNamespace="http://example.org/clio/serialization">
+			<xs:simpleType name="guid">
+				<xs:restriction base="xs:string">
+					<xs:pattern value="[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}" />
+				</xs:restriction>
+			</xs:simpleType>
+		</xs:schema>
+	</wsdl:types>
+	<wsdl:message name="GetByRefIn"><wsdl:part name="parameters" element="tns:GetByRef" /></wsdl:message>
+	<wsdl:message name="GetByRefOut"><wsdl:part name="parameters" element="tns:GetByRefResponse" /></wsdl:message>
+	<wsdl:message name="GetNestedIn"><wsdl:part name="parameters" element="tns:GetNested" /></wsdl:message>
+	<wsdl:message name="GetNestedOut"><wsdl:part name="parameters" element="tns:GetNestedResponse" /></wsdl:message>
+	<wsdl:message name="GetComplexIn"><wsdl:part name="parameters" element="tns:GetComplex" /></wsdl:message>
+	<wsdl:message name="GetComplexOut"><wsdl:part name="parameters" element="tns:GetComplexResponse" /></wsdl:message>
+	<wsdl:message name="GetByArrayIn"><wsdl:part name="parameters" element="tns:GetByArray" /></wsdl:message>
+	<wsdl:message name="GetByArrayOut"><wsdl:part name="parameters" element="tns:GetByArrayResponse" /></wsdl:message>
+	<wsdl:message name="GetByRolesIn"><wsdl:part name="parameters" element="tns:GetByRoles" /></wsdl:message>
+	<wsdl:message name="GetByRolesOut"><wsdl:part name="parameters" element="tns:GetByRolesResponse" /></wsdl:message>
+	<wsdl:message name="GetRegionsIn"><wsdl:part name="parameters" element="tns:GetRegions" /></wsdl:message>
+	<wsdl:message name="GetRegionsOut"><wsdl:part name="parameters" element="tns:GetRegionsResponse" /></wsdl:message>
+	<wsdl:message name="GetCatalogIn"><wsdl:part name="parameters" element="tns:GetCatalog" /></wsdl:message>
+	<wsdl:message name="GetCatalogOut"><wsdl:part name="parameters" element="tns:GetCatalogResponse" /></wsdl:message>
+	<wsdl:message name="GetManyTypesIn"><wsdl:part name="parameters" element="tns:GetManyTypes" /></wsdl:message>
+	<wsdl:message name="GetManyTypesOut"><wsdl:part name="parameters" element="tns:GetManyTypesResponse" /></wsdl:message>
+	<wsdl:message name="FindPersonIn"><wsdl:part name="parameters" element="tns:FindPerson" /></wsdl:message>
+	<wsdl:message name="FindPersonOut"><wsdl:part name="parameters" element="tns:FindPersonResponse" /></wsdl:message>
+	<wsdl:message name="SecureCallIn"><wsdl:part name="parameters" element="tns:SecureCall" /></wsdl:message>
+	<wsdl:message name="SecureCallOut"><wsdl:part name="parameters" element="tns:SecureCallResponse" /></wsdl:message>
+	<wsdl:message name="TaggedCallIn"><wsdl:part name="parameters" element="tns:TaggedCall" /></wsdl:message>
+	<wsdl:message name="TaggedCallOut"><wsdl:part name="parameters" element="tns:TaggedCallResponse" /></wsdl:message>
+	<wsdl:message name="AuthHeaderMessage"><wsdl:part name="AuthHeader" element="tns:AuthHeader" /></wsdl:message>
+	<wsdl:message name="TraceHeaderMessage"><wsdl:part name="TraceHeader" element="tns:TraceHeader" /></wsdl:message>
+	<wsdl:message name="TagsHeaderMessage"><wsdl:part name="TagsHeader" element="tns:TagsHeader" /></wsdl:message>
+	<wsdl:message name="PingIn"><wsdl:part name="parameters" element="tns:PingWithAVeryLongRequestElementNameThatKeepsGoingPastTheLimitOfTwoHundredCharactersWhichStudioCutsFromTheStartSoTheEndOfTheNameSurvivesAndTheSchemaNamePrefixIsLostOnTheWayUnlessClioKeepsItInFrontOfTheTailEveryTime" /></wsdl:message>
+	<wsdl:message name="PingOut"><wsdl:part name="parameters" element="tns:PingResponse" /></wsdl:message>
+	<wsdl:message name="GetBankIn"><wsdl:part name="parameters" element="tns:getBank.Method" /></wsdl:message>
+	<wsdl:message name="GetBankOut"><wsdl:part name="parameters" element="tns:getBank.MethodResponse" /></wsdl:message>
+	<wsdl:message name="CheckPhoneIn">
+		<wsdl:part name="PhoneNumber" type="xs:string" />
+		<wsdl:part name="LicenseKey" type="xs:string" />
+	</wsdl:message>
+	<wsdl:message name="CheckPhoneOut"><wsdl:part name="parameters" element="tns:CheckPhoneResult" /></wsdl:message>
+	<wsdl:portType name="ClioWizardFeaturesPort">
+		<wsdl:operation name="GetByRef"><wsdl:input message="tns:GetByRefIn" /><wsdl:output message="tns:GetByRefOut" /></wsdl:operation>
+		<wsdl:operation name="GetNested"><wsdl:input message="tns:GetNestedIn" /><wsdl:output message="tns:GetNestedOut" /></wsdl:operation>
+		<wsdl:operation name="GetComplex"><wsdl:input message="tns:GetComplexIn" /><wsdl:output message="tns:GetComplexOut" /></wsdl:operation>
+		<wsdl:operation name="GetByArray"><wsdl:input message="tns:GetByArrayIn" /><wsdl:output message="tns:GetByArrayOut" /></wsdl:operation>
+		<wsdl:operation name="GetByRoles"><wsdl:input message="tns:GetByRolesIn" /><wsdl:output message="tns:GetByRolesOut" /></wsdl:operation>
+		<wsdl:operation name="GetRegions"><wsdl:input message="tns:GetRegionsIn" /><wsdl:output message="tns:GetRegionsOut" /></wsdl:operation>
+		<wsdl:operation name="GetCatalog"><wsdl:input message="tns:GetCatalogIn" /><wsdl:output message="tns:GetCatalogOut" /></wsdl:operation>
+		<wsdl:operation name="GetManyTypes"><wsdl:input message="tns:GetManyTypesIn" /><wsdl:output message="tns:GetManyTypesOut" /></wsdl:operation>
+		<wsdl:operation name="FindPerson"><wsdl:input message="tns:FindPersonIn" /><wsdl:output message="tns:FindPersonOut" /></wsdl:operation>
+		<wsdl:operation name="SecureCall"><wsdl:input message="tns:SecureCallIn" /><wsdl:output message="tns:SecureCallOut" /></wsdl:operation>
+		<wsdl:operation name="TaggedCall"><wsdl:input message="tns:TaggedCallIn" /><wsdl:output message="tns:TaggedCallOut" /></wsdl:operation>
+		<wsdl:operation name="Ping"><wsdl:input message="tns:PingIn" /><wsdl:output message="tns:PingOut" /></wsdl:operation>
+		<wsdl:operation name="getBank.Method"><wsdl:input message="tns:GetBankIn" /><wsdl:output message="tns:GetBankOut" /></wsdl:operation>
+		<wsdl:operation name="CheckPhone"><wsdl:input message="tns:CheckPhoneIn" /><wsdl:output message="tns:CheckPhoneOut" /></wsdl:operation>
+	</wsdl:portType>
+	<wsdl:binding name="ClioWizardFeaturesSoap" type="tns:ClioWizardFeaturesPort">
+		<soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document" />
+		<wsdl:operation name="GetByRef"><soap:operation soapAction="http://example.org/clio/wizard/GetByRef" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetNested"><soap:operation soapAction="http://example.org/clio/wizard/GetNested" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetComplex"><soap:operation soapAction="http://example.org/clio/wizard/GetComplex" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetByArray"><soap:operation soapAction="http://example.org/clio/wizard/GetByArray" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetByRoles"><soap:operation soapAction="http://example.org/clio/wizard/GetByRoles" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetRegions"><soap:operation soapAction="http://example.org/clio/wizard/GetRegions" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetCatalog"><soap:operation soapAction="http://example.org/clio/wizard/GetCatalog" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetManyTypes"><soap:operation soapAction="http://example.org/clio/wizard/GetManyTypes" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="FindPerson"><soap:operation soapAction="http://example.org/clio/wizard/FindPerson" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="SecureCall">
+			<soap:operation soapAction="http://example.org/clio/wizard/SecureCall" />
+			<wsdl:input>
+				<soap:body use="literal" />
+				<soap:header message="tns:AuthHeaderMessage" part="AuthHeader" use="literal" />
+				<soap:header message="tns:TraceHeaderMessage" part="TraceHeader" use="literal" />
+			</wsdl:input>
+			<wsdl:output><soap:body use="literal" /></wsdl:output>
+		</wsdl:operation>
+		<wsdl:operation name="TaggedCall">
+			<soap:operation soapAction="http://example.org/clio/wizard/TaggedCall" />
+			<wsdl:input>
+				<soap:body use="literal" />
+				<soap:header message="tns:TagsHeaderMessage" part="TagsHeader" use="literal" />
+			</wsdl:input>
+			<wsdl:output><soap:body use="literal" /></wsdl:output>
+		</wsdl:operation>
+		<wsdl:operation name="Ping"><soap:operation soapAction="http://example.org/clio/wizard/Ping" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="getBank.Method"><soap:operation soapAction="http://example.org/clio/wizard/getBank" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="CheckPhone"><soap:operation soapAction="http://example.org/clio/wizard/CheckPhone" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+	</wsdl:binding>
+	<wsdl:binding name="ClioWizardFeaturesSoap12" type="tns:ClioWizardFeaturesPort">
+		<soap12:binding transport="http://schemas.xmlsoap.org/soap/http" style="document" />
+		<wsdl:operation name="GetByRef"><soap12:operation soapAction="http://example.org/clio/wizard/GetByRef" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetNested"><soap12:operation soapAction="http://example.org/clio/wizard/GetNested" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetComplex"><soap12:operation soapAction="http://example.org/clio/wizard/GetComplex" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetByArray"><soap12:operation soapAction="http://example.org/clio/wizard/GetByArray" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetByRoles"><soap12:operation soapAction="http://example.org/clio/wizard/GetByRoles" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetRegions"><soap12:operation soapAction="http://example.org/clio/wizard/GetRegions" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetCatalog"><soap12:operation soapAction="http://example.org/clio/wizard/GetCatalog" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="GetManyTypes"><soap12:operation soapAction="http://example.org/clio/wizard/GetManyTypes" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="FindPerson"><soap12:operation soapAction="http://example.org/clio/wizard/FindPerson" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="SecureCall">
+			<soap12:operation soapAction="http://example.org/clio/wizard/SecureCall" />
+			<wsdl:input>
+				<soap12:body use="literal" />
+				<soap12:header message="tns:AuthHeaderMessage" part="AuthHeader" use="literal" />
+				<soap12:header message="tns:TraceHeaderMessage" part="TraceHeader" use="literal" />
+			</wsdl:input>
+			<wsdl:output><soap12:body use="literal" /></wsdl:output>
+		</wsdl:operation>
+		<wsdl:operation name="TaggedCall">
+			<soap12:operation soapAction="http://example.org/clio/wizard/TaggedCall" />
+			<wsdl:input>
+				<soap12:body use="literal" />
+				<soap12:header message="tns:TagsHeaderMessage" part="TagsHeader" use="literal" />
+			</wsdl:input>
+			<wsdl:output><soap12:body use="literal" /></wsdl:output>
+		</wsdl:operation>
+		<wsdl:operation name="Ping"><soap12:operation soapAction="http://example.org/clio/wizard/Ping" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="getBank.Method"><soap12:operation soapAction="http://example.org/clio/wizard/getBank" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+		<wsdl:operation name="CheckPhone"><soap12:operation soapAction="http://example.org/clio/wizard/CheckPhone" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+	</wsdl:binding>
+	<wsdl:binding name="ClioWizardFeaturesHttpGet" type="tns:ClioWizardFeaturesPort">
+		<http:binding verb="GET" />
+	</wsdl:binding>
+	<wsdl:service name="ClioWizardFeatures">
+		<wsdl:port name="ClioWizardFeaturesSoap" binding="tns:ClioWizardFeaturesSoap">
+			<soap:address location="http://localhost/clio-wizard-features.asmx" />
+		</wsdl:port>
+		<wsdl:port name="ClioWizardFeaturesSoap12" binding="tns:ClioWizardFeaturesSoap12">
+			<soap12:address location="http://localhost/clio-wizard-features.asmx" />
+		</wsdl:port>
+		<wsdl:port name="ClioWizardFeaturesHttpGet" binding="tns:ClioWizardFeaturesHttpGet">
+			<http:address location="http://localhost/clio-wizard-features.asmx" />
+		</wsdl:port>
+	</wsdl:service>
+</wsdl:definitions>

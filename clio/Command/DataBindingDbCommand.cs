@@ -494,6 +494,9 @@ internal sealed class DataBindingDbService(
 
 	/// <summary>Creatio runtime <c>dataValueType</c> of a native Color column.</summary>
 	private const int ColorRuntimeDataValueType = 18;
+	private const int DateTimeRuntimeDataValueType = 7;
+	private const int DateRuntimeDataValueType = 8;
+	private const int TimeRuntimeDataValueType = 9;
 
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -520,6 +523,7 @@ internal sealed class DataBindingDbService(
 			? bindingWriter.FetchBoundRows(existingBindingUId.Value)
 			: [];
 		List<string> boundRecordIds = ExtractBoundRecordIds(existingBoundRows);
+		RefuseSecretSettingValueRows(options.SchemaName, existingBoundRows, rows);
 
 		Dictionary<string, string> existingNameToId = ShouldFetchExistingNames(schema, rows)
 			? FetchExistingEntityNameToId(options.SchemaName)
@@ -739,6 +743,7 @@ internal sealed class DataBindingDbService(
 		List<Dictionary<string, JsonNode?>> existingBoundRows = bindingWriter.FetchBoundRows(bindingUId);
 		List<string> existingIds = ExtractBoundRecordIds(existingBoundRows);
 		bool rowAlreadyBound = existingIds.Contains(rowId, StringComparer.OrdinalIgnoreCase);
+		RefuseSecretSettingValueRows(entitySchemaName, existingBoundRows, SingleRowSet(values));
 
 		if (rowAlreadyBound || RowExistsInTable(entitySchemaName, rowId)) {
 			// Update whether the row is already bound to this package OR exists in the table but is not yet
@@ -811,11 +816,14 @@ internal sealed class DataBindingDbService(
 				$"Row with key '{options.KeyValue}' was not found in binding '{options.BindingName}'.");
 		}
 
-		DeleteEntityRow(entitySchemaName, options.KeyValue);
 		boundIds.RemoveAll(id => string.Equals(id, options.KeyValue, StringComparison.OrdinalIgnoreCase));
 		boundRows.RemoveAll(row =>
 			row.TryGetValue("Id", out JsonNode? idNode) &&
 			string.Equals(idNode?.ToString(), options.KeyValue, StringComparison.OrdinalIgnoreCase));
+		if (boundIds.Count > 0) {
+			RefuseSecretSettingValueRows(entitySchemaName, boundRows);
+		}
+		DeleteEntityRow(entitySchemaName, options.KeyValue);
 
 		if (boundIds.Count == 0) {
 			bindingWriter.DeleteBinding(packageRef, options.BindingName);
@@ -960,9 +968,15 @@ internal sealed class DataBindingDbService(
 	}
 
 	/// <summary>
-	/// Shapes a row value for an Insert/Update query parameter, applying the Color rules at the DataService boundary.
+	/// Shapes a row value for an Insert/Update query parameter, applying the Color and the date and time rules at the
+	/// DataService boundary.
 	/// </summary>
 	/// <remarks>
+	/// <para>
+	/// A DateTime, Date or Time parameter is read by DataService as JSON, so the text has to arrive as a quoted JSON
+	/// string. Bare text is refused there: <c>2026-01-01</c> as "Input string '2026-01-01' is not a valid number" and
+	/// <c>2026-01-01T00:00:00</c> as "Value cannot be null".
+	/// </para>
 	/// Every other column is written the way it always was - the JSON node stringified, null collapsed to an
 	/// empty string. Color cannot use that rule: the parameter keeps <c>dataValueType</c> 18, so a number
 	/// would be POSTed as "123", an object as its JSON text, and a null as "", none of which is a valid
@@ -970,9 +984,38 @@ internal sealed class DataBindingDbService(
 	/// the DB-first create and upsert paths.
 	/// </remarks>
 	private static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
-		dataValueType == ColorRuntimeDataValueType
-			? ConvertColorValue(columnName, value)
-			: value?.ToString() ?? "";
+		dataValueType switch {
+			ColorRuntimeDataValueType => ConvertColorValue(columnName, value),
+			_ when IsDateOrTimeDataValueType(dataValueType) => ConvertDateOrTimeValue(columnName, value, dataValueType),
+			_ => value?.ToString() ?? ""
+		};
+
+	private static bool IsDateOrTimeDataValueType(int dataValueType) =>
+		dataValueType is DateTimeRuntimeDataValueType or DateRuntimeDataValueType or TimeRuntimeDataValueType;
+
+	/// <summary>
+	/// Returns a DateTime, Date or Time value as the quoted JSON string DataService reads, preserving null, and
+	/// rejects any other wire shape.
+	/// </summary>
+	private static string? ConvertDateOrTimeValue(string columnName, JsonNode? value, int dataValueType) {
+		if (value is null) {
+			//Preserved as null rather than "": an empty string is not a date, and DataService cannot read it as one.
+			return null;
+		}
+
+		if (value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) && !string.IsNullOrWhiteSpace(text)) {
+			return JsonSerializer.Serialize(text);
+		}
+
+		string typeName = dataValueType switch {
+			DateRuntimeDataValueType => "Date",
+			TimeRuntimeDataValueType => "Time",
+			_ => "DateTime"
+		};
+		throw new InvalidOperationException(
+			$"Column '{columnName}' value '{value.ToJsonString()}' is not valid for data type '{typeName}'. "
+			+ "Pass it as a string, for example \"2026-01-31T09:00:00.000\".");
+	}
 
 	/// <summary>
 	/// Returns the hex literal of a Color value, preserving null, and rejects any other wire shape.
@@ -1082,14 +1125,99 @@ internal sealed class DataBindingDbService(
 					//same create already inserted on the stand when a later one carries a malformed Color.
 					ConvertColorValue(requested.Key, requested.Value);
 				}
+				else if (IsDateOrTimeDataValueType(column.DataValueType)) {
+					//Same reason as Color: a number or an object under a date column is refused before the first POST.
+					ConvertDateOrTimeValue(requested.Key, requested.Value, column.DataValueType);
+				}
 			}
 		}
 	}
+
+	/// <summary>
+	/// Columns the platform reads while it saves a binding of the given schema, whether or not a row references them.
+	/// Saving a <c>SysSettingsValue</c> binding runs <c>PackageSchemaDataUtilities.GetIsSecureSettings</c> (the
+	/// SecureText re-encryption, on by default through <c>ReEncryptSecureSettingsValuesInPackageData</c>), which calls
+	/// <c>GetIsColumnValueLoaded("SysSettingsId")</c> and <c>GetIsColumnValueLoaded("TextValue")</c>. Both throw
+	/// <c>Value "..." was not found.</c> when the column is not in the binding, so they are always projected.
+	/// </summary>
+	private static readonly Dictionary<string, string[]> PlatformRequiredBindingColumns =
+		new(StringComparer.OrdinalIgnoreCase) {
+			["SysSettingsValue"] = ["SysSettings", "TextValue"]
+		};
+
+	private const string SysSettingsValueSchemaName = "SysSettingsValue";
+	private const string SecureTextValueTypeName = "SecureText";
+
+	/// <summary>
+	/// Refuses a <c>SysSettingsValue</c> binding that would hold the value of a SecureText setting. The projection
+	/// always carries <c>TextValue</c>, so such a row would ship the secret; <c>PackageDataBinder</c> refuses the same
+	/// row for the same reason. Rows are matched by their own <c>Id</c> and by the <c>SysSettings</c> they name, because
+	/// an adopted row may carry only its <c>Id</c> and a new row has no stored setting to read yet.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">A row belongs to a SecureText setting.</exception>
+	private void RefuseSecretSettingValueRows(string schemaName,
+		params IEnumerable<Dictionary<string, JsonNode?>>?[] rowSets) {
+		if (!string.Equals(schemaName, SysSettingsValueSchemaName, StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+
+		List<Dictionary<string, JsonNode?>> rows = rowSets.Where(set => set is not null).SelectMany(set => set).ToList();
+		List<string> valueRowIds = ReadGuidValues(rows, "Id");
+		List<string> settingIds = ReadGuidValues(rows, "SysSettings");
+		HashSet<string> secretCodes = new(StringComparer.OrdinalIgnoreCase);
+		if (valueRowIds.Count > 0) {
+			secretCodes.UnionWith(FindSecureTextCodes(SysSettingsValueSchemaName, "SysSettings.", valueRowIds));
+		}
+		if (settingIds.Count > 0) {
+			secretCodes.UnionWith(FindSecureTextCodes("SysSettings", string.Empty, settingIds));
+		}
+		if (secretCodes.Count == 0) {
+			return;
+		}
+
+		throw new InvalidOperationException(
+			$"System setting(s) {string.Join(", ", secretCodes.Order(StringComparer.OrdinalIgnoreCase).Select(code => $"'{code}'"))} "
+			+ $"are {SecureTextValueTypeName}, and a secret value is never shipped in a package, so no "
+			+ $"{SysSettingsValueSchemaName} row of them is bound. Ship only the definition (SysSettings_<Code>) and set "
+			+ "the value on each environment with update-sys-setting.");
+	}
+
+	private IEnumerable<string> FindSecureTextCodes(string rootSchemaName, string settingPathPrefix,
+		IReadOnlyList<string> ids) {
+		SettingValueTypeResponse response = SelectQueryHelper.ExecuteSelectQuery<SettingValueTypeResponse>(
+			applicationClient,
+			serviceUrlBuilder,
+			SelectQueryHelper.BuildSelectQueryWithInFilter(
+				rootSchemaName,
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition($"{settingPathPrefix}Code", "Code"),
+					new SelectQueryHelper.SelectQueryColumnDefinition($"{settingPathPrefix}ValueTypeName", "ValueTypeName")
+				],
+				"Id",
+				ids,
+				SelectQueryHelper.GuidDataValueType));
+		return response.Rows
+			.Where(row => string.Equals(row.ValueTypeName, SecureTextValueTypeName, StringComparison.OrdinalIgnoreCase))
+			.Select(row => row.Code ?? string.Empty);
+	}
+
+	private static List<string> ReadGuidValues(IEnumerable<Dictionary<string, JsonNode?>> rows, string columnName) =>
+		rows
+			.Select(row => row.FirstOrDefault(pair => string.Equals(pair.Key, columnName, StringComparison.OrdinalIgnoreCase)).Value)
+			.Select(node => node is JsonObject envelope && envelope.TryGetPropertyValue("value", out JsonNode? raw)
+				? raw?.ToString()
+				: node?.ToString())
+			.Where(value => Guid.TryParse(value, out _))
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 
 	private static DataBindingDbSchema BuildBindingSchemaProjection(
 		DataBindingDbSchema runtimeSchema,
 		params IEnumerable<Dictionary<string, JsonNode?>>?[] rowSets) {
 		HashSet<string> referencedColumns = CollectReferencedColumnNames(rowSets);
+		if (PlatformRequiredBindingColumns.TryGetValue(runtimeSchema.SchemaName, out string[]? requiredColumns)) {
+			referencedColumns.UnionWith(requiredColumns);
+		}
 		List<DataBindingSchemaColumn> projectedColumns = SelectBindingSchemaColumns(runtimeSchema.SchemaColumns, referencedColumns);
 		ValidateBindingSchemaColumnsSupported(projectedColumns);
 		return new DataBindingDbSchema(
@@ -1265,6 +1393,19 @@ internal sealed class DataBindingDbService(
 	private sealed class EntityNameSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
 		[JsonPropertyName("rows")]
 		public List<EntityNameRowDto> Rows { get; init; } = [];
+	}
+
+	private sealed class SettingValueTypeResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<SettingValueTypeRowDto> Rows { get; init; } = [];
+	}
+
+	private sealed class SettingValueTypeRowDto {
+		[JsonPropertyName("Code")]
+		public string? Code { get; init; }
+
+		[JsonPropertyName("ValueTypeName")]
+		public string? ValueTypeName { get; init; }
 	}
 
 	private sealed class EntityNameRowDto {

@@ -1,6 +1,8 @@
 ﻿namespace Clio.Project.NuGet
 {
+	using System;
 	using System.Collections.Generic;
+	using System.Linq;
 	using System.IO;
 	using Clio.Common;
 	using Clio.Package;
@@ -51,7 +53,12 @@
 					string packagePath = Path.Combine(zipTempDirectory, 
 						_packageArchiver.GetPackedGroupPackagesFileName(restoreTempDirectoryInfo.Name));
 					_packageArchiver.ZipPackages(restoreTempDirectory, packagePath, true);
-					_packageInstaller.Install(packagePath, _environmentSettings);
+					// The installer answers false after logging why; dropping the answer let install-nuget-pkg log
+					// Done and exit 0 for packages that were not installed.
+					if (!_packageInstaller.Install(packagePath, _environmentSettings)) {
+						throw new InvalidOperationException(InstallFailureMessages.NotInstalled("NuGet packages",
+							nugetPackageFullNames.Select(fullName => fullName.ToString())));
+					}
 				});
 			});
 		}

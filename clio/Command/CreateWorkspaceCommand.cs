@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Clio.Common;
 using Clio.UserEnvironment;
+using Clio.WebApplication;
 using Clio.Workspaces;
 using CommandLine;
 
@@ -48,6 +50,8 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 	private readonly ISettingsRepository _settingsRepository;
 	private readonly IWorkspacePathBuilder _workspacePathBuilder;
 	private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
+	private readonly IApplicationPing _applicationPing;
+	private readonly EnvironmentSettings _environmentSettings;
 
 	private readonly IWorkspace _workspace;
 
@@ -55,10 +59,18 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 
 	#region Constructors: Public
 
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes independent DI collaborators (workspace, logger, installed-application "
+			+ "reader, file system, settings, path builder, working directories); the ping and its environment "
+			+ "settings joined them so an environment that does not answer fails the command before anything is "
+			+ "written. Grouping them into a parameter object would hide the injected contract without changing "
+			+ "behaviour, which is how the other multi-collaborator commands in this assembly are handled.")]
 	public CreateWorkspaceCommand(IWorkspace workspace, ILogger logger, IInstalledApplication installedApplication,
 		IFileSystem fileSystem, ISettingsRepository settingsRepository, IWorkspacePathBuilder workspacePathBuilder,
-		IWorkingDirectoriesProvider workingDirectoriesProvider) {
+		IWorkingDirectoriesProvider workingDirectoriesProvider, IApplicationPing applicationPing,
+		EnvironmentSettings environmentSettings) {
 		workspace.CheckArgumentNull(nameof(workspace));
+		applicationPing.CheckArgumentNull(nameof(applicationPing));
 		_workspace = workspace;
 		_logger = logger;
 		_installedApplication = installedApplication;
@@ -66,6 +78,8 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 		_settingsRepository = settingsRepository;
 		_workspacePathBuilder = workspacePathBuilder;
 		_workingDirectoriesProvider = workingDirectoriesProvider;
+		_applicationPing = applicationPing;
+		_environmentSettings = environmentSettings;
 	}
 
 	#endregion
@@ -136,16 +150,18 @@ public class CreateWorkspaceCommand : Command<CreateWorkspaceCommandOptions>{
 			return 0;
 		}
 
+		// Nothing is written before the checks pass - the rule WorkspaceRestorer keeps (#1119). The local checks
+		// come first, so "inside an existing workspace" is the error shown, not a failed login against an
+		// environment that would not have been used. The environment comes next: this branch reads the package
+		// list or the application from it, and the restore below downloads from it.
+		_workspace.ValidateCanCreate(options.Force);
+		_applicationPing.EnsureAnswers(_environmentSettings, "Workspace was not created", options.Environment);
 		bool appCodeNotExists = options.AppCode == null;
+		// Read before Create for the same reason: an application that cannot be read leaves nothing behind.
+		InstalledAppInfo app = appCodeNotExists ? null : _installedApplication.GetInstalledAppInfo(options.AppCode);
 		_workspace.Create(options.Environment, appCodeNotExists, options.Force);
-		if (!appCodeNotExists) {
-			InstalledAppInfo app = _installedApplication.GetInstalledAppInfo(options.AppCode);
-			if (app != null) {
-				IEnumerable<string> packages = app.GetPackages();
-				foreach (string package in packages) {
-					_workspace.AddPackageIfNeeded(package);
-				}
-			}
+		foreach (string package in app?.GetPackages() ?? []) {
+			_workspace.AddPackageIfNeeded(package);
 		}
 		_workspace.Restore(options);
 		_logger.WriteInfo($"Workspace created at: {currentDirectory}");

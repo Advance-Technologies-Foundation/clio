@@ -93,6 +93,8 @@ public sealed class WorkspaceInstallerDescriptorCheckTests : BaseClioModuleTests
 	[Description("When every package packs, Install still resets the schema change state of each package and installs the archive.")]
 	public void Install_ShouldResetEveryPackageAndInstall_WhenAllPackagesPack() {
 		// Arrange
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+			Arg.Any<string>(), Arg.Any<bool>()).Returns(true);
 		IWorkspaceInstaller sut = Container.GetRequiredService<IWorkspaceInstaller>();
 
 		// Act

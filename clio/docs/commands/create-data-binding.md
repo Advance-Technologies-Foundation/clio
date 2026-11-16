@@ -92,6 +92,9 @@ clio create-data-binding -e dev --package Custom --schema UsrLookupBinding --val
 
 - --workspace-path is the workspace root containing .clio/workspaceSettings.json,
 not the package directory. Clio resolves packages/{package-name} beneath that root.
+- --package and --binding-name (--schema when --binding-name is omitted) must be plain folder names: no path separators, '..', drive or root, characters that are invalid in a file name, or a trailing dot; --package and --schema may not start or end with a space, and --binding-name is trimmed
+- --localizations keys must be culture names such as en-US (letters, digits and hyphens); each one becomes the file Localization/data.<culture>.json
+- A binding path that passes through a symbolic link or a junction anywhere below the workspace root, the packages folder included, is refused before any file changes
 - This command writes LOCAL workspace artifact files (descriptor.json, data.json) under packages/<package>/Data/<binding-name>; it does not persist data to a remote Creatio database. To persist row data directly to the remote database instead, use create-data-binding-db
 - For the templated schema SysSettings, --environment and --uri are optional
 - For non-templated schemas, the command requires either --environment or --uri
@@ -101,7 +104,7 @@ not the package directory. Clio resolves packages/{package-name} beneath that ro
 - If the primary key column is a Guid and is omitted or null in --values, create-data-binding generates it automatically
 - For lookup and image-reference columns, clio writes SchemaColumnUId, Value, and DisplayValue in data.json
 - For create-data-binding, lookup and image-reference values may use {"value":"...","displayValue":"..."}; if displayValue is omitted and Creatio runtime lookup data is available, clio resolves it automatically
-- For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
+- For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json. A path outside the workspace is refused whether or not the file exists (a valid base64 value is kept as it is), and so is a file reached through a symbolic link or a junction
 - If the target binding folder already exists for another schema, the
 command fails instead of overwriting it
 - filter.json is always created as an empty file

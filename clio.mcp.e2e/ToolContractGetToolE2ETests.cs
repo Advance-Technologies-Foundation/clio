@@ -1736,6 +1736,37 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Over the real stdio server, the SHORT odata-read contract still shows the shape of its filters field: the cut field description carries one compact example from the contract, so a caller that reads only detail=short does not have to guess the all/any group of {field, op, value} conditions.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("get-tool-contract detail=short keeps one example on a cut object field")]
+	public async Task GetToolContracts_ShouldKeepTheFiltersExample_WhenODataReadIsReadShort() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { ODataReadTool.ToolName },
+				["detail"] = ToolContractShortForm.ShortDetail
+			});
+		ToolContractDefinition contract = response.Tools!.Single();
+		ToolContractField filters = contract.InputSchema.Properties.Single(field => field.Name == "filters");
+
+		// Assert
+		AllureApi.Step("Assert the contract is the short form", () =>
+			contract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+				because: "the case is about what a caller sees when it asks for the short contract"));
+		AllureApi.Step("Assert the cut filters field shows its shape and operators", () => {
+			filters.Description.Should().Contain("op?: eq|ne|gt|ge|lt|le|contains|startswith|endswith (default eq)",
+				because: "the first sentence the short form keeps names every operator the filter accepts");
+			filters.Description.Should().Contain(
+				"Example: {\"all\":[{\"field\":\"Account/Id\",\"op\":\"eq\",\"value\":\"8ecab4a1-0ca3-4515-9399-efe0a19390bd\"}]}",
+				because: "the field's own example is the shape of a structured filter in one line");
+		});
+	}
+
+	[Test]
 	[Description("Over the real stdio server, the DEFAULT lookup of create-business-process - a 34 KB contract in full - comes back in its short form, inside the inline reply budget, marked short and sized, and detail=full still returns it complete (ENG-100154).")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract fits a large contract inline and keeps the full form one flag away")]

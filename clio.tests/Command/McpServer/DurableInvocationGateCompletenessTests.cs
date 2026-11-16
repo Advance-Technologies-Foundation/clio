@@ -74,6 +74,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"dataforge-status",
 		"describe-business-process",
 		"describe-environment",
+		// Reads one web service through the designer read; every credential value is masked before it is returned.
+		"describe-web-service",
 		"execute-esq",
 		"find-app",
 		"find-empty-iis-port",
@@ -131,6 +133,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"list-pages",
 		"list-printables",
 		"list-sys-settings",
+		// Reads VwWebServiceV2 rows and the base URI with user information removed; no credentials.
+		"list-web-services",
 		"list-themes",
 		"list-user-tasks",
 		// Merges only caller-supplied strings in memory; it has no repository, filesystem, or environment authority.
@@ -142,6 +146,9 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"read-data-binding-db",
 		"read-entity-business-rules",
 		"read-page-business-rules",
+		// Reads a WSDL (local files, or downloaded by the platform's WSDL endpoint, which saves nothing) and returns
+		// register-web-service arguments; it saves no service.
+		"read-wsdl",
 		"resolve-oauth-system-user",
 		"restart-status",
 		"show-passing-infrastructure",

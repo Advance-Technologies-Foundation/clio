@@ -9,6 +9,7 @@ using Clio.Command.TIDE;
 using Clio.Common;
 using Clio.Package;
 using Clio.UserEnvironment;
+using Clio.WebApplication;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
@@ -434,7 +435,9 @@ public sealed class WorkspaceSyncToolTests {
 					Substitute.For<IFileSystem>(),
 					Substitute.For<ISettingsRepository>(),
 					Substitute.For<IWorkspacePathBuilder>(),
-					Substitute.For<IWorkingDirectoriesProvider>())) {
+					Substitute.For<IWorkingDirectoriesProvider>(),
+					Substitute.For<IApplicationPing>(),
+					new EnvironmentSettings())) {
 		}
 
 		public override int Execute(RestoreWorkspaceOptions options) {

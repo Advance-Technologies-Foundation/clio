@@ -48,6 +48,7 @@ public static class DataBindingDbPrompt {
 		 localizable columns are accepted. To translate rows that already exist, call the tool again with the same rows.
 		 DB-first binding metadata is projected from the primary key plus the columns referenced by currently bound or requested rows.
 		 Unrelated runtime-only columns are not blockers, but explicitly requested unsupported runtime columns still fail.
+		 A `SysSettingsValue` binding always carries `SysSettings` and `TextValue` too, because the platform reads both while it saves it; a row of a SecureText setting is refused, so its secret never ships.
 		 After the remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 		 To sync the result to a local workspace after the DB write, use `restore-workspace` separately.
 		 {FileSystemModeNote}

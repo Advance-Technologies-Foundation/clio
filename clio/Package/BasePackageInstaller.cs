@@ -145,7 +145,11 @@
 					;
 				_logger.WriteLine("Backup completed");
 				return true;
-			} catch {
+			} catch (Exception exception) {
+				// The installation stops here, and this line is the only place that says why: the caller's
+				// closing error names what was not installed, not the reason.
+				_logger.WriteError("Package installation failed: the backup could not be created: "
+					+ exception.GetReadableMessageException());
 				return false;
 			}
 		}

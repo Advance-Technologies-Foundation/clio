@@ -548,6 +548,13 @@ public class BindingsModule {
 		services.AddTransient<SetActiveProcessVersionCommand>();
 		services.AddTransient<ICompileBusinessProcessService, CompileBusinessProcessService>();
 		services.AddTransient<CompileBusinessProcessCommand>();
+		services.AddTransient<IBuildCaseClient, BuildCaseClient>();
+		services.AddTransient<IEntityClientSchemaReader, ListEntityClientSchemasCommand>();
+		services.AddTransient<IPageBodyWriter, PageUpdateCommand>();
+		services.AddTransient<IDynamicCaseRecordPageResolver, DynamicCaseRecordPageResolver>();
+		services.AddTransient<IDynamicCasePageStep, DynamicCasePageStep>();
+		services.AddTransient<IDynamicCaseService, DynamicCaseService>();
+		services.AddTransient<CreateDynamicCaseCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -881,6 +888,12 @@ public class BindingsModule {
 		services.AddTransient<GetTargetPackageTool>();
 		services.AddTransient<PackageFileTool>();
 		services.AddTransient<SysSettingGetTool>();
+		services.AddTransient<RegisterWebServiceTool>();
+		services.AddTransient<ListWebServicesTool>();
+		services.AddTransient<DescribeWebServiceTool>();
+		services.AddTransient<ModifyWebServiceTool>();
+		services.AddTransient<TestWebServiceMethodTool>();
+		services.AddTransient<ReadWsdlTool>();
 		services.AddTransient<SysSettingsListTool>();
 		services.AddTransient<SysSettingCreateTool>();
 		services.AddTransient<SysSettingUpdateTool>();
@@ -1089,6 +1102,11 @@ public class BindingsModule {
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServiceDesignerClient, Clio.Command.WebServiceDesigner.WebServiceDesignerClient>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServiceDesigner, Clio.Command.WebServiceDesigner.WebServiceDesigner>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWebServicePrefixReader, Clio.Command.WebServiceDesigner.WebServicePrefixReader>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWsdlParser, Clio.Command.WebServiceDesigner.WsdlParser>();
+		services.AddTransient<Clio.Command.WebServiceDesigner.IWsdlReader, Clio.Command.WebServiceDesigner.WsdlReader>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReader, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IGranteeLookup, Clio.Common.ObjectRights.RightManagementServiceClient>();
@@ -1675,6 +1693,8 @@ public class BindingsModule {
 				});
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
 			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
+		// After the SDK fills the tool collection: each listed tool's _meta carries what it does (McpToolFacts).
+		services.PostConfigure<McpServerOptions>(McpToolFactsListing.Attach);
 		return mcpServerBuilder;
 	}
 

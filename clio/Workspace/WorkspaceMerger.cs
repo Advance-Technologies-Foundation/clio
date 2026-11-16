@@ -17,6 +17,10 @@ namespace Clio.Workspaces
 		/// </summary>
 		/// <param name="workspacePaths">Array of paths to workspace folders.</param>
 		/// <param name="zipFileName">Optional name for the resulting ZIP file. Default is "MergedCreatioPackages".</param>
+		/// <exception cref="InvalidOperationException">
+		/// The installer reported the installation as failed; it has already logged the reason, and the exception
+		/// names the merged packages that were not installed.
+		/// </exception>
 		void MergeAndInstall(string[] workspacePaths, string zipFileName = "MergedCreatioPackages");
 
 		/// <summary>
@@ -134,10 +138,15 @@ namespace Clio.Workspaces
 			return applicationZip;
 		}
 
-		private void InstallApplication(string applicationZip)
+		private void InstallApplication(string applicationZip, IEnumerable<string> packageNames)
 		{
 			_logger.WriteInfo($"Installing application from {applicationZip}");
-			_packageInstaller.Install(applicationZip, _environmentSettings);
+			// The installer answers false after logging why; dropping the answer let merge-workspaces log
+			// "Installation completed successfully." and exit 0 for a failed installation.
+			if (!_packageInstaller.Install(applicationZip, _environmentSettings)) {
+				throw new InvalidOperationException(
+					InstallFailureMessages.NotInstalled("Merged workspace packages", packageNames.OrderBy(name => name)));
+			}
 		}
 
 		#endregion
@@ -183,7 +192,7 @@ namespace Clio.Workspaces
 				
 				_logger.WriteInfo($"Total unique packages gathered: {processedPackages.Count}");
 				var applicationZip = ZipPackages(tempDirectory, rootPackedPackagePath, zipFileName);
-				InstallApplication(applicationZip);
+				InstallApplication(applicationZip, processedPackages);
 				_logger.WriteInfo("Installation completed successfully.");
 			});
 		}

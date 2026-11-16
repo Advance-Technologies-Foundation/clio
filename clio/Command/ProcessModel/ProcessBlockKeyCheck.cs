@@ -34,7 +34,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
 /// and it covers a host whose server check reports itself unavailable. Every caller requires the create/modify floor
-/// (1.6.6.153 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
+/// (1.6.6.162 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
 /// only while that line stamps lower numbers - should it ever stamp that floor or above without the ENG-95244 check, a
 /// replayed read-back member would be dropped there with no word from either side. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
 /// payloads.</para>
@@ -43,7 +43,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// here by a stale list. Fields <c>describe-business-process</c> reports but the write path does not take
 /// (<c>sourceSchemaUId</c>, <c>outputs</c>, <c>position</c>, ...) are DERIVED read-backs: a described block fed
 /// back keeps building. clio tolerates them and says nothing: the server they reach (every caller requires
-/// the create/modify floor, 1.6.6.153 today) ignores them and names them in its own "Read-only fields copied from describe were
+/// the create/modify floor, 1.6.6.162 today) ignores them and names them in its own "Read-only fields copied from describe were
 /// ignored" warning, which names them and, where it can, the key that changes each. A second warning from clio about
 /// the same fields only doubled the noise of a describe -> setElement round trip. The accepted cost: on a host whose
 /// server check reports itself unavailable, the server's warning says the request was not checked and may name none of
@@ -147,7 +147,8 @@ internal static class ProcessBlockKeyCheck {
 		"elementName parameter column");
 
 	private static readonly KeySet FilterCondition = new KeySet("FilterConditionDescriptor", "filter condition", null,
-			"column comparison value displayValue processParameter elementParameter expression macro macroArgument datePart")
+			"column comparison value values displayValue processParameter elementParameter expression macro macroArgument "
+			+ "datePart")
 		.With(ElementParameterRef);
 
 	private static readonly KeySet FilterGroup = BuildFilterGroup();
@@ -518,6 +519,9 @@ internal static class ProcessBlockKeyCheck {
 				return;
 			}
 			foreach ((string key, JsonNode value) in members) {
+				if (set == FilterCondition) {
+					RefuseFilterValueShape(key, value, where, prefix + key);
+				}
 				if (set.Declares(key)) {
 					VisitChild(key, value, set, where, prefix, placement, depth);
 				} else if (set.ReadBack.Contains(key)) {
@@ -573,6 +577,37 @@ internal static class ProcessBlockKeyCheck {
 						Visit(item, child, where, $"{prefix}{key}[{index}].", placement, depth + 1);
 					}
 				}
+			}
+		}
+
+		// A filter condition's 'value' is ONE string on the server's contract and 'values' a LIST of strings
+		// (ENG-105557). A list or an object in 'value', and anything but a list of scalars in 'values', is not a key
+		// the contract drops: the serializer fails to read the WHOLE request, which reached the caller only as
+		// "BuildProcess returned a response clio could not read" - the form agents reach for first when a column
+		// should match one of several records. Numbers and booleans in 'value' read fine and are left alone.
+		private void RefuseFilterValueShape(string key, JsonNode value, string where, string path) {
+			if (key == "value" && value is JsonArray) {
+				RefuseShape($"{where}: '{path}' is a list, which the server cannot read. Several records of ONE lookup "
+					+ "column are one condition: send them as \"values\": [...] with 'equal' (any of them) or 'notEqual' "
+					+ "(none of them); one record is \"value\": \"...\".");
+				return;
+			}
+			if (key == "value" && value is JsonObject) {
+				RefuseShape($"{where}: '{path}' is an object, which the server cannot read. Send the constant as a "
+					+ "string - for a lookup, the record id or its display name.");
+				return;
+			}
+			if (key != "values" || value is null) {
+				return;
+			}
+			if (value is not JsonArray entries) {
+				RefuseShape($"{where}: '{path}' takes a LIST of records, so {(value is JsonObject ? "an object" : value.ToJsonString(ReadableJson))} "
+					+ "there makes the server fail the whole request. Send \"values\": [\"<record>\", \"<record>\"].");
+				return;
+			}
+			if (entries.Any(entry => entry is JsonObject or JsonArray)) {
+				RefuseShape($"{where}: every entry of '{path}' is one record as a string (its id or display name); a "
+					+ "nested object or list there makes the server fail the whole request.");
 			}
 		}
 

@@ -8,6 +8,8 @@ deploy-application - Deploy app from current environment to destination environm
 
 Transfers an application package from one Creatio environment to another.
 
+When the destination reports the installation as failed, the installer writes `Package installation failed: <reason>`, the command closes with `Application <NAME> may not have been installed in <DESTINATION>.`, and it exits with `1`.
+
 ## Synopsis
 
 ```bash

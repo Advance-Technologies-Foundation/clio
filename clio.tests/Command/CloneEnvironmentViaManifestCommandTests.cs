@@ -364,6 +364,63 @@ internal class CloneEnvironmentsCommandTests : BaseCommandTests<CloneEnvironment
 	}
 
 
+	[Test]
+	[Category("Unit")]
+	[Description("When pull-pkg fails for a package of the source, clone-env should stop with an error naming the package instead of cloning an incomplete set.")]
+	public void Execute_ShouldStopWithTheReason_WhenAPackageIsNotPulled() {
+		// Arrange
+		CloneEnvironmentCommand command = CreateCommand(out PullPkgCommand pullPkgCommand,
+			out PushPackageCommand pushPackageCommand, out IWorkingDirectoriesProvider workingDirectoriesProvider);
+		pullPkgCommand.Execute(Arg.Any<PullPkgOptions>()).Returns(1);
+		CloneEnvironmentOptions options = new() { Source = "sourceEnv", Target = "targetEnv" };
+
+		// Act
+		Action act = () => command.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Package Package1 was not pulled from sourceEnv, so the environment was not cloned.",
+				because: "pull-pkg has already logged why; clone-env must not go on to unzip an archive that is not there");
+		pushPackageCommand.DidNotReceiveWithAnyArgs().Execute(default);
+		workingDirectoriesProvider.Received(1).DeleteDirectoryIfExists("TempPath");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When push-pkg fails to install the packages on the target, clone-env should stop with an error instead of finishing as a success.")]
+	public void Execute_ShouldStopWithTheReason_WhenThePackagesAreNotInstalledOnTheTarget() {
+		// Arrange
+		CloneEnvironmentCommand command = CreateCommand(out PullPkgCommand _,
+			out PushPackageCommand pushPackageCommand, out IWorkingDirectoriesProvider workingDirectoriesProvider);
+		pushPackageCommand.Execute(Arg.Any<PushPkgOptions>()).Returns(1);
+		CloneEnvironmentOptions options = new() { Source = "sourceEnv", Target = "targetEnv" };
+
+		// Act
+		Action act = () => command.Execute(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("Packages from sourceEnv may not have been installed in targetEnv, so the environment was not cloned.",
+				because: "push-pkg has already logged why; a clone whose installation failed must not end with Done and exit code 0");
+		workingDirectoriesProvider.Received(1).DeleteDirectoryIfExists("TempPath");
+	}
+
+	private static CloneEnvironmentCommand CreateCommand(out PullPkgCommand pullPkgCommand,
+		out PushPackageCommand pushPackageCommand, out IWorkingDirectoriesProvider workingDirectoriesProvider) {
+		pullPkgCommand = Substitute.For<PullPkgCommand>();
+		pushPackageCommand = Substitute.For<PushPackageCommand>();
+		workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		workingDirectoriesProvider.CreateTempDirectory().Returns("TempPath");
+		IEnvironmentManager environmentManager = Substitute.For<IEnvironmentManager>();
+		environmentManager.LoadEnvironmentManifestFromFile(Arg.Any<string>()).Returns(new EnvironmentManifest {
+			Packages = [new CreatioManifestPackage { Name = "Package1" }]
+		});
+		return new CloneEnvironmentCommand(Substitute.For<ShowDiffEnvironmentsCommand>(),
+			Substitute.For<ApplyEnvironmentManifestCommand>(), pullPkgCommand, pushPackageCommand, environmentManager,
+			Substitute.For<ILogger>(), Substitute.For<IDataProvider>(), Substitute.For<ICompressionUtilities>(),
+			workingDirectoriesProvider, Substitute.For<IFileSystem>(), null, Substitute.For<PingAppCommand>());
+	}
+
 	private bool IsEqualEnvironmentOptions(ShowDiffEnvironmentsOptions expected, ShowDiffEnvironmentsOptions actual) {
 		return expected.Source == actual.Source && expected.Target == actual.Target;
 	}
