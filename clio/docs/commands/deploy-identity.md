@@ -53,7 +53,8 @@ the first free IIS port in range 40001-40100. With overwrite and a recorded atta
 --identity-archive-path-in-bundle PATH
 Nested IdentityService archive path when --zip-file is a Creatio distribution bundle.
 Also used as the preferred relative path under EnvironmentPath when --zip-file is omitted;
-it must then stay inside EnvironmentPath: a rooted path or a '..' segment is refused.
+it must then stay inside EnvironmentPath and name one file: a rooted path, a '..' segment,
+an empty file name (a trailing separator) or a '*' or '?' in the file name is refused.
 Default: IdentityService.zip
 
 --identity-site-name NAME

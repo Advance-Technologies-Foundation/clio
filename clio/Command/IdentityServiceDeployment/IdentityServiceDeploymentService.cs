@@ -527,10 +527,20 @@ public sealed class IdentityServiceDeploymentService : IIdentityServiceDeploymen
 				"no '..' segment. Pass --zip-file to use an archive from another location.",
 				nameof(identityArchivePathInBundle));
 		}
+		// The file name is also the search pattern of the fallback below. An empty one (a value that ends with a
+		// separator) is searched as "*", and one with a wildcard matches any file: the first match anywhere under
+		// EnvironmentPath would be taken as the IdentityService archive.
+		string fileName = Path.GetFileName(nestedPath);
+		if (string.IsNullOrWhiteSpace(fileName) || fileName.IndexOfAny(['*', '?']) >= 0) {
+			throw new ArgumentException(
+				$"IdentityService archive path '{identityArchivePathInBundle}' must name one archive file when " +
+				"--zip-file is omitted: its file name is empty or has a wildcard character ('*' or '?'). Pass the " +
+				"path of the archive relative to EnvironmentPath, or pass --zip-file.",
+				nameof(identityArchivePathInBundle));
+		}
 		if (File.Exists(exactPath)) {
 			return exactPath;
 		}
-		string fileName = Path.GetFileName(nestedPath);
 		string discoveredPath = Directory
 			.EnumerateFiles(environment.EnvironmentPath, fileName, SearchOption.AllDirectories)
 			.OrderBy(path => path, StringComparer.OrdinalIgnoreCase)

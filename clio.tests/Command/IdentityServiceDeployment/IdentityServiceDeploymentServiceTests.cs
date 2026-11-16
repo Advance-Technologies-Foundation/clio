@@ -812,6 +812,105 @@ public sealed class IdentityServiceDeploymentServiceTests
 		lifecycle.DidNotReceiveWithAnyArgs().RecordDeployment(default!, default!, default);
 	}
 
+	[TestCase("nested/../IdentityService.zip")]
+	[TestCase("nested\\..\\IdentityService.zip")]
+	[TestCase("nested/deeper/../../IdentityService.zip")]
+	[Description("Deploy refuses an archive path with a '..' segment when zip-file is omitted even when the path resolves to an archive inside EnvironmentPath: only the segment rule catches this form.")]
+	public void Deploy_ShouldRefuseArchivePath_WhenItHasADotDotSegmentButStaysInsideEnvironmentPath(
+		string archivePathInBundle) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		Directory.CreateDirectory(Path.Combine(crmPath, "nested", "deeper"));
+		CreateIdentityArchive(crmPath);
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new DeploymentStoppedByTestException());
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, lifecycle: lifecycle);
+
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank",
+			IdentityArchivePathInBundle = archivePathInBundle, IdentitySitePort = 40086,
+			IdentityPath = CreateIdentityTargetPath(), NoApp = true });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				because: "the documented rule refuses every '..' segment, also one that stays inside EnvironmentPath")
+			.WithMessage("*no '..' segment*", because: "the caller should learn why the path was refused");
+		resolver.DidNotReceiveWithAnyArgs().Resolve(default!, default!);
+		lifecycle.DidNotReceiveWithAnyArgs().RecordDeployment(default!, default!, default);
+	}
+
+	[TestCase("IdentityService.zip")]
+	[TestCase("nested/IdentityService.zip")]
+	[Description("Deploy refuses a rooted archive path when zip-file is omitted even when it points at an archive inside EnvironmentPath: only the rooted rule catches this form.")]
+	public void Deploy_ShouldRefuseArchivePath_WhenItIsRootedButLiesInsideEnvironmentPath(string relativeLocation) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		string archiveFolder = Path.GetDirectoryName(
+			Path.Combine(crmPath, relativeLocation.Replace('/', Path.DirectorySeparatorChar)))!;
+		Directory.CreateDirectory(archiveFolder);
+		string rootedArchiveInsideEnvironment = CreateIdentityArchive(archiveFolder);
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new DeploymentStoppedByTestException());
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, lifecycle: lifecycle);
+
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank",
+			IdentityArchivePathInBundle = rootedArchiveInsideEnvironment, IdentitySitePort = 40086,
+			IdentityPath = CreateIdentityTargetPath(), NoApp = true });
+
+		// Assert
+		Path.IsPathRooted(rootedArchiveInsideEnvironment).Should().BeTrue(
+			because: "the test must pass a rooted path, or it does not exercise the rooted rule");
+		act.Should().Throw<ArgumentException>(
+				because: "without zip-file the argument is a path relative to EnvironmentPath, never a rooted one")
+			.WithMessage("*no drive or root*", because: "the caller should learn why the path was refused");
+		resolver.DidNotReceiveWithAnyArgs().Resolve(default!, default!);
+		lifecycle.DidNotReceiveWithAnyArgs().RecordDeployment(default!, default!, default);
+	}
+
+	[TestCase("nested/")]
+	[TestCase("nested\\")]
+	[TestCase("nested/*.zip")]
+	[TestCase("*")]
+	[TestCase("*.zip")]
+	[TestCase("IdentityService.zi?")]
+	[Description("Deploy refuses an archive path whose file-name part is empty or has a wildcard character when zip-file is omitted, because the fallback search would then pick whatever file matches first under EnvironmentPath.")]
+	public void Deploy_ShouldRefuseArchivePath_WhenItsFileNameIsEmptyOrAWildcardAndZipFileIsOmitted(
+		string archivePathInBundle) {
+		// Arrange
+		string crmPath = CreateCreatioEnvironmentPath();
+		string archiveFolder = Path.Combine(crmPath, "nested");
+		Directory.CreateDirectory(archiveFolder);
+		CreateIdentityArchive(archiveFolder);
+		ISettingsRepository settings = CreateSettingsRepository(new EnvironmentSettings { EnvironmentPath = crmPath,
+			Uri = "http://localhost:40085", Login = "Supervisor", Password = "Supervisor", IsNetCore = true });
+		IIdentityServiceArchiveResolver resolver = Substitute.For<IIdentityServiceArchiveResolver>();
+		resolver.Resolve(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(_ => throw new DeploymentStoppedByTestException());
+		IIdentityServiceLifecycle lifecycle = Substitute.For<IIdentityServiceLifecycle>();
+		IdentityServiceDeploymentService sut = CreateService(settings, resolver, lifecycle: lifecycle);
+
+		// Act
+		Action act = () => sut.Deploy(new DeployIdentityOptions { Environment = "bank",
+			IdentityArchivePathInBundle = archivePathInBundle, IdentitySitePort = 40086,
+			IdentityPath = CreateIdentityTargetPath(), NoApp = true });
+
+		// Assert
+		act.Should().Throw<ArgumentException>(
+				because: "an empty or wildcard file name does not name one archive, and the search must not choose one for the caller")
+			.WithMessage("*must name one archive file*", because: "the caller should learn why the path was refused");
+		resolver.DidNotReceiveWithAnyArgs().Resolve(default!, default!);
+		lifecycle.DidNotReceiveWithAnyArgs().RecordDeployment(default!, default!, default);
+	}
+
 	[TestCase(null, "IdentityService.zip")]
 	[TestCase("nested/IdentityService.zip", "nested/IdentityService.zip")]
 	[TestCase("nested\\IdentityService.zip", "nested/IdentityService.zip")]
