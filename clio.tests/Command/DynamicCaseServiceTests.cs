@@ -882,6 +882,24 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
+	[Description("An answer whose case block lists no stages leaves the connection kind out rather than guessing it.")]
+	public void Describe_ShouldLeaveTheConnectionKindOut_WhenTheAnswerListsNoStages() {
+		// Arrange
+		BuildCaseCaseInfo noStages = new() {
+			Status = "existing", SchemaName = "UsrOrderCase", SchemaUId = CaseUId, ConnectionCount = 6
+		};
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse { Success = true, Cases = [noStages] }, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Cases[0].Connections.Count.Should().Be(6, because: "the server's count is still reported");
+		result.Cases[0].Connections.Kind.Should().BeNull(because: "without the stages nothing says which kind it is");
+	}
+
+	[Test]
 	[Description("A server refusal of a describe is passed through with its code, and no case is invented.")]
 	public void Describe_ShouldPassTheRefusalThrough_WhenTheServerRefuses() {
 		// Arrange
