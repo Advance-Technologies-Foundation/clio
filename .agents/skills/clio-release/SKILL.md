@@ -26,6 +26,8 @@ Resolve these paths from the clio repository root, not the skill directory.
   test plans, story status, command documentation, MCP evidence, and quality gates.
   Distinguish recorded pre-merge checks from checks run in this session; do not
   present missing live-environment coverage as verified.
+- If there are no new commits since the previous release, report that there is
+  nothing to release and stop rather than publishing an identical package.
 - Require a successful `Build` (`build.yml`) run for the exact selected SHA with
   `event=push` and `headBranch=master`. A green PR run is insufficient. Monitor an
   in-flight run; stop publication on failure and report the failing job. The release
@@ -38,6 +40,17 @@ Write English release notes to a temporary Markdown file. Explain user-visible
 features and fixes, call out behavior changes and required package upgrades, link
 the supporting PRs, include `clio update`, and link the full comparison. Avoid
 generic "Automated release" text. Do not claim unreleased guidance is available.
+
+Preserve the established developer-facing release-note style:
+
+- Start with `## <emoji> Clio X.Y.Z.W — <hook>` and a warm one-line opener
+  explaining the problem the release solves.
+- Use applicable sections such as `### ✨ What's New`, `### 🐛 Fixes`, and
+  `### 📚 Docs`. Start each bullet with a bold lead-in, explain what changed and
+  why it helps, and link the supporting PR.
+- Close with `### 💡 Why upgrade?` and `*Happy coding! 🎉*`.
+- Base every claim on the actual changes; a friendly hook must not overstate
+  unconfirmed behavior. Do not infer a different tone from a recent release.
 
 The workflow injects the tag version into the package and assembly. Do not edit
 `clio.csproj`, `Directory.Packages.props`, or bundled package versions just to
