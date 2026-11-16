@@ -364,6 +364,12 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				}
 			}, cts.Token);
 
+		// The application's token URL never resolves, so the platform fails before sending anything.
+		WebServiceTestResult testCall = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = MethodCode
+			}, cts.Token);
+
 		// Assert
 		registered.Success.Should().BeTrue(because: $"an existing OAuth application must be accepted; error: {registered.Error}");
 		registered.Service!.Auth!.Type.Should().Be("oauth20", because: "the service authenticates with OAuth 2.0");
@@ -376,6 +382,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		restored.Success.Should().BeTrue(because: $"setAuth accepts the oauth-app-id describe reports; error: {restored.Error}");
 		restored.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(_oauthApplicationId,
 			because: "authentication rebuilt from a describe reply links the same application");
+		testCall.Success.Should().BeFalse(because: "the access token cannot be retrieved from an unresolvable token URL");
+		testCall.ResponseBody.Should().BeNull(because: "a token endpoint's error can quote the client secret, so nothing is returned");
+		testCall.Error.Should().Contain("OAuth application",
+			because: "a call that sent nothing points at the OAuth application, not at a system setting");
 	}
 
 	[Test]
