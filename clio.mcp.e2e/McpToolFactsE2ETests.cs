@@ -81,4 +81,37 @@ public sealed class McpToolFactsE2ETests : McpContractFixtureBase {
 				&& (string?)entry["value"] == "list" && (string?)entry["effect"] == "read",
 			because: "listing roles only reads, so a host must not ask for a change approval to do it");
 	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract detail=facts says which arguments are paths on this machine")]
+	[Description("Asks the real clio MCP server for the facts of set-logo and get-package-file and verifies that set-logo's logo is a file clio reads, and that get-package-file's file-path is declared not a host path.")]
+	public async Task GetToolContract_Should_Answer_Host_Paths_For_A_Tool_That_Names_Files() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["detail"] = ToolContractCatalog.FactsDetail,
+					["tool-names"] = new[] { "set-logo", "get-package-file" }
+				}
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse response = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "a facts request is an ordinary successful lookup");
+		response.Facts.Should().NotBeNull(because: "detail=facts answers under facts");
+		response.Facts!["set-logo"]["host-paths"]!.AsArray().Should().Contain(path => (string?)path!["argument"] == "logo"
+				&& (string?)path["kind"] == "file" && (string?)path["access"] == "read",
+			because: "clio reads the image from this machine, so a host must keep that path inside its folder");
+		response.Facts["get-package-file"]["host-paths"].Should().BeNull(
+			because: "the tool reads a file inside a package on the environment");
+		response.Facts["get-package-file"]["not-host-paths"]!.AsArray().Should().Contain(
+				path => (string?)path!["argument"] == "file-path",
+			because: "a host that guesses by name needs clio's word that this argument is not a path here");
+	}
 }
