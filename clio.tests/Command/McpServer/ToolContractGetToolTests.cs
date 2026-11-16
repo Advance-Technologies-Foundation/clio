@@ -2604,7 +2604,7 @@ public sealed class ToolContractGetToolTests {
 		createContract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "from-environment-requires-environment-and-binding"
 				&& validator.Fields != null
-				&& validator.Fields.SequenceEqual(new[] { "from-environment", "environment-name", "binding-name" }),
+				&& validator.Fields.SequenceEqual(new[] { "from-environment", "environment-name", "binding-name", "schema-name" }),
 			because: "from-environment reads the binding from the environment, so it needs both (ENG-106290)");
 		createContract.InputSchema.Properties.Should().Contain(field =>
 				field.Name == "from-environment" && field.Type == "boolean"

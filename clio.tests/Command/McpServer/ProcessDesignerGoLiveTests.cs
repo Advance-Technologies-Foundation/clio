@@ -29,7 +29,9 @@ public sealed class ProcessDesignerGoLiveTests {
 		typeof(ModifyBusinessProcessTool),
 		typeof(DescribeProcessTool),
 		typeof(ListUserTasksTool),
-		typeof(ValidateProcessGraphTool)
+		typeof(ValidateProcessGraphTool),
+		// Added after go-live, ungated from the start: the dynamic-case tool ships the same way.
+		typeof(CreateDynamicCaseTool)
 	];
 
 	private static readonly Type[] GoLivePromptTypes = [
@@ -45,7 +47,8 @@ public sealed class ProcessDesignerGoLiveTests {
 		ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
 		DescribeProcessTool.ToolName,
 		ListUserTasksTool.ListUserTasksToolName,
-		ValidateProcessGraphTool.ToolName
+		ValidateProcessGraphTool.ToolName,
+		CreateDynamicCaseTool.CreateDynamicCaseToolName
 	];
 
 	// The REAL feature rule over a settings repository whose features map is empty — the state every
@@ -58,7 +61,7 @@ public sealed class ProcessDesignerGoLiveTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The five process-designer tool types and five prompt types must not carry [FeatureToggle]: the capability shipped enabled by default at go-live (ENG-96132).")]
+	[Description("The process-designer tool types and the five prompt types must not carry [FeatureToggle]: the capability shipped enabled by default at go-live (ENG-96132), and create-dynamic-case ships the same way.")]
 	public void ProcessDesignerSurface_Should_Not_Carry_FeatureToggle() {
 		// Arrange
 		Type[] surface = GoLiveToolTypes.Concat(GoLivePromptTypes).ToArray();
@@ -77,7 +80,7 @@ public sealed class ProcessDesignerGoLiveTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("With every feature flag off (the shipping default), the invoker registry still resolves all five process-designer tools, so clio-run dispatch and the get-tool-contract index expose them by default.")]
+	[Description("With every feature flag off (the shipping default), the invoker registry still resolves every process-designer tool, so clio-run dispatch and the get-tool-contract index expose them by default.")]
 	public void ProcessDesignerTools_Should_Be_Invokable_When_EveryFeatureIsOff() {
 		// Arrange
 		IServiceProvider provider = Substitute.For<IServiceProvider>();

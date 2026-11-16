@@ -126,6 +126,26 @@ public class PackageDependencyManagerTests
 			because: "the saved package must carry the dependency identified by its UId");
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("The add answers the save's CompilationRequired, so a caller can report that the dependency change needs a configuration compilation.")]
+	public void AddDependenciesReportingCompilation_ShouldAnswerTheSavesCompilationRequired(bool compilationRequired) {
+		// Arrange
+		ArrangeInstalledPackages();
+		ArrangeGetPackageProperties(new WorkspacePackageDto { UId = _targetUId, Name = TargetPackageName });
+		ArrangeSavePackageProperties(new SavePackagePropertiesResponse {
+			Success = true, CompilationRequired = compilationRequired
+		});
+
+		// Act
+		PackageDependencyAddResult result = _manager.AddDependenciesReportingCompilation(TargetPackageName,
+			[new PackageDependencySpec(DependencyPackageName)]);
+
+		// Assert
+		result.CompilationRequired.Should().Be(compilationRequired, because: "the server's answer is passed on");
+		result.Dependencies.Should().Contain(DependencyPackageName, because: "the dependency list is still answered");
+	}
+
 	[Test]
 	[Description("Defaults the dependency version to the installed version of the dependency package when omitted.")]
 	public void AddDependencies_ShouldUseInstalledVersion_WhenVersionIsOmitted() {

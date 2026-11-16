@@ -95,11 +95,21 @@ public sealed class ListEntityClientSchemasResponse {
 }
 
 /// <summary>
+/// Reads an entity's <c>SysModule</c> / <c>SysModuleEdit</c> page registrations, each classified <c>classic</c>,
+/// <c>freedom</c> or <c>unknown</c>. The seam a caller that only needs the registrations depends on, so it does not
+/// have to construct the command.
+/// </summary>
+public interface IEntityClientSchemaReader {
+	/// <inheritdoc cref="ListEntityClientSchemasCommand.TryResolve"/>
+	bool TryResolve(ListEntityClientSchemasOptions options, out ListEntityClientSchemasResponse response);
+}
+
+/// <summary>
 /// Resolves the Classic UI page-role graph of an entity (sections, edit pages, add mini pages) via DataService
 /// ESQ and classifies each page as <c>classic</c>, <c>freedom</c>, or <c>unknown</c> for a Classic-&gt;Freedom
 /// migration. One level only — callers recurse into detail entities by invoking the command per detail entity.
 /// </summary>
-internal class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions> {
+internal class ListEntityClientSchemasCommand : Command<ListEntityClientSchemasOptions>, IEntityClientSchemaReader {
 
 	// Single-sourced with ClassicEntitySchemaQuery so the sentinel/cap cannot drift between the shared query
 	// builder and its callers.

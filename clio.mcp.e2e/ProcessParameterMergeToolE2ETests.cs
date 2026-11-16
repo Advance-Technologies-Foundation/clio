@@ -175,8 +175,8 @@ public sealed class ProcessParameterMergeToolE2ETests {
 					["name"] = MergedParameter, ["type"] = "Guid",
 					["mergeFrom"] = new[] { "SigB.RecordId", "SigA.RecordId" }
 				},
-				new Dictionary<string, object> { ["name"] = "PName", ["type"] = "Text", ["direction"] = "Variable" },
-				new Dictionary<string, object> { ["name"] = "PTitle", ["type"] = "Text", ["direction"] = "Variable" }
+				new Dictionary<string, object> { ["name"] = "PName", ["type"] = "Text", ["direction"] = "Internal" },
+				new Dictionary<string, object> { ["name"] = "PTitle", ["type"] = "Text", ["direction"] = "Internal" }
 			},
 			["elements"] = new object[] {
 				new Dictionary<string, object> {

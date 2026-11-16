@@ -7,7 +7,8 @@ namespace Clio.Command.WebServiceDesigner;
 
 // Wire shapes of the platform's ServiceDataContract family (Terrasoft.Nui.ServiceModel.DataContract). Every
 // type keeps unknown members in an extension bag: a modify re-sends what it read, and a member this file
-// does not model (a SOAP namespace, a body builder) must survive the round trip unchanged.
+// does not model (a body builder) must survive the round trip unchanged. Typed members the platform may leave out
+// are nullable and written only when set, for the same reason.
 
 /// <summary>The platform's <c>ObjectCollection</c>: items keyed by their UId string.</summary>
 public sealed class ServiceItemCollection<T> {
@@ -38,7 +39,8 @@ public sealed class ServiceSchemaDto {
 	[JsonPropertyName("baseUri")] public string BaseUri { get; set; }
 	[JsonPropertyName("type")] public int Type { get; set; }
 	[JsonPropertyName("retryCount")] public int RetryCount { get; set; }
-	[JsonPropertyName("namespaces")] public ServiceItemCollection<JsonElement> Namespaces { get; set; } = new();
+	/// <summary>SOAP namespaces the envelope declares; when any exists, exactly one is the default.</summary>
+	[JsonPropertyName("namespaces")] public ServiceItemCollection<ServiceNamespaceDto> Namespaces { get; set; } = new();
 	[JsonPropertyName("methods")] public ServiceItemCollection<ServiceMethodDto> Methods { get; set; } = new();
 	[JsonPropertyName("authInfo")] public ServiceAuthInfoDto AuthInfo { get; set; }
 	[JsonExtensionData] public Dictionary<string, JsonElement> Extra { get; set; }
@@ -52,10 +54,20 @@ public sealed class ServiceMethodDto {
 	[JsonPropertyName("response")] public ServiceMethodResponseDto Response { get; set; } = new();
 	[JsonPropertyName("caption")] public Dictionary<string, string> Caption { get; set; } = new();
 	[JsonPropertyName("useAuthInfo")] public bool UseAuthInfo { get; set; }
+
+	/// <summary>
+	/// SOAP: the <c>SOAPAction</c> header value; an empty one sends no header. Written back only when it was read or
+	/// set, so a REST method saved by clio carries no member the platform did not send.
+	/// </summary>
+	[JsonPropertyName("soapAction")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SoapAction { get; set; }
+
 	[JsonExtensionData] public Dictionary<string, JsonElement> Extra { get; set; }
 }
 
 public sealed class ServiceMethodRequestDto {
+	/// <summary>REST: the address relative to the base URI. SOAP: the message element, the root element of the body.</summary>
 	[JsonPropertyName("uri")] public string Uri { get; set; }
 	[JsonPropertyName("contentType")] public int ContentType { get; set; }
 	[JsonPropertyName("httpMethodType")] public int HttpMethodType { get; set; }
@@ -80,6 +92,40 @@ public sealed class ServiceParameterDto {
 	[JsonPropertyName("isRequired")] public bool IsRequired { get; set; }
 	[JsonPropertyName("itemProperties")] public ServiceItemCollection<ServiceParameterDto> ItemProperties { get; set; } = new();
 	[JsonPropertyName("caption")] public Dictionary<string, string> Caption { get; set; } = new();
+
+	/// <summary>SOAP: whether this top-level body parameter is rendered under the envelope's Header. Written only when read or set.</summary>
+	[JsonPropertyName("isSoapHeader")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? IsSoapHeader { get; set; }
+
+	/// <summary>
+	/// SOAP: the item element name of an array. The platform stores <c>item</c> on every parameter, so it means
+	/// something on an array only. Written only when read or set.
+	/// </summary>
+	[JsonPropertyName("sequenceElementName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string SequenceElementName { get; set; }
+
+	[JsonExtensionData] public Dictionary<string, JsonElement> Extra { get; set; }
+}
+
+/// <summary>
+/// A SOAP namespace of a service: <c>name</c> is its URI. <c>uId</c> and <c>isDefault</c> are nullable because the
+/// collection used to be read as raw JSON: a row that carries null there must not fail the whole schema read. A null
+/// member is left out on write, never sent as <c>null</c>: the platform's contract declares both as non-nullable.
+/// </summary>
+public sealed class ServiceNamespaceDto {
+	[JsonPropertyName("uId")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Guid? UId { get; set; }
+
+	[JsonPropertyName("name")] public string Name { get; set; }
+	[JsonPropertyName("prefix")] public string Prefix { get; set; }
+
+	[JsonPropertyName("isDefault")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? IsDefault { get; set; }
+
 	[JsonExtensionData] public Dictionary<string, JsonElement> Extra { get; set; }
 }
 
@@ -97,6 +143,8 @@ public sealed class ServiceAuthInfoDto {
 /// <summary>Platform enum values the contract carries as numbers (Terrasoft.Services.Metadata).</summary>
 public static class ServiceSchemaCodes {
 	public const int ServiceTypeRest = 1;
+	public const int ServiceTypeSoap11 = 2;
+	public const int ServiceTypeSoap12 = 3;
 	public const int ContentTypeJson = 1;
 	public const int ContentTypeXml = 2;
 	public const int ValueSourceNone = 0;

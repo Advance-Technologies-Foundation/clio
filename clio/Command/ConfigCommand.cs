@@ -5,7 +5,6 @@ using Clio.Command.CreatioInstallCommand;
 using Clio.Common;
 using Clio.UserEnvironment;
 using CommandLine;
-using ConsoleTables;
 
 namespace Clio.Command;
 
@@ -254,34 +253,48 @@ public class ConfigCommand : Command<ConfigOptions> {
 	private void ShowDefaults() {
 		_logger.WriteInfo($"Configuration file: {_settingsRepository.AppSettingsFilePath}");
 		DeployCreatioDefaults defaults = _settingsRepository.GetDeployCreatioDefaults();
-		if (defaults.IsEmpty) {
-			_logger.WriteInfo("No deploy-creatio defaults are configured.");
-		} else {
-			ConsoleTable table = new() {
-				Columns = { "Deploy-creatio default", "Value" },
-			};
-			table.Rows.Add(["db-server-name", defaults.DbServerName ?? string.Empty]);
-			table.Rows.Add(["redis-server-name", defaults.RedisServerName ?? string.Empty]);
-			table.Rows.Add(["site-name", defaults.SiteName ?? string.Empty]);
-			table.Rows.Add(["site-port", defaults.SitePort?.ToString() ?? string.Empty]);
-			table.Rows.Add(["site-port-range", defaults.SitePortRange is { Length: > 0 }
-				? $"[{string.Join(", ", defaults.SitePortRange)}]"
-				: string.Empty]);
-			table.Rows.Add(["deployment", defaults.DeploymentMethod ?? string.Empty]);
-			_logger.PrintTable(table);
-		}
-
 		KnowledgeFeedbackPolicy feedback = _feedbackPolicyService.GetPolicy();
-		ConsoleTable feedbackTable = new() {
-			Columns = { "Knowledge-feedback setting", "Value" },
-		};
-		feedbackTable.Rows.Add(["configured-mode", feedback.ConfiguredMode]);
-		feedbackTable.Rows.Add(["effective-mode", feedback.EffectiveMode]);
-		feedbackTable.Rows.Add(["destination", feedback.Destination]);
-		feedbackTable.Rows.Add(["reporting-scope", feedback.ReportingScope]);
-		feedbackTable.Rows.Add(["reporting-policy-hash", feedback.ReportingPolicyHash ?? string.Empty]);
-		feedbackTable.Rows.Add(["approval-state", feedback.ApprovalState]);
-		_logger.PrintTable(feedbackTable);
+
+		(string Key, string Value)[] deploySettings = defaults.IsEmpty
+			? []
+			: [
+				("db-server-name", defaults.DbServerName),
+				("redis-server-name", defaults.RedisServerName),
+				("site-name", defaults.SiteName),
+				("site-port", defaults.SitePort?.ToString()),
+				("site-port-range", defaults.SitePortRange is { Length: > 0 }
+					? string.Join(",", defaults.SitePortRange)
+					: null),
+				("deployment", defaults.DeploymentMethod),
+			];
+		(string Key, string Value)[] feedbackSettings = [
+			("configured-mode", feedback.ConfiguredMode),
+			("effective-mode", feedback.EffectiveMode),
+			("approval-state", feedback.ApprovalState),
+			("destination", feedback.Destination),
+			("reporting-scope", feedback.ReportingScope),
+			("reporting-policy-hash", feedback.ReportingPolicyHash),
+		];
+		// One key width across both sections keeps every value in the same column.
+		int keyWidth = deploySettings.Concat(feedbackSettings).Max(setting => setting.Key.Length);
+
+		_logger.WriteLine();
+		_logger.WriteLine("Deploy-creatio defaults");
+		if (defaults.IsEmpty) {
+			_logger.WriteLine("  (none configured)");
+		} else {
+			WriteSettings(deploySettings, keyWidth);
+		}
+		_logger.WriteLine();
+		_logger.WriteLine("Knowledge feedback");
+		WriteSettings(feedbackSettings, keyWidth);
+	}
+
+	private void WriteSettings(IEnumerable<(string Key, string Value)> settings, int keyWidth) {
+		foreach ((string key, string value) in settings) {
+			string displayValue = string.IsNullOrWhiteSpace(value) ? "(not set)" : value;
+			_logger.WriteLine($"  {key.PadRight(keyWidth)}  {displayValue}");
+		}
 	}
 
 }

@@ -268,6 +268,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["create-client-unit-schema"] = PassthroughClassification.NotApplicable,
 			["create-data-binding"] = PassthroughClassification.NotApplicable,
 			["create-data-binding-db"] = PassthroughClassification.NotApplicable,
+			["create-dynamic-case"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["create-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["create-entity-schema"] = PassthroughClassification.NotApplicable,
 			["create-lookup"] = PassthroughClassification.NotApplicable,
@@ -401,6 +402,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["read-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["read-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["read-page-business-rules"] = PassthroughClassification.NotApplicable,
+			["read-wsdl"] = PassthroughClassification.NotApplicable,
 			["regenerate-identity-signing-key"] = PassthroughClassification.NotApplicable,
 			["remove-data-binding-row-db"] = PassthroughClassification.NotApplicable,
 			["remove-package-dependency"] = PassthroughClassification.NotApplicable,

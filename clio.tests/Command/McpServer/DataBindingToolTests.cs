@@ -438,6 +438,34 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Returns a normal command failure envelope, without resolving an environment or writing a file, when the MCP create-data-binding package-name leaves packages/.")]
+	public void CreateDataBinding_Should_Refuse_Package_Name_That_Leaves_The_Workspace() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateDataBindingTool tool = new(
+			Container.GetRequiredService<CreateDataBindingCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver,
+			Container.GetRequiredService<IDataBindingTemplateCatalog>());
+		int pathsBefore = _mockFileSystem.AllPaths.Count();
+
+		// Act
+		CommandExecutionResult result = tool.CreateDataBinding(new CreateDataBindingArgs(
+			PackageName: "..",
+			SchemaName: "SysSettings",
+			WorkspacePath: _workspaceRoot,
+			ValuesJson: """{"Code":"UsrToolRow"}"""));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "'..' as a package name points at the workspace root, not a package");
+		result.Output.Should().Contain(message => message.GetType() == typeof(ErrorMessage)
+				&& message.Value != null && message.Value.ToString()!.Contains("is not a plain folder name"),
+			because: "the envelope must say why the package name was refused");
+		commandResolver.DidNotReceiveWithAnyArgs().Resolve<CreateDataBindingCommand>(default!);
+		_mockFileSystem.AllPaths.Count().Should().Be(pathsBefore, because: "the refusal comes before any folder or file is created");
+	}
+
+	[Test]
 	[Description("Prompt guidance for data-binding tools mentions workspace-path, the exact production tool names, and the conditional offline-template behavior for create-data-binding.")]
 	public void DataBindingPrompt_Should_Mention_Workspace_Path_And_Tool_Names() {
 		// Arrange

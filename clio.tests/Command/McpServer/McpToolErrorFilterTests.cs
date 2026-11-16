@@ -470,7 +470,11 @@ public sealed class McpToolErrorFilterTests
 		};
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
 			McpToolErrorFilter.HandleCallToolErrors((_, _) => new ValueTask<CallToolResult>(expected));
-		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool"));
+		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool", new Dictionary<string, JsonElement> {
+			// A complete call: a required argument left out is refused before the tool runs, which is not
+			// what this case is about.
+			["args"] = JsonSerializer.SerializeToElement(new Dictionary<string, string>())
+		}));
 		context.MatchedPrimitive = CreateRetrySafeTool();
 
 		// Act
@@ -489,7 +493,11 @@ public sealed class McpToolErrorFilterTests
 		InvalidOperationException executionException = new("Environment with key 'NoSuchEnv' not found.");
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
 			McpToolErrorFilter.HandleCallToolErrors((_, _) => throw executionException);
-		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool"));
+		RequestContext<CallToolRequestParams> context = WithRoutingAuthority(CreateContext("fake-read-tool", new Dictionary<string, JsonElement> {
+			// A complete call: a required argument left out is refused before the tool runs, which is not
+			// what this case is about.
+			["args"] = JsonSerializer.SerializeToElement(new Dictionary<string, string>())
+		}));
 		context.MatchedPrimitive = CreateRetrySafeTool();
 
 		// Act
@@ -1673,32 +1681,36 @@ public sealed class McpToolErrorFilterTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("T6b: an empty payload is left exactly as it is for a tool that has NOT declared no-arguments capability, so today's missing-parameter error is preserved — the capability is fail-closed (ENG-95885 R3).")]
+	[Description("T6b: an empty payload is left exactly as it is for a tool that has NOT declared no-arguments capability, so it is refused as a call that leaves out its required args rather than run with a synthesized empty record — the capability is fail-closed (ENG-95885 R3).")]
 	public async Task Normalization_ShouldLeaveEmptyPayloadUntouched_WhenToolDidNotDeclareCapability() {
 		// Arrange
 		Dictionary<string, JsonElement> arguments = new();
 		RequestContext<CallToolRequestParams> context = CreateContext("list-apps", arguments);
 		context.MatchedPrimitive = CreateRealTool();
-		CallToolRequestParams? forwardedParams = null;
+		bool nextCalled = false;
 		// ENG-95262 Stage 4b: the matched dispatch site is FAIL-CLOSED without a routing authority, so a
 		// context that carries a MatchedPrimitive and continues into the pipeline must carry the router
 		// too — exactly as a real host does.
 		context = WithRoutingAuthority(context);
 		McpRequestHandler<CallToolRequestParams, CallToolResult> handler =
-			McpToolErrorFilter.HandleCallToolErrors((forwardedContext, _) => {
-				forwardedParams = forwardedContext.Params;
+			McpToolErrorFilter.HandleCallToolErrors((_, _) => {
+				nextCalled = true;
 				return ValueTask.FromResult(new CallToolResult { IsError = false });
 			});
 
 		// Act
-		await handler(context, CancellationToken.None);
+		CallToolResult result = await handler(context, CancellationToken.None);
 
 		// Assert
-		forwardedParams!.Arguments.Should().BeSameAs(arguments,
-			because: "capability is declared explicitly, never inferred — an undeclared tool keeps its current "
-				+ "missing-parameter behavior");
-		forwardedParams.Arguments.Should().BeEmpty(
-			because: "the empty payload is passed through untouched, not turned into a synthesized wrapper");
+		context.Params!.Arguments.Should().BeSameAs(arguments,
+			because: "capability is declared explicitly, never inferred — an undeclared tool gets no synthesized wrapper");
+		context.Params.Arguments.Should().BeEmpty(
+			because: "the empty payload is left untouched, not turned into a synthesized wrapper");
+		nextCalled.Should().BeFalse(
+			because: "the tool's required args is missing, so the call is refused before the tool runs");
+		string text = string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		text.Should().StartWith("invalid-parameter-type: argument 'args' for MCP tool 'list-apps' is required and was not sent.",
+			because: "the missing-parameter error now names the argument instead of passing on the SDK's binder text");
 	}
 
 	[Test]

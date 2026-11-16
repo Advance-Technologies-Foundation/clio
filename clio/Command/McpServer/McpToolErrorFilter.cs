@@ -70,6 +70,13 @@ public static partial class McpToolErrorFilter
 		if (TryCreateMissingCompositeArgumentHint(context, out CallToolResult? hintResult)) {
 			return hintResult;
 		}
+		// A required argument the call leaves out - most often a flat camelCase parameter sent in kebab-case -
+		// is refused here with the argument named, instead of the SDK's "The arguments dictionary is missing a
+		// value for the required parameter" thrown out of next(). Before routing, like the checks above, so a
+		// call to a worker-routed tool that cannot bind is refused in the host instead of being relayed.
+		if (TryCreateMissingArgumentError(context, out CallToolResult? missingArgumentResult)) {
+			return missingArgumentResult;
+		}
 		try {
 			// ENG-95262 dispatch site (a) of three — the MATCHED path. The routing question is asked here,
 			// inside the try, so anything unexpected it raises still leaves through the redacted catch

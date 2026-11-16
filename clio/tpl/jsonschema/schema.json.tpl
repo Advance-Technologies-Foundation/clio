@@ -209,34 +209,58 @@
 		},
 		"knowledgefeedbacksettings": {
 			"type": "object",
+			"description": "What a coding agent does when observed behavior contradicts, deviates from, or exposes a gap in Clio guidance. Clio stores this policy only; the agent files the issue with its own GitHub access. Prefer 'clio config --knowledge-feedback-mode <ask|auto|off> --knowledge-feedback-destination <url> --knowledge-feedback-reporting-scope <full|sanitized>' over editing this block by hand, because selecting auto there also records the standing approval.",
 			"additionalProperties": false,
 			"properties": {
 				"mode": {
 					"type": "string",
 					"enum": ["ask", "auto", "off"],
-					"default": "ask"
+					"enumDescriptions": [
+						"Keep the evidence and ask the user, for each discrepancy, whether to file an issue",
+						"File the issue at the end of the task without asking; requires a standing-approval, and the effective mode falls back to ask when the approved guidance article changes",
+						"Do not report discrepancies and do not ask about them"
+					],
+					"default": "ask",
+					"description": "Configured feedback mode. ask: ask the user for each discrepancy. auto: file automatically at task end; requires a standing-approval, and when the 'knowledge-feedback' guidance article changes so that its hash differs from standing-approval.policy-hash, the effective mode is ask until auto is approved again (temporary unavailability of the article does not downgrade an existing approval). off: no reporting and no prompts."
 				},
 				"destination": {
 					"type": "string",
 					"format": "uri",
-					"description": "Exact HTTPS GitHub repository URL used for feedback issues"
+					"pattern": "^https://[^/@?#\\s]+/[^/?#\\s]+/[^/?#\\s]+/?$",
+					"default": "https://github.com/Advance-Technologies-Foundation/clio",
+					"description": "GitHub repository where the agent files feedback issues, as https://<host>/<owner>/<repository>. Must be HTTPS with no credentials, query, or fragment; GitHub Enterprise hosts are allowed. The agent never falls back to another repository.",
+					"examples": [
+						"https://github.com/Advance-Technologies-Foundation/clio",
+						"https://creatio.ghe.com/engineering/clio-feedback"
+					]
 				},
 				"reporting-scope": {
 					"type": "string",
 					"enum": ["full", "sanitized"],
-					"default": "sanitized"
+					"enumDescriptions": [
+						"Comprehensive internal report, for a private destination repository only, never a public one: commands and tool inputs/outputs, errors and traces, versions, environment identifiers, local paths, chronology, workaround, and verified behavior",
+						"Public-safe report: customer, organization, user, environment, and host identifiers, private URLs, local paths, sensitive configuration, and raw logs are removed or generalized; keeps a minimal reproduction, versions, expected/actual behavior, and workaround"
+					],
+					"default": "sanitized",
+					"description": "How much detail a feedback issue contains. full: comprehensive internal report, for a private destination repository only; do not combine it with a public destination. sanitized: public-safe report, intended for a public repository. Both scopes always exclude passwords, tokens, keys, cookies, other authentication material, and hidden chain-of-thought."
 				},
 				"standing-approval": {
-					"$ref": "#/definitions/knowledgefeedbackapproval"
+					"$ref": "#/definitions/knowledgefeedbackapproval",
+					"description": "Written by Clio when auto mode is selected; do not edit by hand. Records which version of the 'knowledge-feedback' guidance article the user approved for automatic reporting. Removed when 'clio config' or the configure-knowledge-feedback-policy MCP tool sets the mode to ask or off; editing mode by hand leaves it in place."
 				}
 			},
 			"required": ["mode", "destination", "reporting-scope"]
 		},
 		"knowledgefeedbackapproval": {
 			"type": "object",
+			"description": "Standing approval for automatic knowledge-feedback reporting.",
 			"additionalProperties": false,
 			"properties": {
-				"policy-hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+				"policy-hash": {
+					"type": "string",
+					"pattern": "^sha256:[0-9a-f]{64}$",
+					"description": "SHA-256 of the exact 'knowledge-feedback' guidance article the user approved, as sha256:<64 lowercase hex characters>. When that article changes, the hash no longer matches and the effective mode falls back to ask until auto is approved again. Changes to other guidance articles or the library version do not affect it."
+				}
 			},
 			"required": ["policy-hash"]
 		},

@@ -198,7 +198,11 @@ internal static class McpToolRegistrySchemaContract {
 		element.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
 		NormalizeType(typeElement) == ObjectType;
 
-	private static List<string> ReadRequired(JsonElement schema) {
+	/// <summary>
+	/// The names in a schema's top-level <c>required</c> array, in order; empty when the array is absent. Shared
+	/// with <c>McpToolErrorFilter.TryCreateMissingArgumentError</c>, which reads a tool's input schema by it.
+	/// </summary>
+	internal static List<string> ReadRequired(JsonElement schema) {
 		List<string> required = [];
 		if (schema.TryGetProperty(RequiredPropertyName, out JsonElement requiredElement) &&
 			requiredElement.ValueKind == JsonValueKind.Array) {
@@ -211,7 +215,12 @@ internal static class McpToolRegistrySchemaContract {
 		return required;
 	}
 
-	private static string ReadType(JsonElement propertyValue) {
+	/// <summary>
+	/// A schema property's JSON type in one word: its <c>type</c>, the first non-null one for a nullable
+	/// <c>["string","null"]</c>, <c>any</c> for a schema that constrains nothing, and <c>object</c> for anything
+	/// else without a <c>type</c>. Shared with <c>McpToolErrorFilter.TryCreateMissingArgumentError</c>.
+	/// </summary>
+	internal static string ReadType(JsonElement propertyValue) {
 		if (IsUnconstrained(propertyValue)) {
 			return AnyType;
 		}

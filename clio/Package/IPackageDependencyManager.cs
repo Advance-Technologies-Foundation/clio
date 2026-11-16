@@ -37,6 +37,15 @@ public interface IPackageDependencyManager
 	IReadOnlyList<string> AddDependencies(string packageName, IEnumerable<PackageDependencySpec> dependencies);
 
 	/// <summary>
+	/// Same as <see cref="AddDependencies"/>, and also answers whether the server asked for a configuration
+	/// compilation after the change (<c>SavePackageProperties</c>' <c>CompilationRequired</c>).
+	/// </summary>
+	/// <param name="packageName">Target package whose dependency list is extended.</param>
+	/// <param name="dependencies">Dependencies to add.</param>
+	PackageDependencyAddResult AddDependenciesReportingCompilation(string packageName,
+		IEnumerable<PackageDependencySpec> dependencies);
+
+	/// <summary>
 	/// Reads the dependencies <paramref name="packageName"/> currently declares, without changing anything.
 	/// Returns the DIRECT dependencies only - what the package descriptor declares, not the transitive
 	/// closure.
@@ -92,3 +101,8 @@ public interface IPackageDependencyManager
 }
 
 #endregion
+
+/// <summary>The dependencies after an add, and whether the server asked for a configuration compilation.</summary>
+/// <param name="Dependencies">The resulting dependency package names.</param>
+/// <param name="CompilationRequired">The server answered <c>CompilationRequired</c> for the save.</param>
+public sealed record PackageDependencyAddResult(IReadOnlyList<string> Dependencies, bool CompilationRequired);

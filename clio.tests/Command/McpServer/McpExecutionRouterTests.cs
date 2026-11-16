@@ -126,7 +126,10 @@ public sealed class McpExecutionRouterTests {
 
 		// Act — site (a): the matched filter, reached under the canonical name.
 		bool matchedPipelineContinued = false;
-		RequestContext<CallToolRequestParams> matchedContext = CallContext(WorkerToolCanonicalName);
+		// The echo tool's own argument, as site (c) sends it: a call that leaves it out is refused before
+		// routing, which would make the matched site answer for a different reason than the other two.
+		RequestContext<CallToolRequestParams> matchedContext = CallContext(WorkerToolCanonicalName,
+			new Dictionary<string, JsonElement> { ["value"] = JsonSerializer.SerializeToElement("x") });
 		matchedContext.MatchedPrimitive = canonicalTool;
 		matchedContext.Services = ProviderWith(sharedRouter);
 		CallToolResult viaMatchedName = await McpToolErrorFilter.HandleCallToolErrors(
@@ -925,7 +928,9 @@ public sealed class McpExecutionRouterTests {
 		// would say so. No real host reaches this branch: the router is registered on the transport-neutral
 		// RegisterInto path, so stdio, mcp-http and the per-request tenant containers all resolve it.
 		bool nextCalled = false;
-		RequestContext<CallToolRequestParams> context = CallContext(EchoToolName);
+		// A complete call, so the refusal below can only come from the missing router.
+		RequestContext<CallToolRequestParams> context = CallContext(EchoToolName,
+			new Dictionary<string, JsonElement> { ["value"] = JsonSerializer.SerializeToElement("x") });
 		context.MatchedPrimitive = BuildEchoTool();
 
 		// Act
@@ -982,7 +987,9 @@ public sealed class McpExecutionRouterTests {
 	// A matched-path context: the echo tool as MatchedPrimitive plus a provider carrying the router, which
 	// is how the static filter reaches the authority at runtime.
 	private static RequestContext<CallToolRequestParams> MatchedContext(IMcpExecutionRouter router) {
-		RequestContext<CallToolRequestParams> context = CallContext(EchoToolName);
+		// A complete call: a required argument left out is refused before an in-process tool runs.
+		RequestContext<CallToolRequestParams> context = CallContext(EchoToolName,
+			new Dictionary<string, JsonElement> { ["value"] = JsonSerializer.SerializeToElement("x") });
 		context.MatchedPrimitive = BuildEchoTool();
 		context.Services = ProviderWith(router);
 		return context;
