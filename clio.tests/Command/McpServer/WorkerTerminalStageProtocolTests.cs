@@ -99,10 +99,12 @@ public sealed class WorkerTerminalStageProtocolTests {
 	/// </para>
 	/// <para>
 	/// The bound was one second with a refresh every third of it, which left a beat 667 ms to cross two
-	/// relay hops. Each hop needs a thread-pool thread, and with four fixtures running at once on a small
-	/// agent the pool hands one out late: the beat arrived after the bound and a healthy run was reported
-	/// as an error, about once in twenty builds. Four seconds with a refresh every 400 ms leaves 3.6 s, so
-	/// eight beats in a row have to be late before the bound can expire.
+	/// relay hops. Each hop needs a thread-pool thread, and with three fixtures running at once (the
+	/// assembly's LevelOfParallelism) on a small agent the pool hands one out late: the beat arrived after
+	/// the bound and a healthy run was reported as an error. This test and the streaming one below together
+	/// failed about one build in nineteen. Four seconds with a refresh every 400 ms leaves 3.6 s: after a
+	/// beat is observed the next nine fall due inside the bound, so nine beats in a row have to be late
+	/// before it can expire.
 	/// </para>
 	/// </remarks>
 	private static readonly TimeSpan LongStageSilenceBound = TimeSpan.FromSeconds(4);
@@ -1126,8 +1128,8 @@ public sealed class WorkerTerminalStageProtocolTests {
 		/// <remarks>
 		/// The refresh interval is scaled to a tenth of the silence bound — the same RATIO the shipped
 		/// numbers hold (30 s inside 300 s) at a size a unit test can wait out. Nothing else about the
-		/// emitter is arranged: if the shipped emitter stops refreshing, this child falls silent for three
-		/// whole silence windows and the parent kills it.
+		/// emitter is arranged: if the shipped emitter stops refreshing, this child falls silent for one
+		/// and a half silence windows and the parent kills it.
 		/// </remarks>
 		/// <param name="toParent">The child's output.</param>
 		/// <param name="progressToken">The token the call carried.</param>
