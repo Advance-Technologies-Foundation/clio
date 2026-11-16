@@ -207,7 +207,7 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 
 	/// <summary>
 	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
-	/// <c>{ "method": ..., "url": ... }</c> for every request the stub has served, letting a test prove
+	/// <c>{ "method": ..., "url": ..., "body": ... }</c> for every request the stub has served, letting a test prove
 	/// which URL the pre-write validation actually requested and that no PATCH was issued.
 	/// </summary>
 	public const string RecordedRequestsPath = "/__stub/requests";
@@ -235,6 +235,7 @@ const http = require("http");
 const config = {{configJson}};
 const port = {{port.ToString(CultureInfo.InvariantCulture)}};
 const recordedRequests = [];
+let backgroundGalleryRegistered = false;
 
 // CSDL 4.0 served at the SERVICE-ROOT odata/$metadata. Declares only Id and Name, so any other
 // field name in an odata-update payload must be rejected before the PATCH.
@@ -309,7 +310,7 @@ http.createServer((request, response) => {
       sendJson(response, 200, recordedRequests);
       return;
     }
-    recordedRequests.push({ method: request.method, url: url });
+    recordedRequests.push({ method: request.method, url: url, body: body });
     // A stopped or recycling application pool answers 503 on every route, including the auth endpoint.
     // It goes FIRST on purpose: the whole point of the switch is that no route answers normally.
     if (config.AllRoutesUnavailable) {
@@ -386,6 +387,17 @@ http.createServer((request, response) => {
       }
       response.end("<!DOCTYPE html><html><head><title>Runtime Error</title></head><body>"
         + "Server Error in '/' Application. {{DesignerHtmlBodyMarker}}</body></html>");
+      return;
+    }
+    if (config.ThemePackageName && request.method === "POST"
+      && (url === "/DataService/json/SyncReply/SelectQuery" || url === "/0/DataService/json/SyncReply/SelectQuery")
+      && body.includes('"SysPackage"')) {
+      sendJson(response, 200, { success: true, rows: [{
+        Id: "cccccccc-0000-0000-0000-000000000001",
+        Name: config.ThemePackageName,
+        UId: "cccccccc-0000-0000-0000-000000000002",
+        InstallType: config.ThemePackageLocked ? 1 : 0
+      }] });
       return;
     }
     if (config.DesignerPackageName && !config.AuthRejectedSelectQuerySchemaName && !config.HtmlSelectQuerySchemaName
@@ -609,6 +621,30 @@ http.createServer((request, response) => {
         return;
       }
       sendText(response, 404, "Not Found");
+      return;
+    }
+    if (config.ThemeWriteResponseJson && request.method === "POST"
+      && (url === "/ServiceModel/ThemeService.svc/CreateTheme" || url === "/ServiceModel/ThemeService.svc/UpdateTheme")) {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(config.ThemeWriteResponseJson);
+      return;
+    }
+    if (config.BackgroundGalleryImageId && url.includes("/odata/SysImage")) {
+      if (request.method === "GET" && url.includes("/odata/SysImage?")) {
+        sendJson(response, 200, { value: [{ Id: config.BackgroundGalleryImageId }] });
+        return;
+      }
+      if (request.method === "GET" && url.includes("/odata/SysImageTag?")) {
+        sendJson(response, 200, { value: [{ Id: "273C2402-7CAE-456B-A9C4-067D2024F1A7" }] });
+        return;
+      }
+      if (request.method === "POST" && url.endsWith("/odata/SysImageInTag")) {
+        backgroundGalleryRegistered = true;
+        sendJson(response, 201, {});
+        return;
+      }
+      const listed = config.BackgroundGalleryListsRegistration && backgroundGalleryRegistered;
+      sendJson(response, 200, { value: listed ? [{ Id: "8b1c2d3e-4f50-4a6b-9c7d-e8f9a0b1c2d3" }] : [] });
       return;
     }
     if (request.method === "GET" && config.ThemeCssPath && url === config.ThemeCssPath) {
@@ -854,6 +890,11 @@ http.createServer((request, response) => {
 /// <paramref name="ThemeCatalogJson"/>, prefixed with '/', because that is the value the tool builds the URL from.
 /// </param>
 /// <param name="ThemeCssContent">The body served at <paramref name="ThemeCssPath"/>; null or empty serves an empty file.</param>
+/// <param name="ThemePackageName">
+/// When set, a DataService <c>SelectQuery</c> on <c>SysPackage</c> answers with this one package, so a theme
+/// background can check its package before the background gallery step.
+/// </param>
+/// <param name="ThemePackageLocked">Whether the package named by <paramref name="ThemePackageName"/> is locked.</param>
 internal sealed record RuntimeDetectionStubServerConfiguration(
 	bool NetCoreHealthEnabled,
 	bool NetFrameworkHealthEnabled,
@@ -883,7 +924,12 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? DesignerSchemaName = null,
 	string? PackageSynchronizationResponse = null,
 	bool NonJsonSysSettingsWriteEnabled = false,
-	string? ShellPageHtml = null);
+	string? ShellPageHtml = null,
+	string? ThemeWriteResponseJson = null,
+	string? BackgroundGalleryImageId = null,
+	bool BackgroundGalleryListsRegistration = false,
+	string? ThemePackageName = null,
+	bool ThemePackageLocked = false);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by
@@ -891,4 +937,6 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 /// </summary>
 /// <param name="Method">HTTP method of the request.</param>
 /// <param name="Url">Request URL, path and query, as the stub received it.</param>
-internal sealed record RecordedStubRequest(string Method, string Url);
+internal sealed record RecordedStubRequest(string Method, string Url) {
+	public string? Body { get; init; }
+}

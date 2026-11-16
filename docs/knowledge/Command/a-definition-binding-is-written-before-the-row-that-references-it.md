@@ -2,15 +2,18 @@
 description: PackageDataBinder.BindFeatureOffState writes the Feature_<code> definition folder before the AdminUnitFeatureState row folder on purpose - a throw on the second SaveBinding must not leave a row shipped without its definition
 applies-to:
   - clio/Command/PackageDataBinder.cs
+  - clio/Command/Branding/BrandingBackgroundService.cs
+  - clio/Command/Branding/SetBackgroundImageCommand.cs
 ticket: ENG-93848
 date: 2026-08-19
 ---
 
 **What is true** — in `BindFeatureOffState` the `SaveBinding` for the `Feature` definition folder runs
 before the `SaveBinding` for the `AdminUnitFeatureState` folder. The order is load-bearing and there is
-no comment saying so. The same rule holds for the caller's pair in
-`SetBackgroundImageCommand`: the `SysImage` row is bound before the `CrtBackgroundConfig` value that
-names it, and the config is withdrawn (`RemoveSysSettingsValue`) when the image is not bound.
+no comment saying so. The same rule holds for the background parts: `BrandingBackgroundService`
+binds the `SysImage` row before the gallery membership that names it, `SetBackgroundImageCommand` binds
+the `CrtBackgroundConfig` value after both, and each is withdrawn (`RemoveBinding`,
+`RemoveSysSettingsValue`) when the image is not bound.
 
 **Why it is this way** — `SaveBinding` is one platform round trip per folder, so a group of related
 folders is never atomic. Whichever folder is written second is the one that can be missing after a

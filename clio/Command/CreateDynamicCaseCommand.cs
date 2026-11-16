@@ -18,15 +18,18 @@ namespace Clio.Command;
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 
-	/// <summary>The first CrtProcessBuilder archive that carries <c>BuildCase</c>.</summary>
+	/// <summary>The first CrtProcessBuilder archive whose <c>BuildCase</c> takes a filter and a subset of the stages.</summary>
 	/// <remarks>
-	/// The one place the floor is written: 1.6.6.165, the first cut that carries it. Every earlier archive has no
+	/// The one place the floor is written. 1.6.6.179 is the first shipped cut whose <c>BuildCase</c> reads <c>filter</c> and
+	/// <c>deactivateUnfiltered</c> and takes a subset of the stage lookup: an older one refuses those as unknown keys or
+	/// as an incomplete stage list, so the floor names the package that answers them. 1.6.6.165 was the first cut that
+	/// carries <c>BuildCase</c> at all. Every earlier archive has no
 	/// <c>BuildCase</c>: 1.6.6.162 and below, and 1.6.6.163 and 1.6.6.164, cut on another branch at the same time
 	/// (1.6.6.154 and 1.6.6.160 were this branch's own cuts and never shipped), so a lower floor would let the call
 	/// reach a package that answers its route with a 404. <c>BundledArchive_ShouldCarryBuildCase_WhenItMeetsTheCaseFloor</c> ties the floor to the archive's
 	/// content, not only its number.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.165";
+	public const string MinimumProcessBuilderVersion = "1.6.6.179";
 
 	/// <summary>The editable package that receives the case and both settings bindings.</summary>
 	public string PackageName { get; set; } = string.Empty;
@@ -37,11 +40,23 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 	/// <summary>The lookup column whose values become the stages.</summary>
 	public string StageColumnName { get; set; } = string.Empty;
 
-	/// <summary>The explicit stage order (lookup value Ids or exact display values); empty for the default order.</summary>
-	public IReadOnlyList<string> Stages { get; set; } = [];
+	/// <summary>
+	/// The explicit stage order (lookup value Ids or exact display values), each with its optional stage group and
+	/// successful flag; empty for the default order.
+	/// </summary>
+	public IReadOnlyList<DynamicCaseStageItem> Stages { get; set; } = [];
 
 	/// <summary>An integer column of the lookup that orders the stages; ignored when <see cref="Stages"/> is given.</summary>
 	public string OrderColumn { get; set; }
+
+	/// <summary>Which new records start the case; <see langword="null"/> for a case without a filter.</summary>
+	public DynamicCaseFilterArgument Filter { get; set; }
+
+	/// <summary>
+	/// The user's yes to disabling the object's enabled cases without a filter, so that this filtered case can start
+	/// next to its siblings.
+	/// </summary>
+	public bool DeactivateUnfiltered { get; set; }
 
 	/// <summary>The case's schema name; the server derives one when empty.</summary>
 	public string Name { get; set; }

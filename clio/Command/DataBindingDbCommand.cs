@@ -1302,16 +1302,22 @@ internal sealed class DataBindingDbService(
 
 		List<DataBindingDbRowInput> result = [];
 		foreach (JsonNode? item in array) {
-			if (item is JsonObject rowObj &&
-				rowObj.TryGetPropertyValue("values", out JsonNode? valuesNode) &&
-				valuesNode is JsonObject valuesObj) {
-				Dictionary<string, JsonNode?> values = valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value);
-				string rowLabel = DescribeRow(values, result.Count);
-				rowObj.TryGetPropertyValue("localizations", out JsonNode? localizationsNode);
-				result.Add(new DataBindingDbRowInput(
-					values,
-					new DataBindingRowLocalization(rowLabel, ParseRowLocalizations(localizationsNode, rowLabel))));
+			if (item is not JsonObject rowObj ||
+				!rowObj.TryGetPropertyValue("values", out JsonNode? valuesNode) ||
+				valuesNode is not JsonObject valuesObj) {
+				//Refused rather than skipped: a skipped row leaves an empty binding behind and reports success, so a
+				//caller who passed the columns directly never learns that nothing was bound.
+				throw new InvalidOperationException(
+					$"--rows item #{result.Count + 1} must be an object with a 'values' object that holds the column values, "
+					+ "for example [{\"values\":{\"Name\":\"Row\"}}]. Nothing was written.");
 			}
+
+			Dictionary<string, JsonNode?> values = valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value);
+			string rowLabel = DescribeRow(values, result.Count);
+			rowObj.TryGetPropertyValue("localizations", out JsonNode? localizationsNode);
+			result.Add(new DataBindingDbRowInput(
+				values,
+				new DataBindingRowLocalization(rowLabel, ParseRowLocalizations(localizationsNode, rowLabel))));
 		}
 
 		return result;
