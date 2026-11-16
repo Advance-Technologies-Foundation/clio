@@ -1,10 +1,13 @@
 # Release Process
 
-## Codex skill
+## Shared release skill
 
-Ask Codex to make a clio release, or invoke `$clio-release`. The repository skill
-is in [`.agents/skills/clio-release/SKILL.md`](.agents/skills/clio-release/SKILL.md),
-with a compatibility link under `.codex/skills/clio-release`.
+Ask Codex or Claude to make a clio release, or invoke the `clio-release` skill
+(`$clio-release` in Codex, `/clio-release` in Claude Code). The single canonical
+skill is in [`.ai/skills/clio-release/SKILL.md`](.ai/skills/clio-release/SKILL.md).
+Thin discovery wrappers in `.agents/skills`, `.codex/skills`, and `.claude/skills`
+all point to that same procedure. They work on Windows without requiring symlink
+support; edit the canonical procedure rather than creating agent-specific copies.
 Codex discovers repository skills in `.agents/skills`; if the new skill does not
 appear after the file changes, restart Codex
 ([official skill documentation](https://learn.chatgpt.com/docs/build-skills)).
