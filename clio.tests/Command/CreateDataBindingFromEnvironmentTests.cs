@@ -45,6 +45,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 	private string _localizationRowsJson = string.Empty;
 	private string _columnRowsJson = string.Empty;
 	private string _modifiedOnResponseJson = string.Empty;
+	private readonly List<string> _registrationRequestBodies = [];
 
 	public override void Setup() {
 		base.Setup();
@@ -78,6 +79,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 
 	public override void TearDown() {
 		base.TearDown();
+		_registrationRequestBodies.Clear();
 		_applicationClient.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
@@ -371,6 +373,121 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
 	}
 
+	[Test]
+	[Description("Refuses a stored culture snapshot that is not package data JSON before any file is written, naming the Localization file it would have become.")]
+	public void Execute_ShouldFailAndWriteNothing_WhenStoredLocalizationIsCorrupt() {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_localizationRowsJson)!.AsArray();
+		rows[1]!["Data"] = "<html>not json</html>";
+		_localizationRowsJson = rows.ToJsonString();
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(1, because: "a corrupt culture snapshot must not reach the package folder");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("Localization/data.uk-UA.json") && message.Contains("not package data JSON")));
+		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
+	}
+
+	[Test]
+	[Description("Writes no Localization file for a culture whose stored snapshot is blank.")]
+	public void Execute_ShouldSkipCulture_WhenStoredLocalizationIsBlank() {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_localizationRowsJson)!.AsArray();
+		rows[1]!["Data"] = null;
+		_localizationRowsJson = rows.ToJsonString();
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a blank snapshot is no culture to write, not an error");
+		FileSystem.File.Exists(BindingPath("Localization", "data.uk-UA.json")).Should().BeFalse(
+			because: "a culture without a stored snapshot gets no file");
+		FileSystem.File.Exists(BindingPath("Localization", "data.en-US.json")).Should().BeTrue(
+			because: "the other cultures are still written");
+	}
+
+	[TestCase("..\\..\\evil")]
+	[TestCase("en-US/../../evil")]
+	[TestCase("..")]
+	[Description("Refuses a culture name from the environment that is not a plain culture name, so no file lands outside Data/<binding>/Localization/, and writes nothing.")]
+	public void Execute_ShouldFailAndWriteNothing_WhenStoredCultureNameIsNotACultureName(string cultureName) {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_localizationRowsJson)!.AsArray();
+		rows[0]!["CultureName"] = cultureName;
+		_localizationRowsJson = rows.ToJsonString();
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(1, because: "the culture name becomes a file name and must stay a plain culture name");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("is not a culture name")));
+		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
+	}
+
+	[Test]
+	[Description("Refuses --from-environment with neither --binding-name nor --schema before any request is sent.")]
+	public void Execute_ShouldFailBeforeAnyRequest_WhenNeitherBindingNameNorSchemaIsGiven() {
+		// Arrange
+		CreateDataBindingOptions options = FromEnvironmentOptions();
+		options.BindingName = null;
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "there is no binding to read");
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("--binding-name") && message.Contains("--schema")));
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Description("Reads the binding named after --schema when --binding-name is omitted, the same rule as without --from-environment.")]
+	public void Execute_ShouldReadBindingNamedAfterSchema_WhenOnlySchemaIsGiven() {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_registrationRowsJson)!.AsArray();
+		rows[0]!["Name"] = "SysDetail";
+		_registrationRowsJson = rows.ToJsonString();
+		CreateDataBindingOptions options = FromEnvironmentOptions();
+		options.BindingName = null;
+		options.SchemaName = "SysDetail";
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the schema name names the binding when --binding-name is omitted");
+		_registrationRequestBodies.Should().ContainSingle(because: "the registration is read once")
+			.Which.Should().Contain("\"SysDetail\"", because: "the registration is filtered on the schema name");
+		FileSystem.File.Exists(WorkspacePath("packages", PackageName, "Data", "SysDetail", "descriptor.json")).Should()
+			.BeTrue(because: "the binding is written under its stored name");
+	}
+
+	[Test]
+	[Description("Refuses create-data-binding without --schema and without --from-environment before any request or write, now that the parser no longer requires --schema.")]
+	public void Execute_ShouldFailBeforeAnyRequest_WhenSchemaIsMissingWithoutFromEnvironment() {
+		// Arrange
+		CreateDataBindingOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = BindingName
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "without --from-environment the descriptor is built from the schema");
+		_logger.Received(1).WriteError("--schema is required unless --from-environment is set.");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
+	}
+
 	private static CreateDataBindingOptions FromEnvironmentOptions() => new() {
 		Environment = "dev",
 		PackageName = PackageName,
@@ -381,12 +498,17 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 	private string BuildSelectResponse(string body) {
 		string? rootSchemaName = JsonNode.Parse(body)?["rootSchemaName"]?.GetValue<string>();
 		string rows = rootSchemaName switch {
-			"SysPackageSchemaData" => _registrationRowsJson,
+			"SysPackageSchemaData" => RecordRegistrationRequest(body),
 			"SysPackageSchemaDataColumn" => _columnRowsJson,
 			"SysPackageDataLcz" => _localizationRowsJson,
 			_ => "[]"
 		};
 		return $$"""{"rows":{{rows}},"success":true}""";
+	}
+
+	private string RecordRegistrationRequest(string body) {
+		_registrationRequestBodies.Add(body);
+		return _registrationRowsJson;
 	}
 
 	private static Dictionary<string, object> ColumnRow(

@@ -995,7 +995,7 @@ internal sealed class DataBindingDbService(
 	/// already refuses those shapes; this is the same rule for the DB-first create and upsert paths.
 	/// </para>
 	/// </remarks>
-	private static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
+	internal static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
 		dataValueType switch {
 			ColorRuntimeDataValueType => ConvertColorValue(columnName, value),
 			_ when IsDateOrTimeDataValueType(dataValueType) => ConvertDateOrTimeValue(columnName, value, dataValueType),
