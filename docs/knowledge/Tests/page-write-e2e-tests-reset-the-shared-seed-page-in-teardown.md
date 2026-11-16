@@ -1,5 +1,5 @@
 ---
-description: a test that writes the shared page ClioMcp_BlankPageToSave takes SeededBlankPage.LeaseAsync and the fixture's [TearDown] resets the page - the lease isolates the tests but FAILS the test on a page found not blank, a reset the first read does not show, a blank read of no or another schema, and two stored schemas in one package
+description: a test that writes the shared page ClioMcp_BlankPageToSave takes SeededBlankPage.LeaseAsync and the fixture's [TearDown] resets the page - the lease isolates the tests but FAILS the test on a page found not blank, a blank read of no or another schema than the last verified reset, a reset the first read does not show or whose save did not move the stored ModifiedOn, and two stored schemas in one package
 applies-to:
   - clio.mcp.e2e/Support/Creatio/SeededBlankPage.cs
   - clio.mcp.e2e/PageSyncToolE2ETests.cs
@@ -19,25 +19,48 @@ state that only the product defect produces:
 
 - **Start, page not blank** — reset, then fail ("found NOT blank before this test", with the section,
   the component names, the stored rows read before the reset). Only the first lease of the test
-  process is exempt (process-wide flag): a developer's stand may start dirty.
+  process is exempt: a developer's stand may start dirty, and the code cannot know whether the page
+  was ever saved on this site.
 - **Start, blank body but no editable schema** (`editable.editableSchemaExists=false`: the body
-  `get-page` synthesizes) — the same: fail on any lease after the first, accept on the first, where a
-  fresh site has no editable schema yet.
+  `get-page` synthesizes) — the same: fail on any lease after the first, accept on the first.
+- **Start, blank but not what the last verified reset left** — the process-wide `LeaseLedger`
+  remembers the editable schema UId and checksum of the first read after the previous lease's verified
+  reset. A later lease that reads the page blank from another UId, or the same UId with another
+  checksum, resets and fails. Nothing is compared when the previous lease did not end verified or when a
+  test wrote the page outside a lease since: `ClioPagesConcurrencyE2ETests` calls
+  `SeededBlankPage.RecordWriteOutsideLease` before its two saves (the only writer outside a lease; the
+  unleased page tests are dry runs, which do not write).
+- **What a later lease's failure says** depends on how the previous lease ended (`PreviousLeaseEnd`):
+  it blames the product only after a verified reset with no writer outside a lease since; after a
+  failed reset ("did NOT end with a verified reset") or a lease that never recorded its end (its
+  TearDown or lease start threw: "did not complete") it says the state may be what that test left.
 - **End (`[TearDown]`)** — the blank body is ALWAYS written, also when the page looks blank. The reset
   polls up to 6 reads so the next test starts clean, but it passes only when the FIRST read shows it:
-  blank body, `editableSchemaExists=true`, and `editable.checksum` equal to the
-  `pages[].digest.checksum` the reset save reported. A later read that shows it, or six blank reads
-  with another checksum, fail the test.
+  blank body, `editableSchemaExists=true`, `editable.checksum` equal to the `pages[].digest.checksum`
+  the reset save reported, AND the stored `SysSchema.ModifiedOn` of the schema that read resolved
+  moved past its value read before the save (a blank-over-blank save that did not land has the same
+  body and, if the checksum is content-only, the same checksum). Both `ModifiedOn` values come from
+  `execute-esq` on the site, so the agent's clock takes no part; `get-page`'s `editable.modifiedOn` is
+  not used, because the server formats it from a parsed date in its own culture, to whole seconds. A
+  later read that shows the reset, six blank reads with another checksum, or a `ModifiedOn` that did not
+  move fail the test.
 - **Stored rows** — the first lease of each fixture lists the `SysSchema` rows of the page and fails
-  when one package holds two. `ClioPagesConcurrencyE2ETests` (two simultaneous saves, the first writer
-  on a fresh site) ends with the same check and requires exactly one row in the design package.
+  when one package holds two; on any lease but the first of the process it also fails when the rows
+  cannot be read or a row carries no package. `ClioPagesConcurrencyE2ETests` logs the rows and what
+  `get-page` resolves before and after its two simultaneous saves (the "after" also in `finally`),
+  logs whether the design package held no schema of the page before the race (only then did it test two
+  simultaneous FIRST saves - it is the first writer only when it runs first), and requires exactly one
+  row in the design package and a `get-page` that resolves that row's UId and checksum.
 - **A failed test** — before the reset, `[TearDown]` writes what `get-page` resolves, the stored rows
   and what each `update-page` / `sync-pages` call of the test reported (`savedSchemaUId`, checksums) to
-  the test output. `sync-pages` reports no schema UId; match its checksum to a stored row.
+  the test output. `sync-pages` reports no schema UId; match its checksum to a stored row. Every lease
+  log line is written to the output when it is observed, so an exception later in the lease does not
+  lose it.
 
 The decisions are pure functions (`Classify`, `DecideStart`, `WhyReadDoesNotShowReset`,
-`JudgeResetReads`, `JudgeStoredRows`) and the two steps run over `IPageAccess`; `SeededBlankPageTests`
-covers them without a stand.
+`JudgeResetReads`, `JudgeResetLanded`, `JudgeStoredRows`, `JudgeReadAgainstDesignPackageRow`), the two
+steps run over `IPageAccess`, and the ledger and the lease's end take their dependencies as arguments
+(`LeaseLedger`, `IToolResultObservable`); `SeededBlankPageTests` covers them without a stand.
 
 **Why it is this way** — each test used to trust the cleanup of the test before it, and three of
 those restores never checked their result. In TeamCity builds 16330337 and 16330482 one read that did

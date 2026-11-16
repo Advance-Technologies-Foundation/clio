@@ -76,8 +76,10 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 	/// </remarks>
 	private static readonly IReadOnlyDictionary<string, string> EvidenceKeepingSites =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
-			// Empty since the page fixtures restore the shared seed page through the SeededBlankPage lease in
-			// TearDown: their two restore-on-failure catch sites are gone.
+			// The page fixtures restore the shared seed page through the SeededBlankPage lease in TearDown: their
+			// two earlier restore-on-failure catch sites are gone.
+			["clio.mcp.e2e/PageSyncToolE2ETests.cs::PageSyncTool_Should_Make_Completed_Write_Immediately_Observable"] =
+				"the catch keeps the exception of the test's own restore in restoreFailure, which fails the test in the assertion scope next to the visibility verdict, so the dump is the record of what the restore received"
 		};
 
 	/// <summary>

@@ -882,56 +882,70 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				MarkerReadbackPollInterval,
 				context.CancellationTokenSource.Token,
 				isTransientProbeFailure: probeException => probeException is InvalidOperationException);
+		// The visibility verdict is recorded BEFORE the restore, and so is what the stand holds when the write
+		// was not seen: the restore overwrites that state. Nothing here retries a read or changes what the
+		// assertions below require.
+		bool writeObserved = readBackBody.Contains(marker, StringComparison.Ordinal);
+		string visibilityDiagnostics = writeObserved
+			? string.Empty
+			: string.Join(Environment.NewLine, observations) + await DescribeSeededPageAsync(context.Session, environmentName);
+
 		// Act 4: the test's own restore of the body it read, checked on ONE read. This is the assertion that
 		// failed TeamCity build 16330482 (the read after the completed restore showed the body of an OLDER
-		// save). It runs here and not in a finally block, and its assertions sit in one scope with the
-		// visibility assertions, so neither failure can replace the other. Its own token: the operation
-		// token may be what the test is failing on.
-		using CancellationTokenSource restoreCts = new(TimeSpan.FromMinutes(2));
-		CallToolResult restoreResult = await context.Session.CallToolAsync(
-			ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["pages"] = new[] {
-						new Dictionary<string, object?> {
-							["schema-name"] = SavePage,
-							["body"] = body,
-							["force"] = true
-						}
-					},
-					["validate"] = true
-				}
-			},
-			restoreCts.Token);
-		PageSyncResponse restoreResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
-		observations.Add(
-			$"the restore: success={restoreResponse.Success} "
-			+ $"checksumAfterSave={restoreResponse.Pages.FirstOrDefault()?.Digest?.Checksum ?? "none"} "
-			+ $"conflictCheck={restoreResponse.Pages.FirstOrDefault()?.ConflictCheck ?? "none"}");
-		CallToolResult restoredReadResult = await context.Session.CallToolAsync(
-			PageGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["schema-name"] = SavePage,
-					["environment-name"] = environmentName
-				}
-			},
-			restoreCts.Token);
-		PageGetResponse restoredReadResponse =
-			EntitySchemaStructuredResultParser.Extract<PageGetResponse>(restoredReadResult);
-		string restoredBody = restoredReadResponse.Success && !string.IsNullOrWhiteSpace(restoredReadResponse.Files?.BodyFile)
-			? await File.ReadAllTextAsync(restoredReadResponse.Files!.BodyFile!, restoreCts.Token)
-			: string.Empty;
-		observations.Add($"the single read after the restore: {DescribeRead(restoredReadResponse, restoredBody, marker)}");
-
-		// Collected only when a read did not show the write before it, and only to explain it: nothing
-		// here retries a read or changes what the assertions below require.
-		string diagnostics = readBackBody.Contains(marker, StringComparison.Ordinal)
-				&& string.Equals(restoredBody, body, StringComparison.Ordinal)
+		// save). It runs here and not in a finally block. An exception in it (a transport error, an
+		// unparsable answer, its own timeout) is caught and reported NEXT TO the visibility verdict above,
+		// never instead of it. Its own token: the operation token may be what the test is failing on.
+		CallToolResult? restoreResult = null;
+		PageSyncResponse? restoreResponse = null;
+		CallToolResult? restoredReadResult = null;
+		PageGetResponse? restoredReadResponse = null;
+		string restoredBody = string.Empty;
+		Exception? restoreFailure = null;
+		try {
+			using CancellationTokenSource restoreCts = new(TimeSpan.FromMinutes(2));
+			restoreResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["pages"] = new[] {
+							new Dictionary<string, object?> {
+								["schema-name"] = SavePage,
+								["body"] = body,
+								["force"] = true
+							}
+						},
+						["validate"] = true
+					}
+				},
+				restoreCts.Token);
+			restoreResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
+			observations.Add(
+				$"the restore: success={restoreResponse.Success} "
+				+ $"checksumAfterSave={restoreResponse.Pages.FirstOrDefault()?.Digest?.Checksum ?? "none"} "
+				+ $"conflictCheck={restoreResponse.Pages.FirstOrDefault()?.ConflictCheck ?? "none"}");
+			restoredReadResult = await context.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = environmentName
+					}
+				},
+				restoreCts.Token);
+			restoredReadResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(restoredReadResult);
+			restoredBody = restoredReadResponse.Success && !string.IsNullOrWhiteSpace(restoredReadResponse.Files?.BodyFile)
+				? await File.ReadAllTextAsync(restoredReadResponse.Files!.BodyFile!, restoreCts.Token)
+				: string.Empty;
+			observations.Add($"the single read after the restore: {DescribeRead(restoredReadResponse, restoredBody, marker)}");
+		} catch (Exception failure) {
+			// Not swallowed: restoreFailure fails the test in the scope below, next to the visibility verdict.
+			restoreFailure = failure;
+			observations.Add($"the restore threw {failure.GetType().Name}: {failure.Message}");
+		}
+		string restoreDiagnostics = restoreFailure is null && string.Equals(restoredBody, body, StringComparison.Ordinal)
 			? string.Empty
-			: string.Join(Environment.NewLine, observations)
-				+ await DescribeSeededPageAsync(context.Session, environmentName);
+			: string.Join(Environment.NewLine, observations) + await DescribeSeededPageAsync(context.Session, environmentName);
 
 		// Assert the read-back proves the new write, not merely the pre-existing body, and that the single
 		// read after the restore shows the restore. One scope: every failed assertion is reported.
@@ -948,22 +962,29 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			because: "observing the unique marker proves the completed write became visible; polled up to "
 				+ $"{MarkerReadbackAttempts} time(s) over ~{MarkerReadbackAttempts * MarkerReadbackPollInterval.TotalSeconds:0}s "
 				+ "and the write was still not observable within that budget, so this is not a fixed-delay flake. "
-				+ "What each call resolved: {0}",
-			diagnostics);
-		restoreResult.IsError.Should().NotBeTrue(
+				+ "What each call resolved, and the state before the restore: {0}",
+			visibilityDiagnostics);
+		restoreFailure.Should().BeNull(
+			because: "the test's own restore of '{0}' must complete; it ran after the visibility verdict above, which is "
+				+ "reported next to this failure. What each call resolved: {1}",
+			SavePage, restoreDiagnostics);
+		if (restoreFailure is not null) {
+			return;
+		}
+		restoreResult!.IsError.Should().NotBeTrue(
 			because: "the restore must return a structured sync-pages response");
-		restoreResponse.Success.Should().BeTrue(
+		restoreResponse!.Success.Should().BeTrue(
 			because: "sync-pages must restore the original body of '{0}'. Per-page error: {1}",
 			SavePage, restoreResponse.Pages.FirstOrDefault()?.Error);
-		restoredReadResult.IsError.Should().NotBeTrue(
+		restoredReadResult!.IsError.Should().NotBeTrue(
 			because: "the read after the restore must return a structured get-page response");
-		restoredReadResponse.Success.Should().BeTrue(
+		restoredReadResponse!.Success.Should().BeTrue(
 			because: "get-page must read '{0}' after the restore. Error: {1}", SavePage, restoredReadResponse.Error);
 		restoredBody.Should().Be(body,
 			because: "the restore completed, so the very next read must return the body it wrote - the body the "
 				+ "page had before the visibility test. One read, no poll: a read that still shows the marker or "
 				+ "an older save is the defect. What each call resolved: {0}",
-			diagnostics);
+			restoreDiagnostics);
 		restoredBody.Should().NotContain(marker,
 			because: "the restore removed the unique visibility marker, and the next read must show that");
 	}

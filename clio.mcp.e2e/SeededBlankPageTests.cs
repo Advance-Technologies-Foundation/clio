@@ -5,7 +5,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Mcp.E2E.Support.Creatio;
+using Clio.Mcp.E2E.Support.Mcp;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E;
 
@@ -140,42 +142,80 @@ public sealed class SeededBlankPageTests {
 	private static SeededBlankPage.ResetSave SavedReset(string? checksum = ResetChecksum) =>
 		new(Success: true, Error: null, Checksum: checksum, ConflictCheck: "not-applied", Warnings: []);
 
-	private static SeededBlankPage.StoredSchemaRow Row(string uId, string package, string packageUId, string createdOn = "2026-11-16T09:00:00") =>
-		new(uId, package, packageUId, ExtendParent: "true", Checksum: "c", CreatedOn: createdOn, ModifiedOn: createdOn);
+	private const string BaseSchemaUId = "11111111-1111-1111-1111-111111111111";
+	private const string BasePackageUId = "0a0a0a0a-0000-0000-0000-00000000000a";
+	private const string BeforeResetModifiedOn = "2026-11-16T09:00:00.000";
+	private const string AfterResetModifiedOn = "2026-11-16T09:00:00.250";
 
-	/// <summary>A scripted page: the reads are returned in order (the last one repeats), every call is counted.</summary>
+	private static SeededBlankPage.StoredSchemaRow Row(
+		string uId, string package, string packageUId, string createdOn = "2026-11-16T09:00:00", string? modifiedOn = null,
+		string checksum = "c") =>
+		new(uId, package, packageUId, ExtendParent: "true", Checksum: checksum, CreatedOn: createdOn,
+			ModifiedOn: modifiedOn ?? createdOn);
+
+	// The page and its replacing schema, the one the reset writes, with the given modification time.
+	private static SeededBlankPage.StoredRows RowsWithWrittenSchema(string modifiedOn) => new([
+		Row(BaseSchemaUId, "AutoTestClioMcp", BasePackageUId),
+		Row(WrittenSchemaUId, "Custom", DesignPackageUId, modifiedOn: modifiedOn, checksum: ResetChecksum)
+	], null);
+
+	// What a later lease sees after a lease that ended with a verified reset of the written schema.
+	private static SeededBlankPage.PriorLeases AfterVerifiedReset(
+		string schemaUId = WrittenSchemaUId, string checksum = ResetChecksum, string? writerOutsideLease = null) =>
+		new(SeededBlankPage.PreviousLeaseEnd.Verified, new SeededBlankPage.VerifiedReset(schemaUId, checksum),
+			writerOutsideLease);
+
+	private static SeededBlankPage.PriorLeases Prior(bool firstLeaseOfProcess) =>
+		firstLeaseOfProcess ? SeededBlankPage.PriorLeases.None : AfterVerifiedReset();
+
+	/// <summary>
+	/// A scripted page: the reads and the stored-row answers are returned in order (the last one repeats),
+	/// every call is counted and logged in order. By default the stored rows show the written schema before
+	/// the reset and the same schema with a later modification time after it.
+	/// </summary>
 	private sealed class ScriptedPage : SeededBlankPage.IPageAccess {
 		private readonly Queue<SeededBlankPage.PageObservation> _reads;
 		private readonly SeededBlankPage.ResetSave _reset;
-		private readonly SeededBlankPage.StoredRows _stored;
+		private readonly Queue<SeededBlankPage.StoredRows> _stored;
 
 		internal ScriptedPage(
 			IEnumerable<SeededBlankPage.PageObservation> reads, SeededBlankPage.ResetSave? reset = null,
-			SeededBlankPage.StoredRows? stored = null) {
+			SeededBlankPage.StoredRows? stored = null, IEnumerable<SeededBlankPage.StoredRows>? storedSequence = null) {
 			_reads = new Queue<SeededBlankPage.PageObservation>(reads);
 			_reset = reset ?? SavedReset();
-			_stored = stored ?? new SeededBlankPage.StoredRows(
-				[Row("11111111-1111-1111-1111-111111111111", "AutoTestClioMcp", "0a0a0a0a-0000-0000-0000-00000000000a")], null);
+			_stored = new Queue<SeededBlankPage.StoredRows>(storedSequence
+				?? (stored is null
+					? [RowsWithWrittenSchema(BeforeResetModifiedOn), RowsWithWrittenSchema(AfterResetModifiedOn)]
+					: [stored]));
 		}
 
 		internal int Reads { get; private set; }
 		internal int Writes { get; private set; }
 		internal int StoredRowReads { get; private set; }
+		internal List<string> Calls { get; } = [];
 
 		public Task<SeededBlankPage.PageObservation> ReadAsync(CancellationToken cancellationToken) {
 			Reads++;
+			Calls.Add("read");
 			return Task.FromResult(_reads.Count > 1 ? _reads.Dequeue() : _reads.Peek());
 		}
 
 		public Task<SeededBlankPage.ResetSave> WriteBlankAsync(CancellationToken cancellationToken) {
 			Writes++;
+			Calls.Add("write");
 			return Task.FromResult(_reset);
 		}
 
 		public Task<SeededBlankPage.StoredRows> ReadStoredRowsAsync(CancellationToken cancellationToken) {
 			StoredRowReads++;
-			return Task.FromResult(_stored);
+			Calls.Add("rows");
+			return Task.FromResult(_stored.Count > 1 ? _stored.Dequeue() : _stored.Peek());
 		}
+	}
+
+	/// <summary>A session stand-in whose observer slot the lease attaches to and detaches from.</summary>
+	private sealed class ObservableSession : IToolResultObservable {
+		public Action<string, IReadOnlyDictionary<string, object?>, CallToolResult>? ToolResultObserver { get; set; }
 	}
 
 	[Test]
@@ -216,7 +256,7 @@ public sealed class SeededBlankPageTests {
 		SeededBlankPage.PageObservation first = NotBlankRead();
 
 		// Act
-		SeededBlankPage.StartDecision decision = SeededBlankPage.DecideStart(first, firstLeaseOfProcess: false);
+		SeededBlankPage.StartDecision decision = SeededBlankPage.DecideStart(first, AfterVerifiedReset());
 
 		// Assert
 		decision.Reset.Should().BeTrue(because: "the next test must still start from a blank page");
@@ -234,7 +274,7 @@ public sealed class SeededBlankPageTests {
 		SeededBlankPage.PageObservation first = NotBlankRead();
 
 		// Act
-		SeededBlankPage.StartDecision decision = SeededBlankPage.DecideStart(first, firstLeaseOfProcess: true);
+		SeededBlankPage.StartDecision decision = SeededBlankPage.DecideStart(first, SeededBlankPage.PriorLeases.None);
 
 		// Assert
 		decision.Reset.Should().BeTrue(because: "a dirty stand is brought to blank before the first test");
@@ -249,8 +289,8 @@ public sealed class SeededBlankPageTests {
 		SeededBlankPage.PageObservation first = SynthesizedRead();
 
 		// Act
-		SeededBlankPage.StartDecision later = SeededBlankPage.DecideStart(first, firstLeaseOfProcess: false);
-		SeededBlankPage.StartDecision firstLease = SeededBlankPage.DecideStart(first, firstLeaseOfProcess: true);
+		SeededBlankPage.StartDecision later = SeededBlankPage.DecideStart(first, AfterVerifiedReset());
+		SeededBlankPage.StartDecision firstLease = SeededBlankPage.DecideStart(first, SeededBlankPage.PriorLeases.None);
 
 		// Assert
 		later.Failure.Should().Contain("only LOOKS blank",
@@ -267,7 +307,7 @@ public sealed class SeededBlankPageTests {
 		SeededBlankPage.PageObservation first = SavedBlankRead();
 
 		// Act
-		SeededBlankPage.StartDecision decision = SeededBlankPage.DecideStart(first, firstLeaseOfProcess);
+		SeededBlankPage.StartDecision decision = SeededBlankPage.DecideStart(first, Prior(firstLeaseOfProcess));
 
 		// Assert
 		decision.Reset.Should().BeFalse(because: "the page is already what the test needs");
@@ -330,7 +370,7 @@ public sealed class SeededBlankPageTests {
 
 		// Act
 		SeededBlankPage.LeaseReport report = await SeededBlankPage.BeginAsync(
-			page, firstLeaseOfProcess: false, checkStoredRows: false, TimeSpan.Zero, CancellationToken.None);
+			page, AfterVerifiedReset(), checkStoredRows: false, TimeSpan.Zero, CancellationToken.None);
 
 		// Assert
 		report.Failures.Should().BeEmpty(because: "the page is in the state every test expects");
@@ -345,14 +385,15 @@ public sealed class SeededBlankPageTests {
 
 		// Act
 		SeededBlankPage.LeaseReport report = await SeededBlankPage.BeginAsync(
-			page, firstLeaseOfProcess: false, checkStoredRows: false, TimeSpan.Zero, CancellationToken.None);
+			page, AfterVerifiedReset(), checkStoredRows: false, TimeSpan.Zero, CancellationToken.None);
 
 		// Assert
 		page.Writes.Should().Be(1, because: "the page is brought back to blank so the failure does not cascade");
 		report.Failures.Should().ContainSingle(because: "the reset itself was visible at once, so only the found state fails")
 			.Which.Should().Contain("NOT blank before this test",
 				because: "a page left not blank after a verified reset must fail the test that finds it");
-		page.StoredRowReads.Should().Be(1, because: "the stored rows are recorded before the reset overwrites the state");
+		page.StoredRowReads.Should().Be(2,
+			because: "the stored rows are read before the reset, and after its first read to see that the save landed");
 	}
 
 	[Test]
@@ -363,7 +404,7 @@ public sealed class SeededBlankPageTests {
 
 		// Act
 		SeededBlankPage.LeaseReport report = await SeededBlankPage.BeginAsync(
-			page, firstLeaseOfProcess: true, checkStoredRows: false, TimeSpan.Zero, CancellationToken.None);
+			page, SeededBlankPage.PriorLeases.None, checkStoredRows: false, TimeSpan.Zero, CancellationToken.None);
 
 		// Assert
 		page.Writes.Should().Be(1, because: "a dirty stand is reset before the first test");
@@ -385,7 +426,7 @@ public sealed class SeededBlankPageTests {
 
 		// Act
 		SeededBlankPage.LeaseReport report = await SeededBlankPage.BeginAsync(
-			page, firstLeaseOfProcess: true, checkStoredRows: true, TimeSpan.Zero, CancellationToken.None);
+			page, SeededBlankPage.PriorLeases.None, checkStoredRows: true, TimeSpan.Zero, CancellationToken.None);
 
 		// Assert
 		report.Failures.Should().ContainSingle(because: "the page reads blank, so only the stored rows fail")
@@ -537,6 +578,323 @@ public sealed class SeededBlankPageTests {
 		description.Should().NotContain("MORE THAN ONE ROW",
 			because: "the warning must appear only for a real duplicate");
 	}
+
+	[Test]
+	[Description("A page that get-page cannot read before the test fails the lease, on the first lease and on later ones, and is not reset: there is no read to judge a reset by.")]
+	public void DecideStart_ShouldFailWithoutAReset_WhenThePageCannotBeRead([Values] bool firstLeaseOfProcess) {
+		// Arrange
+		SeededBlankPage.PageObservation first = SavedBlankRead() with { Success = false, Error = "boom", Body = null };
+
+		// Act
+		SeededBlankPage.StartDecision decision = SeededBlankPage.DecideStart(first, Prior(firstLeaseOfProcess));
+
+		// Assert
+		decision.Failure.Should().Contain("get-page must read").And.Contain("boom",
+			because: "a test must not run on a page nobody could read, and the message must carry the error of get-page");
+		decision.Reset.Should().BeFalse(because: "a reset could not be verified without a working read");
+	}
+
+	[Test]
+	[Description("A later lease that reads the page blank from another editable schema, or with another checksum, than the previous lease's verified reset left fails and resets; a write outside a lease since, or a previous lease that did not end verified, makes the remembered state unknown and nothing is compared.")]
+	public void DecideStart_ShouldResetAndFail_WhenALaterLeaseReadsBlankFromAnotherSchemaThanTheLastVerifiedReset() {
+		// Arrange
+		SeededBlankPage.PageObservation twin = SavedBlankRead(TwinChecksum, TwinSchemaUId);
+		SeededBlankPage.PageObservation sameSchemaOtherChecksum = SavedBlankRead(TwinChecksum);
+		SeededBlankPage.PriorLeases notVerified = new(SeededBlankPage.PreviousLeaseEnd.NotVerified, null, null);
+
+		// Act
+		SeededBlankPage.StartDecision otherSchema = SeededBlankPage.DecideStart(twin, AfterVerifiedReset());
+		SeededBlankPage.StartDecision otherChecksum = SeededBlankPage.DecideStart(sameSchemaOtherChecksum, AfterVerifiedReset());
+		SeededBlankPage.StartDecision afterOutsideWriter =
+			SeededBlankPage.DecideStart(twin, AfterVerifiedReset(writerOutsideLease: "ConcurrencyTest"));
+		SeededBlankPage.StartDecision afterUnverified = SeededBlankPage.DecideStart(twin, notVerified);
+		SeededBlankPage.StartDecision same = SeededBlankPage.DecideStart(SavedBlankRead(), AfterVerifiedReset());
+
+		// Assert
+		otherSchema.Failure.Should().Contain(TwinSchemaUId).And.Contain(WrittenSchemaUId).And.Contain("product defect",
+			because: "nothing wrote the page since a verified reset, so a blank read of another schema is the signature of the defect");
+		otherSchema.Reset.Should().BeTrue(because: "the next test must start from the schema a verified reset wrote");
+		otherChecksum.Failure.Should().Contain(TwinChecksum).And.Contain(ResetChecksum,
+			because: "the same schema with another checksum was written by something that was not supposed to write it");
+		afterOutsideWriter.Failure.Should().BeNull(
+			because: "a test that wrote the page outside a lease makes the remembered state unknown");
+		afterOutsideWriter.Note.Should().Contain("ConcurrencyTest", because: "the log must say why nothing was compared");
+		afterUnverified.Failure.Should().BeNull(because: "nothing was verified to compare with");
+		same.Failure.Should().BeNull(because: "the page is what the verified reset left");
+		same.Reset.Should().BeFalse(because: "the page is already what the test needs");
+	}
+
+	[Test]
+	[Description("A later lease's failure says only what the record of the previous lease proves: it blames the product only when the previous lease ended with a verified reset and nothing wrote the page since.")]
+	public void DecideStart_ShouldWordALaterLeaseFailure_ByHowThePreviousLeaseEnded() {
+		// Arrange
+		SeededBlankPage.PageObservation first = NotBlankRead();
+
+		// Act
+		string? verified = SeededBlankPage.DecideStart(first, AfterVerifiedReset()).Failure;
+		string? withOutsideWriter = SeededBlankPage.DecideStart(first, AfterVerifiedReset(writerOutsideLease: "ConcurrencyTest")).Failure;
+		string? notVerified = SeededBlankPage.DecideStart(first,
+			new SeededBlankPage.PriorLeases(SeededBlankPage.PreviousLeaseEnd.NotVerified, null, null)).Failure;
+		string? didNotComplete = SeededBlankPage.DecideStart(first,
+			new SeededBlankPage.PriorLeases(SeededBlankPage.PreviousLeaseEnd.DidNotComplete, null, null)).Failure;
+
+		// Assert
+		verified.Should().Contain("product defect").And.Contain(WrittenSchemaUId,
+			because: "after a verified reset and no other writer, a page that is not blank is the defect, and the message names what was verified");
+		withOutsideWriter.Should().Contain("ConcurrencyTest").And.NotContain("product defect",
+			because: "a write outside a lease since the reset is another possible cause, and the message must name it");
+		notVerified.Should().Contain("did NOT end with a verified reset").And.NotContain("product defect",
+			because: "a reset that failed may have left this state, so blaming the product would be false");
+		didNotComplete.Should().Contain("did not complete").And.NotContain("product defect",
+			because: "a TearDown that threw never reset the page, so this state may be the previous test's");
+		new[] { verified, withOutsideWriter, notVerified, didNotComplete }.Should().OnlyContain(failure => failure != null,
+			because: "every later lease that finds the page not blank still fails; only the wording changes");
+	}
+
+	[Test]
+	[Description("The stored rows are read BEFORE the reset, so the rows a failure reports are the ones the test left, not the ones the reset wrote.")]
+	public async Task BeginAsync_ShouldReadTheStoredRowsBeforeTheReset() {
+		// Arrange
+		ScriptedPage page = new([NotBlankRead(), SavedBlankRead()]);
+
+		// Act
+		SeededBlankPage.LeaseReport report = await SeededBlankPage.BeginAsync(
+			page, AfterVerifiedReset(), checkStoredRows: false, TimeSpan.Zero, CancellationToken.None);
+
+		// Assert
+		page.Calls.IndexOf("rows").Should().BeLessThan(page.Calls.IndexOf("write"),
+			because: "the reset overwrites what the rows show. Calls: {0}", string.Join(", ", page.Calls));
+		report.Log.ToList().FindIndex(line => line.Contains("before the test:")).Should().BeLessThan(
+			report.Log.ToList().FindIndex(line => line.Contains("reset save before the test")),
+			because: "the log must show the rows before the reset in the order they were read");
+	}
+
+	[Test]
+	[Description("The first lease of a fixture fails a later lease of the process when the stored rows cannot be read, and only reports it on the first lease of the process.")]
+	public async Task BeginAsync_ShouldFailALaterLease_ButNotTheFirst_WhenTheStoredRowsCannotBeRead() {
+		// Arrange
+		SeededBlankPage.StoredRows unreadable = new(null, "esq failed");
+		ScriptedPage later = new([SavedBlankRead()], stored: unreadable);
+		ScriptedPage firstLease = new([SavedBlankRead()], stored: unreadable);
+
+		// Act
+		SeededBlankPage.LeaseReport laterReport = await SeededBlankPage.BeginAsync(
+			later, AfterVerifiedReset(), checkStoredRows: true, TimeSpan.Zero, CancellationToken.None);
+		SeededBlankPage.LeaseReport firstReport = await SeededBlankPage.BeginAsync(
+			firstLease, SeededBlankPage.PriorLeases.None, checkStoredRows: true, TimeSpan.Zero, CancellationToken.None);
+
+		// Assert
+		laterReport.Failures.Should().ContainSingle(because: "a duplicate-row check that cannot read the rows must not pass as if it had")
+			.Which.Should().Contain("esq failed", because: "the failure must carry why the rows could not be read");
+		firstReport.Failures.Should().BeEmpty(because: "the first lease of the process only reports what it cannot read");
+		firstReport.Log.Should().Contain(line => line.Contains("esq failed"), because: "the log still shows the failed read");
+	}
+
+	[Test]
+	[Description("A reset passes only when the stored modification time of the schema the first read resolved moved past its value before the save; a schema the reset created passes; unreadable rows fail where required.")]
+	public void JudgeResetLanded_ShouldRequireTheModificationTimeOfTheReadSchemaToMove() {
+		// Arrange
+		SeededBlankPage.StoredRows before = RowsWithWrittenSchema(BeforeResetModifiedOn);
+		SeededBlankPage.StoredRows moved = RowsWithWrittenSchema(AfterResetModifiedOn);
+		SeededBlankPage.StoredRows withoutWritten = new([Row(BaseSchemaUId, "AutoTestClioMcp", BasePackageUId)], null);
+		SeededBlankPage.StoredRows unreadable = new(null, "esq failed");
+		SeededBlankPage.PageObservation read = SavedBlankRead();
+
+		// Act
+		string? landed = SeededBlankPage.JudgeResetLanded(before, moved, read, "after the test", rowsRequired: true);
+		string? notMoved = SeededBlankPage.JudgeResetLanded(before, before, read, "after the test", rowsRequired: true);
+		string? created = SeededBlankPage.JudgeResetLanded(withoutWritten, moved, read, "after the test", rowsRequired: true);
+		string? noRow = SeededBlankPage.JudgeResetLanded(before, withoutWritten, read, "after the test", rowsRequired: true);
+		string? unreadableRequired = SeededBlankPage.JudgeResetLanded(before, unreadable, read, "after the test", rowsRequired: true);
+		string? unreadableLenient = SeededBlankPage.JudgeResetLanded(unreadable, moved, read, "before the test", rowsRequired: false);
+
+		// Assert
+		landed.Should().BeNull(because: "the save modified the schema the read resolved");
+		notMoved.Should().Contain("did not move").And.Contain(BeforeResetModifiedOn,
+			because: "a blank-over-blank save that did not land looks like one that did by body and checksum; only the modification time tells");
+		created.Should().BeNull(because: "a schema without a row before the save was created by the reset");
+		noRow.Should().Contain("no stored SysSchema row", because: "the read resolved a schema the database does not hold");
+		unreadableRequired.Should().Contain("esq failed", because: "a reset that cannot be shown to have landed is not verified");
+		unreadableLenient.Should().BeNull(because: "the first lease of the process only reports rows it cannot read");
+	}
+
+	[Test]
+	[Description("The end of a lease fails when the first read shows the blank body and the checksum the save reported but the stored modification time of that schema did not move, and returns the verified read only when it did.")]
+	public async Task EndAsync_ShouldReportAFailure_WhenTheResetDidNotModifyTheSchemaTheFirstReadResolved() {
+		// Arrange
+		ScriptedPage notLanded = new([SavedBlankRead()],
+			storedSequence: [RowsWithWrittenSchema(BeforeResetModifiedOn), RowsWithWrittenSchema(BeforeResetModifiedOn)]);
+		ScriptedPage landed = new([SavedBlankRead()]);
+
+		// Act
+		SeededBlankPage.LeaseReport notLandedReport = await SeededBlankPage.EndAsync(notLanded, TimeSpan.Zero, CancellationToken.None);
+		SeededBlankPage.LeaseReport landedReport = await SeededBlankPage.EndAsync(landed, TimeSpan.Zero, CancellationToken.None);
+
+		// Assert
+		notLandedReport.Failures.Should().ContainSingle(because: "body and checksum match, only the modification time does not")
+			.Which.Should().Contain("did not move", because: "the failure must say the save did not land in the schema read");
+		notLandedReport.VerifiedRead.Should().BeNull(because: "an unverified reset must not be remembered as verified");
+		notLanded.Calls.Should().Equal(["rows", "write", "read", "rows"],
+			because: "the rows are read before the save and after the first read that showed it");
+		landedReport.Failures.Should().BeEmpty(because: "the save landed in the schema the first read resolved");
+		landedReport.VerifiedRead.Should().NotBeNull(because: "the next lease compares with what this reset left");
+		landedReport.VerifiedRead!.EditableSchemaUId.Should().Be(WrittenSchemaUId, because: "it is the first read after the reset");
+	}
+
+	[Test]
+	[Description("The ledger exempts only the first lease of the process and lets the first lease of each fixture check the stored rows.")]
+	public void LeaseLedger_ShouldExemptOnlyTheFirstLeaseOfTheProcess_AndCheckTheRowsOncePerFixture() {
+		// Arrange
+		SeededBlankPage.LeaseLedger ledger = new();
+
+		// Act
+		(SeededBlankPage.PriorLeases firstPrior, bool firstCheck) = ledger.Start("FixtureA");
+		(SeededBlankPage.PriorLeases secondPrior, bool secondCheck) = ledger.Start("FixtureA");
+		(SeededBlankPage.PriorLeases otherPrior, bool otherCheck) = ledger.Start("FixtureB");
+
+		// Assert
+		firstPrior.IsFirstLeaseOfProcess.Should().BeTrue(because: "no lease ran before it in the process");
+		secondPrior.IsFirstLeaseOfProcess.Should().BeFalse(because: "only one lease per process is exempt");
+		otherPrior.IsFirstLeaseOfProcess.Should().BeFalse(because: "the exemption is process-wide, not per fixture");
+		firstCheck.Should().BeTrue(because: "the first lease of a fixture lists the stored rows");
+		secondCheck.Should().BeFalse(because: "a fixture lists the rows once");
+		otherCheck.Should().BeTrue(because: "each fixture lists the rows at its first lease");
+	}
+
+	[Test]
+	[Description("The ledger tells the next lease whether the previous one did not complete, ended verified (with what it verified) or ended unverified, and whether a test wrote the page outside a lease since.")]
+	public void LeaseLedger_ShouldRecordHowThePreviousLeaseEnded() {
+		// Arrange
+		SeededBlankPage.LeaseLedger ledger = new();
+		SeededBlankPage.LeaseReport verified = new([], [], SavedBlankRead());
+		SeededBlankPage.LeaseReport failed = new(["reset not shown"], []);
+
+		// Act
+		ledger.Start("Fixture");
+		SeededBlankPage.PriorLeases afterNoEnd = ledger.Start("Fixture").Prior;
+		ledger.RecordEnd(verified);
+		ledger.RecordWriteOutsideLease("ConcurrencyTest");
+		SeededBlankPage.PriorLeases afterVerified = ledger.Start("Fixture").Prior;
+		ledger.RecordEnd(failed);
+		SeededBlankPage.PriorLeases afterFailed = ledger.Start("Fixture").Prior;
+
+		// Assert
+		afterNoEnd.PreviousEnd.Should().Be(SeededBlankPage.PreviousLeaseEnd.DidNotComplete,
+			because: "a lease whose end was never recorded threw or was never ended");
+		afterVerified.PreviousEnd.Should().Be(SeededBlankPage.PreviousLeaseEnd.Verified, because: "its reset was verified");
+		afterVerified.LastVerified.Should().Be(new SeededBlankPage.VerifiedReset(WrittenSchemaUId, ResetChecksum),
+			because: "the next lease compares with the schema and checksum the verified read resolved");
+		afterVerified.WriterOutsideLease.Should().Be("ConcurrencyTest",
+			because: "a write outside a lease after the verified reset makes the remembered state unknown");
+		afterFailed.PreviousEnd.Should().Be(SeededBlankPage.PreviousLeaseEnd.NotVerified, because: "its reset failed");
+		afterFailed.LastVerified.Should().BeNull(because: "nothing was verified");
+		afterFailed.WriterOutsideLease.Should().BeNull(because: "the outside write happened before that lease's own reset");
+	}
+
+	[Test]
+	[Description("A lease attaches its save observer to the session and detaches it at the end, but never removes an observer that is not its own.")]
+	public async Task Lease_ShouldAttachItsObserver_AndDetachOnlyItsOwn() {
+		// Arrange
+		ObservableSession session = new();
+		ObservableSession sharedSession = new();
+		Action<string, IReadOnlyDictionary<string, object?>, CallToolResult> foreign = (_, _, _) => { };
+		SeededBlankPage.Lease lease = NewLease(session, new ScriptedPage([SavedBlankRead()]));
+		SeededBlankPage.Lease replaced = NewLease(sharedSession, new ScriptedPage([SavedBlankRead()]));
+		Action<string, IReadOnlyDictionary<string, object?>, CallToolResult>? attached = session.ToolResultObserver;
+		sharedSession.ToolResultObserver = foreign;
+
+		// Act
+		await lease.EndAndReportAsync(testFailed: false, _ => { });
+		await replaced.EndAndReportAsync(testFailed: false, _ => { });
+
+		// Assert
+		attached.Should().NotBeNull(because: "the lease records the saves of the test from the moment it is taken");
+		session.ToolResultObserver.Should().BeNull(because: "the lease stops recording when it ends");
+		sharedSession.ToolResultObserver.Should().BeSameAs(foreign,
+			because: "an observer another lease attached since must stay attached");
+	}
+
+	[Test]
+	[Description("When the test failed, the end of the lease describes the state the test left BEFORE the reset overwrites it; when it passed it does not; and the end is recorded in the ledger.")]
+	public async Task Lease_ShouldReportTheStateOfAFailedTest_BeforeTheReset() {
+		// Arrange
+		ScriptedPage failedPage = new([SavedBlankRead()]);
+		ScriptedPage passedPage = new([SavedBlankRead()]);
+		SeededBlankPage.LeaseLedger ledger = new();
+		ledger.Start("Fixture");
+		List<string> output = [];
+		SeededBlankPage.Lease failedLease = NewLease(new ObservableSession(), failedPage, ledger);
+		SeededBlankPage.Lease passedLease = NewLease(new ObservableSession(), passedPage, ledger);
+
+		// Act
+		await failedLease.EndAndReportAsync(testFailed: true, output.Add);
+		await passedLease.EndAndReportAsync(testFailed: false, _ => { });
+
+		// Assert
+		failedPage.Calls.IndexOf("describe").Should().BeGreaterThanOrEqualTo(0,
+			because: "the state of a failed test is the evidence. Calls: {0}", string.Join(", ", failedPage.Calls));
+		failedPage.Calls.IndexOf("describe").Should().BeLessThan(failedPage.Calls.IndexOf("write"),
+			because: "the reset overwrites the state the test left");
+		output.Should().Contain(line => line.Contains("the test FAILED"), because: "the state goes to the test output");
+		passedPage.Calls.Should().NotContain("describe", because: "a passing test has nothing to explain");
+		ledger.Start("Fixture").Prior.PreviousEnd.Should().Be(SeededBlankPage.PreviousLeaseEnd.Verified,
+			because: "the end of the lease is recorded for the next lease");
+	}
+
+	[Test]
+	[Description("After completed saves get-page must resolve the one stored schema of the page in its design package, with its UId and checksum; another schema, another checksum, no editable schema, two rows or unreadable rows fail.")]
+	public void JudgeReadAgainstDesignPackageRow_ShouldRequireTheReadToResolveTheOneStoredRow() {
+		// Arrange
+		SeededBlankPage.StoredRows one = RowsWithWrittenSchema(AfterResetModifiedOn);
+		SeededBlankPage.StoredRows two = new([.. one.Rows!, Row(TwinSchemaUId, "Custom", DesignPackageUId)], null);
+
+		// Act
+		string? match = SeededBlankPage.JudgeReadAgainstDesignPackageRow(SavedBlankRead(), one);
+		string? otherSchema = SeededBlankPage.JudgeReadAgainstDesignPackageRow(SavedBlankRead(TwinChecksum, TwinSchemaUId), one);
+		string? otherChecksum = SeededBlankPage.JudgeReadAgainstDesignPackageRow(SavedBlankRead(TwinChecksum), one);
+		string? synthesized = SeededBlankPage.JudgeReadAgainstDesignPackageRow(SynthesizedRead(), one);
+		string? twoRows = SeededBlankPage.JudgeReadAgainstDesignPackageRow(SavedBlankRead(), two);
+		string? unreadable = SeededBlankPage.JudgeReadAgainstDesignPackageRow(SavedBlankRead(), new(null, "esq failed"));
+
+		// Assert
+		match.Should().BeNull(because: "the read resolves the schema the saves stored");
+		otherSchema.Should().Contain(TwinSchemaUId).And.Contain(WrittenSchemaUId,
+			because: "a read of another schema than the one stored is the defect, and both must be named");
+		otherChecksum.Should().Contain(TwinChecksum).And.Contain(ResetChecksum,
+			because: "a read with another checksum does not show what the saves stored");
+		synthesized.Should().Contain("NO editable schema", because: "completed saves leave an editable schema");
+		twoRows.Should().Contain("holds 2", because: "the read cannot be matched to one stored schema");
+		unreadable.Should().Contain("esq failed", because: "a check that cannot read the rows must not pass");
+	}
+
+	[Test]
+	[Description("The row printout groups the rows exactly as the verdict does: rows without a package are not reported as duplicates, are named, and fail only the strict check; one row required with no design package known fails.")]
+	public void DescribeStoredRows_ShouldGroupTheRowsAsTheVerdictDoes() {
+		// Arrange
+		SeededBlankPage.StoredRows withoutPackage = new([Row("a", "?", "?"), Row("b", "?", "?")], null);
+
+		// Act
+		string description = SeededBlankPage.DescribeStoredRows(withoutPackage);
+		string? lenient = SeededBlankPage.JudgeStoredRows(withoutPackage, null, requireOneInDesignPackage: false, unreadableIsFailure: false);
+		string? strict = SeededBlankPage.JudgeStoredRows(withoutPackage, null, requireOneInDesignPackage: false, unreadableIsFailure: true);
+		string? noDesignPackage = SeededBlankPage.JudgeStoredRows(
+			RowsWithWrittenSchema(AfterResetModifiedOn), " ", requireOneInDesignPackage: true, unreadableIsFailure: true);
+
+		// Assert
+		description.Should().NotContain("MORE THAN ONE",
+			because: "the verdict does not count rows without a package as duplicates, so the printout must not either");
+		description.Should().Contain("2 row(s) carry no package", because: "the printout must say which rows were not counted");
+		lenient.Should().BeNull(because: "at a lenient check the rows are a report");
+		strict.Should().Contain("carry no package", because: "a strict check that cannot count must not pass");
+		noDesignPackage.Should().Contain("no design package", because: "one row cannot be required in an unknown package");
+	}
+
+	private static SeededBlankPage.Lease NewLease(
+		IToolResultObservable session, ScriptedPage page, SeededBlankPage.LeaseLedger? ledger = null) =>
+		new(session, () => page, _ => {
+			page.Calls.Add("describe");
+			return Task.FromResult("state");
+		}, ledger ?? new SeededBlankPage.LeaseLedger(), TimeSpan.Zero);
 
 	[Test]
 	[Description("A failure message that carries the page diagnostics keeps their JSON braces: FluentAssertions must not read them as format placeholders.")]

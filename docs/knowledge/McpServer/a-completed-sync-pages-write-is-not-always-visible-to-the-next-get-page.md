@@ -34,8 +34,9 @@ pre-save hierarchy. And both tools find the schema by name with `rowCount: 1` an
 (`PageSchemaMetadataHelper.QuerySysSchemaRow`, `QueryExistingSchemaInPackage`), so two stored schemas
 of one page in one package would let a read and a write resolve different rows. `update-page` creates
 the replacing schema of a page after a lookup with no lock around lookup-and-save, so two simultaneous
-first saves can leave such a pair; `ClioPagesConcurrencyE2ETests` makes exactly those two saves and is
-the first writer of the seed page on a fresh site.
+first saves can leave such a pair; `ClioPagesConcurrencyE2ETests` makes exactly those two saves. It
+tests that case only when the design package holds no schema of the page before it runs (it ran before
+the page fixtures in the builds checked, but NUnit order is no contract), and it logs whether it did.
 
 The e2e suite does not tolerate the gap, it reports it. Every one of these fails a test, with what each
 call resolved and the stored `SysSchema` rows in the message:
@@ -44,10 +45,14 @@ call resolved and the stored `SysSchema` rows in the message:
   single next read returns;
 - `SeededBlankPage` (every test that writes the seed page): a reset that the FIRST read does not show
   (the poll after it only keeps the next test clean); a blank read that resolves no editable schema or
-  carries another checksum than the reset save reported; a page found not blank at the start of a test
-  after a verified reset (first lease of the process exempt);
+  carries another checksum than the reset save reported; a reset save that did not move the stored
+  `ModifiedOn` of the schema the first read resolved; a page found not blank, or blank from another
+  schema or checksum than the previous verified reset left, at the start of a test (first lease of the
+  process exempt; the message blames the product only when the previous lease ended verified and
+  nothing wrote the page outside a lease since);
 - two stored schemas of the page in one package: at the end of the concurrency test (a deliberate
-  tripwire: exactly one row in the design package) and at the first lease of each page fixture.
+  tripwire: exactly one row in the design package, and `get-page` must resolve that row's UId and
+  checksum) and at the first lease of each page fixture.
 
 **What breaks if you ignore it** — an agent chaining `sync-pages` then `get-page` reads an old body and
 concludes its write was dropped; a test author reads the same thing as a `sync-pages` regression and

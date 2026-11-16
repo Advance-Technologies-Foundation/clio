@@ -14,7 +14,17 @@ using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E.Support.Mcp;
 
-internal sealed class McpServerSession : IAsyncDisposable {
+/// <summary>
+/// A session whose completed tool calls can be observed, for diagnostics only. <c>SeededBlankPage.Lease</c>
+/// depends on this instead of the session, so its attach and detach are unit-tested without a server.
+/// </summary>
+internal interface IToolResultObservable {
+
+	/// <summary>Called with the tool name, its arguments and its result after every completed call.</summary>
+	Action<string, IReadOnlyDictionary<string, object?>, CallToolResult>? ToolResultObserver { get; set; }
+}
+
+internal sealed class McpServerSession : IAsyncDisposable, IToolResultObservable {
 	private const int MaxDiagnosticNotifications = 20;
 	private readonly StdioClientTransport _transport;
 	private readonly ConcurrentQueue<JsonNode> _capturedProgressParams = new();
@@ -43,7 +53,7 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	/// change the outcome of a call. <c>SeededBlankPage.Lease</c> uses it to record what the saves of a test
 	/// reported. The session can be shared by fixtures, so an observer must ignore calls that are not its own.
 	/// </summary>
-	internal Action<string, IReadOnlyDictionary<string, object?>, CallToolResult>? ToolResultObserver { get; set; }
+	public Action<string, IReadOnlyDictionary<string, object?>, CallToolResult>? ToolResultObserver { get; set; }
 
 	public static async Task<McpServerSession> StartAsync(McpE2ESettings settings, CancellationToken cancellationToken) =>
 		await StartAsync(settings, elicitationHandler: null, cancellationToken);

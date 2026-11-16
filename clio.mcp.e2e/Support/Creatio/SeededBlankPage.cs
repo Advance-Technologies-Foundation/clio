@@ -33,8 +33,10 @@ namespace Clio.Mcp.E2E.Support.Creatio;
 /// <para>
 /// The lease isolates the tests; it does not tolerate the defect that made them fail. It always brings the
 /// page back to blank, and then FAILS the test for every observation that is the signature of the defect:
-/// a page that an earlier, verified reset left blank and that is not blank now (<see cref="DecideStart"/>);
-/// a completed reset that the first <c>get-page</c> does not show (<see cref="JudgeResetReads"/>); a read
+/// a page that an earlier, verified reset left blank and that is not blank now, or reads blank from another
+/// stored schema or checksum than that reset left (<see cref="DecideStart"/>); a completed reset that the
+/// first <c>get-page</c> does not show (<see cref="JudgeResetReads"/>) or that did not modify the stored
+/// schema that read resolved (<see cref="JudgeResetLanded"/>); a read
 /// that only looks blank - the body <c>get-page</c> synthesizes when it finds no editable schema, or
 /// another stored schema of the page than the one the reset wrote
 /// (<see cref="WhyReadDoesNotShowReset"/>); two stored schemas of the page in one package
@@ -79,13 +81,18 @@ internal static class SeededBlankPage {
 
 	private const string LastSectionMarker = "/**SCHEMA_VALIDATORS*/";
 
-	// Process-wide: only the FIRST lease of the test process may find the page not blank (or without an
-	// editable schema) without failing, because a developer's stand may start dirty and a fresh site has no
-	// editable schema until the first save. Every later lease starts after a reset this class verified.
-	private static int _leasesStarted;
+	/// <summary>
+	/// Process-wide record of the leases: which lease is the first of the test process, which fixtures
+	/// already checked the stored rows, how the previous lease ended and what its verified reset left.
+	/// </summary>
+	internal static LeaseLedger Ledger { get; } = new();
 
-	// The fixtures whose first lease already listed and checked the stored rows of the page.
-	private static readonly HashSet<string> FixturesWithStoredRowsCheck = new(StringComparer.Ordinal);
+	/// <summary>
+	/// Records that a test wrote the page outside a lease (<c>ClioPagesConcurrencyE2ETests</c>), so the next
+	/// lease does not compare the page with the last verified reset. Call it before the write.
+	/// </summary>
+	/// <param name="writer">The test that writes.</param>
+	internal static void RecordWriteOutsideLease(string writer) => Ledger.RecordWriteOutsideLease(writer);
 
 	/// <summary>
 	/// The blank body the reset writes: the body clio itself gives a replacing schema it creates
@@ -167,22 +174,32 @@ internal static class SeededBlankPage {
 
 	/// <summary>
 	/// Decides what the start of a lease does with the first read of the page. Only the first lease of the
-	/// test process may find the page not blank, or without an editable schema, without failing.
+	/// test process may find the page not blank, or without an editable schema, without failing. A later lease
+	/// that follows a verified reset, with no write outside a lease since, also fails when the page reads
+	/// blank from another editable schema or with another checksum than that reset left.
 	/// </summary>
 	/// <param name="first">The read made before the test.</param>
-	/// <param name="firstLeaseOfProcess">Whether no lease was started in this test process before.</param>
+	/// <param name="prior">What the leases before this one left (<see cref="LeaseLedger.Start"/>).</param>
 	/// <returns>Whether to reset the page, and the failure or note to report.</returns>
-	internal static StartDecision DecideStart(PageObservation first, bool firstLeaseOfProcess) {
+	internal static StartDecision DecideStart(PageObservation first, PriorLeases prior) {
+		ArgumentNullException.ThrowIfNull(prior);
 		PageState state = Classify(first, out string? reason);
 		const string firstLeaseCase = "This is the FIRST lease of the test process, so it is not treated as a "
-			+ "failure: a developer's stand may start dirty and a fresh site has no editable schema of the page yet.";
-		const string laterLeaseCase = "This is NOT the first lease of the test process: the lease before it ended "
-			+ "with a reset that get-page showed on its first read, from an editable schema with the checksum the "
-			+ "save reported, and nothing else writes other content to the page. So an earlier completed save did "
-			+ "not land where it was read, or this read does not show the latest save - the product defect, not "
-			+ "this test.";
+			+ "failure: a developer's stand may start dirty, and the code cannot tell whether the page has been saved "
+			+ "on this site before.";
+		string laterLeaseCase = DescribeLaterLeaseCase(prior);
+		bool firstLeaseOfProcess = prior.IsFirstLeaseOfProcess;
 		return state switch {
-			PageState.SavedBlank => new StartDecision(Reset: false, Failure: null, Note: null),
+			PageState.SavedBlank when WhyNotTheLastVerifiedReset(first, prior) is { } changed => new StartDecision(
+				Reset: true,
+				Failure: $"'{SchemaName}' reads blank before this test, but {changed}. {laterLeaseCase} "
+					+ "The page was reset so the next test starts clean.",
+				Note: null),
+			PageState.SavedBlank => new StartDecision(Reset: false, Failure: null,
+				Note: prior.PreviousEnd == PreviousLeaseEnd.Verified && prior.WriterOutsideLease is not null
+					? $"'{SchemaName}' is not compared with the last verified reset: {prior.WriterOutsideLease} wrote the "
+						+ "page outside a lease since then."
+					: null),
 			PageState.Unreadable => new StartDecision(Reset: false,
 				Failure: $"get-page must read the shared page '{SchemaName}' before the test. {reason}", Note: null),
 			PageState.SynthesizedBlank when firstLeaseOfProcess => new StartDecision(Reset: false, Failure: null,
@@ -199,6 +216,50 @@ internal static class SeededBlankPage {
 				Note: null)
 		};
 	}
+
+	// Compares a blank read with what the previous lease's verified reset left. Only meaningful when that
+	// lease ended verified and no test wrote the page outside a lease since; otherwise the state is unknown.
+	private static string? WhyNotTheLastVerifiedReset(PageObservation first, PriorLeases prior) {
+		if (prior.PreviousEnd != PreviousLeaseEnd.Verified || prior.WriterOutsideLease is not null
+			|| prior.LastVerified is not { } verified) {
+			return null;
+		}
+		if (!string.Equals(NormalizeGuid(first.EditableSchemaUId), NormalizeGuid(verified.EditableSchemaUId),
+				StringComparison.OrdinalIgnoreCase)) {
+			return $"from editable schema {first.EditableSchemaUId} (checksum {first.Checksum ?? "none"}) while the "
+				+ $"previous lease's verified reset was read from editable schema {verified.EditableSchemaUId} "
+				+ $"(checksum {verified.Checksum}): the read resolves another stored schema of the page";
+		}
+		return string.Equals(first.Checksum, verified.Checksum, StringComparison.OrdinalIgnoreCase)
+			? null
+			: $"with checksum {first.Checksum ?? "none"} while the previous lease's verified reset left checksum "
+				+ $"{verified.Checksum} on the same editable schema {verified.EditableSchemaUId}, and nothing that ran "
+				+ "since was supposed to write it";
+	}
+
+	// The second half of a later lease's failure: it says only what the record of the previous lease proves.
+	private static string DescribeLaterLeaseCase(PriorLeases prior) => prior.PreviousEnd switch {
+		PreviousLeaseEnd.Verified when prior.WriterOutsideLease is not null =>
+			"This is NOT the first lease of the test process. The lease before it ended with a reset that get-page "
+			+ $"showed on its first read, but since then {prior.WriterOutsideLease} wrote the page outside a lease. "
+			+ "That test saves the body it read, so it should have left a blank page blank; its output shows what "
+			+ "get-page resolved before and after its saves.",
+		PreviousLeaseEnd.Verified =>
+			"This is NOT the first lease of the test process. The lease before it ended with a reset that get-page "
+			+ "showed on its first read (editable schema "
+			+ $"{prior.LastVerified?.EditableSchemaUId ?? "?"}, checksum {prior.LastVerified?.Checksum ?? "?"}, the "
+			+ "checksum the save reported, stored modification time moved), and no test wrote the page outside a "
+			+ "lease since. So an earlier completed save did not land where it was read, or this read does not show "
+			+ "the latest save - the product defect, not this test.",
+		PreviousLeaseEnd.NotVerified =>
+			"This is NOT the first lease of the test process, and the lease before it did NOT end with a verified "
+			+ "reset: its reset failed or was not shown by the first read (see the failure of the previous test). This "
+			+ "state may be what that test or its reset left, so it is not by itself a new occurrence of the defect.",
+		_ =>
+			"This is NOT the first lease of the test process, and the lease before it did not complete: its reset "
+			+ "threw or never ran (see the failure of the previous test, in its TearDown or its lease start). This "
+			+ "state may be what that test left, so it is not by itself a new occurrence of the defect."
+	};
 
 	/// <summary>
 	/// Says why <paramref name="read"/> does not prove that the reset <paramref name="reset"/> is what
@@ -279,6 +340,11 @@ internal static class SeededBlankPage {
 					+ $"in its design package is unknown: {stored.Error}"
 				: null;
 		}
+		if (unreadableIsFailure && stored.Rows.Any(row => PackageKey(row) is null)) {
+			return $"{stored.Rows.Count(row => PackageKey(row) is null)} stored SysSchema row(s) of '{SchemaName}' carry "
+				+ "no package, so two schemas of the page in one package cannot be counted: "
+				+ string.Join(", ", stored.Rows.Where(row => PackageKey(row) is null).Select(row => row.UId));
+		}
 		// A row whose package the answer does not carry takes no part: it must not be counted as a duplicate.
 		string[] duplicated = stored.Rows
 			.Where(row => PackageKey(row) is not null)
@@ -319,6 +385,98 @@ internal static class SeededBlankPage {
 				NormalizeGuid(row.PackageUId), NormalizeGuid(packageUId), StringComparison.OrdinalIgnoreCase));
 	}
 
+	/// <summary>
+	/// Judges whether the reset save modified the stored schema that the first read after it resolved. A
+	/// blank-over-blank save writes the same body and, when the checksum depends on the content only, the same
+	/// checksum, so only the stored <c>SysSchema.ModifiedOn</c> tells a save that landed from one that did not.
+	/// Both values come from the site (<c>execute-esq</c>), so the clock of the test agent takes no part.
+	/// </summary>
+	/// <param name="before">The stored rows read before the reset save.</param>
+	/// <param name="after">The stored rows read after the first read that showed the reset.</param>
+	/// <param name="firstRead">The first read after the reset save.</param>
+	/// <param name="phase">When the reset ran, for the message.</param>
+	/// <param name="rowsRequired">Whether rows that could not be read fail the check.</param>
+	/// <returns><c>null</c> when the schema the read resolved was modified by the save; otherwise the failure.</returns>
+	internal static string? JudgeResetLanded(
+		StoredRows before, StoredRows after, PageObservation firstRead, string phase, bool rowsRequired) {
+		ArgumentNullException.ThrowIfNull(before);
+		ArgumentNullException.ThrowIfNull(after);
+		ArgumentNullException.ThrowIfNull(firstRead);
+		if (before.Rows is null || after.Rows is null) {
+			return rowsRequired
+				? $"the reset of '{SchemaName}' {phase} cannot be shown to have modified a stored schema: the SysSchema "
+					+ $"rows could not be read (before the reset: {before.Error ?? "read"}; after it: {after.Error ?? "read"})"
+				: null;
+		}
+		string schemaUId = NormalizeGuid(firstRead.EditableSchemaUId);
+		StoredSchemaRow? afterRow = after.Rows.FirstOrDefault(row =>
+			string.Equals(NormalizeGuid(row.UId), schemaUId, StringComparison.OrdinalIgnoreCase));
+		if (afterRow is null) {
+			return $"the first read after the reset of '{SchemaName}' {phase} resolved editable schema "
+				+ $"{firstRead.EditableSchemaUId}, but no stored SysSchema row of the page has that UId";
+		}
+		StoredSchemaRow? beforeRow = before.Rows.FirstOrDefault(row =>
+			string.Equals(NormalizeGuid(row.UId), schemaUId, StringComparison.OrdinalIgnoreCase));
+		if (beforeRow is null || ModificationMoved(beforeRow.ModifiedOn, afterRow.ModifiedOn)) {
+			// No row before: the reset created the schema the read resolved.
+			return null;
+		}
+		return $"sync-pages reported the reset of '{SchemaName}' {phase} as saved and the first read resolved editable "
+			+ $"schema {firstRead.EditableSchemaUId}, but the stored SysSchema.ModifiedOn of that schema did not move: "
+			+ $"{beforeRow.ModifiedOn} before the reset save, {afterRow.ModifiedOn} after the first read. A blank body "
+			+ "and an unchanged checksum cannot tell a blank-over-blank save that landed from one that did not; this "
+			+ "save did not land in the schema get-page reads";
+	}
+
+	/// <summary>
+	/// Judges whether <c>get-page</c> resolves the one stored schema of the page in its design package: the
+	/// read must come from an editable schema whose UId and checksum are those of that row. After completed
+	/// saves anything else is a completed save that is not what the next read returns.
+	/// </summary>
+	/// <param name="read">A read made after the saves.</param>
+	/// <param name="stored">The stored rows read after that read.</param>
+	/// <returns><c>null</c> when the read resolves that row; otherwise the failure.</returns>
+	internal static string? JudgeReadAgainstDesignPackageRow(PageObservation read, StoredRows stored) {
+		ArgumentNullException.ThrowIfNull(read);
+		ArgumentNullException.ThrowIfNull(stored);
+		if (!read.Success) {
+			return $"get-page could not read '{SchemaName}': {read.Error}";
+		}
+		if (!read.EditableSchemaExists || string.IsNullOrWhiteSpace(read.EditableSchemaUId)) {
+			return $"get-page resolved NO editable schema of '{SchemaName}' (editableSchemaExists="
+				+ $"{read.EditableSchemaExists}) although the saves completed";
+		}
+		if (stored.Rows is null) {
+			return $"the stored SysSchema rows of '{SchemaName}' could not be read, so the editable schema get-page "
+				+ $"resolved cannot be matched to one: {stored.Error}";
+		}
+		StoredSchemaRow[] inDesignPackage = stored.Rows.Where(row => string.Equals(
+			NormalizeGuid(row.PackageUId), NormalizeGuid(read.DesignPackageUId), StringComparison.OrdinalIgnoreCase)).ToArray();
+		if (inDesignPackage.Length != 1) {
+			return $"the design package {read.DesignPackageUId} holds {inDesignPackage.Length} stored schema(s) of "
+				+ $"'{SchemaName}', so the editable schema get-page resolved cannot be matched to one";
+		}
+		StoredSchemaRow row = inDesignPackage[0];
+		bool sameSchema = string.Equals(NormalizeGuid(read.EditableSchemaUId), NormalizeGuid(row.UId),
+			StringComparison.OrdinalIgnoreCase);
+		bool sameChecksum = string.Equals(read.Checksum, row.Checksum, StringComparison.OrdinalIgnoreCase);
+		return sameSchema && sameChecksum
+			? null
+			: $"get-page resolved editable schema {read.EditableSchemaUId} with checksum {read.Checksum ?? "none"}, but "
+				+ $"the one stored schema of '{SchemaName}' in the design package is {row.UId} with checksum {row.Checksum}: "
+				+ "the read does not return what the completed saves stored";
+	}
+
+	// The stored ModifiedOn is the raw DataService value (ISO 8601). Compared as instants when both parse,
+	// otherwise as text: any change counts as moved.
+	private static bool ModificationMoved(string before, string after) =>
+		DateTime.TryParse(before, System.Globalization.CultureInfo.InvariantCulture,
+			System.Globalization.DateTimeStyles.RoundtripKind, out DateTime beforeTime)
+		&& DateTime.TryParse(after, System.Globalization.CultureInfo.InvariantCulture,
+			System.Globalization.DateTimeStyles.RoundtripKind, out DateTime afterTime)
+			? afterTime > beforeTime
+			: !string.Equals(before, after, StringComparison.Ordinal);
+
 	// ------------------------------------------------------------------------------------------------
 	// The lease's two steps over an injected page access, so the unit tests drive them with a fake.
 	// ------------------------------------------------------------------------------------------------
@@ -328,69 +486,94 @@ internal static class SeededBlankPage {
 	/// saved blank page, and reports every observation that must fail the test.
 	/// </summary>
 	/// <param name="access">Reads and writes the page.</param>
-	/// <param name="firstLeaseOfProcess">Whether no lease was started in this test process before.</param>
+	/// <param name="prior">What the leases before this one left.</param>
 	/// <param name="checkStoredRows">Whether to list and judge the stored rows of the page.</param>
 	/// <param name="pollInterval">The wait between the reads after a reset.</param>
 	/// <param name="cancellationToken">Cancels the calls.</param>
-	/// <returns>The failures (empty when the test may run) and the log of what was observed.</returns>
+	/// <param name="echo">Receives each log line as it is observed, so a later exception does not lose it.</param>
+	/// <returns>
+	/// The failures (empty when the test may run), the log of what was observed, and the first read after the
+	/// reset when the lease reset the page and that reset was verified.
+	/// </returns>
 	internal static async Task<LeaseReport> BeginAsync(
-		IPageAccess access, bool firstLeaseOfProcess, bool checkStoredRows, TimeSpan pollInterval,
-		CancellationToken cancellationToken) {
+		IPageAccess access, PriorLeases prior, bool checkStoredRows, TimeSpan pollInterval,
+		CancellationToken cancellationToken, Action<string>? echo = null) {
 		ArgumentNullException.ThrowIfNull(access);
+		ArgumentNullException.ThrowIfNull(prior);
 		List<string> failures = [];
 		List<string> log = [];
+		void Log(string line) {
+			log.Add(line);
+			echo?.Invoke(line);
+		}
 		PageObservation first = await access.ReadAsync(cancellationToken);
-		log.Add($"[seed-page] read before the test ({(firstLeaseOfProcess ? "first lease of the test process" : "not the first lease of the test process")}): {first.Describe()}");
-		StartDecision decision = DecideStart(first, firstLeaseOfProcess);
+		Log($"[seed-page] read before the test ({prior.Describe()}): {first.Describe()}");
+		StartDecision decision = DecideStart(first, prior);
+		StoredRows? stored = null;
 		if (checkStoredRows || decision.Reset) {
 			// Before the reset: the reset overwrites what these rows show.
-			StoredRows stored = await access.ReadStoredRowsAsync(cancellationToken);
-			log.Add($"[seed-page] stored schemas of '{SchemaName}' before the test:{Environment.NewLine}{DescribeStoredRows(stored)}");
+			stored = await access.ReadStoredRowsAsync(cancellationToken);
+			Log($"[seed-page] stored schemas of '{SchemaName}' before the test:{Environment.NewLine}{DescribeStoredRows(stored)}");
+			// The first lease of the process only reports rows it cannot read; a later one fails on them.
 			if (checkStoredRows && JudgeStoredRows(stored, first.DesignPackageUId, requireOneInDesignPackage: false,
-					unreadableIsFailure: false) is { } storedFailure) {
+					unreadableIsFailure: !prior.IsFirstLeaseOfProcess) is { } storedFailure) {
 				failures.Add(storedFailure);
 			}
 		}
 		if (decision.Note is not null) {
-			log.Add($"[seed-page] {decision.Note}");
+			Log($"[seed-page] {decision.Note}");
 		}
 		if (decision.Failure is not null) {
 			failures.Add(decision.Failure);
 		}
+		PageObservation? verified = null;
 		if (decision.Reset) {
-			failures.AddRange(await ResetAndVerifyAsync(access, "before the test", pollInterval, log, cancellationToken));
+			(IReadOnlyList<string> resetFailures, verified) = await ResetAndVerifyAsync(access, "before the test",
+				stored!, rowsRequired: !prior.IsFirstLeaseOfProcess, pollInterval, Log, cancellationToken);
+			failures.AddRange(resetFailures);
 		}
-		return new LeaseReport(failures, log);
+		return new LeaseReport(failures, log, verified);
 	}
 
 	/// <summary>
 	/// The end of a lease: always writes the blank body and requires the first read to show that write.
 	/// It does not skip the write when the page already looks blank, because a blank body alone cannot tell
-	/// a reset page from a read that shows no editable schema or another stored schema.
+	/// a reset page from a read that shows no editable schema or another stored schema. The stored rows are
+	/// read before and after the save: the schema the first read resolved must have been modified by it.
 	/// </summary>
 	/// <param name="access">Reads and writes the page.</param>
 	/// <param name="pollInterval">The wait between the reads after the reset.</param>
 	/// <param name="cancellationToken">Cancels the calls.</param>
-	/// <returns>The failures (empty when the reset was visible at once) and the log of what was observed.</returns>
+	/// <param name="echo">Receives each log line as it is observed, so a later exception does not lose it.</param>
+	/// <returns>
+	/// The failures (empty when the reset was visible at once), the log of what was observed, and the verified
+	/// first read when there are no failures.
+	/// </returns>
 	internal static async Task<LeaseReport> EndAsync(
-		IPageAccess access, TimeSpan pollInterval, CancellationToken cancellationToken) {
+		IPageAccess access, TimeSpan pollInterval, CancellationToken cancellationToken, Action<string>? echo = null) {
 		ArgumentNullException.ThrowIfNull(access);
 		List<string> log = [];
-		IReadOnlyList<string> failures =
-			await ResetAndVerifyAsync(access, "after the test", pollInterval, log, cancellationToken);
-		return new LeaseReport(failures, log);
+		void Log(string line) {
+			log.Add(line);
+			echo?.Invoke(line);
+		}
+		StoredRows before = await access.ReadStoredRowsAsync(cancellationToken);
+		Log($"[seed-page] stored schemas of '{SchemaName}' before the reset after the test:{Environment.NewLine}{DescribeStoredRows(before)}");
+		(IReadOnlyList<string> failures, PageObservation? verified) = await ResetAndVerifyAsync(
+			access, "after the test", before, rowsRequired: true, pollInterval, Log, cancellationToken);
+		return new LeaseReport(failures, log, verified);
 	}
 
-	private static async Task<IReadOnlyList<string>> ResetAndVerifyAsync(
-		IPageAccess access, string phase, TimeSpan pollInterval, List<string> log,
-		CancellationToken cancellationToken) {
+	private static async Task<(IReadOnlyList<string> Failures, PageObservation? Verified)> ResetAndVerifyAsync(
+		IPageAccess access, string phase, StoredRows before, bool rowsRequired, TimeSpan pollInterval,
+		Action<string> log, CancellationToken cancellationToken) {
 		ResetSave reset = await access.WriteBlankAsync(cancellationToken);
-		log.Add($"[seed-page] reset save {phase}: {reset.Describe()}");
+		log($"[seed-page] reset save {phase}: {reset.Describe()}");
 		if (!reset.Success) {
-			return [
+			return ([
 				$"sync-pages must reset the shared page '{SchemaName}' to its blank body {phase}. Error of the reset: "
 				+ $"{reset.Error ?? "sync-pages returned no page result"}. Warnings: {string.Join(" | ", reset.Warnings)}"
-			];
+			], null);
 		}
 		List<PageObservation> reads = [];
 		// The poll keeps the isolation: the next test must not start before the page is blank. Whether the
@@ -399,16 +582,23 @@ internal static class SeededBlankPage {
 			async pollToken => {
 				PageObservation read = await access.ReadAsync(pollToken);
 				reads.Add(read);
+				log($"[seed-page] read {reads.Count} after the reset {phase}: {read.Describe()}");
 				return read;
 			},
 			read => WhyReadDoesNotShowReset(read, reset) is null,
 			ResetObservationAttempts,
 			pollInterval,
 			cancellationToken);
-		for (int index = 0; index < reads.Count; index++) {
-			log.Add($"[seed-page] read {index + 1} after the reset {phase}: {reads[index].Describe()}");
+		if (JudgeResetReads(reset, reads, phase) is { } readFailure) {
+			return ([readFailure], null);
 		}
-		return JudgeResetReads(reset, reads, phase) is { } failure ? [failure] : [];
+		// The first read showed the reset by body and checksum; the stored modification time says whether the
+		// save really landed in the schema that read resolved.
+		StoredRows after = await access.ReadStoredRowsAsync(cancellationToken);
+		log($"[seed-page] stored schemas of '{SchemaName}' after the reset {phase}:{Environment.NewLine}{DescribeStoredRows(after)}");
+		return JudgeResetLanded(before, after, reads[0], phase, rowsRequired) is { } landedFailure
+			? ([landedFailure], null)
+			: ([], reads[0]);
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -426,18 +616,23 @@ internal static class SeededBlankPage {
 	/// <returns>The lease to hand to <see cref="Lease.EndAsync"/> in <c>[TearDown]</c>.</returns>
 	internal static async Task<Lease> LeaseAsync(McpServerSession session, string environmentName) {
 		ArgumentNullException.ThrowIfNull(session);
-		bool firstLeaseOfProcess = Interlocked.Exchange(ref _leasesStarted, 1) == 0;
-		bool checkStoredRows = IsFirstLeaseOfFixture(TestContext.CurrentContext.Test.ClassName);
+		(PriorLeases prior, bool checkStoredRows) = Ledger.Start(TestContext.CurrentContext.Test.ClassName);
+		Func<CancellationToken, Task<string>> describe =
+			cancellationToken => DescribeAsync(session, environmentName, cancellationToken);
 		// Not the test's token: the lease has its own budget.
 		using CancellationTokenSource cancellation = new(OperationTimeout);
 		LeaseReport report;
 		using (McpPageAccess access = new(session, environmentName)) {
-			report = await BeginAsync(access, firstLeaseOfProcess, checkStoredRows, ResetObservationPollInterval,
-				cancellation.Token);
+			report = await BeginAsync(access, prior, checkStoredRows, ResetObservationPollInterval,
+				cancellation.Token, line => WriteToTestOutput([line]));
 		}
-		WriteToTestOutput(report.Log);
-		await FailOnAsync(report, session, environmentName, "before the test", savesOfTheTest: null);
-		return new Lease(session, environmentName);
+		if (report.Failures.Count > 0) {
+			// The test fails here and its TearDown has no lease to end: this start is the lease's last step.
+			Ledger.RecordEnd(report);
+		}
+		await FailOnAsync(report, describe, "before the test", savesOfTheTest: null);
+		return new Lease(session, () => new McpPageAccess(session, environmentName), describe, Ledger,
+			ResetObservationPollInterval);
 	}
 
 	/// <summary>
@@ -505,15 +700,21 @@ internal static class SeededBlankPage {
 				+ $"extendParent={row.ExtendParent} checksum={row.Checksum} "
 				+ $"createdOn={row.CreatedOn} modifiedOn={row.ModifiedOn}");
 		}
+		// Grouped exactly as JudgeStoredRows groups them, so the printout and the verdict cannot disagree.
 		string[] duplicated = stored.Rows
-			.GroupBy(row => row.PackageName, StringComparer.OrdinalIgnoreCase)
+			.Where(row => PackageKey(row) is not null)
+			.GroupBy(row => PackageKey(row)!, StringComparer.OrdinalIgnoreCase)
 			.Where(group => group.Count() > 1)
-			.Select(group => $"{group.Key} x{group.Count()}")
+			.Select(group => $"{group.First().PackageName} x{group.Count()}")
 			.ToArray();
+		int withoutPackage = stored.Rows.Count(row => PackageKey(row) is null);
 		description.Append(duplicated.Length > 0
 			? $"SysSchema rows: {stored.Rows.Count}. MORE THAN ONE ROW IN ONE PACKAGE ({string.Join(", ", duplicated)}): "
 				+ "a read and a write can resolve different schemas of this page."
 			: $"SysSchema rows: {stored.Rows.Count}, at most one per package.");
+		if (withoutPackage > 0) {
+			description.Append($" {withoutPackage} row(s) carry no package and are not counted.");
+		}
 		return description.ToString();
 	}
 
@@ -537,23 +738,17 @@ internal static class SeededBlankPage {
 	/// <returns>One line per row and a verdict line.</returns>
 	internal static string DescribeStoredLayers(JsonElement rows) => DescribeStoredRows(ParseStoredRows(rows));
 
-	private static bool IsFirstLeaseOfFixture(string? fixtureName) {
-		lock (FixturesWithStoredRowsCheck) {
-			return FixturesWithStoredRowsCheck.Add(fixtureName ?? string.Empty);
-		}
-	}
-
 	/// <summary>
 	/// Fails the current test when <paramref name="report"/> carries failures, with the log of the lease and
 	/// the state of the page in the message.
 	/// </summary>
 	private static async Task FailOnAsync(
-		LeaseReport report, McpServerSession session, string environmentName, string phase, string? savesOfTheTest) {
+		LeaseReport report, Func<CancellationToken, Task<string>> describe, string phase, string? savesOfTheTest) {
 		if (report.Failures.Count == 0) {
 			return;
 		}
 		using CancellationTokenSource diagnosticsCts = new(OperationTimeout);
-		string diagnostics = await DescribeAsync(session, environmentName, diagnosticsCts.Token);
+		string diagnostics = await describe(diagnosticsCts.Token);
 		report.Failures.Count.Should().Be(0,
 			because: "the shared page '{0}' must be a saved blank page {1}, and a completed reset must be what the "
 				+ "next get-page returns. {2}{3}What the lease observed: {4}{5}State now (after the reset): {6}",
@@ -696,7 +891,102 @@ internal static class SeededBlankPage {
 	/// <summary>The outcome of one step of a lease.</summary>
 	/// <param name="Failures">What must fail the test; empty when nothing does.</param>
 	/// <param name="Log">What the step read and saved, in order.</param>
-	internal sealed record LeaseReport(IReadOnlyList<string> Failures, IReadOnlyList<string> Log);
+	/// <param name="VerifiedRead">
+	/// The first read after the step's reset when that reset was verified (shown by the first read, stored
+	/// modification time moved); <c>null</c> when the step did not reset or the reset was not verified.
+	/// </param>
+	internal sealed record LeaseReport(
+		IReadOnlyList<string> Failures, IReadOnlyList<string> Log, PageObservation? VerifiedRead = null);
+
+	/// <summary>How the lease before the current one ended.</summary>
+	internal enum PreviousLeaseEnd {
+		/// <summary>No lease was started in this test process before.</summary>
+		NoLeaseYet,
+		/// <summary>Its last step was a reset that the first read showed and that modified the schema read.</summary>
+		Verified,
+		/// <summary>Its last step reported failures and no verified reset.</summary>
+		NotVerified,
+		/// <summary>It started and never recorded an end: its reset threw, or its TearDown never ended it.</summary>
+		DidNotComplete
+	}
+
+	/// <summary>What the first read after a verified reset resolved.</summary>
+	internal sealed record VerifiedReset(string EditableSchemaUId, string Checksum);
+
+	/// <summary>What the leases before the current one left, as <see cref="LeaseLedger.Start"/> returns it.</summary>
+	/// <param name="PreviousEnd">How the previous lease ended.</param>
+	/// <param name="LastVerified">What its verified reset left; <c>null</c> unless it ended verified.</param>
+	/// <param name="WriterOutsideLease">The tests that wrote the page outside a lease since; <c>null</c> when none.</param>
+	internal sealed record PriorLeases(
+		PreviousLeaseEnd PreviousEnd, VerifiedReset? LastVerified, string? WriterOutsideLease) {
+
+		/// <summary>No lease before this one in the test process.</summary>
+		internal static PriorLeases None { get; } = new(PreviousLeaseEnd.NoLeaseYet, null, null);
+
+		/// <summary>Whether no lease was started in this test process before.</summary>
+		internal bool IsFirstLeaseOfProcess => PreviousEnd == PreviousLeaseEnd.NoLeaseYet;
+
+		/// <summary>The facts for the log.</summary>
+		public string Describe() => IsFirstLeaseOfProcess
+			? "first lease of the test process"
+			: $"not the first lease of the test process; previous lease: {PreviousEnd}"
+				+ (LastVerified is { } verified
+					? $" (editable schema {verified.EditableSchemaUId}, checksum {verified.Checksum})"
+					: string.Empty)
+				+ (WriterOutsideLease is null ? string.Empty : $"; written outside a lease since by {WriterOutsideLease}");
+	}
+
+	/// <summary>
+	/// The record of the leases of one test process. <see cref="Ledger"/> is the process-wide instance; the
+	/// unit tests create their own.
+	/// </summary>
+	internal sealed class LeaseLedger {
+		private readonly object _gate = new();
+		private readonly HashSet<string> _fixturesWithStoredRowsCheck = new(StringComparer.Ordinal);
+		private PreviousLeaseEnd _previousEnd = PreviousLeaseEnd.NoLeaseYet;
+		private VerifiedReset? _lastVerified;
+		private string? _writerOutsideLease;
+
+		/// <summary>
+		/// Starts a lease: returns what the leases before it left and whether it is the first lease of its
+		/// fixture (which lists and judges the stored rows). Until <see cref="RecordEnd"/> is called, the next
+		/// lease sees this one as <see cref="PreviousLeaseEnd.DidNotComplete"/>.
+		/// </summary>
+		/// <param name="fixtureName">The fixture of the test that takes the lease.</param>
+		/// <returns>The prior leases and whether to check the stored rows.</returns>
+		internal (PriorLeases Prior, bool CheckStoredRows) Start(string? fixtureName) {
+			lock (_gate) {
+				PriorLeases prior = new(_previousEnd, _lastVerified, _writerOutsideLease);
+				bool checkStoredRows = _fixturesWithStoredRowsCheck.Add(fixtureName ?? string.Empty);
+				_previousEnd = PreviousLeaseEnd.DidNotComplete;
+				return (prior, checkStoredRows);
+			}
+		}
+
+		/// <summary>Records the last step of a lease: verified when that step's reset was verified.</summary>
+		/// <param name="report">The report of the lease's last step.</param>
+		internal void RecordEnd(LeaseReport report) {
+			ArgumentNullException.ThrowIfNull(report);
+			lock (_gate) {
+				if (report.VerifiedRead is { EditableSchemaUId: { Length: > 0 } schemaUId, Checksum: { Length: > 0 } checksum }) {
+					_previousEnd = PreviousLeaseEnd.Verified;
+					_lastVerified = new VerifiedReset(schemaUId, checksum);
+				} else {
+					_previousEnd = PreviousLeaseEnd.NotVerified;
+					_lastVerified = null;
+				}
+				_writerOutsideLease = null;
+			}
+		}
+
+		/// <summary>Records a write of the page outside a lease; the next lease then does not compare.</summary>
+		/// <param name="writer">The test that writes.</param>
+		internal void RecordWriteOutsideLease(string writer) {
+			lock (_gate) {
+				_writerOutsideLease = _writerOutsideLease is null ? writer : $"{_writerOutsideLease}, {writer}";
+			}
+		}
+	}
 
 	/// <summary>The reads and the one write the lease makes; a fake in the unit tests.</summary>
 	internal interface IPageAccess {
@@ -857,16 +1147,30 @@ internal static class SeededBlankPage {
 	/// matched to a stored schema.
 	/// </summary>
 	internal sealed class Lease {
-		private readonly McpServerSession _session;
-		private readonly string _environmentName;
+		private readonly IToolResultObservable _observable;
+		private readonly Func<IPageAccess> _openAccess;
+		private readonly Func<CancellationToken, Task<string>> _describe;
+		private readonly LeaseLedger _ledger;
+		private readonly TimeSpan _pollInterval;
 		private readonly ConcurrentQueue<string> _saves = new();
 		private readonly Action<string, IReadOnlyDictionary<string, object?>, CallToolResult> _observer;
 
-		internal Lease(McpServerSession session, string environmentName) {
-			_session = session;
-			_environmentName = environmentName;
+		/// <summary>Starts recording the saves of the test on <paramref name="observable"/>.</summary>
+		/// <param name="observable">The MCP session of the test.</param>
+		/// <param name="openAccess">Opens the page access the reset uses; disposed after the reset when disposable.</param>
+		/// <param name="describe">Describes what the stand holds for the page; never throws.</param>
+		/// <param name="ledger">Records how the lease ended.</param>
+		/// <param name="pollInterval">The wait between the reads after the reset.</param>
+		internal Lease(
+			IToolResultObservable observable, Func<IPageAccess> openAccess,
+			Func<CancellationToken, Task<string>> describe, LeaseLedger ledger, TimeSpan pollInterval) {
+			_observable = observable;
+			_openAccess = openAccess;
+			_describe = describe;
+			_ledger = ledger;
+			_pollInterval = pollInterval;
 			_observer = RecordSave;
-			_session.ToolResultObserver = _observer;
+			_observable.ToolResultObserver = _observer;
 		}
 
 		/// <summary>
@@ -875,31 +1179,51 @@ internal static class SeededBlankPage {
 		/// resets the page and fails the test when the first read does not show the reset.
 		/// </summary>
 		internal async Task EndAsync() {
-			if (ReferenceEquals(_session.ToolResultObserver, _observer)) {
-				_session.ToolResultObserver = null;
+			bool testFailed;
+			try {
+				testFailed = TestContext.CurrentContext.Result.Outcome.Status
+					== NUnit.Framework.Interfaces.TestStatus.Failed;
+			} catch (Exception) {
+				testFailed = false;
+			}
+			(LeaseReport report, string saves) = await EndAndReportAsync(testFailed, line => WriteToTestOutput([line]));
+			await FailOnAsync(report, _describe, "after the test", saves);
+		}
+
+		/// <summary>
+		/// The steps of <see cref="EndAsync"/> without the assertion: stops recording, reports the state of a
+		/// failed test BEFORE the reset, resets and verifies, and records the end in the ledger.
+		/// </summary>
+		/// <param name="testFailed">Whether the test failed.</param>
+		/// <param name="echo">Receives each output line as it is observed.</param>
+		/// <returns>The report of the reset and the saves the test made.</returns>
+		internal async Task<(LeaseReport Report, string Saves)> EndAndReportAsync(bool testFailed, Action<string> echo) {
+			if (ReferenceEquals(_observable.ToolResultObserver, _observer)) {
+				_observable.ToolResultObserver = null;
 			}
 			string saves = _saves.IsEmpty ? "none recorded" : string.Join(" || ", _saves);
-			await ReportStateOfFailedTestAsync(saves);
-			using CancellationTokenSource cancellation = new(OperationTimeout);
-			LeaseReport report;
-			using (McpPageAccess access = new(_session, _environmentName)) {
-				report = await SeededBlankPage.EndAsync(access, ResetObservationPollInterval, cancellation.Token);
+			if (testFailed) {
+				await ReportStateOfFailedTestAsync(saves, echo);
 			}
-			await FailOnAsync(report, _session, _environmentName, "after the test", saves);
+			using CancellationTokenSource cancellation = new(OperationTimeout);
+			IPageAccess access = _openAccess();
+			LeaseReport report;
+			try {
+				report = await SeededBlankPage.EndAsync(access, _pollInterval, cancellation.Token, echo);
+			} finally {
+				(access as IDisposable)?.Dispose();
+			}
+			_ledger.RecordEnd(report);
+			return (report, saves);
 		}
 
 		// Never throws: it runs in [TearDown] and must not replace the failure it describes.
-		private async Task ReportStateOfFailedTestAsync(string saves) {
+		private async Task ReportStateOfFailedTestAsync(string saves, Action<string> echo) {
 			try {
-				if (TestContext.CurrentContext.Result.Outcome.Status != NUnit.Framework.Interfaces.TestStatus.Failed) {
-					return;
-				}
 				using CancellationTokenSource diagnosticsCts = new(OperationTimeout);
-				string state = await DescribeAsync(_session, _environmentName, diagnosticsCts.Token);
-				WriteToTestOutput([
-					$"[seed-page] the test FAILED. State of '{SchemaName}' as the test left it, BEFORE the reset:{state}",
-					$"[seed-page] saves of the test on '{SchemaName}': {saves}"
-				]);
+				string state = await _describe(diagnosticsCts.Token);
+				echo($"[seed-page] the test FAILED. State of '{SchemaName}' as the test left it, BEFORE the reset:{state}");
+				echo($"[seed-page] saves of the test on '{SchemaName}': {saves}");
 			} catch (Exception) {
 				// The failure of the test stays the reported failure.
 			}
@@ -913,21 +1237,28 @@ internal static class SeededBlankPage {
 				return;
 			}
 			string time = DateTime.UtcNow.ToString("HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture);
-			if (toolName == PageUpdateTool.ToolName) {
-				PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
-				_saves.Enqueue($"{time}Z update-page success={response.Success} dryRun={response.DryRun} "
-					+ $"savedSchemaUId={response.SavedSchemaUId ?? "not reported"} "
-					+ $"newChecksum={response.NewChecksum ?? "none"} conflictCheck={response.ConflictCheck ?? "none"}");
-				return;
-			}
-			PageSyncResponse sync = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(result);
-			foreach (PageSyncPageResult page in sync.Pages ?? []) {
-				if (!string.Equals(page.SchemaName, SchemaName, StringComparison.Ordinal)) {
-					continue;
+			try {
+				if (toolName == PageUpdateTool.ToolName) {
+					PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+					_saves.Enqueue($"{time}Z update-page success={response.Success} dryRun={response.DryRun} "
+						+ $"savedSchemaUId={response.SavedSchemaUId ?? "not reported"} "
+						+ $"newChecksum={response.NewChecksum ?? "none"} conflictCheck={response.ConflictCheck ?? "none"}");
+					return;
 				}
-				_saves.Enqueue($"{time}Z sync-pages success={page.Success} conflict={page.Conflict} "
-					+ $"schemaUId={page.Page?.SchemaUId ?? "not reported by sync-pages"} "
-					+ $"checksumAfterSave={page.Digest?.Checksum ?? "none"} conflictCheck={page.ConflictCheck ?? "none"}");
+				PageSyncResponse sync = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(result);
+				foreach (PageSyncPageResult page in sync.Pages ?? []) {
+					if (!string.Equals(page.SchemaName, SchemaName, StringComparison.Ordinal)) {
+						continue;
+					}
+					_saves.Enqueue($"{time}Z sync-pages success={page.Success} conflict={page.Conflict} "
+						+ $"schemaUId={page.Page?.SchemaUId ?? "not reported by sync-pages"} "
+						+ $"checksumAfterSave={page.Digest?.Checksum ?? "none"} conflictCheck={page.ConflictCheck ?? "none"}");
+				}
+			} catch (InvalidOperationException parseFailure) {
+				// Diagnostics only: the test parses the same result itself and fails on it if it must, so this
+				// copy's payload dump would only land in the published TestResults of a passing run.
+				PayloadDumpReader.DeleteIfPresent(parseFailure.Message);
+				_saves.Enqueue($"{time}Z {toolName} result could not be parsed");
 			}
 		}
 	}
