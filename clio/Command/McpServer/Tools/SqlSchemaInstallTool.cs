@@ -25,7 +25,7 @@ public sealed class SqlSchemaInstallTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description(
-		"Execute a SQL script schema on a remote Creatio environment. " +
+		"Execute a SQL script schema on Creatio. " +
 		"WARNING: executes raw SQL directly on the database. Irreversible. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public SqlSchemaInstallResponse InstallSchema(

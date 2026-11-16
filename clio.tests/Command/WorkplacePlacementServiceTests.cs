@@ -1169,6 +1169,9 @@ public sealed class WorkplacePlacementServiceTests {
 		public void RemoveRow(RemoveDataBindingRowDbOptions options) =>
 			throw new AssertionException("The placement tool must never delete a row.");
 
+		public int DeleteBinding(DeleteDataBindingDbOptions options) =>
+			throw new AssertionException("The placement tool must never delete a binding.");
+
 		public BoundBindingProjection ReadBinding(ReadDataBindingDbOptions options) {
 			ReadBindingPackages.Add(options.PackageName);
 			var binding = options.PackageName == OtherPackage && OtherPackageBindings.ContainsKey(options.BindingName)

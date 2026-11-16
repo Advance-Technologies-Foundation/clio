@@ -37,7 +37,7 @@ public sealed class RemovePackageDependencyTool(
 	[McpServerTool(Name = RemovePackageDependencyToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		OpenWorld = false)]
 	[Description("""
-				 Removes one or more package dependencies from a Creatio package via PackageService.svc.
+				 Removes package dependencies from a package. One or more go in one call, via PackageService.svc.
 
 				 The symmetric counterpart of add-package-dependency. Use it to roll back a dependency that was
 				 added only to unblock the schema designer once it is no longer needed. Dependencies are matched
