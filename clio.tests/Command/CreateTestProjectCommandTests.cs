@@ -133,6 +133,8 @@ public class CreateTestProjectCommandTests : BaseCommandTests<CreateTestProjectO
 	[TestCase("sub\\Acme")]
 	[TestCase("/rooted/Acme")]
 	[TestCase("Acme, Other")]
+	[TestCase("Acme.")]
+	[TestCase("C:Acme")]
 	[Description("Rejects a package name that is not a plain folder name before reading any project or writing any test scaffold, so a name with a separator, '..' or a root cannot leave the workspace.")]
 	public void Execute_ShouldFailBeforeAnyFileAccess_WhenAPackageNameIsNotAPlainName(string packages) {
 		// Arrange

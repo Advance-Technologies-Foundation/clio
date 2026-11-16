@@ -280,6 +280,9 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 	[TestCase("..")]
 	[TestCase("sub/Custom")]
 	[TestCase("/rooted/Custom")]
+	[TestCase("sub\\Custom")]
+	[TestCase("Custom.")]
+	[TestCase("C:Custom")]
 	[Description("Returns an error for a package name that is not a plain folder name before any file is probed or any request is sent, so the command cannot read a descriptor outside the workspace.")]
 	[Category("Unit")]
 	public void Execute_Should_Return_Error_Before_Any_File_Access_When_Package_Name_Is_Not_A_Plain_Name(string packageName) {
