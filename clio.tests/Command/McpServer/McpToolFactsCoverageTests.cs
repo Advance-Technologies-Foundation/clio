@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
@@ -65,6 +66,15 @@ public sealed class McpToolFactsCoverageTests {
 		  "zz-facts-hint-contradiction-tool": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
 		  "zz-facts-wide-argument-tool": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none",
 		    "by-argument": [{"argument": "mode", "value": "wipe", "effect": "destroy"}, {"argument": "missing", "value": "x", "effect": "read"}]},
+		  "zz-facts-host-path-declared-tool": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none",
+		    "host-paths": [{"argument": "outputFile", "kind": "file", "access": "write"}, {"argument": "source", "kind": "folder", "access": "read", "list": true, "or": "name"}],
+		    "not-host-paths": [{"argument": "filePath", "why": "a path inside a package on the environment"}]},
+		  "zz-facts-host-path-defect-tool": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none",
+		    "host-paths": [{"argument": "missing", "kind": "file", "access": "read"}, {"argument": "both", "kind": "folder", "access": "write"},
+		      {"argument": "twice", "kind": "file", "access": "read"}, {"argument": "twice", "kind": "file", "access": "write", "or": "anything"}],
+		    "not-host-paths": [{"argument": "both", "why": "declared both ways"}, {"argument": "zipFile"}, {"argument": "absent", "why": "not an argument"}]},
+		  "zz-facts-host-path-partial-tool": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none",
+		    "host-paths": [{"argument": "outputFile", "kind": "file"}, {"argument": "source", "kind": "archive", "access": "read"}]},
 		  "zz-facts-stale-entry": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"}
 		}
 		""";
@@ -110,6 +120,7 @@ public sealed class McpToolFactsCoverageTests {
 			failures.AddRange(FindHintFailures(name, tool, facts));
 			failures.AddRange(FindConsistencyFailures(name, facts.Effect, facts.EnvironmentImpact, facts.Connections, string.Empty));
 			failures.AddRange(FindArgumentFailures(name, tool, facts));
+			failures.AddRange(FindHostPathFailures(name, tool, facts));
 		}
 		return failures;
 	}
@@ -162,6 +173,49 @@ public sealed class McpToolFactsCoverageTests {
 			foreach (string failure in FindConsistencyFailures(name, entry.Effect, entry.EnvironmentImpact, entry.Connections, where)) {
 				yield return failure;
 			}
+		}
+	}
+
+	// A name a host would read as a path. An argument with such a name is declared a host path or, with what it is
+	// instead, not one; so a host that guesses by name has clio's answer for every argument it would guess on.
+	private static readonly Regex PathLikeArgumentName = new(
+		"(dir|directory|folder|destination|location|zip)s?$|path|file",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+	private static IEnumerable<string> FindHostPathFailures(string name, McpServerTool tool, McpToolFacts facts) {
+		HashSet<string> arguments = ReadArgumentNames(tool.ProtocolTool.InputSchema);
+		HashSet<string> hostPaths = new(StringComparer.Ordinal);
+		HashSet<string> notHostPaths = new(StringComparer.Ordinal);
+		foreach (McpToolHostPath path in facts.HostPaths) {
+			if (!arguments.Contains(path.Argument)) {
+				yield return $"Tool '{name}' declares host path '{path.Argument}', which is not one of its arguments.";
+			}
+			if (!hostPaths.Add(path.Argument)) {
+				yield return $"Tool '{name}' declares host path '{path.Argument}' twice.";
+			}
+			if (path.Or is not (null or McpToolHostPath.OrName or McpToolHostPath.OrUrl)) {
+				yield return $"Tool '{name}' says host path '{path.Argument}' may instead be '{path.Or}', which is neither '{McpToolHostPath.OrName}' nor '{McpToolHostPath.OrUrl}'.";
+			}
+		}
+		foreach (McpToolNotHostPath notPath in facts.NotHostPaths) {
+			if (!arguments.Contains(notPath.Argument)) {
+				yield return $"Tool '{name}' declares '{notPath.Argument}' not a host path, but it is not one of its arguments.";
+			}
+			if (!notHostPaths.Add(notPath.Argument)) {
+				yield return $"Tool '{name}' declares '{notPath.Argument}' not a host path twice.";
+			}
+			if (hostPaths.Contains(notPath.Argument)) {
+				yield return $"Tool '{name}' declares '{notPath.Argument}' both a host path and not one.";
+			}
+			if (string.IsNullOrWhiteSpace(notPath.Why)) {
+				yield return $"Tool '{name}' declares '{notPath.Argument}' not a host path without saying what it is instead (why).";
+			}
+		}
+		foreach (string argument in arguments
+			.Where(argument => PathLikeArgumentName.IsMatch(argument)
+				&& !hostPaths.Contains(argument) && !notHostPaths.Contains(argument))
+			.OrderBy(argument => argument, StringComparer.Ordinal)) {
+			yield return $"Tool '{name}' has the argument '{argument}', whose name reads like a path: declare it under host-paths or, with what it is instead, under not-host-paths.";
 		}
 	}
 
@@ -247,6 +301,46 @@ public sealed class McpToolFactsCoverageTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The host-path check has teeth: over synthetic tools it reports an argument whose name reads like a " +
+		"path and is declared neither way, a declaration on an argument the tool does not take, one made twice or both " +
+		"ways, an unknown alternative to a path, a not-host-path without its reason, and a host path that leaves out or misspells its kind or access; " +
+		"and stays silent about a tool that declares its paths and its look-alike.")]
+	public void FactsRoutine_ShouldReportHostPathDefects_WhenRunOverSyntheticTools() {
+		// Arrange
+		IReadOnlyList<(string Name, McpServerTool Tool, McpToolFacts Facts)> synthetic = ReadSynthetic(
+			typeof(HostPathDeclaredFixtureTool),
+			typeof(HostPathDefectFixtureTool),
+			typeof(HostPathPartialFixtureTool));
+
+		// Act
+		IReadOnlyList<string> failures = FindFactsFailures(synthetic);
+		string[] defects = [.. failures.Where(failure => failure.Contains(HostPathDefectFixtureTool.ToolName, StringComparison.Ordinal))];
+
+		// Assert
+		synthetic.Should().HaveCount(3, because: "every synthetic tool must be discovered, or this proof is itself vacuous");
+		defects.Should().Contain(failure => failure.Contains("'outputFile', whose name reads like a path", StringComparison.Ordinal),
+			because: "an argument a host would read as a path must be declared one way or the other, so a new tool cannot hide one");
+		defects.Should().Contain(failure => failure.Contains("host path 'missing', which is not one of its arguments", StringComparison.Ordinal),
+			because: "a host path on an argument the tool does not take can never match a call");
+		defects.Should().Contain(failure => failure.Contains("'absent' not a host path, but it is not one of its arguments", StringComparison.Ordinal),
+			because: "a not-host-path on an argument the tool does not take is a leftover of a rename");
+		defects.Should().Contain(failure => failure.Contains("host path 'twice' twice", StringComparison.Ordinal),
+			because: "two declarations of one argument can disagree, and a host would read either");
+		defects.Should().Contain(failure => failure.Contains("may instead be 'anything'", StringComparison.Ordinal),
+			because: "a host acts on the alternative by its name, so an unknown one tells it nothing");
+		defects.Should().Contain(failure => failure.Contains("'both' both a host path and not one", StringComparison.Ordinal),
+			because: "an argument is a host path or it is not");
+		defects.Should().Contain(failure => failure.Contains("'zipFile' not a host path without saying what it is instead", StringComparison.Ordinal),
+			because: "the reason is what a reviewer checks the exemption against");
+		failures.Should().ContainSingle(failure => failure.Contains(HostPathPartialFixtureTool.ToolName, StringComparison.Ordinal))
+			.Which.Should().Contain("host path outputFile: Access", because: "a host path that leaves its access out says nothing a host can act on")
+			.And.Contain("host path source: Kind", because: "a misspelled kind reads back as unspecified instead of a plausible default");
+		failures.Should().NotContain(failure => failure.Contains(HostPathDeclaredFixtureTool.ToolName, StringComparison.Ordinal),
+			because: "a tool that declares its host paths and its look-alike is correct");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A catalog entry for a tool clio does not serve is reported, so a renamed or removed tool cannot leave a stale entry.")]
 	public void StaleEntryRoutine_ShouldReportAnEntryForAToolClioDoesNotServe() {
 		// Arrange
@@ -254,7 +348,8 @@ public sealed class McpToolFactsCoverageTests {
 
 		// Act
 		IReadOnlyList<string> failures = FindStaleEntries(catalog.Keys, [DeclaredFixtureTool.ToolName, PartialFixtureTool.ToolName,
-			HintContradictionFixtureTool.ToolName, WideArgumentFixtureTool.ToolName]);
+			HintContradictionFixtureTool.ToolName, WideArgumentFixtureTool.ToolName, HostPathDeclaredFixtureTool.ToolName,
+			HostPathDefectFixtureTool.ToolName, HostPathPartialFixtureTool.ToolName]);
 
 		// Assert
 		failures.Should().ContainSingle(because: "only the stale entry names a tool that is not served")
@@ -275,6 +370,33 @@ public sealed class McpToolFactsCoverageTests {
 			declared[alias].ToJson().ToJsonString().Should().Be(declared[canonical].ToJson().ToJsonString(),
 				because: $"'{alias}' runs the same code as '{canonical}', so a host must treat both the same");
 		}
+	}
+
+	[McpServerToolType]
+	private static class HostPathDeclaredFixtureTool {
+		internal const string ToolName = "zz-facts-host-path-declared-tool";
+
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[System.ComponentModel.Description("Synthetic tool that declares its host paths, one under a name that does not read like a path, and its look-alike.")]
+		public static string Run(string outputFile, string source, string filePath) => outputFile + source + filePath;
+	}
+
+	[McpServerToolType]
+	private static class HostPathDefectFixtureTool {
+		internal const string ToolName = "zz-facts-host-path-defect-tool";
+
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[System.ComponentModel.Description("Synthetic tool with an undeclared path-like argument and host-path declarations that are unknown, doubled, contradictory or unexplained.")]
+		public static string Run(string outputFile, string both, string twice, string zipFile) => outputFile + both + twice + zipFile;
+	}
+
+	[McpServerToolType]
+	private static class HostPathPartialFixtureTool {
+		internal const string ToolName = "zz-facts-host-path-partial-tool";
+
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[System.ComponentModel.Description("Synthetic tool whose host paths leave out an access and misspell a kind.")]
+		public static string Run(string outputFile, string source) => outputFile + source;
 	}
 
 	[McpServerToolType]
