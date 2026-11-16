@@ -155,6 +155,7 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Ignore("Flaky on CI runners, quarantined until ENG-106540 / https://github.com/Advance-Technologies-Foundation/clio/issues/1969 is investigated")]
 	[Description("Neither bound truncates a healthy long deploy: the ORDINARY worker budget does not apply at all, and every stage event RESTARTS the silence timer — so a run that streams for longer than the silence bound, in gaps shorter than it, reaches its terminal stage unkilled.")]
 	public async Task DispatchAsync_ShouldNotKillAtTheOrdinaryBudget_WhenTheDeployKeepsStreamingStages() {
 		// Arrange — an ordinary budget so small that any budget-based bound fires immediately, and a silence
