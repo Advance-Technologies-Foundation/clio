@@ -74,10 +74,11 @@ public class CreateDynamicCaseTool(
 		 + "dry-run=true runs every check, the page write's dry run included, and writes nothing. Nothing is written until "
 		 + "every check passes; a refusal answers outcome refused with a stable errorCode. An equivalent enabled "
 		 + "case answers already-present and writes nothing, so a re-run is safe; another enabled case without a filter "
-		 + "is refused (case-exists): change it with modify-dynamic-case. If the bar cannot be added, "
+		 + "is refused (case-exists): change it with modify-dynamic-case; once the object's cases are split by a filter "
+		 + "column, a create without a filter is refused (filter-required): supply one. If the bar cannot be added, "
 		 + "outcome created-page-failed keeps the case and page.retry is the exact update-page call. "
 		 + "A case is interpreted: no compile-creatio and no restart, but open pages of the object need a reload "
-		 + "(F5). Requires a CrtProcessBuilder that carries BuildCase (install-process-builder, after "
+		 + "(F5). Requires a CrtProcessBuilder with case filters (install-process-builder, after "
 		 + "user approval). Steps inside stages are not supported.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -118,8 +119,9 @@ public class CreateDynamicCaseTool(
 			return filterRefusal;
 		}
 		if (args.DeactivateUnfiltered == true && filter is null) {
-			return CommandExecutionResult.FromValidationError("deactivate-unfiltered goes with filter: it disables the "
-				+ "cases without a filter so that a case with one can start next to them. [invalid-request]");
+			return DynamicCaseStageArguments.Refuse("deactivate-unfiltered goes with filter: it disables the "
+				+ "cases without a filter so that a case with one can start next to them.",
+				DynamicCaseStageArguments.InvalidRequestCode);
 		}
 
 		CreateDynamicCaseOptions options = new() {

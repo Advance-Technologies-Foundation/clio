@@ -102,8 +102,8 @@ public class ModifyDynamicCaseTool(
 				missing, ForModifyDynamicCase);
 		}
 		if (args.Caption is not null && string.IsNullOrWhiteSpace(args.Caption)) {
-			return CommandExecutionResult.FromValidationError(
-				"caption cannot be empty: leave it out to keep the case caption. [invalid-request]");
+			return DynamicCaseStageArguments.Refuse("caption cannot be empty: leave it out to keep the case caption.",
+				DynamicCaseStageArguments.InvalidRequestCode);
 		}
 		if (!DynamicCaseStageArguments.TryRead(args.Stages ?? default, StageKeys, StageShape,
 				out List<DynamicCaseStageItem> stages, out CommandExecutionResult stagesRefusal)) {
@@ -114,8 +114,8 @@ public class ModifyDynamicCaseTool(
 			return filterRefusal;
 		}
 		if (filter is not null && args.RemoveFilter == true) {
-			return CommandExecutionResult.FromValidationError(
-				"filter and remove-filter=true contradict each other: send one of them. [invalid-request]");
+			return DynamicCaseStageArguments.Refuse("filter and remove-filter=true contradict each other: send one of them.",
+				DynamicCaseStageArguments.InvalidRequestCode);
 		}
 
 		ModifyDynamicCaseOptions options = new() {

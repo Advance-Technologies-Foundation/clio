@@ -366,7 +366,7 @@ public sealed class CreateDynamicCaseToolTests {
 	private sealed class FakeCommand(int exitCode = 0)
 		: CreateDynamicCaseCommand(Substitute.For<IDynamicCaseService>(), Substitute.For<ILogger>()) {
 
-		public CreateDynamicCaseOptions Captured { get; private set; }
+		public CreateDynamicCaseOptions Captured { get; set; }
 
 		public override int Execute(CreateDynamicCaseOptions options) {
 			Captured = options;
@@ -435,12 +435,15 @@ public sealed class CreateDynamicCaseToolTests {
 		// Act
 		CommandExecutionResult forwarded = _tool.CreateDynamicCase(withFilter);
 		bool deactivate = _resolved.Captured!.DeactivateUnfiltered;
+		_resolved.Captured = null;
 		CommandExecutionResult refused = _tool.CreateDynamicCase(alone);
 
 		// Assert
 		forwarded.ExitCode.Should().Be(0, because: "the flag goes with a filter");
 		deactivate.Should().BeTrue(because: "the user's yes is forwarded");
 		refused.ExitCode.Should().NotBe(0, because: "the flag without a filter disables a case for nothing");
+		TextOf(refused).Should().Contain("[invalid-request]", because: "the stable code is named");
+		_resolved.Captured.Should().BeNull(because: "a refused call sends nothing to the server");
 	}
 
 	[Test]
@@ -457,7 +460,8 @@ public sealed class CreateDynamicCaseToolTests {
 		// Assert
 		description.Should().Contain("filter-overlap", because: "filters of one object never share a value")
 			.And.Contain("unfiltered-case-exists", because: "the refusal next to a case without a filter is named")
-			.And.Contain("ONLY after the user agreed", because: "disabling a case cancels its running cases later");
+			.And.Contain("filter-required", because: "an unfiltered create next to filtered cases is refused by name")
+			.And.Contain("ONLY after the user agreed", because: "the agent never disables a case on its own");
 		deactivate.Should().StartWith("LEAVE IT OUT unless the user agreed", because: "the agent never sets it alone");
 	}
 }

@@ -901,6 +901,26 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
+	[Description("An archive that meets the create-dynamic-case floor must accept the case filter: the floor moved to the first cut with filters, and a cut with BuildCase but without them would refuse filter and deactivate-unfiltered as unknown keys.")]
+	public void BundledArchive_ShouldAcceptTheCaseFilter_WhenItMeetsTheCaseFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.CreateDynamicCaseOptions.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool carriesDeactivateUnfiltered = archive.Contains("[DataMember(Name = \"deactivateUnfiltered\")]",
+			StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			carriesDeactivateUnfiltered.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the create-dynamic-case floor {floor}, which is the first "
+					+ "cut whose BuildCase request takes the filter and deactivateUnfiltered");
+		}
+	}
+
+	[Test]
 	[Description("An archive that meets the describe-dynamic-case / modify-dynamic-case floor must carry the DescribeCase and ModifyCase operations, and one below it must not: a version number alone lets a cut from another branch pass every gate without the operations, and the install remedy would then reinstall the same package.")]
 	public void BundledArchive_ShouldCarryTheCaseChangeOperations_WhenItMeetsTheirFloor() {
 		// Arrange
