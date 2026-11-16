@@ -143,6 +143,13 @@ public class SkillRepositoryResolver(
 		_fileSystem.CreateDirectoryIfNotExists(SettingsRepository.AppSettingsFolderPath);
 
 		if (_fileSystem.ExistsDirectory(cachedRepositoryPath)) {
+			// Checked before any git process starts, and nothing is deleted: the folder is not clio's to remove.
+			if (!IsGitWorkingTreeRoot(cachedRepositoryPath)) {
+				throw new InvalidOperationException(
+					$"Skills repository '{effectiveLocator}' cannot be cached: the folder '{cachedRepositoryPath}' exists " +
+					"and is not a clone clio made. Choose another URL or remove the folder.");
+			}
+
 			// The cache was cloned tracking the requested branch, so a fast-forward
 			// pull keeps it on that branch.
 			GitCommandResult pullResult = _gitCommandRunner.Pull(cachedRepositoryPath);
@@ -183,14 +190,26 @@ public class SkillRepositoryResolver(
 		return _fileSystem.Combine(SettingsRepository.AppSettingsFolderPath, repositoryName);
 	}
 
-	// A name that stays directly below the settings folder: not empty, not made of dots only ("." is the folder
-	// itself, ".." the one above it), no separator and no root. Other characters are left alone, as they always were:
-	// a locator such as git@host:repo.git keeps its name.
+	// A name that stays directly below the settings folder: not empty, not made of dots and spaces only ("." is the
+	// folder itself, ".." the one above it, and Windows removes trailing dots and spaces, so ". ." and ".. ." are the
+	// settings folder there), not ending with a dot or a space (Windows would silently name another folder), no
+	// separator and no root. Other characters are left alone, as they always were: a locator such as
+	// git@host:repo.git keeps its name.
 	private static bool IsCacheFolderName(string name) =>
 		!string.IsNullOrWhiteSpace(name)
-		&& name.Trim('.').Length > 0
+		&& name.Trim('.', ' ').Length > 0
+		&& name[^1] is not ('.' or ' ')
 		&& name.IndexOfAny(['/', '\\']) < 0
 		&& !System.IO.Path.IsPathRooted(name);
+
+	// An existing cache folder is pulled only when it is itself the root of a git working tree: it holds a .git
+	// folder with a HEAD file, or a .git file (a linked working tree). In any other folder, for example one clio
+	// keeps for something else under the settings folder or an empty one, git would search the parent folders and
+	// pull whatever repository encloses the settings folder.
+	private bool IsGitWorkingTreeRoot(string directoryPath) {
+		string gitPath = _fileSystem.Combine(directoryPath, ".git");
+		return _fileSystem.ExistsFile(gitPath) || _fileSystem.ExistsFile(_fileSystem.Combine(gitPath, "HEAD"));
+	}
 
 	private string GetRepositoryName(string repositoryLocator) {
 		string trimmedLocator = repositoryLocator.Trim().TrimEnd('/', '\\');

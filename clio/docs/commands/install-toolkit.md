@@ -30,8 +30,10 @@ The default source is the public toolkit marketplace
 Use `--repo` to override it: a marketplace git URL for claude/codex/copilot, or a
 local path/git URL for the Cursor file-copy.
 For cursor a git URL is cached in a folder of the clio settings folder named after the
-URL's last segment, so the URL must end with the repository name
-(`https://host/org/repo` or `https://host/org/repo.git`); any other URL is refused.
+URL's last segment (`https://host/org/repo` and `https://host/org/repo.git` both use
+`repo`). A URL is refused when that segment is empty, consists only of dots and spaces,
+or ends with a dot, and when a folder of that name already exists there and is not a
+git clone.
 
 install-toolkit is idempotent. A detected agent whose CLI is not on PATH is skipped
 with a warning and does not fail the command.
