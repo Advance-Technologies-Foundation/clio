@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO.Abstractions;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -45,8 +46,21 @@ public sealed class PageSchemaNameConfinementTests {
 		"..",
 		"sub/Page",
 		"/abs/Outside",
-		"sub\\Page"
+		"sub\\Page",
+		// A drive-relative name: refused for its ':' on every OS, so it needs no Windows run.
+		"C:Outside",
+		// Windows drops a trailing dot, so the folder used would not be the folder named.
+		"Trailing.",
+		" LeadingSpace",
+		"Control\u0001Char",
+		// clio's own entries under .clio-pages: the lock folder, the staging folder and the ignore file.
+		".locks",
+		".staging",
+		".gitignore"
 	];
+
+	/// <summary>Names every page tool reports as missing, in its own words.</summary>
+	private static readonly string[] BlankNames = [null, "", "  "];
 
 	private IApplicationClient _applicationClient;
 	private IToolCommandResolver _commandResolver;
@@ -131,6 +145,21 @@ public sealed class PageSchemaNameConfinementTests {
 				.Select(call => call.GetMethodInfo().Name)
 				.Where(name => name != nameof(IDirectory.GetCurrentDirectory))
 				.Select(name => "Directory." + name));
+
+	// The verify read-back of sync-pages is private and, through the tool, is reached only after the per-page
+	// name check. Calling it directly is the only way to pin that it confines the name by itself.
+	private static (string BodyFile, string MetaWarning) PublishVerifiedReadBack(
+		PageSyncTool tool, string schemaName, string outputDirectory, PageGetResponse readBack) {
+		MethodInfo method = typeof(PageSyncTool).GetMethod(
+			"PublishVerifiedReadBack", BindingFlags.Instance | BindingFlags.NonPublic);
+		method.Should().NotBeNull(because: "the verify read-back of sync-pages is the method under test");
+		try {
+			return ((string, string))method.Invoke(tool, [schemaName, outputDirectory, "dev", readBack]);
+		} catch (TargetInvocationException exception) when (exception.InnerException is not null) {
+			System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
+			throw;
+		}
+	}
 
 	#endregion
 
@@ -217,6 +246,80 @@ public sealed class PageSchemaNameConfinementTests {
 	}
 
 	[TestCaseSource(nameof(HostileNames))]
+	[Description("The schema directory builder, the one place a schema name becomes a folder under .clio-pages, refuses a name that is not a plain name.")]
+	public void ResolveSchemaDirectory_ShouldThrow_WhenSchemaNameIsNotAPlainName(string hostileName) {
+		// Arrange
+		MockFileSystem fileSystem = new();
+
+		// Act
+		Action act = () => PageBaselineStore.ResolveSchemaDirectory(fileSystem, "/ws/.clio-pages", hostileName);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the folder of such a name would be outside .clio-pages or one of clio's own folders in it")
+			.WithMessage($"*{RefusalFragment}*", because: "the message has to say what is wrong with the name");
+	}
+
+	[TestCaseSource(nameof(BlankNames))]
+	[Description("The schema directory builder refuses a blank name: joining it would answer the .clio-pages root itself.")]
+	public void ResolveSchemaDirectory_ShouldThrow_WhenSchemaNameIsBlank(string blankName) {
+		// Arrange
+		MockFileSystem fileSystem = new();
+
+		// Act
+		Action act = () => PageBaselineStore.ResolveSchemaDirectory(fileSystem, "/ws/.clio-pages", blankName);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+			because: "a blank name has no folder of its own, and the root must not be handed out as a page folder");
+	}
+
+	[Test]
+	[Description("The schema directory builder answers .clio-pages/{schema-name} for a normal page schema name.")]
+	public void ResolveSchemaDirectory_ShouldJoinTheNameUnderTheRoot_WhenSchemaNameIsPlain() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+
+		// Act
+		string schemaDirectory = PageBaselineStore.ResolveSchemaDirectory(fileSystem, "/ws/.clio-pages", PlainName);
+
+		// Assert
+		schemaDirectory.Should().Be(fileSystem.Path.Combine("/ws/.clio-pages", PlainName),
+			because: "the layout .clio-pages/{schema} is what get-page writes and the verify read-back rewrites");
+	}
+
+	[TestCaseSource(nameof(HostileNames))]
+	[Description("The page-name check every page tool runs first reports a name that is not a plain name, including a name that starts with a dot.")]
+	public void DescribeSchemaNameRefusal_ShouldReturnTheRefusal_WhenSchemaNameIsNotAPlainName(string hostileName) {
+		// Arrange & Act
+		string refusal = PageBaselineStore.DescribeSchemaNameRefusal(hostileName);
+
+		// Assert
+		refusal.Should().Contain(RefusalFragment,
+			because: "each page tool returns this text as its error before it touches a file or asks Creatio");
+	}
+
+	[TestCaseSource(nameof(BlankNames))]
+	[Description("The baseline guard arms nothing, touches no file and adds no warning for a blank schema name: the tool's own 'required' error is the whole answer.")]
+	public void TryArm_ShouldReturnNoWarningAndTouchNoFile_WhenSchemaNameIsBlank(string blankName) {
+		// Arrange
+		IInterprocessFileGate gate = Substitute.For<IInterprocessFileGate>();
+		PageBaselineGuard guard = new(_fileSystem, gate);
+		PageUpdateOptions options = new() { SchemaName = blankName, Environment = "dev", Body = ValidBody };
+
+		// Act
+		(string metaFilePath, bool refreshBaseline, string warning) = guard.TryArm(options, "/ws");
+
+		// Assert
+		warning.Should().BeNull(
+			because: "a DISARMED warning about a name that is 'not a plain page schema name' would mislead next to 'schema-name is required'");
+		metaFilePath.Should().BeNull(because: "a blank name has no baseline folder");
+		refreshBaseline.Should().BeFalse(because: "nothing was armed");
+		DiskTouches(_fileSystem).Should().BeEmpty(because: "there is no baseline to probe for a blank name");
+		gate.ReceivedCalls().Should().BeEmpty(because: "there is no lock to take for a blank name");
+	}
+
+	[TestCaseSource(nameof(HostileNames))]
 	[Description("The after-save baseline refresh used by localize-page touches no file for a schema name that is not a plain name.")]
 	public void RefreshAfterSave_ShouldTouchNoFile_WhenSchemaNameIsNotAPlainName(string hostileName) {
 		// Arrange
@@ -296,6 +399,41 @@ public sealed class PageSchemaNameConfinementTests {
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[TestCaseSource(nameof(BlankNames))]
+	[Description("update-page answers a blank schema name with its own 'required' error only: no DISARMED baseline warning rides along.")]
+	public async Task UpdatePage_ShouldReportOnlyTheRequiredError_WhenSchemaNameIsBlank(string blankName) {
+		// Arrange
+		PageUpdateTool tool = CreateUpdateTool();
+		PageUpdateArgs args = new(blankName, ValidBody, OutputDirectory: "/ws") { EnvironmentName = "dev" };
+
+		// Act
+		PageUpdateResponse response = await tool.UpdatePage(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a page cannot be saved without a schema name");
+		response.Error.Should().Be("schemaName is required", because: "the tool reports a missing name in its own words");
+		(response.Warnings ?? []).Should().NotContain(
+			warning => warning.Contains("DISARMED") || warning.Contains(RefusalFragment),
+			because: "a blank name is a missing argument, not a name that is not plain, and no detection was skipped for it");
+	}
+
+	[TestCaseSource(nameof(BlankNames))]
+	[Description("The CLI update-page answers a blank schema name with its 'required' error only: the output carries no DISARMED baseline warning.")]
+	public void UpdatePageCommand_ShouldReportOnlyTheRequiredError_WhenSchemaNameIsBlank(string blankName) {
+		// Arrange
+		PageUpdateCommand command = CreateUpdateCommand(new PageBaselineGuard(_fileSystem));
+		PageUpdateOptions options = new() { SchemaName = blankName, Body = ValidBody, Environment = "dev" };
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a missing schema name is a failed command");
+		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains("schemaName is required")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(json => json.Contains("DISARMED") || json.Contains(RefusalFragment)));
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains("DISARMED") || text.Contains(RefusalFragment)));
+	}
+
 	[TestCaseSource(nameof(HostileNames))]
 	[Description("The CLI update-page refuses a schema name that is not a plain name without arming the baseline guard and without a request to Creatio.")]
 	public void UpdatePageCommand_ShouldRefuseWithoutArmingOrCreatioCall_WhenSchemaNameIsNotAPlainName(string hostileName) {
@@ -367,6 +505,66 @@ public sealed class PageSchemaNameConfinementTests {
 		fileSystem.AllFiles.Should().BeEquivalentTo(filesBefore, because: "no file is created, changed or deleted for the refused page");
 		fileSystem.AllDirectories.Should().BeEquivalentTo(directoriesBefore, because: "no lock directory is created outside .clio-pages");
 		fileSystem.File.ReadAllText("/Outside/meta.json").Should().Be("keep", because: "the file the name points at is left alone");
+	}
+
+	[TestCaseSource(nameof(BlankNames))]
+	[Description("sync-pages answers a page with a blank schema name with the 'required' error only: the page result carries no DISARMED baseline warning.")]
+	public async Task SyncPages_ShouldReportOnlyTheRequiredError_WhenSchemaNameIsBlank(string blankName) {
+		// Arrange
+		PageSyncTool tool = CreateSyncTool(_fileSystem);
+		PageSyncArgs args = new("dev", [new PageSyncPageInput(blankName, ValidBody)], Validate: false, OutputDirectory: "/ws");
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages.Should().ContainSingle(because: "the one page of the batch gets its own result");
+		response.Pages[0].Success.Should().BeFalse(because: "a page cannot be saved without a schema name");
+		response.Pages[0].Error.Should().Be("schemaName is required", because: "a missing name is reported in the tool's own words");
+		(response.Pages[0].Validation?.Warnings ?? []).Should().NotContain(
+			warning => warning.Contains("DISARMED") || warning.Contains(RefusalFragment),
+			because: "a blank name is a missing argument, not a name that is not plain, and no detection was skipped for it");
+	}
+
+	[Test]
+	[Description("The sync-pages verify=true read-back writes body.js and meta.json into .clio-pages/{schema-name} for a normal schema name.")]
+	public void SyncPagesVerifyReadBack_ShouldWriteUnderClioPages_WhenSchemaNameIsPlain() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		PageSyncTool tool = CreateSyncTool(fileSystem);
+		PageGetResponse readBack = new() { Success = true, Raw = new PageRawInfo { Body = ValidBody } };
+		string schemaDirectory = fileSystem.Path.Combine(fileSystem.Path.GetFullPath("/ws"), ".clio-pages", PlainName);
+
+		// Act
+		(string bodyFile, string metaWarning) = PublishVerifiedReadBack(tool, PlainName, "/ws", readBack);
+
+		// Assert
+		bodyFile.Should().Be(fileSystem.Path.Combine(schemaDirectory, "body.js"),
+			because: "the verified body belongs in the schema's own folder under .clio-pages");
+		fileSystem.File.ReadAllText(bodyFile).Should().Be(ValidBody, because: "the read-back body is what gets written");
+		fileSystem.File.Exists(fileSystem.Path.Combine(schemaDirectory, "meta.json")).Should().BeTrue(
+			because: $"the baseline of the read-back is written beside the body (warning: {metaWarning})");
+	}
+
+	[TestCaseSource(nameof(HostileNames))]
+	[Description("The sync-pages verify=true read-back refuses a schema name that is not a plain name by itself, without relying on the per-page check that runs earlier, and writes nothing.")]
+	public void SyncPagesVerifyReadBack_ShouldThrowAndWriteNothing_WhenSchemaNameIsNotAPlainName(string hostileName) {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string[] filesBefore = fileSystem.AllFiles.ToArray();
+		string[] directoriesBefore = fileSystem.AllDirectories.ToArray();
+		PageSyncTool tool = CreateSyncTool(fileSystem);
+		PageGetResponse readBack = new() { Success = true, Raw = new PageRawInfo { Body = ValidBody } };
+
+		// Act
+		Action act = () => PublishVerifiedReadBack(tool, hostileName, "/ws", readBack);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "the read-back builds its folder through the shared resolver, which refuses the name")
+			.WithMessage($"*{RefusalFragment}*", because: "the message has to say what is wrong with the name");
+		fileSystem.AllFiles.Should().BeEquivalentTo(filesBefore, because: "no body.js or meta.json is written for a refused name");
+		fileSystem.AllDirectories.Should().BeEquivalentTo(directoriesBefore, because: "no folder is created for a refused name");
 	}
 
 	#endregion
