@@ -1,24 +1,30 @@
 # Release Process
 
-## Быстрый способ: GitHub Copilot команда
+## Codex skill
 
-### `/release` 🚀
+Ask Codex to make a clio release, or invoke `$clio-release`. The repository skill
+is in [`.agents/skills/clio-release/SKILL.md`](.agents/skills/clio-release/SKILL.md),
+with a compatibility link under `.codex/skills/clio-release`.
+Codex discovers repository skills in `.agents/skills`; if the new skill does not
+appear after the file changes, restart Codex
+([official skill documentation](https://learn.chatgpt.com/docs/build-skills)).
 
-Используйте команду `/release` в GitHub Copilot для автоматического создания нового релиза:
+The skill selects a verified full `origin/master` commit, waits for its master-push
+`Build` run, increments the last version component, writes English release notes,
+and follows the release workflow through NuGet publication and version verification.
+It does not need a project-version commit. A request to make a release authorizes
+publication; no additional confirmation is needed for that same release.
 
-1. Откройте GitHub Copilot Chat
-2. Введите `/release`
-3. Copilot автоматически:
-   - Найдет последний тег релиза
-   - Инкрементирует минорную версию на 1
-   - Создаст и запушит новый тег
-   - Создаст GitHub release (если доступен GitHub CLI)
-   - Подтвердит создание тега и релиза
+The scripts below are legacy interactive helpers: they tag the current checkout
+and create placeholder notes. In an agent worktree, use the skill's explicit
+commit selection and reviewed notes instead.
 
-**Пример:**
-- Текущий тег: `8.0.1.42`
-- Новый тег: `8.0.1.43`
-- Автоматически создается GitHub release
+## GitHub Copilot command
+
+Run `/release` in GitHub Copilot Chat. The prompt follows the same shared
+`clio-release` procedure: increment the last version component (for example,
+`8.0.1.42` → `8.0.1.43`), publish from tested master with meaningful notes, and
+verify NuGet delivery.
 
 ## Альтернативные способы
 
@@ -65,7 +71,7 @@ Before creating a release tag, verify the following:
 **Test gates**
 - [ ] `make test-unit` passes locally
 - [ ] CI is green on master (`make check-pr`)
-- [ ] MCP E2E tests run manually if any MCP tool was changed (not in CI yet)
+- [ ] Review relevant MCP E2E results when MCP tools changed; check per-fixture CI coverage and run missing live-environment cases manually
 - [ ] SonarCloud has no new unresolved issues
 
 **Documentation**
@@ -81,15 +87,16 @@ Before creating a release tag, verify the following:
 
 1. **Создайте тег версии** в формате `X.Y.Z.W`:
    ```bash
-   git tag 8.0.1.43
-   git push origin 8.0.1.43
+   git tag 8.0.1.43 <verified-full-master-sha>
+   git push origin refs/tags/8.0.1.43
    ```
 
 2. **Создайте GitHub Release**:
    
    **Вариант A: GitHub CLI (рекомендуется)**
    ```bash
-   gh release create 8.0.1.43 --title "Release 8.0.1.43" --notes "Automated release 8.0.1.43"
+   gh release create 8.0.1.43 --verify-tag --target <verified-full-master-sha> \
+     --title "Release 8.0.1.43" --notes-file <release-notes-file>
    ```
    
    **Вариант B: Веб-интерфейс**
