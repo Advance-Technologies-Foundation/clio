@@ -228,7 +228,7 @@ public sealed record CreateDynamicCaseArgs(
 	[property: JsonPropertyName("deactivate-unfiltered")]
 	[property: Description("LEAVE IT OUT unless the user agreed to disable the object's enabled case without a filter, "
 		+ "as the case designer does. Goes with filter. New records then start only the filtered cases; the disabled "
-		+ "case's running cases continue.")]
+		+ "case's running cases are cancelled at their record's next status change.")]
 	bool? DeactivateUnfiltered = null,
 
 	[property: JsonPropertyName("name")]
