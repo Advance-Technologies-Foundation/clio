@@ -235,14 +235,15 @@ public sealed partial class WsdlReader(
 					+ "modify-web-service)."));
 			// The caption comes from the WSDL's service name, which another service registered from the same API (by
 			// Studio's wizard, say) already shows: Studio would list two services under one name.
-			foreach (WsdlServiceArguments service in services.Where(s => !string.IsNullOrWhiteSpace(s.Arguments.Caption))
-					.DistinctBy(s => s.Arguments.Caption, StringComparer.OrdinalIgnoreCase)) {
+			foreach (WsdlRegistrationArgs arguments in services.Select(service => service.Arguments)
+					.Where(arguments => !string.IsNullOrWhiteSpace(arguments.Caption))
+					.DistinctBy(arguments => arguments.Caption, StringComparer.OrdinalIgnoreCase)) {
 				string taken = client.Select("VwWebServiceV2", ["Name"],
-						new Dictionary<string, string> { ["Caption"] = service.Arguments.Caption })
+						new Dictionary<string, string> { ["Caption"] = arguments.Caption })
 					.Select(row => row[WebServiceDesignerClient.ColumnAlias("Name")]?.ToString())
-					.FirstOrDefault(name => !string.Equals(name, service.Arguments.Code, StringComparison.OrdinalIgnoreCase));
+					.FirstOrDefault(name => !string.Equals(name, arguments.Code, StringComparison.OrdinalIgnoreCase));
 				if (taken is not null) {
-					notices.Add($"The caption '{WsdlParser.Shown(service.Arguments.Caption)}' is already shown by web service "
+					notices.Add($"The caption '{WsdlParser.Shown(arguments.Caption)}' is already shown by web service "
 						+ $"'{WsdlParser.Shown(taken)}', so Studio would list two services under one name. Pass a caption "
 						+ "the user names, or leave caption out to use the code.");
 				}
