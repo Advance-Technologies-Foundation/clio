@@ -2,18 +2,33 @@
   "StopAllCreatio": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none"},
   "add-custom-logging": {"effect": "change", "rebuilds-environment": true, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "restart-environment", "value": "false", "when-absent": true, "effect": "change", "rebuilds-environment": false}
+  ], "not-host-paths": [
+      {"argument": "file-name", "why": "a plain log file name clio validates and writes as text into the NLog configuration"}
   ]},
-  "add-data-binding-row": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
-  "add-item-model": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "add-data-binding-row": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
+  "add-item-model": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "folder", "kind": "folder", "access": "write"}
+  ]},
   "add-knowledge-source": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "confirmed", "value": "false", "effect": "read"}
+  ], "host-paths": [
+      {"argument": "trustedPublicKeyPath", "kind": "file", "access": "read"}
+  ], "not-host-paths": [
+      {"argument": "location", "why": "a remote https address of the knowledge source"}
   ]},
-  "add-package": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "add-package": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "build-zip-path", "kind": "file-or-folder", "access": "read", "list": true},
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
   "add-package-dependency": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "advise-theme-palette": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
   "apply-default-record-rights": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "assert-infrastructure": {"effect": "read", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
-  "build-theme": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "build-theme": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspace-directory", "kind": "folder", "access": "write"}
+  ]},
   "check-auth-code-flow": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "check-settings-health": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "read"},
   "check-theming-access": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
@@ -25,12 +40,17 @@
   "clio-run-destructive": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "change"},
   "compile-creatio": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "compile-status": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "configure-knowledge-feedback-policy": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
+  "configure-knowledge-feedback-policy": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none", "not-host-paths": [
+      {"argument": "destination", "why": "an https address of a GitHub repository"},
+      {"argument": "expected-destination", "why": "the same repository address, repeated for consent"}
+  ]},
   "create-app": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "create-app-section": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "create-business-process": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "create-client-unit-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "create-data-binding": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "create-data-binding": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
   "create-data-binding-db": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "create-dynamic-case": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "dry-run", "value": "true", "effect": "read"}
@@ -43,14 +63,25 @@
   "create-page": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "create-page-business-rules": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "create-related-page-addon": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "create-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "create-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "body-file", "kind": "file", "access": "read"}
+  ]},
   "create-server-to-server-oauth-app": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "change"},
   "create-sql-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "create-sys-setting": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "create-theme": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "create-user-task": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
-  "create-user-task-page": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
-  "create-workspace": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
+  "create-user-task": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
+  "create-user-task-page": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "large-icon-path", "kind": "file", "access": "read"},
+      {"argument": "small-icon-path", "kind": "file", "access": "read"},
+      {"argument": "title-icon-path", "kind": "file", "access": "read"},
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
+  "create-workspace": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "directory", "kind": "folder", "access": "write"}
+  ]},
   "dataforge-context": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "dataforge-find-lookups": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "dataforge-find-tables": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
@@ -66,42 +97,78 @@
       {"argument": "confirmed", "value": "false", "effect": "read", "scope": "local"}
   ]},
   "delete-page-business-rules": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "delete-schema": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
+  "delete-schema": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read"}
+  ]},
   "delete-theme": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "delete-toolkit": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
-  "deploy-creatio": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "change"},
-  "deploy-identity": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "change"},
+  "deploy-creatio": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "change", "host-paths": [
+      {"argument": "zipFile", "kind": "file-or-folder", "access": "read"}
+  ]},
+  "deploy-identity": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "change", "host-paths": [
+      {"argument": "identityPath", "kind": "folder", "access": "read-write"},
+      {"argument": "zipFile", "kind": "file", "access": "read"}
+  ], "not-host-paths": [
+      {"argument": "identityArchivePathInBundle", "why": "an entry name inside the zipFile archive; without zipFile, a file name clio looks for below the environment's folder"}
+  ]},
   "describe-business-process": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "describe-dynamic-case": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "describe-environment": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "describe-web-service": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "disable-knowledge-source": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
-  "download-configuration-by-build": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
-  "download-configuration-by-environment": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "download-sys-setting-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "download-configuration-by-build": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "build-path", "kind": "file-or-folder", "access": "read"},
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
+  "download-configuration-by-environment": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
+  "download-sys-setting-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "file-name", "kind": "file", "access": "write"}
+  ]},
   "enable-knowledge-source": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "enroll-sequence-participants": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "execute-dataservice-batch": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "execute-esq": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "execute-esq-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "execute-sql-script": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "execute-esq-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
+  "execute-sql-script": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "destination-path", "kind": "file", "access": "write"},
+      {"argument": "file", "kind": "file", "access": "read"}
+  ]},
   "experimental": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "name", "value": "", "when-absent": true, "effect": "read", "scope": "local"}
   ]},
-  "export-component-registry": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "export-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "export-component-registry": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
+  "export-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "destination", "kind": "folder", "access": "write"}
+  ]},
   "find-app": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "find-empty-iis-port": {"effect": "read", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "find-entity-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "finish-hotfix": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "generate-process-model": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "generate-process-model": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "destination-path", "kind": "file-or-folder", "access": "write"}
+  ]},
   "generate-source-code": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "get-app-info": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-browser-session": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "read"},
-  "get-classic-list-columns": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-classic-page-sources": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-client-unit-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "get-classic-list-columns": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "not-host-paths": [
+      {"argument": "ignore-profile", "why": "a flag"}
+  ]},
+  "get-classic-page-sources": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
+  "get-client-unit-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
   "get-component-info": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-component-info-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "get-component-info-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
   "get-email-template": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-entity-connections": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-entity-schema-column-properties": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
@@ -114,8 +181,12 @@
   "get-knowledge-feedback-policy": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
   "get-mobile-page-conversion-guide": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-object-rights": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-package-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-page": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "get-package-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "not-host-paths": [
+      {"argument": "file-path", "why": "a path inside a package on the environment"}
+  ]},
+  "get-page": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-directory", "kind": "folder", "access": "read-write"}
+  ]},
   "get-page-hierarchy": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-page-modal-size": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-process-page-facts": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
@@ -123,48 +194,76 @@
   "get-record-rights": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-related-page-addon": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-request-info": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-request-info-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "get-request-info-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
+  "get-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
   "get-schema-name-prefix": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-sequence-context": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "get-sql-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "get-sql-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
   "get-sys-setting": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-target-package": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-telemetry-consent": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
-  "get-theme": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "get-theme": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
   "get-tool-contract": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
   "get-user-culture": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "import-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "dry-run", "value": "true", "effect": "read"}
+  ], "host-paths": [
+      {"argument": "path", "kind": "file-or-folder", "access": "read"}
   ]},
   "info-knowledge": {"effect": "read", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "inspect-access": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "inspect-license": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "inspect-role": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "inspect-user": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "install-application": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
+  "inspect-user": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "not-host-paths": [
+      {"argument": "password-file", "why": "a plain file name clio validates and reads from its own secrets folder"}
+  ]},
+  "install-application": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "name", "kind": "file-or-folder", "access": "read"},
+      {"argument": "report-path", "kind": "file-or-folder", "access": "write"}
+  ]},
   "install-dashboards-migrator": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "install-gate": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "install-knowledge": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "install-process-builder": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "install-sql-schema": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "install-toolkit": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
+  "install-toolkit": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none", "host-paths": [
+      {"argument": "repo", "kind": "folder", "access": "read", "or": "url"}
+  ]},
   "last-compilation-log": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "link-from-repository-by-env-package-path": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "dryRun", "value": "true", "effect": "read", "scope": "environment"}
+  ], "host-paths": [
+      {"argument": "envPkgPath", "kind": "folder", "access": "read-write", "or": "name"},
+      {"argument": "repoPath", "kind": "folder", "access": "read"}
   ]},
   "link-from-repository-by-environment": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "dryRun", "value": "true", "effect": "read", "scope": "environment"}
+  ], "host-paths": [
+      {"argument": "environmentName", "kind": "folder", "access": "read-write", "or": "name"},
+      {"argument": "repoPath", "kind": "folder", "access": "read"}
   ]},
   "link-from-repository-unlocked": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "dryRun", "value": "true", "effect": "read", "scope": "environment"}
+  ], "host-paths": [
+      {"argument": "environmentName", "kind": "folder", "access": "read-write", "or": "name"},
+      {"argument": "repoPath", "kind": "folder", "access": "read"}
   ]},
   "list-app-sections": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "list-apps": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "list-creatio-builds": {"effect": "read", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "list-db-templates": {"effect": "read", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "list-entity-client-schemas": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "list-entity-client-schemas-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "list-entity-client-schemas-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
   "list-environments": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "read"},
   "list-knowledge-examples": {"effect": "read", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "list-knowledge-sources": {"effect": "read", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
@@ -177,7 +276,9 @@
   "list-themes": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "list-user-tasks": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "list-web-services": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "localize-page": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "localize-page": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-directory", "kind": "folder", "access": "read-write"}
+  ]},
   "manage-access": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "action", "value": "ip-list", "effect": "read"},
       {"argument": "action", "value": "ip-create", "effect": "change"},
@@ -224,31 +325,54 @@
       {"argument": "action", "value": "lock-status", "effect": "read"},
       {"argument": "action", "value": "unlock", "effect": "change"},
       {"argument": "action", "value": "password", "effect": "change"}
+  ], "not-host-paths": [
+      {"argument": "password-file", "why": "a plain file name clio validates and reads from its own secrets folder"}
   ]},
-  "merge-creatio-artifact": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
+  "merge-creatio-artifact": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "not-host-paths": [
+      {"argument": "artifact-path", "why": "a label that tells the artifact's kind; clio reads nothing from disk by it"}
+  ]},
   "modify-business-process": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "modify-business-process-as-new-version": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "modify-dynamic-case": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
+      {"argument": "dry-run", "value": "true", "effect": "read"}
+  ]},
   "modify-entity-schema-column": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "action", "value": "add", "effect": "change"},
       {"argument": "action", "value": "modify", "effect": "change"}
   ]},
-  "modify-user-task-parameters": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
+  "modify-user-task-parameters": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
   "modify-web-service": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "new-integration-test-project": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
-  "new-test-project": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
-  "new-ui-project": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "odata-create": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "new-integration-test-project": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
+  "new-test-project": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
+  "new-ui-project": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspaceDirectory", "kind": "folder", "access": "read-write"}
+  ]},
+  "odata-create": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "rows-file", "kind": "file", "access": "read"}
+  ]},
   "odata-delete": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "dry-run", "value": "true", "effect": "read"},
       {"argument": "confirm", "value": "false", "when-absent": true, "effect": "read"}
   ]},
   "odata-read": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "odata-read-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "odata-read-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-file", "kind": "file", "access": "write"}
+  ]},
   "odata-update": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "confirm", "value": "false", "when-absent": true, "effect": "read"}
+  ], "host-paths": [
+      {"argument": "rows-file", "kind": "file", "access": "read"}
   ]},
   "page-smoke": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "click", "value": "", "when-absent": true, "effect": "change"}
+  ], "host-paths": [
+      {"argument": "browser-path", "kind": "file", "access": "read"}
   ]},
   "pkg-to-db": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "pkg-to-file-system": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
@@ -256,16 +380,27 @@
       {"argument": "mode", "value": "none", "effect": "read"}
   ]},
   "prune-db-templates": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
-  "push-workspace": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
+  "push-workspace": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read"}
+  ]},
   "read-data-binding-db": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "read-entity-business-rules": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "read-page-business-rules": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "read-wsdl": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "reg-web-app": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "change"},
+  "read-wsdl": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "wsdl-files", "kind": "file", "access": "read", "list": true}
+  ]},
+  "reg-web-app": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "change", "host-paths": [
+      {"argument": "environment-path", "kind": "folder", "access": "read-write"},
+      {"argument": "workspace-paths", "kind": "folder", "access": "read-write"}
+  ]},
   "regenerate-identity-signing-key": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "register-process-element": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
+  "register-process-element": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
   "register-web-service": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "remove-data-binding-row": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
+  "remove-data-binding-row": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
   "remove-data-binding-row-db": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "remove-knowledge-source": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "confirmed", "value": "false", "effect": "read"}
@@ -275,25 +410,43 @@
   "restart-by-credentials": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "restart-by-environment-name": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "restart-status": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
-  "restore-db-by-credentials": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none"},
+  "restore-db-by-credentials": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none", "host-paths": [
+      {"argument": "backupPath", "kind": "file", "access": "read"},
+      {"argument": "dbWorkingFolder", "kind": "folder", "access": "write"}
+  ]},
   "restore-db-by-environment": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "asTemplate", "value": "true", "effect": "change", "rebuilds-environment": false}
+  ], "host-paths": [
+      {"argument": "backupPath", "kind": "file-or-folder", "access": "read"}
   ]},
   "restore-db-to-local-server": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "dropIfExists", "value": "false", "when-absent": true, "effect": "change"}
+  ], "host-paths": [
+      {"argument": "backupPath", "kind": "file", "access": "read"}
   ]},
-  "restore-workspace": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "restore-workspace": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "workspace-path", "kind": "folder", "access": "read-write"}
+  ]},
   "run-process": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "send-telemetry": {"effect": "change", "rebuilds-environment": false, "scope": "local", "connections": "none"},
   "set-active-business-process-version": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "set-background-image": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "set-background-image": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "file", "kind": "file", "access": "read"}
+  ]},
   "set-default-record-rights": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "preview", "value": "true", "effect": "read"},
       {"argument": "revoke", "value": "false", "when-absent": true, "effect": "change"}
   ]},
   "set-entity-schema-properties": {"effect": "change", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "set-fsm-mode": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none"},
-  "set-logo": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "set-logo": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "configuration-logo", "kind": "file", "access": "read"},
+      {"argument": "dark-logo", "kind": "file", "access": "read"},
+      {"argument": "favicon", "kind": "file", "access": "read"},
+      {"argument": "login-logo", "kind": "file", "access": "read"},
+      {"argument": "logo", "kind": "file", "access": "read"},
+      {"argument": "menu-logo", "kind": "file", "access": "read"}
+  ]},
   "set-object-rights": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "preview", "value": "true", "effect": "read"},
       {"argument": "remove-row", "value": "false", "when-absent": true, "effect": "change"}
@@ -307,7 +460,9 @@
   "start-creatio": {"effect": "change", "rebuilds-environment": true, "scope": "machine", "connections": "none"},
   "stop-all-creatio": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none"},
   "stop-creatio": {"effect": "destroy", "rebuilds-environment": true, "scope": "machine", "connections": "none"},
-  "sync-pages": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "sync-pages": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "output-directory", "kind": "folder", "access": "read-write"}
+  ]},
   "sync-schemas": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "test-web-service-method": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "user-confirmed", "value": "false", "when-absent": true, "effect": "read"}
@@ -319,6 +474,8 @@
   "update-app-section": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "update-client-unit-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "dry-run", "value": "true", "effect": "read"}
+  ], "host-paths": [
+      {"argument": "body-file", "kind": "file", "access": "read"}
   ]},
   "update-email-template": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "confirm", "value": "false", "when-absent": true, "effect": "read"}
@@ -329,21 +486,38 @@
   "update-knowledge": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
   "update-page": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "dry-run", "value": "true", "effect": "read"}
+  ], "host-paths": [
+      {"argument": "body-file", "kind": "file", "access": "read"},
+      {"argument": "output-directory", "kind": "folder", "access": "read-write"}
   ]},
   "update-page-business-rules": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "update-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "dry-run", "value": "true", "effect": "read"}
+  ], "host-paths": [
+      {"argument": "body-file", "kind": "file", "access": "read"}
   ]},
   "update-sql-schema": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "dry-run", "value": "true", "effect": "read"}
+  ], "host-paths": [
+      {"argument": "body-file", "kind": "file", "access": "read"}
   ]},
-  "update-sys-setting": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "update-sys-setting": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "value-file-path", "kind": "file", "access": "read"}
+  ]},
   "update-theme": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "update-toolkit": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
-  "upload-file": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "upload-image": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "update-toolkit": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none", "host-paths": [
+      {"argument": "repo", "kind": "folder", "access": "read", "or": "url"}
+  ]},
+  "upload-file": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "file", "kind": "file", "access": "read"}
+  ]},
+  "upload-image": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
+      {"argument": "file", "kind": "file", "access": "read"}
+  ]},
   "upsert-data-binding-row-db": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
-  "validate-page": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
+  "validate-page": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none", "host-paths": [
+      {"argument": "body-file", "kind": "file", "access": "read"}
+  ]},
   "validate-process-graph": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "verify-oauth-app": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "read"},
   "watch-compilation": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},

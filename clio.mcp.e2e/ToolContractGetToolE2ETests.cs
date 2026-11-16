@@ -1888,6 +1888,32 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Over the real stdio server, the default lookup of create-business-process - its short form - says the sentence the process-data-source-filters guide quotes as its gate for values, so an agent that never asks for detail=full builds several lookup records of one column as ONE condition (ENG-105557).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(CreateBusinessProcessTool.CreateBusinessProcessToolName)]
+	[AllureName("get-tool-contract short create-business-process says the values gate sentence")]
+	[AllureDescription("Requests the create-business-process contract with no detail, verifies the reply is the short form, and verifies its description contains \"any of several lookup records is ONE condition with values\" word for word.")]
+	public async Task GetToolContracts_ShouldSayTheValuesGateSentence_InTheShortCreateContract() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CreateBusinessProcessTool.CreateBusinessProcessToolName }
+			});
+		ToolContractDefinition contract = response.Tools!.Single();
+
+		// Assert
+		AllureApi.Step("Assert the default contract is the short form", () =>
+			contract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+				because: "anti-vacuity: the sentence has to reach the form agents read by default"));
+		AllureApi.Step("Assert the short form says the gate sentence word for word", () =>
+			contract.Description.Should().Contain("any of several lookup records is ONE condition with values",
+				because: "the process-data-source-filters guide uses values only when the contract says these words"));
+	}
+
+	[Test]
 	[Description("Serves the curated contracts of the four *-to-file tools through the real MCP server, and each of them requires output-file.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureTag(ExecuteEsqToFileTool.ToolName)]

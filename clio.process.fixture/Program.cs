@@ -22,7 +22,13 @@ if (IsCommand(args, holdPipesArgument, 1)) {
 	return 0;
 }
 
-if (IsCommand(args, growDirectoryArgument, 2)) {
+// Grows the directory only AFTER the process that spawned it has exited, then keeps the inherited
+// pipes open. Anchoring the delay at the parent's exit (rather than at this process's own start) is
+// what makes the growth "late": on a busy machine the parent can need longer than any fixed delay
+// to record this process and write its output, and growth that lands first gets the parent killed
+// before it has produced the output the caller asserts on.
+if (IsCommand(args, growDirectoryArgument, 3)) {
+	await WaitForProcessExitAsync(int.Parse(args[2], CultureInfo.InvariantCulture));
 	await Task.Delay(TimeSpan.FromMilliseconds(300));
 	Directory.CreateDirectory(args[1]);
 	await File.WriteAllBytesAsync(Path.Combine(args[1], "late-growth.bin"), new byte[4096]);
@@ -64,7 +70,8 @@ if (IsCommand(args, spawnDescendantArgument, 2)) {
 }
 
 if (IsCommand(args, spawnGrowingDescendantArgument, 3)) {
-	using Process descendant = StartPipeHoldingDescendant(growDirectoryArgument, args[2]);
+	using Process descendant = StartPipeHoldingDescendant(growDirectoryArgument, args[2],
+		Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
 	await WriteProcessIdentityAsync(args[1], descendant);
 	await WriteOutputAsync("parent-exited");
 	return 0;
@@ -135,6 +142,17 @@ static Process StartPipeHoldingDescendant(params string[] arguments) {
 	}
 	return Process.Start(descendantStartInfo)
 		?? throw new InvalidOperationException("The inherited-pipe fixture descendant did not start.");
+}
+
+static async Task WaitForProcessExitAsync(int processId) {
+	try {
+		using Process process = Process.GetProcessById(processId);
+		await process.WaitForExitAsync();
+	} catch (ArgumentException) {
+		// No process has this id any more: it has already exited.
+	} catch (InvalidOperationException) {
+		// The process exited between the lookup and the wait.
+	}
 }
 
 static async Task WriteProcessIdentityAsync(string path, Process process) {

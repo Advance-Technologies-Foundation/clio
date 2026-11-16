@@ -43,6 +43,11 @@ A requested row that already exists in the table is adopted into the binding ins
 re-inserted — matched by Name when the schema has a Name column, otherwise by its Id. This
 lets you bind an existing keyed row (e.g. a `SysSchemaAdminUnitRight` grant) by passing its Id
 without creating a duplicate.
+A DateTime, Date or Time column takes its value as a JSON string, for example
+`"2026-01-31T09:00:00.000"`, `"2026-01-31"` or `"09:00:00"`; `null` clears it. A number or an
+object under such a column is refused before anything is written.
+Every item of `--rows` carries its columns under `values`. An item without a `values` object (for
+example the columns given directly) is refused before anything is written.
 
 ### Translations
 

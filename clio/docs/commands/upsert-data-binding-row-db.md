@@ -31,6 +31,9 @@ in the table it is UPDATED; a row present in neither the binding nor the table i
 create-data-binding-db first.
 SaveSchema metadata is rebuilt from the primary key plus the columns present in the
 existing bound rows and the requested upsert payload.
+A DateTime, Date or Time column takes its value as a JSON string, for example
+"2026-01-31T09:00:00.000", "2026-01-31" or "09:00:00"; null clears it. A number or an
+object under such a column is refused before anything is written.
 A SysSettingsValue binding also carries SysSettings and TextValue, and a row of a
 SecureText setting is refused before anything is written, so its secret never ships.
 After remote mutation, read back from Creatio instead of treating the request payload
