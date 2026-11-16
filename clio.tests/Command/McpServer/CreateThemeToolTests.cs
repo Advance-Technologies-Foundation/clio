@@ -29,7 +29,7 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Declares the FR-12 safety flags on the create-theme tool method: a write that is not destructive, not idempotent, and open-world (brand mode probes Google Fonts through the shared build engine).")]
+	[Description("Declares the FR-12 safety flags on the create-theme tool method: a destructive write (a background turns an environment-wide feature off), not idempotent, and open-world (brand mode probes Google Fonts through the shared build engine).")]
 	public void CreateThemeTool_ShouldDeclareCreateSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CreateThemeTool)
@@ -40,7 +40,7 @@ public class CreateThemeToolTests {
 		// Assert
 		attribute.Name.Should().Be(CreateThemeTool.ToolName, because: "the tool must be published under its canonical kebab-case name");
 		attribute.ReadOnly.Should().BeFalse(because: "creating a theme writes to the environment");
-		attribute.Destructive.Should().BeFalse(because: "create adds a new theme without destroying existing state");
+		attribute.Destructive.Should().BeTrue(because: "with a background, create also turns the environment-wide UsePanelIconBackground feature off");
 		attribute.Idempotent.Should().BeFalse(because: "a repeated create yields a different theme (new auto-id) rather than the same end state");
 		attribute.OpenWorld.Should().BeTrue(
 			because: "brand mode probes Google Fonts over the open network through the shared build engine, exactly like build-theme — the inline css-content path stays tenant-only, but the attribute describes the tool's whole surface");
@@ -310,6 +310,36 @@ public class CreateThemeToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[TestCase("backgroundImageId", "background-image-id")]
+	[TestCase("background_image_id", "background-image-id")]
+	[TestCase("backgroundColor", "background-color")]
+	[TestCase("background_color", "background-color")]
+	[TestCase("keepIconBackground", "keep-icon-background")]
+	[TestCase("keep_icon_background", "keep-icon-background")]
+	[Description("Returns the rename hint for a camelCase or snake_case spelling of a background argument instead of dropping it.")]
+	[Category("Unit")]
+	public void CreateTheme_ShouldReturnRenameHint_WhenABackgroundArgumentAliasIsPassed(string alias, string argument) {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+		CreateThemeArgs args = new(EnvironmentName: "docker_fix2", CssContent: ".ocean-theme{}") {
+			ExtensionData = new Dictionary<string, JsonElement> {
+				[alias] = JsonSerializer.SerializeToElement("#1A2B3C")
+			}
+		};
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(args);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a misspelled background argument must not create a theme without it");
+		result.Error.Should().Contain($"'{alias}' -> '{argument}'",
+			because: "the failure must tell the caller the exact rename that fixes the call");
+		commandResolver.DidNotReceive().Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>());
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
 	[Test]
 	[Description("Forwards a null caption when caption is omitted, leaving the command to derive it from cssClassName.")]
 	[Category("Unit")]
@@ -539,7 +569,8 @@ public class CreateThemeToolTests {
 			nameof(CreateThemeArgs.EnvironmentName), nameof(CreateThemeArgs.CssContent),
 			nameof(CreateThemeArgs.CssClassName), nameof(CreateThemeArgs.Caption),
 			nameof(CreateThemeArgs.Id), nameof(CreateThemeArgs.PackageName),
-			nameof(CreateThemeArgs.ExtensionData)
+			nameof(CreateThemeArgs.BackgroundImageId), nameof(CreateThemeArgs.BackgroundColor),
+			nameof(CreateThemeArgs.KeepIconBackground), nameof(CreateThemeArgs.ExtensionData)
 		];
 		System.Reflection.PropertyInfo[] declaredBrandProperties = typeof(CreateThemeArgs)
 			.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
@@ -1812,13 +1843,143 @@ public class CreateThemeToolTests {
 		return (properties, required);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts the background warnings before they reach the MCP transcript, because a binding failure can carry a server message.")]
+	public void CreateTheme_ShouldRedactTheBackgroundWarnings() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(new FakeCreateThemeCommand(
+			warnings: ["binding failed at http://admin:hunter2@proxy.internal.example:8080/trace"]));
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
+			CssContent: ".x{}", Caption: "Ocean", BackgroundColor: "#123"));
+
+		// Assert
+		result.Warnings.Should().ContainSingle(warning => !warning.Contains("hunter2"),
+			because: "a credential in a server message must not reach the model transcript");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the package the background image was bound into and whether the panel icon background is off or kept.")]
+	public void CreateTheme_ShouldReturnTheImagePackageAndThePanelIconState() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(new FakeCreateThemeCommand(
+			imagePackage: "UsrBranding", panelIconBackground: ThemeBackgroundOutcome.PanelIconOff));
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
+			CssContent: ".x{}", Caption: "Ocean", BackgroundImageId: "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81"));
+
+		// Assert
+		JsonSerializer.Serialize(result).Should().Contain(
+			"\"background-image-package\":\"UsrBranding\",\"panel-icon-background\":\"off\"",
+			because: "an MCP client reads where the image went and the panel icon state only from the result");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps background-image-id into the create options in brand mode and leaves keep-icon-background false when it is omitted.")]
+	public void CreateTheme_ShouldMapTheBackgroundImage_WhenBrandModeSupplied() {
+		// Arrange
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6",
+			BackgroundImageId: "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81"));
+
+		// Assert
+		resolvedCommand.CapturedOptions.Should().BeEquivalentTo(new {
+			BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81",
+			BackgroundColor = (string)null,
+			KeepIconBackground = false
+		}, because: "the default branding flow creates the theme in brand mode, and an omitted keep-icon-background means off");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses an invalid background in brand mode before the version gate and the CSS build run.")]
+	public void CreateTheme_ShouldRefuseAnInvalidBackground_BeforeTheBrandBuild() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
+			Caption: "Ocean", Primary: "#004fd6", BackgroundColor: "red"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a color that is not hex is refused");
+		result.Error.Should().Be("background-color 'red' is not a hex color (#RGB, #RRGGBB or #RRGGBBAA).",
+			because: "the refusal names the argument and its accepted forms");
+		commandResolver.ReceivedCalls().Should().BeEmpty(
+			because: "neither the environment nor the theme build is touched for an argument refused locally");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps background-color and keep-icon-background into the create options in inline mode.")]
+	public void CreateTheme_ShouldMapTheBackgroundColorAndKeepIconBackground_WhenInlineModeSupplied() {
+		// Arrange
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2", CssContent: ".x{}", Caption: "Ocean",
+			BackgroundColor: "#1A2B3C", KeepIconBackground: true));
+
+		// Assert
+		resolvedCommand.CapturedOptions.Should().BeEquivalentTo(new {
+			BackgroundImageId = (string)null,
+			BackgroundColor = "#1A2B3C",
+			KeepIconBackground = true
+		}, because: "losing keep-icon-background would turn the panel icon background off against the caller's request");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Binds a JSON null background argument of create-theme as an absent one with the real MCP serializer options, because create-theme has no background to remove.")]
+	public void CreateThemeArgs_ShouldBindAJsonNullBackgroundArgumentAsAbsent() {
+		// Act
+		CreateThemeArgs args = JsonSerializer.Deserialize<CreateThemeArgs>(
+			"""{"environment-name":"docker_fix2","css-content":".x{}","background-image-id":null,"background-color":null}""",
+			Clio.BindingsModule.CreateMcpSerializerOptions())!;
+
+		// Assert
+		new { args.BackgroundImageId, args.BackgroundColor }.Should().BeEquivalentTo(
+			new { BackgroundImageId = (string)null, BackgroundColor = (string)null },
+			because: "a JSON null in create-theme means no background, exactly like an omitted argument");
+	}
+
 	private sealed class ThrowingCreateThemeCommand(string failureMessage) : CreateThemeCommand(
 		Substitute.For<IApplicationClient>(),
 		new EnvironmentSettings(),
 		Substitute.For<IServiceUrlBuilder>(),
-		Substitute.For<IFileSystem>()) {
+		Substitute.For<IFileSystem>(),
+		Substitute.For<IThemeBackgroundWriter>()) {
 
-		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage) {
+		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
+			out ThemeBackgroundOutcome backgroundOutcome) {
 			throw new InvalidOperationException(failureMessage);
 		}
 	}
@@ -1827,24 +1988,30 @@ public class CreateThemeToolTests {
 		private readonly bool _success;
 		private readonly string _createdId;
 		private readonly string _error;
+		private readonly ThemeBackgroundOutcome _backgroundOutcome;
 
 		public CreateThemeOptions CapturedOptions { get; private set; }
 
-		public FakeCreateThemeCommand(string createdId = "auto-id", bool success = true, string error = null)
+		public FakeCreateThemeCommand(string createdId = "auto-id", bool success = true, string error = null,
+			IReadOnlyList<string> warnings = null, string imagePackage = null, string panelIconBackground = null)
 			: base(
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(),
-				Substitute.For<IFileSystem>()) {
+				Substitute.For<IFileSystem>(),
+				Substitute.For<IThemeBackgroundWriter>()) {
 			_createdId = createdId;
 			_success = success;
 			_error = error;
+			_backgroundOutcome = new ThemeBackgroundOutcome(warnings ?? [], imagePackage, panelIconBackground);
 		}
 
-		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage) {
+		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
+			out ThemeBackgroundOutcome backgroundOutcome) {
 			CapturedOptions = options;
 			createdId = _success ? _createdId : null;
 			errorMessage = _error;
+			backgroundOutcome = _backgroundOutcome;
 			return _success;
 		}
 	}

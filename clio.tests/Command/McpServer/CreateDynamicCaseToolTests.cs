@@ -147,7 +147,46 @@ public sealed class CreateDynamicCaseToolTests {
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "every accepted form is a valid call");
-		_resolved.Captured!.Stages.Should().Equal(["New", "Done"], because: "the order is kept and the shape normalised");
+		_resolved.Captured!.Stages.Select(stage => stage.Value).Should().Equal(["New", "Done"],
+			because: "the order is kept and the shape normalised");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A stage may name its stage group by the parent stage's value and successful=false; both reach the options, and a stage that names neither carries neither.")]
+	public void CreateDynamicCase_ShouldMapTheStageGroupAndSuccessful() {
+		// Arrange
+		CreateDynamicCaseArgs args = Args("{" + Required + ",\"stages\":[\"New\",{\"value\":\"Done\"},"
+			+ "{\"value\":\"Rejected\",\"group\":\"Done\",\"successful\":false}]}");
+
+		// Act
+		CommandExecutionResult result = _tool.CreateDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "group and successful are declared stage keys");
+		DynamicCaseStageItem grouped = _resolved.Captured!.Stages[2];
+		grouped.Group.Should().Be("Done", because: "the parent stage is named by its lookup value");
+		grouped.Successful.Should().BeFalse(because: "false ends the case unsuccessfully");
+		_resolved.Captured.Stages[1].Group.Should().BeNull(because: "a stage that names no group joins none");
+		_resolved.Captured.Stages[1].Successful.Should().BeNull(because: "successful is sent only when named");
+	}
+
+	[TestCase("{\"value\":\"Done\",\"successful\":\"no\"}")]
+	[TestCase("{\"value\":\"Done\",\"group\":5}")]
+	[TestCase("{\"value\":\"Done\",\"group\":\" \"}")]
+	[Category("Unit")]
+	[Description("A successful that is not a boolean and a group that is not a lookup value are refused as invalid-request before the command runs.")]
+	public void CreateDynamicCase_ShouldRefuseAMalformedGroupOrSuccessful(string stageJson) {
+		// Arrange
+		CreateDynamicCaseArgs args = Args("{" + Required + ",\"stages\":[\"New\"," + stageJson + "]}");
+
+		// Act
+		CommandExecutionResult result = _tool.CreateDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "the stage cannot be read as described");
+		TextOf(result).Should().Contain("[invalid-request]", because: "the stable code is named");
+		_resolver.DidNotReceiveWithAnyArgs().Resolve<CreateDynamicCaseCommand>(default!);
 	}
 
 	[Test]
@@ -304,6 +343,10 @@ public sealed class CreateDynamicCaseToolTests {
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
 		firstSentence.Should().StartWith("Create a minimal dynamic case (DCM)", because: "the index line says what it does");
 		description.Should().Contain("not supported", because: "what the tool cannot do yet is stated");
+		description.Should().Contain("(case-exists): change it with modify-dynamic-case",
+			because: "an existing case is changed by its own tool, which the refusal points at");
+		description.Length.Should().BeLessThanOrEqualTo(1975,
+			because: "naming the change tool and stage groups was paid for inside the description's earlier length");
 	}
 
 	[Test]
@@ -323,11 +366,102 @@ public sealed class CreateDynamicCaseToolTests {
 	private sealed class FakeCommand(int exitCode = 0)
 		: CreateDynamicCaseCommand(Substitute.For<IDynamicCaseService>(), Substitute.For<ILogger>()) {
 
-		public CreateDynamicCaseOptions Captured { get; private set; }
+		public CreateDynamicCaseOptions Captured { get; set; }
 
 		public override int Execute(CreateDynamicCaseOptions options) {
 			Captured = options;
 			return exitCode;
 		}
+	}
+
+	[TestCase("{\"column\":\"UsrType\",\"values\":[\"B2B\",\"Partner\"]}", "B2B|Partner", false)]
+	[TestCase("{\"column\":\" UsrType \",\"values\":\"B2B\"}", "B2B", false)]
+	[TestCase("\"{\\\"column\\\":\\\"UsrType\\\",\\\"empty\\\":true}\"", "", true)]
+	[Category("Unit")]
+	[Description("filter is accepted as an object, with one value or several, or as a string holding one, and reaches the options normalised.")]
+	public void CreateDynamicCase_ShouldNormaliseTheFilter(string filterJson, string values, bool empty) {
+		// Arrange
+		CreateDynamicCaseArgs args = JsonSerializer.Deserialize<CreateDynamicCaseArgs>("{\"environment-name\":\"dev\","
+			+ "\"package-name\":\"UsrOrders\",\"entity-schema-name\":\"UsrOrder\",\"stage-column-name\":\"UsrStatus\","
+			+ "\"filter\":" + filterJson + "}")!;
+
+		// Act
+		CommandExecutionResult result = _tool.CreateDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "every accepted form is a valid call");
+		DynamicCaseFilterArgument filter = _resolved.Captured!.Filter;
+		filter.Column.Should().Be("UsrType", because: "the column is forwarded trimmed");
+		string.Join("|", filter.Values).Should().Be(values, because: "the values are forwarded in order");
+		filter.Empty.Should().Be(empty, because: "empty asks for the case of records with an empty column");
+		_resolved.Captured.DeactivateUnfiltered.Should().BeFalse(because: "disabling a case is never assumed");
+	}
+
+	[TestCase("{\"column\":\"UsrType\",\"values\":[\"B2B\"],\"op\":\"in\"}", "unknown-keys")]
+	[TestCase("{\"values\":[\"B2B\"]}", "invalid-request")]
+	[TestCase("{\"column\":\"UsrType\"}", "invalid-request")]
+	[TestCase("{\"column\":\"UsrType\",\"values\":[\"B2B\"],\"empty\":true}", "invalid-request")]
+	[TestCase("{\"column\":\"UsrType\",\"values\":[1]}", "invalid-request")]
+	[TestCase("[\"B2B\"]", "JSON object")]
+	[Category("Unit")]
+	[Description("A filter with an undeclared key, without a column, with neither or both of values and empty, a non-string value or not an object is refused before the command runs.")]
+	public void CreateDynamicCase_ShouldRefuseAMalformedFilter(string filterJson, string code) {
+		// Arrange
+		CreateDynamicCaseArgs args = JsonSerializer.Deserialize<CreateDynamicCaseArgs>("{\"environment-name\":\"dev\","
+			+ "\"package-name\":\"UsrOrders\",\"entity-schema-name\":\"UsrOrder\",\"stage-column-name\":\"UsrStatus\","
+			+ "\"filter\":" + filterJson + "}")!;
+
+		// Act
+		CommandExecutionResult result = _tool.CreateDynamicCase(args);
+
+		// Assert
+		result.ExitCode.Should().NotBe(0, because: "the filter cannot be read as described");
+		string.Join(" | ", result.Output.Select(message => message.Value?.ToString())).Should().Contain(code,
+			because: "the refusal carries a stable code");
+		_resolved.Captured.Should().BeNull(because: "nothing ran");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("deactivate-unfiltered reaches the options with a filter, and without one it is refused: it only lets a filtered case start next to its siblings.")]
+	public void CreateDynamicCase_ShouldForwardDeactivateUnfiltered_OnlyWithAFilter() {
+		// Arrange
+		const string identity = "{\"environment-name\":\"dev\",\"package-name\":\"UsrOrders\","
+			+ "\"entity-schema-name\":\"UsrOrder\",\"stage-column-name\":\"UsrStatus\",\"deactivate-unfiltered\":true";
+		CreateDynamicCaseArgs withFilter = JsonSerializer.Deserialize<CreateDynamicCaseArgs>(identity
+			+ ",\"filter\":{\"column\":\"UsrType\",\"values\":[\"B2B\"]}}")!;
+		CreateDynamicCaseArgs alone = JsonSerializer.Deserialize<CreateDynamicCaseArgs>(identity + "}")!;
+
+		// Act
+		CommandExecutionResult forwarded = _tool.CreateDynamicCase(withFilter);
+		bool deactivate = _resolved.Captured!.DeactivateUnfiltered;
+		_resolved.Captured = null;
+		CommandExecutionResult refused = _tool.CreateDynamicCase(alone);
+
+		// Assert
+		forwarded.ExitCode.Should().Be(0, because: "the flag goes with a filter");
+		deactivate.Should().BeTrue(because: "the user's yes is forwarded");
+		refused.ExitCode.Should().NotBe(0, because: "the flag without a filter disables a case for nothing");
+		TextOf(refused).Should().Contain("[invalid-request]", because: "the stable code is named");
+		_resolved.Captured.Should().BeNull(because: "a refused call sends nothing to the server");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The description names the filter, its overlap refusal and the user's yes for deactivate-unfiltered, and the argument says to leave it out without that yes.")]
+	public void Description_ShouldCarryTheFilterRules() {
+		// Act
+		string description = Description();
+		string deactivate = typeof(CreateDynamicCaseArgs).GetProperties()
+			.Single(property => property.GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>()
+				?.Name == "deactivate-unfiltered")
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("filter-overlap", because: "filters of one object never share a value")
+			.And.Contain("unfiltered-case-exists", because: "the refusal next to a case without a filter is named")
+			.And.Contain("filter-required", because: "an unfiltered create next to filtered cases is refused by name")
+			.And.Contain("ONLY after the user agreed", because: "the agent never disables a case on its own");
+		deactivate.Should().StartWith("LEAVE IT OUT unless the user agreed", because: "the agent never sets it alone");
 	}
 }

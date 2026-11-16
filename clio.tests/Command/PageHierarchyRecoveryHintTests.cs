@@ -280,7 +280,7 @@ public sealed class PageHierarchyRecoveryHintTests {
 		new(_applicationClient, _serviceUrlBuilder, _logger, hierarchyClient,
 			new PageSchemaBodyParser(),
 			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
-			Substitute.For<IPageFileWriter>());
+			Substitute.For<IPageFileWriter>(), Substitute.For<IPageLayerInspector>());
 
 	private static PageUpdateOptions CreateUpdateOptions() =>
 		new() { SchemaName = SchemaName, Body = ValidBody };
