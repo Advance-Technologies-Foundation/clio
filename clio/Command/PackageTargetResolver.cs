@@ -34,6 +34,9 @@ public sealed record PackageTargetResolution {
 	/// </summary>
 	public bool ResolutionFailed { get; private init; }
 
+	/// <summary>Name of the package that was found but is locked against design-time writes; null otherwise.</summary>
+	public string LockedPackageName { get; private init; }
+
 	/// <summary>Creates a successful resolution.</summary>
 	/// <param name="packageName">Name of the resolved package.</param>
 	/// <param name="packageUId">UId of the resolved package.</param>
@@ -49,6 +52,15 @@ public sealed record PackageTargetResolution {
 	/// <param name="error">The failure message, naming the action that resolves it.</param>
 	public static PackageTargetResolution Unresolvable(string error) {
 		return new PackageTargetResolution { Error = error, ResolutionFailed = true };
+	}
+
+	/// <summary>
+	/// Creates a definitive failure for a package that exists but is locked against design-time writes.
+	/// </summary>
+	/// <param name="packageName">Name of the locked package.</param>
+	/// <param name="error">The failure message, naming the action that resolves it.</param>
+	public static PackageTargetResolution Locked(string packageName, string error) {
+		return new PackageTargetResolution { Error = error, ResolutionFailed = true, LockedPackageName = packageName };
 	}
 
 	/// <summary>
@@ -136,7 +148,7 @@ internal sealed class PackageTargetResolver(
 				$"Package '{packageName}' was not found in the environment. Check the name against list-packages.");
 		}
 		if (requireEditable && IsLocked(row)) {
-			return PackageTargetResolution.Unresolvable(
+			return PackageTargetResolution.Locked(row.Name,
 				$"Package '{row.Name}' is locked, so it cannot receive design-time writes. Unlock it with " +
 				"unlock-package, or name another package.");
 		}
@@ -175,7 +187,7 @@ internal sealed class PackageTargetResolver(
 				$"'{currentPackageId}', which could not be resolved to a usable package. " + AskForPackage);
 		}
 		if (requireEditable && IsLocked(row)) {
-			return PackageTargetResolution.Unresolvable(
+			return PackageTargetResolution.Locked(row.Name,
 				$"The environment's {CurrentPackageSettingCode} system setting points at package '{row.Name}', " +
 				"which is locked, so it cannot receive design-time writes. Unlock it with unlock-package, or " +
 				"name another package.");

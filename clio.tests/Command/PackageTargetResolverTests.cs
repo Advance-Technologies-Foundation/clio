@@ -80,6 +80,8 @@ public sealed class PackageTargetResolverTests {
 		resolution.ResolutionFailed.Should().BeTrue(because: "the environment answered and the package is closed");
 		resolution.Error.Should().Contain("unlock-package",
 			because: "the user can fix this, so the message names how");
+		resolution.LockedPackageName.Should().Be(PackageName,
+			because: "a caller that must not offer the unlock needs to tell a locked package from a missing one");
 	}
 
 	[Test, Category("Unit")]
@@ -166,6 +168,8 @@ public sealed class PackageTargetResolverTests {
 			because: "an omitted package must not lower the bar the named path is held to");
 		resolution.ResolutionFailed.Should().BeTrue(because: "the environment answered and the package is closed");
 		resolution.Error.Should().Contain("unlock-package", because: "the message names how the user fixes it");
+		resolution.LockedPackageName.Should().Be(PackageName,
+			because: "the locked current package is named the same way as a locked named one");
 	}
 
 	[Test, Category("Unit")]
