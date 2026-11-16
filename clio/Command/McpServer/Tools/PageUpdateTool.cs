@@ -104,6 +104,12 @@ public sealed class PageUpdateTool(
 			"Optional under credential passthrough — omit environment-name/uri/login/password so the header-supplied tenant is used; supplying any of them together with an active passthrough header is rejected, not silently honored.")]
 		[Required] PageUpdateArgs args,
 		CancellationToken cancellationToken = default) {
+		// Before anything else: the name becomes the folder .clio-pages/{schema-name}, which the baseline guard
+		// probes, locks and reads BEFORE the save, and the pre-execution gates below already ask Creatio about it.
+		if (PageBaselineStore.DescribeSchemaNameRefusal(args.SchemaName) is { } schemaNameRefusal) {
+			return new PageUpdateResponse { Success = false, Error = schemaNameRefusal }
+				.MarkDryRunFailure(args.DryRun ?? false, args.SchemaName);
+		}
 		// Opened at the TOP of the entry point so both gates below run inside ONE scope: the value flows
 		// DOWN to awaited callees, never back UP to the caller, so a scope opened inside a nested helper
 		// would cover that helper and nothing else. One call = one persisted-key cache, so the tool gate

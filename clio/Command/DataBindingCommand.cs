@@ -1572,7 +1572,8 @@ internal static partial class DataBindingPathGuard {
 		return candidate.Length > prefix.Length && candidate.StartsWith(prefix, StringComparison.Ordinal);
 	}
 
-	private static bool IsPlainName(string value) =>
+	/// <summary>Tells whether <paramref name="value"/> is a plain folder name, by the rule of <see cref="RequirePlainName"/>.</summary>
+	internal static bool IsPlainName(string value) =>
 		!string.IsNullOrWhiteSpace(value)
 		&& string.Equals(value, value.Trim(), StringComparison.Ordinal)
 		&& !value.EndsWith('.')
