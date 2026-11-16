@@ -293,6 +293,53 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 	}
 
 	[Test]
+	[Description("Deletes a DB-first binding that holds no rows through MCP on a real Creatio environment, the case delete-data-binding-db exists for and remove-data-binding-row-db cannot reach, and verifies the binding is gone from the package.")]
+	[AllureTag(DeleteDbToolName)]
+	[AllureTag(ReadDbToolName)]
+	[AllureName("delete-data-binding-db drops a binding that has no rows")]
+	[AllureDescription("Creates a Lookup binding without rows with create-data-binding-db (no rows argument), deletes the binding with delete-data-binding-db, then verifies that the delete reports zero bound rows and that read-data-binding-db no longer finds the binding.")]
+	public async Task DeleteDataBindingDb_Should_Delete_Binding_Without_Rows() {
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string bindingName = $"UsrDbDelEmptyE2E{arrangeContext.PackageName}";
+		Dictionary<string, object?> bindingArgs = new() {
+			["environment-name"] = arrangeContext.EnvironmentName,
+			["package-name"] = arrangeContext.PackageName,
+			["binding-name"] = bindingName
+		};
+		CommandExecutionActResult createResult = await ActCommandAsync(
+			arrangeContext,
+			CreateDbToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = "Lookup",
+				["binding-name"] = bindingName
+			});
+		AssertToolCallSucceeded(createResult);
+		AssertCommandExitCode(createResult, 0, "the empty binding to delete must exist first");
+		CommandExecutionActResult readBeforeDeleteResult =
+			await ActCommandAsync(arrangeContext, ReadDbToolName, bindingArgs);
+		AssertToolCallSucceeded(readBeforeDeleteResult);
+		AssertCommandExitCode(readBeforeDeleteResult, 0,
+			"the empty binding must be registered in the package before the delete, or the test proves nothing");
+
+		// Act
+		CommandExecutionActResult deleteResult = await ActCommandAsync(arrangeContext, DeleteDbToolName, bindingArgs);
+		CommandExecutionActResult readResult = await ActCommandAsync(arrangeContext, ReadDbToolName, bindingArgs);
+
+		// Assert
+		AssertToolCallSucceeded(deleteResult);
+		AssertCommandExitCode(deleteResult, 0,
+			"delete-data-binding-db should delete a binding that holds no rows");
+		AssertOutputContains(deleteResult, "(0 bound rows). The records stay in the table.",
+			"the result must say that the deleted binding held no rows");
+		AssertToolCallSucceeded(readResult);
+		AssertCommandExitCode(readResult, 1,
+			"read-data-binding-db must no longer find the deleted binding in the package");
+	}
+
+	[Test]
 	[Description("read-data-binding-db reaches its binding-resolution layer over the real MCP server and reports a human-readable failure for an unresolvable environment, so an agent never mistakes an unreachable read for a proven projection.")]
 	[AllureTag(ReadDbToolName)]
 	[AllureName("Read DB-first binding reports failure without an environment")]

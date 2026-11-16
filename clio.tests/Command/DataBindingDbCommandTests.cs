@@ -41,6 +41,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private string? _entityIdProbeResponseJson;
 	private string _schemaResponseJson = string.Empty;
 	private string _saveSchemaResponseJson = """{"success":true}""";
+	private string _deletePackageSchemaDataResponseJson = """{"success":true}""";
 	private string _settingValueTypesJson = NoSettingRowsJson;
 	private const string NoSettingRowsJson = """{"rows":[],"success":true}""";
 	private const string SecureTextSettingRowsJson = """{"rows":[{"Code":"UsrApiKey","ValueTypeName":"SecureText"}],"success":true}""";
@@ -63,6 +64,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_schemaResponseJson = SchemaResponseJson;
 		_entityIdProbeResponseJson = null;
 		_saveSchemaResponseJson = """{"success":true}""";
+		_deletePackageSchemaDataResponseJson = """{"success":true}""";
 		_settingValueTypesJson = NoSettingRowsJson;
 		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(false);
 	}
@@ -1777,7 +1779,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		}
 
 		if (url.Contains("DeletePackageSchemaDataRequest", StringComparison.Ordinal)) {
-			return """{"success":true}""";
+			return _deletePackageSchemaDataResponseJson;
 		}
 
 		if (url.Contains("InsertQuery", StringComparison.Ordinal)) {
@@ -2098,6 +2100,82 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Fails delete-data-binding-db with exit code 1 when the server rejects DeletePackageSchemaDataRequest with success:false: the server's message is surfaced as the error and the binding is not reported as deleted.")]
+	public void DeleteDataBindingDb_Should_Fail_And_Surface_The_Error_When_Server_Rejects_The_Delete() {
+		// Arrange
+		_deletePackageSchemaDataResponseJson =
+			"""{"success":false,"errorInfo":{"message":"Package is locked"}}""";
+		DeleteDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1,
+			because: "a delete the server refused must not be reported as a success");
+		_applicationClient.Received(1).ExecutePostRequest(
+			"http://localhost/0/DataService/json/SyncReply/DeletePackageSchemaDataRequest",
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		_logger.Received(1).WriteError(Arg.Is<string>(message =>
+			message.Contains("DeletePackageSchemaDataRequest failed") &&
+			message.Contains("Package is locked")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.Contains("Deleted binding")));
+	}
+
+	[Test]
+	[Description("delete-data-binding-db looks the binding up with a select on SysPackageSchemaData that filters by BOTH the binding name and the package UId, combined with AND, so a same-named binding in another package cannot be found and deleted.")]
+	public void DeleteDataBindingDb_Should_Filter_The_Binding_Lookup_By_Name_And_Package_UId() {
+		// Arrange
+		DeleteDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings"
+		};
+
+		// Act
+		int result = _deleteCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the lookup must find the binding registered in the requested package");
+		List<JsonNode> lookupBodies = _applicationClient.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(IApplicationClient.ExecutePostRequest))
+			.Select(call => call.GetArguments())
+			.Where(arguments => ((string)arguments[0]!).Contains("SelectQuery", StringComparison.Ordinal))
+			.Select(arguments => JsonNode.Parse((string)arguments[1]!)!)
+			.Where(body => body["rootSchemaName"]?.GetValue<string>() == "SysPackageSchemaData")
+			.ToList();
+		lookupBodies.Should().ContainSingle(
+			because: "the delete looks the binding up exactly once before it deletes anything");
+		JsonNode filters = lookupBodies[0]["filters"]!;
+		filters["logicalOperation"]!.GetValue<int>().Should().Be(0,
+			because: "the name and package filters must be combined with AND, not OR");
+		Dictionary<string, string?> filterValueByColumn = filters["items"]!.AsObject()
+			.ToDictionary(
+				item => item.Value!["leftExpression"]!["columnPath"]!.GetValue<string>(),
+				item => item.Value!["rightExpression"]!["parameter"]!["value"]?.GetValue<string>());
+		filterValueByColumn.Should().HaveCount(2,
+			because: "the lookup is keyed by exactly the binding name and the package");
+		filterValueByColumn.Should().Contain("Name", "SysSettings",
+			because: "the lookup must be restricted to the requested binding name");
+		filterValueByColumn.Should().Contain("SysPackage.UId", PackageUId.ToString(),
+			because: "the lookup must be restricted to the requested package, so a same-named binding in another package is not found");
+		foreach (KeyValuePair<string, JsonNode?> item in filters["items"]!.AsObject()) {
+			item.Value!["isEnabled"]!.GetValue<bool>().Should().BeTrue(
+				because: $"the '{item.Key}' filter must be active");
+			item.Value!["comparisonType"]!.GetValue<int>().Should().Be(3,
+				because: $"the '{item.Key}' filter must be an equality comparison");
+		}
 	}
 
 	private static string BuildBindingLookupResponse(string schemaName, string? bindingName = null) {
