@@ -196,9 +196,18 @@ public class ProcessExecutorIntegrationTests {
 		string monitoredDirectory = Path.Combine(directory, "checkout");
 		Directory.CreateDirectory(monitoredDirectory);
 		string descendantIdentityPath = Path.Combine(directory, "descendant.identity");
+		// The fixture descendant grows the checkout 300 ms after its parent exits and then holds the
+		// inherited pipes for 30 s. A monitor that keeps running through the drain ends the operation
+		// about one poll after that growth. A monitor that stops with the parent leaves the operation
+		// draining until the operation timeout, which reports TimedOut after the full twenty seconds.
+		// Neither figure below is a performance budget: before the growth can happen two fixture
+		// processes must cold-start, which took over three seconds on a loaded CI agent, so the
+		// timeout is far above that and the elapsed bound sits halfway between the two outcomes.
+		TimeSpan operationTimeout = TimeSpan.FromSeconds(20);
+		TimeSpan maximumElapsed = TimeSpan.FromSeconds(10);
 		ProcessExecutionOptions options = new(ResolveFixtureExecutable(),
 			$"--spawn-growing-inherited-handle-descendant \"{descendantIdentityPath}\" \"{monitoredDirectory}\"") {
-			Timeout = TimeSpan.FromSeconds(5),
+			Timeout = operationTimeout,
 			MonitoredDirectory = monitoredDirectory,
 			MaximumMonitoredDirectoryBytes = 1024,
 			ResourceMonitorInterval = TimeSpan.FromMilliseconds(50)
@@ -213,14 +222,18 @@ public class ProcessExecutorIntegrationTests {
 			descendantIdentity = ReadDescendantIdentity(descendantIdentityPath);
 
 			// Assert
+			string observed = $"observed: elapsed {elapsed.Elapsed.TotalMilliseconds:0} ms, "
+				+ $"ResourceLimitExceeded={result.ResourceLimitExceeded}, TimedOut={result.TimedOut}, "
+				+ $"Canceled={result.Canceled}, Started={result.Started}, ExitCode={result.ExitCode}, "
+				+ $"stdout length {result.StandardOutput.Length}, stderr length {result.StandardError.Length}";
 			result.ResourceLimitExceeded.Should().BeTrue(
-				because: "a descendant must remain subject to the checkout limit while stream draining is pending");
+				because: $"a descendant must remain subject to the checkout limit while stream draining is pending ({observed})");
 			result.TimedOut.Should().BeFalse(
-				because: "late directory growth must retain resource-limit classification instead of waiting for timeout");
+				because: $"late directory growth must retain resource-limit classification instead of waiting for timeout ({observed})");
 			result.StandardOutput.Should().Be("parent-exited",
-				because: "output captured before the late resource violation must remain available");
-			elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3),
-				because: "the fifty-millisecond monitor must detect growth well before the five-second timeout");
+				because: $"output captured before the late resource violation must remain available ({observed})");
+			elapsed.Elapsed.Should().BeLessThan(maximumElapsed,
+				because: $"the fifty-millisecond monitor must end the drain soon after the growth, not let it run to the {operationTimeout.TotalSeconds:0}-second timeout ({observed})");
 		} finally {
 			if (descendantIdentity is not null) {
 				await TerminateProcessAsync(descendantIdentity);
