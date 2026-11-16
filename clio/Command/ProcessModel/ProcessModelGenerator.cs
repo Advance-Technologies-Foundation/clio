@@ -16,16 +16,16 @@ public interface IProcessModelGenerator{
 	public ErrorOr<ProcessModel> Generate(GenerateProcessModelCommandOptions options);
 
 	/// <summary>
-	/// Reads the flow elements of one process schema by its UId, without resolving a name, in ONE request bounded by
+	/// Reads one process schema by its UId, without resolving a name, in ONE request bounded by
 	/// <paramref name="timeoutMs"/>.
 	/// </summary>
 	/// <param name="schemaUId">The process schema UId, for example the one a sub-process element calls.</param>
 	/// <param name="timeoutMs">What the request may spend, in milliseconds; no retry follows a failure.</param>
 	/// <returns>
-	/// The schema's top-level flow elements, nested ones inside their containers (empty when it has none), or the error
-	/// the read hit. Captions are not filled.
+	/// The schema's parameters and top-level flow elements (nested ones inside their containers), or the error the
+	/// read hit. Captions are not filled.
 	/// </returns>
-	public ErrorOr<IReadOnlyList<FlowElement>> ReadFlowElements(Guid schemaUId, int timeoutMs);
+	public ErrorOr<MetaDataSchema> ReadSchema(Guid schemaUId, int timeoutMs);
 }
 
 public class ProcessModelGenerator(ILogger logger, IApplicationClient applicationClient, IDataProvider dataProvider
@@ -66,13 +66,13 @@ public class ProcessModelGenerator(ILogger logger, IApplicationClient applicatio
 	}
 
 	/// <inheritdoc />
-	public ErrorOr<IReadOnlyList<FlowElement>> ReadFlowElements(Guid schemaUId, int timeoutMs) {
+	public ErrorOr<MetaDataSchema> ReadSchema(Guid schemaUId, int timeoutMs) {
 		ErrorOr<string> jsonResponse = GetProcessSchema(schemaUId, Math.Max(1, timeoutMs), maxAttempts: 1);
 		if (jsonResponse.IsError) {
 			return jsonResponse.Errors;
 		}
 		if (string.IsNullOrWhiteSpace(jsonResponse.Value)) {
-			return Error.Failure("ReadFlowElements", "Empty response");
+			return Error.Failure("ReadSchema", "Empty response");
 		}
 		ProcessSchemaResponse schema;
 		try {
@@ -80,12 +80,12 @@ public class ProcessModelGenerator(ILogger logger, IApplicationClient applicatio
 			schema = System.Text.Json.JsonSerializer.Deserialize<ProcessSchemaResponse>(jsonResponse.Value);
 		}
 		catch (System.Text.Json.JsonException e) {
-			return Error.Failure("ReadFlowElements", $"Error deserializing process schema: {e.Message}");
+			return Error.Failure("ReadSchema", $"Error deserializing process schema: {e.Message}");
 		}
 		if (schema?.Schema?.MetaDataSchema is not { } metaData) {
-			return Error.Failure("ReadFlowElements", $"Process schema {schemaUId} carried no metadata");
+			return Error.Failure("ReadSchema", $"Process schema {schemaUId} carried no metadata");
 		}
-		return metaData.FlowElements ?? [];
+		return metaData;
 	}
 
 	private ErrorOr<string> GetProcessSchema(Guid processUId, int timeoutMs = 10_000, int maxAttempts = 3) {

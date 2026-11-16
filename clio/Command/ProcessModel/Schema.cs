@@ -343,13 +343,6 @@ public class FlowElement{
 	public JsonElement? Body { get; set; }
 
 	/// <summary>
-	/// The process parameter a Formula element writes: its UId, stored bare. Raw JSON for the same reason as
-	/// <see cref="Body"/>.
-	/// </summary>
-	[JsonPropertyName("resultParameterMetaPath")]
-	public JsonElement? ResultParameterMetaPath { get; set; }
-
-	/// <summary>
 	/// The elements nested in this one: an event sub-process (and an embedded sub-process) keeps its own flow
 	/// elements, and the schema serializes them here rather than in the top-level list.
 	/// </summary>

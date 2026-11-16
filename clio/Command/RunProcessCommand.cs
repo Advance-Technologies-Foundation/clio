@@ -142,8 +142,8 @@ public sealed class RunProcessResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("resultParameterValues")]
 	public Dictionary<string, object> ResultParameterValues { get; set; }
 
-	// The result parameters whose values were replaced by ProcessResultSources.WithheldMarker: each may hold what a
-	// web service returned, and an API can echo the credentials it was sent. Null when nothing was withheld.
+	// The result parameters whose values were replaced by RunProcessCommand.WithheldMarker: the process calls a
+	// web service or reads a SecureText setting, and the value's type could carry a credential. Null when none was.
 	[JsonProperty("withheldResultParameters", NullValueHandling = NullValueHandling.Ignore)]
 	[System.Text.Json.Serialization.JsonPropertyName("withheldResultParameters")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
@@ -183,7 +183,7 @@ public class RunProcessCommand(
 	ILogger logger,
 	IRunVerificationServices verification,
 	EnvironmentSettings environmentSettings,
-	IProcessResultSourceClassifier resultSources)
+	IProcessCredentialSourceDetector credentialSources)
 	: Command<RunProcessOptions> {
 
 	private readonly IProcessRunMonitor runMonitor = verification.Monitor;
@@ -356,7 +356,7 @@ public class RunProcessCommand(
 			return false;
 		}
 
-		IReadOnlyDictionary<string, string> withheld = FindWebServiceFed(model, options);
+		IReadOnlyDictionary<string, string> withheld = FindWithheld(model, options, out string credentialSource);
 
 		WatchBaseline baseline = null;
 		if (options.Watch is { Count: > 0 }) {
@@ -368,100 +368,143 @@ public class RunProcessCommand(
 		Launch(options, model, values, out response);
 		Verify(options, response, baseline);
 		Withhold(response, withheld, options.ResultParameters);
+		WithholdTitles(response, credentialSource);
 		MaskCredentialShapes(response);
 		return response.Error is null;
 	}
 
-	// The source check reads the processes sub-process elements call, before the launch: it gets at most this, and never
-	// the part of the response deadline the launch and its verdict need. A process it could not read in time counts as
-	// one that calls a web service.
-	private const int ClassificationBudgetMs = 8_000;
-	private const int ClassificationReserveMs = 20_000;
+	/// <summary>The value run-process returns in place of one that may hold a credential.</summary>
+	internal const string WithheldMarker = "[withheld]";
 
-	// ENG-105475: an API may echo the request it was sent, so a value that comes from what a Call web service element
-	// received can carry the Authorization header or a key the platform filled in from a system setting. Decided by
-	// source, before the launch: the setting cannot be read to recognise the key (a SecureText one reads as ***).
-	// A failed check withholds every requested value - the check exists to keep a credential out of the answer.
-	private IReadOnlyDictionary<string, string> FindWebServiceFed(ProcessModel.ProcessModel model,
-		RunProcessOptions options) {
-		IReadOnlyList<string> resultParameters = options.ResultParameters;
-		if (resultParameters is not { Count: > 0 }) {
-			return new Dictionary<string, string>(StringComparer.Ordinal);
+	// The check reads the processes sub-process elements call and the types of the settings the process reads, before
+	// the launch: it gets at most this, and never the part of the response deadline the launch and its verdict need.
+	// What it could not read in time counts as a source.
+	private const int CredentialCheckBudgetMs = 8_000;
+	private const int CredentialCheckReserveMs = 20_000;
+
+	// The result types (as DataValueTypeMap resolves them) that cannot carry a credential: a flag, a number, a date or a
+	// time. Everything else - text, a Guid or lookup, a collection, an unknown type - may.
+	private static readonly HashSet<Type> ValueTypesThatCannotCarryACredential = [
+		typeof(bool), typeof(int), typeof(float), typeof(decimal), typeof(DateTime), typeof(DateOnly), typeof(TimeOnly)
+	];
+
+	// ENG-105475: a process can hand a credential back as a result value in two ways - a Call web service element's
+	// response may echo the request it was sent (the Authorization header, a key filled in from a system setting), and
+	// the platform decrypts a SecureText setting a parameter or a formula reads. clio cannot recognise such a key by
+	// value, so in such a process only results whose type cannot carry one are returned; a failed check withholds the
+	// same way. Hygiene for the agent's context, not a security boundary: whoever can run a process can read the
+	// settings through the platform. The check is skipped when no requested result could carry a credential anyway.
+	private IReadOnlyDictionary<string, string> FindWithheld(ProcessModel.ProcessModel model, RunProcessOptions options,
+		out string source) {
+		source = null;
+		Dictionary<string, string> withheld = new(StringComparer.Ordinal);
+		List<string> candidates = (options.ResultParameters ?? [])
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Where(name => FindParameter(model.Parameters ?? [], name)?.DataValueTypeResolved is not { } type
+				|| !ValueTypesThatCannotCarryACredential.Contains(type))
+			.Distinct(StringComparer.Ordinal)
+			.ToList();
+		bool watched = options.Watch is { Count: > 0 };
+		if (candidates.Count == 0 && !watched) {
+			return withheld;
 		}
-		DateTimeOffset stopAt = DateTimeOffset.UtcNow.AddMilliseconds(ClassificationBudgetMs);
-		if (options.ResponseDeadline is { } deadline && deadline.AddMilliseconds(-ClassificationReserveMs) < stopAt) {
-			stopAt = deadline.AddMilliseconds(-ClassificationReserveMs);
+		DateTimeOffset stopAt = DateTimeOffset.UtcNow.AddMilliseconds(CredentialCheckBudgetMs);
+		if (options.ResponseDeadline is { } deadline && deadline.AddMilliseconds(-CredentialCheckReserveMs) < stopAt) {
+			stopAt = deadline.AddMilliseconds(-CredentialCheckReserveMs);
 		}
 		try {
-			return resultSources.FindWebServiceFed(model, resultParameters, stopAt);
+			source = credentialSources.FindCredentialSource(model, stopAt);
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
-			string origin = $"a source clio could not check ({exception.GetType().Name})";
-			Dictionary<string, string> all = new(StringComparer.Ordinal);
-			foreach (string name in resultParameters.Where(name => !string.IsNullOrWhiteSpace(name))) {
-				all.TryAdd(name, origin);
-			}
-			return all;
+			source = $"could not be checked for a credential source ({exception.GetType().Name})";
 		}
+		if (source is null) {
+			return withheld;
+		}
+		foreach (string name in candidates) {
+			withheld[name] = source;
+		}
+		return withheld;
 	}
 
 	/// <summary>
-	/// Replaces the withheld values with <see cref="ProcessModel.ProcessResultSources.WithheldMarker"/>, lists them and
-	/// explains why. A value the platform returned for a name that was not requested is withheld too: only a requested
-	/// name was checked.
+	/// Replaces the withheld values with <see cref="WithheldMarker"/>, lists them and explains why. A value the platform
+	/// returned for a name that was not requested is withheld too, whatever its type: only a requested name was checked.
 	/// </summary>
 	/// <param name="response">The answer whose values are replaced.</param>
-	/// <param name="withheld">The requested names to withhold, each with where its value may come from.</param>
+	/// <param name="withheld">The requested names to withhold, each with why the process may return a credential.</param>
 	/// <param name="requested">The names the run was asked to return.</param>
 	internal static void Withhold(RunProcessResponse response, IReadOnlyDictionary<string, string> withheld,
 		IReadOnlyList<string> requested) {
 		if (response.ResultParameterValues is not { Count: > 0 } values) {
 			return;
 		}
-		// Matched ignoring case so that a spelling difference cannot let a value through; a name that differs from
-		// another only by case keeps the first origin.
+		// Matched ignoring case so that a spelling difference cannot let a value through.
 		Dictionary<string, string> byName = new(StringComparer.OrdinalIgnoreCase);
 		foreach (KeyValuePair<string, string> entry in withheld ?? new Dictionary<string, string>()) {
 			byName.TryAdd(entry.Key, entry.Value);
 		}
 		HashSet<string> asked = new(requested ?? [], StringComparer.OrdinalIgnoreCase);
-		List<string> hidden = [];
+		List<string> sourced = [];
+		List<string> unrequested = [];
+		string reason = null;
 		foreach (string name in values.Keys.ToList()) {
-			string origin = OriginOf(name, byName, asked);
-			if (origin is null) {
+			if (byName.TryGetValue(name, out string why)) {
+				reason ??= why;
+				sourced.Add($"'{name}'");
+			}
+			else if (!asked.Contains(name)) {
+				unrequested.Add($"'{name}'");
+			}
+			else {
 				continue;
 			}
-			values[name] = ProcessModel.ProcessResultSources.WithheldMarker;
-			hidden.Add($"'{name}' (from {origin})");
+			values[name] = WithheldMarker;
 			(response.WithheldResultParameters ??= []).Add(name);
 		}
-		if (hidden.Count == 0) {
-			return;
+		if (sourced.Count > 0) {
+			(response.Warnings ??= []).Add(BuildWithheldNote(sourced, reason, response.ProcessId));
 		}
-		(response.Warnings ??= []).Add(BuildWithheldNote(hidden, response.ProcessId));
+		if (unrequested.Count > 0) {
+			(response.Warnings ??= []).Add($"resultParameterValues {string.Join(", ", unrequested)} are withheld as "
+				+ $"{WithheldMarker}: the platform returned them although they were not requested, so they were not "
+				+ "checked for a credential. Request them by code to read them.");
+		}
 	}
 
-	private static string OriginOf(string name, Dictionary<string, string> withheld, HashSet<string> asked) {
-		if (withheld.TryGetValue(name, out string origin)) {
-			return origin;
-		}
-		return asked.Contains(name) ? null : "a parameter that was not requested, so its source was not checked";
-	}
-
-	internal static string BuildWithheldNote(IReadOnlyList<string> hidden, string processId) =>
-		$"resultParameterValues {string.Join(", ", hidden)} are withheld as {ProcessModel.ProcessResultSources.WithheldMarker}: "
-		+ "each may hold what a web service returned, and an API can echo the credentials it was sent (the "
-		+ "Authorization header, a key filled in from a system setting), so clio never returns such a value. The run "
-		+ "itself is not affected. Judge it by status, by Success and StatusCode, and by its effects; the user can see "
-		+ "the values in Creatio, in the process log"
+	private static string BuildWithheldNote(IReadOnlyList<string> names, string reason, string processId) =>
+		$"resultParameterValues {string.Join(", ", names)} are withheld as {WithheldMarker}: the process {reason}, so a "
+		+ "text, Guid or collection result may hold a credential - an API can echo the credentials it was sent, and the "
+		+ "platform decrypts a SecureText setting a process reads - and clio never returns one. Flags, numbers and dates "
+		+ "(Success, StatusCode) are returned. The run itself is not affected: judge it by status, those values and its "
+		+ "effects; the user can see the values in Creatio, in the process log"
 		+ (string.IsNullOrEmpty(processId) ? string.Empty : $" of run {processId}")
 		+ " with tracing on for the process. Do not try to read them another way, and do not change the process to "
 		+ "expose them.";
 
+	// The title of a record the run created or cleanup touched can be any column it wrote - an echoed key included - so
+	// in a process with a credential source it is withheld; the entity and id stay.
+	internal static void WithholdTitles(RunProcessResponse response, string source) {
+		if (source is null) {
+			return;
+		}
+		response.Created = WithholdTitles(response.Created);
+		if (response.Cleanup is { } cleanup) {
+			cleanup.Deleted = WithholdTitles(cleanup.Deleted);
+			cleanup.Skipped = WithholdTitles(cleanup.Skipped);
+		}
+	}
+
+	private static List<CreatedRecord> WithholdTitles(List<CreatedRecord> records) =>
+		records?.Select(record => record is null || string.IsNullOrEmpty(record.Title)
+				? record
+				: record with { Title = WithheldMarker })
+			.ToList();
+
 	/// <summary>
 	/// Hides credentials recognisable by their shape in text the server wrote - the run's error, a result value, the
-	/// title of a record it created - which the source rule does not reach (a Script task, a record written and read
-	/// back). clio's own warnings are left alone.
+	/// title of a record it created - which the per-process rule does not reach (a Script task whose code reads a
+	/// setting or calls an API itself). clio's own warnings are left alone.
 	/// </summary>
 	/// <param name="response">The answer to mask in place.</param>
 	internal static void MaskCredentialShapes(RunProcessResponse response) {
