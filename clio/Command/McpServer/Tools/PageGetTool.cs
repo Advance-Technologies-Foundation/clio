@@ -41,6 +41,11 @@ public sealed class PageGetTool(
 	public PageGetResponse GetPage(
 		[Description("schema-name (required); environment-name preferred; uri/login/password fallback only.")]
 		[Required] PageGetArgs args) {
+		// The page files go to .clio-pages/{schema-name}; a name that is not a plain name is refused before
+		// Creatio is asked. PageFileWriter keeps its own, stricter check for the write itself.
+		if (PageBaselineStore.DescribeSchemaNameRefusal(args.SchemaName) is { } schemaNameRefusal) {
+			return new PageGetResponse { Success = false, Error = schemaNameRefusal };
+		}
 		PageGetOptions options = new() {
 			SchemaName = args.SchemaName,
 			Environment = args.EnvironmentName,

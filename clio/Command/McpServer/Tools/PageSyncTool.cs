@@ -110,7 +110,9 @@ public sealed class PageSyncTool(
 		// the registry/version is unavailable (fail-open).
 		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions = null;
 		string? mobileCatalogVersion = null;
-		if (args.Validate ?? true) {
+		// A batch in which every page has a refused schema name asks the environment nothing.
+		if ((args.Validate ?? true)
+			&& pages.Any(page => PageBaselineStore.DescribeSchemaNameRefusal(page.SchemaName) is null)) {
 			string? platformVersion = await ResolvePlatformVersionAsync(args.EnvironmentName, cancellationToken).ConfigureAwait(false);
 			chartTypeDefinitions = await ChartWidgetValidation
 				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
@@ -261,6 +263,16 @@ public sealed class PageSyncTool(
 		for (int i = 0; i < pages.Count; i++) {
 			PageSyncPrePassEntry entry = prePass.Entries[i];
 			PageSyncPageInput page = pages[i];
+			// First, before the gates below read the page's persisted keys from Creatio and long before the
+			// baseline guard probes .clio-pages/{schema-name}: the page fails alone, the batch goes on.
+			if (PageBaselineStore.DescribeSchemaNameRefusal(page.SchemaName) is { } schemaNameRefusal) {
+				results.Add(new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Error = schemaNameRefusal
+				});
+				continue;
+			}
 			if (entry.SyntaxFailureMessage is { } syntaxMsg) {
 				results.Add(BuildPrePassFailureResult(page, ResolvePrePassSyntaxFailureMessage(page, syntaxMsg, validate)));
 				continue;
@@ -994,7 +1006,7 @@ public sealed class PageSyncTool(
 				outputDirectory);
 		}
 		string rootDir = fileSystem.Path.Combine(anchor, ".clio-pages");
-		string schemaDir = fileSystem.Path.Combine(rootDir, schemaName);
+		string schemaDir = PageBaselineStore.ResolveSchemaDirectory(fileSystem, rootDir, schemaName);
 		string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
 		string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");
 		// H-1: the verify read-back rewrites files a concurrent clio process may be reading, so the

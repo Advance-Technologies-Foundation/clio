@@ -14,7 +14,17 @@ using ModelContextProtocol.Protocol;
 
 namespace Clio.Mcp.E2E.Support.Mcp;
 
-internal sealed class McpServerSession : IAsyncDisposable {
+/// <summary>
+/// A session whose completed tool calls can be observed, for diagnostics only. <c>SeededBlankPage.Lease</c>
+/// depends on this instead of the session, so its attach and detach are unit-tested without a server.
+/// </summary>
+internal interface IToolResultObservable {
+
+	/// <summary>Called with the tool name, its arguments and its result after every completed call.</summary>
+	Action<string, IReadOnlyDictionary<string, object?>, CallToolResult>? ToolResultObserver { get; set; }
+}
+
+internal sealed class McpServerSession : IAsyncDisposable, IToolResultObservable {
 	private const int MaxDiagnosticNotifications = 20;
 	private readonly StdioClientTransport _transport;
 	private readonly ConcurrentQueue<JsonNode> _capturedProgressParams = new();
@@ -35,6 +45,15 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	}
 
 	public McpClient Client { get; }
+
+	/// <summary>
+	/// Diagnostics only: called after every completed
+	/// <see cref="CallToolAsync(string, IReadOnlyDictionary{string, object?}, CancellationToken)"/> with the
+	/// tool name, its arguments and its result. An exception it throws is swallowed, so an observer can never
+	/// change the outcome of a call. <c>SeededBlankPage.Lease</c> uses it to record what the saves of a test
+	/// reported. The session can be shared by fixtures, so an observer must ignore calls that are not its own.
+	/// </summary>
+	public Action<string, IReadOnlyDictionary<string, object?>, CallToolResult>? ToolResultObserver { get; set; }
 
 	public static async Task<McpServerSession> StartAsync(McpE2ESettings settings, CancellationToken cancellationToken) =>
 		await StartAsync(settings, elicitationHandler: null, cancellationToken);
@@ -345,15 +364,25 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		CancellationToken cancellationToken) {
 		long startedAt = Stopwatch.GetTimestamp();
 		try {
-			if (await IsToolAdvertisedAsync(toolName, cancellationToken)) {
-				return await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken);
-			}
-			return await Client.CallToolAsync(
-				ClioRunTool.ToolName,
-				BuildClioRunArguments(toolName, arguments),
-				cancellationToken: cancellationToken);
+			CallToolResult result = await IsToolAdvertisedAsync(toolName, cancellationToken)
+				? await Client.CallToolAsync(toolName, arguments, cancellationToken: cancellationToken)
+				: await Client.CallToolAsync(
+					ClioRunTool.ToolName,
+					BuildClioRunArguments(toolName, arguments),
+					cancellationToken: cancellationToken);
+			NotifyToolResultObserver(toolName, arguments, result);
+			return result;
 		} finally {
 			E2ETimingProbe.RecordToolCall(toolName, Stopwatch.GetElapsedTime(startedAt));
+		}
+	}
+
+	private void NotifyToolResultObserver(
+		string toolName, IReadOnlyDictionary<string, object?> arguments, CallToolResult result) {
+		try {
+			ToolResultObserver?.Invoke(toolName, arguments, result);
+		} catch (Exception) {
+			// Diagnostics must not fail the call they observe.
 		}
 	}
 

@@ -30,6 +30,28 @@ namespace Clio.Mcp.E2E;
 public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	private const string ToolName = PageUpdateTool.ToolName;
 
+	// Set by every test that writes the shared page ClioMcp_BlankPageToSave; ended by the [TearDown] below.
+	// The fixture is [NonParallelizable] and NUnit runs its tests on one instance, one at a time.
+	private SeededBlankPage.Lease? _seededPageLease;
+
+	/// <summary>
+	/// Ends the lease of a test that wrote the shared page. When the test failed, the lease first writes what
+	/// the stand holds for the page, and what the test's saves reported, to the test output. It then always
+	/// resets the page to its blank body and fails the test when the reset is refused or when the FIRST read
+	/// after it does not show it (an editable schema with the checksum the reset save reported, blank body).
+	/// In <c>[TearDown]</c>, not in a <c>finally</c> block of the test:
+	/// NUnit reports a teardown failure next to the assertion that failed in the test, while an exception
+	/// thrown in <c>finally</c> replaces it.
+	/// </summary>
+	[TearDown]
+	public async Task ResetSeededPageAsync() {
+		SeededBlankPage.Lease? lease = _seededPageLease;
+		_seededPageLease = null;
+		if (lease is not null) {
+			await lease.EndAsync();
+		}
+	}
+
 	[Test]
 	[Description("GH-1189: the real update-page validation response gives safe remediation for an own-body field insert with an undeclared binding.")]
 	[AllureTag(ToolName)]
@@ -401,7 +423,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		const string savePage = SeededBlankPage.SchemaName;
 		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
 		int operationsBefore = CountViewConfigDiffOperations(bodyBefore);
 		string fragment = BuildAppendFragment(savePage);
@@ -456,7 +478,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		const string savePage = SeededBlankPage.SchemaName;
 		string fragment = BuildAppendFragment(savePage);
 
 		// Act
@@ -563,7 +585,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		const string savePage = SeededBlankPage.SchemaName;
 		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
 		string fragment = "define(\"" + savePage + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -613,7 +635,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		const string savePage = SeededBlankPage.SchemaName;
 		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
 		string fragment = "define(\"" + savePage + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
@@ -824,16 +846,15 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
 		string baselineDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-before-").FullName;
 		string readbackDir = Directory.CreateTempSubdirectory("clio-e2e-lint-gate-after-").FullName;
-		string originalBody = null;
-		bool restoreNeeded = false;
 		try {
 			PageGetResponse baseline = await GetPageAsync(arrangeContext, savePage, environmentName, baselineDir);
 			baseline.Success.Should().BeTrue(
 				because: $"get-page must succeed for the seeded page '{savePage}' before the gate can be proven. Error: {baseline.Error}");
-			originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
+			string originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
 
 			// Act
 			PageUpdateResponse response = await UpdatePageAsync(
@@ -843,12 +864,11 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				environmentName,
 				baselineDir);
 			PageGetResponse readback = await GetPageAsync(arrangeContext, savePage, environmentName, readbackDir);
-			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
-			//A readback that did not come back cannot show the page is intact, and the write it was
-			//supposed to check may well have landed - so that case restores too.
-			restoreNeeded = bodyAfter is null || bodyAfter != originalBody;
+			string? bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
 
 			// Assert
+			// When the gate lets the probe body through - the failure this test exists to catch - the shared
+			// page is put back by the fixture's [TearDown], which also fails the test when that reset is refused.
 			response.Success.Should().BeFalse(
 				because: "the helper is either uninitialized now or removed by the next Designer save");
 			response.Error.Should().Contain("Page body lint failed",
@@ -860,39 +880,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			bodyAfter.Should().Be(originalBody,
 				because: "a refused write must leave the stand untouched — this is the assertion a dry-run scenario cannot make");
 		} finally {
-			if (restoreNeeded) {
-				//Only reached when the gate let the probe body through, which is the failure this test
-				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
-				//than left holding a body that throws on open.
-				//Through readbackDir, not baselineDir: update-page compares the body on the stand against
-				//the baseline in its output directory, and only readbackDir holds one taken AFTER the
-				//probe write landed. Restoring against the stale baseline would be refused as a conflict.
-				await TryRestorePageBodyAsync(arrangeContext, savePage, originalBody, environmentName,
-					readbackDir);
-			}
 			TryDeleteDirectory(baselineDir);
 			TryDeleteDirectory(readbackDir);
-		}
-	}
-
-	/// <summary>
-	/// Best-effort restore of a shared fixture page's body. A failure here is reported to the console
-	/// and swallowed: it must not replace the assertion failure that made the restore necessary.
-	/// </summary>
-	private static async Task TryRestorePageBodyAsync(ArrangeContext context, string schemaName,
-		string body, string environmentName, string outputDirectory) {
-		try {
-			PageUpdateResponse restored =
-				await UpdatePageAsync(context, schemaName, body, environmentName, outputDirectory);
-			if (!restored.Success) {
-				//A refused save comes back in the envelope rather than as an exception, so without this
-				//the shared fixture page would be left holding a body that throws on open, silently.
-				TestContext.Progress.WriteLine(
-					$"Failed to restore the body of '{schemaName}': {restored.Error}");
-			}
-		} catch (Exception restoreFailure) {
-			TestContext.Progress.WriteLine(
-				$"Failed to restore the body of '{schemaName}': {restoreFailure.Message}");
 		}
 	}
 
@@ -1828,7 +1817,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-session-").FullName;
 		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-conflict-oob-").FullName;
 		try {
@@ -1843,9 +1833,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 
 			// Act 2: out-of-band modification — update-page anchored at a DIFFERENT directory
 			// (no baseline there → no conflict check, and the session baseline stays untouched).
-			string outOfBandBody = originalBody.Replace(
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			// Through BodyWithContainer, not string.Replace: on a body whose section is not exactly "[]" a
+			// plain replace returns the body unchanged, and the "out-of-band" save then changes nothing.
+			string outOfBandBody = BodyWithContainer(originalBody, "UsrE2EOobContainer");
 			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
 				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
 			outOfBandResponse.Success.Should().BeTrue(
@@ -1899,7 +1889,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		const string savePage = SeededBlankPage.SchemaName;
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-selector-session-").FullName;
 		string emptyAnchorDir = Directory.CreateTempSubdirectory("clio-e2e-selector-empty-").FullName;
 		try {
@@ -1963,7 +1953,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		const string savePage = SeededBlankPage.SchemaName;
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-check-outcome-").FullName;
 		try {
 			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
@@ -2022,7 +2012,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		const string savePage = SeededBlankPage.SchemaName;
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-nobaseline-session-").FullName;
 		string emptyAnchorDir = Directory.CreateTempSubdirectory("clio-e2e-nobaseline-empty-").FullName;
 		try {
@@ -2062,7 +2052,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-checksum-roundtrip-").FullName;
 		string? originalBody = null;
 		try {
@@ -2139,12 +2130,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			thirdGet.Editable.Checksum.Should().Be(secondSave.NewChecksum,
 				because: "a refused save must leave the schema exactly as the last accepted save left it");
 		} finally {
-			if (!string.IsNullOrWhiteSpace(originalBody)) {
-				PageUpdateResponse restore = await UpdatePageAsync(
-					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
-				restore.Success.Should().BeTrue(
-					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
-			}
+			// The probe content is removed by the fixture's [TearDown], which resets the shared seeded page
+			// and fails the test when that reset is refused or cannot be read back.
 			TryDeleteDirectory(sessionDir);
 		}
 	}
@@ -2163,7 +2150,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
 		// Both probe keys are UNIQUE PER RUN. Registration is additive - ResourceStringHelper.CleanAndMerge
 		// copies every existing entry before adding - so re-sending a key this test already persisted on the
 		// shared seeded page answers resourcesRegistered: 0, and Assert 2 below (which requires the key in
@@ -2243,12 +2231,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			omittingSave.Success.Should().BeTrue(
 				because: $"the key is already persisted on the schema, so it does not have to be repeated. Error: {omittingSave.Error}");
 		} finally {
-			if (!string.IsNullOrWhiteSpace(originalBody)) {
-				PageUpdateResponse restore = await UpdatePageAsync(
-					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
-				restore.Success.Should().BeTrue(
-					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
-			}
+			// The probe content is removed by the fixture's [TearDown], which resets the shared seeded page
+			// and fails the test when that reset is refused or cannot be read back.
 			TryDeleteDirectory(sessionDir);
 		}
 	}
@@ -2267,7 +2251,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
 		// NOT Usr-prefixed: a Usr key is auto-derived and would never warn, which would make the dry-run
 		// assertion vacuous. The registered key is FIXED: a localizableStrings entry cannot be removed through
 		// update-page, so a run-unique key would leave one more resource string on the shared seeded page on
@@ -2306,12 +2291,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				warning => warning.Contains(neverRegisteredKey) && warning.Contains("will not be registered"),
 				because: "a key registered nowhere still renders raw, so the dry run must keep reporting it");
 		} finally {
-			if (!string.IsNullOrWhiteSpace(originalBody)) {
-				PageUpdateResponse restore = await UpdatePageAsync(
-					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
-				restore.Success.Should().BeTrue(
-					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
-			}
+			// The probe content is removed by the fixture's [TearDown], which resets the shared seeded page
+			// and fails the test when that reset is refused or cannot be read back.
 			TryDeleteDirectory(sessionDir);
 		}
 	}
@@ -2402,7 +2383,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
 		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-presence-").FullName;
 		await using var listener = await DesignerPresenceListener.StartAsync(environmentName, savePage);
 		try {
@@ -2448,7 +2430,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
-		const string savePage = "ClioMcp_BlankPageToSave";
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-force-session-").FullName;
 		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-force-oob-").FullName;
 		try {
@@ -2456,9 +2439,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			getResponse.Success.Should().BeTrue(
 				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
 			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
-			string outOfBandBody = originalBody.Replace(
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2EForceContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			string outOfBandBody = BodyWithContainer(originalBody, "UsrE2EForceContainer");
 			PageUpdateResponse outOfBandResponse = await UpdatePageAsync(
 				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
 			outOfBandResponse.Success.Should().BeTrue(

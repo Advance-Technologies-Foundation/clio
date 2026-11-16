@@ -276,6 +276,51 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			.ExecutePostRequest(default, default, default, default, default);
 	}
 
+	[TestCase("../../Outside")]
+	[TestCase("..")]
+	[TestCase("sub/Custom")]
+	[TestCase("/rooted/Custom")]
+	[TestCase("sub\\Custom")]
+	[TestCase("Custom.")]
+	[TestCase("C:Custom")]
+	[Description("Returns an error for a package name that is not a plain folder name before any file is probed or any request is sent, so the command cannot read a descriptor outside the workspace.")]
+	[Category("Unit")]
+	public void Execute_Should_Return_Error_Before_Any_File_Access_When_Package_Name_Is_Not_A_Plain_Name(string packageName) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		EnvironmentSettings settings = new();
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(true);
+		fileSystem.ExistsFile(Arg.Any<string>()).Returns(true);
+
+		CreateUserTaskCommand command =
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
+		CreateUserTaskOptions options = new() {
+			Package = packageName,
+			Code = "UsrMyUserTask",
+			Title = "My user task"
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the package name is joined into the path of the descriptor the command reads");
+		workspacePathBuilder.DidNotReceive().BuildPackagePath(Arg.Any<string>());
+		fileSystem.DidNotReceive().ExistsFile(Arg.Any<string>());
+		applicationClient.DidNotReceiveWithAnyArgs()
+			.ExecutePostRequest(default, default, default, default, default);
+	}
+
 	[Test]
 	[Description("Returns an error when the command is executed outside a workspace directory.")]
 	[Category("Unit")]

@@ -340,6 +340,12 @@
 		/// </summary>
 		private bool TryUpdatePageCore(PageUpdateOptions options, out PageUpdateResponse response) {
 			try {
+				// Covers the CLI and every caller of this command: no body file is read and no request is
+				// sent for a name that is not a plain schema name.
+				if (PageBaselineStore.DescribeSchemaNameRefusal(options.SchemaName) is { } schemaNameRefusal) {
+					response = new PageUpdateResponse { Success = false, Error = schemaNameRefusal };
+					return false;
+				}
 				if (!TryLoadBodyFromFile(options, out response)) return false;
 				// Single chokepoint for update-page, sync-pages, and the CLI: run the registered before-save
 				// page-body preprocessors before validating/saving. Fail-safe; a no-op for bodies no preprocessor
@@ -1268,8 +1274,11 @@
 			// Mirror the MCP tool: auto-discover the on-disk baseline so a CLI save (e.g. an AI agent
 			// running `clio update-page --body-file .clio-pages/<schema>/body.js`) is blocked when the
 			// schema was modified out-of-band, instead of silently overwriting the external edit.
+			// A name TryUpdatePage refuses is not armed: the refusal is the whole answer, with no baseline warning.
 			(string metaFilePath, bool refreshBaseline, string baselineWarning) =
-				_pageBaselineGuard.TryArm(options, outputDirectory: null);
+				PageBaselineStore.DescribeSchemaNameRefusal(options.SchemaName) is null
+					? _pageBaselineGuard.TryArm(options, outputDirectory: null)
+					: (null, false, null);
 			bool success = TryUpdatePage(options, out PageUpdateResponse response);
 			if ((refreshBaseline || options.ConditionalBaselineApplied) && success && !options.DryRun) {
 				// A failed refresh cannot fail a save that already landed on the server, so it surfaces as a
