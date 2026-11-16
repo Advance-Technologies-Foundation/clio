@@ -1573,6 +1573,7 @@ internal static partial class DataBindingPathGuard {
 	}
 
 	/// <summary>Tells whether <paramref name="value"/> is a plain folder name, by the rule of <see cref="RequirePlainName"/>.</summary>
+	/// <param name="value">The name to check.</param>
 	internal static bool IsPlainName(string value) =>
 		!string.IsNullOrWhiteSpace(value)
 		&& string.Equals(value, value.Trim(), StringComparison.Ordinal)

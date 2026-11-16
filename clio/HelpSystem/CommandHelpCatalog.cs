@@ -286,6 +286,7 @@ internal sealed class CommandHelpCatalog {
 			"create-entity-schema",
 			"create-lookup",
 			"dataservice",
+			"delete-data-binding-db",
 			"delete-schema",
 			"get-classic-list-columns",
 			"get-classic-page-sources",

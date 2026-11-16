@@ -1,0 +1,55 @@
+# delete-data-binding-db
+
+## Description
+
+Deletes a DB-first package data binding from its package. The bound records stay in the table.
+
+## Usage
+
+```bash
+clio delete-data-binding-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME>
+--binding-name <BINDING_NAME>
+```
+
+## Options
+
+```bash
+-e, --environment          Creatio environment name (required when --uri is omitted)
+--uri                      Creatio application URI (alternative to --environment)
+--package                  Target package name (required)
+--binding-name             Binding folder name (required)
+-H, --help                 Show this help
+```
+
+## Behavior
+
+Looks up the binding in the given package in the remote SysPackageSchemaData table.
+When the package has no binding of that name, the command fails with exit code 1 and
+deletes nothing.
+Deletes the binding schema data record via DeletePackageSchemaDataRequest. No record of
+the bound table is deleted or changed: the rows the binding held stay in the table and
+only stop being shipped by the package. The next package export ships without the binding.
+Works for a binding that holds rows and for an empty one, so it removes a binding that
+was created by mistake or left without rows.
+Prints how many rows the binding held.
+To delete a live record together with its binding row, use
+[`remove-data-binding-row-db`](remove-data-binding-row-db.md).
+After remote mutation, read back from Creatio instead of treating the request payload
+or install log as proof.
+
+In file system development mode the platform applies the binding change to the database only, so
+the package folder on disk (`Pkg/<package>/Data/<binding>`) does not get the change and a commit
+of that folder does not carry it. The command still exits 0 and prints a warning naming the
+folder. Run `clio pkg-to-file-system -e <ENVIRONMENT_NAME>` to write it to disk. That command
+rewrites every package folder on disk from the database (except client modules and C# source code)
+and removes on-disk items the database does not have, so commit on-disk work that is not in the
+database yet first, and run it before the next `pkg-to-db`, which makes the database match the
+disk.
+
+## Example
+
+```bash
+clio delete-data-binding-db -e dev --package Custom --binding-name UsrTaskStatus
+```
+
+- [Clio Command Reference](../../Commands.md#delete-data-binding-db)
