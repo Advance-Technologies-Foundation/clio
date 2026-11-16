@@ -5,5 +5,5 @@ description: Publish a new Advance-Technologies-Foundation/clio CLI release from
 
 # Clio release
 
-Read `../../../.ai/skills/clio-release/SKILL.md` completely, then follow it as
+Read `../../../.agents/skills/clio-release/SKILL.md` completely, then follow it as
 the single canonical release procedure. Resolve that path relative to this file.

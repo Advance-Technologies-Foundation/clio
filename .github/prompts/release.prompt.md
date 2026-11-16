@@ -3,7 +3,7 @@ description: Publish the next clio release from tested master and verify NuGet d
 ---
 
 Follow the shared release procedure in
-`.ai/skills/clio-release/SKILL.md` and `RELEASE.md`.
+`.agents/skills/clio-release/SKILL.md` and `RELEASE.md`.
 
 A request to make a release authorizes tag creation, GitHub publication and the
 automatic NuGet publish. Select the exact verified `origin/master` SHA rather
