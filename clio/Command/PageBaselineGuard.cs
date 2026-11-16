@@ -201,6 +201,12 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		options.DetectionDidNotRunWarning = null;
 		options.ConditionalBaselineWarning = null;
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
+		// A blank schema name has no baseline folder, and the save fails with the tool's own "schema-name is
+		// required". The path builder refuses a blank name by throwing, which the catch below would turn into
+		// a second, misleading "DISARMED ... not a plain page schema name" warning next to that error.
+		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
+			return (null, false, null);
+		}
 		// A selector means nothing can be armed HERE: the target is resolved only after this method returns.
 		// The baseline is keyed by schema name alone and `get-page` has no redirect option, so both the
 		// on-disk baseline and any checksum copied out of a get-page response describe the schema the

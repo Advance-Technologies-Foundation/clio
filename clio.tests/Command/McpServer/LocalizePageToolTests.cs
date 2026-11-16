@@ -280,4 +280,25 @@ public sealed class LocalizePageToolTests : BaseClioModuleTests {
 		// Assert
 		resident.Should().BeFalse(because: "ADR D1 keeps localize-page long-tail, like update-page");
 	}
+
+	[TestCase("../../Outside")]
+	[TestCase("..")]
+	[TestCase("sub/Page")]
+	[TestCase("/abs/Outside")]
+	[TestCase("sub\\Page")]
+	[Description("localize-page refuses a schema name that is not a plain name with an ordinary tool error, before the service is resolved or called.")]
+	public void LocalizePage_ShouldRefuseWithoutCallingTheService_WhenSchemaNameIsNotAPlainName(string hostileName) {
+		// Arrange
+		LocalizePageArgs args = new(SchemaName: hostileName, Culture: "es-ES", EnvironmentName: "dev");
+
+		// Act
+		LocalizePageResponse response = _tool.LocalizePage(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the name would anchor the baseline refresh outside .clio-pages");
+		response.Error.Should().Contain("is not a plain page schema name",
+			because: "the caller has to learn which argument to fix");
+		_service.ReceivedCalls().Should().BeEmpty(because: "nothing is read from or saved to Creatio for a refused name");
+		_resolver.ReceivedCalls().Should().BeEmpty(because: "no environment is resolved for a refused call");
+	}
 }
