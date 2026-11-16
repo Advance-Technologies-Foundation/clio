@@ -822,6 +822,9 @@ internal static class SeededBlankPage {
 					? ParseStoredRows(rows)
 					: new StoredRows(null, response.Error ?? "no rows array in the answer");
 			} catch (Exception readFailure) {
+				// The rows are diagnostics: a read that fails is reported in them, not as the test's verdict, so a
+				// parse failure's payload dump would only land in the published TestResults artifact of a passing run.
+				PayloadDumpReader.DeleteIfPresent(readFailure.Message);
 				return new StoredRows(null, readFailure.Message);
 			}
 		}
