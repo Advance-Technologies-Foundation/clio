@@ -400,6 +400,12 @@ public sealed class WebServiceDesigner(
 			return "The response is withheld: a value filled from a system setting could not be located in what the "
 				+ "platform reports as sent (or the request body is neither JSON nor XML), so it could not be masked.";
 		}
+		if (result.Success) {
+			// Not a failure: the cause hints below would be wrong for a call that worked.
+			return "The response is withheld: the call succeeded, but the platform reported nothing as sent, so the "
+				+ "credentials it carried could not be located to mask. Studio > Web services shows the answer for the "
+				+ "same test request.";
+		}
 		string lead = "The platform's answer is withheld: the call failed with nothing reported as sent, so the "
 			+ "credentials it would have carried could not be located to mask.";
 		return method.UseAuthInfo && schema.AuthInfo is { AuthType: ServiceSchemaCodes.AuthOAuth20 }

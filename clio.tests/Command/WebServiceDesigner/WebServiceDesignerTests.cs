@@ -781,6 +781,25 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("A successful OAuth call with nothing reported as sent is withheld without claiming a failure or a token problem.")]
+	public void TestMethod_Should_Not_Call_A_Successful_Withheld_Call_A_Failure() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "{\"token\":\"echo\"}", null));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "the credentials it carried could not be located to mask");
+		result.Error.Should().Contain("the call succeeded", because: "the message stays true to what happened")
+			.And.NotContain("access token could not be retrieved", because: "the token was retrieved for a call that worked");
+	}
+
+	[Test]
 	[Description("An OAuth service's method that does not use the authentication gets no OAuth hint when it sent nothing.")]
 	public void TestMethod_Should_Not_Blame_OAuth_For_A_Method_Without_Authentication() {
 		// Arrange
