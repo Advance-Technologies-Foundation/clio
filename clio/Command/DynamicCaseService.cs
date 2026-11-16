@@ -704,7 +704,7 @@ public sealed class DynamicCaseService(
 			OrderSource = info.OrderSource,
 			Stages = info.Stages ?? [],
 			Connections = new DynamicCaseConnections {
-				Kind = DynamicCaseConnections.KindOf(info.Stages?.Count ?? 0, info.ConnectionCount),
+				Kind = info.Stages is null ? null : DynamicCaseConnections.KindOf(info.Stages.Count, info.ConnectionCount),
 				Count = info.ConnectionCount
 			},
 			FinalStages = info.FinalStages,

@@ -501,7 +501,8 @@ public sealed class BuildCaseResponse {
 public sealed class DynamicCaseConnections {
 	/// <summary>
 	/// <c>all-to-all</c> when every ordered pair of stages is connected, so every stage is clickable on the bar (every
-	/// case create builds); <c>restricted</c> when a described or changed case, made in the designer, has fewer.
+	/// case create builds); <c>restricted</c> when a described or changed case, made in the designer, has fewer; absent
+	/// when the answer lists no stages to judge by.
 	/// </summary>
 	[JsonPropertyName("kind")]
 	public string Kind { get; init; }
