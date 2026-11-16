@@ -138,6 +138,7 @@ public class SkillRepositoryResolver(
 			return new ResolvedSkillRepository(fullPath, fullPath, localCommitHash, _workingDirectoriesProvider);
 		}
 
+		// Derived and checked before anything is created or any git process starts.
 		string cachedRepositoryPath = GetCachedRepositoryPath(effectiveLocator);
 		_fileSystem.CreateDirectoryIfNotExists(SettingsRepository.AppSettingsFolderPath);
 
@@ -166,10 +167,30 @@ public class SkillRepositoryResolver(
 			_workingDirectoriesProvider);
 	}
 
+	// The cache folder is named after the last segment of the locator and lies directly below the clio settings
+	// folder. git pull or git clone then runs there, on the person's machine and outside any sandbox of an agent that
+	// calls the toolkit tools over MCP, so a locator whose last segment is not a plain folder name ("..", ".", an
+	// empty name left by a bare ".git") is refused: it would name the settings folder itself or a folder outside it.
 	private string GetCachedRepositoryPath(string repositoryLocator) {
 		string repositoryName = GetRepositoryName(repositoryLocator);
+		if (!IsCacheFolderName(repositoryName)) {
+			throw new InvalidOperationException(
+				$"Skills repository '{repositoryLocator}' cannot be cached: its last segment '{repositoryName}' is not " +
+				"a plain folder name. Use a git URL that ends with the repository name, for example " +
+				"https://github.com/org/repo or https://github.com/org/repo.git, or the path of an existing local folder.");
+		}
+
 		return _fileSystem.Combine(SettingsRepository.AppSettingsFolderPath, repositoryName);
 	}
+
+	// A name that stays directly below the settings folder: not empty, not made of dots only ("." is the folder
+	// itself, ".." the one above it), no separator and no root. Other characters are left alone, as they always were:
+	// a locator such as git@host:repo.git keeps its name.
+	private static bool IsCacheFolderName(string name) =>
+		!string.IsNullOrWhiteSpace(name)
+		&& name.Trim('.').Length > 0
+		&& name.IndexOfAny(['/', '\\']) < 0
+		&& !System.IO.Path.IsPathRooted(name);
 
 	private string GetRepositoryName(string repositoryLocator) {
 		string trimmedLocator = repositoryLocator.Trim().TrimEnd('/', '\\');

@@ -349,5 +349,95 @@ public sealed class SkillRepositoryResolverTests {
 			because: "the resolver should reuse the persistent cached repository directory for repeated operations");
 	}
 
+	[TestCase("https://host/x/..")]
+	[TestCase("https://host/x/../")]
+	[TestCase("https://host/x/.")]
+	[TestCase("https://host/x/.git")]
+	[TestCase("https://host/x/...git")]
+	[Description("Repository resolver should refuse a git URL whose last segment is not a plain folder name before it creates a directory or starts git, because the cache folder would be the clio settings folder itself or a folder outside it.")]
+	public void SkillRepositoryResolver_ShouldRefuseRepository_WhenDerivedCacheNameIsNotPlainName(string repositoryLocator) {
+		// Arrange
+		MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>(), GetCurrentDirectoryPath());
+		Clio.Common.IFileSystem fileSystem = new Clio.Common.FileSystem(mockFileSystem);
+		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		IGitCommandRunner gitCommandRunner = Substitute.For<IGitCommandRunner>();
+		gitCommandRunner.Pull(Arg.Any<string>()).Returns(new GitCommandResult(true, string.Empty, string.Empty));
+		gitCommandRunner.Clone(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(new GitCommandResult(true, string.Empty, string.Empty));
+		gitCommandRunner.GetHeadCommitHash(Arg.Any<string>())
+			.Returns(new GitCommandResult(true, "abc123", string.Empty));
+		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner, mockFileSystem);
+
+		// Act
+		Action act = () => resolver.Resolve(repositoryLocator);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a cache folder name that is not a plain name would place the git working folder outside the cache root")
+			.WithMessage("*is not a plain folder name*",
+				because: "the caller should learn what is wrong with the repository locator");
+		gitCommandRunner.ReceivedCalls().Should().BeEmpty(
+			because: "no git process may start for a repository whose cache folder is refused");
+		mockFileSystem.Directory.Exists(SettingsRepository.AppSettingsFolderPath).Should().BeFalse(
+			because: "the refusal must come before any directory is created");
+	}
+
+	[TestCase("https://github.com/org/repo")]
+	[TestCase("https://github.com/org/repo.git")]
+	[TestCase("https://github.com/org/repo/")]
+	[TestCase("https://github.com/org/repo.git/")]
+	[TestCase("git@github.com:org/repo.git")]
+	[Description("Repository resolver should keep deriving the cache folder name from the last segment of an ordinary git URL, with or without .git and a trailing slash.")]
+	public void SkillRepositoryResolver_ShouldCloneIntoFolderNamedAfterLastSegment_WhenRepoIsOrdinaryGitUrl(
+		string repositoryLocator) {
+		// Arrange
+		MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData>(), GetCurrentDirectoryPath());
+		Clio.Common.IFileSystem fileSystem = new Clio.Common.FileSystem(mockFileSystem);
+		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		IGitCommandRunner gitCommandRunner = Substitute.For<IGitCommandRunner>();
+		string cachedRepositoryPath = Path.Combine(SettingsRepository.AppSettingsFolderPath, "repo");
+		gitCommandRunner.Clone(repositoryLocator, cachedRepositoryPath)
+			.Returns(new GitCommandResult(true, string.Empty, string.Empty));
+		gitCommandRunner.GetHeadCommitHash(cachedRepositoryPath)
+			.Returns(new GitCommandResult(true, "abc123", string.Empty));
+		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner, mockFileSystem);
+
+		// Act
+		using ResolvedSkillRepository repository = resolver.Resolve(repositoryLocator);
+
+		// Assert
+		gitCommandRunner.Received(1).Clone(repositoryLocator, cachedRepositoryPath);
+		repository.RepositoryRootPath.Should().Be(cachedRepositoryPath,
+			because: "an ordinary git URL should still be cached in a folder named after its last segment");
+	}
+
+	[Test]
+	[Description("Repository resolver should use an existing local folder in place, without deriving a cache folder, cloning or pulling.")]
+	public void SkillRepositoryResolver_ShouldUseLocalFolderInPlace_WhenRepoIsExistingDirectory() {
+		// Arrange
+		string localRepositoryPath = OperatingSystem.IsWindows() ? @"C:\repos\toolkit" : "/repos/toolkit";
+		MockFileSystem mockFileSystem = new(new Dictionary<string, MockFileData> {
+			[Path.Combine(localRepositoryPath, ".git", "HEAD")] = new("ref: refs/heads/main")
+		}, GetCurrentDirectoryPath());
+		Clio.Common.IFileSystem fileSystem = new Clio.Common.FileSystem(mockFileSystem);
+		IWorkingDirectoriesProvider workingDirectoriesProvider = Substitute.For<IWorkingDirectoriesProvider>();
+		IGitCommandRunner gitCommandRunner = Substitute.For<IGitCommandRunner>();
+		string resolvedPath = mockFileSystem.Path.GetFullPath(localRepositoryPath);
+		gitCommandRunner.GetHeadCommitHash(resolvedPath)
+			.Returns(new GitCommandResult(true, "abc123", string.Empty));
+		SkillRepositoryResolver resolver = new(fileSystem, workingDirectoriesProvider, gitCommandRunner, mockFileSystem);
+
+		// Act
+		using ResolvedSkillRepository repository = resolver.Resolve(localRepositoryPath);
+
+		// Assert
+		repository.RepositoryRootPath.Should().Be(resolvedPath,
+			because: "a local folder is the source itself and is not copied into the cache");
+		gitCommandRunner.DidNotReceiveWithAnyArgs().Clone(default!, default!);
+		gitCommandRunner.DidNotReceiveWithAnyArgs().Pull(default!);
+		mockFileSystem.Directory.Exists(SettingsRepository.AppSettingsFolderPath).Should().BeFalse(
+			because: "a local folder needs no cache folder under the clio settings folder");
+	}
+
 	private static string GetCurrentDirectoryPath() => OperatingSystem.IsWindows() ? @"C:\workspace" : "/";
 }

@@ -29,6 +29,9 @@ The default source is the public toolkit marketplace
 (`https://github.com/Creatio-Platform/creatio-ai-app-development-toolkit.git`).
 Use `--repo` to override it: a marketplace git URL for claude/codex/copilot, or a
 local path/git URL for the Cursor file-copy.
+For cursor a git URL is cached in a folder of the clio settings folder named after the
+URL's last segment, so the URL must end with the repository name
+(`https://host/org/repo` or `https://host/org/repo.git`); any other URL is refused.
 
 install-toolkit is idempotent. A detected agent whose CLI is not on PATH is skipped
 with a warning and does not fail the command.

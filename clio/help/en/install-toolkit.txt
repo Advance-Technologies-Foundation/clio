@@ -26,6 +26,9 @@ DESCRIPTION
         https://github.com/Creatio-Platform/creatio-ai-app-development-toolkit.git
     Use --repo to override it (a marketplace git URL for claude/codex/copilot;
     a local path or git URL for the cursor file-copy).
+    For cursor a git URL is cached in a folder of the clio settings folder named
+    after the URL's last segment, so the URL must end with the repository name
+    (https://host/org/repo or https://host/org/repo.git); any other URL is refused.
 
     install-toolkit is idempotent: re-running it refreshes/repairs the install.
     If a detected agent's CLI is not on PATH, that agent is skipped with a warning
