@@ -361,9 +361,7 @@ public sealed class WebServiceDesigner(
 		if (secretUnlocated) {
 			// The value is unknown, so it cannot be masked: fail closed and return the status only. The parsed
 			// response values come from the same response and are withheld with it.
-			return new WebServiceTestResult(result.Success,
-				"The response is withheld: a value filled from a system setting could not be located in what the "
-				+ "platform reports as sent (or the request body is neither JSON nor XML), so it could not be masked.",
+			return new WebServiceTestResult(result.Success, UnlocatedSecretMessage(schema, result),
 				result.StatusCode, null, false, true);
 		}
 		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
@@ -379,6 +377,29 @@ public sealed class WebServiceDesigner(
 			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
 			bodyMasked || errorMasked || valuesMasked, responseValues, valuesOmitted ? true : null,
 			notices.Count > 0 ? notices : null);
+	}
+
+	/// <summary>
+	/// Why a test call's answer is withheld. When the platform reports nothing as sent, the call failed before or
+	/// while sending (a token that could not be retrieved, an unreachable host, a timeout), so the system-setting
+	/// wording would point the agent at the wrong thing; the answer stays withheld because an OAuth server's error
+	/// can quote the client secret, which clio does not know and cannot mask.
+	/// </summary>
+	private static string UnlocatedSecretMessage(ServiceSchemaDto schema, ServiceMethodCallResult result) {
+		if (!string.IsNullOrEmpty(result.RequestRawData) || !string.IsNullOrEmpty(result.RequestBody)) {
+			return "The response is withheld: a value filled from a system setting could not be located in what the "
+				+ "platform reports as sent (or the request body is neither JSON nor XML), so it could not be masked.";
+		}
+		string lead = "The platform's answer is withheld: the call failed with nothing reported as sent, so the "
+			+ "credentials it would have carried could not be located to mask.";
+		return schema.AuthInfo is { AuthType: ServiceSchemaCodes.AuthOAuth20 }
+			? lead + " The service uses OAuth 2.0, and a call that fails before sending usually means the access token "
+				+ "could not be retrieved: ask the user to check the OAuth application (client id and secret, scope, "
+				+ "token URL; when the token endpoint refuses a Basic header, set Send client credentials to In request "
+				+ "body) and to send the test request in Studio > Web services, which shows the platform's error."
+			: lead + " Typical causes: the host is unreachable or refuses the connection, the call timed out, or the "
+				+ "authentication could not be prepared. Studio > Web services shows the platform's error for the same "
+				+ "test request.";
 	}
 
 	/// <summary>

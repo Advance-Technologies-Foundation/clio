@@ -741,6 +741,27 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("An OAuth call that fails before anything is sent is still withheld, but the message points at the OAuth application instead of system settings.")]
+	public void TestMethod_Should_Explain_An_OAuth_Call_That_Sent_Nothing() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "Access token cannot be retrieved: client_secret=s3cr3t"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().Contain("OAuth application", because: "the call failed while getting the token, not on a setting")
+			.And.Contain("Send client credentials", because: "the measured cause is the client-credentials placement")
+			.And.NotContain("system setting could not be located", because: "no system setting is involved")
+			.And.NotContain("s3cr3t", because: "the token endpoint's error can quote the client secret, which clio cannot mask");
+		result.ResponseBody.Should().BeNull(because: "nothing of the platform's answer is returned");
+	}
+
+	[Test]
 	[Description("A method that keeps use-auth after the service authentication was removed sends no Authorization, so nothing is withheld for it.")]
 	public void TestMethod_Should_Not_Withhold_When_The_Service_Has_No_Authentication() {
 		// Arrange
