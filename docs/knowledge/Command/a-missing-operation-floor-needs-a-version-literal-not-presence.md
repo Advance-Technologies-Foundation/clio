@@ -4,6 +4,9 @@ applies-to:
   - clio/Command/ModifyProcessAsNewVersionCommand.cs
   - clio/Command/SetActiveProcessVersionCommand.cs
   - clio/Command/CreateDynamicCaseCommand.cs
+  - clio/Command/DescribeDynamicCaseCommand.cs
+  - clio/Command/ModifyDynamicCaseCommand.cs
+  - clio/Command/DynamicCaseChangeModels.cs
   - clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs
 ticket: ENG-94374
 date: 2026-09-06
@@ -15,7 +18,9 @@ different reasons, and they are not interchangeable. The older ones (`CreateBusi
 still accepts. `ModifyProcessAsNewVersionOptions` and `SetActiveProcessVersionOptions` name one because the
 *operations themselves* do not exist before `CrtProcessBuilder 1.6.1.0`. `CreateDynamicCaseOptions` is the
 same case for `BuildCase` (ENG-105556), with its floor held in one constant,
-`CreateDynamicCaseOptions.MinimumProcessBuilderVersion`.
+`CreateDynamicCaseOptions.MinimumProcessBuilderVersion`; `DescribeDynamicCaseOptions` and
+`ModifyDynamicCaseOptions` are the same case for `DescribeCase` and `ModifyCase` (ENG-106378), both on one
+shared floor, `DynamicCaseChangeRequirement.MinimumProcessBuilderVersion`.
 
 **Why it is this way** — the presence-only form exists so the convergence rule (`IBundledPackageConvergence`)
 can own "keep the environment current" without a literal restating that policy where it cannot track the

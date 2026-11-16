@@ -47,7 +47,7 @@ public sealed class CreatePackageTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
-				 Creates a new, empty, editable package in a registered Creatio environment.
+				 Creates a new, empty, editable Creatio package.
 				 It is the same operation as "Create package" in the Configuration section (PackageService.svc).
 				 Use it when the user asks for a separate package (for example to hold a migration's output
 				 or to extend out-of-the-box functionality); page and schema writes already resolve their own

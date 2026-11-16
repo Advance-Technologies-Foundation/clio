@@ -112,6 +112,40 @@ public class RemoveDataBindingRowDbTool(
 }
 
 /// <summary>
+/// MCP tool for deleting a remote DB-first data binding from its package.
+/// </summary>
+public class DeleteDataBindingDbTool(
+	DeleteDataBindingDbCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<DeleteDataBindingDbOptions>(command, logger, commandResolver) {
+	internal const string DeleteDataBindingDbToolName = "delete-data-binding-db";
+
+	[McpServerTool(Name = DeleteDataBindingDbToolName, ReadOnly = false, Destructive = true, Idempotent = false,
+		OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[Description("Deletes a DB-first data binding from the package; the bound records stay in the table. "
+		+ "Use it to drop a binding created by mistake or left empty. The next package export ships without it.")]
+	public CommandExecutionResult DeleteDataBindingDb(
+		[Description("Parameters: environment-name, package-name, binding-name (all required)")]
+		[Required]
+		DeleteDataBindingDbArgs args) {
+		DeleteDataBindingDbOptions options = new() {
+			Environment = args.EnvironmentName,
+			PackageName = args.PackageName,
+			BindingName = args.BindingName
+		};
+		return InternalExecute<DeleteDataBindingDbCommand>(options);
+	}
+}
+
+/// <summary>
 ///     MCP surface for <see cref="ReadDataBindingDbCommand" />: reports which columns a DB-first binding ships.
 /// </summary>
 public class ReadDataBindingDbTool(
@@ -251,4 +285,24 @@ public sealed record RemoveDataBindingRowDbArgs(
 	[property: Description("Primary-key value of the row to remove")]
 	[property: Required]
 	string KeyValue
+);
+
+/// <summary>
+/// Arguments for the <c>delete-data-binding-db</c> MCP tool.
+/// </summary>
+public sealed record DeleteDataBindingDbArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("package-name")]
+	[property: Description("Target package name on the remote environment")]
+	[property: Required]
+	string PackageName,
+
+	[property: JsonPropertyName("binding-name")]
+	[property: Description("Binding folder name")]
+	[property: Required]
+	string BindingName
 );

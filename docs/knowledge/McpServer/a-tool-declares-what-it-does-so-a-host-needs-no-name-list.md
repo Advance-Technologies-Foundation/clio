@@ -26,7 +26,7 @@ regexes on clio's verbs and lists of tool names, and each clio release made them
 14 Nov 2026 was refused `create-dynamic-case`, and `manage-role list` raised a change approval).
 
 Two exclusions are deliberate. Writing a file the call names is not an effect (a `get-...-to-file` tool is a
-`Read`; which arguments name a host file is a separate per-argument fact), and neither are clio's own caches. And
+`Read`; which arguments name a host file is a separate per-argument fact, `host-paths`), and neither are clio's own caches. And
 the facts are not on the line index, the `index-entries` objects or the contracts: those are budgeted to the byte
 (`ToolContractPayloadBudgetTests`) and ClioRing parses `index-entries`. A host asks once with `detail=facts`.
 

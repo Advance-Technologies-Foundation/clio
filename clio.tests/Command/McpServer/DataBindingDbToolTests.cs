@@ -105,12 +105,14 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	[TestCase(nameof(CreateDataBindingDbTool.CreateDataBindingDb))]
 	[TestCase(nameof(UpsertDataBindingRowDbTool.UpsertDataBindingRowDb))]
 	[TestCase(nameof(RemoveDataBindingRowDbTool.RemoveDataBindingRowDb))]
+	[TestCase(nameof(DeleteDataBindingDbTool.DeleteDataBindingDb))]
 	public void DataBindingDbTools_Should_Be_Marked_As_Destructive(string methodName) {
 		// Arrange
 		Type toolType = methodName switch {
 			nameof(CreateDataBindingDbTool.CreateDataBindingDb) => typeof(CreateDataBindingDbTool),
 			nameof(UpsertDataBindingRowDbTool.UpsertDataBindingRowDb) => typeof(UpsertDataBindingRowDbTool),
 			nameof(RemoveDataBindingRowDbTool.RemoveDataBindingRowDb) => typeof(RemoveDataBindingRowDbTool),
+			nameof(DeleteDataBindingDbTool.DeleteDataBindingDb) => typeof(DeleteDataBindingDbTool),
 			_ => throw new InvalidOperationException($"Unsupported method: {methodName}")
 		};
 		System.Reflection.MethodInfo method = toolType.GetMethod(methodName)!;
@@ -402,13 +404,134 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Advertises the stable delete-data-binding-db MCP tool name so tests and callers reuse the production constant.")]
+	public void DeleteDataBindingDb_Should_Advertise_Stable_Tool_Name() {
+		// Arrange & Act
+		string toolName = DeleteDataBindingDbTool.DeleteDataBindingDbToolName;
+
+		// Assert
+		toolName.Should().Be("delete-data-binding-db",
+			because: "the MCP DB tool name should remain stable for prompts, tests, and external callers");
+	}
+
+	[Test]
+	[Description("Declares delete-data-binding-db as a destructive, non-read-only, non-idempotent, closed-world MCP tool, because it removes a binding from the package on the environment.")]
+	public void DeleteDataBindingDb_Should_Declare_Safety_Hints() {
+		// Arrange
+		System.Reflection.MethodInfo method =
+			typeof(DeleteDataBindingDbTool).GetMethod(nameof(DeleteDataBindingDbTool.DeleteDataBindingDb))!;
+
+		// Act
+		McpServerToolAttribute attribute = method
+			.GetCustomAttributes(typeof(McpServerToolAttribute), inherit: false)
+			.Cast<McpServerToolAttribute>()
+			.Single();
+
+		// Assert
+		attribute.Name.Should().Be(DeleteDataBindingDbTool.DeleteDataBindingDbToolName,
+			because: "the method must be registered under the production tool-name constant");
+		attribute.ReadOnly.Should().BeFalse(
+			because: "the tool removes a binding from the package");
+		attribute.Destructive.Should().BeTrue(
+			because: "deleting a binding removes something from the package that the next export no longer ships");
+		attribute.Idempotent.Should().BeFalse(
+			because: "a second call fails because the binding is already gone");
+		attribute.OpenWorld.Should().BeFalse(
+			because: "the tool talks only to the named Creatio environment");
+	}
+
+	[Test]
+	[Description("Returns failure result from delete-data-binding-db when environment-name is empty, matching the DB-first command-layer validation guard.")]
+	public void DeleteDataBindingDb_Should_Return_Failure_Without_Environment() {
+		// Arrange
+		// Resolve before configuring the substitute: building the command calls other substitutes, and NSubstitute
+		// must not see those calls inside Returns().
+		DeleteDataBindingDbCommand resolvedCommand = Container.GetRequiredService<DeleteDataBindingDbCommand>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<DeleteDataBindingDbCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		DeleteDataBindingDbTool tool = new(
+			Container.GetRequiredService<DeleteDataBindingDbCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.DeleteDataBindingDb(new DeleteDataBindingDbArgs(
+			EnvironmentName: string.Empty,
+			PackageName: PackageName,
+			BindingName: "SysSettings"));
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "delete-data-binding-db requires a remote environment and should fail gracefully without one");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("DeletePackageSchemaDataRequest")),
+			Arg.Any<string>(),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Maps delete-data-binding-db arguments into the environment-aware command resolver.")]
+	public void DeleteDataBindingDb_Should_Map_All_Arguments() {
+		// Arrange
+		FakeDeleteDataBindingDbCommand defaultCommand = new();
+		FakeDeleteDataBindingDbCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<DeleteDataBindingDbCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(resolvedCommand);
+		DeleteDataBindingDbTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.DeleteDataBindingDb(new DeleteDataBindingDbArgs(
+			EnvironmentName: "dev",
+			PackageName: PackageName,
+			BindingName: "UsrRemoteBinding"));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "delete-data-binding-db should forward a valid delete request through the resolved command");
+		defaultCommand.CapturedOptions.Should().BeNull(
+			because: "the environment-aware tool should execute the resolved command instance");
+		resolvedCommand.CapturedOptions.Should().NotBeNull(
+			because: "the resolved command should receive the mapped delete options");
+		resolvedCommand.CapturedOptions!.Environment.Should().Be("dev",
+			because: "the requested environment must be preserved");
+		resolvedCommand.CapturedOptions.PackageName.Should().Be(PackageName,
+			because: "the requested package must be preserved");
+		resolvedCommand.CapturedOptions.BindingName.Should().Be("UsrRemoteBinding",
+			because: "the target binding name must be preserved");
+	}
+
+	[Test]
+	[Description("Prompt guidance for delete-data-binding-db names the tool, says the records stay in the table, and points to remove-data-binding-row-db for deleting a live record.")]
+	public void DeleteDataBindingDbPrompt_Should_Say_The_Records_Stay() {
+		// Arrange & Act
+		string prompt = DataBindingDbPrompt.DeleteDataBindingDb("dev", PackageName, "UsrRemoteBinding");
+
+		// Assert
+		prompt.Should().Contain($"`{DeleteDataBindingDbTool.DeleteDataBindingDbToolName}`",
+			because: "the prompt must name the tool to call");
+		prompt.Should().Contain("`UsrRemoteBinding`",
+			because: "the prompt must carry the binding to delete");
+		prompt.Should().Contain("stay in the table",
+			because: "an agent must know the tool does not delete the bound records");
+		prompt.Should().Contain($"`{RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName}`",
+			because: "the prompt must point to the tool that deletes a live record");
+		prompt.Should().Contain("read back from Creatio",
+			because: "the prompt should require remote read-back instead of trusting mutation intent");
+	}
+
+	[Test]
 	[Description("Prompt guidance for every DB-first data-binding tool tells agents that in file system development mode the change reaches the database only and names pkg-to-file-system as the step that writes it to the package folder (GitHub #1747).")]
 	public void DataBindingDbPrompt_Should_Name_The_File_System_Export_For_File_Design_Mode() {
 		// Arrange & Act
 		string[] prompts = [
 			DataBindingDbPrompt.CreateDataBindingDb("dev", PackageName, "SysSettings"),
 			DataBindingDbPrompt.UpsertDataBindingRowDb("dev", PackageName, "SysSettings", """{"Name":"x"}"""),
-			DataBindingDbPrompt.RemoveDataBindingRowDb("dev", PackageName, "SysSettings", ExistingRowId.ToString())
+			DataBindingDbPrompt.RemoveDataBindingRowDb("dev", PackageName, "SysSettings", ExistingRowId.ToString()),
+			DataBindingDbPrompt.DeleteDataBindingDb("dev", PackageName, "SysSettings")
 		];
 
 		// Assert
@@ -514,6 +637,19 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 		}
 
 		public override int Execute(RemoveDataBindingRowDbOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeDeleteDataBindingDbCommand : DeleteDataBindingDbCommand {
+		public DeleteDataBindingDbOptions CapturedOptions { get; private set; }
+
+		public FakeDeleteDataBindingDbCommand()
+			: base(Substitute.For<IDataBindingDbService>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(DeleteDataBindingDbOptions options) {
 			CapturedOptions = options;
 			return 0;
 		}

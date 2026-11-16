@@ -69,7 +69,7 @@ file is also one place to review every tool's facts side by side, and its shape 
 Two things are deliberately not effects: writing a file or folder the call names in an argument (a
 `get-...-to-file` tool that only reads the environment is a `read`), and clio's own caches and working files (page
 baselines, the browser-session cache, logs, the telemetry outbox). Which arguments name a file on the host, and
-whether clio reads or writes it, is a fact of its own, per argument; it is out of scope here (see Consequences).
+whether clio reads or writes it, is a fact of its own, per argument (D8).
 
 ### D2. The tool's facts are the widest; argument entries only narrow them
 
@@ -151,6 +151,81 @@ inferred from names. Host-side name lists were used only as a cross-check; where
 `confirm` / `confirmed` flags. A narrowing that needs two arguments, or a member of a nested array
 (`sync-schemas` `operations[].type`), is not declared: the tool's widest facts apply.
 
+### D8. Host paths: which arguments name a file or folder on this machine
+
+clio's MCP server runs on the person's machine as that person, outside any sandbox the host keeps its agent in. An
+argument such as `output-file` therefore lets the agent write where its sandbox would not. A host closes that by
+keeping every such path inside the folder it allows, and to do it the host has to know which arguments are paths.
+Hosts guessed from the argument's name (`...path`, `...file`, `...folder`), which is wrong both ways: `set-logo`'s
+`logo` is a local image, and `get-package-file`'s `file-path` is a path inside a package on the environment.
+
+So a tool's entry may carry two more lists:
+
+```json
+"host-paths": [
+  { "argument": "repoPath", "kind": "folder", "access": "read" },
+  { "argument": "environmentName", "kind": "folder", "access": "read-write", "or": "name" }
+],
+"not-host-paths": [
+  { "argument": "file-path", "why": "a path inside a package on the environment" }
+]
+```
+
+- **`host-paths`**: every argument whose value directs clio to a file or folder on this machine, whatever it is
+  called. The value is a full path or a path relative to clio's working folder.
+  - `kind`: `file`, `folder` (with everything below it) or `file-or-folder`.
+  - `access`, the widest clio does there: `read`; `write` (creates or replaces what the path names and reads nothing
+    that was there); `read-write` (reads and writes, or deletes there; also a folder clio only stores, for later
+    calls to read and write in, as `reg-web-app` does).
+  - `list: true`: the value holds several paths, as a JSON array (`read-wsdl` `wsdl-files`) or as one string
+    separated by commas (`add-package` `build-zip-path`).
+  - `or`: what the value may be instead of a path, which clio tells apart by the value's look: `name` (a registered
+    environment, for the `link-from-repository-*` tools) or `url` (`install-toolkit` `repo`). A host that cannot
+    tell treats the value as a path.
+- **`not-host-paths`**: every argument whose name reads like a path and whose value is not one here, with what it
+  is instead. It is published, so a host that still guesses by name has clio's answer for each name it would
+  guess on.
+
+Both are published with the other facts (D3), only when the tool has them; a tool with neither publishes exactly
+what it published before. Argument names are as the caller writes them: inside `args` for an args-record tool.
+
+What is deliberately not a host path:
+
+- a plain name clio itself validates (no separator, no `..`, not rooted) and joins beneath a declared folder or a
+  folder of its own: a package or binding name under `workspace-path`, `manage-user`'s `password-file` under
+  clio's secrets folder. The folder it sits under is the declared path, and keeping the name inside it is clio's
+  job, not the host's;
+- content: a body, a script, a JSON value. One nested case reaches the disk and stays confined by clio: an image
+  column's value in a data binding may be a file path, which clio reads only inside `workspace-path`;
+- a nested member of an array or object (`rules[].condition...path` is a column path). Only top-level arguments and
+  the members of an `args` record are declared.
+
+What these facts do not say, and a host has to know:
+
+- **A folder clio is given is only as confined as the path itself.** clio keeps what it writes below
+  `workspace-path`, but it follows the path it was given: the host resolves links in the path and its ancestors
+  before deciding the path is inside its folder.
+- **An omitted path argument.** Where clio reads or writes when the argument is left out is not declared. Most
+  optional paths then touch no file. Some fall back to a place the caller did not name: the workspace root above
+  clio's working folder or the working folder itself (`get-page`, `sync-pages`, `update-page`, `export-schema`,
+  `export-component-registry`, `get-classic-page-sources`, `generate-process-model`); a folder from clio's settings
+  (`create-workspace`, `restore-db-by-credentials`, `restore-db-by-environment`); a folder beside the environment
+  (`deploy-identity`). A host that owns clio's working folder covers the first group.
+- **Names clio does not confine yet.** The review found arguments that are meant as names and are joined into a
+  path without a check, so `..` or a rooted value leaves the folder: `package-name` of `new-test-project` and
+  `create-user-task`; `schema-name` of `update-page`, `sync-pages` and `localize-page` (the page baseline folder);
+  `packages` and the package names an environment returns in the `link-from-repository-*` tools; the last segment
+  of a `repo` URL in `install-toolkit` / `update-toolkit` (cursor); `identitySiteName` and, without `zipFile`,
+  `identityArchivePathInBundle` of `deploy-identity`. Each is a defect to fix in clio, not a host path to declare:
+  declaring them would make the defect the contract.
+
+The guard (D6) also fails when a tool has an argument whose name reads like a path (`path` or `file` anywhere; a
+trailing `dir`, `directory`, `folder`, `destination`, `location` or `zip`) declared in neither list; when a
+declaration names an argument the tool does not take, is made twice or both ways; when a host path leaves out or
+misspells its `kind` or `access`, or names an alternative other than `name` or `url`; and when a `not-host-paths`
+entry gives no `why`. The name pattern only catches a new look-alike. A path under another name (`logo`, `repo`,
+`name`) is found by reading the code, as all of them were: 85 host paths on 66 tools, 10 look-alikes.
+
 ## Alternatives considered
 
 - **Derive the facts from the name or the hints.** That is what hosts do today, and it is the problem.
@@ -169,6 +244,6 @@ inferred from names. Host-side name lists were used only as a cross-check; where
 - A host can classify any call of any current tool from clio's output alone, and a new clio tool works in a host
   the day it ships.
 - Adding a tool now means declaring its facts; the coverage test says so by name.
-- Follow-ups, each its own change: per-argument facts for arguments that name a file or folder on the host (kind,
-  read or write); a guide in the knowledge library that needs a newer clio than the one serving it saying so up
-  front.
+- Follow-ups, each its own change: confining the names D8 lists as not confined yet; saying where an omitted path
+  argument falls back to; a guide in the knowledge library that needs a newer clio than the one serving it saying
+  so up front.

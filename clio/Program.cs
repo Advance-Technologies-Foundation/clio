@@ -308,6 +308,7 @@ internal class Program {
 		typeof(RegenerateIdentitySigningKeyOptions),
 		typeof(CheckAuthCodeFlowOptions),
 		typeof(RegisterSsoProviderOptions),
+		typeof(DeleteDataBindingDbOptions),
 
 
 	];
@@ -647,6 +648,7 @@ internal class Program {
 			CreateDataBindingDbOptions opts => Resolve<CreateDataBindingDbCommand>(opts).Execute(opts),
 			UpsertDataBindingRowDbOptions opts => Resolve<UpsertDataBindingRowDbCommand>(opts).Execute(opts),
 			RemoveDataBindingRowDbOptions opts => Resolve<RemoveDataBindingRowDbCommand>(opts).Execute(opts),
+			DeleteDataBindingDbOptions opts => Resolve<DeleteDataBindingDbCommand>(opts).Execute(opts),
 			UnlockPackageOptions opts => Resolve<UnlockPackageCommand>(opts).Execute(opts),
 			LockPackageOptions opts => Resolve<LockPackageCommand>(opts).Execute(opts),
 			DataServiceQueryOptions opts => Resolve<DataServiceQuery>(opts).Execute(opts),
