@@ -22,7 +22,7 @@ public class CreateUserTaskTool(
 	/// <summary>
 	/// Creates a workspace-owned user task and optionally adds initial parameters.
 	/// </summary>
-	[McpServerTool(Name = CreateUserTaskToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = CreateUserTaskToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,

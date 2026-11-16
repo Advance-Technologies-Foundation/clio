@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using Clio.Command.Administration;
 using Clio.Common;
@@ -15,13 +16,16 @@ public sealed class AdministrationPasswordReferenceTests : BaseCommandTests<Mana
 	private IAdministrationService _administration;
 	private ILogger _logger;
 	private ManageUserCommand _command;
+	private string _secretsFolder;
 
 	protected override void AdditionalRegistrations(IServiceCollection services) {
 		base.AdditionalRegistrations(services);
 		_administration = Substitute.For<IAdministrationService>();
 		_logger = Substitute.For<ILogger>();
+		_secretsFolder = Path.Combine(Path.GetTempPath(), "clio-admin-secrets-" + Guid.NewGuid().ToString("N"));
 		services.AddSingleton(_administration);
 		services.AddSingleton(_logger);
+		services.AddSingleton<IClioSecretFileReader>(new ClioSecretFileReader(_secretsFolder));
 	}
 
 	[SetUp]
@@ -30,7 +34,81 @@ public sealed class AdministrationPasswordReferenceTests : BaseCommandTests<Mana
 	public override void TearDown() {
 		_administration.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+		if (Directory.Exists(_secretsFolder)) {
+			Directory.Delete(_secretsFolder, recursive: true);
+		}
 		base.TearDown();
+	}
+
+	private void WriteSecret(string name, string content) {
+		Directory.CreateDirectory(_secretsFolder);
+		string path = Path.Combine(_secretsFolder, name);
+		File.WriteAllText(path, content);
+		if (!OperatingSystem.IsWindows()) {
+			File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+		}
+	}
+
+	[TestCase("password")]
+	[TestCase("create")]
+	[Description("A password file named by reference is read at call time, passed without its trailing line break and never echoed.")]
+	public void Execute_AcceptsPasswordFile(string action) {
+		// Arrange
+		const string password = " file-held-password ";
+		WriteSecret("demo-users", password + "\n");
+		_administration.CreateUser(default, default, default, default, default, default).ReturnsForAnyArgs(
+			System.Text.Json.JsonDocument.Parse("{\"created\":true}").RootElement);
+		ManageUserOptions options = new() {
+			Action = action, Id = Guid.NewGuid(), UserLogin = "demo", ContactId = Guid.NewGuid(),
+			PasswordFile = "demo-users", Confirm = true
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the host placed an owner-only file under the name it gave");
+		object[] arguments = _administration.ReceivedCalls().Should().ContainSingle(because: "one account mutation is expected")
+			.Which.GetArguments();
+		arguments.Should().Contain(password, because: "the service must receive the file's content without the trailing line break");
+		Output().Should().NotContain(password.Trim(), because: "the secret must not appear in command output");
+	}
+
+	[Test]
+	[Description("Naming both password channels is refused before anything is read or sent.")]
+	public void Execute_RejectsBothPasswordReferences() {
+		// Arrange
+		WriteSecret("demo-users", "file-held-password");
+		ManageUserOptions options = new() {
+			Action = "password", Id = Guid.NewGuid(), PasswordFile = "demo-users",
+			PasswordEnvironmentVariable = "CLIO_ADMIN_PASSWORD_DEMO", Confirm = true
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "two references leave it ambiguous which password the caller meant");
+		_administration.ReceivedCalls().Should().BeEmpty(because: "nothing may be sent when the reference is ambiguous");
+		Output().Should().Be(ManageUserCommand.BothReferencesMessage, because: "the refusal must say how to fix the call");
+	}
+
+	[TestCase("missing", "was not found")]
+	[TestCase("../outside", "password-file must be the name of a file")]
+	[Description("A password file clio cannot vouch for is refused before the service is called, and the refusal says why.")]
+	public void Execute_RefusesAPasswordFileItCannotRead(string reference, string fragment) {
+		// Arrange
+		ManageUserOptions options = new() {
+			Action = "password", Id = Guid.NewGuid(), PasswordFile = reference, Confirm = true
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a missing or invalid reference must fail closed");
+		_administration.ReceivedCalls().Should().BeEmpty(because: "no account mutation may run without the password");
+		Output().Should().Contain(fragment, because: "the refusal must name what is wrong with the reference");
 	}
 
 	[TestCase(null)]

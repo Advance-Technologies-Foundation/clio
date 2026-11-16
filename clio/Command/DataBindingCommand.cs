@@ -1,4 +1,6 @@
 using System;
+using System.Buffers;
+using System.Buffers.Text;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -6,6 +8,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.Common.EntitySchema;
@@ -19,22 +22,22 @@ namespace Clio.Command;
 /// </summary>
 [Verb("create-data-binding", HelpText = "Create or regenerate a package data binding")]
 public class CreateDataBindingOptions : EnvironmentOptions {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = true, HelpText = "Target package name: a plain folder name under packages/")]
 	public string PackageName { get; set; } = string.Empty;
 
 	[Option("schema", Required = true, HelpText = "Entity schema name")]
 	public string SchemaName { get; set; } = string.Empty;
 
-	[Option("binding-name", Required = false, HelpText = "Binding folder name")]
+	[Option("binding-name", Required = false, HelpText = "Binding folder name: a plain folder name under the package Data folder")]
 	public string? BindingName { get; set; }
 
 	[Option("install-type", Required = false, Default = 0, HelpText = "Descriptor install type")]
 	public int InstallType { get; set; }
 
-	[Option("values", Required = false, HelpText = "Row values as JSON object keyed by column name. Lookup and image-reference columns may use {\"value\":\"...\",\"displayValue\":\"...\"}; if displayValue is omitted, create-data-binding resolves it from Creatio when runtime lookup data is available. Image content columns accept either a base64 string or a local file path to encode")]
+	[Option("values", Required = false, HelpText = "Row values as JSON object keyed by column name. Lookup and image-reference columns may use {\"value\":\"...\",\"displayValue\":\"...\"}; if displayValue is omitted, create-data-binding resolves it from Creatio when runtime lookup data is available. Image content columns accept either a base64 string or a path to a file inside the workspace to encode")]
 	public string? ValuesJson { get; set; }
 
-	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
+	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture name (for example en-US) and column name")]
 	public string? LocalizationsJson { get; set; }
 
 	/// <summary>Gets or sets the workspace root containing the .clio/workspaceSettings.json marker.</summary>
@@ -47,16 +50,16 @@ public class CreateDataBindingOptions : EnvironmentOptions {
 /// </summary>
 [Verb("add-data-binding-row", HelpText = "Add or replace a row in a package data binding")]
 public class AddDataBindingRowOptions {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = true, HelpText = "Target package name: a plain folder name under packages/")]
 	public string PackageName { get; set; } = string.Empty;
 
-	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
+	[Option("binding-name", Required = true, HelpText = "Binding folder name: a plain folder name under the package Data folder")]
 	public string BindingName { get; set; } = string.Empty;
 
-	[Option("values", Required = true, HelpText = "Row values as JSON object keyed by column name. Non-null lookup and image-reference columns should use {\"value\":\"...\",\"displayValue\":\"...\"}. Image content columns accept either a base64 string or a local file path to encode")]
+	[Option("values", Required = true, HelpText = "Row values as JSON object keyed by column name. Non-null lookup and image-reference columns should use {\"value\":\"...\",\"displayValue\":\"...\"}. Image content columns accept either a base64 string or a path to a file inside the workspace to encode")]
 	public string ValuesJson { get; set; } = string.Empty;
 
-	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture and column name")]
+	[Option("localizations", Required = false, HelpText = "Localized values as JSON object keyed by culture name (for example en-US) and column name")]
 	public string? LocalizationsJson { get; set; }
 
 	/// <summary>Gets or sets the workspace root containing the .clio/workspaceSettings.json marker.</summary>
@@ -69,10 +72,10 @@ public class AddDataBindingRowOptions {
 /// </summary>
 [Verb("remove-data-binding-row", HelpText = "Remove a row from a package data binding")]
 public class RemoveDataBindingRowOptions {
-	[Option("package", Required = true, HelpText = "Target package name")]
+	[Option("package", Required = true, HelpText = "Target package name: a plain folder name under packages/")]
 	public string PackageName { get; set; } = string.Empty;
 
-	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
+	[Option("binding-name", Required = true, HelpText = "Binding folder name: a plain folder name under the package Data folder")]
 	public string BindingName { get; set; } = string.Empty;
 
 	[Option("key-value", Required = true, HelpText = "Primary-key value of the row to delete")]
@@ -189,6 +192,17 @@ internal interface IDataBindingSerializer {
 }
 
 internal interface IDataBindingValueConverter {
+	/// <summary>Converts a JSON value to the CLR value a binding row stores for the column's data type.</summary>
+	/// <param name="valueNode">The JSON value.</param>
+	/// <param name="dataTypeUId">The column's data type.</param>
+	/// <param name="columnName">The column name, for messages.</param>
+	/// <param name="allowEmptyString">Whether an empty string is a valid value.</param>
+	/// <param name="fileBasePath">
+	/// The workspace root. For an image-content column a value that names an existing file strictly inside it, reached
+	/// through no link, is replaced by that file's bytes in base64. A path outside it is refused unless the value is
+	/// valid base64. <see langword="null"/> reads no file at all.
+	/// </param>
+	/// <returns>The converted value.</returns>
 	object? ConvertValue(
 		JsonNode? valueNode,
 		Guid dataTypeUId,
@@ -213,11 +227,15 @@ internal sealed class DataBindingService(
 	IDataBindingDisplayValueResolver displayValueResolver,
 	IWorkspacePathBuilder workspacePathBuilder,
 	IFileSystem fileSystem) : IDataBindingService {
+	private const string PackagesFolderName = "packages";
 	private const string DataFolderName = "Data";
 	private const string LocalizationFolderName = "Localization";
 	private const string DescriptorFileName = "descriptor.json";
 	private const string DataFileName = "data.json";
 	private const string FilterFileName = "filter.json";
+	private const string PackageNameLabel = "Package name";
+	private const string BindingNameLabel = "Binding name";
+	private const string DefaultBindingNameLabel = "Binding name (the schema name when binding-name is omitted)";
 
 	public void CreateBinding(CreateDataBindingOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -225,12 +243,10 @@ internal sealed class DataBindingService(
 
 		string workspaceRoot = ResolveWorkspaceRoot(options.WorkspacePath);
 		string packagePath = ResolvePackagePath(workspaceRoot, options.PackageName);
-		DataBindingSchema schema = schemaResolver.Resolve(options.SchemaName);
-
-		string bindingName = string.IsNullOrWhiteSpace(options.BindingName)
-			? options.SchemaName
-			: options.BindingName.Trim();
+		string bindingName = ResolveCreateBindingName(options);
 		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
+		EnsureBindingFilesConfined(workspaceRoot, bindingDirectoryPath);
+		DataBindingSchema schema = schemaResolver.Resolve(options.SchemaName);
 
 		DataBindingDescriptorFile? existingDescriptor = TryReadDescriptor(bindingDirectoryPath);
 		if (existingDescriptor is not null &&
@@ -274,9 +290,12 @@ internal sealed class DataBindingService(
 
 		string descriptorContent = serializer.SerializeDescriptor(descriptor);
 		string dataContent = serializer.SerializePackageData(dataFile);
+		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
 		Dictionary<string, string> localizationFiles = BuildLocalizationFiles(
-			schema, dataFile, localizations, createTemplateDefault: isTemplate,
-			descriptorColumns, valueFileBasePath: workspaceRoot);
+				schema, dataFile, localizations, createTemplateDefault: isTemplate,
+				descriptorColumns, valueFileBasePath: workspaceRoot)
+			.ToDictionary(file => fileSystem.Combine(localizationDirectoryPath, file.Key), file => file.Value);
+		EnsureWriteTargetsConfined(workspaceRoot, bindingDirectoryPath, localizationFiles.Keys);
 
 		fileSystem.CreateDirectoryIfNotExists(fileSystem.Combine(packagePath, DataFolderName));
 		fileSystem.CreateDirectoryIfNotExists(bindingDirectoryPath);
@@ -284,12 +303,9 @@ internal sealed class DataBindingService(
 		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName), dataContent);
 		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, FilterFileName), string.Empty);
 
-		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
 		fileSystem.DeleteDirectoryIfExists(localizationDirectoryPath);
 		fileSystem.CreateDirectoryIfNotExists(localizationDirectoryPath);
-		foreach ((string fileName, string content) in localizationFiles) {
-			fileSystem.WriteAllTextToFile(fileSystem.Combine(localizationDirectoryPath, fileName), content);
-		}
+		WriteFiles(localizationFiles);
 	}
 
 	public void AddOrUpdateRow(AddDataBindingRowOptions options) {
@@ -321,10 +337,16 @@ internal sealed class DataBindingService(
 		else {
 			dataFile.PackageData.Add(newRow);
 		}
+		Dictionary<string, string> localizationFiles = BuildLocalizationFilesForRow(
+			workspaceRoot, bindingDirectoryPath, runtimeDescriptor, key, localizations);
+		EnsureWriteTargetsConfined(workspaceRoot, bindingDirectoryPath, localizationFiles.Keys);
 
 		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName),
 			serializer.SerializePackageData(dataFile));
-		UpdateLocalizationFilesForRow(bindingDirectoryPath, runtimeDescriptor, key, localizations, workspaceRoot);
+		if (localizationFiles.Count > 0) {
+			fileSystem.CreateDirectoryIfNotExists(fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName));
+		}
+		WriteFiles(localizationFiles);
 	}
 
 	public void RemoveRow(RemoveDataBindingRowOptions options) {
@@ -347,9 +369,15 @@ internal sealed class DataBindingService(
 		}
 
 		dataFile.PackageData.RemoveAt(rowIndex);
+		IReadOnlyList<string> existingLocalizationFiles = ListLocalizationFiles(bindingDirectoryPath);
+		EnsureConfined(workspaceRoot, existingLocalizationFiles);
+		Dictionary<string, string> localizationFiles =
+			BuildLocalizationFilesWithoutRow(existingLocalizationFiles, runtimeDescriptor, normalizedKeyValue);
+		EnsureWriteTargetsConfined(workspaceRoot, bindingDirectoryPath, localizationFiles.Keys);
+
 		fileSystem.WriteAllTextToFile(fileSystem.Combine(bindingDirectoryPath, DataFileName),
 			serializer.SerializePackageData(dataFile));
-		RemoveLocalizationRows(bindingDirectoryPath, runtimeDescriptor, normalizedKeyValue);
+		WriteFiles(localizationFiles);
 	}
 
 	private void ValidateCreateOptions(CreateDataBindingOptions options) {
@@ -368,7 +396,13 @@ internal sealed class DataBindingService(
 		if (options.InstallType is < 0 or > 3) {
 			throw new InvalidOperationException("--install-type must be between 0 and 3.");
 		}
+		DataBindingPathGuard.RequirePlainName(options.PackageName, PackageNameLabel);
+		DataBindingPathGuard.RequirePlainName(ResolveCreateBindingName(options),
+			string.IsNullOrWhiteSpace(options.BindingName) ? DefaultBindingNameLabel : BindingNameLabel);
 	}
+
+	private static string ResolveCreateBindingName(CreateDataBindingOptions options) =>
+		string.IsNullOrWhiteSpace(options.BindingName) ? options.SchemaName : options.BindingName.Trim();
 
 	private static void ValidateAddOptions(AddDataBindingRowOptions options) {
 		if (string.IsNullOrWhiteSpace(options.PackageName)) {
@@ -380,6 +414,8 @@ internal sealed class DataBindingService(
 		if (string.IsNullOrWhiteSpace(options.ValuesJson)) {
 			throw new InvalidOperationException("--values is required.");
 		}
+		DataBindingPathGuard.RequirePlainName(options.PackageName, PackageNameLabel);
+		DataBindingPathGuard.RequirePlainName(options.BindingName, BindingNameLabel);
 	}
 
 	private static void ValidateRemoveOptions(RemoveDataBindingRowOptions options) {
@@ -392,6 +428,8 @@ internal sealed class DataBindingService(
 		if (string.IsNullOrWhiteSpace(options.KeyValue)) {
 			throw new InvalidOperationException("--key-value is required.");
 		}
+		DataBindingPathGuard.RequirePlainName(options.PackageName, PackageNameLabel);
+		DataBindingPathGuard.RequirePlainName(options.BindingName, BindingNameLabel);
 	}
 
 	private string ResolveWorkspaceRoot(string? explicitWorkspacePath) {
@@ -414,7 +452,8 @@ internal sealed class DataBindingService(
 	}
 
 	private string ResolvePackagePath(string workspaceRoot, string packageName) {
-		string packagePath = fileSystem.Combine(workspaceRoot, "packages", packageName);
+		string packagePath = fileSystem.Combine(workspaceRoot, PackagesFolderName, packageName);
+		EnsureConfined(workspaceRoot, [packagePath]);
 		if (!fileSystem.ExistsDirectory(packagePath)) {
 			throw new InvalidOperationException($"Package directory not found: {packagePath}");
 		}
@@ -425,11 +464,63 @@ internal sealed class DataBindingService(
 	private string ResolveBindingDirectory(string workspaceRoot, string packageName, string bindingName) {
 		string packagePath = ResolvePackagePath(workspaceRoot, packageName);
 		string bindingDirectoryPath = fileSystem.Combine(packagePath, DataFolderName, bindingName);
+		EnsureBindingFilesConfined(workspaceRoot, bindingDirectoryPath);
 		if (!fileSystem.ExistsDirectory(bindingDirectoryPath)) {
 			throw new InvalidOperationException($"Binding directory not found: {bindingDirectoryPath}");
 		}
 
 		return bindingDirectoryPath;
+	}
+
+	private IEnumerable<string> GetBindingFilePaths(string bindingDirectoryPath) => [
+		fileSystem.Combine(bindingDirectoryPath, DescriptorFileName),
+		fileSystem.Combine(bindingDirectoryPath, DataFileName),
+		fileSystem.Combine(bindingDirectoryPath, FilterFileName),
+		fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName)
+	];
+
+	private void EnsureBindingFilesConfined(string workspaceRoot, string bindingDirectoryPath) =>
+		EnsureConfined(workspaceRoot, GetBindingFilePaths(bindingDirectoryPath));
+
+	// Run again right before the first write, after the schema fetch, the image reads and the reads of the existing
+	// culture files, so a link swapped in during that time is still refused. Only the last few system calls before
+	// each write remain unchecked.
+	private void EnsureWriteTargetsConfined(string workspaceRoot, string bindingDirectoryPath,
+		IEnumerable<string> localizationFilePaths) =>
+		EnsureConfined(workspaceRoot, GetBindingFilePaths(bindingDirectoryPath).Concat(localizationFilePaths));
+
+	/// <summary>
+	/// Refuses a path that leaves <c>&lt;workspace&gt;/packages</c> or passes through a link anywhere below the
+	/// workspace root, the <c>packages</c> folder included.
+	/// </summary>
+	/// <remarks>
+	/// The names were validated already; the lexical check still holds if a later change lets a separator through.
+	/// The link check is the one only the file system can answer: a link planted inside the workspace would carry a
+	/// write, the recursive Localization delete or a read out of it. Unlike the nuget2dll writes, <c>packages</c> is
+	/// probed too: the workspace path is an argument of the MCP caller, who can create that link as easily as any
+	/// other. Only the workspace root and its ancestors are trusted, because they are what the caller named.
+	/// </remarks>
+	private void EnsureConfined(string workspaceRoot, IEnumerable<string> paths) {
+		string fullWorkspaceRoot = fileSystem.GetFullPath(workspaceRoot);
+		string packagesRoot = fileSystem.Combine(fullWorkspaceRoot, PackagesFolderName);
+		foreach (string path in paths) {
+			string fullPath = fileSystem.GetFullPath(path);
+			if (!DataBindingPathGuard.IsStrictlyInside(packagesRoot, fullPath)) {
+				throw new InvalidOperationException(
+					$"Data binding path must stay inside the workspace packages folder '{packagesRoot}': {fullPath}");
+			}
+			if (fileSystem.HasLinkWithin(fullWorkspaceRoot, fullPath)) {
+				throw new InvalidOperationException(
+					$"Data binding path resolves through a symbolic link or a junction: {fullPath}. " +
+					"Refusing to read or write through it; replace the link with a real folder or file.");
+			}
+		}
+	}
+
+	private void WriteFiles(IReadOnlyDictionary<string, string> files) {
+		foreach ((string filePath, string content) in files) {
+			fileSystem.WriteAllTextToFile(filePath, content);
+		}
 	}
 
 	private DataBindingDescriptorFile? TryReadDescriptor(string bindingDirectoryPath) {
@@ -506,6 +597,7 @@ internal sealed class DataBindingService(
 
 		Dictionary<string, Dictionary<string, JsonNode?>> result = new(StringComparer.OrdinalIgnoreCase);
 		foreach ((string culture, JsonNode? cultureNode) in culturesObject) {
+			DataBindingPathGuard.RequireCultureName(culture);
 			if (cultureNode is not JsonObject valuesObject) {
 				throw new InvalidOperationException(
 					$"--localizations entry '{culture}' must be a JSON object keyed by column name.");
@@ -854,31 +946,28 @@ internal sealed class DataBindingService(
 		return files;
 	}
 
-	private void UpdateLocalizationFilesForRow(
+	// Builds the new content of every culture file the row touches before anything is written: the existing files are
+	// read and the localized values converted (an image path among them may be refused) while every file is intact.
+	private Dictionary<string, string> BuildLocalizationFilesForRow(
+		string workspaceRoot,
 		string bindingDirectoryPath,
 		DataBindingRuntimeDescriptor descriptor,
 		string normalizedKey,
-		Dictionary<string, Dictionary<string, JsonNode?>>? localizations,
-		string? valueFileBasePath = null) {
-		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
-		if (!fileSystem.ExistsDirectory(localizationDirectoryPath)) {
-			if (localizations is null) {
-				return;
-			}
-
-			fileSystem.CreateDirectoryIfNotExists(localizationDirectoryPath);
-		}
-
+		Dictionary<string, Dictionary<string, JsonNode?>>? localizations) {
+		Dictionary<string, string> files = new(StringComparer.OrdinalIgnoreCase);
 		if (localizations is null) {
-			return;
+			return files;
 		}
 
-		foreach ((string culture, Dictionary<string, JsonNode?> cultureValues) in localizations) {
-			string culturePath = fileSystem.Combine(localizationDirectoryPath, $"data.{culture}.json");
+		Dictionary<string, Dictionary<string, JsonNode?>> culturesByPath = localizations.ToDictionary(
+			culture => GetCultureFilePath(bindingDirectoryPath, culture.Key), culture => culture.Value,
+			StringComparer.OrdinalIgnoreCase);
+		EnsureConfined(workspaceRoot, culturesByPath.Keys);
+		foreach ((string culturePath, Dictionary<string, JsonNode?> cultureValues) in culturesByPath) {
 			DataBindingPackageDataFile localizationFile = fileSystem.ExistsFile(culturePath)
 				? JsonSerializer.Deserialize<DataBindingPackageDataFile>(fileSystem.ReadAllText(culturePath), DataBindingJson.Options) ?? new DataBindingPackageDataFile()
 				: new DataBindingPackageDataFile();
-			DataBindingRow localizedRow = BuildLocalizationRow(descriptor, normalizedKey, cultureValues, valueFileBasePath);
+			DataBindingRow localizedRow = BuildLocalizationRow(descriptor, normalizedKey, cultureValues, workspaceRoot);
 			int existingIndex = FindRowIndex(localizationFile.PackageData, descriptor, normalizedKey);
 			if (existingIndex >= 0) {
 				localizationFile.PackageData[existingIndex] = localizedRow;
@@ -887,17 +976,26 @@ internal sealed class DataBindingService(
 				localizationFile.PackageData.Add(localizedRow);
 			}
 
-			fileSystem.WriteAllTextToFile(culturePath, serializer.SerializePackageData(localizationFile));
+			files[culturePath] = serializer.SerializePackageData(localizationFile);
 		}
+		return files;
 	}
 
-	private void RemoveLocalizationRows(string bindingDirectoryPath, DataBindingRuntimeDescriptor descriptor, string normalizedKeyValue) {
+	private IReadOnlyList<string> ListLocalizationFiles(string bindingDirectoryPath) {
 		string localizationDirectoryPath = fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName);
-		if (!fileSystem.ExistsDirectory(localizationDirectoryPath)) {
-			return;
-		}
+		return fileSystem.ExistsDirectory(localizationDirectoryPath)
+			? fileSystem.GetFiles(localizationDirectoryPath, "data.*.json", SearchOption.TopDirectoryOnly)
+			: [];
+	}
 
-		foreach (string filePath in fileSystem.GetFiles(localizationDirectoryPath, "data.*.json", SearchOption.TopDirectoryOnly)) {
+	private string GetCultureFilePath(string bindingDirectoryPath, string culture) =>
+		fileSystem.Combine(bindingDirectoryPath, LocalizationFolderName, $"data.{culture}.json");
+
+	// The new content of every culture file that holds the removed row, built before anything is written.
+	private Dictionary<string, string> BuildLocalizationFilesWithoutRow(
+		IEnumerable<string> localizationFiles, DataBindingRuntimeDescriptor descriptor, string normalizedKeyValue) {
+		Dictionary<string, string> files = new(StringComparer.OrdinalIgnoreCase);
+		foreach (string filePath in localizationFiles) {
 			DataBindingPackageDataFile? localizationFile = JsonSerializer.Deserialize<DataBindingPackageDataFile>(
 				fileSystem.ReadAllText(filePath),
 				DataBindingJson.Options);
@@ -908,9 +1006,10 @@ internal sealed class DataBindingService(
 			int existingIndex = FindRowIndex(localizationFile.PackageData, descriptor, normalizedKeyValue);
 			if (existingIndex >= 0) {
 				localizationFile.PackageData.RemoveAt(existingIndex);
-				fileSystem.WriteAllTextToFile(filePath, serializer.SerializePackageData(localizationFile));
+				files[filePath] = serializer.SerializePackageData(localizationFile);
 			}
 		}
+		return files;
 	}
 
 	private DataBindingRow BuildLocalizationRow(
@@ -1382,49 +1481,104 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 	private string? TryConvertImageContentFile(string stringValue, Guid dataTypeUId, string? fileBasePath) {
 		if (!DataValueTypeMap.IsImageContent(dataTypeUId) ||
 			string.IsNullOrWhiteSpace(stringValue) ||
-			string.Equals(stringValue, "null", StringComparison.OrdinalIgnoreCase)) {
+			string.Equals(stringValue, "null", StringComparison.OrdinalIgnoreCase) ||
+			string.IsNullOrWhiteSpace(fileBasePath)) {
 			return null;
 		}
 
-		string filePath = ResolvePotentialFilePath(stringValue, fileBasePath);
+		string workspaceRoot = _fileSystem.GetFullPath(fileBasePath);
+		string filePath = _fileSystem.GetFullPath(_fileSystem.IsPathRooted(stringValue)
+			? stringValue
+			: _fileSystem.Combine(workspaceRoot, stringValue));
+		if (!DataBindingPathGuard.IsStrictlyInside(workspaceRoot, filePath)) {
+			// Decided before the file system is asked anything, so the outcome never tells whether a file exists
+			// outside the workspace. Valid base64 is image data whatever it looks like: JPEG data starts with
+			// "/9j/", which is a rooted path.
+			if (Base64.IsValid(stringValue)) {
+				return null;
+			}
+			throw new InvalidOperationException(
+				$"Image file path must stay inside the workspace: {filePath}. A base64 image value is kept as it is.");
+		}
+
+		// Links before existence, for the same reason: a link inside the workspace leads outside it, and whether
+		// the file behind it exists is not the caller's to learn.
+		if (_fileSystem.HasLinkWithin(workspaceRoot, filePath)) {
+			throw new InvalidOperationException(
+				$"Image file path resolves through a symbolic link or a junction: {filePath}. " +
+				"Copy the image into the workspace instead of linking to it.");
+		}
+
 		if (!_fileSystem.ExistsFile(filePath)) {
 			return null;
 		}
 
-		EnsureFileIsInsideWorkspace(filePath, fileBasePath);
-
 		return Convert.ToBase64String(_fileSystem.ReadAllBytes(filePath));
 	}
+}
 
-	private string ResolvePotentialFilePath(string stringValue, string? fileBasePath) {
-		if (_fileSystem.IsPathRooted(stringValue)) {
-			return _fileSystem.GetFullPath(stringValue);
+/// <summary>
+/// Path rules of the data-binding commands. A package name, a binding name and a localization culture become folder
+/// and file names under <c>&lt;workspace&gt;/packages</c>, and the commands run on the person's machine, outside any
+/// sandbox of an agent that calls them over MCP, so every name is checked before it reaches a path.
+/// </summary>
+internal static partial class DataBindingPathGuard {
+	// Characters that are invalid in a Windows file name, refused on every platform so a package stays portable,
+	// with both separators: Path.GetInvalidFileNameChars() is only { '\0', '/' } on Linux and macOS.
+	private static readonly SearchValues<char> NotInPlainName = SearchValues.Create("/\\:*?\"<>|");
+
+	// Language, then up to four subtags: en-US, sr-Latn-RS, zh-Hans. \z, not $, so a trailing line break fails.
+	[GeneratedRegex(@"^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8}){0,4}\z", RegexOptions.CultureInvariant)]
+	private static partial Regex CultureNamePattern();
+
+	/// <summary>
+	/// Throws unless <paramref name="value"/> is a plain folder name: no separator, no drive or root, no character
+	/// invalid in a file name, no control character, no leading or trailing space and no trailing dot (Windows drops
+	/// both, so <c>"Pkg."</c> would name <c>Pkg</c>; the dot rule also covers <c>.</c> and <c>..</c>).
+	/// </summary>
+	/// <param name="value">The name to check.</param>
+	/// <param name="label">What the name is, for the message.</param>
+	internal static void RequirePlainName(string value, string label) {
+		if (!IsPlainName(value)) {
+			throw new InvalidOperationException(
+				$"{label} '{value}' is not a plain folder name. Use a name without path separators, '..', a drive or " +
+				"root, characters that are invalid in a file name, a leading or trailing space, or a trailing dot.");
 		}
-
-		if (!string.IsNullOrWhiteSpace(fileBasePath)) {
-			return _fileSystem.GetFullPath(_fileSystem.Combine(fileBasePath, stringValue));
-		}
-
-		return _fileSystem.GetFullPath(stringValue);
 	}
 
-	private void EnsureFileIsInsideWorkspace(string filePath, string? fileBasePath) {
-		if (string.IsNullOrWhiteSpace(fileBasePath)) {
-			return;
-		}
-
-		string workspaceRoot = _fileSystem.GetFullPath(fileBasePath)
-			.TrimEnd(_fileSystem.DirectorySeparatorChar);
-		string normalizedFilePath = _fileSystem.GetFullPath(filePath);
-		if (string.Equals(normalizedFilePath, workspaceRoot, StringComparison.OrdinalIgnoreCase)) {
-			throw new InvalidOperationException($"Image file path must point to a file inside the workspace: {normalizedFilePath}");
-		}
-
-		string workspacePrefix = workspaceRoot + _fileSystem.DirectorySeparatorChar;
-		if (!normalizedFilePath.StartsWith(workspacePrefix, StringComparison.OrdinalIgnoreCase)) {
-			throw new InvalidOperationException($"Image file path must stay inside the workspace: {normalizedFilePath}");
+	/// <summary>Throws unless <paramref name="culture"/> is a culture name such as <c>en-US</c>.</summary>
+	/// <param name="culture">A key of the localizations argument; it becomes the file name <c>data.&lt;culture&gt;.json</c>.</param>
+	internal static void RequireCultureName(string culture) {
+		if (!CultureNamePattern().IsMatch(culture)) {
+			throw new InvalidOperationException(
+				$"Localization culture '{culture}' is not a culture name such as en-US. The culture becomes the file " +
+				"name data.<culture>.json, so it may hold only letters, digits and hyphens.");
 		}
 	}
+
+	/// <summary>
+	/// Tells whether <paramref name="candidate"/> lies strictly below <paramref name="root"/>, spelled exactly as the
+	/// root is. Letter case is compared ordinally on every platform: on a case-sensitive volume (Linux, a
+	/// case-sensitive APFS volume, a Windows folder with case sensitivity on) a folder spelled differently is a
+	/// different folder, possibly a link, and the link walk that follows stops at anything that looks like the root.
+	/// </summary>
+	/// <param name="root">Full path of the folder.</param>
+	/// <param name="candidate">Full path to test.</param>
+	/// <returns><see langword="true"/> for a descendant of <paramref name="root"/>; <see langword="false"/> for the
+	/// root itself and for anything outside it.</returns>
+	internal static bool IsStrictlyInside(string root, string candidate) {
+		string trimmedRoot = Path.TrimEndingDirectorySeparator(root);
+		string prefix = Path.EndsInDirectorySeparator(trimmedRoot) ? trimmedRoot : trimmedRoot + Path.DirectorySeparatorChar;
+		return candidate.Length > prefix.Length && candidate.StartsWith(prefix, StringComparison.Ordinal);
+	}
+
+	private static bool IsPlainName(string value) =>
+		!string.IsNullOrWhiteSpace(value)
+		&& string.Equals(value, value.Trim(), StringComparison.Ordinal)
+		&& !value.EndsWith('.')
+		&& value.AsSpan().IndexOfAny(NotInPlainName) < 0
+		&& !value.Any(char.IsControl)
+		&& !Path.IsPathRooted(value);
 }
 
 internal sealed record DataBindingSchema(

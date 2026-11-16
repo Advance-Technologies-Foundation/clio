@@ -354,20 +354,9 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 
 		string rootDirectory = Path.Combine(Path.GetTempPath(), $"clio-data-binding-e2e-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(rootDirectory);
-		string workspaceName = $"workspace-{Guid.NewGuid():N}";
-		string workspacePath = Path.Combine(rootDirectory, workspaceName);
-		string packageName = $"Pkg{Guid.NewGuid():N}".Substring(0, 18);
 		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));
-
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["create-workspace", workspaceName, "--empty", "--directory", rootDirectory],
-			cancellationToken: cancellationTokenSource.Token);
-		await ClioCliCommandRunner.RunAndAssertSuccessAsync(
-			settings,
-			["add-package", packageName],
-			workingDirectory: workspacePath,
-			cancellationToken: cancellationTokenSource.Token);
+		(string workspacePath, string packageName) =
+			await DataBindingPathConfinementE2ETests.Workspace.CreateAsync(settings, rootDirectory, cancellationTokenSource.Token);
 
 		McpServerSession session = Session;
 		return new DataBindingArrangeContext(

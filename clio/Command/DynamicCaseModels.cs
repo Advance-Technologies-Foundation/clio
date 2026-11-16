@@ -404,13 +404,19 @@ public sealed class BuildCaseResponse {
 
 /// <summary>The stage connections of a case.</summary>
 public sealed class DynamicCaseConnections {
-	/// <summary>Always <c>all-to-all</c>: every ordered pair of stages, so every stage is clickable on the bar.</summary>
+	/// <summary>
+	/// <c>all-to-all</c> when every ordered pair of stages is connected, so every stage is clickable on the bar (every
+	/// case create builds); <c>restricted</c> when a described or changed case, made in the designer, has fewer.
+	/// </summary>
 	[JsonPropertyName("kind")]
 	public string Kind { get; init; }
 
 	/// <summary>How many directed connections the case has.</summary>
 	[JsonPropertyName("count")]
 	public int Count { get; init; }
+
+	/// <summary>The kind of <paramref name="count"/> directed connections between <paramref name="stages"/> stages.</summary>
+	internal static string KindOf(int stages, int count) => count == stages * (stages - 1) ? "all-to-all" : "restricted";
 }
 
 /// <summary>The case block of a dynamic-case tool's result: the server's block plus the designer link.</summary>
