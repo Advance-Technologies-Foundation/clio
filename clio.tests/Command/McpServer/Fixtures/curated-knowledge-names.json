@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.221",
-  "sequence": 1015221000,
+  "libraryVersion": "1.15.231",
+  "sequence": 1015231000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -126,6 +126,7 @@
     "creatio.process-diagram-layout",
     "creatio.process-digest",
     "creatio.process-dynamic-case",
+    "creatio.process-dynamic-case-change",
     "creatio.process-element-catalog",
     "creatio.process-element-catalog-details",
     "creatio.process-files",
@@ -260,6 +261,7 @@
     "process-diagram-layout",
     "process-digest",
     "process-dynamic-case",
+    "process-dynamic-case-change",
     "process-element-catalog",
     "process-element-catalog-details",
     "process-files",

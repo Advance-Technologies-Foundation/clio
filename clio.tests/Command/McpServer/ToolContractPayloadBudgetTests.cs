@@ -481,9 +481,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// shape's element shape, which is never cut, is the sentence the process-data-source-filters guide's gate quotes
 	// ("any of several lookup records is ONE condition with values"). It adds 61 bytes and brings the bundle to 18914
 	// bytes - 86 under this guard.
+	//
 	// ENG-96034 (2026-11-13) re-measured by lowering this guard: "chatMessage (sendChatMessage)" in the create call
 	// shape's block list, which is never cut, brings the bundle to 18881 bytes - 119 under this guard. Its description
-	// text carries no safety marker, so no short form keeps it.
+	// text carries no safety marker, so no short form keeps it. Merged with the ENG-105557 follow-up above
+	// (2026-11-17) and re-measured the same way: 18942 bytes - 58 under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]
