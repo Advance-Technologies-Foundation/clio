@@ -41,8 +41,8 @@ leaves every user to the object's operation permissions. In the designer a role 
   object's operation permissions. Every removal's summary and result say what then applies to the removed row's
   members and whether that **widens** their access: the All employees row for an internal role or user, the All
   external users row for an external (portal) one (external users are not in All employees), otherwise the column's
-  other rows or the object's operation permissions. While such a row remains, a removal is refused when clio cannot
-  tell whether the grantee is external.
+  other rows or the object's operation permissions. While an All employees or All external users row remains, a
+  removal is refused when clio cannot tell whether the grantee is external.
 
 The switch changes only through its flags: a grant while column permissions are OFF is refused unless
 `--enable-column-permissions` is passed with it; a move or a removal while they are OFF is refused (turn them on

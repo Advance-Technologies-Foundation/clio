@@ -409,6 +409,27 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
+	[Description("A removal whose read-back fails says what it planned, the effect on the removed row's members included: an MCP removal can end here.")]
+	public void Execute_ShouldCarryTheRemovalEffect_WhenTheReadBackFails() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		IReadOnlyList<ColumnRights> stored =
+			[Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))];
+		Reads(true, stored);
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns(
+			_ => stored, _ => stored, _ => throw new InvalidOperationException("SelectQuery failed: timeout"));
+
+		// Act
+		int exitCode = _command.Execute(Remove(Role));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a save nothing proves is not reported as done");
+		_errors.Should().Contain(line => line.Contains("saved, but NOT verified") && line.Contains("not All employees")
+			&& line.Contains("WIDENS"), because: "the error carries the plan, the removal's effect included");
+	}
+
+	[Test]
 	[Description("When the call's time limit leaves no room for the save and its read-back, the save is not sent.")]
 	public void Execute_ShouldNotSave_WhenTheTimeLimitLeavesNoRoom() {
 		// Arrange

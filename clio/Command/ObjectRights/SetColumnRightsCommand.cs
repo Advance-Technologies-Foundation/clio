@@ -882,7 +882,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			: $"the save failed ({save.Error})";
 		if (!readBack.IsRead) {
 			_logger.WriteError($"Error: {change.Label}: {failure}, and on the read-back {ReadBackFailure(readBack)}. "
-				+ "Read the object with get-column-rights before retrying.");
+				+ $"Read the object with get-column-rights before retrying: the plan was: {change.Summary}");
 			return 1;
 		}
 		IReadOnlyList<string> critical = Critical(change, readBack);
