@@ -13,7 +13,8 @@ internal sealed record RunProcessEnvelope(
 	[property: JsonPropertyName("activeVersionName")] string? ActiveVersionName = null,
 	[property: JsonPropertyName("waitingOn")] IReadOnlyList<RunProcessWaitingElement>? WaitingOn = null,
 	[property: JsonPropertyName("created")] IReadOnlyList<RunProcessRecord>? Created = null,
-	[property: JsonPropertyName("cleanup")] RunProcessCleanup? Cleanup = null);
+	[property: JsonPropertyName("cleanup")] RunProcessCleanup? Cleanup = null,
+	[property: JsonPropertyName("withheldResultParameters")] IReadOnlyList<string>? WithheldResultParameters = null);
 
 internal sealed record RunProcessWaitingElement(
 	[property: JsonPropertyName("caption")] string? Caption,
