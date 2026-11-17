@@ -26,6 +26,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	private const string PackageName = "Custom";
 
+	// A key-like value a service made in Studio can keep under a neutral header name.
+	private const string PartnerKey = "Lk7Hd93Qz20mWr4TbN8e";
+
 	/// <summary>The first CrtProcessBuilder that builds a Call web service element (ENG-92710).</summary>
 	private const string CallWebServiceElementPackageVersion = "1.6.6.150";
 
@@ -602,9 +605,6 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		refused.Error.Should().Contain("xml method", because: "the xml refusal is reported");
 		refused.Error.Should().Contain("GET method", because: "the GET refusal is reported in the same answer");
 	}
-
-	// A key-like value a service made in Studio can keep under a neutral header name.
-	private const string PartnerKey = "Lk7Hd93Qz20mWr4TbN8e";
 
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]

@@ -229,6 +229,11 @@ The wire shape was measured first (ADR D10). Unit rows live in
 | TC-I-F02 | e2e | read-wsdl on the WCF WSDL (wsdl-files) returns the four ports with a SOAP 1.2 or WS-Addressing warning on each of the last three, naming the SOAP 1.1 port (`WsdlReadToolE2ETests`) | D15 |
 | TC-I-F03 | e2e (existing) | The REST, SOAP, read-wsdl and contract web service e2e suites stay green | D15 |
 | TC-I-F04 | e2e | read-wsdl with `code` returns that code in the arguments, which register as they are (`WsdlReadToolE2ETests`) | D16 |
+
+## Header constants (ADR D17)
+
+| ID | Type | Case | Covers |
+|---|---|---|---|
 | TC-U-G01 | unit | `IsKeyLikeValue` / `KeyLikeParts`: generated keys, scheme credentials, credential pairs, opaque runs, password-shaped words and address parts are keys; words, media types, product tokens, language tags, versions and directives are not (`WebServiceSchemaViewTests`) | D17 |
 | TC-U-G02 | unit | `IsSecretLike` per placement: cookie always, credential name always, query by the query rule, header by value, body by name (`WebServiceSchemaViewTests`) | D17 |
 | TC-U-G03 | unit | Describe and the masker agree on header constants; the masker also masks each key part and decoded Basic parts (`WebServiceSchemaViewTests`, `WebServiceResponseMaskerTests`) | D17 |

@@ -171,6 +171,18 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("acct/123456789012345", true, Description = "a long account number behind a slash")]
 	[TestCase("application/soap+xml;charset=utf-8;action=\"http://tempuri.org/IService/Add\"", false, Description = "a SOAP 1.2 content type with its action")]
 	[TestCase("1700000000", false, Description = "a 10-digit number")]
+	[TestCase("https://svc:pa/ss@hooks.example.com/in", true, Description = "user information whose password holds a slash")]
+	[TestCase("https://svc:pa;ss@hooks.example.com/in", true, Description = "user information whose password holds a semicolon")]
+	[TestCase("user=svc&password=sunshine", true, Description = "a credential pair after '&'")]
+	[TestCase("\"Bearer abc123def\"", true, Description = "a quoted scheme")]
+	[TestCase("Digest realm=\"api\", qop=auth, nc=00000001", true, Description = "a scheme whose parameters are all plain")]
+	[TestCase("application/soap+xml;charset=utf-8;action=\"http://tempuri.org/ICustomerRelationshipService/GetCustomer\"", false, Description = "a SOAP 1.2 action with a long WCF contract name")]
+	[TestCase("python-requests/2.31.0", false, Description = "a hyphenated product token")]
+	[TestCase("Apache-HttpClient/4.5.13", false, Description = "a product token with a mixed-case name")]
+	[TestCase("CreatioIntegration/1.0", false, Description = "a long product name")]
+	[TestCase("production-eu-west-1", false, Description = "a hyphenated environment name")]
+	[TestCase("crm-integration-v2", false, Description = "a hyphenated name with a short version")]
+	[TestCase("eu12.example.com", false, Description = "a host name with a digit")]
 	[TestCase("en-US,en;q=0.9", false, Description = "a language list")]
 	[TestCase("en-US", false, Description = "a language tag")]
 	[TestCase("2", false, Description = "a version")]
@@ -197,6 +209,8 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("Token token=abcdef0123456789abcd", "abcdef0123456789abcd", Description = "a scheme parameter's value")]
 	[TestCase("OAuth oauth_signature=\"tnnArxj06cWHq44gCs1OSKk%2FjY%3D\"", "tnnArxj06cWHq44gCs1OSKk/jY=", Description = "an escaped scheme parameter, unescaped")]
 	[TestCase("sig=abc%2Bdef0123456789xyz", "abc+def0123456789xyz", Description = "an escaped pair value, unescaped")]
+	[TestCase("https://bot:hunt%40er2@hooks.example.com/in", "hunt@er2", Description = "an escaped password, unescaped")]
+	[TestCase("id=Lk7Hd93Qz20mWr4TbN8e&return=https://app.example/done", "Lk7Hd93Qz20mWr4TbN8e", Description = "a key in an '&'-joined pair")]
 	[Description("KeyLikeParts gives the part that made a header value a key on its own, so a test call masks it when an API echoes only that part.")]
 	public void KeyLikeParts_Should_Give_The_Key_Part_On_Its_Own(string value, string keyPart) {
 		// Act
@@ -204,6 +218,19 @@ public sealed class WebServiceSchemaViewTests {
 
 		// Assert
 		parts.Should().Contain(keyPart, because: "an API that echoes only the key would otherwise hand it back");
+	}
+
+	[Test]
+	[Description("KeyLikeParts leaves the plain parameters of a scheme out, so a test call does not mask ordinary text or every number 1 in a response, while the credential as a whole is still masked.")]
+	public void KeyLikeParts_Should_Leave_Plain_Scheme_Parameters_Out() {
+		// Act
+		IReadOnlyList<string> parts = WebServiceSchemaView.KeyLikeParts(
+			"Digest realm=\"api\", qop=auth, nc=00000001, response=\"6629fae49393a05397450978507c4ef1\"");
+
+		// Assert
+		parts.Should().NotContain(["00000001", "nc=00000001", "auth", "api"],
+			because: "plain parameters would mask unrelated text and numbers in the echo");
+		parts.Should().Contain("6629fae49393a05397450978507c4ef1", because: "the digest response is a key-shaped value");
 	}
 
 	[TestCase("Accept-Language", "header", "en-US", false, Description = "neutral name, plain value: shown")]
@@ -214,18 +241,34 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("format", "query", "Lk7Hd93Qz20mWr4TbN8e", false, Description = "a query value keeps the query rule: a neutral name is not judged by value")]
 	[TestCase("sig", "query", "Lk7Hd93Qz20mWr4TbN8e", true, Description = "a query value keeps the hosting-key rule")]
 	[TestCase("mode", "body", "Lk7Hd93Qz20mWr4TbN8e", false, Description = "a body value is judged by name only")]
-	[Description("IsSecretLike is the one rule every web service tool follows for a constant default: a cookie always, a credential-like name always, a query value by the query rule, a header value when it looks like a key.")]
-	public void IsSecretLike_Should_Apply_One_Rule_Per_Placement(string name, string placement, string value, bool expected) {
+	[Description("IsSecretConstantAt is the one rule every web service tool follows for a constant default: a cookie always, a credential-like name always, a query value by the query rule, a header value when it looks like a key.")]
+	public void IsSecretConstantAt_Should_Apply_One_Rule_Per_Placement(string name, string placement, string value,
+		bool expected) {
 		// Act
-		bool secret = WebServiceSchemaView.IsSecretLike(name, ServiceSchemaCodes.Placements[placement], value);
+		bool secret = WebServiceSchemaView.IsSecretConstantAt(name, name, ServiceSchemaCodes.Placements[placement], value,
+			false, false);
 
 		// Assert
 		secret.Should().Be(expected, because: "register refuses, describe hides and a test call masks by this one rule");
 	}
 
+	[TestCase("cookie", "dark", true, Description = "a cookie stored with a SOAP-header flag stays a cookie")]
+	[TestCase("body", "fast", false, Description = "a plain SOAP-header value is shown")]
+	[TestCase("body", "Lk7Hd93Qz20mWr4TbN8e", true, Description = "a key-like SOAP-header value is hidden")]
+	[Description("IsSecretConstantAt judges a SOAP-header element as a header constant, but never lets the SOAP-header flag turn a cookie into an ordinary value.")]
+	public void IsSecretConstantAt_Should_Judge_The_Soap_Header_As_A_Header_And_Keep_The_Cookie_Rule(string placement,
+		string value, bool expected) {
+		// Act
+		bool secret = WebServiceSchemaView.IsSecretConstantAt("UsrMode", "tem:Mode", ServiceSchemaCodes.Placements[placement],
+			value, true, false);
+
+		// Assert
+		secret.Should().Be(expected, because: "the cookie rule comes first, then the header rule applies in the SOAP Header");
+	}
+
 	[Test]
 	[Description("A header constant describe shows is not masked in a test call's echo, and one describe hides is, so no constant is shown in one place and masked in the other.")]
-	public void Describe_And_Masker_Should_Agree_On_Header_Constants() {
+	public void From_And_SentSecrets_Should_Agree_On_Header_Constants() {
 		// Arrange
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Send", "GET", "send",

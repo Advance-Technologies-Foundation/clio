@@ -476,10 +476,12 @@ public static partial class WebServiceResponseMasker {
 		}
 	}
 
-	private static IEnumerable<string> BasicParts(string value) =>
-		value.TrimStart().StartsWith("Basic ", StringComparison.OrdinalIgnoreCase)
-			? AuthorizationParts(value.Trim())
+	private static IEnumerable<string> BasicParts(string value) {
+		string[] words = value.Split((char[])null, 2, StringSplitOptions.RemoveEmptyEntries);
+		return words.Length == 2 && words[0].Equals("Basic", StringComparison.OrdinalIgnoreCase)
+			? AuthorizationParts("Basic " + words[1].Trim())
 			: [];
+	}
 
 	/// <summary>
 	/// Whether a request parameter filled from a system setting may have been sent but its value cannot be

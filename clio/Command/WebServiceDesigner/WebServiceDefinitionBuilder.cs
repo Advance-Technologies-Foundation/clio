@@ -823,7 +823,10 @@ public static partial class WebServiceDefinitionBuilder {
 						+ "'$.customer.name' for a response value."));
 		}
 		string path = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path ?? arg.Code : arg.Path;
-		bool inHeader = ValidateSoapMembers(arg, placement, path, scope) || scope.InSoapHeader;
+		// REST: the platform's stored SOAP-header flag is carried as read, and describe and the masker read it, so the
+		// constant is judged where they judge it.
+		bool inHeader = ValidateSoapMembers(arg, placement, path, scope) || scope.InSoapHeader
+			|| (scope.Soap is null && previous?.IsSoapHeader == true);
 		bool previousInHeader = scope.PreviousInSoapHeader || previous?.IsSoapHeader == true;
 		var place = new SoapHeaderPlace(inHeader, scope.UnderSecretSoapParent, previousInHeader,
 			scope.PreviousUnderSecretSoapParent);
@@ -1001,9 +1004,8 @@ public static partial class WebServiceDefinitionBuilder {
 	// Whether a constant in the new place is a secret, by the rule describe hides it with.
 	private static bool IsSecretInNewPlace(WebServiceParameterArg arg, string wireName, int placement, string value,
 		SoapHeaderPlace place) =>
-		(place.InHeader && place.UnderSecretParent)
-		|| WebServiceSchemaView.IsSecretLike(arg.Code, placement, value)
-		|| WebServiceSchemaView.IsSecretLike(wireName, placement, value);
+		WebServiceSchemaView.IsSecretConstantAt(arg.Code, wireName, placement, value, place.InHeader,
+			place.UnderSecretParent);
 
 	/// <param name="place">
 	/// Where the parameter sits in a SOAP Header (WS-Security and licence values): there its constant default is judged
@@ -1011,10 +1013,16 @@ public static partial class WebServiceDefinitionBuilder {
 	/// </param>
 	private static ServiceParameterValueDto BuildDefault(WebServiceParameterArg arg, ServiceParameterDto previous,
 		int placement, string owner, Errors errors, SoapHeaderPlace place) {
-		if (place.InHeader) {
-			placement = ServiceSchemaCodes.Placements["header"];
-		}
 		bool hasConstant = !string.IsNullOrEmpty(arg.DefaultValue);
+		// describe shows [masked] where a URI kept a key (a base URI copied into wsa:To, say); written back as a header
+		// constant it would be sent as that text, so it is refused like the mask in a URI.
+		if (hasConstant && (place.InHeader || placement == ServiceSchemaCodes.Placements["header"])
+				&& arg.DefaultValue.Contains(WebServiceResponseMasker.Mask, StringComparison.OrdinalIgnoreCase)) {
+			errors.Add($"{owner}: the constant default holds {WebServiceResponseMasker.Mask}, which describe-web-service "
+				+ "shows in place of a hidden key; the tools cannot write that key back: reference a system setting with "
+				+ "default-sys-setting the user fills.");
+			return Empty();
+		}
 		bool hasSetting = !string.IsNullOrWhiteSpace(arg.DefaultSysSetting);
 		if (hasConstant && hasSetting) {
 			errors.Add($"{owner}: give default-value or default-sys-setting, not both.");

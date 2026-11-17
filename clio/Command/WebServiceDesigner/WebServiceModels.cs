@@ -117,7 +117,7 @@ public sealed record WebServiceParameterArg(
 	bool? Required = null,
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Optional constant default. Refused on a cookie; on any key, token, secret, password, auth (Authorization) or session parameter; on a query parameter named sig, sas, code, appid, sign or hmac when 16+ characters; and on a header or soap-header parameter when the value looks like a key (an authentication scheme and its credentials, a credential pair such as password=..., a generated key, a long letters-only or digits-only run, a password-like word, an address with credentials or a key in it) or it sits under a credential-like soap-header parent: use default-sys-setting there. A plain header constant such as Accept-Language: en-US or X-Api-Version: 2 is allowed and describe shows it.")]
+	[property: Description("Optional constant default. Refused on a cookie; on any key, token, secret, password, auth (Authorization) or session parameter; on a query parameter named sig, sas, code, appid, sign or hmac when 16+ characters; and on a header or soap-header parameter when the value looks like a key (an authentication scheme and its credentials, a credential pair such as password=..., a generated key, a long letters-only or digits-only run, a password-like word, an address with credentials or a key in it) or it sits under a credential-like soap-header parent: use default-sys-setting there. A plain header constant such as Accept-Language: en-US or X-Api-Version: 2 is allowed and describe shows it; a key, password or PIN the user gives still goes into a system setting, even when the tool would accept it.")]
 	string DefaultValue = null,
 
 	[property: JsonPropertyName("default-sys-setting")]
@@ -370,12 +370,9 @@ public static partial class WebServiceSchemaView {
 	private static partial Regex SecretNamePattern();
 
 	/// <summary>
-	/// Whether a parameter's constant default must be hidden, in the place where the platform sends it: a cookie, a code
-	/// or wire name that looks like a credential, or a value that looks like a key (<see cref="IsSecretLike(string, int, string)"/>).
-	/// A SOAP-header element (its own flag, or <paramref name="inSoapHeader"/> for an item the platform renders under a
-	/// SOAP-header parent) is judged as a header, and in the Header an item under a credential-like parent
-	/// (<paramref name="underSecretParent"/>: <c>tem:AuthHeader/tem:Pin</c>, whose item path does not name the parent) is
-	/// a secret whatever its own name and value.
+	/// Whether a stored parameter's constant default must be hidden, judged where the platform sends it
+	/// (<see cref="IsSecretConstantAt"/>): a SOAP-header element (its own flag, or <paramref name="inSoapHeader"/> for an
+	/// item the platform renders under a SOAP-header parent) is judged as a header.
 	/// </summary>
 	/// <param name="parameter">The stored parameter.</param>
 	/// <param name="inSoapHeader">
@@ -386,32 +383,41 @@ public static partial class WebServiceSchemaView {
 	/// Whether a parent in the SOAP Header has a credential-like code or path (<see cref="IsSecretSoapParent"/>).
 	/// </param>
 	/// <returns>Whether its constant default is a secret.</returns>
-	public static bool IsSecretLike(ServiceParameterDto parameter, bool inSoapHeader = false, bool underSecretParent = false) {
-		bool header = inSoapHeader || parameter.IsSoapHeader == true;
-		int placement = header ? ServiceSchemaCodes.Placements["header"] : parameter.Type;
-		string value = parameter.DefValue?.Value;
-		return (header && underSecretParent)
-			|| IsSecretLike(parameter.Name, placement, value) || IsSecretLike(parameter.Path, placement, value);
-	}
+	public static bool IsSecretLike(ServiceParameterDto parameter, bool inSoapHeader = false, bool underSecretParent = false) =>
+		IsSecretConstantAt(parameter.Name, parameter.Path, parameter.Type, parameter.DefValue?.Value,
+			inSoapHeader || parameter.IsSoapHeader == true, underSecretParent);
 
 	/// <summary>
 	/// The one rule by which a constant default is a secret, shared by register and modify-web-service (refused),
-	/// describe-web-service and list-web-services (hidden), the carry-over of a hidden constant, read-wsdl's carry-over
-	/// of a Studio constant, and a test call (masked in the echo): a cookie is always one; under a credential-like name
-	/// (<see cref="IsSecretName"/>, Authorization included) any value is; a query value follows
-	/// <see cref="IsSecretQueryValue"/>; a header or SOAP-header value is one when it looks like a key
-	/// (<see cref="IsKeyLikeValue"/>), so <c>Accept-Language: en-US</c> or <c>X-Api-Version: 2</c> is an ordinary
-	/// constant, as Studio allows it.
+	/// describe-web-service (hidden), the carry-over of a hidden constant, read-wsdl's carry-over of a Studio constant,
+	/// and a test call (masked in the echo). A cookie always is one, also one stored with a SOAP-header flag. Under a
+	/// credential-like code or wire name (<see cref="IsSecretName"/>, Authorization included) any value is. A query value
+	/// follows <see cref="IsSecretQueryValue"/>. In a header or the SOAP Header, an item under a credential-like
+	/// SOAP-header parent is one, and a value is one when it looks like a key (<see cref="IsKeyLikeValue"/>), so
+	/// <c>Accept-Language: en-US</c> or <c>X-Api-Version: 2</c> is an ordinary constant, as Studio allows it. A body or
+	/// path value is judged by name only.
 	/// </summary>
-	/// <param name="parameterName">The parameter code or wire name.</param>
-	/// <param name="placement">The parameter placement; a SOAP-header element counts as a header.</param>
+	/// <param name="code">The parameter code.</param>
+	/// <param name="wireName">The parameter path (wire name), or null.</param>
+	/// <param name="placement">The parameter placement.</param>
 	/// <param name="value">The constant default, or null.</param>
+	/// <param name="inSoapHeader">Whether the parameter travels in the SOAP Header (its own flag or a parent's).</param>
+	/// <param name="underSecretParent">Whether a parent in the SOAP Header has a credential-like code or path.</param>
 	/// <returns>Whether a constant default there is a secret.</returns>
-	public static bool IsSecretLike(string parameterName, int placement, string value) =>
-		placement == ServiceSchemaCodes.Placements["cookie"]
-		|| IsSecretName(parameterName)
-		|| (placement == ServiceSchemaCodes.Placements["query"] && IsSecretQueryValue(parameterName, value))
-		|| (placement == ServiceSchemaCodes.Placements["header"] && IsKeyLikeValue(value));
+	public static bool IsSecretConstantAt(string code, string wireName, int placement, string value, bool inSoapHeader,
+		bool underSecretParent) {
+		if (placement == ServiceSchemaCodes.Placements["cookie"] || IsSecretName(code) || IsSecretName(wireName)) {
+			return true;
+		}
+		if (inSoapHeader) {
+			placement = ServiceSchemaCodes.Placements["header"];
+		}
+		if (placement == ServiceSchemaCodes.Placements["query"]) {
+			return IsSecretQueryValue(code, value) || IsSecretQueryValue(wireName, value);
+		}
+		return placement == ServiceSchemaCodes.Placements["header"]
+			&& ((inSoapHeader && underSecretParent) || IsKeyLikeValue(value));
+	}
 
 	/// <summary>
 	/// Whether a stored parameter has a non-empty constant default that is a secret
@@ -487,19 +493,25 @@ public static partial class WebServiceSchemaView {
 
 	/// <summary>
 	/// The parts of a header value that make it a key, in the forms an API may echo them alone: a test call masks each
-	/// of them, not only the whole value. The value is split at spaces, commas and semicolons. A value whose first part
-	/// is an authentication scheme (<c>Basic</c>, <c>Bearer</c>, <c>Token</c>...) gives every part after it. Otherwise a
-	/// part, without quotes, base64 padding and a leading <c>name=</c>, is a key when the name is a credential or a
-	/// hosting key name (<see cref="IsSecretQueryValue"/>), or the value is: 16+ characters mixing letters and digits (a
-	/// generated key: a random 16-character letters-and-digits key lacks a digit about one time in 17, (52/62)^16; a
-	/// base64 one about one time in 15; a 32-character one about one time in 280), 24+ letters, 12+ digits, or 8+
-	/// characters mixing upper and lower case, a digit and a symbol (a chosen password). An address (<c>scheme://</c>)
-	/// gives its user information, each path segment, query value and fragment value judged the same way, and the text
-	/// before the scheme. A media type or product token made of words and short versions
-	/// (<c>application/vnd.github.v3+json</c>, <c>AppleWebKit/537.36</c>) is plain. Not caught: a short key or password
-	/// without the four kinds of character (<c>4821</c>, <c>hunter2</c>) under a neutral name; the agent rule that a key
-	/// always goes through a system setting covers those. Known false positives, hidden and refused like keys: a GUID,
-	/// an ISO timestamp, a build tag such as <c>4.18.2-build20240101</c>.
+	/// of them, not only the whole value. The value is split at spaces, commas and semicolons, and a part outside an
+	/// address at '&amp;'. A value whose first part is an authentication scheme (<c>Basic</c>, <c>Bearer</c>,
+	/// <c>Token</c>..., also quoted) gives what follows it, a bare token after it, and each of its parameters that is a key
+	/// or under a credential name. Otherwise a part, without quotes, base64 padding and a
+	/// leading <c>name=</c>, is a key when the name is a credential name, or a hosting key name (<c>sig</c>, <c>code</c>...)
+	/// with a value of 16+ characters (<see cref="IsSecretQueryValue"/>), or when the value is: 16+ characters mixing
+	/// letters and digits (a generated key: a random 16-character letters-and-digits key lacks a digit about one time in
+	/// 17, (52/62)^16; a base64 one about one time in 15; a 32-character one about one time in 280), 24+ letters or
+	/// underscores, 12+ digits, or 8+ characters with an upper and a lower case letter, a digit and one of
+	/// <c>!@#$%^&amp;*?~</c> (a chosen password). Any user information of an address (anything between <c>://</c> and an
+	/// <c>@</c>) is a key; so is a path segment, query value or fragment value of an address judged the same way (a long
+	/// letters-only path segment, a WCF contract name, is not), and the text before a scheme that is not one. Text made
+	/// of words, short numbers and at most one short mixed piece joined by <c>/ . + - _</c> is plain: a media type
+	/// (<c>application/vnd.github.v3+json</c>), a product token (<c>python-requests/2.31.0</c>), a host name, a
+	/// hyphenated name (<c>production-eu-west-1</c>). Not caught: a short key or password without those four kinds of
+	/// character (<c>4821</c>, <c>hunter2</c>, <c>Winter-2024</c>) under a neutral name; the agent rule that a key always
+	/// goes through a system setting covers those. Known false positives, hidden and refused like keys: a GUID, an ISO
+	/// timestamp, a build tag (<c>4.18.2-build20240101</c>), a multipart boundary, and a value whose first word is a
+	/// scheme name (<c>Basic monthly</c>).
 	/// </summary>
 	/// <param name="value">The header value, or null.</param>
 	/// <returns>The key-like parts, distinct; empty when the value is plain.</returns>
@@ -508,26 +520,65 @@ public static partial class WebServiceSchemaView {
 		if (string.IsNullOrEmpty(value)) {
 			return parts;
 		}
+		AddUserInformation(parts, value);
 		string[] split = value.Split(HeaderValueSeparators, StringSplitOptions.RemoveEmptyEntries);
-		bool scheme = split.Length > 1 && AuthSchemes.Contains(split[0]);
+		bool scheme = split.Length > 1 && AuthSchemes.Contains(split[0].Trim('"', '\''));
+		if (scheme) {
+			// Everything after the scheme is its credential, whatever its shape: the value is a key, and the credential
+			// as a whole is masked too.
+			string trimmed = value.Trim().Trim('"', '\'');
+			AddPart(parts, trimmed[(trimmed.IndexOfAny(HeaderValueSeparators) + 1)..].Trim());
+		}
 		for (int i = 0; i < split.Length; i++) {
 			string part = split[i].Trim('"', '\'');
 			if (scheme && i > 0) {
-				AddPart(parts, part);
-				AddPart(parts, part.TrimEnd('='));
-				// A scheme's parameters (token=..., signature="...", oauth_signature="...%2F...") are echoed by value.
-				int equals = part.IndexOf('=');
-				if (equals > 0) {
-					string schemeValue = part[(equals + 1)..].Trim('"', '\'');
-					AddPart(parts, schemeValue);
-					AddPart(parts, schemeValue.TrimEnd('='));
-					AddPart(parts, Uri.UnescapeDataString(schemeValue));
-				}
+				AddSchemePieces(parts, part);
 				continue;
 			}
 			AddPartPieces(parts, part);
 		}
 		return parts.Distinct(StringComparer.Ordinal).ToList();
+	}
+
+	// Fail closed, as a soap-action is checked: any '@' after a "://" ends user information, whatever the password holds
+	// ('/', '#', ';', ',' or a space would otherwise end the authority or the part first). The forms an echo may carry
+	// are the whole user information and the password, as written and unescaped.
+	private static void AddUserInformation(List<string> parts, string value) {
+		int scheme = value.IndexOf("://", StringComparison.Ordinal);
+		int at = value.LastIndexOf('@');
+		if (scheme < 0 || at <= scheme + 3) {
+			return;
+		}
+		string userInfo = value[(scheme + 3)..at];
+		int colon = userInfo.IndexOf(':');
+		foreach (string piece in new[] { userInfo, colon < 0 ? null : userInfo[(colon + 1)..] }) {
+			AddPart(parts, piece);
+			AddPart(parts, piece is null ? null : Uri.UnescapeDataString(piece));
+		}
+	}
+
+	// What follows an authentication scheme is its credential: a bare token in every form, and of a scheme parameter
+	// (token=..., signature="...", oauth_signature="...%2F...") the value, when it is a key or under a credential name.
+	// A plain parameter (realm="api", qop=auth, nc=00000001) is left out, so it does not mask ordinary text or numbers.
+	private static void AddSchemePieces(List<string> parts, string part) {
+		int equals = part.IndexOf('=');
+		if (equals <= 0 || equals == part.Length - 1 || part.TrimEnd('=').IndexOf('=') < 0) {
+			if (!part.All(char.IsAsciiDigit)) {
+				AddPart(parts, part);
+				AddPart(parts, part.TrimEnd('='));
+			}
+			return;
+		}
+		string name = part[..equals];
+		string schemeValue = part[(equals + 1)..].Trim('"', '\'');
+		string unescaped = Uri.UnescapeDataString(schemeValue);
+		if (IsSecretQueryValue(name, schemeValue) || IsKeyShaped(schemeValue.TrimEnd('='), true)
+				|| IsKeyShaped(unescaped.TrimEnd('='), true)) {
+			AddPart(parts, part);
+			AddPart(parts, schemeValue);
+			AddPart(parts, schemeValue.TrimEnd('='));
+			AddPart(parts, unescaped);
+		}
 	}
 
 	private static void AddPart(List<string> parts, string part) {
@@ -545,24 +596,25 @@ public static partial class WebServiceSchemaView {
 		if (scheme >= 0) {
 			// Not a scheme in front (id=KEY&return=https://...): the text before it is judged like any part, and so is
 			// the address after it.
-			AddTokenPieces(parts, part[..scheme]);
+			AddPairPieces(parts, part[..scheme]);
 			AddAddressPieces(parts, part[(scheme + 3)..]);
 			return;
 		}
-		AddTokenPieces(parts, part);
+		AddPairPieces(parts, part);
+	}
+
+	// A part outside an address may join name=value pairs with '&' (user=svc&pwd=abc); each is judged, so the key alone
+	// is found too. A key in base64, hex or a JWT holds no '&'.
+	private static void AddPairPieces(List<string> parts, string part) {
+		foreach (string pair in part.Split('&', StringSplitOptions.RemoveEmptyEntries)) {
+			AddTokenPieces(parts, pair);
+		}
 	}
 
 	// A host is not a key; user information, a path segment (a webhook token), a query or a fragment value can be.
 	private static void AddAddressPieces(List<string> parts, string rest) {
+		// User information was taken from the whole value (AddUserInformation).
 		int authorityEnd = rest.IndexOfAny(['/', '?', '#']);
-		string authority = authorityEnd < 0 ? rest : rest[..authorityEnd];
-		int at = authority.LastIndexOf('@');
-		if (at >= 0) {
-			string userInfo = authority[..at];
-			AddPart(parts, userInfo);
-			int colon = userInfo.IndexOf(':');
-			AddPart(parts, colon < 0 ? null : userInfo[(colon + 1)..]);
-		}
 		if (authorityEnd < 0) {
 			return;
 		}
@@ -573,8 +625,10 @@ public static partial class WebServiceSchemaView {
 		int question = beforeFragment.IndexOf('?');
 		string path = question < 0 ? beforeFragment : beforeFragment[..question];
 		string query = question < 0 ? string.Empty : beforeFragment[(question + 1)..];
+		// A path segment is often a long name (a WCF contract, IOrderFulfillmentService), so a letters-only run there is
+		// not a key; a mixed one (a webhook token) is.
 		foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries)) {
-			AddTokenPieces(parts, Uri.UnescapeDataString(segment));
+			AddTokenPieces(parts, Uri.UnescapeDataString(segment), lettersRunIsKey: false);
 		}
 		foreach (string pair in (query + "&" + fragment).Split('&', StringSplitOptions.RemoveEmptyEntries)) {
 			AddTokenPieces(parts, Uri.UnescapeDataString(pair));
@@ -584,7 +638,7 @@ public static partial class WebServiceSchemaView {
 	// Base64 padding is dropped first, so a key's trailing '=' is not read as a name=value separator; a name=value part
 	// is a key under a credential or hosting key name (password=..., sig=...) and is otherwise judged by its value
 	// (max-age=3600 is not a key).
-	private static void AddTokenPieces(List<string> parts, string token) {
+	private static void AddTokenPieces(List<string> parts, string token, bool lettersRunIsKey = true) {
 		string core = token.TrimEnd('=');
 		int equals = core.IndexOf('=');
 		if (equals > 0) {
@@ -598,19 +652,19 @@ public static partial class WebServiceSchemaView {
 			}
 			core = pairValue;
 		}
-		if (IsKeyShaped(core)) {
+		if (IsKeyShaped(core, lettersRunIsKey)) {
 			AddPart(parts, token);
 			AddPart(parts, core);
 			AddPart(parts, Uri.UnescapeDataString(core));
 		}
 	}
 
-	private static bool IsKeyShaped(string core) {
+	private static bool IsKeyShaped(string core, bool lettersRunIsKey) {
 		if (core.Length >= MinKeyLikeLength && core.Any(char.IsAsciiLetter) && core.Any(char.IsAsciiDigit)
-				&& !IsProductToken(core)) {
+				&& !IsWordsToken(core)) {
 			return true;
 		}
-		if (core.Length >= MinOpaqueLettersLength && core.All(c => char.IsAsciiLetter(c) || c == '_')) {
+		if (lettersRunIsKey && core.Length >= MinOpaqueLettersLength && core.All(c => char.IsAsciiLetter(c) || c == '_')) {
 			return true;
 		}
 		if (core.Length >= MinOpaqueDigitsLength && core.All(char.IsAsciiDigit)) {
@@ -620,21 +674,18 @@ public static partial class WebServiceSchemaView {
 			&& core.Any(char.IsAsciiDigit) && core.Any(c => ChosenWordSymbols.Contains(c));
 	}
 
-	// A media type or a product token: a word, a '/', then words and version numbers. Each piece is a word, a short
-	// number or a short mixed piece, and at most one piece mixes letters and digits (v3 in vnd.github.v3+json). A base64
-	// key has a long mixed piece; a structured key (lic/AB12-CD34-EF56, acct/123456789012345) has several short mixed
-	// pieces or a long number, so neither is one.
-	private static bool IsProductToken(string token) {
-		int slash = token.IndexOf('/');
-		if (slash <= 0 || !token[..slash].All(char.IsAsciiLetter)) {
-			return false;
-		}
+	// Text made of words and short numbers joined by '/', '.', '+', '-' or '_': a media type (application/vnd.github.v3+json),
+	// a product token (python-requests/2.31.0, CreatioIntegration/1.0), a hyphenated name (production-eu-west-1,
+	// crm-integration-v2). Each piece is a word (under 24 letters), a short number (under 12 digits) or a piece of up to 4
+	// characters, and at most one piece mixes letters and digits. A generated key has a long mixed piece, and a structured
+	// key (AB12-CD34-EF56-GH78, acct/123456789012345, a GUID) has several mixed pieces or a long number, so neither is one.
+	private static bool IsWordsToken(string token) {
 		string[] pieces = token.Split(ProductTokenSeparators, StringSplitOptions.RemoveEmptyEntries);
 		static bool Mixed(string piece) => piece.Any(char.IsAsciiLetter) && piece.Any(char.IsAsciiDigit);
-		return pieces.Count(Mixed) <= 1
-			&& pieces.All(piece => piece.Length < MinKeyLikeLength
-				&& (piece.Length <= 4 || piece.All(char.IsAsciiLetter)
-					|| (piece.All(char.IsAsciiDigit) && piece.Length < MinOpaqueDigitsLength)));
+		return pieces.Length > 1 && pieces.Count(Mixed) <= 1
+			&& pieces.All(piece => piece.Length <= 4
+				|| (piece.All(char.IsAsciiLetter) && piece.Length < MinOpaqueLettersLength)
+				|| (piece.All(char.IsAsciiDigit) && piece.Length < MinOpaqueDigitsLength));
 	}
 
 	/// <summary>Whether a parameter code or wire name looks like a credential (key, token, secret, password, ...).</summary>

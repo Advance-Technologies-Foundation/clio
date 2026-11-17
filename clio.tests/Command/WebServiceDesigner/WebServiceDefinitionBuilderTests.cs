@@ -61,7 +61,7 @@ public sealed class WebServiceDefinitionBuilderTests {
 	[TestCase("XCallback", "X-Callback", "https://bot:hunter2@hooks.example.com/in", Description = "an address with user information")]
 	[TestCase("XCallback", "X-Callback", "https://hooks.example.com/in?sig=QmFzZTY0U2lnbmF0dXJlVmFsdWU", Description = "an address with a key in its query")]
 	[TestCase("Authorization", "Authorization", "Basic", Description = "Authorization is a credential name whatever the value")]
-	[TestCase("XSession", "X-Session", "1", Description = "a credential-like name whatever the value")]
+	[TestCase("XSession", "X-Session", "Zq7", Description = "a credential-like name whatever the value")]
 	[Description("A constant default on a header is refused when the name looks like a credential or the value looks like a key, and the refusal never repeats the value.")]
 	public void BuildMethod_Should_Refuse_A_Secret_Header_Constant(string code, string wireName, string value) {
 		// Arrange
@@ -75,9 +75,23 @@ public sealed class WebServiceDefinitionBuilderTests {
 		// Assert
 		errors.Should().ContainSingle(because: "the header constant is a credential by its name or its value")
 			.Which.Should().Contain("default-sys-setting", because: "the refusal names the allowed route");
-		if (value.Length > 1) {
-			errors.Single().Should().NotContain(value, because: "a refused credential is never echoed back");
-		}
+		errors.Single().Should().NotContain(value, because: "a refused credential is never echoed back");
+	}
+
+	[Test]
+	[Description("A header constant that holds the [masked] text describe shows for a hidden key (a base URI copied into a header) is refused, since it would be sent as that text.")]
+	public void BuildMethod_Should_Refuse_The_Mask_In_A_Header_Constant() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = Orders(new WebServiceParameterArg("id", "path"),
+			new WebServiceParameterArg("XTo", "header", Path: "X-To", DefaultValue: "https://fn.example/svc?code=[masked]"));
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors);
+
+		// Assert
+		errors.Should().ContainSingle(because: "the tools never write the mask back")
+			.Which.Should().Contain("default-sys-setting", because: "the refusal names the allowed route");
 	}
 
 	[TestCase("theme", "dark", Description = "a plain cookie value")]
@@ -121,7 +135,8 @@ public sealed class WebServiceDefinitionBuilderTests {
 		kept.Request.Parameters.Items.Values.Single().DefValue.Value.Should().Be("Lk7Hd93Qz20mWr4TbN8e",
 			because: "describe hid the key, so leaving it out must not erase it");
 		bodyErrors.Should().ContainSingle(because: "a body parameter is judged by name only, so describe would print the key")
-			.Which.Should().NotContain("Lk7Hd93Qz20mWr4TbN8e", because: "the refusal never repeats the hidden value");
+			.Which.Should().Contain("would show it", because: "the refusal says why the hidden constant cannot move")
+			.And.NotContain("Lk7Hd93Qz20mWr4TbN8e", because: "the refusal never repeats the hidden value");
 	}
 
 	[Test]

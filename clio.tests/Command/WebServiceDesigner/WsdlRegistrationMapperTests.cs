@@ -548,6 +548,28 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
+	[Description("A hidden constant on an item whose own flag is not set, hidden because its parent travelled in the SOAP Header, is named in a warning when the WSDL takes the parent out of the Header.")]
+	public void Map_Should_Warn_When_A_Hidden_Item_Leaves_The_Soap_Header_With_Its_Parent() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add", Parameter("ctx", "tem:ctx", "Object", true, "tem:ctx", false,
+			Parameter("mode", "mode"))));
+		var item = new WebServiceParameterView("UsrCtxMode", "Mode", "body", "mode", "Text", false, false, null, null, true, []);
+		var context = new WebServiceParameterView("UsrCtx", "Ctx", "body", "tem:ctx", "Object", true, false, null, null, false,
+			[item], SoapHeader: true, SequenceElement: "tem:ctx");
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 9000, "xml", true, [context], [], "tem:Add", "urn:Add")
+		]);
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, warnings);
+
+		// Assert
+		warnings.Kept.Should().Contain(w => w.Contains("'mode'") && w.Contains("leaves the SOAP Header"),
+			because: "the item travelled in the Header with its parent although its own flag was never set");
+	}
+
+	[Test]
 	[Description("use-auth false on a matched method is carried, since without it register gives the method the service's authentication.")]
 	public void Map_Should_Carry_Use_Auth_False_From_A_Matched_Method() {
 		// Arrange

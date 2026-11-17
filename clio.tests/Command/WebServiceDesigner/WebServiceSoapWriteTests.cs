@@ -904,7 +904,7 @@ public sealed class WebServiceSoapWriteTests {
 
 	[Test]
 	[Description("An item under a credential-like SOAP-header parent (tem:AuthHeader) is a secret whatever its own name and value, although its item path does not name the parent: describe hides it, a test call masks it, and register refuses one.")]
-	public void Soap_Header_Item_Under_A_Credential_Like_Parent_Should_Be_A_Secret() {
+	public void From_SentSecrets_And_Register_Should_Treat_An_Item_Under_A_Credential_Like_Soap_Header_Parent_As_A_Secret() {
 		// Arrange
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
 		ServiceMethodDto method = schema.Methods.Items.Values.Single();
@@ -930,6 +930,7 @@ public sealed class WebServiceSoapWriteTests {
 			because: "a PIN under an auth header is a credential although '4821' and 'Pin' look plain");
 		secrets.Should().Contain("4821", because: "a test call masks what describe hides");
 		refused.Should().Throw<ArgumentException>(because: "the same rule refuses writing it")
+			.WithMessage("*constant default is refused*", because: "it is the constant rule that refuses it")
 			.Which.Message.Should().NotContain("4821", because: "a refused credential is never echoed back");
 	}
 
