@@ -1198,7 +1198,7 @@ public sealed class ServerProcessDescriberTests {
 			because: "a template reads back as the lookup macro the write side accepts");
 		block.TemplateName.Should().Be("Creating new case from chat", because: "the describe-only name reads back");
 		block.Message.Should().BeNull(because: "template mode reports no message");
-		block.IgnoreErrors.Should().BeFalse(because: "ignoreErrors is always stated, false included");
+		block.IgnoreErrors.Should().BeFalse(because: "a constant ignoreErrors reads back, false included");
 		block.ColumnValues.Should().ContainSingle(because: "the column values read back")
 			.Which.GetProperty("column").GetString().Should().Be("Case", because: "the entry keeps its write shape");
 		block.Outputs.Should().Equal(["SendStatus", "SendStatusDetails"], because: "both outputs are listed even unmapped");

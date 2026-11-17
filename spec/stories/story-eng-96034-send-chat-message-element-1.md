@@ -54,4 +54,6 @@ the one the designer would have saved
 - [x] TC-U-07, TC-U-08, TC-U-16, TC-U-17 and TC-U-18 green on the rebundled archive.
 - [x] e2e TC-I-01 to TC-I-10 implemented (skip with a reason without OmnichannelMessaging, a channel or a chat template).
 - [x] e2e run green on a stand with OmnichannelMessaging and the chat cut installed (TC-I-01 to TC-I-10).
-- [ ] Q13 answered (what the process-designer lane stand carries).
+- [x] Q13 answered (what the process-designer lane stand carries): the lane deploys Studio, which ships
+  OmnichannelMessaging; its run on this PR (TeamCity build 16326369) passed every chat case except TC-I-08, ignored as
+  expected (the designer-built fixture exists only on the manual stand).

@@ -2832,8 +2832,9 @@ public sealed class DescribedChatMessage {
 	public string Message { get; set; }
 
 	/// <summary>
-	/// The stored ignore-errors flag. Always stated: <c>false</c> - the designer's untouched box included - means a
-	/// failed send stops the process.
+	/// The stored ignore-errors flag: <c>false</c> - the designer's untouched box included - means a failed send stops
+	/// the process. <c>null</c> when the flag is bound to a process parameter or a formula, so its value is decided at
+	/// run time; the element's generic <c>parameters</c> show the binding.
 	/// </summary>
 	[JsonPropertyName("ignoreErrors")]
 	public bool? IgnoreErrors { get; set; }

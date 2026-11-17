@@ -55,7 +55,8 @@ had not fitted, the item would have gone back to the owner with the numbers.
 
 **D6 - Describe reports the block re-appliably (Q11, Q17).** Every write member reads back in a form the write side
 takes; `message` is suppressed in template mode (the designer's copy of the template body would otherwise trip the
-template-plus-message refusal on replay); `ignoreErrors` is always stated; both outputs are always listed. The
+template-plus-message refusal on replay); `ignoreErrors` is stated whenever it is a constant (absent when bound to a parameter or a formula); both
+outputs are always listed. The
 generic describe also lists `MessageType` and `Contact` under `connections[]` for this task; replaying them aborts the
 edit, so the describe prompt and the guide say to ignore them (the generic suppression is a package follow-up).
 

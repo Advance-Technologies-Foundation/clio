@@ -430,7 +430,7 @@ public sealed class SendChatMessageElementToolE2ETests {
 
 	[TestCase(true, "completed")]
 	[TestCase(false, "error")]
-	[Description("TC-I-09: a send that fails at run time - the contact parameter left empty, so the element's own input check fails without reaching any provider - reaches the end of the process with SendStatus = Error when ignoreErrors is true, and ends the instance in Error when it is false. Ignored without McpE2E:AllowDestructiveMcpTests.")]
+	[Description("TC-I-09: a send that fails at run time - the contact parameter left empty, so the element's own input check fails without reaching any provider - reaches the end of the process with SendStatus = Error and no run error when ignoreErrors is true, and ends the instance in Error with the failure recorded in the process log (run-process reports it) when it is false. Ignored without McpE2E:AllowDestructiveMcpTests.")]
 	[AllureTag(RunProcessTool.ToolName)]
 	[AllureName("run-process continues past a failed send only when errors are ignored")]
 	public async Task RunProcess_Should_HonourIgnoreErrors_WhenTheSendFails(bool ignoreErrors, string expectedStatus) {
@@ -460,6 +460,10 @@ public sealed class SendChatMessageElementToolE2ETests {
 			if (ignoreErrors) {
 				Convert.ToString(run.ResultParameterValues?.GetValueOrDefault("SendResult")).Should().Be("Error",
 					because: "SendStatus reports the failure the run ignored");
+				run.Error.Should().BeNull(because: "an ignored send failure completes the run without an error");
+			} else {
+				run.Error.Should().NotBeNullOrWhiteSpace(
+					because: "the failure is recorded in the process log, which run-process reads back for an error run");
 			}
 		} finally {
 			await DeleteProcessesAsync(context, created);

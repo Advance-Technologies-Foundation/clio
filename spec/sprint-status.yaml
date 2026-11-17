@@ -5145,8 +5145,9 @@ stories:
       - story-eng-96034-send-chat-message-element-2
       - story-eng-96034-send-chat-message-element-3
     note: >-
-      ENG-96034 Send chat message element. Owner decisions Q1-Q18 on 2026-11-13 (Q13 deferred: what the
-      process-designer lane stand carries must be known before the clio PR merges). Status: review while the clio PR
+      ENG-96034 Send chat message element. Owner decisions Q1-Q18 on 2026-11-13. Q13 answered: the
+      process-designer lane (Studio) ran every chat case except the designer-parity case (build 16326369). AC 8 closed
+      on a real Telegram send on 2026-11-16 (Jira comment 590369). Status: review while the clio PR
       is open; done in the next clio PR that touches this file after the last merge, with only the really
       ticked Definition of Done boxes. Merge order (human merges): package -> knowledge -> clio.
   - id: story-eng-96034-send-chat-message-element-2

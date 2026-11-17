@@ -483,7 +483,7 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The describe contract and its prompt name the chatMessage block a Send chat message element reads back: the block replays in its write shape and templateName, outputs and issues are describe-only; the prompt says ignoreErrors is always stated, both outputs are listed even unmapped, template mode reports no message, and the connections entries describe lists for the task must never be replayed (setConnections refuses it).")]
+	[Description("The describe contract and its prompt name the chatMessage block a Send chat message element reads back: the block replays in its write shape and templateName, outputs and issues are describe-only; the prompt says a constant ignoreErrors is reported (absent when bound), both outputs are listed even unmapped, template mode reports no message, and the connections entries describe lists for the task must never be replayed (setConnections refuses it).")]
 	public void DescribeProcess_ShouldDocumentTheChatMessageBlock_WhenToolContractIsRead() {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();
@@ -496,7 +496,7 @@ public sealed class DescribeProcessToolTests {
 			because: "the contract names the block, its describe-only members and the guide that owns it");
 		prompt.Should().Contain("A `sendChatMessage` element (the designer's \"Send chat message\") carries its `chatMessage` block",
 			because: "the prompt lists every configuration block the tool reports");
-		prompt.Should().Contain("`ignoreErrors` (always stated: `false` means a failed send",
+		prompt.Should().Contain("`ignoreErrors` (`false` means a failed send stops the process;",
 			because: "an unset chat element stops the process on a failed send, unlike Send email");
 		prompt.Should().Contain("and `SendStatusDetails`, listed even when unmapped)",
 			because: "the outputs carry no direction, so the generic parameters list would hide them");

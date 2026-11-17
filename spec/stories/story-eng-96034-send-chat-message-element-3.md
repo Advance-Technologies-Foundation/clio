@@ -42,4 +42,5 @@ I build a process that actually sends, and I tell the user what to set up when i
 - [ ] Knowledge PR merged and re-pinned here.
 - [x] TC-I-09 implemented (gated by `McpE2E:AllowDestructiveMcpTests`).
 - [x] TC-I-09 run green on a stand with OmnichannelMessaging and the chat cut installed.
-- [ ] Tier B (WireMock Telegram) run recorded on the Jira story.
+- [x] Tier B run recorded on the Jira story: a real send on a Telegram channel on 2026-11-16 (AC 8 PASS; Jira comment
+  590369 on ENG-96034).

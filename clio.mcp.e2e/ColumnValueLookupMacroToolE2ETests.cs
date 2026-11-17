@@ -92,14 +92,11 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 		string recordId = await AnyRecordIdAsync(context, "ContactType");
 		string entry = $$"""{ "column": "Type", "value": "{{recordId}}" }""";
 		string processName = NewProcessName("PlainId");
-		// Nothing is built when the refusal holds, so there is nothing to clean up unless it does not.
-		List<string> created = [];
+		// Registered BEFORE the call: a build the server saved but whose answer never arrived must still be removed.
+		List<string> created = [processName];
 		try {
 			// Act
 			CallToolResult callResult = await CreateAsync(context, Descriptor(processName, "changeData", "Contact", entry));
-			if (LogText(callResult).Contains(CreatedLine, StringComparison.Ordinal)) {
-				created.Add(processName);
-			}
 
 			// Assert
 			ShouldBeRefused(callResult, "a plain constant on a Lookup column cannot be stored in a form the runtime reads");
