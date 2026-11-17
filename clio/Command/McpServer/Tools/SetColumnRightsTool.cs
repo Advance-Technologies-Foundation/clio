@@ -28,8 +28,8 @@ public sealed class SetColumnRightsTool(
 
 	// The worker is killed at its budget (120 s by default). A write makes up to thirteen requests in sequence (grantee,
 	// SysSchema lookup, read, storage count and rows, schema columns, a read by column UId when turning column
-	// permissions on, the object and its rows again right before the save, the save, and the read-back of the object and
-	// of storage, counted). Each gets one attempt of at most 20 s, all share a 100 s limit, and the save is sent only
+	// permissions on or, for a removal, whether the grantee is external, the object and its rows again right before the
+	// save, the save, and the read-back of the object and of storage, counted). Each gets one attempt of at most 20 s, all share a 100 s limit, and the save is sent only
 	// while two timeouts (40 s) are left for it and a read-back request; a read-back the limit cuts short reports the
 	// save as saved but NOT verified.
 	internal const int McpRequestTimeoutMilliseconds = 20_000;

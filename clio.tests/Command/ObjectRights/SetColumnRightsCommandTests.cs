@@ -928,6 +928,69 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
+	[Description("Removing an external role's deny row, with only All employees: read left, does not say its members follow All employees (external users are not in it) and says the removal WIDENS their access.")]
+	public void Execute_ShouldNotNameAllEmployees_WhenAnExternalRolesRowIsRemoved() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the preview ran");
+		_infos.Should().NotContain(line => line.StartsWith("PREVIEW") && line.Contains("follow the All employees row"),
+			because: "the All employees row does not apply to external users");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("not All employees")
+			&& line.Contains("operation permissions") && line.Contains("WIDENS"),
+			because: "with no All external users row the removed role's members follow the object's operation permissions");
+	}
+
+	[Test]
+	[Description("Removing an external role's deny row, with All external users: read left, says its members then follow the All external users row and that this WIDENS their access.")]
+	public void Execute_ShouldNameAllExternalUsers_WhenAnExternalRolesRowIsRemoved() {
+		// Arrange
+		Guid allExternalUsers = Guid.Parse("720b771c-e7a7-4f31-9cfb-52cd21c3739f");
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(allExternalUsers, 1, ColumnRightLevel.Read),
+			Row(Employees, 2, ColumnRightLevel.Edit))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("follow the All external users row (read)")
+			&& line.Contains("WIDENS"), because: "All external users' row is the one that applies to external users");
+	}
+
+	[Test]
+	[Description("When clio cannot tell whether the removed row's grantee is external, the removal is refused and nothing is written: an external role taken for internal would hide its widening.")]
+	public void Execute_ShouldRefuseTheRemoval_WhenTheExternalLookupFails() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new TimeoutException("no answer"));
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = Remove(Role);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the effect of the removal cannot be shown");
+		_errors.Should().Contain(line => line.Contains("external (portal) role") && line.Contains("Nothing was changed"),
+			because: "the error says why the call stopped");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
 	[Description("The emptied column is sent with no rows, and storage must then hold none for it.")]
 	public void Execute_ShouldSendTheEmptiedColumnWithNoRows_WhenTheLastRowIsRemoved() {
 		// Arrange

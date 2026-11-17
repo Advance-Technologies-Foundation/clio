@@ -38,7 +38,9 @@ leaves every user to the object's operation permissions. In the designer a role 
 - A column whose rows share a position is refused: its order is ambiguous.
 - `--remove-row` deletes the grantee's row; a removal of a row the grantee no longer has is no change. Removing a
   column's last row (while column permissions are ON) sends the column with no rows: every user then follows the
-  object's operation permissions; the summary says when that **widens** the removed row's access.
+  object's operation permissions; the summary says when that **widens** the removed row's access. For an external
+  (portal) role or user the summary compares with the All external users row, not All employees (external users are
+  not in it); when clio cannot tell whether the grantee is external, the removal is refused.
 
 The switch changes only through its flags: a grant while column permissions are OFF is refused unless
 `--enable-column-permissions` is passed with it; a move or a removal while they are OFF is refused (turn them on
