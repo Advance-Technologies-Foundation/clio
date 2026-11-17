@@ -137,7 +137,8 @@ every discovery call. A host asks for them once.
 - has `readOnlyHint = false` while its facts say it only reads and writes no host path, unless it is one of the
   named tools that hand out or drop a credential (`get-identity-assertion`, `get-browser-session`,
   `clear-browser-session`), each listed with its reason (D9);
-- leaves any of the four MCP hints unset: an absent hint is MCP's default, not a statement clio made;
+- leaves any of the four MCP hints unset: an absent hint is MCP's default, not a statement clio made. The values of
+  `idempotentHint` and `openWorldHint`, and `destructiveHint` on a `change`, are reviewed, not tested (D9);
 - is a `read` that rebuilds the environment or changes connections (at tool level or in an entry);
 - has an argument entry on an argument it does not take, a duplicate entry, two `when-absent` values for one
   argument, or an entry wider than the tool;
@@ -233,25 +234,28 @@ entry gives no `why`. The name pattern only catches a new look-alike. A path und
 
 ### D9. The MCP hints follow the facts; the facts are the mark for acting on this machine
 
-Decided on 16 Nov 2026 for the AI Accelerator: clio publishes the standard MCP hints on every tool, and its own mark
-for a call that acts on the machine; a host reads both from the clio it pins, and keeps its own name table only as a
-cross-check. The MCP specification calls every hint a hint, to be trusted only from a trusted server: a host that
+clio publishes the standard MCP hints on every tool, and its own facts; a host that runs clio for an agent reads both
+from the clio it pins, and keeps any name table of its own only as a cross-check. The MCP specification calls every hint a hint, to be trusted only from a trusted server: a host that
 pins clio trusts it.
 
 - **`readOnlyHint`** is MCP's "does not modify its environment": `true` exactly when the facts say `read` and no host
   path may be written. A `get-...-to-file` tool, a `read` that writes the file its call names, is `false`. Three tools
   are `false` though their facts say they only read: each hands out or drops a credential, which the facts do not count
   (clio's own caches are not an effect): `get-identity-assertion` issues a signed assertion, `get-browser-session` signs
-  in and keeps the cookies, `clear-browser-session` deletes them.
-- **`destructiveHint`** is MCP's "may perform destructive updates" as clio has always read it (`(D)`): `true` for every
-  `destroy`, and for a `change` that overwrites or replaces (`update-page`, `sync-pages`); `false` for one that only adds
-  (`odata-create`, `create-schema`). It cannot tell a create from a delete; `effect` can.
+  in and keeps the cookies, `clear-browser-session` deletes them. For these three the hint is the only signal: the
+  facts carry no credential field.
+- **`destructiveHint`** is clio's `(D)`: `true` for every `destroy`, and for a `change` that overwrites or replaces what
+  is on the environment (`update-page`, `sync-pages`); `false` for a `change` that only adds there (`odata-create`,
+  `create-schema`), and for a tool whose only overwrites are the files its call names or clio's connections
+  (`build-theme`, a `read` that rewrites its output folder; `reg-web-app`, a `change` that updates a registered
+  environment): those are in `host-paths` and `connections`.
+  It cannot tell a create from a delete; `effect` can.
 - **`idempotentHint`** and **`openWorldHint`** are stated on every tool. clio reads a Creatio environment as a closed
-  domain (`openWorldHint=false`), and a tool that reaches outside clio and its environments as an open one: a download
-  or a fetch (`install-toolkit`, `install-knowledge`), a web service (`read-wsdl`, `test-web-service-method`),
-  telemetry, and `clio-run`, which runs any tool.
-- **Acting on the machine** is in the facts: `scope: machine` for a call that reaches installed software, services,
-  local Creatio instances or clio itself, and `host-paths` for the arguments that name a file or folder there, with the
+  domain (`openWorldHint=false`), and a tool that reaches outside clio and its environments as an open one, for example
+  a download or a fetch (`install-toolkit`, `update-knowledge`), a font probe (`build-theme`, `create-theme`), a web
+  service (`read-wsdl`, `test-web-service-method`), telemetry, and `clio-run`, which runs any tool.
+- **Reaching the machine** is in the facts: `scope: machine` for a call that reaches installed software, services,
+  local Creatio instances or clio itself (a read included; `effect` says whether it changes anything), and `host-paths` for the arguments that name a file or folder there, with the
   access. A host reads them from `_meta["clio/facts"]` and `get-tool-contract` `detail=facts` (D3); no second mark is
   added, so the two cannot disagree.
 

@@ -33,8 +33,9 @@ the facts are not on the line index, the `index-entries` objects or the contract
 **How the MCP hints relate** — every tool states all four MCP hints, and `readOnlyHint` is `true` exactly when the
 facts say `read` and no host path may be written; three tools that hand out or drop a credential stay `false` by name
 (`get-identity-assertion`, `get-browser-session`, `clear-browser-session`). `destructiveHint` keeps clio's `(D)`
-meaning (overwrites or deletes), which is wider than `effect: destroy`. A host that pins clio may trust the hints; the
-facts say more, and `scope: machine` with `host-paths` is clio's mark for a call that acts on this machine
+meaning (overwrites or deletes on the environment), which is wider than `effect: destroy`; local file writes and
+connection updates are in `host-paths` and `connections` instead. Only `readOnlyHint` is tested both ways. A host that pins clio may trust the hints; the
+facts say more, and `scope: machine` with `host-paths` is clio's mark for a call that reaches this machine
 (`spec/adr/adr-mcp-tool-facts.md` D9).
 
 **What breaks if you ignore it** — a new tool without a catalog entry, with a field left out, with facts its
