@@ -683,7 +683,18 @@ public static partial class WsdlRegistrationMapper {
 					+ "hidden constant default was kept; outside it describe would show the value, so register refuses to "
 					+ "keep it: send default-value \"\" to clear it or default-sys-setting to replace it.");
 			}
-			return Argument(parameter, code, path, sequenceElement, previous, items, soapHeader, defaultValue);
+			// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method).
+			return new WebServiceParameterArg(code,
+				Type: parameter.Type,
+				Path: path,
+				Caption: parameter.Caption,
+				Array: parameter.IsArray ? true : null,
+				Required: previous?.Required == true ? true : null,
+				DefaultValue: defaultValue,
+				DefaultSysSetting: previous?.DefaultSysSetting,
+				Items: items.Count > 0 ? items : null,
+				SoapHeader: soapHeader ? true : null,
+				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);
 		}
 
 		// A constant describe showed is carried unless the WSDL puts it where register would take it for a secret: a
@@ -721,24 +732,6 @@ public static partial class WsdlRegistrationMapper {
 			} else {
 				_matched.Remove(previous);
 			}
-		}
-
-		// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method); the
-		// constant default is the one CarriedConstant keeps.
-		private static WebServiceParameterArg Argument(WsdlParameter parameter, string code, string path,
-				string sequenceElement, WebServiceParameterView previous, List<WebServiceParameterArg> items, bool soapHeader,
-				string defaultValue) {
-			return new WebServiceParameterArg(code,
-				Type: parameter.Type,
-				Path: path,
-				Caption: parameter.Caption,
-				Array: parameter.IsArray ? true : null,
-				Required: previous?.Required == true ? true : null,
-				DefaultValue: defaultValue,
-				DefaultSysSetting: previous?.DefaultSysSetting,
-				Items: items.Count > 0 ? items : null,
-				SoapHeader: soapHeader ? true : null,
-				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);
 		}
 
 		private string LeftOut(string path, bool isRequest) =>

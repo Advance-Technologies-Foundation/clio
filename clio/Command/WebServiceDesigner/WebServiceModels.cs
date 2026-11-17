@@ -395,6 +395,25 @@ public static partial class WebServiceSchemaView {
 	}
 
 	/// <summary>
+	/// The one rule by which a constant default is a secret, shared by register and modify-web-service (refused),
+	/// describe-web-service and list-web-services (hidden), the carry-over of a hidden constant, read-wsdl's carry-over
+	/// of a Studio constant, and a test call (masked in the echo): a cookie is always one; under a credential-like name
+	/// (<see cref="IsSecretName"/>, Authorization included) any value is; a query value follows
+	/// <see cref="IsSecretQueryValue"/>; a header or SOAP-header value is one when it looks like a key
+	/// (<see cref="IsKeyLikeValue"/>), so <c>Accept-Language: en-US</c> or <c>X-Api-Version: 2</c> is an ordinary
+	/// constant, as Studio allows it.
+	/// </summary>
+	/// <param name="parameterName">The parameter code or wire name.</param>
+	/// <param name="placement">The parameter placement; a SOAP-header element counts as a header.</param>
+	/// <param name="value">The constant default, or null.</param>
+	/// <returns>Whether a constant default there is a secret.</returns>
+	public static bool IsSecretLike(string parameterName, int placement, string value) =>
+		placement == ServiceSchemaCodes.Placements["cookie"]
+		|| IsSecretName(parameterName)
+		|| (placement == ServiceSchemaCodes.Placements["query"] && IsSecretQueryValue(parameterName, value))
+		|| (placement == ServiceSchemaCodes.Placements["header"] && IsKeyLikeValue(value));
+
+	/// <summary>
 	/// Whether a stored parameter has a non-empty constant default that is a secret
 	/// (<see cref="IsSecretLike(ServiceParameterDto, bool, bool)"/>). The one check describe-web-service hides by, a test
 	/// call masks by, and modify-web-service carries a hidden constant over by, so no constant is shown in one place and
@@ -422,25 +441,6 @@ public static partial class WebServiceSchemaView {
 	public static bool IsSecretSoapParent(bool inSoapHeader, bool underSecretParent, string code, string path) =>
 		inSoapHeader && (underSecretParent || IsSecretName(code) || IsSecretName(path));
 
-	/// <summary>
-	/// The one rule by which a constant default is a secret, shared by register and modify-web-service (refused),
-	/// describe-web-service and list-web-services (hidden), the carry-over of a hidden constant, read-wsdl's carry-over
-	/// of a Studio constant, and a test call (masked in the echo): a cookie is always one; under a credential-like name
-	/// (<see cref="IsSecretName"/>, Authorization included) any value is; a query value follows
-	/// <see cref="IsSecretQueryValue"/>; a header or SOAP-header value is one when it looks like a key
-	/// (<see cref="IsKeyLikeValue"/>), so <c>Accept-Language: en-US</c> or <c>X-Api-Version: 2</c> is an ordinary
-	/// constant, as Studio allows it.
-	/// </summary>
-	/// <param name="parameterName">The parameter code or wire name.</param>
-	/// <param name="placement">The parameter placement; a SOAP-header element counts as a header.</param>
-	/// <param name="value">The constant default, or null.</param>
-	/// <returns>Whether a constant default there is a secret.</returns>
-	public static bool IsSecretLike(string parameterName, int placement, string value) =>
-		placement == ServiceSchemaCodes.Placements["cookie"]
-		|| IsSecretName(parameterName)
-		|| (placement == ServiceSchemaCodes.Placements["query"] && IsSecretQueryValue(parameterName, value))
-		|| (placement == ServiceSchemaCodes.Placements["header"] && IsKeyLikeValue(value));
-
 	// A value part at least this long can be a generated key: 16 characters is the shortest key in common use (a 64-bit
 	// key in hex), the length MinHostingKeyLength takes for a key under a hosting key name. Shorter parts are versions,
 	// language tags, short media types and flags.
@@ -456,8 +456,8 @@ public static partial class WebServiceSchemaView {
 
 	// A part of this length or more with an upper-case letter, a lower-case letter, a digit and a symbol has the shape of
 	// a chosen password (Summer2024!); a plain header value seldom mixes all four.
-	private const int MinPasswordLength = 8;
-	private const string PasswordSymbols = "!@#$%^&*?~";
+	private const int MinChosenWordLength = 8;
+	private const string ChosenWordSymbols = "!@#$%^&*?~";
 
 	// Where a header value splits into parts judged one by one: a scheme and its key (Bearer abc...), list items
 	// (gzip, deflate) and parameters (text/xml; charset=utf-8). A key in base64, base64url, hex or a JWT holds none.
@@ -616,8 +616,8 @@ public static partial class WebServiceSchemaView {
 		if (core.Length >= MinOpaqueDigitsLength && core.All(char.IsAsciiDigit)) {
 			return true;
 		}
-		return core.Length >= MinPasswordLength && core.Any(char.IsAsciiLetterUpper) && core.Any(char.IsAsciiLetterLower)
-			&& core.Any(char.IsAsciiDigit) && core.Any(c => PasswordSymbols.Contains(c));
+		return core.Length >= MinChosenWordLength && core.Any(char.IsAsciiLetterUpper) && core.Any(char.IsAsciiLetterLower)
+			&& core.Any(char.IsAsciiDigit) && core.Any(c => ChosenWordSymbols.Contains(c));
 	}
 
 	// A media type or a product token: a word, a '/', then words and version numbers. Each piece is a word, a short
@@ -630,7 +630,7 @@ public static partial class WebServiceSchemaView {
 			return false;
 		}
 		string[] pieces = token.Split(ProductTokenSeparators, StringSplitOptions.RemoveEmptyEntries);
-		bool Mixed(string piece) => piece.Any(char.IsAsciiLetter) && piece.Any(char.IsAsciiDigit);
+		static bool Mixed(string piece) => piece.Any(char.IsAsciiLetter) && piece.Any(char.IsAsciiDigit);
 		return pieces.Count(Mixed) <= 1
 			&& pieces.All(piece => piece.Length < MinKeyLikeLength
 				&& (piece.Length <= 4 || piece.All(char.IsAsciiLetter)
