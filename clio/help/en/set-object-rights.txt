@@ -219,6 +219,10 @@ EXAMPLES
         clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissions --confirm -e production
 
 NOTES
+    A write takes the object's write lease (keyed by the environment's resolved URL and the object's
+    code), shared with set-default-record-rights and set-column-rights: a second write of the same
+    object while one runs is refused, and nothing is changed. A preview takes none.
+
     The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
 
     When the grantee is All employees and the object has no row for it, the new row gets exactly the

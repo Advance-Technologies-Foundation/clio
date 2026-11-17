@@ -15,8 +15,7 @@ Changes the **column** (field-level) permissions of ONE object — one column an
 `RightManagementService.svc/SaveAdministratedObject`, the payload of the System Designer "Column permissions" tab.
 Read the result with [`get-column-rights`](get-column-rights.md).
 
-The object is named by its **code** (entity schema name); when no object has that code, the one object whose title it
-is is changed and the output says so; several objects with that title are refused. `--column` is the column **code**,
+The object is named by its **code** (entity schema name); a title is refused, naming the code to pass. `--column` is the column **code**,
 resolved to its UId through the entity schema (every package layer included). `--grantee` is a SysAdminUnit id, which
 must exist.
 
@@ -25,7 +24,8 @@ must exist.
 - `--position N` places the row (with `--access`) or moves the grantee's row (alone) to `N` in the column's **stored
   position order**, 0 first, and renumbers the column's rows `0..n-1`. Only an explicit number is accepted: how
   Creatio ranks the rows of one column against each other is **not measured**, so the command claims no precedence.
-- `--remove-row` deletes the grantee's row.
+- `--remove-row` deletes the grantee's row; a repeated removal is no change. Removing a column's last row other than
+  the default leaves it the default row (All employees: edit), which **widens** access; the summary says so.
 
 The switch changes only through its flags: a grant while column permissions are OFF is refused unless
 `--enable-column-permissions` is passed with it; a move or a removal while they are OFF is refused (turn them on
@@ -57,11 +57,16 @@ only row of a default-only column is refused: the default would come back.
   with its rows, a column with no rows with none, a default column omitted. Any disagreement refuses the call: a save
   built from a short storage read would lock every column it missed.
 - **Counted read:** storage is counted before it is read; a read with fewer rows than the count is refused.
-- **One call per object at a time:** a call takes a lease on the environment and object (an exclusive OS file handle,
-  released if the process dies) for its whole run; a second call while it is held is refused. **Calls for one object
-  must not run in parallel.**
-- **Re-read before the save:** the stored rows are read again right before the save; if another client changed them
-  since the plan, nothing is saved.
+- **Second read when enabling:** while column permissions are OFF the service lists nothing, so turning them on reads
+  the rows again by the object's column UIds; rows of this object the first read missed refuse the call. Every output
+  says how many stored rows the plan was read from.
+- **One write per object at a time:** a write takes a lease on the object — keyed by the environment's resolved URL and
+  the object's code; an exclusive OS file handle, released if the process dies — for its whole run, shared with
+  `set-object-rights` and `set-default-record-rights`; a second write of the object while it is held is refused.
+  **Calls for one object must not run in parallel.**
+- **Re-read before the save:** the object and its stored rows are read again right before the save; if any of the three
+  switches (column, operation, record permissions), the schema UId or a stored row changed since the plan, nothing is
+  saved. The save goes out from that fresh read.
 
 ### Read-back
 
@@ -99,7 +104,7 @@ clio set-column-rights --entity-schema-name <EntitySchemaName> (--enable-column-
 
 ```bash
 --entity-schema-name NAME
-The object: its code, or its title when no object has that code. Required.
+The object, by its code. A title is refused, naming the code. Required.
 
 --column CODE
 Column code whose rows change. Required unless the call only turns the switch.
@@ -115,7 +120,9 @@ Position in the column's stored position order, 0 first: with --access it places
 grantee's row. Past the end is refused.
 
 --remove-row
-Remove the grantee's row. A call of its own: not with --access, --position or a switch flag.
+Remove the grantee's row; no change when it has none. Removing the column's last row other than the default leaves the
+default row (All employees: edit), which widens access. A call of its own: not with --access, --position or a switch
+flag.
 
 --enable-column-permissions
 Turn column permissions ON: with --access, or alone.
@@ -172,8 +179,8 @@ clio set-column-rights --entity-schema-name UsrOrder --disable-column-permission
 - Exit code 0 when the storage read-back matches the plan, when the call changes nothing, for a preview, or when the
   prompt is answered no; 1 otherwise.
 - On MCP the tool is `set-column-rights` (destructive, idempotent: a repeated call finds its change in place). The host
-  approval is the confirmation; `preview=true` writes nothing. A write makes up to twelve requests in sequence; each
-  gets one attempt of at most 25 s, all of them share a 100 s limit, as for `set-object-rights`, and the save is sent
-  only while three timeouts are left for it and the read-back.
+  approval is the confirmation; `preview=true` writes nothing. A write makes up to thirteen requests in sequence; each
+  gets one attempt of at most 20 s, all of them share a 100 s limit, and the save is sent only while four timeouts are
+  left for it and its counted read-back.
 - See `docs/knowledge/platform/column-permissions-come-from-the-administrated-object.md` for the measured service
   facts.

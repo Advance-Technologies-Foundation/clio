@@ -237,6 +237,8 @@ clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissi
 
 ## Notes
 
+- A write takes the object's write lease (keyed by the environment's resolved URL and the object's code), shared with
+  `set-default-record-rights` and `set-column-rights`: a second write of the same object while one runs is refused, and nothing is changed. A preview takes none.
 - Backed by `RightManagementService.svc/GetAdministratedObject` + `SaveAdministratedObject` (a
   read-modify-write). The untouched record, column and entity-operation collections are sent as null.
 - The output and the exit code come from the planned change and the read-back, compared row by row (grantee,

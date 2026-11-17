@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -258,6 +259,28 @@ public class ColumnRightsStorageReaderTests {
 	}
 
 	[Test]
+	[Description("The read by column UId filters on SubjectColumnUId only (no schema filter) and returns each row with its schema, so other objects' rows for inherited columns are told apart.")]
+	public void ReadStoredRowsByColumns_ShouldReadByColumnAndKeepTheSchema_WhenCalled() {
+		// Arrange
+		Guid other = Guid.Parse("41af89e9-750b-4ebb-8cac-ff39b64841ec");
+		Answers(null, Rows(
+			"{\"SubjectSchemaUId\":\"" + Schema + "\"," + Row(Amount, Role, "Role", 0, "0").Substring(1),
+			"{\"SubjectSchemaUId\":\"" + other + "\"," + Row(Amount, Role, "Role", 0, "1").Substring(1)));
+
+		// Act
+		var rows = _reader.ReadStoredRowsByColumns([Amount], new CreatioRequestOptions());
+
+		// Assert
+		rows.Select(entry => entry.SubjectSchemaUId).Should().BeEquivalentTo(new[] { Schema, other },
+			because: "each row keeps the object it is stored for");
+		JsonObject filters = JsonNode.Parse(_rowsQuery)!["filters"]!["items"]!.AsObject();
+		filters.Select(filter => filter.Value!["leftExpression"]!["columnPath"]!.GetValue<string>()).Should()
+			.Equal(new[] { "SubjectColumnUId" }, because: "the read is keyed by column UId only, with no schema filter");
+		_rowsQuery.Should().Contain(Amount.ToString(), because: "the filter carries the column UId");
+		_countQuery.Should().BeNull(because: "the second read is compared with a counted first read");
+	}
+
+	[Test]
 	[Description("A failed DataService answer is thrown, never read as no stored rows.")]
 	public void ReadStoredColumns_ShouldThrow_WhenTheServiceFails() {
 		// Arrange
@@ -273,18 +296,19 @@ public class ColumnRightsStorageReaderTests {
 }
 
 /// <summary>
-/// <see cref="ColumnRightsWriteLease"/>: one holder per environment and object across processes, refused at once while
-/// held, free again once disposed. Uses a lock folder of its own under the temp directory.
+/// <see cref="AdministratedObjectWriteLease"/>: one holder per environment and object across processes — the environment
+/// by its resolved, normalised URL — refused at once while held, free again once disposed. Uses a lock folder of its own
+/// under the temp directory.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Common")]
-public class ColumnRightsWriteLeaseTests {
+public class AdministratedObjectWriteLeaseTests {
 
 	private string _root;
 
 	[SetUp]
-	public void SetUp() => _root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"clio-column-lease-{Guid.NewGuid():N}");
+	public void SetUp() => _root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"clio-object-lease-{Guid.NewGuid():N}");
 
 	[TearDown]
 	public void TearDown() {
@@ -293,23 +317,41 @@ public class ColumnRightsWriteLeaseTests {
 		}
 	}
 
+	private AdministratedObjectWriteLease Lease(string uri) => new(new EnvironmentSettings { Uri = uri }, _root);
+
 	[Test]
-	[Description("A second lease on the same environment and object is refused while the first is held, and granted once it is disposed; another object is not blocked.")]
+	[Description("A second lease on the same object is refused while the first is held — also through another spelling of the same site's URL — and granted once it is disposed; another object or another site is not blocked.")]
 	public void Acquire_ShouldRefuseASecondHolder_WhileTheFirstHoldsTheLease() {
 		// Arrange
-		ColumnRightsWriteLease lease = new(_root);
-		IDisposable first = lease.Acquire("dev", "UsrHoliday");
+		IDisposable first = Lease("https://dev.example.com").Acquire("UsrHoliday");
 
 		// Act
-		Action second = () => lease.Acquire("DEV", "usrholiday").Dispose();
-		Action other = () => lease.Acquire("dev", "UsrOrder").Dispose();
+		Action sameSite = () => Lease("HTTPS://Dev.Example.com/").Acquire("usrholiday").Dispose();
+		Action otherObject = () => Lease("https://dev.example.com").Acquire("UsrOrder").Dispose();
+		Action otherSite = () => Lease("https://qa.example.com").Acquire("UsrHoliday").Dispose();
 
 		// Assert
-		second.Should().Throw<InvalidOperationException>(because: "two calls on one object would revert each other")
+		sameSite.Should().Throw<InvalidOperationException>(because: "two writes of one object would revert each other")
 			.WithMessage("*must not run in parallel*");
-		other.Should().NotThrow(because: "a lease covers one object");
+		otherObject.Should().NotThrow(because: "a lease covers one object");
+		otherSite.Should().NotThrow(because: "a lease covers one environment");
 		first.Dispose();
-		Action afterRelease = () => lease.Acquire("dev", "UsrHoliday").Dispose();
+		Action afterRelease = () => Lease("https://dev.example.com").Acquire("UsrHoliday").Dispose();
 		afterRelease.Should().NotThrow(because: "a disposed lease is free again");
+	}
+
+	[TestCase("https://dev.example.com/", "HTTPS://DEV.EXAMPLE.COM")]
+	[TestCase("  https://Dev.Example.com  ", "HTTPS://DEV.EXAMPLE.COM")]
+	[TestCase("https://dev.example.com/0/", "HTTPS://DEV.EXAMPLE.COM/0")]
+	[Description("The environment key is the resolved URL normalised: case, surrounding spaces and a trailing slash do not make another environment.")]
+	public void EnvironmentKey_ShouldNormaliseTheResolvedUrl_WhenWrittenDifferently(string uri, string expected) {
+		// Arrange
+		EnvironmentSettings settings = new() { Uri = uri };
+
+		// Act
+		string key = AdministratedObjectWriteLease.EnvironmentKey(settings);
+
+		// Assert
+		key.Should().Be(expected, because: "one site is one environment however its URL is written");
 	}
 }

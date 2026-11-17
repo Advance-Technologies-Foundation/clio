@@ -57,7 +57,7 @@ public enum ColumnRightsRefusal {
 	/// <summary>A grant on an object whose column permissions are off, without <c>--enable-column-permissions</c>.</summary>
 	EnableNotRequested,
 
-	/// <summary>A move or a removal of a row the grantee does not have in the column.</summary>
+	/// <summary>A move of a row the grantee does not have in the column (a removal of one is no change).</summary>
 	NoGranteeRow,
 
 	/// <summary>The grantee has more than one row in the column, so the row to change is ambiguous.</summary>
@@ -231,6 +231,12 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 				granteeRows.Select(row => row.Position).ToArray());
 		}
 		ColumnRightRow existing = granteeRows.FirstOrDefault();
+		// A removal whose row is already gone has nothing left to do: a repeated call succeeds with no change.
+		if (existing is null && request.RemoveRow) {
+			return new ColumnRightsPlan(before, switchRead, null, before, [], null, [], request.ColumnUId) with {
+				BaseRows = rows
+			};
+		}
 		if (existing is null && request.Access is null) {
 			return Refuse(before, request, ColumnRightsRefusal.NoGranteeRow) with { BaseRows = rows };
 		}

@@ -26,6 +26,15 @@ public sealed class SetColumnRightsTool(
 
 	internal const string ToolName = "set-column-rights";
 
+	// The worker is killed at its budget (120 s by default). A write makes up to thirteen requests in sequence (grantee,
+	// SysSchema lookup, read, storage count and rows, schema columns, a read by column UId when turning column
+	// permissions on, the object and its rows again right before the save, the save, and the read-back of the object and
+	// of storage, counted). Each gets one attempt of at most 20 s, all share a 100 s limit, and the save is sent only
+	// while four timeouts (80 s) are left for it and its read-back.
+	internal const int McpRequestTimeoutMilliseconds = 20_000;
+
+	internal static readonly TimeSpan McpCallBudget = TimeSpan.FromSeconds(100);
+
 	internal const string ValidArguments =
 		"Valid: environment-name, entity-schema-name, column, grantee, access, remove-row, position, "
 		+ "enable-column-permissions, disable-column-permissions, preview.";
@@ -39,8 +48,8 @@ public sealed class SetColumnRightsTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Changes column permissions. Sets one role's access (denied/read/edit) to ONE column of ONE object, moves or removes that role's row, or turns the object's column permissions on or off - the COLUMN (field-level) layer (DESTRUCTIVE - changes access rights). " +
-		"entity-schema-name is the object's code; when no object has that code, the one object with that title (several are refused). column is the column CODE. grantee is a SysAdminUnit id (names are not unique); it must exist. " +
-		"access sets the grantee's row: a new row goes after the column's last row, an existing one keeps its place. position (0 first) places or, alone, moves the row in the column's stored position order and renumbers its rows 0..n-1; how Creatio ranks column rows is not measured. remove-row=true deletes the grantee's row. " +
+		"entity-schema-name is the object's CODE: a title is refused, naming the code to pass. column is the column CODE. grantee is a SysAdminUnit id (names are not unique); it must exist. " +
+		"access sets the grantee's row: a new row goes after the column's last row, an existing one keeps its place. position (0 first) places or, alone, moves the row in the column's stored position order and renumbers its rows 0..n-1; how Creatio ranks column rows is not measured. remove-row=true deletes the grantee's row (a repeated removal is no change); removing a column's last row other than the default leaves it the default (All employees: edit), which WIDENS access. " +
 		"The switch changes only through its flags: a grant while column permissions are OFF is refused unless enable-column-permissions is passed; a move or a removal while OFF is refused; enable-column-permissions turns them on and gives EVERY column with no stored row the default row (All employees: edit), naming those columns in the result; disable-column-permissions ALONE turns them off (rows kept, not applied). " +
 		"A save with a column list gives every column it does not name the default row (All employees, edit), so the call builds the list from storage: every column whose stored rows are not the default, the changed one with its new rows; a column with no rows is sent with none while column permissions are ON, and gets the default when the call turns them on (no column is locked; the result names them). A column emptied by remove-row gets the default. Disable sends no list: rows are kept, not applied. The call then reads storage back: a difference fails it. " +
 		"Calls for one object must NOT run in parallel: a second call while one runs is refused, and a save is aborted when the stored rows changed since they were read. While ON, the call is refused when storage disagrees with the service's list. Put a restriction at position 0: which row wins is not measured, and a row below All employees: edit is warned about. " +
@@ -66,11 +75,7 @@ public sealed class SetColumnRightsTool(
 
 	/// <summary>The command options an MCP call runs with.</summary>
 	/// <param name="args">The call's arguments.</param>
-	/// <returns>The options, with the request limits of set-object-rights. A write makes up to twelve requests in sequence
-	/// (grantee, SysSchema lookup, read, the read again under the write lease, the storage count and rows, the schema's
-	/// columns, the storage rows again right before the save, the save, and the read-back of the object and of storage);
-	/// each gets at most 25 s of the shared 100 s, and the save is sent only while three timeouts are left for it and the
-	/// read-back.</returns>
+	/// <returns>The options, with the MCP request limits above.</returns>
 	internal static SetColumnRightsOptions BuildOptions(SetColumnRightsArgs args) {
 		bool preview = args.Preview ?? false;
 		return new SetColumnRightsOptions {
@@ -87,9 +92,9 @@ public sealed class SetColumnRightsTool(
 			// MCP cannot prompt anyone: the host's approval of this call is the confirmation. A preview writes nothing,
 			// so it is never confirmed.
 			Confirm = !preview,
-			TimeOut = SetObjectRightsTool.McpRequestTimeoutMilliseconds,
+			TimeOut = McpRequestTimeoutMilliseconds,
 			MaxAttempts = 1,
-			CallBudget = SetObjectRightsTool.McpCallBudget
+			CallBudget = McpCallBudget
 		};
 	}
 }
@@ -112,7 +117,7 @@ public sealed record SetColumnRightsArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("The one object whose column permissions change: its code, or its title when no object has that code.")]
+	[property: Description("The one object whose column permissions change, by its CODE (entity schema name). A title is refused, naming the code it belongs to.")]
 	[property: Required]
 	string EntitySchemaName,
 
@@ -129,7 +134,7 @@ public sealed record SetColumnRightsArgs(
 	string? Access = null,
 
 	[property: JsonPropertyName("remove-row")]
-	[property: Description("Remove the grantee's row from the column (default false). A call of its own: not with access, position or a switch flag.")]
+	[property: Description("Remove the grantee's row from the column (default false); no change when it has none. Removing the column's last row other than the default leaves the default row (All employees: edit), which WIDENS access. A call of its own: not with access, position or a switch flag.")]
 	bool? RemoveRow = null,
 
 	[property: JsonPropertyName("position")]

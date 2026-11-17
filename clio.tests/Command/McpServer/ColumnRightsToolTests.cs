@@ -235,7 +235,7 @@ public sealed class SetColumnRightsToolTests {
 	}
 
 	private SetColumnRightsCommand Command() => new(_reader, _storage, _writer, new ColumnRightsPlanner(),
-		new ColumnRightsReadBackVerifier(), Substitute.For<IColumnRightsWriteLease>(), _granteeLookup, _columnManager,
+		new ColumnRightsReadBackVerifier(), Substitute.For<IAdministratedObjectWriteLease>(), _granteeLookup, _columnManager,
 		Substitute.For<IInteractiveConsole>(), _logger);
 
 	private SetColumnRightsTool Tool() => new(Command(), _logger, _resolver);
@@ -307,10 +307,13 @@ public sealed class SetColumnRightsToolTests {
 		options.Position.Should().Be(0, because: "position maps to --position");
 		options.EnableColumnPermissions.Should().BeTrue(because: "the enable flag maps through");
 		options.Confirm.Should().BeTrue(because: "the host's approval of the call is the confirmation");
-		options.TimeOut.Should().Be(SetObjectRightsTool.McpRequestTimeoutMilliseconds,
-			because: "each request gets the set-object-rights limit");
+		options.TimeOut.Should().Be(SetColumnRightsTool.McpRequestTimeoutMilliseconds,
+			because: "each request gets at most 20 s, so four are left for the save and its counted read-back");
 		options.MaxAttempts.Should().Be(1, because: "a write is not retried");
-		options.CallBudget.Should().Be(SetObjectRightsTool.McpCallBudget, because: "all requests share one limit");
+		options.CallBudget.Should().Be(SetColumnRightsTool.McpCallBudget, because: "all requests share one limit");
+		(4 * SetColumnRightsTool.McpRequestTimeoutMilliseconds).Should().BeLessThan(
+			(int)SetColumnRightsTool.McpCallBudget.TotalMilliseconds,
+			because: "the save and its read-back must fit the call's limit with time left for the reads before them");
 		SetColumnRightsTool.ValidArguments.Should().NotContain("package",
 			because: "column rights are not bound to a package: the delivery path is not established");
 	}
@@ -330,8 +333,10 @@ public sealed class SetColumnRightsToolTests {
 		// Assert
 		response.Success.Should().BeFalse(because: "an unknown argument name must be refused, not silently dropped");
 		response.Error.Should().Contain(unknown, because: "the refusal names the offending key");
-		_resolver.DidNotReceive().Resolve<SetColumnRightsCommand>(Arg.Any<EnvironmentOptions>());
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		Clio.Tests.Command.ObjectRights.ReceivedCallLog.CallsTo(_resolver, nameof(IToolCommandResolver.Resolve))
+			.Should().BeEmpty(because: "the refusal comes before the command is resolved");
+		Clio.Tests.Command.ObjectRights.ReceivedCallLog.CallsTo(_writer, nameof(IColumnRightsWriter.Save))
+			.Should().BeEmpty(because: "nothing is written");
 	}
 
 	[Test]
@@ -346,7 +351,8 @@ public sealed class SetColumnRightsToolTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "a preview of a valid change succeeds");
 		_captured!.Confirm.Should().BeFalse(because: "a preview is never confirmed");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		Clio.Tests.Command.ObjectRights.ReceivedCallLog.CallsTo(_writer, nameof(IColumnRightsWriter.Save))
+			.Should().BeEmpty(because: "a preview writes nothing");
 		response.Output.Should().Contain("PREVIEW", because: "the output says nothing was changed");
 	}
 }

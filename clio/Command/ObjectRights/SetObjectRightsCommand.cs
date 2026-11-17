@@ -127,23 +127,25 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private readonly IGranteeLookup _granteeLookup;
 	private readonly IObjectRightsReadBackVerifier _readBackVerifier;
 	private readonly IObjectRightsPackageBinder _binder;
+	private readonly IAdministratedObjectWriteLease _lease;
 	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "The command composes independent DI collaborators (reader, writer, planner, grantee lookup, "
-			+ "read-back verifier, package binder, console, logger); grouping them into a parameter object would hide the "
-			+ "injected contract without changing behaviour.")]
+			+ "read-back verifier, package binder, write lease, console, logger); grouping them into a parameter object "
+			+ "would hide the injected contract without changing behaviour.")]
 	public SetObjectRightsCommand(IObjectRightsReader reader, IObjectRightsWriter writer, IObjectRightsPlanner planner,
 		IGranteeLookup granteeLookup, IObjectRightsReadBackVerifier readBackVerifier, IObjectRightsPackageBinder binder,
-		IInteractiveConsole console, ILogger logger) {
+		IAdministratedObjectWriteLease lease, IInteractiveConsole console, ILogger logger) {
 		_reader = reader;
 		_writer = writer;
 		_planner = planner;
 		_granteeLookup = granteeLookup;
 		_readBackVerifier = readBackVerifier;
 		_binder = binder;
+		_lease = lease;
 		_console = console;
 		_logger = logger;
 	}
@@ -165,6 +167,12 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			}
 			request = request with { GranteeName = granteeName };
 		}
+		// The object's write lease, shared with set-default-record-rights and set-column-rights: the save carries the
+		// object's three switches as read, so an overlapping write of the object would revert them.
+		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, named, options.Preview, _logger, out IDisposable held)) {
+			return 1;
+		}
+		using IDisposable lease = held;
 		if (!TryReadObject(named, requestOptions, out string schemaName, out ObjectRightsInfo before)) {
 			return 1;
 		}

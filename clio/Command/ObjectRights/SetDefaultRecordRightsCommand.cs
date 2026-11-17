@@ -102,18 +102,23 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 	private readonly IDefaultRecordRightsPlanner _planner;
 	private readonly IGranteeLookup _unitLookup;
 	private readonly IObjectRecordCounter _recordCounter;
+	private readonly IAdministratedObjectWriteLease _lease;
 	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes independent DI collaborators (reader, writer, planner, unit lookup, record "
+			+ "counter, write lease, console, logger); grouping them would hide the injected contract.")]
 	public SetDefaultRecordRightsCommand(IObjectRightsReader reader, IDefaultRecordRightsWriter writer,
 		IDefaultRecordRightsPlanner planner, IGranteeLookup unitLookup, IObjectRecordCounter recordCounter,
-		IInteractiveConsole console, ILogger logger) {
+		IAdministratedObjectWriteLease lease, IInteractiveConsole console, ILogger logger) {
 		_reader = reader;
 		_writer = writer;
 		_planner = planner;
 		_unitLookup = unitLookup;
 		_recordCounter = recordCounter;
+		_lease = lease;
 		_console = console;
 		_logger = logger;
 	}
@@ -127,6 +132,13 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 		if (!TryResolveRule(options, rule, requestOptions, out DefaultRecordRuleChange ruleChange)) {
 			return 1;
 		}
+		// The object's write lease, shared with set-object-rights and set-column-rights: the save carries the object's
+		// three switches as read, so an overlapping write of the object would revert them.
+		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, schemaName, options.Preview, _logger,
+				out IDisposable held)) {
+			return 1;
+		}
+		using IDisposable lease = held;
 		ObjectRightsInfo before = _reader.GetObjectRights(schemaName, requestOptions);
 		if (!before.IsRead) {
 			_logger.WriteError($"Error: '{schemaName}': {before.FailureReason}. Nothing was changed.");

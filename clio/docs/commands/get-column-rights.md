@@ -46,7 +46,10 @@ Per object the output is one of:
 
 While OFF, the columns whose only stored row is the default are summarised the same way.
 
-When the stored rows cannot be read, a warning says so and the `GetAdministratedObject` answer is shown instead: while
+While ON, the stored rows are checked against what the service lists (every restricted column with its rows, a column
+with no rows with none, a default column omitted). When they disagree, or the stored rows cannot be read (they are
+counted first, and a short read is refused), a warning says so and the `GetAdministratedObject` answer is shown
+instead: while
 ON it does not list a default column at all, and the columns it lists with no rows are shown as accessible only to
 system administrators; while OFF it lists no column.
 

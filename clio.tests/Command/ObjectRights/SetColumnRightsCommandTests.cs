@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.ObjectRights;
@@ -33,7 +34,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	private IObjectRightsReader _reader;
 	private IColumnRightsStorageReader _storage;
 	private IColumnRightsWriter _writer;
-	private IColumnRightsWriteLease _lease;
+	private IAdministratedObjectWriteLease _lease;
 	private IGranteeLookup _granteeLookup;
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private IInteractiveConsole _console;
@@ -65,7 +66,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		_reader = Substitute.For<IObjectRightsReader>();
 		_storage = Substitute.For<IColumnRightsStorageReader>();
 		_writer = Substitute.For<IColumnRightsWriter>();
-		_lease = Substitute.For<IColumnRightsWriteLease>();
+		_lease = Substitute.For<IAdministratedObjectWriteLease>();
 		_granteeLookup = Substitute.For<IGranteeLookup>();
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		_console = Substitute.For<IInteractiveConsole>();
@@ -78,7 +79,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		_logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => _errors.Add((string)call[0]));
 		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => _infos.Add((string)call[0]));
 		_logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(call => _warnings.Add((string)call[0]));
-		_lease.Acquire(default, default).ReturnsForAnyArgs(_ => Substitute.For<IDisposable>());
+		_lease.Acquire(default).ReturnsForAnyArgs(_ => Substitute.For<IDisposable>());
 		_granteeLookup.ResolveGranteeName(Role, Arg.Any<CreatioRequestOptions>()).Returns("Role");
 		_granteeLookup.ResolveGranteeName(Employees, Arg.Any<CreatioRequestOptions>()).Returns("All employees");
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
@@ -100,12 +101,18 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
+	private ObjectRightsSnapshot _sentSnapshot;
+
 	private void Saves(ObjectRightsSaveResult result) =>
 		_writer.Save(default, default, default, default).ReturnsForAnyArgs(call => {
 			_sent = true;
+			_sentSnapshot = (ObjectRightsSnapshot)call[0];
 			_sentList = (IReadOnlyList<ColumnRights>)call[2];
 			return result;
 		});
+
+	private static IReadOnlyList<object[]> Calls(object substitute, string method) =>
+		ReceivedCallLog.CallsTo(substitute, method);
 
 	private static EntitySchemaPropertyColumnInfo SchemaColumn(string name, Guid uId, string title) =>
 		new(name, uId, "own", title, null, "Text", false, false, null);
@@ -128,9 +135,11 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 			.ToArray();
 	}
 
-	private static ObjectRightsInfo Object(bool? on, IReadOnlyList<ColumnRights> stored, bool operations = false) =>
+	private static ObjectRightsInfo Object(bool? on, IReadOnlyList<ColumnRights> stored, bool operations = false,
+		bool records = false) =>
 		new(true, "UsrHoliday", "Holiday", operations, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
-			AdministratedByColumns: on, Columns: ServiceView(on, stored));
+			AdministratedByColumns: on, Columns: ServiceView(on, stored), Snapshot: new ObjectRightsSnapshot(new JsonObject()),
+			AdministratedByRecords: records);
 
 	// The service read (name resolution, the read under the lease, the read-back) and the storage reads (the plan's,
 	// the one right before the save, the read-back).
@@ -140,6 +149,9 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 			.Returns(Object(on, stored), Object(on, stored), Object(onAfter ?? on, storedAfter ?? stored));
 		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>())
 			.Returns(stored, storedBeforeSave ?? stored, storedAfter ?? stored);
+		// The read by column UId, made when turning column permissions on, returns the same rows.
+		_storage.ReadStoredRowsByColumns(default, default).ReturnsForAnyArgs(
+			stored.Select(column => new StoredColumnRights(SchemaUId, column)).ToArray());
 	}
 
 	private static SetColumnRightsOptions Grant(string access = "denied", bool enable = false, bool preview = false,
@@ -175,7 +187,8 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 			because: "the default-only column is left out and every other column is named");
 		_sentList.Single(column => column.ColumnUId == DescriptionUId).Rows.Should().Equal(description.Rows,
 			because: "another column goes back as stored");
-		_lease.Received(1).Acquire(Arg.Any<string>(), "UsrHoliday");
+		Calls(_lease, nameof(IAdministratedObjectWriteLease.Acquire)).Should().ContainSingle(
+			because: "a write holds the object's lease").Which[0].Should().Be("UsrHoliday", because: "it is keyed by the code");
 		_infos.Should().Contain(line => line.Contains("not bound to a package"), because: "the rows stay in this environment");
 	}
 
@@ -279,16 +292,18 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	public void Execute_ShouldRefuse_WhenAnotherCallHoldsTheLease() {
 		// Arrange
 		Reads(true, []);
-		_lease.Acquire(default, default).ReturnsForAnyArgs(_ => throw new InvalidOperationException(
-			"another set-column-rights call is changing 'UsrHoliday' on this environment"));
+		_lease.Acquire(default).ReturnsForAnyArgs(_ => throw new InvalidOperationException(
+			"another call is changing the permissions of 'UsrHoliday' on this environment"));
 
 		// Act
 		int exitCode = _command.Execute(Grant());
 
 		// Assert
 		exitCode.Should().Be(1, because: "two overlapping calls would revert each other");
-		_errors.Should().Contain(line => line.Contains("another set-column-rights call"), because: "the refusal says why");
-		_storage.DidNotReceiveWithAnyArgs().ReadStoredColumns(default, default, default);
+		_errors.Should().Contain(line => line.Contains("another call is changing the permissions"),
+			because: "the refusal says why");
+		Calls(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().BeEmpty(
+			because: "nothing is read while another write of the object runs");
 		_sent.Should().BeFalse(because: "nothing is written");
 	}
 
@@ -303,7 +318,8 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "the plan no longer matches storage");
-		_errors.Should().Contain(line => line.Contains("changed after the call read them"), because: "the abort says why");
+		_errors.Should().Contain(line => line.Contains("changed after the call read it")
+			&& line.Contains("stored column permission rows changed"), because: "the abort says why");
 		_sent.Should().BeFalse(because: "nothing is written");
 	}
 
@@ -560,18 +576,18 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a row for a principal nobody holds must not be written");
 		_errors.Should().ContainSingle(line => line.Contains("was not found in SysAdminUnit"), because: "the grantee is checked");
-		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		Calls(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().BeEmpty(
+			because: "the grantee is checked before the object is read");
 	}
 
 	[Test]
-	[Description("A title several objects share is refused, listing them.")]
-	public void Execute_ShouldRefuse_WhenTheTitleIsAmbiguous() {
+	[Description("A title is refused, naming the code to pass, as set-object-rights does: a write names its object by code.")]
+	public void Execute_ShouldRefuse_WhenTheObjectIsNamedByItsTitle() {
 		// Arrange
 		_reader.GetObjectRights("Holiday", Arg.Any<CreatioRequestOptions>())
 			.Returns(new ObjectRightsInfo(false, "Holiday", null, false, Array.Empty<RoleOperationRights>()));
-		_reader.FindObjectsByTitle("Holiday", Arg.Any<CreatioRequestOptions>()).Returns(new[] {
-			new ObjectTitleMatch("UsrHoliday", "Holiday"), new ObjectTitleMatch("UsrHolidayOld", "Holiday")
-		});
+		_reader.FindObjectsByTitle("Holiday", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("UsrHoliday", "Holiday") });
 		SetColumnRightsOptions options = Grant();
 		options.EntitySchemaName = "Holiday";
 
@@ -579,9 +595,10 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		int exitCode = _command.Execute(options);
 
 		// Assert
-		exitCode.Should().Be(1, because: "the tool never guesses between objects with the same title");
-		_errors.Should().ContainSingle(line => line.Contains("UsrHolidayOld"), because: "the candidates are listed");
-		_lease.DidNotReceiveWithAnyArgs().Acquire(default, default);
+		exitCode.Should().Be(1, because: "a title is not unique and this call changes access rights");
+		_errors.Should().ContainSingle(line => line.Contains("it is the title of UsrHoliday") && line.Contains("Pass the code"),
+			because: "the refusal names the code to pass");
+		_sent.Should().BeFalse(because: "nothing is written");
 	}
 
 	[Test]
@@ -618,7 +635,9 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "a preview that would succeed is not a failure");
 		_sent.Should().BeFalse(because: "a preview writes nothing");
-		_lease.DidNotReceiveWithAnyArgs().Acquire(default, default);
+		Calls(_lease, nameof(IAdministratedObjectWriteLease.Acquire)).Should().BeEmpty(because: "a preview takes no lease");
+		_infos.Should().Contain(line => line.Contains("Stored rows read: 0 row(s) in 0 column(s), counted"),
+			because: "a preview shows how many stored rows the plan was built from");
 		_infos.Should().Contain(line => line.StartsWith("PREVIEW"), because: "the output says nothing was changed");
 		_infos.Should().Contain(line => line.Contains("stored rows after: [0] Role"), because: "the plan shows the row");
 	}
@@ -638,6 +657,158 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "a destructive change needs confirmation");
 		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("The read a save is built from, and the storage read-back, are counted; only the re-read right before the save, compared with the counted read, is not.")]
+	public void Execute_ShouldCountThePlanningReadAndTheReadBack_WhenSaving() {
+		// Arrange
+		Reads(true, [], storedAfter: [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+
+		// Act
+		_command.Execute(Grant());
+
+		// Assert
+		Calls(_storage, nameof(IColumnRightsStorageReader.ReadStoredColumns)).Select(call => (bool)call[2])
+			.Should().Equal(new[] { true, false, true },
+				because: "a short storage read must never be planned on, and a short read-back must not pass as complete");
+	}
+
+	[Test]
+	[Description("The save goes out from the object read again right before it, not from the first read.")]
+	public void Execute_ShouldSaveFromTheFreshRead_WhenTheObjectIsUnchanged() {
+		// Arrange
+		ObjectRightsInfo fresh = Object(true, []);
+		IReadOnlyList<ColumnRights> after = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))];
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
+			.Returns(Object(true, []), fresh, Object(true, after));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns([], [], after);
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(0, because: "storage holds the plan");
+		_sentSnapshot.Should().BeSameAs(fresh.Snapshot, because: "the switches are sent as they are right before the save");
+	}
+
+	[TestCase("operations", TestName = "Execute_ShouldAbort_WhenTheOperationSwitchChangedBeforeTheSave")]
+	[TestCase("records", TestName = "Execute_ShouldAbort_WhenTheRecordSwitchChangedBeforeTheSave")]
+	[TestCase("columns", TestName = "Execute_ShouldAbort_WhenTheColumnSwitchChangedBeforeTheSave")]
+	[Description("A switch another client changed between the plan and the save aborts the call: the save would send it back as first read.")]
+	public void Execute_ShouldAbort_WhenASwitchChangedBeforeTheSave(string changed) {
+		// Arrange
+		ObjectRightsInfo fresh = changed switch {
+			"operations" => Object(true, [], operations: true),
+			"records" => Object(true, [], records: true),
+			_ => Object(false, [])
+		};
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(Object(true, []), fresh);
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns([]);
+		string expected = changed switch {
+			"operations" => "operation permissions are ON (were OFF)",
+			"records" => "record permissions are ON (were OFF)",
+			_ => "column permissions are OFF (were ON)"
+		};
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the object changed after it was read");
+		_errors.Should().ContainSingle(line => line.Contains("changed after the call read it") && line.Contains(expected),
+			because: "the abort names the switch that changed");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("Turning column permissions on reads the rows a second time by the object's column UIds; rows of this object the first read missed refuse the call.")]
+	public void Execute_ShouldRefuse_WhenTheReadByColumnFindsRowsTheFirstReadMissed() {
+		// Arrange
+		Reads(false, []);
+		_storage.ReadStoredRowsByColumns(default, default).ReturnsForAnyArgs(
+			[new StoredColumnRights(SchemaUId, Stored(DescriptionUId, Row(Role, 0, ColumnRightLevel.Denied)))]);
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: true));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a list built from a short read would reset the missed column to the default");
+		_errors.Should().ContainSingle(line => line.Contains("read by column UId differ"), because: "the refusal says why");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("Turning column permissions on says what the second read found, other objects' rows for inherited columns included, and keys it by the object's column UIds.")]
+	public void Execute_ShouldReportTheSecondRead_WhenEnabling() {
+		// Arrange
+		Guid other = Guid.NewGuid();
+		Reads(false, []);
+		_storage.ReadStoredRowsByColumns(default, default).ReturnsForAnyArgs(
+			[new StoredColumnRights(other, Stored(NameUId, Row(Role, 0, ColumnRightLevel.Denied)))]);
+
+		// Act
+		_command.Execute(new SetColumnRightsOptions { EntitySchemaName = "UsrHoliday", EnableColumnPermissions = true,
+			Preview = true });
+
+		// Assert
+		_infos.Should().Contain(line => line.Contains("A second read by the object's column UIds found the same rows")
+			&& line.Contains("1 row(s) of other objects"), because: "the corroboration is shown in the facts");
+		Calls(_storage, nameof(IColumnRightsStorageReader.ReadStoredRowsByColumns)).Should().ContainSingle(
+			because: "the rows are read once by column").Which[0].Should().BeEquivalentTo(
+			new[] { AmountUId, DescriptionUId, NameUId }, because: "the read is keyed by the object's column UIds");
+	}
+
+	[Test]
+	[Description("A read-back where the record switch changed fails the call, and the summary says the change was partially applied, naming the switch.")]
+	public void Execute_ShouldFail_WhenTheRecordSwitchChanged() {
+		// Arrange
+		IReadOnlyList<ColumnRights> after = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))];
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
+			.Returns(Object(true, []), Object(true, []), Object(true, after, records: true));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns([], [], after);
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(1, because: "a changed record switch is not this call's change");
+		_errors.Should().ContainSingle(line => line.Contains("record permissions are ON, they were OFF")
+			&& line.Contains("PARTIALLY applied") && line.Contains("record permissions are ON (were OFF)"),
+			because: "the failure names the switch, and the summary includes it");
+	}
+
+	[Test]
+	[Description("A removal of a row the grantee no longer has is no change: a repeated call succeeds and writes nothing.")]
+	public void Execute_ShouldReportNoChange_WhenTheRowToRemoveIsGone() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Employees, 0, ColumnRightLevel.Read))]);
+
+		// Act
+		int exitCode = _command.Execute(Remove(Role));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the removal is already in place");
+		_infos.Should().Contain(line => line.EndsWith("(no change)."), because: "the output says nothing changed");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("Removing a column's last row other than the default says, in the summary the host approves, that the column gets the default row and its access WIDENS.")]
+	public void Execute_ShouldSayTheAccessWidens_WhenTheLastRowIsRemoved() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the preview ran");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("WIDENS access"),
+			because: "the summary line names the widening");
 	}
 
 	[TestCase(true, false, null, false, null, "--disable-column-permissions is a call of its own")]
@@ -662,6 +833,6 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		// Assert
 		exitCode.Should().Be(1, because: "the arguments are refused");
 		_errors.Should().Contain(line => line.Contains(expected), because: "the error says what is wrong");
-		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		Calls(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().BeEmpty(because: "nothing is read");
 	}
 }

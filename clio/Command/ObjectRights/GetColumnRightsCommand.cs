@@ -101,6 +101,14 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		}
 		bool storedRead = TryReadStored(root, requestOptions, out IReadOnlyList<ColumnRights> stored,
 			out string storedError);
+		// While the switch is on the service lists every restricted column; storage that says otherwise is not shown as
+		// the truth: the warning names the disagreement and the service's view is shown.
+		IReadOnlyList<string> disagreements = storedRead && root.AdministratedByColumns == true
+			? ColumnRightsCrossCheck.Disagreements(root.Columns ?? [], stored)
+			: [];
+		if (disagreements.Count > 0) {
+			storedRead = false;
+		}
 		ColumnRightsState state = storedRead ? new ColumnRightsState(root.AdministratedByColumns, stored) : root.ColumnState;
 		IReadOnlyList<ColumnRights> shown = state.RestrictedColumns;
 		IReadOnlyDictionary<Guid, string> codes = new Dictionary<Guid, string>();
@@ -138,8 +146,11 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 				+ "which is read.");
 		}
 		if (!storedRead) {
-			_logger.WriteWarning($"  The stored rows could not be read ({storedError}): shown is GetAdministratedObject's "
-				+ "answer. While column permissions are ON it omits a column whose only row is the default (All "
+			_logger.WriteWarning((disagreements.Count > 0
+					? $"  The stored rows disagree with what the service lists "
+						+ $"({string.Join("; ", disagreements.Take(5))}{(disagreements.Count > 5 ? "; ..." : "")})"
+					: $"  The stored rows could not be read ({storedError})")
+				+ ": shown is GetAdministratedObject's answer. While column permissions are ON it omits a column whose only row is the default (All "
 				+ "employees, edit), so a column it does not list is not shown at all, and it lists a column with no "
 				+ "rows with none (shown as accessible only to system administrators); while they are OFF it lists no "
 				+ "column, though rows may be stored.");

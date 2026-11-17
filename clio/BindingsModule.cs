@@ -1121,7 +1121,7 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.ObjectRights.IDefaultRecordRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
 		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsStorageReader, Clio.Common.ObjectRights.ColumnRightsStorageReader>();
-		services.AddSingleton<Clio.Common.ObjectRights.IColumnRightsWriteLease, Clio.Common.ObjectRights.ColumnRightsWriteLease>();
+		services.AddTransient<Clio.Common.ObjectRights.IAdministratedObjectWriteLease, Clio.Common.ObjectRights.AdministratedObjectWriteLease>();
 		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsPlanner, Clio.Common.ObjectRights.ColumnRightsPlanner>();
 		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsReadBackVerifier, Clio.Common.ObjectRights.ColumnRightsReadBackVerifier>();
 		services.AddTransient<Clio.Common.ObjectRights.IDefaultRecordRightsPlanner, Clio.Common.ObjectRights.DefaultRecordRightsPlanner>();

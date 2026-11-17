@@ -364,6 +364,41 @@ internal static class ObjectRightsCommandInput {
 	}
 
 	/// <summary>
+	/// Takes the object's write lease (<see cref="IAdministratedObjectWriteLease"/>) for a write that is not a preview, so
+	/// every writer of one object — set-object-rights, set-default-record-rights, set-column-rights — runs alone from its
+	/// first read to its read-back. The object is named by its code in every writer (a title is refused), so the lease is
+	/// keyed by <paramref name="named"/> as a code before anything is read; a name that is not a code takes no lease,
+	/// since the call refuses it before any write.
+	/// </summary>
+	/// <param name="lease">The lease.</param>
+	/// <param name="named">The object as the caller named it.</param>
+	/// <param name="preview">The call writes nothing: no lease is taken.</param>
+	/// <param name="logger">Where a refusal is written.</param>
+	/// <param name="held">The lease to dispose after the read-back; a no-op one when none is needed.</param>
+	/// <returns><see langword="false"/> after writing why another call holds the lease.</returns>
+	internal static bool TryTakeWriteLease(IAdministratedObjectWriteLease lease, string named, bool preview,
+		ILogger logger, out IDisposable held) {
+		held = NoLease.Instance;
+		if (preview || !ObjectRightsSupport.TryNormalizeSchemaName(named, out string code)) {
+			return true;
+		}
+		try {
+			held = lease.Acquire(code);
+			return true;
+		}
+		catch (InvalidOperationException ex) {
+			logger.WriteError($"Error: {ex.Message}");
+			held = null;
+			return false;
+		}
+	}
+
+	private sealed class NoLease : IDisposable {
+		public static readonly NoLease Instance = new();
+		public void Dispose() { }
+	}
+
+	/// <summary>
 	/// The number of existing records of <paramref name="schemaName"/> as a fact for the output — what a user needs to
 	/// decide whether, and when, to apply the default record rules to them. A failed count is reported, never thrown:
 	/// it never fails the call.

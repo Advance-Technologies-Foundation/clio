@@ -594,13 +594,32 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 	private static readonly Guid SchemaUId = Guid.Parse("35a9057f-800d-414b-acfb-c919c215857a");
 
-	// An object whose schema UId was read, so its stored rows are read from storage.
-	private void ReturnsWithStorage(bool? on, params ColumnRights[] stored) {
+	// What the service lists for the stored rows while the switch is on: every non-default column with its rows, every
+	// schema column with no stored row with none; a default-only column is omitted. Nothing while it is off.
+	private static ColumnRights[] ServiceView(bool? on, ColumnRights[] stored) {
+		if (on != true) {
+			return [];
+		}
+		HashSet<Guid?> withRows = stored.Select(column => column.ColumnUId).ToHashSet();
+		return stored.Where(column => !ColumnRightsDefaults.IsDefaultOnly(column.Rows))
+			.Concat(new[] { DescriptionUId, AmountUId, NameUId }.Where(uId => !withRows.Contains(uId))
+				.Select(uId => new ColumnRights(uId, null, [])))
+			.ToArray();
+	}
+
+	// An object whose schema UId was read, so its stored rows are read from storage; the service lists them as it does.
+	private void ReturnsWithStorage(bool? on, params ColumnRights[] stored) =>
+		ReturnsWithStorage(on, ServiceView(on, stored), stored);
+
+	private void ReturnsWithStorage(bool? on, ColumnRights[] listed, ColumnRights[] stored) {
 		_rightsReader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
 			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
-			AdministratedByColumns: on, Columns: Array.Empty<ColumnRights>()));
+			AdministratedByColumns: on, Columns: listed));
 		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns(stored);
 	}
+
+	private List<string> Lines(string method) =>
+		ReceivedCallLog.CallsTo(_logger, method).Select(call => (string)call[0]).ToList();
 
 	[Test]
 	[Description("With column permissions ON, storage is shown: a restricted column with its rows, a column with only the default row (All employees, edit) as default — never as a restriction — and a schema column with no stored row as one only system administrators can access.")]
@@ -615,11 +634,47 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read ran");
-		_logger.Received().WriteInfo("    UsrAmount:");
-		_logger.Received().WriteInfo($"      [0] Role ({Role}): denied");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.DefaultOnly} (1): Name.");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.");
-		_logger.DidNotReceive().WriteInfo("    Name:");
+		List<string> infos = Lines(nameof(ILogger.WriteInfo));
+		infos.Should().Contain("    UsrAmount:", because: "a restricted column is listed by its code");
+		infos.Should().Contain($"      [0] Role ({Role}): denied", because: "with its rows");
+		infos.Should().Contain($"  {GetColumnRightsCommand.DefaultOnly} (1): Name.", because: "a default column is summarised");
+		infos.Should().Contain($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.",
+			because: "a schema column with no stored row is reported as locked");
+		infos.Should().NotContain("    Name:", because: "a default column is never shown as a restriction");
+	}
+
+	[Test]
+	[Description("The stored rows are read with their count verified, so a read the server cut short is never shown as complete.")]
+	public void Execute_ShouldCountTheStoredRows_WhenReadingStorage() {
+		// Arrange
+		ReturnsWithStorage(true, Column(AmountUId, null, Row(Role, "Role", 0, ColumnRightLevel.Denied)));
+
+		// Act
+		Run();
+
+		// Assert
+		ReceivedCallLog.CallsTo(_storage, nameof(IColumnRightsStorageReader.ReadStoredColumns))
+			.Select(call => (bool)call[2]).Should().Equal(new[] { true }, because: "the read counts its rows first");
+	}
+
+	[Test]
+	[Description("While ON, storage that disagrees with what the service lists is not shown as the truth: a warning names the disagreement and the service's view is shown.")]
+	public void Execute_ShouldShowTheServiceView_WhenStorageDisagreesWhileOn() {
+		// Arrange
+		ReturnsWithStorage(true,
+			[Column(AmountUId, "Amount", Row(Role, "Role", 0, ColumnRightLevel.Denied)), Column(DescriptionUId, "Description")],
+			[Column(NameUId, null, Row(Role, "Role", 0, ColumnRightLevel.Read))]);
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(0, because: "the service read still answers");
+		Lines(nameof(ILogger.WriteWarning)).Should().ContainSingle(line => line.Contains("disagree with what the service lists")
+			&& line.Contains(NameUId.ToString()), because: "the warning names the disagreeing column");
+		List<string> infos = Lines(nameof(ILogger.WriteInfo));
+		infos.Should().Contain("    UsrAmount 'Amount':", because: "the service's view is shown");
+		infos.Should().NotContain("    Name:", because: "the disagreeing storage is not shown as the truth");
 	}
 
 	[Test]
@@ -634,15 +689,16 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read ran");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
-		_logger.Received().WriteInfo("  Rows stored while column permissions are OFF:");
-		_logger.Received().WriteInfo($"      [0] Role ({Role}): denied");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.DefaultOnly} (1): Name.");
-		_logger.DidNotReceive().WriteInfo("    Name:");
+		List<string> infos = Lines(nameof(ILogger.WriteInfo));
+		infos.Should().Contain($"  {GetColumnRightsCommand.SwitchOff}", because: "OFF is said first");
+		infos.Should().Contain("  Rows stored while column permissions are OFF:", because: "stored rows are not applied");
+		infos.Should().Contain($"      [0] Role ({Role}): denied", because: "the stored restriction is listed");
+		infos.Should().Contain($"  {GetColumnRightsCommand.DefaultOnly} (1): Name.", because: "a default column is summarised");
+		infos.Should().NotContain("    Name:", because: "a default column is never listed as a restriction");
 	}
 
 	[Test]
-	[Description("--column naming a column with no stored row while ON reports it as one only system administrators can access.")]
+	[Description("--column naming a column with no stored row while ON reports it as one only system administrators can access, under a plain ON line — never the object-wide 'no rows other than the default' line.")]
 	public void Execute_ShouldReportTheNamedColumnAsLocked_WhenItHasNoStoredRowWhileOn() {
 		// Arrange
 		ReturnsWithStorage(true, Column(AmountUId, null, Row(Role, "Role", 0, ColumnRightLevel.Denied)));
@@ -652,10 +708,13 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the column exists");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.");
-		_logger.DidNotReceive().WriteInfo("    UsrAmount:");
-		_logger.Received().WriteInfo("  Column permissions: ON.");
-		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.OnWithoutRows}");
+		List<string> infos = Lines(nameof(ILogger.WriteInfo));
+		infos.Should().Contain($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.",
+			because: "the named column has no stored row");
+		infos.Should().NotContain("    UsrAmount:", because: "only the named column is shown");
+		infos.Should().Contain("  Column permissions: ON.", because: "the switch line names no object-wide fact");
+		infos.Should().NotContain($"  {GetColumnRightsCommand.OnWithoutRows}",
+			because: "another column of the object has rows");
 	}
 
 	[Test]
@@ -677,9 +736,11 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the service read still answers");
-		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("Access denied")
-			&& line.Contains("not shown at all")));
-		_logger.Received().WriteInfo("    UsrAmount 'Amount':");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.");
+		Lines(nameof(ILogger.WriteWarning)).Should().ContainSingle(line => line.Contains("Access denied")
+			&& line.Contains("not shown at all"), because: "the warning says what the service read leaves out");
+		List<string> infos = Lines(nameof(ILogger.WriteInfo));
+		infos.Should().Contain("    UsrAmount 'Amount':", because: "the service's restricted column is shown");
+		infos.Should().Contain($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.",
+			because: "a column the service lists with no rows is locked");
 	}
 }

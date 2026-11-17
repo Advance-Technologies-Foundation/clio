@@ -31,6 +31,7 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 	private IDefaultRecordRightsWriter _writer;
 	private IGranteeLookup _unitLookup;
 	private IObjectRecordCounter _counter;
+	private IAdministratedObjectWriteLease _lease;
 	private IInteractiveConsole _console;
 	private ILogger _logger;
 	private DefaultRecordRightsState _saved;
@@ -76,6 +77,8 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		containerBuilder.AddTransient(_ => _writer);
 		containerBuilder.AddTransient(_ => _unitLookup);
 		containerBuilder.AddTransient(_ => _counter);
+		_lease = ObjectRightsBinderStub.Lease();
+		containerBuilder.AddTransient(_ => _lease);
 		containerBuilder.AddTransient(_ => _console);
 		containerBuilder.AddTransient(_ => _logger);
 	}
@@ -196,6 +199,20 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 	}
 
 	// ---- the flow ----
+
+	[Test]
+	[Description("A confirmed write takes the object's write lease, keyed by its code, shared with set-object-rights and set-column-rights.")]
+	public void Execute_ShouldTakeTheObjectsWriteLease_WhenWriting() {
+		// Arrange
+		ObjectIs(Info(true));
+
+		// Act
+		_command.Execute(RuleOptions("read,edit"));
+
+		// Assert
+		ReceivedCallLog.CallsTo(_lease, nameof(IAdministratedObjectWriteLease.Acquire)).Should().ContainSingle(
+			because: "a write runs alone on its object").Which[0].Should().Be("UsrFoo", because: "it is keyed by the code");
+	}
 
 	[Test]
 	[Description("A confirmed grant on an object with record permissions on saves the plan, reads it back, reports the rule and the record count, and exits 0.")]

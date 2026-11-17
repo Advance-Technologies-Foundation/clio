@@ -18,8 +18,7 @@ DESCRIPTION
     RightManagementService SaveAdministratedObject - the payload of the System Designer "Column
     permissions" tab. Read the result with get-column-rights.
 
-    The object is named by its code (entity schema name); when no object has that code, the one object
-    whose title it is is changed, and the output says so. Several objects with that title are refused.
+    The object is named by its code (entity schema name); a title is refused, naming the code to pass.
     --column is the column's code, resolved to its UId through the entity schema (every package layer
     included). --grantee is a SysAdminUnit id, which must exist.
 
@@ -52,12 +51,19 @@ DESCRIPTION
     would lock the columns it missed. Storage is counted before it is read, and a read with fewer rows
     than the count is refused.
 
-    Calls for one object must not run in parallel: a call takes a lease on the environment and object
-    for its whole run, and a second call while it is held is refused. Right before the save the stored
-    rows are read again; if another client changed them since the plan, nothing is saved.
+    Calls for one object must not run in parallel. A write takes a lease on the object (keyed by the
+    environment's resolved URL and the object's code) for its whole run, shared with set-object-rights
+    and set-default-record-rights, and a second write of the object while it is held is refused. Right
+    before the save the object and its stored rows are read again; if any of its three switches (column,
+    operation, record permissions), its schema UId or a stored row changed since the plan, nothing is
+    saved. The save goes out from that fresh read.
+
+    When the call turns column permissions on, the service lists nothing to check storage against, so
+    the rows are read a second time by the object's column UIds; rows of this object the first read
+    missed refuse the call. Every output says how many stored rows the plan was read from.
 
     The service answers success whatever it stores, so after every save the switches and the stored
-    rows are read back. After a save that names columns, any difference from the plan fails the call,
+    rows are read back, counted. After a save that names columns, any difference from the plan fails the call,
     and the error says whether nothing was applied or the change was partially applied; a changed
     operation or record switch fails it too. After a disable (no list), a changed stored row is only a
     warning: another client may have changed it.
@@ -70,7 +76,7 @@ DESCRIPTION
 
 OPTIONS
     --entity-schema-name
-        The object: its code, or its title when no object has that code. Required.
+        The object, by its code. A title is refused, naming the code. Required.
 
     --column
         Column code whose rows change. Required unless the call only turns the switch.
@@ -86,7 +92,9 @@ OPTIONS
         moves the grantee's row. Past the end is refused.
 
     --remove-row
-        Remove the grantee's row. A call of its own: not with --access, --position or a switch flag.
+        Remove the grantee's row; no change when it has none. Removing the column's last row other than
+        the default leaves the default row (All employees: edit), which WIDENS access; the summary says
+        so. A call of its own: not with --access, --position or a switch flag.
 
     --enable-column-permissions
         Turn column permissions ON: with --access, or alone.

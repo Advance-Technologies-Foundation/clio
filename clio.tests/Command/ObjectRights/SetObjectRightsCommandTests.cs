@@ -30,6 +30,7 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	private IObjectRightsWriter _writer;
 	private IGranteeLookup _granteeLookup;
 	private IObjectRightsPackageBinder _binder;
+	private IAdministratedObjectWriteLease _lease;
 	private IInteractiveConsole _console;
 	private ILogger _logger;
 	private ObjectRightsState _saved;
@@ -74,6 +75,8 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		containerBuilder.AddTransient(_ => _granteeLookup);
 		_binder = ObjectRightsBinderStub.Binding();
 		containerBuilder.AddTransient(_ => _binder);
+		_lease = ObjectRightsBinderStub.Lease();
+		containerBuilder.AddTransient(_ => _lease);
 		containerBuilder.AddTransient(_ => _console);
 		containerBuilder.AddTransient(_ => _logger);
 	}
@@ -131,6 +134,40 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 		_saved.Roles.Should().Equal(new[] { Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "RE") },
 			because: "the grantee's row goes below the existing row with read and edit only");
 		_reader.Received(2).GetObjectRights("UsrFoo", Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("A confirmed write takes the object's write lease, keyed by its code, shared with set-default-record-rights and set-column-rights; a preview takes none.")]
+	public void Execute_ShouldTakeTheObjectsWriteLease_WhenWriting() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		_command.Execute(Options("read", o => { o.Confirm = false; o.Preview = true; }));
+		int previewLeases = ReceivedCallLog.CallsTo(_lease, nameof(IAdministratedObjectWriteLease.Acquire)).Count;
+		_command.Execute(Options("read,edit"));
+
+		// Assert
+		previewLeases.Should().Be(0, because: "a preview writes nothing");
+		ReceivedCallLog.CallsTo(_lease, nameof(IAdministratedObjectWriteLease.Acquire)).Should().ContainSingle(
+			because: "a write runs alone on its object").Which[0].Should().Be("UsrFoo", because: "it is keyed by the code");
+	}
+
+	[Test]
+	[Description("A write whose object's lease another call holds is refused before the object is read.")]
+	public void Execute_ShouldRefuse_WhenAnotherWriteHoldsTheLease() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+		_lease.Acquire(default).ReturnsForAnyArgs(_ => throw new InvalidOperationException("another call is changing"));
+
+		// Act
+		int exitCode = _command.Execute(Options("read,edit"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "two writes of one object would revert each other's switches");
+		_errors.Should().Contain(m => m.Contains("another call is changing"), because: "the refusal says why");
+		ReceivedCallLog.CallsTo(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().BeEmpty(
+			because: "nothing is read while another write runs");
 	}
 
 	[Test]

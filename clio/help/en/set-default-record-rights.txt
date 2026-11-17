@@ -120,6 +120,10 @@ EXAMPLES
         clio set-default-record-rights --entity-schema-name UsrOrder --author <author-id> --grantee <role-id> --operations read,edit,delete --revoke --confirm -e production
 
 NOTES
+    A write takes the object's write lease (keyed by the environment's resolved URL and the object's
+    code), shared with set-object-rights and set-column-rights: a second write of the same
+    object while one runs is refused, and nothing is changed. A preview takes none.
+
     Then apply the rules to existing records only when the user decides to:
     apply-default-record-rights. Read the result back with get-object-rights.
 

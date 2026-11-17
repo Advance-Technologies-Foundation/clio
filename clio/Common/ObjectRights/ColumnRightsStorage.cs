@@ -48,7 +48,27 @@ public interface IColumnRightsStorageReader {
 	/// <see cref="InvalidOperationException"/> when the answer may be cut off.</exception>
 	IReadOnlyList<ColumnRights> ReadStoredColumns(Guid schemaUId, CreatioRequestOptions requestOptions,
 		bool verifyCount = true);
+
+	/// <summary>
+	/// Reads every stored column permission row whose <c>SubjectColumnUId</c> is one of <paramref name="columnUIds"/>,
+	/// whatever its <c>SubjectSchemaUId</c>: a second read of an object's rows keyed by its columns rather than by the
+	/// object, to corroborate the first where the service lists nothing to check it against (switch off). Columns
+	/// inherited from a base object share their UId with every object that inherits them, so rows of other objects come
+	/// back too; each is returned with its schema UId.
+	/// </summary>
+	/// <param name="columnUIds">The object's column UIds; no request is sent when empty.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns>The rows per schema and column.</returns>
+	/// <exception cref="Exception">A service failure is thrown. <see cref="InvalidOperationException"/> when the answer
+	/// may be cut off.</exception>
+	IReadOnlyList<StoredColumnRights> ReadStoredRowsByColumns(IReadOnlyCollection<Guid> columnUIds,
+		CreatioRequestOptions requestOptions);
 }
+
+/// <summary>The stored rows of one column of one object, as a read by column UId returns them.</summary>
+/// <param name="SubjectSchemaUId">The object the rows are stored for.</param>
+/// <param name="Column">The column and its rows, in stored position order.</param>
+public sealed record StoredColumnRights(Guid SubjectSchemaUId, ColumnRights Column);
 
 /// <inheritdoc />
 public sealed class ColumnRightsStorageReader : IColumnRightsStorageReader {
@@ -105,14 +125,53 @@ public sealed class ColumnRightsStorageReader : IColumnRightsStorageReader {
 		return rows
 			.GroupBy(row => row.SubjectColumnUId)
 			.Select(column => new ColumnRights(column.Key, null, column
-				.Select(row => new ColumnRightRow(row.SysAdminUnit?.Value ?? Guid.Empty,
-					row.SysAdminUnit?.DisplayValue ?? "(unknown)", row.Position,
-					row.RightLevelValue is { } level ? (ColumnRightLevel)level : null,
-					row.RightLevelValue is null ? "(none)" : null))
+				.Select(Project)
 				.OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0)
 				.ToList()))
 			.ToList();
 	}
+
+	/// <inheritdoc />
+	public IReadOnlyList<StoredColumnRights> ReadStoredRowsByColumns(IReadOnlyCollection<Guid> columnUIds,
+		CreatioRequestOptions requestOptions) {
+		ArgumentNullException.ThrowIfNull(columnUIds);
+		if (columnUIds.Count == 0) {
+			return [];
+		}
+		object query = SelectQueryHelper.BuildSelectQueryWithInFilter(
+			StorageView,
+			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("SubjectSchemaUId", "SubjectSchemaUId",
+					OrderDirection: 1, OrderPosition: 0),
+				new SelectQueryHelper.SelectQueryColumnDefinition("SubjectColumnUId", "SubjectColumnUId",
+					OrderDirection: 1, OrderPosition: 1),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Position", "Position", OrderDirection: 1,
+					OrderPosition: 2),
+				new SelectQueryHelper.SelectQueryColumnDefinition("SysAdminUnit", "SysAdminUnit"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("RightLevel.Value", "RightLevelValue")
+			},
+			"SubjectColumnUId",
+			columnUIds.Distinct().Select(uId => uId.ToString()).ToArray(),
+			SelectQueryHelper.GuidDataValueType,
+			RowCap + 1);
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
+		StoredRowsResponse response = SelectQueryHelper.ExecuteSelectQuery<StoredRowsResponse>(
+			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
+		List<StoredRow> rows = response.Rows ?? new List<StoredRow>();
+		if (rows.Count > RowCap) {
+			throw new InvalidOperationException($"{StorageView} returned more than {RowCap} rows for the object's "
+				+ "columns, so the stored rows may be cut off.");
+		}
+		return rows
+			.GroupBy(row => (row.SubjectSchemaUId, row.SubjectColumnUId))
+			.Select(group => new StoredColumnRights(group.Key.SubjectSchemaUId, new ColumnRights(group.Key.SubjectColumnUId,
+				null, group.Select(Project).OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0).ToList())))
+			.ToList();
+	}
+
+	private static ColumnRightRow Project(StoredRow row) =>
+		new(row.SysAdminUnit?.Value ?? Guid.Empty, row.SysAdminUnit?.DisplayValue ?? "(unknown)", row.Position,
+			row.RightLevelValue is { } level ? (ColumnRightLevel)level : null, row.RightLevelValue is null ? "(none)" : null);
 
 	private static SelectQueryHelper.SelectQueryFilterDefinition SchemaFilter(Guid schemaUId) =>
 		new("SubjectSchemaUId", schemaUId.ToString(), SelectQueryHelper.GuidDataValueType);
@@ -158,6 +217,9 @@ public sealed class ColumnRightsStorageReader : IColumnRightsStorageReader {
 	}
 
 	private sealed class StoredRow {
+		[JsonPropertyName("SubjectSchemaUId")]
+		public Guid SubjectSchemaUId { get; set; }
+
 		[JsonPropertyName("SubjectColumnUId")]
 		public Guid SubjectColumnUId { get; set; }
 
