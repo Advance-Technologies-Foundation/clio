@@ -483,9 +483,10 @@ public static partial class WebServiceSchemaView {
 	[GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.\-]*$", RegexOptions.CultureInvariant)]
 	private static partial Regex UriSchemePattern();
 
-	// A name made of capitalised words, with an optional interface prefix: ICustomerRelationshipService, GetCustomer.
-	[GeneratedRegex(@"^I?(?:[A-Z][a-z]+)+$", RegexOptions.CultureInvariant)]
-	private static partial Regex PascalNamePattern();
+	// A service or contract name made of capitalised words, with an optional interface prefix, version and file
+	// extension: ICustomerRelationshipService, GetCustomer, ICustomerService2, IOrderManagementV2, CustomerServiceV2.svc.
+	[GeneratedRegex(@"^I?(?:[A-Z][a-z]+)+(?:V?\d{1,3})?(?:\.[a-z]{2,5})?$", RegexOptions.CultureInvariant)]
+	private static partial Regex ServiceNamePattern();
 
 	/// <summary>
 	/// Whether a header value looks like a key, judged without its name, because a header carrying a key is often named
@@ -508,7 +509,7 @@ public static partial class WebServiceSchemaView {
 	/// underscores, 12+ digits, or 8+ characters with an upper and a lower case letter, a digit and one of
 	/// <c>!@#$%^&amp;*?~</c> (a chosen password). Any user information of an address (anything between <c>://</c> and an
 	/// <c>@</c>) is a key; so is a path segment, query value or fragment value of an address judged the same way (a long
-	/// path segment of capitalised words, a WCF contract name, is not), and the text before a scheme that is not one. Text made
+	/// path segment that is a service or contract name, ICustomerService2 or CustomerServiceV2.svc, is not), and the text before a scheme that is not one. Text made
 	/// of words, short numbers and at most one short mixed piece joined by <c>/ . + - _</c> is plain: a media type
 	/// (<c>application/vnd.github.v3+json</c>), a product token (<c>python-requests/2.31.0</c>), a host name, a
 	/// hyphenated name (<c>production-eu-west-1</c>). Not caught: a short key or password without those four kinds of
@@ -576,8 +577,8 @@ public static partial class WebServiceSchemaView {
 		string name = part[..equals];
 		string schemeValue = part[(equals + 1)..].Trim('"', '\'');
 		string unescaped = Uri.UnescapeDataString(schemeValue);
-		if (IsSecretQueryValue(name, schemeValue) || IsKeyShaped(schemeValue.TrimEnd('='), true)
-				|| IsKeyShaped(unescaped.TrimEnd('='), true)) {
+		if (IsSecretQueryValue(name, schemeValue) || IsKeyShaped(schemeValue.TrimEnd('='))
+				|| IsKeyShaped(unescaped.TrimEnd('='))) {
 			AddPart(parts, part);
 			AddPart(parts, schemeValue);
 			AddPart(parts, schemeValue.TrimEnd('='));
@@ -629,11 +630,14 @@ public static partial class WebServiceSchemaView {
 		int question = beforeFragment.IndexOf('?');
 		string path = question < 0 ? beforeFragment : beforeFragment[..question];
 		string query = question < 0 ? string.Empty : beforeFragment[(question + 1)..];
-		// A path segment is often a long name (a WCF contract, IOrderFulfillmentService), so a letters-only run there is
-		// not a key when it reads as capitalised words; a random letters run or a mixed one (a webhook token) is.
+		// A path segment is often a service or contract name (IOrderFulfillmentService, ICustomerService2,
+		// CustomerServiceV2.svc), which is not a key when it reads as capitalised words, optionally followed by a version
+		// and a file extension; a random letters run or a mixed one (a webhook token) is.
 		foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries)) {
 			string unescaped = Uri.UnescapeDataString(segment);
-			AddTokenPieces(parts, unescaped, lettersRunIsKey: !PascalNamePattern().IsMatch(unescaped));
+			if (!ServiceNamePattern().IsMatch(unescaped)) {
+				AddTokenPieces(parts, unescaped);
+			}
 		}
 		foreach (string pair in (query + "&" + fragment).Split('&', StringSplitOptions.RemoveEmptyEntries)) {
 			AddTokenPieces(parts, Uri.UnescapeDataString(pair));
@@ -643,7 +647,7 @@ public static partial class WebServiceSchemaView {
 	// Base64 padding is dropped first, so a key's trailing '=' is not read as a name=value separator; a name=value part
 	// is a key under a credential or hosting key name (password=..., sig=...) and is otherwise judged by its value
 	// (max-age=3600 is not a key).
-	private static void AddTokenPieces(List<string> parts, string token, bool lettersRunIsKey = true) {
+	private static void AddTokenPieces(List<string> parts, string token) {
 		string core = token.TrimEnd('=');
 		int equals = core.IndexOf('=');
 		if (equals > 0) {
@@ -657,19 +661,19 @@ public static partial class WebServiceSchemaView {
 			}
 			core = pairValue;
 		}
-		if (IsKeyShaped(core, lettersRunIsKey)) {
+		if (IsKeyShaped(core)) {
 			AddPart(parts, token);
 			AddPart(parts, core);
 			AddPart(parts, Uri.UnescapeDataString(core));
 		}
 	}
 
-	private static bool IsKeyShaped(string core, bool lettersRunIsKey) {
+	private static bool IsKeyShaped(string core) {
 		if (core.Length >= MinKeyLikeLength && core.Any(char.IsAsciiLetter) && core.Any(char.IsAsciiDigit)
 				&& !IsWordsToken(core)) {
 			return true;
 		}
-		if (lettersRunIsKey && core.Length >= MinOpaqueLettersLength && core.All(c => char.IsAsciiLetter(c) || c == '_')) {
+		if (core.Length >= MinOpaqueLettersLength && core.All(c => char.IsAsciiLetter(c) || c == '_')) {
 			return true;
 		}
 		if (core.Length >= MinOpaqueDigitsLength && core.All(char.IsAsciiDigit)) {
