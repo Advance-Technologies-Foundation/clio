@@ -143,9 +143,85 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 			throw new ArgumentException("Insert/update require 1–50 values; delete accepts no values.");
 		}
 		if ((operation.Values ?? []).Any(pair => !IsIdentifier(pair.Key) || pair.Key.Equals("Id", StringComparison.OrdinalIgnoreCase)
-			|| pair.Value is null || !IsScalar(pair.Value))) {
-			throw new ArgumentException("Values require column identifiers other than Id and compatible scalar DataService types (0–12).");
+			|| pair.Value is null)) {
+			throw new ArgumentException(InvalidValueMessage);
 		}
+		foreach (var pair in operation.Values ?? []) {
+			if (IsDateOrTime(pair.Value.DataValueType) && !IsDateOrTimeValue(pair.Value.Value)) {
+				//Refused here, before the request: DataService would answer a number or an object under a date type with a parse error.
+				string typeName = pair.Value.DataValueType switch { 8 => "Date", 9 => "Time", _ => "DateTime" };
+				throw new ArgumentException(
+					$"Column '{pair.Key}' value of JSON kind {pair.Value.Value.ValueKind} is not valid for data type '{typeName}' "
+					+ $"(data-value-type {pair.Value.DataValueType}). Pass it as a non-empty string, for example \"2026-01-31T09:00:00.000\", or null.");
+			}
+			if (!IsScalar(pair.Value)) {
+				throw new ArgumentException(InvalidValueMessage);
+			}
+		}
+	}
+
+	private const string InvalidValueMessage = "Values require column identifiers other than Id and compatible scalar DataService types (0–12).";
+
+	private static bool IsDateOrTime(int dataValueType) => dataValueType is 7 or 8 or 9;
+
+	private static bool IsDateOrTimeValue(JsonElement element) {
+		if (element.ValueKind == JsonValueKind.Null) { return true; }
+		if (element.ValueKind != JsonValueKind.String || !TryGetText(element, out string text)) { return false; }
+		return ReadJsonStringLiteral(text, out _, out string inner) ? !string.IsNullOrWhiteSpace(inner) : !string.IsNullOrWhiteSpace(text);
+	}
+
+	/// <summary>
+	/// Reads the text of a JSON string element; <c>false</c> when it cannot be decoded (an escaped lone surrogate
+	/// such as <c>\uD800</c> makes <see cref="JsonElement.GetString"/> throw).
+	/// </summary>
+	private static bool TryGetText(JsonElement element, out string text) {
+		try {
+			text = element.GetString();
+			return true;
+		} catch (InvalidOperationException) {
+			text = null;
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Tells whether <paramref name="text"/>, without the whitespace around it, is itself a JSON string literal:
+	/// it starts and ends with a double quote and parses as one JSON string.
+	/// </summary>
+	/// <param name="text">The caller's value.</param>
+	/// <param name="literal">The trimmed literal, the form that is forwarded to DataService.</param>
+	/// <param name="inner">
+	/// The text inside the literal; <c>null</c> when the literal cannot be decoded (an escaped lone surrogate), which
+	/// validation refuses like an empty value.
+	/// </param>
+	private static bool ReadJsonStringLiteral(string text, out string literal, out string inner) {
+		literal = text?.Trim();
+		inner = null;
+		if (literal is null || literal.Length < 2 || literal[0] != '"' || literal[^1] != '"') { return false; }
+		try {
+			using JsonDocument document = JsonDocument.Parse(literal);
+			if (document.RootElement.ValueKind != JsonValueKind.String) { return false; }
+			TryGetText(document.RootElement, out inner);
+			return true;
+		} catch (JsonException) {
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Shapes a value for an Insert/Update query parameter, applying the date and time rule at the DataService boundary.
+	/// </summary>
+	/// <remarks>
+	/// A DateTime (7), Date (8) or Time (9) parameter is read by DataService as JSON, so the text has to arrive as a
+	/// quoted JSON string. Bare text is refused there: <c>2026-01-01</c> as "Input string '2026-01-01' is not a valid
+	/// number" and <c>2026-01-01T00:00:00</c> as "Value cannot be null". A caller that already passed the JSON string
+	/// literal is forwarded as that literal, without the whitespace around it, so the value is never quoted twice.
+	/// Null and every other type pass through.
+	/// </remarks>
+	private static object BuildParameterValue(DataServiceBatchValue value) {
+		if (!IsDateOrTime(value.DataValueType) || value.Value.ValueKind != JsonValueKind.String) { return value.Value; }
+		string text = value.Value.GetString();
+		return ReadJsonStringLiteral(text, out string literal, out _) ? literal : JsonSerializer.Serialize(text);
 	}
 
 	private static bool IsIdentifier(string value) => value is not null && Regex.IsMatch(value, "^[A-Za-z_][A-Za-z0-9_]{0,127}$", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
@@ -177,7 +253,7 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 		if (operation.Operation != "delete") {
 			JsonObject values = [];
 			foreach (var pair in operation.Values) {
-				values[pair.Key] = JsonSerializer.SerializeToNode(new { expressionType = 2, parameter = new { dataValueType = pair.Value.DataValueType, value = pair.Value.Value } });
+				values[pair.Key] = JsonSerializer.SerializeToNode(new { expressionType = 2, parameter = new { dataValueType = pair.Value.DataValueType, value = BuildParameterValue(pair.Value) } });
 			}
 			if (operation.Operation == InsertOperation) {
 				values["Id"] = JsonSerializer.SerializeToNode(new { expressionType = 2, parameter = new { dataValueType = 0, value = operation.RecordId } });

@@ -48,6 +48,14 @@ symlinks that point at packages that were never exported.
 Use --skip-preparation to disable this behavior.
 --unlocked and --packages are mutually exclusive.
 
+A package name must be a plain folder name: no path separator, no '..', no drive
+or root, no character that is invalid in a file name, no leading or trailing space
+and no trailing dot. A --packages value that lists any other name is refused before
+anything is read or changed. With --unlocked the same rule applies to every package
+name the environment returns and, for a versioned repository, to every package
+version: if one is not a plain name the command stops with exit code 1 before the
+first package is touched, so nothing is deleted or linked.
+
 ## Options
 
 ```bash

@@ -92,6 +92,7 @@
   "dataforge-update": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "delete-app": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none"},
   "delete-app-section": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "delete-data-binding-db": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "delete-entity-business-rules": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "delete-knowledge": {"effect": "destroy", "rebuilds-environment": false, "scope": "machine", "connections": "none", "by-argument": [
       {"argument": "confirmed", "value": "false", "effect": "read", "scope": "local"}
@@ -112,6 +113,7 @@
       {"argument": "identityArchivePathInBundle", "why": "an entry name inside the zipFile archive; without zipFile, a file name clio looks for below the environment's folder"}
   ]},
   "describe-business-process": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "describe-dynamic-case": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "describe-environment": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "describe-web-service": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "disable-knowledge-source": {"effect": "change", "rebuilds-environment": false, "scope": "machine", "connections": "none"},
@@ -332,6 +334,9 @@
   ]},
   "modify-business-process": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "modify-business-process-as-new-version": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
+  "modify-dynamic-case": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
+      {"argument": "dry-run", "value": "true", "effect": "read"}
+  ]},
   "modify-entity-schema-column": {"effect": "destroy", "rebuilds-environment": true, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "action", "value": "add", "effect": "change"},
       {"argument": "action", "value": "modify", "effect": "change"}

@@ -98,7 +98,7 @@ public sealed class PageFileWriter : IPageFileWriter {
 				outputDirectory);
 		}
 		string rootDir = _fileSystem.Path.Combine(anchor, ClioPagesDirectoryName);
-		string schemaDir = _fileSystem.Path.Combine(rootDir, schemaName);
+		string schemaDir = PageBaselineStore.ResolveSchemaDirectory(_fileSystem, rootDir, schemaName);
 		// H-1 (ENG-95262): staging the three files and swapping them into place are one indivisible unit of
 		// work on files another clio process (a CLI update-page, a second MCP call, a worker child) may be
 		// reading or rewriting at the same instant. Hold the schema's interprocess gate across the whole
