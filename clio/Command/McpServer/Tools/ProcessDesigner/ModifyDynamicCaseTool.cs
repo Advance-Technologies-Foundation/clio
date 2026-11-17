@@ -72,7 +72,7 @@ public class ModifyDynamicCaseTool(
 		 + "show: running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
 		 + "stage value rename (confirm-value-rename). Every refusal answers outcome refused with a stable errorCode "
 		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
-		 + "no restart, but open pages of the object need a reload (F5). Requires CrtProcessBuilder 1.6.6.184 or later "
+		 + "no restart, but open pages of the object need a reload (F5). Requires CrtProcessBuilder 1.6.6.185 or later "
 		 + "(install-process-builder, after user approval). Steps inside stages are not supported.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

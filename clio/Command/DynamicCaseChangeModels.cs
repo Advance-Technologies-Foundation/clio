@@ -14,12 +14,12 @@ public static class DynamicCaseChangeRequirement {
 	/// <remarks>
 	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
 	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
-	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.184 is the first
+	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.185 is the first
 	/// shipped cut whose stage rename renames the lookup value and whose describe reports <c>records</c>. Not 1.6.6.180:
 	/// that number is also another branch's cut without this code. An older package would ignore the two
 	/// confirmations, and a stage rename there would write a caption no one sees.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.184";
+	public const string MinimumProcessBuilderVersion = "1.6.6.185";
 }
 
 /// <summary>
