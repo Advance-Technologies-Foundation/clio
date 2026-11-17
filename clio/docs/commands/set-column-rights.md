@@ -48,10 +48,37 @@ the list is built from **storage**:
 - a column whose last row is removed is not sent, so it gets the default row;
 - a default-only column is not sent: the service writes the same default.
 
-A disable sends `null`. The operation, record and entity-operation collections are always sent as null. The service
-answers `success: true` whatever it stores, so after every save the switch and the **stored rows are read back** and
-compared with the plan: every column the plan names must hold its expected rows (a column the list leaves out, the
-default row). Any difference fails the call and names it.
+A disable sends `null`. The operation, record and entity-operation collections are always sent as null. Removing the
+only row of a default-only column is refused: the default would come back.
+
+### Guards before the save
+
+- **Cross-check (switch ON):** the stored rows must match what `GetAdministratedObject` lists — every restricted column
+  with its rows, a column with no rows with none, a default column omitted. Any disagreement refuses the call: a save
+  built from a short storage read would lock every column it missed.
+- **Counted read:** storage is counted before it is read; a read with fewer rows than the count is refused.
+- **One call per object at a time:** a call takes a lease on the environment and object (an exclusive OS file handle,
+  released if the process dies) for its whole run; a second call while it is held is refused. **Calls for one object
+  must not run in parallel.**
+- **Re-read before the save:** the stored rows are read again right before the save; if another client changed them
+  since the plan, nothing is saved.
+
+### Read-back
+
+The service answers `success: true` whatever it stores, so after every save the switches and the **stored rows are
+read back**:
+
+- after a save that names columns, any difference from the plan **fails** the call (every column the plan names must
+  hold its expected rows; a column the list leaves out, the default row), and the error says whether nothing was
+  applied or the change was **partially applied**;
+- a changed operation or record switch **fails** it too (the save sends them as read);
+- after a disable (no list), a changed stored row is only a **warning**: another client may have changed it.
+
+### Row order
+
+Which row wins for a user in several roles is not measured for columns. When a restriction ends up after an All
+employees row with edit (for example a grant that turns column permissions on, on a column with no rows, appends after
+the default row), the output warns; put a restriction first with `--position 0`.
 
 ### No package binding
 
@@ -114,6 +141,12 @@ Preview denying a role the Amount column, turning column permissions on:
 clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --enable-column-permissions --preview -e dev
 ```
 
+Deny a role the column, first in the column's position order (recommended for a restriction):
+
+```bash
+clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --position 0 --confirm -e dev
+```
+
 Let a role read the column, first in the column's position order:
 
 ```bash
@@ -131,13 +164,16 @@ clio set-column-rights --entity-schema-name UsrOrder --disable-column-permission
 
 - Refused before any write: a grant while column permissions are OFF without `--enable-column-permissions`; a move or a
   removal while they are OFF; a removal or a move of a row the grantee does not have; a grantee with several rows in
-  the column; a position past the end; an unknown column, an unknown grantee, several objects with the title; a read
-  with no readable switch (never taken for OFF); a stored row with no readable position, level or grantee (every
-  restricted column goes back as stored); stored rows or schema columns that cannot be read.
+  the column; a position past the end of the rows the change starts from; removing a default-only column's row; an
+  unknown column, an unknown grantee, several objects with the title; a read with no readable switch (never taken for
+  OFF); a stored row with no readable position, level or grantee (every restricted column goes back as stored);
+  storage that disagrees with the service, is cut short or cannot be read; schema columns that cannot be read; another
+  call holding the object's lease; stored rows that changed before the save; a time limit with no room for the save.
 - Exit code 0 when the storage read-back matches the plan, when the call changes nothing, for a preview, or when the
   prompt is answered no; 1 otherwise.
 - On MCP the tool is `set-column-rights` (destructive, idempotent: a repeated call finds its change in place). The host
-  approval is the confirmation; `preview=true` writes nothing. Each request gets one attempt of at most 25 s, and all
-  of them share a 100 s limit, as for `set-object-rights`.
+  approval is the confirmation; `preview=true` writes nothing. A write makes up to twelve requests in sequence; each
+  gets one attempt of at most 25 s, all of them share a 100 s limit, as for `set-object-rights`, and the save is sent
+  only while three timeouts are left for it and the read-back.
 - See `docs/knowledge/platform/column-permissions-come-from-the-administrated-object.md` for the measured service
   facts.

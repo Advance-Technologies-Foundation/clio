@@ -139,19 +139,51 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		}
 		if (!storedRead) {
 			_logger.WriteWarning($"  The stored rows could not be read ({storedError}): shown is GetAdministratedObject's "
-				+ "answer, which omits a column whose only row is the default (All employees, edit) while column "
-				+ "permissions are ON and every column while they are OFF, so default and locked columns cannot be told "
-				+ "apart.");
+				+ "answer. While column permissions are ON it omits a column whose only row is the default (All "
+				+ "employees, edit), so a column it does not list is not shown at all, and it lists a column with no "
+				+ "rows with none (shown as accessible only to system administrators); while they are OFF it lists no "
+				+ "column, though rows may be stored.");
 			ReportColumns(state, columnUId, column, codes, codesRead, granteeFilter);
+			if (state.AdministratedByColumns == true) {
+				Guid[] listedEmpty = state.Columns.Where(entry => entry.Rows.Count == 0 && entry.ColumnUId is not null)
+					.Select(entry => entry.ColumnUId!.Value).Where(uId => columnUId is null || uId == columnUId).ToArray();
+				if (listedEmpty.Length > 0) {
+					_logger.WriteInfo($"  {NoRowsLocked} ({listedEmpty.Length}): {FormatColumnList(listedEmpty, codes)}.");
+				}
+			}
 			return 0;
 		}
 		if (state.AdministratedByColumns == true) {
 			ReportStoredWhileOn(state, KnownColumns(codes, root), columnUId, column, codes, codesRead, granteeFilter);
 			return 0;
 		}
-		ReportColumns(state, columnUId, column, codes, codesRead, granteeFilter);
+		ReportStoredNotOn(state, columnUId, column, codes, codesRead, granteeFilter);
 		return 0;
 	}
+
+	// Column permissions OFF (or a switch not returned), from storage: the stored rows, kept but not applied — the
+	// columns with rows other than the default listed, the default-only ones summarised as on the ON branch.
+	private void ReportStoredNotOn(ColumnRightsState state, Guid? columnUId, string column,
+		IReadOnlyDictionary<Guid, string> codes, bool codesRead, Guid? granteeFilter) {
+		ColumnRightsState restricted = state with {
+			Columns = state.Columns.Where(entry => !ColumnRightsDefaults.IsDefaultOnly(entry.Rows)).ToArray()
+		};
+		Guid[] defaults = DefaultOnlyColumns(state, columnUId);
+		if (column is not null && defaults.Length > 0) {
+			// The named column has only the default row: the summary below says so; no "no rows" line.
+			_logger.WriteInfo($"  {(state.AdministratedByColumns is null ? SwitchMissing : SwitchOff)}");
+		} else {
+			ReportColumns(restricted, columnUId, column, codes, codesRead, granteeFilter);
+		}
+		if (defaults.Length > 0) {
+			_logger.WriteInfo($"  {DefaultOnly} ({defaults.Length}): {FormatColumnList(defaults, codes)}.");
+		}
+	}
+
+	private static Guid[] DefaultOnlyColumns(ColumnRightsState state, Guid? columnUId) =>
+		state.RestrictedColumns.Where(entry => ColumnRightsDefaults.IsDefaultOnly(entry.Rows))
+			.Where(entry => entry.ColumnUId is not null).Select(entry => entry.ColumnUId!.Value)
+			.Where(uId => columnUId is null || uId == columnUId).ToArray();
 
 	// The stored rows, by the object's schema UId. A failure is returned, never an empty list.
 	private bool TryReadStored(ObjectRightsInfo info, CreatioRequestOptions requestOptions,
@@ -167,7 +199,7 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 				error = "the call's time limit is spent";
 				return false;
 			}
-			stored = _storage.ReadStoredColumns(info.SchemaUId, requestOptions);
+			stored = _storage.ReadStoredColumns(info.SchemaUId, requestOptions, verifyCount: true);
 			return true;
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
@@ -195,13 +227,14 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 			.OrderBy(entry => CodeOf(entry, codes) is null ? 1 : 0)
 			.ThenBy(entry => CodeOf(entry, codes) ?? entry.ColumnCaption ?? "", StringComparer.OrdinalIgnoreCase)
 			.ToList();
-		Guid[] defaults = state.RestrictedColumns.Where(entry => ColumnRightsDefaults.IsDefaultOnly(entry.Rows))
-			.Where(entry => entry.ColumnUId is not null).Select(entry => entry.ColumnUId!.Value)
-			.Where(uId => columnUId is null || uId == columnUId).ToArray();
+		Guid[] defaults = DefaultOnlyColumns(state, columnUId);
 		HashSet<Guid?> withRows = state.RestrictedColumns.Select(entry => entry.ColumnUId).ToHashSet();
 		Guid[] locked = known.Where(uId => !withRows.Contains(uId))
 			.Where(uId => columnUId is null || uId == columnUId).ToArray();
-		_logger.WriteInfo(restricted.Count > 0 ? "  Column permissions: ON. Columns with rows:" : $"  {OnWithoutRows}");
+		// The summary line is about the whole object, so it is computed from every column, not only the one named.
+		bool anyRestricted = state.RestrictedColumns.Any(entry => !ColumnRightsDefaults.IsDefaultOnly(entry.Rows));
+		_logger.WriteInfo(columnUId is not null ? "  Column permissions: ON."
+			: anyRestricted ? "  Column permissions: ON. Columns with rows:" : $"  {OnWithoutRows}");
 		foreach (ColumnRights entry in restricted) {
 			_logger.WriteInfo($"    {FormatColumn(entry, codes, codesRead)}:");
 			ReportRows(entry.Rows, granteeFilter);
@@ -377,7 +410,7 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		"Column permissions: ON. No column has rows other than the default row (All employees, edit).";
 
 	internal const string DefaultOnly =
-		"Default row only (All employees: edit), not a restriction";
+		"Default row only (All employees: edit), not a restriction for members of All employees";
 
 	internal const string NoRowsLocked =
 		"No rows - per Creatio's documentation only system administrators can access these columns";

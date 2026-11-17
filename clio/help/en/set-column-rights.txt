@@ -43,9 +43,27 @@ DESCRIPTION
     sent with none, so it stays as it is (per Creatio's documentation only system administrators can
     access it). When the call turns them ON, a column with no rows is not sent, so it gets the default
     row and no column is locked; the output names those columns. A column whose last row is removed gets
-    the default row. A disable sends no list. The service answers success whatever it stores, so after
-    every save the switch and the stored rows are read back and compared with the plan; any difference
-    fails the call.
+    the default row; removing the only row of a column that has just the default is refused, since the
+    default would come back. A disable sends no list.
+
+    Before planning, while column permissions are ON, the stored rows are checked against what the
+    service lists (every restricted column with its rows, a column with no rows with none, a default
+    column omitted); any disagreement refuses the call, since a save built from a short storage read
+    would lock the columns it missed. Storage is counted before it is read, and a read with fewer rows
+    than the count is refused.
+
+    Calls for one object must not run in parallel: a call takes a lease on the environment and object
+    for its whole run, and a second call while it is held is refused. Right before the save the stored
+    rows are read again; if another client changed them since the plan, nothing is saved.
+
+    The service answers success whatever it stores, so after every save the switches and the stored
+    rows are read back. After a save that names columns, any difference from the plan fails the call,
+    and the error says whether nothing was applied or the change was partially applied; a changed
+    operation or record switch fails it too. After a disable (no list), a changed stored row is only a
+    warning: another client may have changed it.
+
+    Which row wins for a user in several roles is not measured for columns. When a restriction ends up
+    after an All employees row with edit, the output warns; put a restriction first (--position 0).
 
     The rows are written to the environment only. They are NOT bound to a package: how Creatio carries
     column permissions in a package is not established yet.
@@ -91,14 +109,19 @@ EXIT CODES
     1   An argument was missing, invalid or in a combination that is refused; the object, the column or
         the grantee was not found; several objects have the title; the plan was refused (the switch is
         OFF, a move or removal while OFF, the grantee has no row or several rows in the column, the
-        position is past the end; the read carried no readable switch; a stored row has no readable
-        position, level or grantee, so it could not be sent back exactly as stored); the stored rows or
-        the schema's columns could not be read; the save failed; or the read-back failed or does not
-        match the plan.
+        position is past the end, the removal of a default-only column's row; the read carried no
+        readable switch; a stored row has no readable position, level or grantee, so it could not be sent
+        back exactly as stored); storage disagrees with the service, is cut short, or cannot be read; the
+        schema's columns could not be read; another call holds the object's lease; the stored rows
+        changed before the save; the time limit left no room for the save; the save failed; or the
+        read-back failed or does not match the plan.
 
 EXAMPLES
     Preview denying a role the Amount column, turning column permissions on:
         clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --enable-column-permissions --preview -e dev
+
+    Deny a role the column, first in the column's position order (recommended for a restriction):
+        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --position 0 --confirm -e dev
 
     Let a role read the column, first in the column's position order:
         clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access read --position 0 --confirm -e dev

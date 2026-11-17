@@ -106,6 +106,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	private readonly IColumnRightsWriter _writer;
 	private readonly IColumnRightsPlanner _planner;
 	private readonly IColumnRightsReadBackVerifier _readBackVerifier;
+	private readonly IColumnRightsWriteLease _lease;
 	private readonly IGranteeLookup _granteeLookup;
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly IInteractiveConsole _console;
@@ -114,17 +115,18 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	/// <summary>Creates the command.</summary>
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "The command composes independent DI collaborators (rights reader, storage reader, writer, "
-			+ "planner, read-back verifier, grantee lookup, column reader, console, logger), as set-object-rights does; "
-			+ "grouping them would hide the injected contract without changing behaviour.")]
+			+ "planner, read-back verifier, write lease, grantee lookup, column reader, console, logger), as "
+			+ "set-object-rights does; grouping them would hide the injected contract without changing behaviour.")]
 	public SetColumnRightsCommand(IObjectRightsReader reader, IColumnRightsStorageReader storage,
 		IColumnRightsWriter writer, IColumnRightsPlanner planner, IColumnRightsReadBackVerifier readBackVerifier,
-		IGranteeLookup granteeLookup, IRemoteEntitySchemaColumnManager columnManager, IInteractiveConsole console,
-		ILogger logger) {
+		IColumnRightsWriteLease lease, IGranteeLookup granteeLookup, IRemoteEntitySchemaColumnManager columnManager,
+		IInteractiveConsole console, ILogger logger) {
 		_reader = reader;
 		_storage = storage;
 		_writer = writer;
 		_planner = planner;
 		_readBackVerifier = readBackVerifier;
+		_lease = lease;
 		_granteeLookup = granteeLookup;
 		_columnManager = columnManager;
 		_console = console;
@@ -146,10 +148,36 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			return 1;
 		}
 		string label = ObjectRightsSupport.FormatObject(schemaName, before.Caption);
-		if (!TryReadStored(before, label, requestOptions, out IReadOnlyList<ColumnRights> stored, out string storedError)) {
+		// A write holds the lease for the object from its read to its read-back, and reads the object again under it: a
+		// call that overlapped another would plan on rows the other is changing and send them back as they were.
+		using IDisposable lease = options.Preview ? null : TakeLease(options, schemaName);
+		if (!options.Preview) {
+			if (lease is null) {
+				return 1;
+			}
+			before = _reader.GetObjectRights(schemaName, requestOptions);
+			if (!before.IsRead) {
+				_logger.WriteError($"Error: '{schemaName}': {ColumnFailureReason(before)}. Nothing was changed.");
+				return 1;
+			}
+		}
+		if (!TryReadStored(before, label, requestOptions, true, out IReadOnlyList<ColumnRights> stored,
+				out string storedError)) {
 			_logger.WriteError($"Error: the stored column permission rows of {label} could not be read: {storedError}. A "
 				+ "save is built from them, so nothing was changed.");
 			return 1;
+		}
+		// While the switch is on the service lists every restricted column; storage must say the same, or a save built
+		// from a storage read that missed rows would send the missed columns with none and lock them.
+		if (!input.SwitchOnly && before.AdministratedByColumns == true) {
+			IReadOnlyList<string> disagreements = ColumnRightsCrossCheck.Disagreements(before.Columns ?? [], stored);
+			if (disagreements.Count > 0) {
+				_logger.WriteError($"Error: the stored column permission rows of {label} disagree with what the service "
+					+ $"lists: {string.Join("; ", disagreements.Take(10))}"
+					+ (disagreements.Count > 10 ? $"; and {disagreements.Count - 10} more" : "")
+					+ ". A save is built from storage, so nothing was changed. Check the object with get-column-rights.");
+				return 1;
+			}
 		}
 		// A disable sends no list and needs no column of the schema; every other call does.
 		IReadOnlyList<EntitySchemaPropertyColumnInfo> schemaColumns = [];
@@ -194,6 +222,20 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			case ConfirmDecision.Refused:
 				return 1;
 		}
+		// The rows are read once more right before the save: a change another client made since the plan (the lease
+		// covers clio calls only) would otherwise be overwritten with the rows planned on.
+		if (!TryReadStored(before, label, requestOptions, false, out IReadOnlyList<ColumnRights> current,
+				out string currentError)) {
+			_logger.WriteError($"Error: the stored column permission rows of {label} could not be read again before the "
+				+ $"save: {currentError}. Nothing was changed.");
+			return 1;
+		}
+		if (!SameStorage(stored, current)) {
+			_logger.WriteError($"Error: the stored column permission rows of {label} changed after the call read them "
+				+ "(another client changed the object). Nothing was changed: re-run the call to plan on the rows as they "
+				+ "are now.");
+			return 1;
+		}
 		// The save, then the read-back of the switch and of storage: three requests.
 		if (!ObjectRightsCommandInput.HasTimeFor(requestOptions, 3, schemaName, "save",
 				"the save and the read-back need", "nothing was changed", _logger)) {
@@ -204,11 +246,32 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName, readBackOptions);
 		IReadOnlyList<ColumnRights> actualStored = null;
 		string actualStoredError = null;
-		if (actual.IsRead && !TryReadStored(actual, label, readBackOptions, out actualStored, out actualStoredError)) {
+		if (actual.IsRead
+			&& !TryReadStored(actual, label, readBackOptions, false, out actualStored, out actualStoredError)) {
 			actualStored = null;
 		}
-		ReadBack readBack = new(actual, actualStored, actualStoredError);
+		ReadBack readBack = new(before, actual, actualStored, actualStoredError);
 		return save.Succeeded ? ReportSaved(change, facts, readBack) : ReportFailedSave(change, save, readBack);
+	}
+
+	// The write lease for the object, or null after writing why it was refused.
+	private IDisposable TakeLease(SetColumnRightsOptions options, string schemaName) {
+		try {
+			return _lease.Acquire(options.Environment ?? options.Uri ?? string.Empty, schemaName);
+		}
+		catch (InvalidOperationException ex) {
+			_logger.WriteError($"Error: {ex.Message}");
+			return null;
+		}
+	}
+
+	// Whether two storage reads hold the same rows in every column.
+	private static bool SameStorage(IReadOnlyList<ColumnRights> left, IReadOnlyList<ColumnRights> right) {
+		ColumnRightsState first = new(null, left);
+		ColumnRightsState second = new(null, right);
+		return left.Select(column => column.ColumnUId).Concat(right.Select(column => column.ColumnUId)).Distinct()
+			.All(column => ColumnRightsComparer.SameRows(ColumnRightsPlan.RowsOf(first, column),
+				ColumnRightsPlan.RowsOf(second, column)));
 	}
 
 	// The parsed arguments of one call.
@@ -219,8 +282,10 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	// The column a call changes: its code as the schema spells it, its UId and its caption.
 	private sealed record ColumnTarget(string Code, Guid UId, string Caption);
 
-	// What was read back after the save: the switch from the service, the rows from storage (null when not read).
-	private sealed record ReadBack(ObjectRightsInfo Object, IReadOnlyList<ColumnRights> Stored, string StoredError) {
+	// What was read back after the save: the switch from the service, the rows from storage (null when not read), next
+	// to the object as it was read before.
+	private sealed record ReadBack(ObjectRightsInfo Before, ObjectRightsInfo Object, IReadOnlyList<ColumnRights> Stored,
+		string StoredError) {
 		public bool IsRead => Object.IsRead && Stored is not null;
 	}
 
@@ -359,9 +424,10 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		return true;
 	}
 
-	// The stored rows of the object, by its schema UId. A failure is returned, never an empty list.
+	// The stored rows of the object, by the uId the service returned for it (which is the rows' SubjectSchemaUId). A
+	// failure is returned, never an empty list.
 	private bool TryReadStored(ObjectRightsInfo info, string label, CreatioRequestOptions requestOptions,
-		out IReadOnlyList<ColumnRights> stored, out string error) {
+		bool verifyCount, out IReadOnlyList<ColumnRights> stored, out string error) {
 		stored = null;
 		error = null;
 		if (info.SchemaUId == Guid.Empty) {
@@ -369,7 +435,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			return false;
 		}
 		try {
-			stored = _storage.ReadStoredColumns(info.SchemaUId, requestOptions);
+			stored = _storage.ReadStoredColumns(info.SchemaUId, requestOptions, verifyCount);
 			return true;
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
@@ -424,7 +490,13 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ "so the row to change is ambiguous. Remove the duplicates in the Column permissions designer, then re-run.",
 			ColumnRightsRefusal.PositionOutOfRange =>
 				$"position {change.Request.Position} is past the end of column {change.ColumnLabel} of {change.Label}: "
-				+ $"it has {plan.ColumnRowsBefore.Count} row(s), so the positions are 0..{LastPosition(change)}.",
+				+ $"the change starts from {plan.BaseRows.Count} row(s) ({FormatRows(plan.BaseRows)}), so the positions "
+				+ $"are 0..{plan.MaxPosition}.",
+			ColumnRightsRefusal.RemovesTheDefault =>
+				$"column {change.ColumnLabel} of {change.Label} has only the default row (All employees: edit). Removing "
+				+ "it would leave the column with no rows, which the save does not name, so the service would write the "
+				+ "same default row back. To restrict the column, add a row for a role, or set All employees to read or "
+				+ "denied with --access.",
 			ColumnRightsRefusal.SwitchUnknown =>
 				$"the read of {change.Label} carried no readable \"Use column permissions\" switch, so what a save would "
 				+ "turn on or off is unknown. Check the object with get-column-rights.",
@@ -435,12 +507,6 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ "re-run.",
 			_ => $"the change on {change.Label} is refused ({plan.Refusal})."
 		};
-	}
-
-	// A new row may go one past the last row; an existing row only within the rows.
-	private static int LastPosition(Change change) {
-		bool hasRow = change.Plan.ColumnRowsBefore.Any(row => row.GranteeId == change.Request.Grantee);
-		return hasRow ? change.Plan.ColumnRowsBefore.Count - 1 : change.Plan.ColumnRowsBefore.Count;
 	}
 
 	private static string NoChangeReason(Change change) {
@@ -462,6 +528,14 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		List<string> facts = new();
 		if (plan.EnablesColumnPermissions) {
 			facts.Add($"Column permissions on {change.Label} are turned ON: from then on its column rows apply.");
+			Guid[] applying = plan.Before.Columns
+				.Where(column => column.ColumnUId is not null && column.Rows.Count > 0
+					&& !ColumnRightsDefaults.IsDefaultOnly(column.Rows))
+				.Select(column => column.ColumnUId!.Value).ToArray();
+			if (applying.Length > 0) {
+				facts.Add($"Columns whose stored rows start to apply ({applying.Length}): "
+					+ $"{change.FormatColumns(applying)}.");
+			}
 		}
 		if (plan.DisablesColumnPermissions) {
 			int storedColumns = plan.Before.Columns.Count(column => column.Rows.Count > 0);
@@ -472,11 +546,18 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		if (!change.Request.SwitchOnly) {
 			facts.Add($"Column {change.ColumnLabel}, stored rows before: {FormatRows(plan.ColumnRowsBefore)}.");
 			facts.Add($"Column {change.ColumnLabel}, stored rows after: {FormatRows(plan.ColumnRowsAfter)}.");
+			IReadOnlyList<ColumnRightRow> below = plan.RestrictionsBelowAllEmployeesEdit;
+			if (below.Count > 0) {
+				facts.Add($"Warning: in column {change.ColumnLabel}, All employees has edit at a position before "
+					+ $"{FormatRows(below)}. Which row wins for a member of both is not measured for columns, so that "
+					+ "restriction may not apply to members of All employees; to be safe put a restriction first "
+					+ "(--position 0).");
+			}
 		}
 		if (plan.RewritesColumns) {
 			int restricted = plan.SaveList.Count(column => column.Rows.Count > 0 && column.ColumnUId != plan.ColumnUId);
 			facts.Add($"The save names every column whose stored rows are not the default: {restricted} other column(s) "
-				+ "with their stored rows, unchanged; a column it does not name gets the default row (All employees, "
+				+ "with their stored rows as read; a column it does not name gets the default row (All employees, "
 				+ "edit), which a default column already has.");
 			IReadOnlyList<Guid> kept = plan.ColumnsKeptWithoutRows;
 			if (kept.Count > 0) {
@@ -484,7 +565,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 					+ $"administrators can access a column with no rows): {change.FormatColumns(kept)}.");
 			}
 			if (plan.DefaultedColumns.Count > 0) {
-				facts.Add($"Get the default row (All employees, edit) because they have no rows now "
+				facts.Add($"Get the default row (All employees: edit) because they have no rows now "
 					+ $"({plan.DefaultedColumns.Count}): {change.FormatColumns(plan.DefaultedColumns)}.");
 			}
 		}
@@ -499,15 +580,58 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			WriteFacts(facts);
 			return 1;
 		}
-		ColumnRightsReadBackComparison comparison = _readBackVerifier.Compare(change.Plan,
-			readBack.Object.AdministratedByColumns, readBack.Stored);
-		if (comparison.Critical.Count > 0) {
-			_logger.WriteError($"Error: {change.Label}: the save reported success, but the stored column permissions do "
-				+ $"not match the plan: {string.Join("; ", comparison.Critical)}. Check them with get-column-rights.");
+		IReadOnlyList<string> critical = Critical(change, readBack);
+		if (critical.Count > 0) {
+			_logger.WriteError($"Error: {change.Label}: the save reported success, but the switches and the stored column "
+				+ $"permissions do not match the plan: {string.Join("; ", critical)}. {AgainstBefore(change, readBack)} "
+				+ "Check them with get-column-rights.");
 			return 1;
 		}
-		ReportDone(change, facts, readBack, comparison);
+		ReportDone(change, facts, readBack, _readBackVerifier.Compare(change.Plan,
+			readBack.Object.AdministratedByColumns, readBack.Stored));
 		return 0;
+	}
+
+	// The differences the call fails on: the column switch and rows against the plan, and the operation and record
+	// switches, which the save sends as read and must leave as they were.
+	private IReadOnlyList<string> Critical(Change change, ReadBack readBack) {
+		List<string> critical = _readBackVerifier.Compare(change.Plan, readBack.Object.AdministratedByColumns,
+			readBack.Stored).Critical.ToList();
+		if (readBack.Object.AdministratedByOperations != readBack.Before.AdministratedByOperations) {
+			critical.Add($"operation permissions are {OnOff(readBack.Object.AdministratedByOperations)}, they were "
+				+ $"{OnOff(readBack.Before.AdministratedByOperations)} before the save");
+		}
+		if (readBack.Object.AdministratedByRecords != readBack.Before.AdministratedByRecords) {
+			critical.Add($"record permissions are {OnOff(readBack.Object.AdministratedByRecords)}, they were "
+				+ $"{OnOff(readBack.Before.AdministratedByRecords)} before the save");
+		}
+		return critical;
+	}
+
+	private static string OnOff(bool value) => value ? "ON" : "OFF";
+
+	// Whether the object read back is still as it was before the save, or partly changed — which the operator must know
+	// to decide whether to re-run.
+	private static string AgainstBefore(Change change, ReadBack readBack) {
+		List<string> changed = new();
+		if (readBack.Object.AdministratedByColumns != change.Plan.Before.AdministratedByColumns) {
+			changed.Add($"column permissions are {FormatSwitch(readBack.Object.AdministratedByColumns)} (were "
+				+ $"{FormatSwitch(change.Plan.Before.AdministratedByColumns)})");
+		}
+		ColumnRightsState before = change.Plan.Before;
+		ColumnRightsState after = new(readBack.Object.AdministratedByColumns, readBack.Stored);
+		Guid[] columns = before.Columns.Select(column => column.ColumnUId)
+			.Concat(readBack.Stored.Select(column => column.ColumnUId))
+			.Where(column => column is not null).Select(column => column!.Value).Distinct()
+			.Where(column => !ColumnRightsComparer.SameRows(ColumnRightsPlan.RowsOf(before, column),
+				ColumnRightsPlan.RowsOf(after, column)))
+			.ToArray();
+		if (columns.Length > 0) {
+			changed.Add($"the stored rows changed in {columns.Length} column(s): {change.FormatColumns(columns)}");
+		}
+		return changed.Count == 0
+			? "The switch and the stored rows are unchanged: nothing was applied."
+			: $"The change was PARTIALLY applied: {string.Join("; ", changed)}.";
 	}
 
 	// A save that reported an error may still have been committed, so storage is read back before the call is reported
@@ -521,10 +645,10 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ "Read the object with get-column-rights before retrying.");
 			return 1;
 		}
-		ColumnRightsReadBackComparison comparison = _readBackVerifier.Compare(change.Plan,
-			readBack.Object.AdministratedByColumns, readBack.Stored);
-		if (comparison.Critical.Count > 0) {
-			_logger.WriteError($"Error: {change.Label}: {failure}. Column permissions now: "
+		IReadOnlyList<string> critical = Critical(change, readBack);
+		if (critical.Count > 0) {
+			_logger.WriteError($"Error: {change.Label}: {failure}. It differs from the plan: {string.Join("; ", critical)}. "
+				+ $"{AgainstBefore(change, readBack)} Column permissions now: "
 				+ $"{FormatSwitch(readBack.Object.AdministratedByColumns)}"
 				+ (change.Column is null
 					? "."
@@ -534,7 +658,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		}
 		_logger.WriteWarning($"{change.Label}: the save reported an error ({save.Error}), but the stored column "
 			+ "permissions match the plan.");
-		ReportDone(change, DescribePlan(change), readBack, comparison);
+		ReportDone(change, DescribePlan(change), readBack, _readBackVerifier.Compare(change.Plan,
+			readBack.Object.AdministratedByColumns, readBack.Stored));
 		return 0;
 	}
 

@@ -599,7 +599,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		_rightsReader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
 			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
 			AdministratedByColumns: on, Columns: Array.Empty<ColumnRights>()));
-		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>()).Returns(stored);
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns(stored);
 	}
 
 	[Test]
@@ -623,10 +623,11 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("With column permissions OFF, the stored rows are listed as stored but not applied, the default ones included.")]
-	public void Execute_ShouldListStoredRowsAsNotApplied_WhenStorageIsReadWhileOff() {
+	[Description("With column permissions OFF, the stored rows are listed as stored but not applied, and the default-only columns are summarised as on the ON branch, never listed as restrictions.")]
+	public void Execute_ShouldListStoredRowsAndSummariseDefaults_WhenStorageIsReadWhileOff() {
 		// Arrange
-		ReturnsWithStorage(false, Column(NameUId, null, Row(Employees, "All employees", 0, ColumnRightLevel.Edit)));
+		ReturnsWithStorage(false, Column(AmountUId, null, Row(Role, "Role", 0, ColumnRightLevel.Denied)),
+			Column(NameUId, null, Row(Employees, "All employees", 0, ColumnRightLevel.Edit)));
 
 		// Act
 		int exitCode = Run();
@@ -635,7 +636,9 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		exitCode.Should().Be(0, because: "the read ran");
 		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
 		_logger.Received().WriteInfo("  Rows stored while column permissions are OFF:");
-		_logger.Received().WriteInfo($"      [0] All employees ({Employees}): edit");
+		_logger.Received().WriteInfo($"      [0] Role ({Role}): denied");
+		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.DefaultOnly} (1): Name.");
+		_logger.DidNotReceive().WriteInfo("    Name:");
 	}
 
 	[Test]
@@ -651,17 +654,22 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		exitCode.Should().Be(0, because: "the column exists");
 		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.");
 		_logger.DidNotReceive().WriteInfo("    UsrAmount:");
+		_logger.Received().WriteInfo("  Column permissions: ON.");
+		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.OnWithoutRows}");
 	}
 
 	[Test]
-	[Description("When storage cannot be read, the service read is shown with a warning that default and locked columns cannot be told apart.")]
+	[Description("When storage cannot be read, the service read is shown with a warning that default columns are not listed by it, and the columns it lists with no rows are shown as accessible only to system administrators.")]
 	public void Execute_ShouldFallBackWithAWarning_WhenStorageCannotBeRead() {
 		// Arrange
 		_rightsReader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
 			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
 			AdministratedByColumns: true,
-			Columns: new[] { Column(AmountUId, "Amount", Row(Role, "Role", 0, ColumnRightLevel.Denied)) }));
-		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>())
+			Columns: new[] {
+				Column(AmountUId, "Amount", Row(Role, "Role", 0, ColumnRightLevel.Denied)),
+				Column(DescriptionUId, "Description")
+			}));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>())
 			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: Access denied"));
 
 		// Act
@@ -670,7 +678,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the service read still answers");
 		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("Access denied")
-			&& line.Contains("cannot be told apart")));
+			&& line.Contains("not shown at all")));
 		_logger.Received().WriteInfo("    UsrAmount 'Amount':");
+		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.");
 	}
 }

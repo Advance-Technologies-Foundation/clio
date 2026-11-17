@@ -50,7 +50,7 @@ public sealed class ColumnRightsToolTests {
 		_logger.When(l => l.ClearMessages()).Do(_ => messages.Clear());
 		_reader = Substitute.For<IObjectRightsReader>();
 		_storage = Substitute.For<IColumnRightsStorageReader>();
-		_storage.ReadStoredColumns(default, default).ReturnsForAnyArgs(Array.Empty<ColumnRights>());
+		_storage.ReadStoredColumns(default, default, default).ReturnsForAnyArgs(Array.Empty<ColumnRights>());
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
 			new EntitySchemaPropertiesInfo("UsrHoliday", "Holiday", null, "(merged: all packages)", null, false, "Id",
@@ -151,7 +151,7 @@ public sealed class ColumnRightsToolTests {
 		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
 			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
 			AdministratedByColumns: true, Columns: columns));
-		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>()).Returns(columns);
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns(columns);
 
 		// Act
 		ObjectRightsToolResponse response = Tool().GetColumnRights(new GetColumnRightsArgs("dev", "UsrHoliday"));
@@ -215,7 +215,7 @@ public sealed class SetColumnRightsToolTests {
 		_logger.When(l => l.ClearMessages()).Do(_ => messages.Clear());
 		_reader = Substitute.For<IObjectRightsReader>();
 		_storage = Substitute.For<IColumnRightsStorageReader>();
-		_storage.ReadStoredColumns(default, default).ReturnsForAnyArgs(Array.Empty<ColumnRights>());
+		_storage.ReadStoredColumns(default, default, default).ReturnsForAnyArgs(Array.Empty<ColumnRights>());
 		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
 			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
 			AdministratedByColumns: true, Columns: Array.Empty<ColumnRights>()));
@@ -235,7 +235,8 @@ public sealed class SetColumnRightsToolTests {
 	}
 
 	private SetColumnRightsCommand Command() => new(_reader, _storage, _writer, new ColumnRightsPlanner(),
-		new ColumnRightsReadBackVerifier(), _granteeLookup, _columnManager, Substitute.For<IInteractiveConsole>(), _logger);
+		new ColumnRightsReadBackVerifier(), Substitute.For<IColumnRightsWriteLease>(), _granteeLookup, _columnManager,
+		Substitute.For<IInteractiveConsole>(), _logger);
 
 	private SetColumnRightsTool Tool() => new(Command(), _logger, _resolver);
 
@@ -257,6 +258,21 @@ public sealed class SetColumnRightsToolTests {
 		attribute.Destructive.Should().BeTrue(because: "a deny or a removal takes access away");
 		attribute.Idempotent.Should().BeTrue(because: "repeating the same call changes nothing further");
 		attribute.OpenWorld.Should().BeFalse(because: "the tool talks only to the registered environment");
+	}
+
+	[Test]
+	[Description("The set-column-rights description tells a host approving an enable that every column with no rows gets the default row and is named, and that calls for one object must not run in parallel.")]
+	public void SetColumnRightsTool_ShouldStateEnableDefaultsAndNoParallelCalls_WhenInspectingDescription() {
+		// Arrange & Act
+		string description = ((System.ComponentModel.DescriptionAttribute)typeof(SetColumnRightsTool)
+			.GetMethod(nameof(SetColumnRightsTool.SetColumnRights))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Single()).Description;
+
+		// Assert
+		description.Should().Contain("gives EVERY column with no stored row the default row (All employees: edit), naming those columns",
+			because: "a host approving an enable must see that columns with no rows get the default");
+		description.Should().Contain("must NOT run in parallel", because: "overlapping calls on one object are refused");
 	}
 
 	[Test]

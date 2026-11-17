@@ -37,15 +37,18 @@ Per object the output is one of:
   not applied.` The stored rows are listed after it.
 - `Column permissions: ON. Columns with rows:` followed by each column whose stored rows are not just the default, with
   its rows (or `No column has rows other than the default row`); then `Default row only (All employees: edit), not a
-  restriction (N): <columns>`; then `No rows - per Creatio's documentation only system administrators can access these
+  restriction for members of All employees (N): <columns>` (external/portal users are not in All employees); then `No rows - per Creatio's documentation only system administrators can access these
   columns (N): <columns>` for the schema's columns with no stored row. Creatio Academy's column permissions
   documentation states that for a column with no rows "users, except for system administrators, will not be able to
   access that column". Long column lists are cut after 20.
 - `Column permissions: unknown — the service did not return the column switch (administratedByColumns).` Stored rows,
   if any, are listed after it. It is never reported as OFF.
 
-When the stored rows cannot be read, a warning says so and the `GetAdministratedObject` answer is shown instead;
-default and locked columns cannot then be told apart.
+While OFF, the columns whose only stored row is the default are summarised the same way.
+
+When the stored rows cannot be read, a warning says so and the `GetAdministratedObject` answer is shown instead: while
+ON it does not list a default column at all, and the columns it lists with no rows are shown as accessible only to
+system administrators; while OFF it lists no column.
 
 With `--column` only that column is shown, named by its code as the schema spells it: its rows, or that it has the
 default row only, or no rows. When `--column` is omitted, every column with rows is listed. With `--grantee`, per column, the rows

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Package;
 
@@ -35,12 +37,17 @@ public interface IColumnRightsStorageReader {
 	/// grouped per column (by <c>SubjectColumnUId</c>), each column's rows in stored position order. A column with no
 	/// stored row is not listed. Captions are not stored; they are left empty.
 	/// </summary>
-	/// <param name="schemaUId">The object's base schema UId (<c>SubjectSchemaUId</c>).</param>
+	/// <param name="schemaUId">The uId <c>GetAdministratedObject</c> returned for the object, which is the stored rows'
+	/// <c>SubjectSchemaUId</c> (measured on multi-layer schemas too).</param>
 	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <param name="verifyCount">Count the rows first (one more request) and refuse an answer with fewer rows than the
+	/// count — a cap the server applies below the requested one — or more than <c>10000</c>. A read that plans a save
+	/// counts; a read-back may skip it, since a short read-back fails the comparison anyway.</param>
 	/// <returns>The stored rows per column.</returns>
 	/// <exception cref="Exception">A service failure is thrown: an empty answer never stands for a read that failed.
-	/// <see cref="InvalidOperationException"/> when the answer may be cut off by the row cap.</exception>
-	IReadOnlyList<ColumnRights> ReadStoredColumns(Guid schemaUId, CreatioRequestOptions requestOptions);
+	/// <see cref="InvalidOperationException"/> when the answer may be cut off.</exception>
+	IReadOnlyList<ColumnRights> ReadStoredColumns(Guid schemaUId, CreatioRequestOptions requestOptions,
+		bool verifyCount = true);
 }
 
 /// <inheritdoc />
@@ -61,8 +68,15 @@ public sealed class ColumnRightsStorageReader : IColumnRightsStorageReader {
 	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<ColumnRights> ReadStoredColumns(Guid schemaUId, CreatioRequestOptions requestOptions) {
-		// The level is read as the lookup's Value (0/1/2): the lookup's ids differ per site.
+	public IReadOnlyList<ColumnRights> ReadStoredColumns(Guid schemaUId, CreatioRequestOptions requestOptions,
+		bool verifyCount = true) {
+		int? count = verifyCount ? CountStoredRows(schemaUId, requestOptions) : null;
+		if (count > RowCap) {
+			throw new InvalidOperationException($"{StorageView} holds {count} rows for schema {schemaUId}, more than "
+				+ $"the {RowCap} this read takes.");
+		}
+		// The level is read as the lookup's Value (0/1/2): the lookup's ids differ per site. One row more than the cap is
+		// asked for, so an answer at the cap is told from one cut off by it.
 		object query = SelectQueryHelper.BuildSelectQuery(
 			StorageView,
 			new[] {
@@ -73,18 +87,20 @@ public sealed class ColumnRightsStorageReader : IColumnRightsStorageReader {
 				new SelectQueryHelper.SelectQueryColumnDefinition("SysAdminUnit", "SysAdminUnit"),
 				new SelectQueryHelper.SelectQueryColumnDefinition("RightLevel.Value", "RightLevelValue")
 			},
-			new[] {
-				new SelectQueryHelper.SelectQueryFilterDefinition("SubjectSchemaUId", schemaUId.ToString(),
-					SelectQueryHelper.GuidDataValueType)
-			},
-			RowCap);
+			new[] { SchemaFilter(schemaUId) },
+			RowCap + 1);
 		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
 		StoredRowsResponse response = SelectQueryHelper.ExecuteSelectQuery<StoredRowsResponse>(
 			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
 		List<StoredRow> rows = response.Rows ?? new List<StoredRow>();
-		if (rows.Count >= RowCap) {
-			throw new InvalidOperationException($"{StorageView} returned {rows.Count} rows for schema {schemaUId}, the "
-				+ "row cap, so the stored rows may be cut off.");
+		if (rows.Count > RowCap) {
+			throw new InvalidOperationException($"{StorageView} returned more than {RowCap} rows for schema {schemaUId}, "
+				+ "so the stored rows may be cut off.");
+		}
+		// The server may cap an answer below the rows asked for: then the rows are fewer than the count.
+		if (count is { } counted && rows.Count != counted) {
+			throw new InvalidOperationException($"{StorageView} returned {rows.Count} of the {counted} rows it counts for "
+				+ $"schema {schemaUId}, so the stored rows are not all read.");
 		}
 		return rows
 			.GroupBy(row => row.SubjectColumnUId)
@@ -96,6 +112,44 @@ public sealed class ColumnRightsStorageReader : IColumnRightsStorageReader {
 				.OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0)
 				.ToList()))
 			.ToList();
+	}
+
+	private static SelectQueryHelper.SelectQueryFilterDefinition SchemaFilter(Guid schemaUId) =>
+		new("SubjectSchemaUId", schemaUId.ToString(), SelectQueryHelper.GuidDataValueType);
+
+	// COUNT(Id) over the object's stored rows: the same filter as the rows, one aggregation column.
+	private int CountStoredRows(Guid schemaUId, CreatioRequestOptions requestOptions) {
+		JsonObject query = JsonSerializer.SerializeToNode(SelectQueryHelper.BuildSelectQuery(StorageView,
+			new[] { new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id") }, new[] { SchemaFilter(schemaUId) },
+			1))!.AsObject();
+		query["columns"] = JsonSerializer.SerializeToNode(new {
+			items = new Dictionary<string, object> {
+				["Count"] = new {
+					expression = new {
+						expressionType = 1,
+						functionType = 2,
+						aggregationType = 1,
+						functionArgument = new { expressionType = 0, columnPath = "Id" }
+					},
+					isVisible = true
+				}
+			}
+		});
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
+		CountResponse response = SelectQueryHelper.ExecuteSelectQuery<CountResponse>(_applicationClient, _urlBuilder,
+			query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
+		return response.Rows?.FirstOrDefault()?.Count
+			?? throw new InvalidOperationException($"{StorageView}: the row count for schema {schemaUId} came back empty.");
+	}
+
+	private sealed class CountResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<CountRow> Rows { get; set; }
+	}
+
+	private sealed class CountRow {
+		[JsonPropertyName("Count")]
+		public int? Count { get; set; }
 	}
 
 	private sealed class StoredRowsResponse : SelectQueryHelper.SelectQueryResponseBaseDto {

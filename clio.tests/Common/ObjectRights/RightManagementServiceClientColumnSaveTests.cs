@@ -124,7 +124,8 @@ public class RightManagementServiceClientColumnSaveTests {
 
 /// <summary>
 /// <see cref="ColumnRightsStorageReader"/>: the stored rows from <c>VwSysEntitySchemaColumnRight</c> through DataService,
-/// filtered by the object's schema UId, the level read as the lookup's Value, grouped per column in stored order.
+/// filtered by the object's schema UId, the level read as the lookup's Value, grouped per column in stored order — and
+/// counted first, so a read the server cut short is refused instead of planned on.
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -141,49 +142,65 @@ public class ColumnRightsStorageReaderTests {
 
 	private IApplicationClient _applicationClient;
 	private ColumnRightsStorageReader _reader;
-	private string _query;
+	private string _rowsQuery;
+	private string _countQuery;
 
 	[SetUp]
 	public void SetUp() {
-		_query = null;
+		_rowsQuery = null;
+		_countQuery = null;
 		_applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
 		_reader = new ColumnRightsStorageReader(_applicationClient, urlBuilder);
 	}
 
-	private void Answers(string body) =>
+	// The count query (an aggregation) gets the count; the rows query gets the rows.
+	private void Answers(int? count, string rowsBody) =>
 		_applicationClient.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(call => { _query = (string)call[1]; return body; });
+			.Returns(call => {
+				string body = (string)call[1];
+				if (body.Contains("\"aggregationType\"")) {
+					_countQuery = body;
+					return "{\"success\":true,\"rows\":[{\"Count\":" + (count?.ToString() ?? "null") + "}]}";
+				}
+				_rowsQuery = body;
+				return rowsBody;
+			});
+
+	private static string Rows(params string[] rows) => "{\"success\":true,\"rows\":[" + string.Join(",", rows) + "]}";
 
 	private static string Row(Guid column, Guid grantee, string name, int position, string level) =>
 		"{\"SubjectColumnUId\":\"" + column + "\",\"Position\":" + position + ",\"SysAdminUnit\":{\"value\":\"" + grantee
 		+ "\",\"displayValue\":\"" + name + "\"},\"RightLevelValue\":" + level + "}";
 
 	[Test]
-	[Description("Queries the storage view by the object's schema UId, reading the level as RightLevel.Value (the lookup's ids differ per site).")]
+	[Description("Counts and then queries the storage view by the object's schema UId, reading the level as RightLevel.Value (the lookup's ids differ per site) and asking for one row more than the cap.")]
 	public void ReadStoredColumns_ShouldQueryTheStorageView_WhenCalled() {
 		// Arrange
-		Answers("{\"success\":true,\"rows\":[]}");
+		Answers(0, Rows());
 
 		// Act
 		_reader.ReadStoredColumns(Schema, new CreatioRequestOptions());
 
 		// Assert
-		JsonObject query = JsonNode.Parse(_query)!.AsObject();
-		query["rootSchemaName"]!.GetValue<string>().Should().Be("VwSysEntitySchemaColumnRight",
+		JsonObject rows = JsonNode.Parse(_rowsQuery)!.AsObject();
+		rows["rootSchemaName"]!.GetValue<string>().Should().Be("VwSysEntitySchemaColumnRight",
 			because: "the rows are read from storage, not from the filtering service read");
-		_query.Should().Contain("\"columnPath\":\"RightLevel.Value\"", because: "the level is the lookup's Value");
-		_query.Should().Contain("\"columnPath\":\"SubjectSchemaUId\"", because: "the rows are filtered by the object");
-		_query.Should().Contain(Schema.ToString(), because: "the filter carries the schema UId");
+		rows["rowCount"]!.GetValue<int>().Should().Be(ColumnRightsStorageReader.RowCap + 1,
+			because: "an answer at the cap is told from one cut off by it");
+		_rowsQuery.Should().Contain("\"columnPath\":\"RightLevel.Value\"", because: "the level is the lookup's Value");
+		_rowsQuery.Should().Contain(Schema.ToString(), because: "the rows are filtered by the object");
+		_countQuery.Should().Contain("VwSysEntitySchemaColumnRight", because: "the count is over the same view")
+			.And.Contain(Schema.ToString(), because: "and the same filter");
 	}
 
 	[Test]
 	[Description("Groups the stored rows per column in stored position order, with the grantee's id and name and the level from its Value.")]
 	public void ReadStoredColumns_ShouldGroupRowsPerColumn_WhenRowsAreStored() {
 		// Arrange
-		Answers("{\"success\":true,\"rows\":[" + Row(Amount, Role, "Role", 1, "0") + ","
-			+ Row(Amount, Employees, "All employees", 0, "2") + "," + Row(Description, Role, "Role", 0, "1") + "]}");
+		Answers(3, Rows(Row(Amount, Role, "Role", 1, "0"), Row(Amount, Employees, "All employees", 0, "2"),
+			Row(Description, Role, "Role", 0, "1")));
 
 		// Act
 		var columns = _reader.ReadStoredColumns(Schema, new CreatioRequestOptions());
@@ -199,10 +216,52 @@ public class ColumnRightsStorageReaderTests {
 	}
 
 	[Test]
+	[Description("An answer with fewer rows than the count — a cap the server applies below the one asked for — is refused, never planned on.")]
+	public void ReadStoredColumns_ShouldThrow_WhenTheServerReturnsFewerRowsThanItCounts() {
+		// Arrange
+		Answers(2, Rows(Row(Amount, Role, "Role", 0, "0")));
+
+		// Act
+		Action act = () => _reader.ReadStoredColumns(Schema, new CreatioRequestOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a short read would send the missed columns with no rows")
+			.WithMessage("*returned 1 of the 2 rows*");
+	}
+
+	[Test]
+	[Description("A count past the cap is refused before the rows are read.")]
+	public void ReadStoredColumns_ShouldThrow_WhenTheCountIsPastTheCap() {
+		// Arrange
+		Answers(ColumnRightsStorageReader.RowCap + 5, Rows());
+
+		// Act
+		Action act = () => _reader.ReadStoredColumns(Schema, new CreatioRequestOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the rows could not all be read").WithMessage("*more than*");
+		_rowsQuery.Should().BeNull(because: "the rows are not read once the count is past the cap");
+	}
+
+	[Test]
+	[Description("A read-back may skip the count: then only the rows are queried.")]
+	public void ReadStoredColumns_ShouldNotCount_WhenVerifyCountIsFalse() {
+		// Arrange
+		Answers(null, Rows(Row(Amount, Role, "Role", 0, "0")));
+
+		// Act
+		var columns = _reader.ReadStoredColumns(Schema, new CreatioRequestOptions(), verifyCount: false);
+
+		// Assert
+		columns.Should().ContainSingle(because: "the stored row is read");
+		_countQuery.Should().BeNull(because: "no count is asked for");
+	}
+
+	[Test]
 	[Description("A failed DataService answer is thrown, never read as no stored rows.")]
 	public void ReadStoredColumns_ShouldThrow_WhenTheServiceFails() {
 		// Arrange
-		Answers("{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
+		Answers(0, "{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
 
 		// Act
 		Action act = () => _reader.ReadStoredColumns(Schema, new CreatioRequestOptions());
@@ -210,5 +269,47 @@ public class ColumnRightsStorageReaderTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "an empty list must never stand for a failed read")
 			.WithMessage("*Access denied*");
+	}
+}
+
+/// <summary>
+/// <see cref="ColumnRightsWriteLease"/>: one holder per environment and object across processes, refused at once while
+/// held, free again once disposed. Uses a lock folder of its own under the temp directory.
+/// </summary>
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
+public class ColumnRightsWriteLeaseTests {
+
+	private string _root;
+
+	[SetUp]
+	public void SetUp() => _root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"clio-column-lease-{Guid.NewGuid():N}");
+
+	[TearDown]
+	public void TearDown() {
+		if (System.IO.Directory.Exists(_root)) {
+			System.IO.Directory.Delete(_root, true);
+		}
+	}
+
+	[Test]
+	[Description("A second lease on the same environment and object is refused while the first is held, and granted once it is disposed; another object is not blocked.")]
+	public void Acquire_ShouldRefuseASecondHolder_WhileTheFirstHoldsTheLease() {
+		// Arrange
+		ColumnRightsWriteLease lease = new(_root);
+		IDisposable first = lease.Acquire("dev", "UsrHoliday");
+
+		// Act
+		Action second = () => lease.Acquire("DEV", "usrholiday").Dispose();
+		Action other = () => lease.Acquire("dev", "UsrOrder").Dispose();
+
+		// Assert
+		second.Should().Throw<InvalidOperationException>(because: "two calls on one object would revert each other")
+			.WithMessage("*must not run in parallel*");
+		other.Should().NotThrow(because: "a lease covers one object");
+		first.Dispose();
+		Action afterRelease = () => lease.Acquire("dev", "UsrHoliday").Dispose();
+		afterRelease.Should().NotThrow(because: "a disposed lease is free again");
 	}
 }

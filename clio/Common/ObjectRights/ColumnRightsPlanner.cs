@@ -79,7 +79,11 @@ public enum ColumnRightsRefusal {
 
 	/// <summary>A move or a removal while column permissions are off: a save with a column list while off is not
 	/// measured, so the call asks to turn them on first.</summary>
-	SwitchOffForLayout
+	SwitchOffForLayout,
+
+	/// <summary>A removal of the All employees row of a column whose only row it is (the default): the column would
+	/// have no rows, the save would not name it, and the service would write the same default row back.</summary>
+	RemovesTheDefault
 }
 
 /// <summary>
@@ -138,6 +142,30 @@ public sealed record ColumnRightsPlan(
 	/// <summary>The stored rows a list save could not send back exactly: no position, level or grantee.</summary>
 	public IReadOnlyList<ColumnRightRow> UnreadableRows =>
 		Before.Columns.SelectMany(column => column.Rows).Where(IsUnreadable).ToArray();
+
+	/// <summary>The rows the change starts from (the stored rows, or the default row a column with none would get when
+	/// the call turns column permissions on); <see cref="PositionOutOfRange"/> is measured against them.</summary>
+	public IReadOnlyList<ColumnRightRow> BaseRows { get; init; } = [];
+
+	/// <summary>The last position the call may name: one past the base rows for a new row, the last base row for an
+	/// existing one.</summary>
+	public int MaxPosition { get; init; }
+
+	/// <summary>
+	/// Rows of the changed column that grant less than edit and sit after an All employees row with edit. Which row
+	/// wins for a user in several roles is not measured for columns, so such a restriction may never apply to members
+	/// of All employees; the output warns about it.
+	/// </summary>
+	public IReadOnlyList<ColumnRightRow> RestrictionsBelowAllEmployeesEdit {
+		get {
+			ColumnRightRow allEmployees = ColumnRowsAfter.FirstOrDefault(row =>
+				row.GranteeId == SysAdminUnitIds.AllEmployees && row.Level == ColumnRightLevel.Edit);
+			return allEmployees is null
+				? []
+				: ColumnRowsAfter.Where(row => row.GranteeId != SysAdminUnitIds.AllEmployees
+					&& row.Level != ColumnRightLevel.Edit && row.Position > allEmployees.Position).ToArray();
+		}
+	}
 
 	internal static bool IsUnreadable(ColumnRightRow row) =>
 		row.Position is null || row.Level is null || row.GranteeId == Guid.Empty;
@@ -204,13 +232,21 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 		}
 		ColumnRightRow existing = granteeRows.FirstOrDefault();
 		if (existing is null && request.Access is null) {
-			return Refuse(before, request, ColumnRightsRefusal.NoGranteeRow);
+			return Refuse(before, request, ColumnRightsRefusal.NoGranteeRow) with { BaseRows = rows };
+		}
+		// Removing the default row empties the column, which the save then leaves to the service: the same default.
+		if (request.RemoveRow && ColumnRightsDefaults.IsDefaultOnly(rows)) {
+			return Refuse(before, request, ColumnRightsRefusal.RemovesTheDefault) with { BaseRows = rows };
 		}
 		int lastPosition = existing is null ? rows.Count : rows.Count - 1;
 		if (request.Position is { } position && (position < 0 || position > lastPosition)) {
-			return Refuse(before, request, ColumnRightsRefusal.PositionOutOfRange);
+			return Refuse(before, request, ColumnRightsRefusal.PositionOutOfRange) with {
+				BaseRows = rows, MaxPosition = lastPosition
+			};
 		}
-		return BuildListPlan(layer, before, switchRead, request, PlanRows(rows, existing, request));
+		return BuildListPlan(layer, before, switchRead, request, PlanRows(rows, existing, request)) with {
+			BaseRows = rows, MaxPosition = lastPosition
+		};
 	}
 
 	// The list save: every column whose stored rows are not exactly the default, as stored; the changed column with its
@@ -282,6 +318,53 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 		ColumnRightsRefusal refusal, IReadOnlyList<int?> duplicatePositions = null) =>
 		new(before, before.AdministratedByColumns ?? false, null, before, [], refusal, duplicatePositions ?? [],
 			request.SwitchOnly ? Guid.Empty : request.ColumnUId);
+}
+
+/// <summary>
+/// Cross-checks the stored rows against <c>GetAdministratedObject</c> while column permissions are on, before a save is
+/// built from storage: a storage read that misses rows would otherwise send the columns it missed with no rows and lock
+/// them. Measured: while the switch is on the service lists every column with rows other than the default (with those
+/// rows), a column with no rows as <c>rights: []</c>, and omits a column whose only row is the default.
+/// </summary>
+public static class ColumnRightsCrossCheck {
+
+	/// <summary>
+	/// Every disagreement between <paramref name="serviceListed"/> (the service's columns, switch on) and
+	/// <paramref name="stored"/>: a listed column whose stored rows differ from its listed rows, a column listed with
+	/// no rows that has stored rows, a stored column the service omits whose rows are not exactly the default, and a
+	/// listed column whose UId is not a GUID.
+	/// </summary>
+	/// <param name="serviceListed">The columns <c>GetAdministratedObject</c> returned.</param>
+	/// <param name="stored">The stored rows per column.</param>
+	/// <returns>The disagreements; empty when storage and the service agree.</returns>
+	public static IReadOnlyList<string> Disagreements(IReadOnlyList<ColumnRights> serviceListed,
+		IReadOnlyList<ColumnRights> stored) {
+		List<string> disagreements = new();
+		ColumnRightsState storage = new(true, stored);
+		ColumnRightsState service = new(true, serviceListed);
+		foreach (ColumnRights column in serviceListed) {
+			if (column.ColumnUId is not { } uId) {
+				disagreements.Add($"the service lists a column whose UId '{ObjectRightsSupport.Display(column.UnreadableUId)}' "
+					+ "is not a GUID");
+				continue;
+			}
+			IReadOnlyList<ColumnRightRow> storedRows = ColumnRightsPlan.RowsOf(storage, uId);
+			if (!ColumnRightsComparer.SameRows(ColumnRightsPlan.RowsOf(service, uId), storedRows)) {
+				disagreements.Add($"column {uId}: the service lists {Count(column.Rows)}, storage has {Count(storedRows)}"
+					+ " that differ");
+			}
+		}
+		HashSet<Guid?> listed = serviceListed.Select(column => column.ColumnUId).ToHashSet();
+		foreach (ColumnRights column in stored.Where(column => !listed.Contains(column.ColumnUId))) {
+			if (!ColumnRightsDefaults.IsDefaultOnly(column.Rows)) {
+				disagreements.Add($"column {column.ColumnUId}: storage has {Count(column.Rows)}, the service omits it "
+					+ "(which it does only for a column whose only row is the default)");
+			}
+		}
+		return disagreements;
+	}
+
+	private static string Count(IReadOnlyList<ColumnRightRow> rows) => rows.Count == 1 ? "1 row" : $"{rows.Count} rows";
 }
 
 /// <summary>Compares column permission rows by grantee, position and level, as a multiset.</summary>

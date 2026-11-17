@@ -267,6 +267,51 @@ public class ColumnRightsPlannerTests {
 		enable.Changes.Should().BeFalse(because: "the switch is already on");
 	}
 
+	[Test]
+	[Description("Removing the All employees row of a default-only column is refused: the service would write the same default back.")]
+	public void Plan_ShouldRefuse_WhenRemovingTheDefaultRow() {
+		// Arrange
+		ColumnRightsLayer layer = Layer(true, Known(Amount), Column(Amount, ColumnRightsDefaults.Row));
+
+		// Act
+		ColumnRightsPlan plan = _planner.Plan(layer,
+			new ColumnRightsChangeRequest(Amount, "Amount", Employees, "All employees", null, true, null, false, false));
+
+		// Assert
+		plan.Refusal.Should().Be(ColumnRightsRefusal.RemovesTheDefault, because: "the removal would change nothing");
+	}
+
+	[Test]
+	[Description("A position past the end is measured against the rows the change starts from: the default row a column with none gets when enabling.")]
+	public void Plan_ShouldBoundThePositionByTheBaseRows_WhenEnablingOnAColumnWithoutRows() {
+		// Arrange
+		ColumnRightsLayer layer = Layer(false, Known(Amount));
+
+		// Act
+		ColumnRightsPlan plan = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, position: 3, enable: true));
+
+		// Assert
+		plan.Refusal.Should().Be(ColumnRightsRefusal.PositionOutOfRange, because: "3 is past one after the default row");
+		plan.BaseRows.Should().Equal(new[] { ColumnRightsDefaults.Row }, because: "the change starts from the default row");
+		plan.MaxPosition.Should().Be(1, because: "a new row may go one past the base rows");
+	}
+
+	[Test]
+	[Description("A restriction placed after an All employees row with edit is reported, since which row wins is not measured.")]
+	public void Plan_ShouldReportARestrictionBelowAllEmployeesEdit_WhenItIsAppendedAfterTheDefault() {
+		// Arrange
+		ColumnRightsLayer layer = Layer(false, Known(Amount));
+
+		// Act
+		ColumnRightsPlan below = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, enable: true));
+		ColumnRightsPlan first = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, position: 0, enable: true));
+
+		// Assert
+		below.RestrictionsBelowAllEmployeesEdit.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
+			because: "the deny row sits after All employees: edit");
+		first.RestrictionsBelowAllEmployeesEdit.Should().BeEmpty(because: "a restriction placed first is not below it");
+	}
+
 	// The planner's own row lookup, for the assertions.
 	private static class Plan {
 		internal static IReadOnlyList<ColumnRightRow> RowsOf(ColumnRightsState state, Guid column) =>
@@ -380,5 +425,56 @@ public class ColumnRightsReadBackVerifierTests {
 		comparison.Critical.Should().ContainSingle(because: "the switch did not go off")
 			.Which.Should().Contain("ON", because: "it says the switch is still on");
 		comparison.Differences.Should().ContainSingle(because: "the save sent no list, so a lost row is reported apart");
+	}
+}
+
+/// <summary>
+/// <see cref="ColumnRightsCrossCheck"/>: while column permissions are on, the service lists every restricted column with
+/// its rows, a column with no rows with none, and omits a default-only column; storage must agree before a save is
+/// built from it.
+/// </summary>
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "Common")]
+public class ColumnRightsCrossCheckTests {
+
+	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
+	private static readonly Guid Role = Guid.Parse("11111111-2222-3333-4444-555555555555");
+	private static readonly Guid Amount = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
+	private static readonly Guid Description = Guid.Parse("9e53fd7c-1111-4c5b-9c3a-2a7b0e7e0001");
+	private static readonly Guid Name = Guid.Parse("9e53fd7c-3333-4c5b-9c3a-2a7b0e7e0003");
+
+	private static ColumnRightRow Deny => new(Role, "Role", 0, ColumnRightLevel.Denied);
+
+	[Test]
+	[Description("Storage that matches the service's list — the listed rows, nothing for a column listed empty, the default row for a column it omits — has no disagreement.")]
+	public void Disagreements_ShouldBeEmpty_WhenStorageMatchesTheService() {
+		// Arrange
+		ColumnRights[] listed = [new(Amount, "Amount", [Deny]), new(Description, "Description", [])];
+		ColumnRights[] stored = [new(Amount, null, [Deny]), new(Name, null, [ColumnRightsDefaults.Row])];
+
+		// Act
+		var disagreements = ColumnRightsCrossCheck.Disagreements(listed, stored);
+
+		// Assert
+		disagreements.Should().BeEmpty(because: "storage says what the service says");
+	}
+
+	[Test]
+	[Description("A listed column storage lacks, a column listed empty that storage has rows for, and an omitted column storage holds non-default rows for are each a disagreement.")]
+	public void Disagreements_ShouldNameEachColumn_WhenStorageDisagrees() {
+		// Arrange
+		ColumnRights[] listed = [new(Amount, "Amount", [Deny]), new(Description, "Description", [])];
+		ColumnRights[] stored = [new(Description, null, [Deny]), new(Name, null, [Deny])];
+
+		// Act
+		var disagreements = ColumnRightsCrossCheck.Disagreements(listed, stored);
+
+		// Assert
+		disagreements.Should().HaveCount(3, because: "every column disagrees in its own way");
+		disagreements.Should().Contain(line => line.Contains(Amount.ToString()), because: "the missed rows are named");
+		disagreements.Should().Contain(line => line.Contains(Description.ToString()), because: "the column listed empty is named");
+		disagreements.Should().Contain(line => line.Contains(Name.ToString()) && line.Contains("omits"),
+			because: "an omitted column must hold only the default row");
 	}
 }
