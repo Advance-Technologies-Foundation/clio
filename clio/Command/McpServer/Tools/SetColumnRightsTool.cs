@@ -28,10 +28,10 @@ public sealed class SetColumnRightsTool(
 
 	// The worker is killed at its budget (120 s by default). A write makes up to thirteen requests in sequence (grantee,
 	// SysSchema lookup, read, storage count and rows, schema columns, a read by column UId when turning column
-	// permissions on, the object and its rows again right before the save, the save, and the read-back of the object and
-	// of storage, counted). Each gets one attempt of at most 20 s, all share a 100 s limit, and the save is sent only
-	// while two timeouts (40 s) are left for it and a read-back request; a read-back the limit cuts short reports the
-	// save as saved but NOT verified.
+	// permissions on or, for a removal, whether the grantee is external, the object and its rows again right before
+	// the save, the save, and the read-back of the object and of storage, counted). Each gets one attempt of at most
+	// 20 s, all share a 100 s limit, and the save is sent only while two timeouts (40 s) are left for it and a
+	// read-back request; a read-back the limit cuts short reports the save as saved but NOT verified.
 	internal const int McpRequestTimeoutMilliseconds = 20_000;
 
 	internal static readonly TimeSpan McpCallBudget = TimeSpan.FromSeconds(100);
@@ -50,7 +50,7 @@ public sealed class SetColumnRightsTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Changes column permissions. Sets one role's access (denied/read/edit) to ONE column of ONE object, moves or removes that role's row, or turns the object's column permissions on or off - the COLUMN (field-level) layer (DESTRUCTIVE - changes access rights). " +
 		"entity-schema-name is the object's CODE: a title is refused, naming the code to pass. column is the column CODE. grantee is a SysAdminUnit id (names are not unique); it must exist. " +
-		"access sets the grantee's row: a new row goes to the TOP (position 0) unless position is given - All employees' to the BOTTOM, so a broad grant does not override specific rows; an existing one keeps its place. Per Creatio's documentation the higher row wins for a user in several roles (documented, not measured); a column with no rows leaves every user to the object's operation permissions. position (0 first) places or, alone, moves the row and renumbers the column's rows 0..n-1. An All employees row above a row with another level is warned about (the All employees row decides for its members); a column whose rows share a position is refused. remove-row=true deletes the grantee's row (a repeated removal is no change); removing a column's last row leaves it with no rows, so every user follows the object's operation permissions - the result says when that widens access. " +
+		"access sets the grantee's row: a new row goes to the TOP (position 0) unless position is given - All employees' to the BOTTOM, so a broad grant does not override specific rows; an existing one keeps its place. Per Creatio's documentation the higher row wins for a user in several roles (documented, not measured); a column with no rows leaves every user to the object's operation permissions. position (0 first) places or, alone, moves the row and renumbers the column's rows 0..n-1. An All employees row above a row with another level is warned about (the All employees row decides for its members); a column whose rows share a position is refused. remove-row=true deletes the grantee's row (a repeated removal is no change); removing a column's last row leaves it with no rows, so every user follows the object's operation permissions - every removal's result says what then applies to the removed row's members and whether that widens their access - All external users' row, not All employees', for an external (portal) role or user - and while an All employees or All external users row remains a removal is refused when clio cannot tell whether the grantee is external. " +
 		"The switch changes only through its flags: a grant while column permissions are OFF is refused unless enable-column-permissions is passed; a move or a removal while OFF is refused; enable-column-permissions turns them on and gives EVERY column with no stored row the default row (All employees: edit), naming those columns in the result, and rows kept on other columns since a disable apply again - run preview=true before an enable; disable-column-permissions ALONE turns them off (rows kept, not applied; the result names the columns with no rows, which a later enable through clio gives the default row). " +
 		"A save with a column list gives every column it does not name the default row, so the call builds the list from storage: every column whose stored rows are not the default, the changed one with its new rows; a column with no rows is sent with none while ON. The call then reads storage back: a difference fails it. " +
 		"Calls for one object must NOT run in parallel: a second write of the object (also set-object-rights, set-default-record-rights) while one runs is refused, and a save is aborted when the object or its stored rows changed since they were read. While ON, the call is refused when storage disagrees with the service's list. " +
@@ -135,7 +135,7 @@ public sealed record SetColumnRightsArgs(
 	string? Access = null,
 
 	[property: JsonPropertyName("remove-row")]
-	[property: Description("Remove the grantee's row from the column (default false); no change when it has none. Removing the column's last row leaves it with no rows: every user then follows the object's operation permissions (Creatio documentation); the summary says when that widens access. A call of its own: not with access, position or a switch flag.")]
+	[property: Description("Remove the grantee's row from the column (default false); no change when it has none. Removing the column's last row leaves it with no rows: every user then follows the object's operation permissions (Creatio documentation); the summary and the result say what then applies to the removed row's members and whether that widens their access (All external users' row, not All employees', for an external role or user); while an All employees or All external users row remains, the removal is refused when clio cannot tell whether the grantee is external. A call of its own: not with access, position or a switch flag.")]
 	bool? RemoveRow = null,
 
 	[property: JsonPropertyName("position")]
