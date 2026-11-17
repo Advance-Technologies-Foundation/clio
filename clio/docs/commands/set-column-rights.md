@@ -28,10 +28,14 @@ permissions, and object operation and record permissions outrank column permissi
 leaves every user to the object's operation permissions. In the designer a role added to a column starts with edit.
 
 - `--access denied|read|edit` sets the grantee's row in the column. A grantee with no row gets one at the **top**
-  (position 0, which wins), and the other rows move down one; an existing row keeps its place and gets the new level.
+  (position 0, which wins), and the other rows move down one — except **All employees**, whose new row goes to the
+  **bottom**, so a broad grant does not override the specific rows; an existing row keeps its place and gets the new
+  level.
 - `--position N` places the row (with `--access`) or moves the grantee's row (alone) to `N`, and renumbers the column's
-  rows `0..n-1`. When that puts a restriction below an All employees row with edit, a warning says the restriction does
-  not apply to members of All employees.
+  rows `0..n-1`.
+- Whenever an All employees row ends above a row that grants less (edit over read or denied, read over denied), the
+  preview, the prompt and the result **warn**: for members of All employees that row narrows nothing.
+- A column whose rows share a position is refused: its order is ambiguous.
 - `--remove-row` deletes the grantee's row; a removal of a row the grantee no longer has is no change. Removing a
   column's last row other than the default leaves it the default row (All employees: edit), which **widens** access;
   the summary says so.
@@ -59,8 +63,9 @@ the list is built from **storage**:
 - a column whose last row is removed is not sent, so it gets the default row;
 - a default-only column is not sent: the service writes the same default.
 
-A disable sends `null`. The operation, record and entity-operation collections are always sent as null. Removing the
-only row of a default-only column is refused: the default would come back.
+A disable sends `null` and does not depend on the stored rows: when they cannot be read it goes ahead with a warning.
+The operation, record and entity-operation collections are always sent as null. Removing the only row of a
+default-only column is refused: the default would come back.
 
 ### Guards before the save
 
@@ -89,7 +94,8 @@ read back**, counted:
 - after a save that names columns, any difference from the plan **fails** the call (every column the plan names must
   hold its expected rows; a column the list leaves out, the default row), and the error says whether nothing was
   applied or the change was **partially applied**;
-- a changed operation or record switch **fails** it too (the save sends them as read);
+- the operation and record switches go out as read right before the save, so one that differs on the read-back was
+  changed by another client **after** the save: a **warning** after the call's own result;
 - after a disable (no list), a changed stored row is only a **warning**: another client may have changed it.
 
 ### No package binding

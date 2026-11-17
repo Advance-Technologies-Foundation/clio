@@ -120,14 +120,14 @@ EXAMPLES
         clio set-default-record-rights --entity-schema-name UsrOrder --author <author-id> --grantee <role-id> --operations read,edit,delete --revoke --confirm -e production
 
 NOTES
-    A write takes the object's write lease (keyed by the environment's resolved URL and the object's
-    code), shared with set-object-rights and set-column-rights: a second write of the same
-    object while one runs is refused, and nothing is changed. A preview takes none.
-
-    A switch the call does not change (column or record permissions for set-object-rights; column or
-    operation permissions for set-default-record-rights) is sent as the call read it: one another client
-    changed between the read and the save is sent back, and the read-back then fails the call, naming
-    it.
+    Right after the confirmation (never across the prompt) a write takes the object's write lease
+    (keyed by the environment's resolved URL and the object's code), shared with set-object-rights and set-column-rights;
+    a second write of the same object while one runs is refused, and nothing is changed. A preview
+    takes none. Under the lease the object is read again: if any of its three switches (column,
+    operation, record permissions), its schema UId or a default record rule changed since the plan read it, nothing
+    is saved; otherwise the save goes out from that fresh read, so it sends the switches as they are.
+    A switch the call does not change that differs on the read-back was changed by another client after
+    the save: that is a warning after the call's own result.
 
     Then apply the rules to existing records only when the user decides to:
     apply-default-record-rights. Read the result back with get-object-rights.

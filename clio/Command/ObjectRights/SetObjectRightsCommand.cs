@@ -167,12 +167,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			}
 			request = request with { GranteeName = granteeName };
 		}
-		// The object's write lease, shared with set-default-record-rights and set-column-rights: the save carries the
-		// object's three switches as read, so an overlapping write of the object would revert them.
-		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, named, options.Preview, _logger, out IDisposable held)) {
-			return 1;
-		}
-		using IDisposable lease = held;
 		if (!TryReadObject(named, requestOptions, out string schemaName, out ObjectRightsInfo before)) {
 			return 1;
 		}
@@ -227,26 +221,39 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			case ConfirmDecision.Refused:
 				return 1;
 		}
+		// The object's write lease, shared with set-default-record-rights and set-column-rights, is taken after the
+		// prompt — never held while a person answers it. Under it the object is read again: a switch, the schema UId or
+		// an operation row changed since the plan refuses the save, which then goes out from that fresh read.
+		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, schemaName, false, _logger, out IDisposable held)) {
+			return 1;
+		}
+		using IDisposable lease = held;
+		if (!ObjectRightsCommandInput.TryReadFresh(_reader, schemaName, change.Label, before, "the operation rows",
+				fresh => !fresh.State.SameAs(before.State), requestOptions, _logger, out ObjectRightsInfo fresh)) {
+			return 1;
+		}
 		if (!ObjectRightsCommandInput.HasTimeToSave(requestOptions, change.SchemaName, _logger)) {
 			return 1;
 		}
 		ObjectRightsSaveResult save = plan.RewritesAllRows
-			? _writer.SaveRowLayout(before.Snapshot, plan.After, requestOptions)
-			: _writer.Save(before.Snapshot, plan.After, requestOptions);
+			? _writer.SaveRowLayout(fresh.Snapshot, plan.After, requestOptions)
+			: _writer.Save(fresh.Snapshot, plan.After, requestOptions);
 		// After a failed save the read-back is one attempt as well: the object is checked once, and on MCP the answer
 		// still arrives within the call's budget.
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName,
 			save.Succeeded ? requestOptions : requestOptions with { MaxAttempts = 1 });
-		string otherSwitches = ObjectRightsCommandInput.DescribeOtherSwitchChanges(before, actual, operations: false,
-			records: true, columns: true);
-		if (otherSwitches is not null) {
-			_logger.WriteError($"Error: {change.Label}: {otherSwitches}");
-			return 1;
-		}
 		int saved = save.Succeeded
 			? ReportSaved(change, facts, actual)
 			: ReportFailedSave(change, facts, save, actual);
-		return saved == 0 ? BindRows(change, target, before.SchemaUId, actual.State) : saved;
+		int result = saved == 0 ? BindRows(change, target, before.SchemaUId, actual.State) : saved;
+		// The call's own result and the binding come first; a switch it does not change that moved after the save is a
+		// separate warning.
+		string movedAfterSave = ObjectRightsCommandInput.DescribeSwitchesChangedAfterSave(fresh, actual,
+			operations: false, records: true, columns: true);
+		if (movedAfterSave is not null) {
+			_logger.WriteWarning($"Warning: {change.Label}: {movedAfterSave}");
+		}
+		return result;
 	}
 
 	// Everything the output of one call is rendered from.

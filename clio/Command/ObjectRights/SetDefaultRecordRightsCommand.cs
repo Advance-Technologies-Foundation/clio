@@ -132,13 +132,6 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 		if (!TryResolveRule(options, rule, requestOptions, out DefaultRecordRuleChange ruleChange)) {
 			return 1;
 		}
-		// The object's write lease, shared with set-object-rights and set-column-rights: the save carries the object's
-		// three switches as read, so an overlapping write of the object would revert them.
-		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, schemaName, options.Preview, _logger,
-				out IDisposable held)) {
-			return 1;
-		}
-		using IDisposable lease = held;
 		ObjectRightsInfo before = _reader.GetObjectRights(schemaName, requestOptions);
 		if (!before.IsRead) {
 			_logger.WriteError($"Error: '{schemaName}': {before.FailureReason}. Nothing was changed.");
@@ -180,20 +173,34 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 			case ConfirmDecision.Refused:
 				return 1;
 		}
+		// The object's write lease, shared with set-object-rights and set-column-rights, is taken after the prompt —
+		// never held while a person answers it. Under it the object is read again: a switch, the schema UId or a default
+		// record rule changed since the plan refuses the save, which then goes out from that fresh read.
+		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, schemaName, false, _logger, out IDisposable held)) {
+			return 1;
+		}
+		using IDisposable lease = held;
+		if (!ObjectRightsCommandInput.TryReadFresh(_reader, schemaName, $"'{schemaName}'", before,
+				"the default record rules", fresh => fresh.RecordState.RulesDifferFrom(before.RecordState), requestOptions,
+				_logger, out ObjectRightsInfo fresh)) {
+			return 1;
+		}
 		if (!ObjectRightsCommandInput.HasTimeToSave(requestOptions, schemaName, _logger)) {
 			return 1;
 		}
-		ObjectRightsSaveResult save = _writer.Save(before.Snapshot, plan.After, requestOptions);
+		ObjectRightsSaveResult save = _writer.Save(fresh.Snapshot, plan.After, requestOptions);
 		// After a failed save the read-back is one attempt as well, so on MCP the answer still arrives within the budget.
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName,
 			save.Succeeded ? requestOptions : requestOptions with { MaxAttempts = 1 });
-		string otherSwitches = ObjectRightsCommandInput.DescribeOtherSwitchChanges(before, actual, operations: true,
-			records: false, columns: true);
-		if (otherSwitches is not null) {
-			_logger.WriteError($"Error: '{schemaName}': {otherSwitches}");
-			return 1;
+		// The call's own result first — a failed save is never hidden behind it; a switch the call does not change that
+		// moved after the save is a separate warning.
+		int result = save.Succeeded ? ReportSaved(change, facts, actual) : ReportFailedSave(change, facts, save, actual);
+		string movedAfterSave = ObjectRightsCommandInput.DescribeSwitchesChangedAfterSave(fresh, actual,
+			operations: true, records: false, columns: true);
+		if (movedAfterSave is not null) {
+			_logger.WriteWarning($"Warning: '{schemaName}': {movedAfterSave}");
 		}
-		return save.Succeeded ? ReportSaved(change, facts, actual) : ReportFailedSave(change, facts, save, actual);
+		return result;
 	}
 
 	private bool TryResolveRule(SetDefaultRecordRightsOptions options, RuleInput rule,

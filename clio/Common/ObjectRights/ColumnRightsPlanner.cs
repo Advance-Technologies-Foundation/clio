@@ -83,7 +83,11 @@ public enum ColumnRightsRefusal {
 
 	/// <summary>A removal of the All employees row of a column whose only row it is (the default): the column would
 	/// have no rows, the save would not name it, and the service would write the same default row back.</summary>
-	RemovesTheDefault
+	RemovesTheDefault,
+
+	/// <summary>Two rows of the changed column share a stored position, so the column's order — which per Creatio's
+	/// documentation decides — is ambiguous.</summary>
+	DuplicatePositions
 }
 
 /// <summary>
@@ -153,18 +157,18 @@ public sealed record ColumnRightsPlan(
 	public int MaxPosition { get; init; }
 
 	/// <summary>
-	/// Rows of the changed column that grant less than edit and sit after an All employees row with edit. Per Creatio's
-	/// documentation the higher row wins for a user in several roles (documented, not measured), so such a restriction
-	/// does not apply to members of All employees; the output warns when an explicit position puts one there.
+	/// Rows of the changed column that sit below an All employees row and grant less than it (edit over read or denied,
+	/// read over denied). Per Creatio's documentation the higher row wins for a user in several roles (documented, not
+	/// measured), so for members of All employees such a row does not narrow anything; the output warns about it.
 	/// </summary>
-	public IReadOnlyList<ColumnRightRow> RestrictionsBelowAllEmployeesEdit {
+	public IReadOnlyList<ColumnRightRow> NarrowerRowsBelowAllEmployees {
 		get {
-			ColumnRightRow allEmployees = ColumnRowsAfter.FirstOrDefault(row =>
-				row.GranteeId == SysAdminUnitIds.AllEmployees && row.Level == ColumnRightLevel.Edit);
+			ColumnRightRow allEmployees = ColumnRowsAfter.FirstOrDefault(row => row.GranteeId == SysAdminUnitIds.AllEmployees
+				&& row.Level is not null);
 			return allEmployees is null
 				? []
-				: ColumnRowsAfter.Where(row => row.GranteeId != SysAdminUnitIds.AllEmployees
-					&& row.Level != ColumnRightLevel.Edit && row.Position > allEmployees.Position).ToArray();
+				: ColumnRowsAfter.Where(row => row.GranteeId != SysAdminUnitIds.AllEmployees && row.Level is not null
+					&& (int)row.Level < (int)allEmployees.Level && row.Position > allEmployees.Position).ToArray();
 		}
 	}
 
@@ -185,7 +189,8 @@ public interface IColumnRightsPlanner {
 	/// while column permissions are on (so it stays as it is), and is left out when the call turns them on (so it gets
 	/// the default); a column the call empties is left out (it gets the default); a removal of a row the grantee no longer
 	/// has is no change. A disable sends no list. A level change keeps every position as stored; a new row without a
-	/// position goes to the top (position 0), which per Creatio's documentation wins; a new row with a position, a move
+	/// position goes to the top (position 0), which per Creatio's documentation wins — one for All employees to the
+	/// bottom, so a broad grant does not override the specific rows; a new row with a position, a move
 	/// and a removal go where named; the column's rows are then renumbered 0..n-1. When the call turns column permissions
 	/// on, a column with no stored row starts from the default row it would get.
 	/// </summary>
@@ -227,6 +232,11 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 		List<ColumnRightRow> rows = stored.Count == 0 && !switchRead
 			? [ColumnRightsDefaults.Row]
 			: stored.ToList();
+		int?[] sharedPositions = rows.GroupBy(row => row.Position).Where(group => group.Count() > 1)
+			.Select(group => group.Key).ToArray();
+		if (sharedPositions.Length > 0) {
+			return Refuse(before, request, ColumnRightsRefusal.DuplicatePositions, sharedPositions) with { BaseRows = rows };
+		}
 		ColumnRightRow[] granteeRows = rows.Where(row => row.GranteeId == request.Grantee).ToArray();
 		if (granteeRows.Length > 1) {
 			return Refuse(before, request, ColumnRightsRefusal.DuplicateGranteeRows,
@@ -314,11 +324,19 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 		ColumnRightRow changed = existing is null
 			? new ColumnRightRow(request.Grantee, request.GranteeName, 0, request.Access)
 			: existing with { Level = request.Access ?? existing.Level };
-		// A new row without a position goes to the top: per Creatio's documentation the higher row wins.
+		// A new row without a position goes to the top — per Creatio's documentation the higher row wins — except one for
+		// All employees, which goes to the bottom: a broad grant must not override the specific rows above it.
 		List<ColumnRightRow> ordered = rows.Where(row => row != existing).ToList();
-		ordered.Insert(request.Position ?? 0, changed);
+		ordered.Insert(request.Position ?? DefaultPosition(request, ordered.Count), changed);
 		return Renumber(ordered);
 	}
+
+	/// <summary>Where a new row without a position goes: the bottom for All employees, the top for any other grantee.</summary>
+	/// <param name="request">The change.</param>
+	/// <param name="otherRows">How many other rows the column has.</param>
+	/// <returns>The position.</returns>
+	internal static int DefaultPosition(ColumnRightsChangeRequest request, int otherRows) =>
+		request.Grantee == SysAdminUnitIds.AllEmployees ? otherRows : 0;
 
 	private static List<ColumnRightRow> Renumber(IEnumerable<ColumnRightRow> rows) =>
 		rows.Select((row, index) => row with { Position = index }).ToList();

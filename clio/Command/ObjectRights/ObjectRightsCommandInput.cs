@@ -394,40 +394,93 @@ internal static class ObjectRightsCommandInput {
 	}
 
 	/// <summary>
-	/// The switches of <paramref name="after"/> that differ from <paramref name="before"/> among those the call does not
-	/// change. <c>SaveAdministratedObject</c> carries the object's three switches as the writer read them, so a switch
-	/// another client changed between the read and the save is sent back as it was: the read-back names it, and the call
-	/// fails instead of reporting success over a reverted change.
+	/// The object's three switches and its schema UId that differ between <paramref name="before"/> and
+	/// <paramref name="fresh"/>, as clauses: <c>column permissions are ON (were OFF)</c>.
 	/// </summary>
-	/// <param name="before">The object as the call read it.</param>
+	/// <param name="before">The object as the plan read it.</param>
+	/// <param name="fresh">The object read again.</param>
+	/// <returns>The changes; empty when none.</returns>
+	internal static List<string> SwitchesChanged(ObjectRightsInfo before, ObjectRightsInfo fresh) {
+		List<string> changed = new();
+		if (fresh.AdministratedByColumns != before.AdministratedByColumns) {
+			changed.Add($"column permissions are {OnOff(fresh.AdministratedByColumns)} (were "
+				+ $"{OnOff(before.AdministratedByColumns)})");
+		}
+		if (fresh.AdministratedByOperations != before.AdministratedByOperations) {
+			changed.Add($"operation permissions are {OnOff(fresh.AdministratedByOperations)} (were "
+				+ $"{OnOff(before.AdministratedByOperations)})");
+		}
+		if (fresh.AdministratedByRecords != before.AdministratedByRecords) {
+			changed.Add($"record permissions are {OnOff(fresh.AdministratedByRecords)} (were "
+				+ $"{OnOff(before.AdministratedByRecords)})");
+		}
+		if (fresh.SchemaUId != before.SchemaUId) {
+			changed.Add($"the schema UId is {fresh.SchemaUId} (was {before.SchemaUId})");
+		}
+		return changed;
+	}
+
+	/// <summary>
+	/// Reads the object again right before the save, under the write lease, and refuses when any of its three switches,
+	/// its schema UId or the layer the call writes changed since the plan read it: <c>SaveAdministratedObject</c>
+	/// carries the object's switches as the writer read them, so a change made meanwhile — in the designer while the
+	/// prompt was open, say — would otherwise be sent back. The save goes out from the object read here.
+	/// </summary>
+	/// <param name="reader">The object-rights reader.</param>
+	/// <param name="schemaName">The object's code.</param>
+	/// <param name="label">The object as the output names it.</param>
+	/// <param name="before">The object as the plan read it.</param>
+	/// <param name="layer">What the call writes, for the message: <c>the operation rows</c>.</param>
+	/// <param name="layerChanged">Whether that layer differs between the plan's read and the fresh one.</param>
+	/// <param name="requestOptions">The call's request options.</param>
+	/// <param name="logger">Where a refusal is written.</param>
+	/// <param name="fresh">The object read again.</param>
+	/// <returns><see langword="false"/> after writing why nothing is saved.</returns>
+	internal static bool TryReadFresh(IObjectRightsReader reader, string schemaName, string label, ObjectRightsInfo before,
+		string layer, Func<ObjectRightsInfo, bool> layerChanged, CreatioRequestOptions requestOptions, ILogger logger,
+		out ObjectRightsInfo fresh) {
+		fresh = reader.GetObjectRights(schemaName, requestOptions);
+		if (!fresh.IsRead) {
+			logger.WriteError($"Error: '{schemaName}' could not be read again before the save: {fresh.FailureReason}. "
+				+ "Nothing was changed.");
+			return false;
+		}
+		List<string> changed = SwitchesChanged(before, fresh);
+		if (layerChanged(fresh)) {
+			changed.Add($"{layer} changed");
+		}
+		if (changed.Count == 0) {
+			return true;
+		}
+		logger.WriteError($"Error: {label} changed after the call read it ({string.Join("; ", changed)}): another "
+			+ "client changed the object. Nothing was changed: re-run the call to plan on the object as it is now.");
+		return false;
+	}
+
+	/// <summary>
+	/// The switches the call does not change that differ on the read-back from the state the save sent (the fresh read,
+	/// identical to the plan's): another client changed them after the save. A warning, after the call's own result.
+	/// </summary>
+	/// <param name="sent">The object as read right before the save.</param>
 	/// <param name="after">The object read back after the save.</param>
 	/// <param name="operations">Check the operation switch (the call does not change it).</param>
 	/// <param name="records">Check the record switch.</param>
 	/// <param name="columns">Check the column switch.</param>
-	/// <returns>The error clause, or <see langword="null"/> when none changed or the read-back failed.</returns>
-	internal static string DescribeOtherSwitchChanges(ObjectRightsInfo before, ObjectRightsInfo after, bool operations,
-		bool records, bool columns) {
+	/// <returns>The warning clause, or <see langword="null"/> when none changed or the read-back failed.</returns>
+	internal static string DescribeSwitchesChangedAfterSave(ObjectRightsInfo sent, ObjectRightsInfo after,
+		bool operations, bool records, bool columns) {
 		if (!after.IsRead) {
 			return null;
 		}
-		List<string> changed = new();
-		if (operations && after.AdministratedByOperations != before.AdministratedByOperations) {
-			changed.Add($"operation permissions are {OnOff(after.AdministratedByOperations)} (were "
-				+ $"{OnOff(before.AdministratedByOperations)})");
-		}
-		if (records && after.AdministratedByRecords != before.AdministratedByRecords) {
-			changed.Add($"record permissions are {OnOff(after.AdministratedByRecords)} (were "
-				+ $"{OnOff(before.AdministratedByRecords)})");
-		}
-		if (columns && after.AdministratedByColumns != before.AdministratedByColumns) {
-			changed.Add($"column permissions are {OnOff(after.AdministratedByColumns)} (were "
-				+ $"{OnOff(before.AdministratedByColumns)})");
-		}
+		List<string> changed = SwitchesChanged(sent, after).Where(clause =>
+			(operations && clause.StartsWith("operation", StringComparison.Ordinal))
+			|| (records && clause.StartsWith("record", StringComparison.Ordinal))
+			|| (columns && clause.StartsWith("column", StringComparison.Ordinal))).ToList();
 		return changed.Count == 0
 			? null
-			: $"the read-back shows {string.Join("; ", changed)} — switches this call does not change. The save sends the "
-				+ "object's switches as they were read, so a change another client made between the read and the save "
-				+ "was sent back; check the object with get-object-rights and get-column-rights, and redo that change.";
+			: $"after the save, {string.Join("; ", changed)} — switches this call does not change and sent as they were "
+				+ "right before it: another client changed them after the save. Check the object with get-object-rights "
+				+ "and get-column-rights.";
 	}
 
 	private static string OnOff(bool? value) => value switch { true => "ON", false => "OFF", null => "UNKNOWN" };

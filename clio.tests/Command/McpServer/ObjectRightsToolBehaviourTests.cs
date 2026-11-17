@@ -62,7 +62,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 		ObjectRightsInfo after = before with {
 			Roles = before.Roles.Append(new RoleOperationRights(GranteeId, "Grantee", 1, true, true, true, false)).ToArray()
 		};
-		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()).Returns(before, after);
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()).Returns(before, before, after);
 		_resolver = Substitute.For<IToolCommandResolver>();
 		_capturedSet = null;
 		_capturedGet = null;
@@ -215,7 +215,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 		ObjectRightsInfo before = new(true, "UsrFoo", "UsrFoo", true,
 			new[] { new RoleOperationRights(AllEmployees, "All employees", 0, true, true, true, true) });
 		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(before, before with { AdministratedByOperations = false });
+			.Returns(before, before, before with { AdministratedByOperations = false });
 
 		// Act
 		ObjectRightsToolResponse response = SetTool().SetObjectRights(

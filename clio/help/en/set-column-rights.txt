@@ -31,11 +31,14 @@ DESCRIPTION
     with edit.
 
     --access sets the grantee's row in the column: a grantee with no row gets one at the top (position
-    0, which wins), and the other rows move down one; an existing row keeps its place and gets the new
-    level. --position N places the row (with --access) or moves the grantee's row (alone) to N, and the
-    column's rows are renumbered 0..n-1; when that puts a restriction below an All employees row with
-    edit, a warning says the restriction does not apply to members of All employees. --remove-row
-    deletes the grantee's row; a removal of a row the grantee no longer has is no change.
+    0, which wins), and the other rows move down one - except All employees, whose new row goes to the
+    bottom, so a broad grant does not override the specific rows; an existing row keeps its place and
+    gets the new level. --position N places the row (with --access) or moves the grantee's row (alone)
+    to N, and the column's rows are renumbered 0..n-1. Whenever an All employees row ends above a row
+    that grants less (edit over read or denied, read over denied), the preview, the prompt and the
+    result warn: for members of All employees that row narrows nothing. A column whose rows share a
+    position is refused: its order is ambiguous. --remove-row deletes the grantee's row; a removal of a
+    row the grantee no longer has is no change.
 
     The switch changes only through its flags. A grant while the object's column permissions are OFF is
     refused unless --enable-column-permissions is passed with it; a move or a removal while they are
@@ -43,7 +46,8 @@ DESCRIPTION
     on columns since a disable apply again, and every column with no stored row gets the default row -
     run it with --preview first, which names both. --disable-column-permissions alone turns them off and
     keeps every stored row, not applied; it names the columns with no rows, which a later enable
-    through clio gives the default row.
+    through clio gives the default row. A disable does not depend on the stored rows: when they cannot
+    be read it goes ahead with a warning.
 
     Measured on storage (VwSysEntitySchemaColumnRight): a save with a column list gives each column in
     the list exactly the listed rows and every other column of the object the default row (All
@@ -76,9 +80,11 @@ DESCRIPTION
 
     The service answers success whatever it stores, so after every save the switches and the stored
     rows are read back, counted. After a save that names columns, any difference from the plan fails
-    the call, and the error says whether nothing was applied or the change was partially applied; a
-    changed operation or record switch fails it too. After a disable (no list), a changed stored row is
-    only a warning: another client may have changed it.
+    the call, and the error says whether nothing was applied or the change was partially applied. The
+    operation and record switches go out as read right before the save, so one that differs on the
+    read-back was changed by another client after the save: a warning after the call's own result.
+    After a disable (no list), a changed stored row is only a warning: another client may have changed
+    it.
 
     The rows are written to the environment only. They are NOT bound to a package: how Creatio carries
     column permissions in a package is not established yet.

@@ -90,10 +90,11 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		new(true, "UsrFoo", "Foo", true, Array.Empty<RoleOperationRights>(), AdministratedByRecords: recordsOn,
 			RecordRules: rules, SchemaUId: Guid.NewGuid());
 
-	// The first read returns `before`; the read-back returns what the command saved (or `readBack` when given).
+	// The plan's read and the read right before the save return `before`; the read-back returns what the command saved
+	// (or `readBack` when given).
 	private void ObjectIs(ObjectRightsInfo before, ObjectRightsInfo readBack = null) =>
 		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(_ => before, _ => readBack ?? (_saved is null
+			.Returns(_ => before, _ => before, _ => readBack ?? (_saved is null
 				? before
 				: Info(_saved.AdministratedByRecords, _saved.Rules.ToArray())));
 
@@ -201,7 +202,7 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 	// ---- the flow ----
 
 	[Test]
-	[Description("A write whose object's lease another call holds is refused before the object is read; a preview takes no lease.")]
+	[Description("A write whose object's lease another call holds is refused after the prompt, before the fresh read and the save; a preview takes no lease.")]
 	public void Execute_ShouldRefuseWhileTheLeaseIsHeld_AndTakeNoneForAPreview() {
 		// Arrange
 		ObjectIs(Info(true));
@@ -220,8 +221,9 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 		previewLeases.Should().Be(0, because: "a preview writes nothing");
 		exitCode.Should().Be(1, because: "two writes of one object would revert each other's switches");
 		_errors.Should().Contain(m => m.Contains("another call is changing"), because: "the refusal says why");
-		ReceivedCallLog.CallsTo(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().BeEmpty(
-			because: "nothing is read while another write runs");
+		ReceivedCallLog.CallsTo(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().ContainSingle(
+			because: "only the plan's read happens: the lease is taken after the prompt, before the fresh read");
+		NothingSaved();
 	}
 
 	[Test]
@@ -241,18 +243,75 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 	}
 
 	[Test]
-	[Description("A read-back where the operation switch — which set-default-record-rights does not change — moved fails the call, naming it.")]
-	public void Execute_ShouldFail_WhenTheOperationSwitchChangedUnderTheCall() {
+	[Description("The save goes out from the object read again under the lease, right before it, not from the plan's read.")]
+	public void Execute_ShouldSaveFromTheFreshRead_WhenTheObjectIsUnchanged() {
 		// Arrange
-		ObjectIs(Info(true), Info(true) with { AdministratedByOperations = false });
+		ObjectRightsInfo before = Info(true) with { Snapshot = new ObjectRightsSnapshot(new System.Text.Json.Nodes.JsonObject()) };
+		ObjectRightsInfo fresh = before with { Snapshot = new ObjectRightsSnapshot(new System.Text.Json.Nodes.JsonObject()) };
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()).Returns(_ => before, _ => fresh,
+			_ => Info(_saved.AdministratedByRecords, _saved.Rules.ToArray()) with { SchemaUId = before.SchemaUId });
+
+		// Act
+		_command.Execute(RuleOptions("read,edit"));
+
+		// Assert
+		ReceivedCallLog.CallsTo(_writer, nameof(IDefaultRecordRightsWriter.Save)).Should().ContainSingle(
+			because: "the change is saved").Which[0].Should().BeSameAs(fresh.Snapshot,
+			because: "the switches go out as they are right before the save");
+	}
+
+	[Test]
+	[Description("A switch another client changed while the prompt was open — here the operation switch, which set-default-record-rights does not change — refuses the save: the fresh read under the lease differs from the plan's.")]
+	public void Execute_ShouldRefuse_WhenASwitchMovedBeforeTheSave() {
+		// Arrange
+		ObjectRightsInfo before = Info(true);
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(before, before with { AdministratedByOperations = false });
 
 		// Act
 		int exitCode = _command.Execute(RuleOptions("read,edit"));
 
 		// Assert
-		exitCode.Should().Be(1, because: "a switch this call does not change moved between its read and its read-back");
-		_errors.Should().Contain(m => m.Contains("operation permissions are OFF (were ON)") && m.Contains("does not change"),
-			because: "the failure names the switch");
+		exitCode.Should().Be(1, because: "saving would send the operation switch back as first read");
+		_errors.Should().Contain(m => m.Contains("changed after the call read it")
+			&& m.Contains("operation permissions are OFF (were ON)"), because: "the refusal names the switch that moved");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("A switch the call does not change that differs only on the read-back is a warning after the call's own result.")]
+	public void Execute_ShouldWarnAfterTheResult_WhenASwitchMovedAfterTheSave() {
+		// Arrange
+		ObjectRightsInfo before = Info(true);
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()).Returns(_ => before, _ => before,
+			_ => Info(_saved.AdministratedByRecords, _saved.Rules.ToArray()) with { AdministratedByOperations = false });
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read,edit"));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the call's own change landed as planned");
+		_warnings.Should().Contain(m => m.Contains("after the save, operation permissions are OFF (were ON)"),
+			because: "the moved switch is a separate warning");
+	}
+
+	[Test]
+	[Description("A failed save is never hidden behind a switch that moved after it: the failure is reported and the call fails, with the warning after it.")]
+	public void Execute_ShouldReportTheFailedSave_WhenASwitchAlsoMovedAfterIt() {
+		// Arrange
+		ObjectRightsInfo before = Info(true);
+		_writer.Save(default, default(DefaultRecordRightsState), default).ReturnsForAnyArgs(new ObjectRightsSaveResult("boom"));
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(before, before, before with { AdministratedByOperations = false });
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read,edit"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the save failed and nothing landed");
+		_errors.Should().Contain(m => m.Contains("boom"), because: "the failed save is reported");
+		_warnings.Should().Contain(m => m.Contains("after the save, operation permissions are OFF (were ON)"),
+			because: "the moved switch is still said, after the failure");
 	}
 
 	[Test]

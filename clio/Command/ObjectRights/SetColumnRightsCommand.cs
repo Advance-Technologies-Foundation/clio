@@ -151,11 +151,18 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			return 1;
 		}
 		string label = ObjectRightsSupport.FormatObject(schemaName, before.Caption);
-		if (!TryReadStored(before, label, requestOptions, true, out IReadOnlyList<ColumnRights> stored,
-				out string storedError)) {
-			_logger.WriteError($"Error: the stored column permission rows of {label} could not be read: {storedError}. A "
-				+ "save is built from them, so nothing was changed.");
-			return 1;
+		bool storedRead = TryReadStored(before, label, requestOptions, true, out IReadOnlyList<ColumnRights> stored,
+			out string storedError);
+		if (!storedRead) {
+			// A disable sends no list, so it does not depend on the rows: it goes ahead, and says they were not read.
+			if (!options.DisableColumnPermissions) {
+				_logger.WriteError($"Error: the stored column permission rows of {label} could not be read: {storedError}. A "
+					+ "save is built from them, so nothing was changed.");
+				return 1;
+			}
+			_logger.WriteWarning($"Warning: the stored column permission rows of {label} could not be read ({storedError}); "
+				+ "a disable sends no list, so they stay as they are.");
+			stored = [];
 		}
 		// Every call but a disable needs the schema's columns; a disable sends no list and reads them only to name the
 		// columns it reports, so a failed read there is not a refusal.
@@ -173,7 +180,9 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			: schemaColumns.Select(entry => entry.UId).ToHashSet();
 		IReadOnlyDictionary<Guid, string> codes =
 			schemaColumns.GroupBy(entry => entry.UId).ToDictionary(group => group.Key, group => group.First().Name);
-		List<string> storageFacts = StorageFacts(stored, schemaColumnUIds);
+		List<string> storageFacts = storedRead
+			? StorageFacts(stored, schemaColumnUIds)
+			: [$"Stored rows not read ({storedError}): a disable sends no list, so they stay as they are."];
 		// While the switch is on the service lists every restricted column of the schema; storage must say the same, or a
 		// save built from a storage read that missed rows would send the missed columns with none, erasing their rows.
 		if (!input.SwitchOnly && before.AdministratedByColumns == true
@@ -198,7 +207,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			KnownColumns(schemaColumns, before)), request);
 		Change change = new(schemaName, label, column,
 			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(granteeName)}' ({input.Grantee})", request, plan,
-			codes, storageFacts, ServiceColumnsWithoutRows(before));
+			codes, storageFacts, ServiceColumnsWithoutRows(before), storedRead);
 		if (plan.Refused) {
 			_logger.WriteError($"Error: {RefusalMessage(change)} Nothing was changed.");
 			WriteFacts(storageFacts);
@@ -210,7 +219,6 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			return 0;
 		}
 		IReadOnlyList<string> facts = DescribePlan(change);
-		WarnAboutRowOrder(change);
 		if (options.Preview) {
 			_logger.WriteInfo($"PREVIEW — nothing was changed. {change.Summary}");
 			WriteFacts(facts);
@@ -232,7 +240,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		using IDisposable lease = held;
 		// The object and its rows are read once more right before the save: a switch or a row another client changed
 		// since the plan would otherwise be overwritten with what was read then. The save goes out from this fresh read.
-		if (!TryReadFresh(schemaName, label, before, stored, requestOptions, out ObjectRightsInfo fresh)) {
+		if (!TryReadFresh(schemaName, label, before, stored, plan, requestOptions, out ObjectRightsInfo fresh)) {
 			return 1;
 		}
 		// The save, then the read-back of the switches and of storage, counted: four requests.
@@ -248,9 +256,22 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		if (actual.IsRead
 			&& !TryReadStored(actual, label, readBackOptions, true, out actualStored, out actualStoredError)) {
 			actualStored = null;
+			// A disable sends no list: its result is the switch, and rows not read back are only said.
+			if (!plan.RewritesColumns) {
+				_logger.WriteWarning($"Warning: the stored rows of {label} could not be read back ({actualStoredError}); a "
+					+ "disable sends no list, so only the switch is checked.");
+				actualStored = plan.Before.Columns;
+			}
 		}
-		ReadBack readBack = new(before, actual, actualStored, actualStoredError);
-		return save.Succeeded ? ReportSaved(change, facts, readBack) : ReportFailedSave(change, save, readBack);
+		ReadBack readBack = new(fresh, actual, actualStored, actualStoredError);
+		int result = save.Succeeded ? ReportSaved(change, facts, readBack) : ReportFailedSave(change, save, readBack);
+		// The call's own result first; a switch it does not change that moved after the save is a separate warning.
+		string movedAfterSave = ObjectRightsCommandInput.DescribeSwitchesChangedAfterSave(fresh, actual,
+			operations: true, records: true, columns: false);
+		if (movedAfterSave is not null) {
+			_logger.WriteWarning($"Warning: {label}: {movedAfterSave}");
+		}
+		return result;
 	}
 
 	// What the plan was read from: the stored rows, counted, and the stored columns no longer in the schema, which the
@@ -273,19 +294,6 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			? (info.Columns ?? []).Where(entry => entry.Rows.Count == 0 && entry.ColumnUId is not null)
 				.Select(entry => entry.ColumnUId!.Value).ToArray()
 			: [];
-
-	// A row an explicit --position puts below an All employees row with edit: per Creatio's documentation the higher row
-	// wins, so the restriction does not apply to members of All employees.
-	private void WarnAboutRowOrder(Change change) {
-		IReadOnlyList<ColumnRightRow> below = change.Plan.RestrictionsBelowAllEmployeesEdit;
-		if (change.Request.Position is null || below.Count == 0) {
-			return;
-		}
-		_logger.WriteWarning($"Warning: in column {change.ColumnLabel}, All employees has edit at a position before "
-			+ $"{FormatRows(below)}. Per Creatio's documentation the higher row wins for a user in several roles "
-			+ "(documented, not measured), so that restriction does not apply to members of All employees. Put a "
-			+ "restriction first (--position 0, or no --position).");
-	}
 
 	// Writes the disagreements as the refusal; true when there is none.
 	private bool NoDisagreement(string label, IReadOnlyList<string> disagreements, string against,
@@ -349,33 +357,20 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		return true;
 	}
 
-	// The object and its rows read again right before the save; a switch, the schema UId or a stored row that changed
-	// since the plan refuses the save.
+	// The object and its rows read again right before the save; a switch, the schema UId or — for a save that names
+	// columns — a stored row that changed since the plan refuses the save. A disable sends no list, so its rows are not
+	// compared.
 	private bool TryReadFresh(string schemaName, string label, ObjectRightsInfo before,
-		IReadOnlyList<ColumnRights> stored, CreatioRequestOptions requestOptions, out ObjectRightsInfo fresh) {
+		IReadOnlyList<ColumnRights> stored, ColumnRightsPlan plan, CreatioRequestOptions requestOptions,
+		out ObjectRightsInfo fresh) {
 		fresh = _reader.GetObjectRights(schemaName, requestOptions);
 		if (!fresh.IsRead) {
 			_logger.WriteError($"Error: '{schemaName}' could not be read again before the save: "
 				+ $"{ColumnFailureReason(fresh)}. Nothing was changed.");
 			return false;
 		}
-		List<string> changed = new();
-		if (fresh.AdministratedByColumns != before.AdministratedByColumns) {
-			changed.Add($"column permissions are {FormatSwitch(fresh.AdministratedByColumns)} (were "
-				+ $"{FormatSwitch(before.AdministratedByColumns)})");
-		}
-		if (fresh.AdministratedByOperations != before.AdministratedByOperations) {
-			changed.Add($"operation permissions are {OnOff(fresh.AdministratedByOperations)} (were "
-				+ $"{OnOff(before.AdministratedByOperations)})");
-		}
-		if (fresh.AdministratedByRecords != before.AdministratedByRecords) {
-			changed.Add($"record permissions are {OnOff(fresh.AdministratedByRecords)} (were "
-				+ $"{OnOff(before.AdministratedByRecords)})");
-		}
-		if (fresh.SchemaUId != before.SchemaUId) {
-			changed.Add($"the schema UId is {fresh.SchemaUId} (was {before.SchemaUId})");
-		}
-		if (changed.Count == 0) {
+		List<string> changed = ObjectRightsCommandInput.SwitchesChanged(before, fresh);
+		if (changed.Count == 0 && plan.RewritesColumns) {
 			if (!TryReadStored(fresh, label, requestOptions, false, out IReadOnlyList<ColumnRights> current,
 					out string currentError)) {
 				_logger.WriteError($"Error: the stored column permission rows of {label} could not be read again before "
@@ -412,8 +407,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	private sealed record ColumnTarget(string Code, Guid UId, string Caption);
 
 	// What was read back after the save: the switch from the service, the rows from storage (null when not read), next
-	// to the object as it was read before.
-	private sealed record ReadBack(ObjectRightsInfo Before, ObjectRightsInfo Object, IReadOnlyList<ColumnRights> Stored,
+	// to the object as it was sent (read right before the save).
+	private sealed record ReadBack(ObjectRightsInfo Sent, ObjectRightsInfo Object, IReadOnlyList<ColumnRights> Stored,
 		string StoredError) {
 		public bool IsRead => Object.IsRead && Stored is not null;
 	}
@@ -421,7 +416,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	// Everything the output of one call is rendered from.
 	private sealed record Change(string SchemaName, string Label, ColumnTarget Column, string GranteeLabel,
 		ColumnRightsChangeRequest Request, ColumnRightsPlan Plan, IReadOnlyDictionary<Guid, string> Codes,
-		IReadOnlyList<string> StorageFacts, IReadOnlyList<Guid> ServiceColumnsWithoutRows) {
+		IReadOnlyList<string> StorageFacts, IReadOnlyList<Guid> ServiceColumnsWithoutRows, bool StoredRead) {
 
 		public string ColumnLabel => Column is null ? null : FormatColumn(Column.Code, Column.Caption);
 
@@ -630,6 +625,11 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				$"position {change.Request.Position} is past the end of column {change.ColumnLabel} of {change.Label}: "
 				+ $"the change starts from {plan.BaseRows.Count} row(s) ({FormatRows(plan.BaseRows)}), so the positions "
 				+ $"are 0..{plan.MaxPosition}.",
+			ColumnRightsRefusal.DuplicatePositions =>
+				$"column {change.ColumnLabel} of {change.Label} has several rows at position(s) "
+				+ $"{string.Join(", ", plan.DuplicatePositions.Select(p => p?.ToString() ?? "?"))} ({FormatRows(plan.BaseRows)}), "
+				+ "so the column's order — which per Creatio's documentation decides — is ambiguous. Fix it in the Column "
+				+ "permissions designer, then re-run.",
 			ColumnRightsRefusal.RemovesTheDefault =>
 				$"column {change.ColumnLabel} of {change.Label} has only the default row (All employees: edit). Removing "
 				+ "it would leave the column with no rows, which the save does not name, so the service would write the "
@@ -678,8 +678,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		if (plan.DisablesColumnPermissions) {
 			int storedColumns = plan.Before.Columns.Count(column => column.Rows.Count > 0);
 			facts.Add($"Column permissions on {change.Label} are turned OFF: every column is then governed only by object "
-				+ $"and record permissions. The stored rows are kept, not applied ({storedColumns} column(s) with rows); "
-				+ "no column list is sent.");
+				+ "and record permissions. The stored rows are kept, not applied"
+				+ (change.StoredRead ? $" ({storedColumns} column(s) with rows)" : "") + "; no column list is sent.");
 			if (change.ServiceColumnsWithoutRows.Count > 0) {
 				facts.Add($"Columns with no rows ({change.ServiceColumnsWithoutRows.Count}): "
 					+ $"{change.FormatColumns(change.ServiceColumnsWithoutRows)}. Every user follows the object's operation "
@@ -695,8 +695,18 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			if (added) {
 				facts.Add(change.Request.Position is { } named
 					? $"The new row goes to position {named}, as named; the rows are renumbered 0..n-1."
-					: "The new row goes to position 0, the top: per Creatio's documentation the higher row wins for a user "
-						+ "in several roles. The other rows move down one.");
+					: change.Request.Grantee == SysAdminUnitIds.AllEmployees
+						? "The new All employees row goes to the bottom: a broad grant must not override the specific rows "
+							+ "above it (per Creatio's documentation the higher row wins for a user in several roles)."
+						: "The new row goes to position 0, the top: per Creatio's documentation the higher row wins for a "
+							+ "user in several roles. The other rows move down one.");
+			}
+			IReadOnlyList<ColumnRightRow> narrower = plan.NarrowerRowsBelowAllEmployees;
+			if (narrower.Count > 0) {
+				facts.Add($"Warning: in column {change.ColumnLabel}, All employees sits above {FormatRows(narrower)}, "
+					+ "which grant less. Per Creatio's documentation the higher row wins for a user in several roles "
+					+ "(documented, not measured), so for members of All employees those rows narrow nothing: put them "
+					+ "above the All employees row (--position).");
 			}
 		}
 		if (plan.RewritesColumns) {
@@ -737,23 +747,11 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		return 0;
 	}
 
-	// The differences the call fails on: the column switch and rows against the plan, and the operation and record
-	// switches, which the save sends as read and must leave as they were.
-	private IReadOnlyList<string> Critical(Change change, ReadBack readBack) {
-		List<string> critical = _readBackVerifier.Compare(change.Plan, readBack.Object.AdministratedByColumns,
-			readBack.Stored).Critical.ToList();
-		if (readBack.Object.AdministratedByOperations != readBack.Before.AdministratedByOperations) {
-			critical.Add($"operation permissions are {OnOff(readBack.Object.AdministratedByOperations)}, they were "
-				+ $"{OnOff(readBack.Before.AdministratedByOperations)} before the save");
-		}
-		if (readBack.Object.AdministratedByRecords != readBack.Before.AdministratedByRecords) {
-			critical.Add($"record permissions are {OnOff(readBack.Object.AdministratedByRecords)}, they were "
-				+ $"{OnOff(readBack.Before.AdministratedByRecords)} before the save");
-		}
-		return critical;
-	}
-
-	private static string OnOff(bool value) => value ? "ON" : "OFF";
+	// The differences the call fails on: the column switch and the stored rows against the plan. The operation and
+	// record switches go out as read right before the save, so one that differs afterwards was changed by another
+	// client after it: that is a warning, not this call's result.
+	private IReadOnlyList<string> Critical(Change change, ReadBack readBack) =>
+		_readBackVerifier.Compare(change.Plan, readBack.Object.AdministratedByColumns, readBack.Stored).Critical;
 
 	// Whether the object read back is still as it was before the save, or partly changed — which the operator must know
 	// to decide whether to re-run.
@@ -762,14 +760,6 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		if (readBack.Object.AdministratedByColumns != change.Plan.Before.AdministratedByColumns) {
 			changed.Add($"column permissions are {FormatSwitch(readBack.Object.AdministratedByColumns)} (were "
 				+ $"{FormatSwitch(change.Plan.Before.AdministratedByColumns)})");
-		}
-		if (readBack.Object.AdministratedByOperations != readBack.Before.AdministratedByOperations) {
-			changed.Add($"operation permissions are {OnOff(readBack.Object.AdministratedByOperations)} (were "
-				+ $"{OnOff(readBack.Before.AdministratedByOperations)})");
-		}
-		if (readBack.Object.AdministratedByRecords != readBack.Before.AdministratedByRecords) {
-			changed.Add($"record permissions are {OnOff(readBack.Object.AdministratedByRecords)} (were "
-				+ $"{OnOff(readBack.Before.AdministratedByRecords)})");
 		}
 		ColumnRightsState before = change.Plan.Before;
 		ColumnRightsState after = new(readBack.Object.AdministratedByColumns, readBack.Stored);

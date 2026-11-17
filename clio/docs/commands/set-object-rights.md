@@ -237,11 +237,13 @@ clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissi
 
 ## Notes
 
-- A write takes the object's write lease (keyed by the environment's resolved URL and the object's code), shared with
-  `set-default-record-rights` and `set-column-rights`: a second write of the same object while one runs is refused,
-  and nothing is changed. A preview takes none.
-- A switch the call does not change (column and record permissions) is sent as the call read it: one another client
-  changed between the read and the save is sent back, and the read-back then fails the call, naming it.
+- Right after the confirmation (never across the prompt) a write takes the object's write lease (keyed by the
+  environment's resolved URL and the object's code), shared with `set-default-record-rights` and `set-column-rights`; a second write of the same object while
+  one runs is refused, and nothing is changed. A preview takes none.
+- Under the lease the object is read again: if any of its three switches (column, operation, record permissions), its
+  schema UId or an operation row changed since the plan read it, nothing is saved; otherwise the save goes out from that fresh
+  read, so it sends the switches as they are. A switch the call does not change that differs on the read-back was
+  changed by another client after the save: that is a warning after the call's own result.
 - Backed by `RightManagementService.svc/GetAdministratedObject` + `SaveAdministratedObject` (a
   read-modify-write). The untouched record, column and entity-operation collections are sent as null.
 - The output and the exit code come from the planned change and the read-back, compared row by row (grantee,

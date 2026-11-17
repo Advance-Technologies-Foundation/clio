@@ -195,7 +195,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 	[Test]
 	[Description("While ON, a column with no stored row other than the changed one is sent with none, so it stays as it is, and the facts say so.")]
-	public void Execute_ShouldKeepALockedColumnLocked_WhenAnotherColumnChanges() {
+	public void Execute_ShouldKeepAColumnWithoutRowsAsItIs_WhenAnotherColumnChanges() {
 		// Arrange
 		ColumnRights nameDefault = Stored(NameUId, ColumnRightsDefaults.Row);
 		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Read)), nameDefault],
@@ -213,7 +213,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("Enabling with nothing stored sends an empty list, so every column gets the default row instead of being locked, and the output names them.")]
+	[Description("Enabling with nothing stored sends an empty list, so every column gets the default row instead of keeping no rows, and the output names them.")]
 	public void Execute_ShouldGiveDefaultsNotALock_WhenEnablingFromEmptyStorage() {
 		// Arrange
 		Reads(false, [], onAfter: true, storedAfter: [
@@ -226,7 +226,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "every column holds the default row afterwards");
-		_sentList.Should().NotBeNull(because: "a null list would leave every column with no rows: locked");
+		_sentList.Should().NotBeNull(because: "a null list would leave every column with no rows instead of the default row");
 		_sentList.Should().BeEmpty(because: "no column has rows to keep");
 		_infos.Should().Contain(line => line.Contains("Get the default row (All employees: edit)")
 			&& line.Contains("Name, UsrAmount, UsrDescription"), because: "the output names the columns that get the default");
@@ -424,8 +424,8 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("A read-back where the operation switch changed fails the call: the save sends it as read and must leave it.")]
-	public void Execute_ShouldFail_WhenTheOperationSwitchChanged() {
+	[Description("An operation switch that differs only on the read-back was changed by another client after the save (the save sent it as read right before): the call reports its own result, then warns.")]
+	public void Execute_ShouldWarnAfterTheResult_WhenTheOperationSwitchMovedAfterTheSave() {
 		// Arrange
 		IReadOnlyList<ColumnRights> after = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))];
 		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
@@ -436,9 +436,10 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		int exitCode = _command.Execute(Grant());
 
 		// Assert
-		exitCode.Should().Be(1, because: "a changed operation switch is not this call's change");
-		_errors.Should().Contain(line => line.Contains("operation permissions are ON, they were OFF"),
-			because: "the failure names the switch that changed");
+		exitCode.Should().Be(0, because: "the call's own change landed as planned");
+		_warnings.Should().ContainSingle(line => line.Contains("after the save, operation permissions are ON (were OFF)")
+			&& line.Contains("another client changed them after the save"), because: "the moved switch is a separate warning");
+		_errors.Should().BeEmpty(because: "it is not this call's partial change");
 	}
 
 	[Test]
@@ -457,23 +458,110 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("A restriction an explicit --position puts after an All employees row with edit is warned about (per Creatio's documentation the higher row wins); without a position the new row goes to the top and the output says so, with no warning.")]
-	public void Execute_ShouldWarnOnlyForAnExplicitPositionBelowAllEmployeesEdit_WhenGranting() {
+	[Description("Whenever an All employees row ends above a row that grants less, the preview, the prompt facts and the result warn — with an explicit position, and also for a level change without one; a new restriction placed on top is not warned about.")]
+	public void Execute_ShouldWarn_WhenAllEmployeesEndsAboveARowThatGrantsLess() {
 		// Arrange
 		Reads(false, []);
 
 		// Act
 		_command.Execute(Grant(enable: true, preview: true, position: 1));
-		List<string> explicitWarnings = _warnings.ToList();
-		_warnings.Clear();
+		List<string> placedBelow = _infos.ToList();
+		_infos.Clear();
 		_command.Execute(Grant(enable: true, preview: true));
 
 		// Assert
-		explicitWarnings.Should().ContainSingle(line => line.Contains("Warning: in column UsrAmount")
-			&& line.Contains("does not apply to members of All employees"), because: "the restriction sits below All employees: edit");
-		_warnings.Should().BeEmpty(because: "a new row without a position goes to the top, above the default row");
+		placedBelow.Should().Contain(line => line.Contains("Warning: in column UsrAmount 'Amount', All employees sits above")
+			&& line.Contains("narrow nothing"), because: "the deny row sits below All employees: edit");
+		_infos.Should().NotContain(line => line.Contains("Warning: in column"),
+			because: "a new row without a position goes to the top, above the default row");
 		_infos.Should().Contain(line => line.Contains("The new row goes to position 0, the top"),
 			because: "the output says where the row went and why");
+	}
+
+	[Test]
+	[Description("A level change without a position that leaves All employees above a row granting less is warned about too, in the result as well as the preview.")]
+	public void Execute_ShouldWarnInTheResult_WhenALevelChangeLeavesAllEmployeesAboveANarrowerRow() {
+		// Arrange
+		ColumnRights before = Stored(AmountUId, Row(Employees, 0, ColumnRightLevel.Read), Row(Role, 1, ColumnRightLevel.Read));
+		ColumnRights after = Stored(AmountUId, Row(Employees, 0, ColumnRightLevel.Read), Row(Role, 1, ColumnRightLevel.Denied));
+		Reads(true, [before], storedAfter: [after]);
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(0, because: "storage holds the plan");
+		_infos.Should().Contain(line => line.Contains("Warning: in column UsrAmount 'Amount', All employees sits above"),
+			because: "the result repeats the warning the prompt showed");
+	}
+
+	[Test]
+	[Description("A new All employees row without a position goes to the bottom, below the specific rows, and the output says why; it is not warned about.")]
+	public void Execute_ShouldPutAllEmployeesAtTheBottom_WhenNoPositionIsGiven() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+		SetColumnRightsOptions options = Grant(access: "read", preview: true, grantee: Employees.ToString());
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_infos.Should().Contain(line => line.Contains("stored rows after: [0] Role") && line.Contains("[1] All employees"),
+			because: "the broad row goes below the specific one");
+		_infos.Should().Contain(line => line.Contains("The new All employees row goes to the bottom"),
+			because: "the output says where it went and why");
+		_infos.Should().NotContain(line => line.Contains("Warning: in column"), because: "nothing sits below All employees");
+	}
+
+	[Test]
+	[Description("A change on a column whose rows share a stored position is refused before any write: its order is ambiguous.")]
+	public void Execute_ShouldRefuse_WhenTheColumnHasDuplicatePositions() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Employees, 0, ColumnRightLevel.Read), Row(Role, 0, ColumnRightLevel.Denied))]);
+
+		// Act
+		int exitCode = _command.Execute(Grant(access: "read"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "which row is higher is unknown");
+		_errors.Should().ContainSingle(line => line.Contains("several rows at position(s) 0") && line.Contains("ambiguous"),
+			because: "the refusal names the shared position");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("A disable does not depend on the stored rows: when they cannot be read it goes ahead, with a warning, and sends no list.")]
+	public void Execute_ShouldDisable_WhenStorageCannotBeRead() {
+		// Arrange
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
+			.Returns(Object(true, []), Object(true, []), Object(false, []));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>())
+			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: Access denied"));
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the switch is off on the read-back");
+		_sent.Should().BeTrue(because: "the switch is saved");
+		_sentList.Should().BeNull(because: "a disable sends no list");
+		_warnings.Should().Contain(line => line.Contains("could not be read") && line.Contains("sends no list"),
+			because: "the unread rows are said, not refused");
+	}
+
+	[Test]
+	[Description("A disable is not refused when the stored rows changed between the plan and the save: it sends no list, so the rows are not compared.")]
+	public void Execute_ShouldDisable_WhenTheStoredRowsChangedBeforeTheSave() {
+		// Arrange
+		IReadOnlyList<ColumnRights> stored = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))];
+		Reads(true, stored, onAfter: false, storedBeforeSave: [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Read))]);
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a disable leaves the rows alone, whatever they are now");
+		_sent.Should().BeTrue(because: "the switch is saved");
 	}
 
 	[Test]
@@ -767,8 +855,8 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("A read-back where the record switch changed fails the call, and the summary says the change was partially applied, naming the switch.")]
-	public void Execute_ShouldFail_WhenTheRecordSwitchChanged() {
+	[Description("A record switch that differs only on the read-back is a warning after the call's own result, never part of a 'partially applied' failure.")]
+	public void Execute_ShouldWarnAfterTheResult_WhenTheRecordSwitchMovedAfterTheSave() {
 		// Arrange
 		IReadOnlyList<ColumnRights> after = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))];
 		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
@@ -779,10 +867,10 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		int exitCode = _command.Execute(Grant());
 
 		// Assert
-		exitCode.Should().Be(1, because: "a changed record switch is not this call's change");
-		_errors.Should().ContainSingle(line => line.Contains("record permissions are ON, they were OFF")
-			&& line.Contains("PARTIALLY applied") && line.Contains("record permissions are ON (were OFF)"),
-			because: "the failure names the switch, and the summary includes it");
+		exitCode.Should().Be(0, because: "the call's own change landed as planned");
+		_warnings.Should().ContainSingle(line => line.Contains("after the save, record permissions are ON (were OFF)"),
+			because: "the moved switch is a separate warning");
+		_errors.Should().NotContain(line => line.Contains("PARTIALLY"), because: "it is not this call's partial change");
 	}
 
 	[Test]

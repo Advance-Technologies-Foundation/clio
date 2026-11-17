@@ -629,8 +629,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		ReceivedCallLog.CallsTo(_logger, method).Select(call => (string)call[0]).ToList();
 
 	[Test]
-	[Description("With column permissions ON, storage is shown: a restricted column with its rows, a column with only the default row (All employees, edit) as default — never as a restriction — and a schema column with no stored row as one only system administrators can access.")]
-	public void Execute_ShouldShowRestrictedDefaultAndLockedColumns_WhenStorageIsReadWhileOn() {
+	[Description("With column permissions ON, storage is shown: a restricted column with its rows, a column with only the default row (All employees, edit) as default — never as a restriction — and a schema column with no stored row as having no rows (every user follows operation permissions).")]
+	public void Execute_ShouldShowRestrictedDefaultAndNoRowColumns_WhenStorageIsReadWhileOn() {
 		// Arrange
 		ReturnsWithStorage(true,
 			Column(AmountUId, null, Row(Role, "Role", 0, ColumnRightLevel.Denied)),
@@ -646,7 +646,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		infos.Should().Contain($"      [0] Role ({Role}): denied", because: "with its rows");
 		infos.Should().Contain($"  {GetColumnRightsCommand.DefaultOnly} (1): Name.", because: "a default column is summarised");
 		infos.Should().Contain($"  {GetColumnRightsCommand.NoRows} (1): UsrDescription.",
-			because: "a schema column with no stored row is reported as locked");
+			because: "a schema column with no stored row is reported as having no rows (every user follows operation permissions)");
 		infos.Should().NotContain("    Name:", because: "a default column is never shown as a restriction");
 		GetColumnRightsCommand.NoRows.Should().Contain("every user follows the object's operation permissions")
 			.And.NotContain("system administrators",
@@ -708,8 +708,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("--column naming a column with no stored row while ON reports it as one only system administrators can access, under a plain ON line — never the object-wide 'no rows other than the default' line.")]
-	public void Execute_ShouldReportTheNamedColumnAsLocked_WhenItHasNoStoredRowWhileOn() {
+	[Description("--column naming a column with no stored row while ON reports it as having no rows (every user follows operation permissions), under a plain ON line — never the object-wide 'no rows other than the default' line.")]
+	public void Execute_ShouldReportTheNamedColumnAsHavingNoRows_WhenItHasNoStoredRowWhileOn() {
 		// Arrange
 		ReturnsWithStorage(true, Column(AmountUId, null, Row(Role, "Role", 0, ColumnRightLevel.Denied)));
 
@@ -728,7 +728,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("When storage cannot be read, the service read is shown with a warning that default columns are not listed by it, and the columns it lists with no rows are shown as accessible only to system administrators.")]
+	[Description("When storage cannot be read, the service read is shown with a warning that default columns are not listed by it, and the columns it lists with no rows are shown as having no rows (every user follows operation permissions).")]
 	public void Execute_ShouldFallBackWithAWarning_WhenStorageCannotBeRead() {
 		// Arrange
 		_rightsReader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
@@ -751,6 +751,6 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		List<string> infos = Lines(nameof(ILogger.WriteInfo));
 		infos.Should().Contain("    UsrAmount 'Amount':", because: "the service's restricted column is shown");
 		infos.Should().Contain($"  {GetColumnRightsCommand.NoRows} (1): UsrDescription.",
-			because: "a column the service lists with no rows is locked");
+			because: "a column the service lists with no rows is reported as having no rows");
 	}
 }

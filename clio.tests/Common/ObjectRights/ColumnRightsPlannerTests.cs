@@ -23,7 +23,7 @@ public class ColumnRightsPlannerTests {
 	private static readonly Guid Role = Guid.Parse("11111111-2222-3333-4444-555555555555");
 	private static readonly Guid Amount = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
 	private static readonly Guid Description = Guid.Parse("9e53fd7c-1111-4c5b-9c3a-2a7b0e7e0001");
-	private static readonly Guid Locked = Guid.Parse("9e53fd7c-3333-4c5b-9c3a-2a7b0e7e0003");
+	private static readonly Guid WithoutRows = Guid.Parse("9e53fd7c-3333-4c5b-9c3a-2a7b0e7e0003");
 	private static readonly Guid Defaulted = Guid.Parse("9e53fd7c-4444-4c5b-9c3a-2a7b0e7e0004");
 
 	private readonly ColumnRightsPlanner _planner = new();
@@ -55,32 +55,32 @@ public class ColumnRightsPlannerTests {
 		plan.SaveList.SingleOrDefault(column => column.ColumnUId == uId);
 
 	[Test]
-	[Description("While column permissions are ON the list names every non-default column as stored, a column with no rows with none (so it stays locked), and leaves a default-only column out (the service writes the same default).")]
+	[Description("While column permissions are ON the list names every non-default column as stored, a column with no rows with none (so it keeps no rows: every user follows operation permissions), and leaves a default-only column out (the service writes the same default).")]
 	public void Plan_ShouldBuildTheListFromStorage_WhenSwitchIsOn() {
 		// Arrange
 		ColumnRights description = Column(Description, Row(Admins, 0, ColumnRightLevel.Edit),
 			Row(Employees, 1, ColumnRightLevel.Denied));
-		ColumnRightsLayer layer = Layer(true, Known(Amount, Description, Locked, Defaulted), description,
+		ColumnRightsLayer layer = Layer(true, Known(Amount, Description, WithoutRows, Defaulted), description,
 			Column(Defaulted, Row(Employees, 0, ColumnRightLevel.Edit)));
 
 		// Act
 		ColumnRightsPlan plan = _planner.Plan(layer, Grant(ColumnRightLevel.Denied));
 
 		// Assert
-		plan.SaveList.Select(column => column.ColumnUId).Should().BeEquivalentTo(new Guid?[] { Amount, Description, Locked },
+		plan.SaveList.Select(column => column.ColumnUId).Should().BeEquivalentTo(new Guid?[] { Amount, Description, WithoutRows },
 			because: "the default-only column is left out, every other column is named");
 		Listed(plan, Description).Rows.Should().Equal(description.Rows, because: "another column goes back as stored");
-		Listed(plan, Locked).Rows.Should().BeEmpty(because: "a column with no rows while ON is sent with none, so it stays as it is");
+		Listed(plan, WithoutRows).Rows.Should().BeEmpty(because: "a column with no rows while ON is sent with none, so it stays as it is");
 		Listed(plan, Amount).Rows.Should().Equal(new[] { Row(Role, 0, ColumnRightLevel.Denied) },
 			because: "the changed column carries its planned rows");
-		plan.ColumnsKeptWithoutRows.Should().Equal(new[] { Locked }, because: "the plan names the column kept without rows");
+		plan.ColumnsKeptWithoutRows.Should().Equal(new[] { WithoutRows }, because: "the plan names the column kept without rows");
 		plan.DefaultedColumns.Should().BeEmpty(because: "no column changes to the default");
 		Plan.RowsOf(plan.ExpectedStored, Defaulted).Should().Equal(new[] { ColumnRightsDefaults.Row },
 			because: "storage must then hold the default row for the column the list leaves out");
 	}
 
 	[Test]
-	[Description("Enabling with nothing stored sends an empty list, so every column gets the default row: access is unchanged and no column is locked.")]
+	[Description("Enabling with nothing stored sends an empty list, so every column gets the default row: access is unchanged.")]
 	public void Plan_ShouldGiveEveryColumnTheDefault_WhenEnablingFromEmptyStorage() {
 		// Arrange
 		ColumnRightsLayer layer = Layer(false, Known(Amount, Description));
@@ -89,7 +89,7 @@ public class ColumnRightsPlannerTests {
 		ColumnRightsPlan plan = _planner.Plan(layer, Switch(enable: true));
 
 		// Assert
-		plan.SaveList.Should().NotBeNull(because: "enabling with null would leave every column with no rows: locked");
+		plan.SaveList.Should().NotBeNull(because: "enabling with null would leave every column with no rows instead of the default row");
 		plan.SaveList.Should().BeEmpty(because: "no column has rows to keep");
 		plan.DefaultedColumns.Should().BeEquivalentTo(new[] { Amount, Description },
 			because: "every column with no stored row gets the default, and the output names them");
@@ -142,7 +142,7 @@ public class ColumnRightsPlannerTests {
 	}
 
 	[Test]
-	[Description("Removing a column's last row leaves the column out of the list, so it gets the default row instead of being locked.")]
+	[Description("Removing a column's last row leaves the column out of the list, so it gets the default row instead of keeping no rows.")]
 	public void Plan_ShouldGiveTheDefault_WhenTheLastRowIsRemoved() {
 		// Arrange
 		ColumnRightsLayer layer = Layer(true, Known(Amount), Column(Amount, Row(Role, 0, ColumnRightLevel.Denied)));
@@ -297,19 +297,72 @@ public class ColumnRightsPlannerTests {
 	}
 
 	[Test]
-	[Description("A restriction an explicit position puts after an All employees row with edit is reported (per Creatio's documentation the higher row wins); one placed without a position goes to the top and is not.")]
-	public void Plan_ShouldReportARestrictionBelowAllEmployeesEdit_WhenAPositionPutsItThere() {
+	[Description("A new All employees row without a position goes to the bottom — a broad grant must not override the specific rows above it — while a new row for another grantee goes to the top.")]
+	public void Plan_ShouldPutANewAllEmployeesRowAtTheBottom_WhenNoPositionIsGiven() {
 		// Arrange
-		ColumnRightsLayer layer = Layer(false, Known(Amount));
+		ColumnRightsLayer layer = Layer(true, Known(Amount), Column(Amount, Row(Role, 0, ColumnRightLevel.Denied),
+			Row(Admins, 1, ColumnRightLevel.Edit)));
 
 		// Act
-		ColumnRightsPlan below = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, position: 1, enable: true));
-		ColumnRightsPlan first = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, enable: true));
+		ColumnRightsPlan plan = _planner.Plan(layer,
+			new ColumnRightsChangeRequest(Amount, "Amount", Employees, "All employees", ColumnRightLevel.Read, false, null,
+				false, false));
 
 		// Assert
-		below.RestrictionsBelowAllEmployeesEdit.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
-			because: "the deny row sits after All employees: edit");
-		first.RestrictionsBelowAllEmployeesEdit.Should().BeEmpty(because: "a new row without a position goes to the top");
+		plan.ColumnRowsAfter.Should().Equal(new[] { Row(Role, 0, ColumnRightLevel.Denied), Row(Admins, 1, ColumnRightLevel.Edit),
+			Row(Employees, 2, ColumnRightLevel.Read) }, because: "the broad row goes below every specific row");
+		plan.NarrowerRowsBelowAllEmployees.Should().BeEmpty(because: "nothing sits below the All employees row");
+	}
+
+	[Test]
+	[Description("Any All employees row above a row that grants less is reported — with or without a position, edit over read or denied, read over denied.")]
+	public void Plan_ShouldReportNarrowerRowsBelowAllEmployees_WhenAllEmployeesSitsAboveThem() {
+		// Arrange
+		ColumnRightsLayer readAbove = Layer(true, Known(Amount), Column(Amount, Row(Employees, 0, ColumnRightLevel.Read),
+			Row(Role, 1, ColumnRightLevel.Read)));
+
+		// Act
+		ColumnRightsPlan editPlaced = _planner.Plan(Layer(false, Known(Amount)),
+			Grant(ColumnRightLevel.Denied, position: 1, enable: true));
+		ColumnRightsPlan readOverDenied = _planner.Plan(readAbove, Grant(ColumnRightLevel.Denied));
+
+		// Assert
+		editPlaced.NarrowerRowsBelowAllEmployees.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
+			because: "a deny row placed below All employees: edit narrows nothing for its members");
+		readOverDenied.NarrowerRowsBelowAllEmployees.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
+			because: "a level change, without a position, leaves All employees: read above the deny row");
+	}
+
+	[Test]
+	[Description("No warning when the rows below All employees grant as much or more, or when the restriction sits above it.")]
+	public void Plan_ShouldNotReportNarrowerRows_WhenNoneSitsBelowAllEmployees() {
+		// Arrange
+		ColumnRightsLayer layer = Layer(true, Known(Amount), Column(Amount, Row(Employees, 0, ColumnRightLevel.Read),
+			Row(Admins, 1, ColumnRightLevel.Edit)));
+
+		// Act
+		ColumnRightsPlan higherBelow = _planner.Plan(layer, Grant(ColumnRightLevel.Read, position: 2));
+		ColumnRightsPlan restrictionOnTop = _planner.Plan(Layer(false, Known(Amount)),
+			Grant(ColumnRightLevel.Denied, enable: true));
+
+		// Assert
+		higherBelow.NarrowerRowsBelowAllEmployees.Should().BeEmpty(because: "edit and read below All employees: read do not grant less");
+		restrictionOnTop.NarrowerRowsBelowAllEmployees.Should().BeEmpty(because: "the new deny row goes above the default row");
+	}
+
+	[Test]
+	[Description("A change on a column whose rows share a stored position is refused: the column's order is ambiguous.")]
+	public void Plan_ShouldRefuse_WhenTheColumnHasDuplicatePositions() {
+		// Arrange
+		ColumnRightsLayer layer = Layer(true, Known(Amount), Column(Amount, Row(Employees, 0, ColumnRightLevel.Read),
+			Row(Admins, 0, ColumnRightLevel.Edit)));
+
+		// Act
+		ColumnRightsPlan plan = _planner.Plan(layer, Grant(ColumnRightLevel.Denied));
+
+		// Assert
+		plan.Refusal.Should().Be(ColumnRightsRefusal.DuplicatePositions, because: "which row is higher is unknown");
+		plan.DuplicatePositions.Should().Equal(new int?[] { 0 }, because: "the refusal names the shared position");
 	}
 
 	// The planner's own row lookup, for the assertions.

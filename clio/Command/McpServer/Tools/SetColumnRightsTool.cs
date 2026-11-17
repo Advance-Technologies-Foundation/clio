@@ -14,8 +14,8 @@ namespace Clio.Command.McpServer.Tools;
 /// MCP surface of <c>set-column-rights</c>: sets, moves or removes one role's row in ONE column of ONE object, or turns
 /// the object's column permissions on or off. Destructive: the call applies the change, and the host's approval of the
 /// call is the confirmation — the arguments name every access-changing transition. <c>preview</c> writes nothing.
-/// Idempotent: a repeated identical call finds its change in place and writes nothing (a repeated removal is refused
-/// because the row is gone, which changes nothing either).
+/// Idempotent: a repeated identical call finds its change in place and writes nothing — a repeated removal included,
+/// which answers "no change" because the row is already gone.
 /// </summary>
 [McpServerToolType]
 public sealed class SetColumnRightsTool(
@@ -49,7 +49,7 @@ public sealed class SetColumnRightsTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Changes column permissions. Sets one role's access (denied/read/edit) to ONE column of ONE object, moves or removes that role's row, or turns the object's column permissions on or off - the COLUMN (field-level) layer (DESTRUCTIVE - changes access rights). " +
 		"entity-schema-name is the object's CODE: a title is refused, naming the code to pass. column is the column CODE. grantee is a SysAdminUnit id (names are not unique); it must exist. " +
-		"access sets the grantee's row: a new row goes to the TOP (position 0) unless position is given, an existing one keeps its place. Per Creatio's documentation the higher row wins for a user in several roles (documented, not measured); a column with no rows leaves every user to the object's operation permissions. position (0 first) places or, alone, moves the row and renumbers the column's rows 0..n-1; one that puts a restriction below All employees: edit is warned about. remove-row=true deletes the grantee's row (a repeated removal is no change); removing a column's last row other than the default leaves it the default (All employees: edit), which WIDENS access. " +
+		"access sets the grantee's row: a new row goes to the TOP (position 0) unless position is given - All employees' to the BOTTOM, so a broad grant does not override specific rows; an existing one keeps its place. Per Creatio's documentation the higher row wins for a user in several roles (documented, not measured); a column with no rows leaves every user to the object's operation permissions. position (0 first) places or, alone, moves the row and renumbers the column's rows 0..n-1. An All employees row above a row that grants less is warned about; a column whose rows share a position is refused. remove-row=true deletes the grantee's row (a repeated removal is no change); removing a column's last row other than the default leaves it the default (All employees: edit), which WIDENS access. " +
 		"The switch changes only through its flags: a grant while column permissions are OFF is refused unless enable-column-permissions is passed; a move or a removal while OFF is refused; enable-column-permissions turns them on and gives EVERY column with no stored row the default row (All employees: edit), naming those columns in the result, and rows kept on other columns since a disable apply again - run preview=true before an enable; disable-column-permissions ALONE turns them off (rows kept, not applied; the result names the columns with no rows, which a later enable through clio gives the default row). " +
 		"A save with a column list gives every column it does not name the default row, so the call builds the list from storage: every column whose stored rows are not the default, the changed one with its new rows; a column with no rows is sent with none while ON. The call then reads storage back: a difference fails it. " +
 		"Calls for one object must NOT run in parallel: a second write of the object (also set-object-rights, set-default-record-rights) while one runs is refused, and a save is aborted when the object or its stored rows changed since they were read. While ON, the call is refused when storage disagrees with the service's list. " +
@@ -130,7 +130,7 @@ public sealed record SetColumnRightsArgs(
 	string? Grantee = null,
 
 	[property: JsonPropertyName("access")]
-	[property: Description("Access the grantee's row gets: denied, read or edit. A grantee with no row gets one at the top (position 0, which per Creatio's documentation wins) unless position is given; an existing row keeps its place and gets the new level.")]
+	[property: Description("Access the grantee's row gets: denied, read or edit. A grantee with no row gets one at the top (position 0, which per Creatio's documentation wins) unless position is given - All employees at the bottom; an existing row keeps its place and gets the new level.")]
 	string? Access = null,
 
 	[property: JsonPropertyName("remove-row")]
