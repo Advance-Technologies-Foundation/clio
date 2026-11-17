@@ -90,9 +90,10 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "an OFF switch is a fact, not a failure");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("Columns with rows")));
-		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"  {GetColumnRightsCommand.SwitchOff}", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain(line => line.Contains("Columns with rows"), because: "the output must not state this");
+		ReceivedCallLog.CallsTo(_columnManager, nameof(IRemoteEntitySchemaColumnManager.GetSchemaProperties)).Should()
+			.BeEmpty(because: "the schema is not read");
 	}
 
 	[Test]
@@ -106,8 +107,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "an empty column layer is a fact, not a failure");
-		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.OnWithoutRows}");
-		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"  {GetColumnRightsCommand.OnWithoutRows}", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain($"  {GetColumnRightsCommand.SwitchOff}", because: "the output must not state this");
 	}
 
 	[Test]
@@ -125,16 +126,16 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		Received.InOrder(() => {
-			_logger.WriteInfo("Column permissions for 'Holiday' (UsrHoliday):");
-			_logger.WriteInfo($"  {GetColumnRightsCommand.OrderRule}");
-			_logger.WriteInfo("  Column permissions: ON. Columns with rows:");
-			_logger.WriteInfo("    UsrAmount 'Amount':");
-			_logger.WriteInfo($"      [0] All employees ({Employees}): read");
-			_logger.WriteInfo("    UsrDescription 'Description':");
-			_logger.WriteInfo($"      [0] System administrators ({Admins}): edit");
-			_logger.WriteInfo($"      [1] All employees ({Employees}): denied");
-		});
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			"Column permissions for 'Holiday' (UsrHoliday):",
+			$"  {GetColumnRightsCommand.OrderRule}",
+			"  Column permissions: ON. Columns with rows:",
+			"    UsrAmount 'Amount':",
+			$"      [0] All employees ({Employees}): read",
+			"    UsrDescription 'Description':",
+			$"      [0] System administrators ({Admins}): edit",
+			$"      [1] All employees ({Employees}): denied"
+		}, because: "the output states these lines in this order");
 	}
 
 	[Test]
@@ -147,7 +148,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		Run();
 
 		// Assert
-		_logger.Received().WriteInfo($"      [0] All employees ({Employees}): unknown (7)");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"      [0] All employees ({Employees}): unknown (7)", because: "the output states this");
 	}
 
 	[Test]
@@ -161,12 +162,12 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		Received.InOrder(() => {
-			_logger.WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
-			_logger.WriteInfo("  Rows stored while column permissions are OFF:");
-			_logger.WriteInfo("    UsrAmount 'Amount':");
-			_logger.WriteInfo($"      [0] All employees ({Employees}): denied");
-		});
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			$"  {GetColumnRightsCommand.SwitchOff}",
+			"  Rows stored while column permissions are OFF:",
+			"    UsrAmount 'Amount':",
+			$"      [0] All employees ({Employees}): denied"
+		}, because: "the output states these lines in this order");
 	}
 
 	[Test]
@@ -180,8 +181,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "a read that did not happen is a failure");
-		_logger.Received().WriteError("  UsrHoliday: its column permissions could not be read: Access denied.");
-		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
+		Lines(nameof(ILogger.WriteError)).Should().Contain("  UsrHoliday: its column permissions could not be read: Access denied.", because: "the error says this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain($"  {GetColumnRightsCommand.SwitchOff}", because: "the output must not state this");
 	}
 
 	[Test]
@@ -196,8 +197,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "a read that timed out did not happen");
-		_logger.Received().WriteError(Arg.Is<string>(line =>
-			line.StartsWith("  UsrHoliday: its column permissions could not be read:") && line.Contains("timed out")));
+		Lines(nameof(ILogger.WriteError)).Should().Contain(line => 
+			line.StartsWith("  UsrHoliday: its column permissions could not be read:") && line.Contains("timed out"), because: "the error says this");
 	}
 
 	[Test]
@@ -213,10 +214,10 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the column exists");
-		_logger.Received().WriteInfo("    UsrAmount 'Amount':");
-		_logger.DidNotReceive().WriteInfo("    UsrDescription 'Description':");
-		_logger.Received().WriteInfo("Column permissions for 'Holiday' (UsrHoliday) (column UsrAmount):");
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("usramount")));
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain("    UsrAmount 'Amount':", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain("    UsrDescription 'Description':", because: "the output must not state this");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain("Column permissions for 'Holiday' (UsrHoliday) (column UsrAmount):", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain(line => line.Contains("usramount"), because: "the output must not state this");
 	}
 
 	[Test]
@@ -230,9 +231,9 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "an unrestricted column is a fact");
-		_logger.Received().WriteInfo("    Name: no column permission rows.");
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("NAME")));
-		_logger.DidNotReceive().WriteInfo("    UsrAmount 'Amount':");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain("    Name: no column permission rows.", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain(line => line.Contains("NAME"), because: "the output must not state this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain("    UsrAmount 'Amount':", because: "the output must not state this");
 	}
 
 	[Test]
@@ -246,7 +247,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "a typo in the column must not read as 'no rows'");
-		_logger.Received().WriteError("Error: 'Holiday' (UsrHoliday) has no column 'UsrMissing'.");
+		Lines(nameof(ILogger.WriteError)).Should().Contain("Error: 'Holiday' (UsrHoliday) has no column 'UsrMissing'.", because: "the error says this");
 	}
 
 	[Test]
@@ -257,10 +258,11 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "only a column code is accepted");
-		_logger.Received(1).WriteError(
-			"Error: --column 'Amount; drop' is not a column code (letters, digits and '_' only).");
-		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
-		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
+		Lines(nameof(ILogger.WriteError)).Should().ContainSingle(line => line == "Error: --column 'Amount; drop' is not a column code (letters, digits and '_' only).", because: "the error says this, once");
+		ReceivedCallLog.CallsTo(_rightsReader, nameof(IObjectRightsReader.GetObjectRights)).Should()
+			.BeEmpty(because: "the rights are not read");
+		ReceivedCallLog.CallsTo(_columnManager, nameof(IRemoteEntitySchemaColumnManager.GetSchemaProperties)).Should()
+			.BeEmpty(because: "the schema is not read");
 	}
 
 	[Test]
@@ -276,9 +278,9 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the rights were read; only the column codes are missing");
-		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("could not be read")
-			&& line.Contains("schema read failed")));
-		_logger.Received().WriteInfo($"    column {AmountUId} 'Amount' (code not resolved):");
+		Lines(nameof(ILogger.WriteWarning)).Should().Contain(line =>  line.Contains("could not be read")
+			&& line.Contains("schema read failed"), because: "the warning says this");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"    column {AmountUId} 'Amount' (code not resolved):", because: "the output states this");
 	}
 
 	[Test]
@@ -294,7 +296,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "the filter cannot be applied without the column codes");
-		_logger.Received().WriteError(Arg.Is<string>(line => line.Contains("--column UsrAmount cannot be found")));
+		Lines(nameof(ILogger.WriteError)).Should().Contain(line =>  line.Contains("--column UsrAmount cannot be found"), because: "the error says this");
 	}
 
 	[Test]
@@ -311,13 +313,13 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		Received.InOrder(() => {
-			_logger.WriteInfo($"      [1] Sales managers ({Role}): read");
-			_logger.WriteInfo("      Other rows of this column:");
-			_logger.WriteInfo($"        [0] System administrators ({Admins}): edit");
-			_logger.WriteInfo($"        [2] All employees ({Employees}): denied");
-		});
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("above")));
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			$"      [1] Sales managers ({Role}): read",
+			"      Other rows of this column:",
+			$"        [0] System administrators ({Admins}): edit",
+			$"        [2] All employees ({Employees}): denied"
+		}, because: "the output states these lines in this order");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain(line => line.Contains("above"), because: "the output must not state this");
 	}
 
 	[Test]
@@ -335,14 +337,14 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		Received.InOrder(() => {
-			_logger.WriteInfo($"      [1] Sales managers ({Role}): read");
-			_logger.WriteInfo($"      [3] Sales managers ({Role}): denied");
-			_logger.WriteInfo("      Other rows of this column:");
-			_logger.WriteInfo($"        [0] System administrators ({Admins}): edit");
-			_logger.WriteInfo($"        [2] All employees ({Employees}): denied");
-		});
-		_logger.DidNotReceive().WriteInfo($"        [3] Sales managers ({Role}): denied");
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			$"      [1] Sales managers ({Role}): read",
+			$"      [3] Sales managers ({Role}): denied",
+			"      Other rows of this column:",
+			$"        [0] System administrators ({Admins}): edit",
+			$"        [2] All employees ({Employees}): denied"
+		}, because: "the output states these lines in this order");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain($"        [3] Sales managers ({Role}): denied", because: "the output must not state this");
 	}
 
 	[Test]
@@ -355,8 +357,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		Run(grantee: Role.ToString());
 
 		// Assert
-		_logger.Received().WriteInfo($"      grantee {Role} has NO row in this column. Its rows:");
-		_logger.Received().WriteInfo($"        [0] All employees ({Employees}): denied");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"      grantee {Role} has NO row in this column. Its rows:", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"        [0] All employees ({Employees}): denied", because: "the output states this");
 	}
 
 	[Test]
@@ -367,8 +369,9 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "the grantee is a SysAdminUnit id");
-		_logger.Received().WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
-		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+		Lines(nameof(ILogger.WriteError)).Should().Contain("Error: --grantee must be a SysAdminUnit id (GUID).", because: "the error says this");
+		ReceivedCallLog.CallsTo(_rightsReader, nameof(IObjectRightsReader.GetObjectRights)).Should()
+			.BeEmpty(because: "the rights are not read");
 	}
 
 	[Test]
@@ -386,7 +389,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the title names one object");
-		_logger.Received().WriteInfo("  'Holiday' is not an object code: it is the title of UsrHoliday, which is read.");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain("  'Holiday' is not an object code: it is the title of UsrHoliday, which is read.", because: "the output states this");
 	}
 
 	[Test]
@@ -403,9 +406,10 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "an ambiguous title is refused");
-		_logger.Received().WriteError(Arg.Is<string>(line => line.Contains("is the title of 2 objects")
-			&& line.EndsWith("Re-run with the exact code.")));
-		_rightsReader.DidNotReceive().GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>());
+		Lines(nameof(ILogger.WriteError)).Should().Contain(line =>  line.Contains("is the title of 2 objects")
+			&& line.EndsWith("Re-run with the exact code."), because: "the error says this");
+		ReceivedCallLog.CallsTo(_rightsReader, nameof(IObjectRightsReader.GetObjectRights))
+			.Should().NotContain(call => (string)call[0] == "UsrHoliday", because: "no object is guessed between the candidates");
 	}
 
 	[Test]
@@ -419,8 +423,10 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		_command.Execute(options);
 
 		// Assert
-		_columnManager.Received(1).GetSchemaProperties(Arg.Is<GetEntitySchemaPropertiesOptions>(read =>
-			read.SchemaName == "UsrHoliday" && read.RuntimeReadTimeoutMilliseconds == 30_000 && read.Package == null));
+		ReceivedCallLog.CallsTo(_columnManager, nameof(IRemoteEntitySchemaColumnManager.GetSchemaProperties))
+			.Select(call => (GetEntitySchemaPropertiesOptions)call[0])
+			.Should().ContainSingle(read =>
+			read.SchemaName == "UsrHoliday" && read.RuntimeReadTimeoutMilliseconds == 30_000 && read.Package == null, because: "the schema is read once, with the call's limits");
 	}
 
 	[Test]
@@ -434,13 +440,13 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the rows were read; only the switch is missing");
-		Received.InOrder(() => {
-			_logger.WriteInfo($"  {GetColumnRightsCommand.SwitchMissing}");
-			_logger.WriteInfo("  Stored rows:");
-			_logger.WriteInfo("    UsrAmount 'Amount':");
-			_logger.WriteInfo($"      [0] All employees ({Employees}): denied");
-		});
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("OFF") || line.Contains(": ON")));
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			$"  {GetColumnRightsCommand.SwitchMissing}",
+			"  Stored rows:",
+			"    UsrAmount 'Amount':",
+			$"      [0] All employees ({Employees}): denied"
+		}, because: "the output states these lines in this order");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain(line => line.Contains("OFF") || line.Contains(": ON"), because: "the output must not state this");
 	}
 
 	[Test]
@@ -454,10 +460,10 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received(1).WriteInfo($"  {GetColumnRightsCommand.SwitchMissing}");
-		_logger.Received(1).WriteInfo("  No column has a permission row.");
-		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
-		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.OnWithoutRows}");
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainSingle(line => line == $"  {GetColumnRightsCommand.SwitchMissing}", because: "the output states this, once");
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainSingle(line => line == "  No column has a permission row.", because: "the output states this, once");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain($"  {GetColumnRightsCommand.SwitchOff}", because: "the output must not state this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain($"  {GetColumnRightsCommand.OnWithoutRows}", because: "the output must not state this");
 	}
 
 	[Test]
@@ -472,10 +478,10 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		Run();
 
 		// Assert
-		Received.InOrder(() => {
-			_logger.WriteInfo($"      [0] System administrators ({Admins}): edit");
-			_logger.WriteInfo($"      [?] All employees ({Employees}): denied");
-		});
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			$"      [0] System administrators ({Admins}): edit",
+			$"      [?] All employees ({Employees}): denied"
+		}, because: "the output states these lines in this order");
 	}
 
 	[Test]
@@ -489,7 +495,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		Run();
 
 		// Assert
-		_logger.Received().WriteInfo($"      [0] All employees ({Employees}): unknown ({{\"value\":1}})");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"      [0] All employees ({Employees}): unknown ({{\"value\":1}})", because: "the output states this");
 	}
 
 	[Test]
@@ -504,9 +510,9 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo($"    column {gone} (not a column of the schema):");
-		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("code not resolved")));
-		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"    column {gone} (not a column of the schema):", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain(line => line.Contains("code not resolved"), because: "the output must not state this");
+		Lines(nameof(ILogger.WriteWarning)).Should().BeEmpty(because: "no such warning is written");
 	}
 
 	[Test]
@@ -522,8 +528,8 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		Run();
 
 		// Assert
-		_logger.Received().WriteInfo("    column 'First' (column UId 'not-a-guid' is not a GUID):");
-		_logger.Received().WriteInfo("    column 'Second' (no column UId):");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain("    column 'First' (column UId 'not-a-guid' is not a GUID):", because: "the output states this");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain("    column 'Second' (no column UId):", because: "the output states this");
 	}
 
 	[Test]
@@ -543,12 +549,12 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		Run();
 
 		// Assert
-		Received.InOrder(() => {
-			_logger.WriteInfo("    Name 'Name':");
-			_logger.WriteInfo("    UsrAmount 'Amount':");
-			_logger.WriteInfo($"    column {alpha} 'alpha' (not a column of the schema):");
-			_logger.WriteInfo($"    column {zeta} 'Zeta' (not a column of the schema):");
-		});
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			"    Name 'Name':",
+			"    UsrAmount 'Amount':",
+			$"    column {alpha} 'alpha' (not a column of the schema):",
+			$"    column {zeta} 'Zeta' (not a column of the schema):"
+		}, because: "the output states these lines in this order");
 	}
 
 	[Test]
@@ -563,10 +569,11 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the rights were read; only the column codes are missing");
-		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
-		_logger.Received(1).WriteWarning("  The columns of UsrHoliday could not be read (the call's time limit is spent): "
-			+ "columns are shown by their UId and caption.");
-		_logger.Received().WriteInfo($"    column {AmountUId} 'Amount' (code not resolved):");
+		ReceivedCallLog.CallsTo(_columnManager, nameof(IRemoteEntitySchemaColumnManager.GetSchemaProperties)).Should()
+			.BeEmpty(because: "the schema is not read");
+		Lines(nameof(ILogger.WriteWarning)).Should().ContainSingle(line => line == "  The columns of UsrHoliday could not be read (the call's time limit is spent): "
+			+ "columns are shown by their UId and caption.", because: "the warning says this, once");
+		Lines(nameof(ILogger.WriteInfo)).Should().Contain($"    column {AmountUId} 'Amount' (code not resolved):", because: "the output states this");
 	}
 
 	[Test]
@@ -582,14 +589,14 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the column exists");
-		Received.InOrder(() => {
-			_logger.WriteInfo("Column permissions for 'Holiday' (UsrHoliday) (column UsrAmount):");
-			_logger.WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
-			_logger.WriteInfo("  Rows stored while column permissions are OFF:");
-			_logger.WriteInfo("    UsrAmount 'Amount':");
-			_logger.WriteInfo($"      [0] All employees ({Employees}): read");
-		});
-		_logger.DidNotReceive().WriteInfo("    UsrDescription 'Description':");
+		Lines(nameof(ILogger.WriteInfo)).Should().ContainInOrder(new[] {
+			"Column permissions for 'Holiday' (UsrHoliday) (column UsrAmount):",
+			$"  {GetColumnRightsCommand.SwitchOff}",
+			"  Rows stored while column permissions are OFF:",
+			"    UsrAmount 'Amount':",
+			$"      [0] All employees ({Employees}): read"
+		}, because: "the output states these lines in this order");
+		Lines(nameof(ILogger.WriteInfo)).Should().NotContain("    UsrDescription 'Description':", because: "the output must not state this");
 	}
 
 	private static readonly Guid SchemaUId = Guid.Parse("35a9057f-800d-414b-acfb-c919c215857a");
@@ -638,9 +645,12 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		infos.Should().Contain("    UsrAmount:", because: "a restricted column is listed by its code");
 		infos.Should().Contain($"      [0] Role ({Role}): denied", because: "with its rows");
 		infos.Should().Contain($"  {GetColumnRightsCommand.DefaultOnly} (1): Name.", because: "a default column is summarised");
-		infos.Should().Contain($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.",
+		infos.Should().Contain($"  {GetColumnRightsCommand.NoRows} (1): UsrDescription.",
 			because: "a schema column with no stored row is reported as locked");
 		infos.Should().NotContain("    Name:", because: "a default column is never shown as a restriction");
+		GetColumnRightsCommand.NoRows.Should().Contain("every user follows the object's operation permissions")
+			.And.NotContain("system administrators",
+				because: "per Creatio's documentation users with no row in a column follow the object's operation permissions");
 	}
 
 	[Test]
@@ -709,7 +719,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the column exists");
 		List<string> infos = Lines(nameof(ILogger.WriteInfo));
-		infos.Should().Contain($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.",
+		infos.Should().Contain($"  {GetColumnRightsCommand.NoRows} (1): UsrDescription.",
 			because: "the named column has no stored row");
 		infos.Should().NotContain("    UsrAmount:", because: "only the named column is shown");
 		infos.Should().Contain("  Column permissions: ON.", because: "the switch line names no object-wide fact");
@@ -740,7 +750,7 @@ public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptio
 			&& line.Contains("not shown at all"), because: "the warning says what the service read leaves out");
 		List<string> infos = Lines(nameof(ILogger.WriteInfo));
 		infos.Should().Contain("    UsrAmount 'Amount':", because: "the service's restricted column is shown");
-		infos.Should().Contain($"  {GetColumnRightsCommand.NoRowsLocked} (1): UsrDescription.",
+		infos.Should().Contain($"  {GetColumnRightsCommand.NoRows} (1): UsrDescription.",
 			because: "a column the service lists with no rows is locked");
 	}
 }

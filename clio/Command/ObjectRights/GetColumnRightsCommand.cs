@@ -54,9 +54,10 @@ public class GetColumnRightsOptions : RemoteCommandOptions {
 /// through the entity schema), each row's position, grantee and access level. The service read filters (it omits a
 /// column whose only row is the default while the switch is on, and every column while it is off), so storage is what
 /// is shown: while the switch is on, a column with only the default row (All employees, edit) is reported as such, and
-/// a column of the schema with no stored row as one only system administrators can access, per Creatio's documentation.
-/// When storage cannot be read, the service's answer is shown with a warning. Which row wins for a user in several
-/// roles is not measured for columns, so the order claims nothing more. It draws no coverage verdict.
+/// a column of the schema with no stored row as one where every user follows the object's operation permissions, per
+/// Creatio's documentation. When storage cannot be read, or disagrees with the service, the service's answer is shown
+/// with a warning. Per Creatio's documentation the higher row wins for a user in several roles (documented, not
+/// measured). It draws no coverage verdict.
 /// </summary>
 public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 
@@ -152,14 +153,14 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 					: $"  The stored rows could not be read ({storedError})")
 				+ ": shown is GetAdministratedObject's answer. While column permissions are ON it omits a column whose only row is the default (All "
 				+ "employees, edit), so a column it does not list is not shown at all, and it lists a column with no "
-				+ "rows with none (shown as accessible only to system administrators); while they are OFF it lists no "
+				+ "rows with none (shown as having no rows); while they are OFF it lists no "
 				+ "column, though rows may be stored.");
 			ReportColumns(state, columnUId, column, codes, codesRead, granteeFilter);
 			if (state.AdministratedByColumns == true) {
 				Guid[] listedEmpty = state.Columns.Where(entry => entry.Rows.Count == 0 && entry.ColumnUId is not null)
 					.Select(entry => entry.ColumnUId!.Value).Where(uId => columnUId is null || uId == columnUId).ToArray();
 				if (listedEmpty.Length > 0) {
-					_logger.WriteInfo($"  {NoRowsLocked} ({listedEmpty.Length}): {FormatColumnList(listedEmpty, codes)}.");
+					_logger.WriteInfo($"  {NoRows} ({listedEmpty.Length}): {FormatColumnList(listedEmpty, codes)}.");
 				}
 			}
 			return 0;
@@ -228,8 +229,8 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 			.ToArray();
 
 	// Column permissions ON, from storage: the columns with rows other than the default, then the columns with only the
-	// default row (not a restriction), then the columns with no stored row, which per Creatio's documentation only system
-	// administrators can access.
+	// default row (not a restriction), then the columns with no stored row, where per Creatio's documentation every user
+	// follows the object's operation permissions.
 	private void ReportStoredWhileOn(ColumnRightsState state, IReadOnlyList<Guid> known, Guid? columnUId, string column,
 		IReadOnlyDictionary<Guid, string> codes, bool codesRead, Guid? granteeFilter) {
 		List<ColumnRights> restricted = state.RestrictedColumns
@@ -240,7 +241,7 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 			.ToList();
 		Guid[] defaults = DefaultOnlyColumns(state, columnUId);
 		HashSet<Guid?> withRows = state.RestrictedColumns.Select(entry => entry.ColumnUId).ToHashSet();
-		Guid[] locked = known.Where(uId => !withRows.Contains(uId))
+		Guid[] noRows = known.Where(uId => !withRows.Contains(uId))
 			.Where(uId => columnUId is null || uId == columnUId).ToArray();
 		// The summary line is about the whole object, so it is computed from every column, not only the one named.
 		bool anyRestricted = state.RestrictedColumns.Any(entry => !ColumnRightsDefaults.IsDefaultOnly(entry.Rows));
@@ -253,10 +254,10 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		if (defaults.Length > 0) {
 			_logger.WriteInfo($"  {DefaultOnly} ({defaults.Length}): {FormatColumnList(defaults, codes)}.");
 		}
-		if (locked.Length > 0) {
-			_logger.WriteInfo($"  {NoRowsLocked} ({locked.Length}): {FormatColumnList(locked, codes)}.");
+		if (noRows.Length > 0) {
+			_logger.WriteInfo($"  {NoRows} ({noRows.Length}): {FormatColumnList(noRows, codes)}.");
 		}
-		if (column is not null && restricted.Count == 0 && defaults.Length == 0 && locked.Length == 0) {
+		if (column is not null && restricted.Count == 0 && defaults.Length == 0 && noRows.Length == 0) {
 			_logger.WriteInfo($"    {column}: no column permission rows.");
 		}
 	}
@@ -323,8 +324,8 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 	}
 
 	// Every row with its position — or, with a grantee, the rows whose grantee is exactly that id first, then the
-	// column's other rows; a column where it has none says so. No row is left out: which row wins for a user in several
-	// roles is not measured for columns, and which roles a user is in is not read here.
+	// column's other rows; a column where it has none says so. No row is left out: which roles a user is in is not read
+	// here, so which of them decides for a user is not shown.
 	private void ReportRows(IReadOnlyList<ColumnRightRow> rows, Guid? granteeFilter) {
 		if (granteeFilter is null) {
 			foreach (ColumnRightRow row in rows) {
@@ -408,7 +409,7 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 
 	internal const string OrderRule =
 		"Rows are listed per column in stored position order ([position], 0 first; [?] when the service returned none); "
-		+ "access: denied, read or edit.";
+		+ "per Creatio's documentation the higher row wins for a user in several roles. Access: denied, read or edit.";
 
 	internal const string SwitchOff =
 		"Column permissions: OFF — every column is governed only by object and record permissions; stored rows are kept "
@@ -423,6 +424,6 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 	internal const string DefaultOnly =
 		"Default row only (All employees: edit), not a restriction for members of All employees";
 
-	internal const string NoRowsLocked =
-		"No rows - per Creatio's documentation only system administrators can access these columns";
+	internal const string NoRows =
+		"No rows - every user follows the object's operation permissions (Creatio documentation)";
 }

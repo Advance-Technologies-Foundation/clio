@@ -315,6 +315,9 @@ public class AdministratedObjectWriteLeaseTests {
 		if (System.IO.Directory.Exists(_root)) {
 			System.IO.Directory.Delete(_root, true);
 		}
+		if (System.IO.File.Exists(_root)) {
+			System.IO.File.Delete(_root);
+		}
 	}
 
 	private AdministratedObjectWriteLease Lease(string uri) => new(new EnvironmentSettings { Uri = uri }, _root);
@@ -338,6 +341,22 @@ public class AdministratedObjectWriteLeaseTests {
 		first.Dispose();
 		Action afterRelease = () => Lease("https://dev.example.com").Acquire("UsrHoliday").Dispose();
 		afterRelease.Should().NotThrow(because: "a disposed lease is free again");
+	}
+
+	[Test]
+	[Description("An IO failure that is not another holder — here, a lock folder that cannot be created — is reported as it is, never as another call running.")]
+	public void Acquire_ShouldReportTheIoFailure_WhenTheLockFolderCannotBeCreated() {
+		// Arrange
+		System.IO.File.WriteAllText(_root, "a file where the lock folder should be");
+		AdministratedObjectWriteLease lease = new(new EnvironmentSettings { Uri = "https://dev.example.com" }, _root);
+
+		// Act
+		Action act = () => lease.Acquire("UsrHoliday").Dispose();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the lock cannot be taken")
+			.Where(ex => ex.Message.Contains("cannot take the permissions lock") && !ex.Message.Contains("another call"),
+				because: "a failure that is not contention must not be reported as another call");
 	}
 
 	[TestCase("https://dev.example.com/", "HTTPS://DEV.EXAMPLE.COM")]

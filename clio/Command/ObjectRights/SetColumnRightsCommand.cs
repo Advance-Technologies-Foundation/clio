@@ -38,8 +38,8 @@ public class SetColumnRightsOptions : RemoteCommandOptions {
 
 	/// <summary>The access the grantee's row gets: denied, read or edit.</summary>
 	[Option("access", Required = false, HelpText =
-		"Access the grantee's row in the column gets: denied, read or edit. Adds the row after the column's last row "
-		+ "when the grantee has none, or changes its level in place.")]
+		"Access the grantee's row in the column gets: denied, read or edit. A grantee with no row gets one at the top "
+		+ "(position 0, which per Creatio's documentation wins), or at --position; an existing row keeps its place.")]
 	public string Access { get; set; }
 
 	/// <summary>Remove the grantee's row from the column; a call of its own.</summary>
@@ -52,15 +52,16 @@ public class SetColumnRightsOptions : RemoteCommandOptions {
 	/// <summary>Put the grantee's row at this position of the column's stored position order, 0 first.</summary>
 	[Option("position", Required = false, HelpText =
 		"Put the grantee's row at this position of the column's stored position order, 0 first: with --access it "
-		+ "places the row, alone it moves the grantee's row. The column's rows are then renumbered 0..n-1. Only an "
-		+ "explicit number is accepted; how Creatio ranks column rows against each other is not measured.")]
+		+ "places the row, alone it moves the grantee's row. The column's rows are then renumbered 0..n-1. Per "
+		+ "Creatio's documentation the higher row wins for a user in several roles (documented, not measured).")]
 	public int? Position { get; set; }
 
 	/// <summary>Turn the object's column permissions on: with a grant, or alone.</summary>
 	[Option("enable-column-permissions", Required = false, HelpText =
 		"Turn the object's column permissions ON: with --access it lets the grant turn them on; alone it turns them on. "
-		+ "Columns with stored rows keep them; every column with none gets the default row (All employees, edit), so "
-		+ "no column is locked. Without it, a grant on an object whose column permissions are off is refused.")]
+		+ "Rows kept on columns since a disable apply again; every column with none gets the default row (All "
+		+ "employees: edit), named in the output. Preview first. Without it, a grant on an object whose column "
+		+ "permissions are off is refused.")]
 	public bool EnableColumnPermissions { get; set; }
 
 	/// <summary>Turn the object's column permissions off; a call of its own that changes no row.</summary>
@@ -146,14 +147,6 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				requestOptions, _logger, out granteeName)) {
 			return 1;
 		}
-		// A write holds the object's lease from its first read to its read-back, shared with set-object-rights and
-		// set-default-record-rights: an overlapping write of the object would plan on a state this one is changing. The
-		// object is named by its code (a title is refused below), so the lease is keyed by it before anything is read.
-		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, input.Named, options.Preview, _logger,
-				out IDisposable held)) {
-			return 1;
-		}
-		using IDisposable lease = held;
 		if (!TryReadObject(input.Named, requestOptions, out string schemaName, out ObjectRightsInfo before)) {
 			return 1;
 		}
@@ -164,24 +157,30 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ "save is built from them, so nothing was changed.");
 			return 1;
 		}
-		// While the switch is on the service lists every restricted column; storage must say the same, or a save built
-		// from a storage read that missed rows would send the missed columns with none and lock them.
+		// Every call but a disable needs the schema's columns; a disable sends no list and reads them only to name the
+		// columns it reports, so a failed read there is not a refusal.
+		if (!ObjectRightsCommandInput.TryReadSchemaColumns(_columnManager, schemaName, requestOptions,
+				out IReadOnlyList<EntitySchemaPropertyColumnInfo> schemaColumns, out string schemaError)) {
+			if (!options.DisableColumnPermissions) {
+				_logger.WriteError($"Error: the columns of {label} could not be read: {schemaError}. A save names every "
+					+ "column with rows, so nothing was changed.");
+				return 1;
+			}
+			schemaColumns = [];
+		}
+		IReadOnlySet<Guid> schemaColumnUIds = options.DisableColumnPermissions
+			? null
+			: schemaColumns.Select(entry => entry.UId).ToHashSet();
+		IReadOnlyDictionary<Guid, string> codes =
+			schemaColumns.GroupBy(entry => entry.UId).ToDictionary(group => group.Key, group => group.First().Name);
+		List<string> storageFacts = StorageFacts(stored, schemaColumnUIds);
+		// While the switch is on the service lists every restricted column of the schema; storage must say the same, or a
+		// save built from a storage read that missed rows would send the missed columns with none, erasing their rows.
 		if (!input.SwitchOnly && before.AdministratedByColumns == true
-			&& !NoDisagreement(label, ColumnRightsCrossCheck.Disagreements(before.Columns ?? [], stored),
-				"what the service lists")) {
+			&& !NoDisagreement(label, ColumnRightsCrossCheck.Disagreements(before.Columns ?? [], stored, schemaColumnUIds),
+				"what the service lists", storageFacts)) {
 			return 1;
 		}
-		// A disable sends no list and needs no column of the schema; every other call does.
-		IReadOnlyList<EntitySchemaPropertyColumnInfo> schemaColumns = [];
-		if (!options.DisableColumnPermissions
-			&& !ObjectRightsCommandInput.TryReadSchemaColumns(_columnManager, schemaName, requestOptions,
-				out schemaColumns, out string schemaError)) {
-			_logger.WriteError($"Error: the columns of {label} could not be read: {schemaError}. A save names every column "
-				+ "with rows, so nothing was changed.");
-			return 1;
-		}
-		List<string> storageFacts = [$"Stored rows read: {stored.Sum(entry => entry.Rows.Count)} row(s) in "
-			+ $"{stored.Count(entry => entry.Rows.Count > 0)} column(s), counted."];
 		// Turning column permissions on has no service list to check storage against (it lists nothing while they are
 		// off), so the rows are read a second time, by the object's column UIds, and must agree.
 		if (options.EnableColumnPermissions && before.AdministratedByColumns == false
@@ -199,17 +198,19 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			KnownColumns(schemaColumns, before)), request);
 		Change change = new(schemaName, label, column,
 			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(granteeName)}' ({input.Grantee})", request, plan,
-			schemaColumns.GroupBy(entry => entry.UId).ToDictionary(group => group.Key, group => group.First().Name),
-			storageFacts);
+			codes, storageFacts, ServiceColumnsWithoutRows(before));
 		if (plan.Refused) {
 			_logger.WriteError($"Error: {RefusalMessage(change)} Nothing was changed.");
+			WriteFacts(storageFacts);
 			return 1;
 		}
 		if (!plan.Changes) {
 			_logger.WriteInfo($"{label}: {NoChangeReason(change)} (no change).");
+			WriteFacts(storageFacts);
 			return 0;
 		}
 		IReadOnlyList<string> facts = DescribePlan(change);
+		WarnAboutRowOrder(change);
 		if (options.Preview) {
 			_logger.WriteInfo($"PREVIEW — nothing was changed. {change.Summary}");
 			WriteFacts(facts);
@@ -223,9 +224,14 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			case ConfirmDecision.Refused:
 				return 1;
 		}
-		// The object and its rows are read once more right before the save (the lease covers clio calls only): a switch
-		// or a row another client changed since the plan would otherwise be overwritten with what was read then. The save
-		// goes out from this fresh read.
+		// The object's write lease, shared with set-object-rights and set-default-record-rights, is taken after the
+		// prompt — never held while a person answers it — and covers the fresh read, the save and the read-back.
+		if (!ObjectRightsCommandInput.TryTakeWriteLease(_lease, schemaName, false, _logger, out IDisposable held)) {
+			return 1;
+		}
+		using IDisposable lease = held;
+		// The object and its rows are read once more right before the save: a switch or a row another client changed
+		// since the plan would otherwise be overwritten with what was read then. The save goes out from this fresh read.
 		if (!TryReadFresh(schemaName, label, before, stored, requestOptions, out ObjectRightsInfo fresh)) {
 			return 1;
 		}
@@ -247,8 +253,43 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		return save.Succeeded ? ReportSaved(change, facts, readBack) : ReportFailedSave(change, save, readBack);
 	}
 
+	// What the plan was read from: the stored rows, counted, and the stored columns no longer in the schema, which the
+	// save sends back as stored.
+	private static List<string> StorageFacts(IReadOnlyList<ColumnRights> stored, IReadOnlySet<Guid> schemaColumns) {
+		List<string> facts = [$"Stored rows read: {stored.Sum(entry => entry.Rows.Count)} row(s) in "
+			+ $"{stored.Count(entry => entry.Rows.Count > 0)} column(s), counted."];
+		IReadOnlyList<ColumnRights> orphans = ColumnRightsCrossCheck.NotInSchema(stored, schemaColumns);
+		if (orphans.Count > 0) {
+			facts.Add($"Rows stored for {orphans.Count} column(s) that are not columns of the schema any more are sent back "
+				+ $"as stored: {string.Join(", ", orphans.Select(entry => entry.ColumnUId))}.");
+		}
+		return facts;
+	}
+
+	// The columns the service lists with no rows (switch on): every user follows the object's operation permissions
+	// there, per Creatio's documentation.
+	private static IReadOnlyList<Guid> ServiceColumnsWithoutRows(ObjectRightsInfo info) =>
+		info.AdministratedByColumns == true
+			? (info.Columns ?? []).Where(entry => entry.Rows.Count == 0 && entry.ColumnUId is not null)
+				.Select(entry => entry.ColumnUId!.Value).ToArray()
+			: [];
+
+	// A row an explicit --position puts below an All employees row with edit: per Creatio's documentation the higher row
+	// wins, so the restriction does not apply to members of All employees.
+	private void WarnAboutRowOrder(Change change) {
+		IReadOnlyList<ColumnRightRow> below = change.Plan.RestrictionsBelowAllEmployeesEdit;
+		if (change.Request.Position is null || below.Count == 0) {
+			return;
+		}
+		_logger.WriteWarning($"Warning: in column {change.ColumnLabel}, All employees has edit at a position before "
+			+ $"{FormatRows(below)}. Per Creatio's documentation the higher row wins for a user in several roles "
+			+ "(documented, not measured), so that restriction does not apply to members of All employees. Put a "
+			+ "restriction first (--position 0, or no --position).");
+	}
+
 	// Writes the disagreements as the refusal; true when there is none.
-	private bool NoDisagreement(string label, IReadOnlyList<string> disagreements, string against) {
+	private bool NoDisagreement(string label, IReadOnlyList<string> disagreements, string against,
+		IReadOnlyList<string> storageFacts) {
 		if (disagreements.Count == 0) {
 			return true;
 		}
@@ -256,13 +297,20 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			+ $"{string.Join("; ", disagreements.Take(10))}"
 			+ (disagreements.Count > 10 ? $"; and {disagreements.Count - 10} more" : "")
 			+ ". A save is built from storage, so nothing was changed. Check the object with get-column-rights.");
+		WriteFacts(storageFacts);
 		return false;
 	}
 
-	// The second read of the rows, by the object's column UIds: its rows for this object must be the first read's.
-	// Rows of other objects that share inherited columns come back too; they are counted, not compared.
+	// The second read of the rows, by the object's column UIds: its rows for this object must be the first read's, and
+	// no row on one of the object's OWN columns may be stored under another schema (that would be this object's row
+	// under another UId). Rows of other objects on inherited columns, which every inheriting object shares, are counted.
 	private bool TryCorroborate(string label, Guid schemaUId, IReadOnlyList<EntitySchemaPropertyColumnInfo> schemaColumns,
 		IReadOnlyList<ColumnRights> stored, CreatioRequestOptions requestOptions, List<string> storageFacts) {
+		if (schemaColumns.Count == 0) {
+			_logger.WriteError($"Error: no column of {label} was read, so the stored rows cannot be read a second time by "
+				+ "column. Turning column permissions on builds the save from them, so nothing was changed.");
+			return false;
+		}
 		IReadOnlyList<StoredColumnRights> byColumn;
 		try {
 			byColumn = _storage.ReadStoredRowsByColumns(schemaColumns.Select(entry => entry.UId).ToArray(),
@@ -276,16 +324,28 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		ColumnRights[] own = byColumn.Where(entry => entry.SubjectSchemaUId == schemaUId).Select(entry => entry.Column)
 			.ToArray();
 		HashSet<Guid?> schemaColumnUIds = schemaColumns.Select(entry => (Guid?)entry.UId).ToHashSet();
+		HashSet<Guid?> ownColumnUIds = schemaColumns
+			.Where(entry => string.Equals(entry.Source, "own", StringComparison.OrdinalIgnoreCase))
+			.Select(entry => (Guid?)entry.UId).ToHashSet();
 		ColumnRights[] ownInSchema = stored.Where(entry => schemaColumnUIds.Contains(entry.ColumnUId)).ToArray();
-		if (!SameStorage(ownInSchema, own)) {
+		StoredColumnRights[] elsewhere = byColumn
+			.Where(entry => entry.SubjectSchemaUId != schemaUId && ownColumnUIds.Contains(entry.Column.ColumnUId))
+			.ToArray();
+		if (!SameStorage(ownInSchema, own) || elsewhere.Length > 0) {
 			_logger.WriteError($"Error: the stored column permission rows of {label} read by column UId differ from the "
-				+ "rows read by object: the storage read is not complete or consistent. Turning column permissions on "
-				+ "builds the save from it, so nothing was changed. Check the object with get-column-rights.");
+				+ "rows read by object"
+				+ (elsewhere.Length > 0
+					? $" (rows of its own column(s) {string.Join(", ", elsewhere.Select(entry => entry.Column.ColumnUId).Distinct())} "
+						+ $"are stored under another schema: {string.Join(", ", elsewhere.Select(entry => entry.SubjectSchemaUId).Distinct())})"
+					: "")
+				+ ": the storage read is not complete or consistent. Turning column permissions on builds the save from "
+				+ "it, so nothing was changed. Check the object with get-column-rights.");
+			WriteFacts(storageFacts);
 			return false;
 		}
 		int others = byColumn.Where(entry => entry.SubjectSchemaUId != schemaUId).Sum(entry => entry.Column.Rows.Count);
 		storageFacts.Add("A second read by the object's column UIds found the same rows"
-			+ (others > 0 ? $" (and {others} row(s) of other objects that share inherited columns)." : "."));
+			+ (others > 0 ? $" (and {others} row(s) of other objects on inherited columns, which they share)." : "."));
 		return true;
 	}
 
@@ -361,7 +421,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	// Everything the output of one call is rendered from.
 	private sealed record Change(string SchemaName, string Label, ColumnTarget Column, string GranteeLabel,
 		ColumnRightsChangeRequest Request, ColumnRightsPlan Plan, IReadOnlyDictionary<Guid, string> Codes,
-		IReadOnlyList<string> StorageFacts) {
+		IReadOnlyList<string> StorageFacts, IReadOnlyList<Guid> ServiceColumnsWithoutRows) {
 
 		public string ColumnLabel => Column is null ? null : FormatColumn(Column.Code, Column.Caption);
 
@@ -620,16 +680,23 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			facts.Add($"Column permissions on {change.Label} are turned OFF: every column is then governed only by object "
 				+ $"and record permissions. The stored rows are kept, not applied ({storedColumns} column(s) with rows); "
 				+ "no column list is sent.");
+			if (change.ServiceColumnsWithoutRows.Count > 0) {
+				facts.Add($"Columns with no rows ({change.ServiceColumnsWithoutRows.Count}): "
+					+ $"{change.FormatColumns(change.ServiceColumnsWithoutRows)}. Every user follows the object's operation "
+					+ "permissions there (Creatio documentation); turning column permissions on again through clio gives "
+					+ "them the default row (All employees: edit).");
+			}
 		}
 		if (!change.Request.SwitchOnly) {
 			facts.Add($"Column {change.ColumnLabel}, stored rows before: {FormatRows(plan.ColumnRowsBefore)}.");
 			facts.Add($"Column {change.ColumnLabel}, stored rows after: {FormatRows(plan.ColumnRowsAfter)}.");
-			IReadOnlyList<ColumnRightRow> below = plan.RestrictionsBelowAllEmployeesEdit;
-			if (below.Count > 0) {
-				facts.Add($"Warning: in column {change.ColumnLabel}, All employees has edit at a position before "
-					+ $"{FormatRows(below)}. Which row wins for a member of both is not measured for columns, so that "
-					+ "restriction may not apply to members of All employees; to be safe put a restriction first "
-					+ "(--position 0).");
+			bool added = change.Request.Access is not null
+				&& plan.ColumnRowsBefore.All(row => row.GranteeId != change.Request.Grantee);
+			if (added) {
+				facts.Add(change.Request.Position is { } named
+					? $"The new row goes to position {named}, as named; the rows are renumbered 0..n-1."
+					: "The new row goes to position 0, the top: per Creatio's documentation the higher row wins for a user "
+						+ "in several roles. The other rows move down one.");
 			}
 		}
 		if (plan.RewritesColumns) {
@@ -639,8 +706,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ "edit), which a default column already has.");
 			IReadOnlyList<Guid> kept = plan.ColumnsKeptWithoutRows;
 			if (kept.Count > 0) {
-				facts.Add($"Sent with no rows, kept that way ({kept.Count}; per Creatio's documentation only system "
-					+ $"administrators can access a column with no rows): {change.FormatColumns(kept)}.");
+				facts.Add($"Sent with no rows, kept that way ({kept.Count}; every user follows the object's operation "
+					+ $"permissions there, per Creatio's documentation): {change.FormatColumns(kept)}.");
 			}
 			if (plan.DefaultedColumns.Count > 0) {
 				facts.Add($"Get the default row (All employees: edit) because they have no rows now "

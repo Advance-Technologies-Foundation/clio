@@ -14,8 +14,9 @@ Read-only companion of `get-object-rights` for the **column** (field-level) laye
 permissions" is ON (from the `RightManagementService.svc/GetAdministratedObject` read) and, per column, the rows
 stored in **`VwSysEntitySchemaColumnRight`**, in **stored position order**. Storage is read because
 `GetAdministratedObject` filters: while the switch is ON it omits a column whose only row is the default (All
-employees, edit), and while it is OFF it lists no column. Which row wins for a user in several roles is not measured
-for columns, so the order claims nothing more.
+employees, edit), and while it is OFF it lists no column. Per Creatio's "Column permissions" documentation the higher row
+wins for a user in several roles (**documented, not measured**); users and roles with no row in a column follow the
+object's operation permissions, and object operation and record permissions outrank column permissions.
 
 The object is named by its **code** (entity schema name), and the code always wins. When no object has that code,
 the object whose **title** it is is read, and the output says so; when several objects have that title, the call is
@@ -37,10 +38,9 @@ Per object the output is one of:
   not applied.` The stored rows are listed after it.
 - `Column permissions: ON. Columns with rows:` followed by each column whose stored rows are not just the default, with
   its rows (or `No column has rows other than the default row`); then `Default row only (All employees: edit), not a
-  restriction for members of All employees (N): <columns>` (external/portal users are not in All employees); then `No rows - per Creatio's documentation only system administrators can access these
-  columns (N): <columns>` for the schema's columns with no stored row. Creatio Academy's column permissions
-  documentation states that for a column with no rows "users, except for system administrators, will not be able to
-  access that column". Long column lists are cut after 20.
+  restriction for members of All employees (N): <columns>` (external/portal users are not in All employees); then
+  `No rows - every user follows the object's operation permissions (Creatio documentation) (N): <columns>` for the
+  schema's columns with no stored row. Long column lists are cut after 20.
 - `Column permissions: unknown — the service did not return the column switch (administratedByColumns).` Stored rows,
   if any, are listed after it. It is never reported as OFF.
 
@@ -49,9 +49,8 @@ While OFF, the columns whose only stored row is the default are summarised the s
 While ON, the stored rows are checked against what the service lists (every restricted column with its rows, a column
 with no rows with none, a default column omitted). When they disagree, or the stored rows cannot be read (they are
 counted first, and a short read is refused), a warning says so and the `GetAdministratedObject` answer is shown
-instead: while
-ON it does not list a default column at all, and the columns it lists with no rows are shown as accessible only to
-system administrators; while OFF it lists no column.
+instead: while ON it does not list a default column at all, and the columns it lists with no rows are shown as having
+no rows; while OFF it lists no column.
 
 With `--column` only that column is shown, named by its code as the schema spells it: its rows, or that it has the
 default row only, or no rows. When `--column` is omitted, every column with rows is listed. With `--grantee`, per column, the rows

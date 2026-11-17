@@ -124,6 +124,11 @@ NOTES
     code), shared with set-object-rights and set-column-rights: a second write of the same
     object while one runs is refused, and nothing is changed. A preview takes none.
 
+    A switch the call does not change (column or record permissions for set-object-rights; column or
+    operation permissions for set-default-record-rights) is sent as the call read it: one another client
+    changed between the read and the save is sent back, and the read-back then fails the call, naming
+    it.
+
     Then apply the rules to existing records only when the user decides to:
     apply-default-record-rights. Read the result back with get-object-rights.
 

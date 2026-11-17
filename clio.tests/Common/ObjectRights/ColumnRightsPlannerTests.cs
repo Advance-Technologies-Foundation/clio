@@ -122,8 +122,8 @@ public class ColumnRightsPlannerTests {
 		ColumnRightsPlan plan = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, enable: true));
 
 		// Assert
-		Listed(plan, Amount).Rows.Should().Equal(new[] { ColumnRightsDefaults.Row, Row(Role, 1, ColumnRightLevel.Denied) },
-			because: "the column keeps the default row the service would give it, and the grant is added after it");
+		Listed(plan, Amount).Rows.Should().Equal(new[] { Row(Role, 0, ColumnRightLevel.Denied), ColumnRightsDefaults.Row with { Position = 1 } },
+			because: "the column keeps the default row the service would give it, and the grant goes above it, to the top");
 	}
 
 	[Test]
@@ -157,7 +157,7 @@ public class ColumnRightsPlannerTests {
 	}
 
 	[Test]
-	[Description("A new row goes after the last stored row; a level change keeps every position; a placement, a move and a removal renumber 0..n-1.")]
+	[Description("A new row without a position goes to the top (per Creatio's documentation the higher row wins) and the others move down; a level change keeps every position; a placement, a move and a removal renumber 0..n-1.")]
 	public void Plan_ShouldPlaceRowsLikeTheDesigner_WhenTheColumnHasRows() {
 		// Arrange
 		ColumnRights amount = Column(Amount, Row(Admins, 0, ColumnRightLevel.Edit), Row(Employees, 3, ColumnRightLevel.Denied));
@@ -172,8 +172,8 @@ public class ColumnRightsPlannerTests {
 		ColumnRightsPlan remove = _planner.Plan(Layer(true, Known(Amount), withRole), Remove());
 
 		// Assert
-		append.ColumnRowsAfter.Should().Equal(new[] { Row(Admins, 0, ColumnRightLevel.Edit),
-			Row(Employees, 3, ColumnRightLevel.Denied), Row(Role, 4, ColumnRightLevel.Read) }, because: "appended after the last");
+		append.ColumnRowsAfter.Should().Equal(new[] { Row(Role, 0, ColumnRightLevel.Read), Row(Admins, 1, ColumnRightLevel.Edit),
+			Row(Employees, 2, ColumnRightLevel.Denied) }, because: "a new row goes to the top and the rows are renumbered");
 		place.ColumnRowsAfter.Should().Equal(new[] { Row(Admins, 0, ColumnRightLevel.Edit), Row(Role, 1, ColumnRightLevel.Read),
 			Row(Employees, 2, ColumnRightLevel.Denied) }, because: "placed and renumbered");
 		level.ColumnRowsAfter.Should().Equal(new[] { Row(Admins, 0, ColumnRightLevel.Edit),
@@ -297,19 +297,19 @@ public class ColumnRightsPlannerTests {
 	}
 
 	[Test]
-	[Description("A restriction placed after an All employees row with edit is reported, since which row wins is not measured.")]
-	public void Plan_ShouldReportARestrictionBelowAllEmployeesEdit_WhenItIsAppendedAfterTheDefault() {
+	[Description("A restriction an explicit position puts after an All employees row with edit is reported (per Creatio's documentation the higher row wins); one placed without a position goes to the top and is not.")]
+	public void Plan_ShouldReportARestrictionBelowAllEmployeesEdit_WhenAPositionPutsItThere() {
 		// Arrange
 		ColumnRightsLayer layer = Layer(false, Known(Amount));
 
 		// Act
-		ColumnRightsPlan below = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, enable: true));
-		ColumnRightsPlan first = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, position: 0, enable: true));
+		ColumnRightsPlan below = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, position: 1, enable: true));
+		ColumnRightsPlan first = _planner.Plan(layer, Grant(ColumnRightLevel.Denied, enable: true));
 
 		// Assert
 		below.RestrictionsBelowAllEmployeesEdit.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
 			because: "the deny row sits after All employees: edit");
-		first.RestrictionsBelowAllEmployeesEdit.Should().BeEmpty(because: "a restriction placed first is not below it");
+		first.RestrictionsBelowAllEmployeesEdit.Should().BeEmpty(because: "a new row without a position goes to the top");
 	}
 
 	// The planner's own row lookup, for the assertions.
@@ -476,5 +476,23 @@ public class ColumnRightsCrossCheckTests {
 		disagreements.Should().Contain(line => line.Contains(Description.ToString()), because: "the column listed empty is named");
 		disagreements.Should().Contain(line => line.Contains(Name.ToString()) && line.Contains("omits"),
 			because: "an omitted column must hold only the default row");
+	}
+
+	[Test]
+	[Description("Stored rows for a column that is not in the schema any more are classed apart: not a disagreement, and named so they are sent back as stored.")]
+	public void Disagreements_ShouldClassAColumnNotInTheSchemaApart_WhenTheSchemaIsKnown() {
+		// Arrange
+		ColumnRights[] stored = [new(Name, null, [Deny])];
+		HashSet<Guid> schema = [Amount, Description];
+
+		// Act
+		var withSchema = ColumnRightsCrossCheck.Disagreements([], stored, schema);
+		var withoutSchema = ColumnRightsCrossCheck.Disagreements([], stored);
+		var orphans = ColumnRightsCrossCheck.NotInSchema(stored, schema);
+
+		// Assert
+		withSchema.Should().BeEmpty(because: "the service lists only the schema's columns");
+		withoutSchema.Should().ContainSingle(because: "without the schema every stored column is held to the service's list");
+		orphans.Should().Equal(stored, because: "the column's rows are named and sent back as stored");
 	}
 }

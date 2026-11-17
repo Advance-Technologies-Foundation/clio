@@ -67,7 +67,8 @@ public static class ColumnRightLevelNames {
 
 /// <summary>
 /// One column permission row: a role's (or user's) access level to one column at a stored <paramref name="Position"/>.
-/// Which row wins for a user in several roles is not measured for columns, so the position is only the stored order. A
+/// Per Creatio's documentation the higher row (lower position) wins for a user in several roles; that is documented, not
+/// measured, and the position is reported as the stored order (0 first). A
 /// row read back carries no id of its own.
 /// </summary>
 /// <param name="GranteeId">The SysAdminUnit id of the role or user the row is for.</param>

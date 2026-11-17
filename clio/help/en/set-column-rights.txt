@@ -22,54 +22,63 @@ DESCRIPTION
     --column is the column's code, resolved to its UId through the entity schema (every package layer
     included). --grantee is a SysAdminUnit id, which must exist.
 
-    --access sets the grantee's row in the column: a grantee with no row gets one after the column's last
-    row; an existing row keeps its place and gets the new level. --position N places the row (with
-    --access) or moves the grantee's row (alone) to N in the column's stored position order, 0 first, and
-    the column's rows are renumbered 0..n-1. Only an explicit number is accepted: how Creatio ranks the
-    rows of one column against each other is not measured, so the command claims no precedence.
-    --remove-row deletes the grantee's row.
+    How Creatio applies the rows (its "Column permissions" documentation): the higher a row is in a
+    column's list, the higher its priority, so a user in several roles gets the access of the highest
+    of their rows - this is documented, not measured; positions are reported as the stored order, 0
+    first. Users and roles with no row in a column follow the object's operation permissions, and
+    object operation and record permissions outrank column permissions. So a column with no rows leaves
+    every user to the object's operation permissions. In the designer a role added to a column starts
+    with edit.
+
+    --access sets the grantee's row in the column: a grantee with no row gets one at the top (position
+    0, which wins), and the other rows move down one; an existing row keeps its place and gets the new
+    level. --position N places the row (with --access) or moves the grantee's row (alone) to N, and the
+    column's rows are renumbered 0..n-1; when that puts a restriction below an All employees row with
+    edit, a warning says the restriction does not apply to members of All employees. --remove-row
+    deletes the grantee's row; a removal of a row the grantee no longer has is no change.
 
     The switch changes only through its flags. A grant while the object's column permissions are OFF is
     refused unless --enable-column-permissions is passed with it; a move or a removal while they are
-    OFF is refused (turn them on first). --enable-column-permissions alone turns them on;
-    --disable-column-permissions alone turns them off and keeps every stored row, not applied.
+    OFF is refused (turn them on first). --enable-column-permissions alone turns them on: the rows kept
+    on columns since a disable apply again, and every column with no stored row gets the default row -
+    run it with --preview first, which names both. --disable-column-permissions alone turns them off and
+    keeps every stored row, not applied; it names the columns with no rows, which a later enable
+    through clio gives the default row.
 
     Measured on storage (VwSysEntitySchemaColumnRight): a save with a column list gives each column in
     the list exactly the listed rows and every other column of the object the default row (All
     employees, edit); a save with no list leaves the stored rows alone. So every save that names
     columns is built from STORAGE: every column whose stored rows are not exactly the default, as
-    stored, with the named column changed. While column permissions are ON, a column with no rows is
-    sent with none, so it stays as it is (per Creatio's documentation only system administrators can
-    access it). When the call turns them ON, a column with no rows is not sent, so it gets the default
-    row and no column is locked; the output names those columns. A column whose last row is removed gets
-    the default row; removing the only row of a column that has just the default is refused, since the
+    stored, with the named column changed; stored rows of a column that is not in the schema any more
+    are sent back as stored. While column permissions are ON, a column with no rows is sent with none,
+    so it stays as it is. When the call turns them ON, a column with no rows is not sent, so it gets
+    the default row. A column whose last row is removed gets the default row, which widens access (the
+    summary says so); removing the only row of a column that has just the default is refused, since the
     default would come back. A disable sends no list.
 
     Before planning, while column permissions are ON, the stored rows are checked against what the
     service lists (every restricted column with its rows, a column with no rows with none, a default
     column omitted); any disagreement refuses the call, since a save built from a short storage read
-    would lock the columns it missed. Storage is counted before it is read, and a read with fewer rows
-    than the count is refused.
+    would send the missed columns with no rows, erasing their rows. Storage is counted before it is
+    read, and a read with fewer rows than the count is refused. When the call turns column permissions
+    on, the service lists nothing to check against, so the rows are read a second time by the object's
+    column UIds: rows of this object the first read missed, or rows of the object's own columns stored
+    under another schema, refuse the call. The plan's facts, and a refusal or a no-change answer after
+    the stored rows were read, say how many stored rows the plan was read from.
 
-    Calls for one object must not run in parallel. A write takes a lease on the object (keyed by the
-    environment's resolved URL and the object's code) for its whole run, shared with set-object-rights
-    and set-default-record-rights, and a second write of the object while it is held is refused. Right
-    before the save the object and its stored rows are read again; if any of its three switches (column,
+    Calls for one object must not run in parallel. Right after the confirmation (never across the
+    prompt) a write takes a lease on the object - keyed by the environment's resolved URL and the
+    object's code; shared with set-object-rights and set-default-record-rights, among clio processes of
+    one OS user (on Windows, of the machine) - and a second write of the object while it is held is
+    refused. Then the object and its stored rows are read again; if any of its three switches (column,
     operation, record permissions), its schema UId or a stored row changed since the plan, nothing is
     saved. The save goes out from that fresh read.
 
-    When the call turns column permissions on, the service lists nothing to check storage against, so
-    the rows are read a second time by the object's column UIds; rows of this object the first read
-    missed refuse the call. Every output says how many stored rows the plan was read from.
-
     The service answers success whatever it stores, so after every save the switches and the stored
-    rows are read back, counted. After a save that names columns, any difference from the plan fails the call,
-    and the error says whether nothing was applied or the change was partially applied; a changed
-    operation or record switch fails it too. After a disable (no list), a changed stored row is only a
-    warning: another client may have changed it.
-
-    Which row wins for a user in several roles is not measured for columns. When a restriction ends up
-    after an All employees row with edit, the output warns; put a restriction first (--position 0).
+    rows are read back, counted. After a save that names columns, any difference from the plan fails
+    the call, and the error says whether nothing was applied or the change was partially applied; a
+    changed operation or record switch fails it too. After a disable (no list), a changed stored row is
+    only a warning: another client may have changed it.
 
     The rows are written to the environment only. They are NOT bound to a package: how Creatio carries
     column permissions in a package is not established yet.
@@ -85,7 +94,8 @@ OPTIONS
         SysAdminUnit id (role or user) whose row changes. Required unless the call only turns the switch.
 
     --access
-        denied, read or edit: the level the grantee's row gets.
+        denied, read or edit: the level the grantee's row gets. A new row goes to the top (position 0)
+        unless --position is given.
 
     --position
         Position in the column's stored position order, 0 first. With --access it places the row; alone it
@@ -97,7 +107,8 @@ OPTIONS
         so. A call of its own: not with --access, --position or a switch flag.
 
     --enable-column-permissions
-        Turn column permissions ON: with --access, or alone.
+        Turn column permissions ON: with --access, or alone. Rows kept on columns since a disable apply
+        again, and every column with no stored row gets the default row; run with --preview first.
 
     --disable-column-permissions
         Turn column permissions OFF, keeping every stored row. A call of its own.
@@ -116,7 +127,7 @@ EXIT CODES
         preview ran, or the prompt was answered no.
     1   An argument was missing, invalid or in a combination that is refused; the object, the column or
         the grantee was not found; several objects have the title; the plan was refused (the switch is
-        OFF, a move or removal while OFF, the grantee has no row or several rows in the column, the
+        OFF, a move or removal while OFF, no row of the grantee to move, several rows of it, the
         position is past the end, the removal of a default-only column's row; the read carried no
         readable switch; a stored row has no readable position, level or grantee, so it could not be sent
         back exactly as stored); storage disagrees with the service, is cut short, or cannot be read; the
@@ -128,11 +139,11 @@ EXAMPLES
     Preview denying a role the Amount column, turning column permissions on:
         clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --enable-column-permissions --preview -e dev
 
-    Deny a role the column, first in the column's position order (recommended for a restriction):
-        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --position 0 --confirm -e dev
+    Deny a role the column (a new row goes to the top, position 0, which per the documentation wins):
+        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --confirm -e dev
 
-    Let a role read the column, first in the column's position order:
-        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access read --position 0 --confirm -e dev
+    Let a role read the column, placed second:
+        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access read --position 1 --confirm -e dev
 
     Remove the role's row:
         clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --remove-row --confirm -e dev

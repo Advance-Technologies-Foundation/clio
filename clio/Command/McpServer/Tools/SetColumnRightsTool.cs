@@ -49,10 +49,10 @@ public sealed class SetColumnRightsTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Changes column permissions. Sets one role's access (denied/read/edit) to ONE column of ONE object, moves or removes that role's row, or turns the object's column permissions on or off - the COLUMN (field-level) layer (DESTRUCTIVE - changes access rights). " +
 		"entity-schema-name is the object's CODE: a title is refused, naming the code to pass. column is the column CODE. grantee is a SysAdminUnit id (names are not unique); it must exist. " +
-		"access sets the grantee's row: a new row goes after the column's last row, an existing one keeps its place. position (0 first) places or, alone, moves the row in the column's stored position order and renumbers its rows 0..n-1; how Creatio ranks column rows is not measured. remove-row=true deletes the grantee's row (a repeated removal is no change); removing a column's last row other than the default leaves it the default (All employees: edit), which WIDENS access. " +
-		"The switch changes only through its flags: a grant while column permissions are OFF is refused unless enable-column-permissions is passed; a move or a removal while OFF is refused; enable-column-permissions turns them on and gives EVERY column with no stored row the default row (All employees: edit), naming those columns in the result; disable-column-permissions ALONE turns them off (rows kept, not applied). " +
-		"A save with a column list gives every column it does not name the default row (All employees, edit), so the call builds the list from storage: every column whose stored rows are not the default, the changed one with its new rows; a column with no rows is sent with none while column permissions are ON, and gets the default when the call turns them on (no column is locked; the result names them). A column emptied by remove-row gets the default. Disable sends no list: rows are kept, not applied. The call then reads storage back: a difference fails it. " +
-		"Calls for one object must NOT run in parallel: a second call while one runs is refused, and a save is aborted when the stored rows changed since they were read. While ON, the call is refused when storage disagrees with the service's list. Put a restriction at position 0: which row wins is not measured, and a row below All employees: edit is warned about. " +
+		"access sets the grantee's row: a new row goes to the TOP (position 0) unless position is given, an existing one keeps its place. Per Creatio's documentation the higher row wins for a user in several roles (documented, not measured); a column with no rows leaves every user to the object's operation permissions. position (0 first) places or, alone, moves the row and renumbers the column's rows 0..n-1; one that puts a restriction below All employees: edit is warned about. remove-row=true deletes the grantee's row (a repeated removal is no change); removing a column's last row other than the default leaves it the default (All employees: edit), which WIDENS access. " +
+		"The switch changes only through its flags: a grant while column permissions are OFF is refused unless enable-column-permissions is passed; a move or a removal while OFF is refused; enable-column-permissions turns them on and gives EVERY column with no stored row the default row (All employees: edit), naming those columns in the result, and rows kept on other columns since a disable apply again - run preview=true before an enable; disable-column-permissions ALONE turns them off (rows kept, not applied; the result names the columns with no rows, which a later enable through clio gives the default row). " +
+		"A save with a column list gives every column it does not name the default row, so the call builds the list from storage: every column whose stored rows are not the default, the changed one with its new rows; a column with no rows is sent with none while ON. The call then reads storage back: a difference fails it. " +
+		"Calls for one object must NOT run in parallel: a second write of the object (also set-object-rights, set-default-record-rights) while one runs is refused, and a save is aborted when the object or its stored rows changed since they were read. While ON, the call is refused when storage disagrees with the service's list. " +
 		"The rows are written to the environment only, NOT bound to a package. preview=true writes nothing and shows the column's rows before and after. Read with get-column-rights. " +
 		"Unknown argument names are REFUSED before any read or write.")]
 	public ObjectRightsToolResponse SetColumnRights(
@@ -130,7 +130,7 @@ public sealed record SetColumnRightsArgs(
 	string? Grantee = null,
 
 	[property: JsonPropertyName("access")]
-	[property: Description("Access the grantee's row gets: denied, read or edit. Adds the row after the column's last row, or changes the existing row's level in place.")]
+	[property: Description("Access the grantee's row gets: denied, read or edit. A grantee with no row gets one at the top (position 0, which per Creatio's documentation wins) unless position is given; an existing row keeps its place and gets the new level.")]
 	string? Access = null,
 
 	[property: JsonPropertyName("remove-row")]
@@ -142,11 +142,11 @@ public sealed record SetColumnRightsArgs(
 	int? Position = null,
 
 	[property: JsonPropertyName("enable-column-permissions")]
-	[property: Description("Turn the object's column permissions ON (default false, which refuses a grant while they are off): with access, or alone. Every column with no stored row gets the default row (All employees: edit); the result names them.")]
+	[property: Description("Turn the object's column permissions ON (default false, which refuses a grant while they are off): with access, or alone. Rows kept on columns since a disable apply again, and every column with no stored row gets the default row (All employees: edit); the result names both. Run with preview=true first.")]
 	bool? EnableColumnPermissions = null,
 
 	[property: JsonPropertyName("disable-column-permissions")]
-	[property: Description("Turn the object's column permissions OFF, keeping every stored row, not applied (default false). A call of its own.")]
+	[property: Description("Turn the object's column permissions OFF, keeping every stored row, not applied (default false). The result names the columns with no rows; a later enable through clio gives them the default row. A call of its own.")]
 	bool? DisableColumnPermissions = null,
 
 	[property: JsonPropertyName("preview")]

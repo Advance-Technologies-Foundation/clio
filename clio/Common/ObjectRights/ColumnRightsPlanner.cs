@@ -134,7 +134,8 @@ public sealed record ColumnRightsPlan(
 	public IReadOnlyList<ColumnRightRow> ColumnRowsAfter => RowsOf(ExpectedStored, ColumnUId);
 
 	/// <summary>The columns the list sends with no rows: columns that have none while column permissions are on, kept
-	/// that way (per Creatio's documentation only system administrators can access them).</summary>
+	/// that way (per Creatio's documentation every user then follows the object's operation permissions for
+	/// them).</summary>
 	public IReadOnlyList<Guid> ColumnsKeptWithoutRows =>
 		(SaveList ?? []).Where(column => column.Rows.Count == 0 && column.ColumnUId is not null)
 			.Select(column => column.ColumnUId!.Value).ToArray();
@@ -152,9 +153,9 @@ public sealed record ColumnRightsPlan(
 	public int MaxPosition { get; init; }
 
 	/// <summary>
-	/// Rows of the changed column that grant less than edit and sit after an All employees row with edit. Which row
-	/// wins for a user in several roles is not measured for columns, so such a restriction may never apply to members
-	/// of All employees; the output warns about it.
+	/// Rows of the changed column that grant less than edit and sit after an All employees row with edit. Per Creatio's
+	/// documentation the higher row wins for a user in several roles (documented, not measured), so such a restriction
+	/// does not apply to members of All employees; the output warns when an explicit position puts one there.
 	/// </summary>
 	public IReadOnlyList<ColumnRightRow> RestrictionsBelowAllEmployeesEdit {
 		get {
@@ -182,10 +183,11 @@ public interface IColumnRightsPlanner {
 	/// row change or an enable sends a column list built from STORAGE: every column whose stored rows are not exactly the
 	/// default, as stored, with the changed column's planned rows; a column that has no stored row is sent with none
 	/// while column permissions are on (so it stays as it is), and is left out when the call turns them on (so it gets
-	/// the default and no column is locked); a column the call empties is left out (it gets the default). A disable sends
-	/// no list. A level change keeps every position as stored; a new row goes after the column's last row; a placement, a
-	/// move and a removal renumber the column's rows 0..n-1. When the call turns column permissions on, a column with no
-	/// stored row starts from the default row it would get.
+	/// the default); a column the call empties is left out (it gets the default); a removal of a row the grantee no longer
+	/// has is no change. A disable sends no list. A level change keeps every position as stored; a new row without a
+	/// position goes to the top (position 0), which per Creatio's documentation wins; a new row with a position, a move
+	/// and a removal go where named; the column's rows are then renumbered 0..n-1. When the call turns column permissions
+	/// on, a column with no stored row starts from the default row it would get.
 	/// </summary>
 	/// <param name="layer">The switch, the stored rows and the known columns.</param>
 	/// <param name="request">The change.</param>
@@ -304,16 +306,17 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 		if (request.RemoveRow) {
 			return Renumber(rows.Where(row => row != existing));
 		}
-		ColumnRightRow changed = existing is null
-			? new ColumnRightRow(request.Grantee, request.GranteeName,
-				rows.Count == 0 ? 0 : rows.Max(row => row.Position ?? 0) + 1, request.Access)
-			: existing with { Level = request.Access ?? existing.Level };
-		if (request.Position is not { } position) {
-			// A level change or an appended row: every other row keeps its position as stored.
-			return rows.Where(row => row != existing).Append(changed).OrderBy(row => row.Position ?? 0).ToList();
+		if (existing is not null && request.Position is null) {
+			// A level change: the row and every other row keep their stored positions.
+			ColumnRightRow updated = existing with { Level = request.Access ?? existing.Level };
+			return rows.Select(row => row == existing ? updated : row).ToList();
 		}
+		ColumnRightRow changed = existing is null
+			? new ColumnRightRow(request.Grantee, request.GranteeName, 0, request.Access)
+			: existing with { Level = request.Access ?? existing.Level };
+		// A new row without a position goes to the top: per Creatio's documentation the higher row wins.
 		List<ColumnRightRow> ordered = rows.Where(row => row != existing).ToList();
-		ordered.Insert(position, changed);
+		ordered.Insert(request.Position ?? 0, changed);
 		return Renumber(ordered);
 	}
 
@@ -328,8 +331,8 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 
 /// <summary>
 /// Cross-checks the stored rows against <c>GetAdministratedObject</c> while column permissions are on, before a save is
-/// built from storage: a storage read that misses rows would otherwise send the columns it missed with no rows and lock
-/// them. Measured: while the switch is on the service lists every column with rows other than the default (with those
+/// built from storage: a storage read that misses rows would otherwise send the columns it missed with no rows, erasing
+/// their rows. Measured: while the switch is on the service lists every column with rows other than the default (with those
 /// rows), a column with no rows as <c>rights: []</c>, and omits a column whose only row is the default.
 /// </summary>
 public static class ColumnRightsCrossCheck {
@@ -338,13 +341,17 @@ public static class ColumnRightsCrossCheck {
 	/// Every disagreement between <paramref name="serviceListed"/> (the service's columns, switch on) and
 	/// <paramref name="stored"/>: a listed column whose stored rows differ from its listed rows, a column listed with
 	/// no rows that has stored rows, a stored column the service omits whose rows are not exactly the default, and a
-	/// listed column whose UId is not a GUID.
+	/// listed column whose UId is not a GUID. A stored column that is not a column of the schema any more is not one:
+	/// the service lists only the schema's columns, and such rows are sent back as stored (see
+	/// <see cref="NotInSchema"/>).
 	/// </summary>
 	/// <param name="serviceListed">The columns <c>GetAdministratedObject</c> returned.</param>
 	/// <param name="stored">The stored rows per column.</param>
+	/// <param name="schemaColumns">The schema's column UIds; <see langword="null"/> when not read, and then every stored
+	/// column is held to the service's list.</param>
 	/// <returns>The disagreements; empty when storage and the service agree.</returns>
 	public static IReadOnlyList<string> Disagreements(IReadOnlyList<ColumnRights> serviceListed,
-		IReadOnlyList<ColumnRights> stored) {
+		IReadOnlyList<ColumnRights> stored, IReadOnlySet<Guid> schemaColumns = null) {
 		List<string> disagreements = new();
 		ColumnRightsState storage = new(true, stored);
 		ColumnRightsState service = new(true, serviceListed);
@@ -361,7 +368,8 @@ public static class ColumnRightsCrossCheck {
 			}
 		}
 		HashSet<Guid?> listed = serviceListed.Select(column => column.ColumnUId).ToHashSet();
-		foreach (ColumnRights column in stored.Where(column => !listed.Contains(column.ColumnUId))) {
+		foreach (ColumnRights column in stored.Where(column => !listed.Contains(column.ColumnUId))
+				.Except(NotInSchema(stored, schemaColumns))) {
 			if (!ColumnRightsDefaults.IsDefaultOnly(column.Rows)) {
 				disagreements.Add($"column {column.ColumnUId}: storage has {Count(column.Rows)}, the service omits it "
 					+ "(which it does only for a column whose only row is the default)");
@@ -369,6 +377,18 @@ public static class ColumnRightsCrossCheck {
 		}
 		return disagreements;
 	}
+
+	/// <summary>The stored columns, with rows other than the default, that are not columns of the schema any more.</summary>
+	/// <param name="stored">The stored rows per column.</param>
+	/// <param name="schemaColumns">The schema's column UIds; <see langword="null"/> when not read (none is then
+	/// classed so).</param>
+	/// <returns>Those columns.</returns>
+	public static IReadOnlyList<ColumnRights> NotInSchema(IReadOnlyList<ColumnRights> stored,
+		IReadOnlySet<Guid> schemaColumns) =>
+		schemaColumns is null
+			? []
+			: stored.Where(column => column.ColumnUId is { } uId && !schemaColumns.Contains(uId)
+				&& column.Rows.Count > 0 && !ColumnRightsDefaults.IsDefaultOnly(column.Rows)).ToArray();
 
 	private static string Count(IReadOnlyList<ColumnRightRow> rows) => rows.Count == 1 ? "1 row" : $"{rows.Count} rows";
 }

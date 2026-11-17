@@ -201,6 +201,61 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 	// ---- the flow ----
 
 	[Test]
+	[Description("A write whose object's lease another call holds is refused before the object is read; a preview takes no lease.")]
+	public void Execute_ShouldRefuseWhileTheLeaseIsHeld_AndTakeNoneForAPreview() {
+		// Arrange
+		ObjectIs(Info(true));
+		_lease.Acquire(default).ReturnsForAnyArgs(_ => throw new InvalidOperationException("another call is changing"));
+		SetDefaultRecordRightsOptions preview = RuleOptions("read");
+		preview.Confirm = false;
+		preview.Preview = true;
+
+		// Act
+		_command.Execute(preview);
+		int previewLeases = ReceivedCallLog.CallsTo(_lease, nameof(IAdministratedObjectWriteLease.Acquire)).Count;
+		_reader.ClearReceivedCalls();
+		int exitCode = _command.Execute(RuleOptions("read,edit"));
+
+		// Assert
+		previewLeases.Should().Be(0, because: "a preview writes nothing");
+		exitCode.Should().Be(1, because: "two writes of one object would revert each other's switches");
+		_errors.Should().Contain(m => m.Contains("another call is changing"), because: "the refusal says why");
+		ReceivedCallLog.CallsTo(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().BeEmpty(
+			because: "nothing is read while another write runs");
+	}
+
+	[Test]
+	[Description("The lease a write takes is disposed after the read-back.")]
+	public void Execute_ShouldDisposeTheLease_WhenTheWriteEnds() {
+		// Arrange
+		IDisposable held = Substitute.For<IDisposable>();
+		_lease.Acquire(default).ReturnsForAnyArgs(held);
+		ObjectIs(Info(true));
+
+		// Act
+		_command.Execute(RuleOptions("read,edit"));
+
+		// Assert
+		ReceivedCallLog.CallsTo(held, nameof(IDisposable.Dispose)).Should().ContainSingle(
+			because: "the next write of the object may run");
+	}
+
+	[Test]
+	[Description("A read-back where the operation switch — which set-default-record-rights does not change — moved fails the call, naming it.")]
+	public void Execute_ShouldFail_WhenTheOperationSwitchChangedUnderTheCall() {
+		// Arrange
+		ObjectIs(Info(true), Info(true) with { AdministratedByOperations = false });
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read,edit"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a switch this call does not change moved between its read and its read-back");
+		_errors.Should().Contain(m => m.Contains("operation permissions are OFF (were ON)") && m.Contains("does not change"),
+			because: "the failure names the switch");
+	}
+
+	[Test]
 	[Description("A confirmed write takes the object's write lease, keyed by its code, shared with set-object-rights and set-column-rights.")]
 	public void Execute_ShouldTakeTheObjectsWriteLease_WhenWriting() {
 		// Arrange

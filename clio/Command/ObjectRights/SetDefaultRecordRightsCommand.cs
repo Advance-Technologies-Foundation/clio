@@ -187,6 +187,12 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 		// After a failed save the read-back is one attempt as well, so on MCP the answer still arrives within the budget.
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName,
 			save.Succeeded ? requestOptions : requestOptions with { MaxAttempts = 1 });
+		string otherSwitches = ObjectRightsCommandInput.DescribeOtherSwitchChanges(before, actual, operations: true,
+			records: false, columns: true);
+		if (otherSwitches is not null) {
+			_logger.WriteError($"Error: '{schemaName}': {otherSwitches}");
+			return 1;
+		}
 		return save.Succeeded ? ReportSaved(change, facts, actual) : ReportFailedSave(change, facts, save, actual);
 	}
 

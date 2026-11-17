@@ -154,6 +154,40 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 	}
 
 	[Test]
+	[Description("A read-back where the column switch — which set-object-rights does not change — moved fails the call, naming it: the save sent the switch back as first read.")]
+	public void Execute_ShouldFail_WhenTheColumnSwitchChangedUnderTheCall() {
+		// Arrange
+		ObjectRightsInfo before = Info(true, Row(AllEmployees, 0, "RCED")) with { AdministratedByColumns = false };
+		ObjectRightsInfo readBack = Info(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "RE"))
+			with { AdministratedByColumns = true };
+		ObjectIs(before, readBack);
+
+		// Act
+		int exitCode = _command.Execute(Options("read,edit"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a switch this call does not change moved between its read and its read-back");
+		_errors.Should().Contain(m => m.Contains("column permissions are ON (were OFF)") && m.Contains("does not change"),
+			because: "the failure names the switch");
+	}
+
+	[Test]
+	[Description("The lease a write takes is disposed after the read-back and the binding.")]
+	public void Execute_ShouldDisposeTheLease_WhenTheWriteEnds() {
+		// Arrange
+		IDisposable held = Substitute.For<IDisposable>();
+		_lease.Acquire(default).ReturnsForAnyArgs(held);
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		_command.Execute(Options("read,edit"));
+
+		// Assert
+		ReceivedCallLog.CallsTo(held, nameof(IDisposable.Dispose)).Should().ContainSingle(
+			because: "the next write of the object may run");
+	}
+
+	[Test]
 	[Description("A write whose object's lease another call holds is refused before the object is read.")]
 	public void Execute_ShouldRefuse_WhenAnotherWriteHoldsTheLease() {
 		// Arrange

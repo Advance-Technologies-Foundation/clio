@@ -273,6 +273,10 @@ public sealed class SetColumnRightsToolTests {
 		description.Should().Contain("gives EVERY column with no stored row the default row (All employees: edit), naming those columns",
 			because: "a host approving an enable must see that columns with no rows get the default");
 		description.Should().Contain("must NOT run in parallel", because: "overlapping calls on one object are refused");
+		description.Should().Contain("rows kept on other columns since a disable apply again - run preview=true before an enable",
+			because: "a host approving an enable must see that stored restrictions take effect again");
+		description.Should().NotContain("system administrators",
+			because: "per Creatio's documentation a column with no rows leaves every user to the object's operation permissions");
 	}
 
 	[Test]
@@ -289,7 +293,7 @@ public sealed class SetColumnRightsToolTests {
 	}
 
 	[Test]
-	[Description("Binds every set-column-rights argument from kebab-case JSON and maps it onto a confirmed command call with the request limits of set-object-rights.")]
+	[Description("Binds every set-column-rights argument from kebab-case JSON and maps it onto a confirmed command call with the tool's own request limits (20 s each, 100 s in all).")]
 	public void SetColumnRightsArgs_ShouldBindAndMapEveryArgument_WhenDeserializedWithMcpOptions() {
 		// Arrange
 		SetColumnRightsArgs args = Bind<SetColumnRightsArgs>(

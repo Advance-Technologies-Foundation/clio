@@ -393,6 +393,45 @@ internal static class ObjectRightsCommandInput {
 		}
 	}
 
+	/// <summary>
+	/// The switches of <paramref name="after"/> that differ from <paramref name="before"/> among those the call does not
+	/// change. <c>SaveAdministratedObject</c> carries the object's three switches as the writer read them, so a switch
+	/// another client changed between the read and the save is sent back as it was: the read-back names it, and the call
+	/// fails instead of reporting success over a reverted change.
+	/// </summary>
+	/// <param name="before">The object as the call read it.</param>
+	/// <param name="after">The object read back after the save.</param>
+	/// <param name="operations">Check the operation switch (the call does not change it).</param>
+	/// <param name="records">Check the record switch.</param>
+	/// <param name="columns">Check the column switch.</param>
+	/// <returns>The error clause, or <see langword="null"/> when none changed or the read-back failed.</returns>
+	internal static string DescribeOtherSwitchChanges(ObjectRightsInfo before, ObjectRightsInfo after, bool operations,
+		bool records, bool columns) {
+		if (!after.IsRead) {
+			return null;
+		}
+		List<string> changed = new();
+		if (operations && after.AdministratedByOperations != before.AdministratedByOperations) {
+			changed.Add($"operation permissions are {OnOff(after.AdministratedByOperations)} (were "
+				+ $"{OnOff(before.AdministratedByOperations)})");
+		}
+		if (records && after.AdministratedByRecords != before.AdministratedByRecords) {
+			changed.Add($"record permissions are {OnOff(after.AdministratedByRecords)} (were "
+				+ $"{OnOff(before.AdministratedByRecords)})");
+		}
+		if (columns && after.AdministratedByColumns != before.AdministratedByColumns) {
+			changed.Add($"column permissions are {OnOff(after.AdministratedByColumns)} (were "
+				+ $"{OnOff(before.AdministratedByColumns)})");
+		}
+		return changed.Count == 0
+			? null
+			: $"the read-back shows {string.Join("; ", changed)} — switches this call does not change. The save sends the "
+				+ "object's switches as they were read, so a change another client made between the read and the save "
+				+ "was sent back; check the object with get-object-rights and get-column-rights, and redo that change.";
+	}
+
+	private static string OnOff(bool? value) => value switch { true => "ON", false => "OFF", null => "UNKNOWN" };
+
 	private sealed class NoLease : IDisposable {
 		public static readonly NoLease Instance = new();
 		public void Dispose() { }

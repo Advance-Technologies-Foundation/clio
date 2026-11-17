@@ -88,7 +88,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 				new[] {
 					SchemaColumn("UsrAmount", AmountUId, "Amount"),
 					SchemaColumn("UsrDescription", DescriptionUId, "Description"),
-					SchemaColumn("Name", NameUId, "Name")
+					SchemaColumn("Name", NameUId, "Name", "inherited")
 				}));
 		Saves(ObjectRightsSaveResult.Saved);
 		containerBuilder.AddTransient(_ => _reader);
@@ -114,8 +114,9 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	private static IReadOnlyList<object[]> Calls(object substitute, string method) =>
 		ReceivedCallLog.CallsTo(substitute, method);
 
-	private static EntitySchemaPropertyColumnInfo SchemaColumn(string name, Guid uId, string title) =>
-		new(name, uId, "own", title, null, "Text", false, false, null);
+	private static EntitySchemaPropertyColumnInfo SchemaColumn(string name, Guid uId, string title,
+		string source = "own") =>
+		new(name, uId, source, title, null, "Text", false, false, null);
 
 	private static ColumnRightRow Row(Guid grantee, int position, ColumnRightLevel level) =>
 		new(grantee, grantee == Employees ? "All employees" : "Role", position, level);
@@ -288,7 +289,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("A call while another holds the write lease for the object is refused before storage is read or anything is written.")]
+	[Description("A write whose object's lease another call holds is refused before the fresh read and the save: nothing is written.")]
 	public void Execute_ShouldRefuse_WhenAnotherCallHoldsTheLease() {
 		// Arrange
 		Reads(true, []);
@@ -302,8 +303,8 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		exitCode.Should().Be(1, because: "two overlapping calls would revert each other");
 		_errors.Should().Contain(line => line.Contains("another call is changing the permissions"),
 			because: "the refusal says why");
-		Calls(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().BeEmpty(
-			because: "nothing is read while another write of the object runs");
+		Calls(_reader, nameof(IObjectRightsReader.GetObjectRights)).Should().ContainSingle(
+			because: "the lease is taken after the plan and the prompt, before the fresh read");
 		_sent.Should().BeFalse(because: "nothing is written");
 	}
 
@@ -409,8 +410,9 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		// Arrange
 		Reads(true, []);
 		SetColumnRightsOptions options = Grant();
-		options.TimeOut = 60_000;
-		options.CallBudget = TimeSpan.FromSeconds(30);
+		// Between three and four timeouts: room for a three-request read-back, not for the counted four.
+		options.TimeOut = 10_000;
+		options.CallBudget = TimeSpan.FromSeconds(35);
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -455,18 +457,23 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("A restriction placed after an All employees row with edit is warned about: which row wins is not measured for columns.")]
-	public void Execute_ShouldWarn_WhenARestrictionSitsBelowAllEmployeesEdit() {
+	[Description("A restriction an explicit --position puts after an All employees row with edit is warned about (per Creatio's documentation the higher row wins); without a position the new row goes to the top and the output says so, with no warning.")]
+	public void Execute_ShouldWarnOnlyForAnExplicitPositionBelowAllEmployeesEdit_WhenGranting() {
 		// Arrange
-		Reads(false, [], storedAfter: [Stored(AmountUId, ColumnRightsDefaults.Row, Row(Role, 1, ColumnRightLevel.Denied))],
-			onAfter: true);
+		Reads(false, []);
 
 		// Act
+		_command.Execute(Grant(enable: true, preview: true, position: 1));
+		List<string> explicitWarnings = _warnings.ToList();
+		_warnings.Clear();
 		_command.Execute(Grant(enable: true, preview: true));
 
 		// Assert
-		_infos.Should().Contain(line => line.Contains("Warning: in column UsrAmount") && line.Contains("--position 0"),
-			because: "the operator is told how to place the restriction first");
+		explicitWarnings.Should().ContainSingle(line => line.Contains("Warning: in column UsrAmount")
+			&& line.Contains("does not apply to members of All employees"), because: "the restriction sits below All employees: edit");
+		_warnings.Should().BeEmpty(because: "a new row without a position goes to the top, above the default row");
+		_infos.Should().Contain(line => line.Contains("The new row goes to position 0, the top"),
+			because: "the output says where the row went and why");
 	}
 
 	[Test]
@@ -753,7 +760,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 		// Assert
 		_infos.Should().Contain(line => line.Contains("A second read by the object's column UIds found the same rows")
-			&& line.Contains("1 row(s) of other objects"), because: "the corroboration is shown in the facts");
+			&& line.Contains("1 row(s) of other objects on inherited columns"), because: "the corroboration is shown in the facts");
 		Calls(_storage, nameof(IColumnRightsStorageReader.ReadStoredRowsByColumns)).Should().ContainSingle(
 			because: "the rows are read once by column").Which[0].Should().BeEquivalentTo(
 			new[] { AmountUId, DescriptionUId, NameUId }, because: "the read is keyed by the object's column UIds");
@@ -809,6 +816,133 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		exitCode.Should().Be(0, because: "the preview ran");
 		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("WIDENS access"),
 			because: "the summary line names the widening");
+	}
+
+	[Test]
+	[Description("A disable names the columns the service lists with no rows: every user follows the object's operation permissions there, and a later enable through clio gives them the default row.")]
+	public void Execute_ShouldNameTheColumnsWithoutRows_WhenDisabling() {
+		// Arrange
+		IReadOnlyList<ColumnRights> stored = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))];
+		Reads(true, stored, onAfter: false);
+
+		// Act
+		_command.Execute(Switch(enable: false));
+
+		// Assert
+		_infos.Should().Contain(line => line.Contains("Columns with no rows (2): Name, UsrDescription")
+			&& line.Contains("follows the object's operation permissions") && line.Contains("default row"),
+			because: "the disable names what a later enable changes");
+	}
+
+	[Test]
+	[Description("A prompt answered no takes no lease: the lease is taken after the confirmation, never held while a person answers.")]
+	public void Execute_ShouldTakeNoLease_WhenThePromptIsDeclined() {
+		// Arrange
+		Reads(true, []);
+		_console.IsInteractive.Returns(true);
+		_console.Prompt(Arg.Any<string>()).Returns(false);
+		SetColumnRightsOptions options = Grant();
+		options.Confirm = false;
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "a declined prompt is not a failure");
+		Calls(_lease, nameof(IAdministratedObjectWriteLease.Acquire)).Should().BeEmpty(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("The lease a write takes is disposed after the read-back.")]
+	public void Execute_ShouldDisposeTheLease_WhenTheWriteEnds() {
+		// Arrange
+		IDisposable held = Substitute.For<IDisposable>();
+		_lease.Acquire(default).ReturnsForAnyArgs(held);
+		Reads(true, [], storedAfter: [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+
+		// Act
+		_command.Execute(Grant());
+
+		// Assert
+		Calls(held, nameof(IDisposable.Dispose)).Should().ContainSingle(because: "the next write of the object may run");
+	}
+
+	[Test]
+	[Description("Turning column permissions on with no column of the schema read is refused: the second read is keyed by the columns.")]
+	public void Execute_ShouldRefuseToEnable_WhenNoSchemaColumnWasRead() {
+		// Arrange
+		Reads(false, []);
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			new EntitySchemaPropertiesInfo("UsrHoliday", "Holiday", null, "(merged: all packages)", null, false, "Id",
+				"Name", 0, 0, null, false, false, null, false, null, false, false, true, false, null, null,
+				Array.Empty<EntitySchemaPropertyColumnInfo>()));
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: true));
+
+		// Assert
+		exitCode.Should().Be(1, because: "storage cannot be corroborated without the object's columns");
+		_errors.Should().ContainSingle(line => line.Contains("no column of") && line.Contains("second time by column"),
+			because: "the refusal says why");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("Rows of one of the object's OWN columns stored under another schema refuse an enable: they would be this object's rows under another UId.")]
+	public void Execute_ShouldRefuseToEnable_WhenAnOwnColumnHasRowsUnderAnotherSchema() {
+		// Arrange
+		Guid other = Guid.NewGuid();
+		Reads(false, []);
+		_storage.ReadStoredRowsByColumns(default, default).ReturnsForAnyArgs(
+			[new StoredColumnRights(other, Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied)))]);
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: true));
+
+		// Assert
+		exitCode.Should().Be(1, because: "an own column's rows under another schema mean the first read is not the object's");
+		_errors.Should().ContainSingle(line => line.Contains("stored under another schema") && line.Contains(other.ToString()),
+			because: "the refusal names the schema");
+	}
+
+	[Test]
+	[Description("A call that changes nothing still says how many stored rows it read.")]
+	public void Execute_ShouldPrintTheStoredRowCount_WhenThereIsNoChange() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+
+		// Act
+		_command.Execute(Grant());
+
+		// Assert
+		_infos.Should().Contain(line => line.Contains("Stored rows read: 1 row(s) in 1 column(s), counted"),
+			because: "the answer says what it was read from");
+	}
+
+	[Test]
+	[Description("Stored rows of a column that is not in the schema any more are not a disagreement: they are sent back as stored and named, so a row change still works.")]
+	public void Execute_ShouldSendBackAColumnNotInTheSchema_WhenChangingAnotherColumn() {
+		// Arrange
+		Guid gone = Guid.Parse("9e53fd7c-9999-4c5b-9c3a-2a7b0e7e0009");
+		ColumnRights orphan = Stored(gone, Row(Role, 0, ColumnRightLevel.Read));
+		IReadOnlyList<ColumnRights> after = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied)), orphan];
+		ObjectRightsInfo Service(IReadOnlyList<ColumnRights> rows) => Object(true, rows) with {
+			Columns = ServiceView(true, rows.Where(column => column.ColumnUId != gone).ToArray())
+		};
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
+			.Returns(Service([orphan]), Service([orphan]), Service(after));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>())
+			.Returns([orphan], [orphan], after);
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the orphan column is not a disagreement and storage holds the plan");
+		_sentList.Single(column => column.ColumnUId == gone).Rows.Should().Equal(orphan.Rows,
+			because: "its rows go back as stored");
+		_infos.Should().Contain(line => line.Contains("not columns of the schema any more") && line.Contains(gone.ToString()),
+			because: "the facts name it");
 	}
 
 	[TestCase(true, false, null, false, null, "--disable-column-permissions is a call of its own")]

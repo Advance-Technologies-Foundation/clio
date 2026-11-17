@@ -237,6 +237,12 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		// still arrives within the call's budget.
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName,
 			save.Succeeded ? requestOptions : requestOptions with { MaxAttempts = 1 });
+		string otherSwitches = ObjectRightsCommandInput.DescribeOtherSwitchChanges(before, actual, operations: false,
+			records: true, columns: true);
+		if (otherSwitches is not null) {
+			_logger.WriteError($"Error: {change.Label}: {otherSwitches}");
+			return 1;
+		}
 		int saved = save.Succeeded
 			? ReportSaved(change, facts, actual)
 			: ReportFailedSave(change, facts, save, actual);

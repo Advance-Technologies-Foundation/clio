@@ -223,6 +223,11 @@ NOTES
     code), shared with set-default-record-rights and set-column-rights: a second write of the same
     object while one runs is refused, and nothing is changed. A preview takes none.
 
+    A switch the call does not change (column or record permissions for set-object-rights; column or
+    operation permissions for set-default-record-rights) is sent as the call read it: one another client
+    changed between the read and the save is sent back, and the read-back then fails the call, naming
+    it.
+
     The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
 
     When the grantee is All employees and the object has no row for it, the new row gets exactly the

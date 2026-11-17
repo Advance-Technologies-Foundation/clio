@@ -6,7 +6,9 @@ using System.Text;
 namespace Clio.Common.ObjectRights;
 
 /// <summary>
-/// Serializes the writes of one administrated object of one environment across every clio process on the machine:
+/// Serializes the writes of one administrated object of one environment across the clio processes that share the lock
+/// directory — those of one OS user (the user's local application data); on Windows, those of the machine (its common
+/// application data):
 /// <c>set-object-rights</c>, <c>set-default-record-rights</c> and <c>set-column-rights</c> all save through
 /// <c>SaveAdministratedObject</c>, which carries the object's three switches as the writer read them, and
 /// <c>set-column-rights</c> sends every restricted column as it read them. Two writes of one object that overlap would
@@ -66,6 +68,10 @@ public sealed class AdministratedObjectWriteLease : IAdministratedObjectWriteLea
 			return new FileStream(Path.Combine(_lockRoot, $"object-{lockKey}.lock"), FileMode.OpenOrCreate,
 				FileAccess.Read, FileShare.None);
 		}
+		catch (IOException exception) when (!IsLockContention(exception)) {
+			throw new InvalidOperationException($"clio cannot take the permissions lock of '{schemaName}' in "
+				+ $"'{_lockRoot}': {exception.Message} Nothing was changed.", exception);
+		}
 		catch (IOException) {
 			throw new InvalidOperationException($"another call is changing the permissions of '{schemaName}' on this "
 				+ "environment (set-object-rights, set-default-record-rights and set-column-rights take one lease per "
@@ -76,5 +82,15 @@ public sealed class AdministratedObjectWriteLease : IAdministratedObjectWriteLea
 			throw new InvalidOperationException("clio cannot use its permissions lock directory "
 				+ $"'{_lockRoot}'; nothing was changed.", exception);
 		}
+	}
+
+	// Whether the open failed because another handle holds the file: a sharing or lock violation on Windows, the
+	// EWOULDBLOCK/EAGAIN the advisory lock .NET takes on Unix answers with (11 on Linux, 35 on macOS). Any other
+	// failure — a path that cannot be created, a full disk — is reported as it is, never as another call.
+	internal static bool IsLockContention(IOException exception) {
+		int code = exception.HResult & 0xFFFF;
+		return OperatingSystem.IsWindows()
+			? code is 32 or 33
+			: exception.HResult is 11 or 35;
 	}
 }
