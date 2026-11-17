@@ -1,0 +1,70 @@
+COMMAND TYPE
+    Identity commands
+
+NAME
+    get-sso-security-events - read the security events state of an SSO provider
+
+DESCRIPTION
+    Reads the security events state of one SSO provider through GetProviderState.
+    It changes nothing and also answers while the site feature
+    IdentitySecurityEvents is off (reason FeatureOff, featureEnabled false), so it
+    is the check before and after every other command of the family.
+
+    Every command of this family posts to one method of the site's settings service
+    SsoSecurityEventsSettingsService (rest/SsoSecurityEventsSettingsService/<Method>,
+    with the 0/ prefix on .NET Framework). The service comes with the
+    SsoSecurityEvents package of Creatio 10.2 and later and needs the CanManageSso
+    system operation. It answers every call with a reason code and never with a
+    failure: the command prints the reason ("none" on success) and exits 0 whatever
+    it is. It exits 1 only when the call itself failed: a refused option, no answer,
+    an answer that is not the service's, or a site without the service (HTTP 404,
+    reported as not supported). Read the reason before acting on the result.
+
+    Text output is one "name: value" line per member the site returned: reason,
+    reasonDetail, oauthError, providerId, isCreated, testResult, streamDeleted,
+    then the state the call left (providerExists, featureEnabled, enabled,
+    siteAddress, siteStatus, streamStatus, lastError, lastTestResult, lastTestOn,
+    changedByOperation, changedOn, isDisablePending). --format json prints the
+    site's whole answer. No answer carries a secret. Text from the site is printed
+    on one line, with anything that looks like a credential removed.
+
+SYNOPSIS
+    get-sso-security-events --code <code> [options]
+
+OPTIONS
+    --code                              Code of the SSO provider (required)
+                                        Creatio ID is always identity-v3
+
+    --format                            Output format: text (default) or json
+                                        Default: text
+
+    --timeout                           Request timeout in milliseconds
+                                        Default: 100000
+
+    --uri                   -u          Application uri
+
+    --Password              -p          User password
+
+    --Login                 -l          User login (administrator permission required)
+
+    --Environment           -e          Environment name
+
+    --Maintainer            -m          Maintainer name
+
+    --clientId                          OAuth client id
+
+    --clientSecret                      OAuth client secret
+
+EXAMPLES
+    clio get-sso-security-events -e demo-site --code identity-v3
+        Print the reason and the events state of Creatio ID
+
+    clio get-sso-security-events -e demo-site --code identity-v3 --format json
+        Print the site's whole answer
+
+RETURN VALUES
+    0       The site answered; read the printed reason code
+    1       The call failed: refused option, no or foreign answer, service not found (404)
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

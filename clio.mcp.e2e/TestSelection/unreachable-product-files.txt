@@ -126,6 +126,8 @@ clio/Command/ScenarioRunnerCommand.cs
 clio/Command/SetFileContentStorageConnectionStringCommand.cs
 clio/Command/ShowDiffEnvironmentsCommand.cs
 clio/Command/ShowLocalEnvironmentsCommand.cs
+clio/Command/SsoSecurityEventsCommand.cs
+clio/Command/SsoSecurityEventsCommands.cs
 clio/Command/SwitchNugetToDllCommand.cs
 clio/Command/SyncDbHubCommand.cs
 clio/Command/TurnFarmModeCommand.cs

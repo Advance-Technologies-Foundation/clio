@@ -12,7 +12,12 @@ DESCRIPTION
     api/SsoProvider/Register to register a new OIDC single sign-on provider. The
     operation is create-only: if a provider with the given --code already exists,
     the server rejects the request and the command exits non-zero with the server
-    error. Use the SSO settings UI in Creatio to update an existing provider.
+    error. Use the SSO settings UI in Creatio, or update-sso-provider on Creatio
+    10.2+ with the SsoSecurityEvents package, to update an existing provider.
+
+    Registering never turns security events on: the new provider has no security
+    events stream until enable-sso-security-events or an administrator turns them
+    on.
 
     The client secret is resolved in priority order:
     --oidc-client-secret-file, then --oidc-client-secret, then the

@@ -792,6 +792,20 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="register-sso-provider"></a>
 <a id="sso-register-provider"></a>
 - [`register-sso-provider`](docs/commands/register-sso-provider.md) - Register a new OIDC SSO provider in Creatio, `sso-register-provider`
+<a id="get-sso-security-events"></a>
+- [`get-sso-security-events`](docs/commands/get-sso-security-events.md) - Read the security events state of an SSO provider
+<a id="enable-sso-security-events"></a>
+- [`enable-sso-security-events`](docs/commands/enable-sso-security-events.md) - Turn security events on for an SSO provider; the card records it as a Creatio support change
+<a id="disable-sso-security-events"></a>
+- [`disable-sso-security-events`](docs/commands/disable-sso-security-events.md) - Turn security events off for an SSO provider; the card records it as a Creatio support change
+<a id="send-sso-security-test-event"></a>
+- [`send-sso-security-test-event`](docs/commands/send-sso-security-test-event.md) - Ask the provider for a security events test event and optionally wait for it
+<a id="set-sso-security-events-address"></a>
+- [`set-sso-security-events-address`](docs/commands/set-sso-security-events-address.md) - Store a new site address for the security events of an SSO provider and optionally move its stream
+<a id="update-sso-provider"></a>
+- [`update-sso-provider`](docs/commands/update-sso-provider.md) - Update an SSO provider in place, keeping its row and its security events stream
+<a id="remove-sso-provider"></a>
+- [`remove-sso-provider`](docs/commands/remove-sso-provider.md) - Remove an SSO provider and its security events stream
 
 ### Connecting through a support access grant
 
