@@ -222,6 +222,26 @@ internal sealed class ProcessCredentialSourceDetector(IProcessModelGenerator gen
 			if (!Visited.Add(callee)) {
 				return null;
 			}
+			string refused = ResolveVersions(callee, depth, out List<Guid> targets);
+			if (refused is not null) {
+				return refused;
+			}
+			foreach (Guid target in targets.Distinct()) {
+				if (target != callee && !Visited.Add(target)) {
+					continue;
+				}
+				string found = ScanSchema(target, settings, depth);
+				if (found is not null) {
+					return found;
+				}
+			}
+			return null;
+		}
+
+		// The versions of a called process to read, or why none can be: a sub-process element runs the ACTIVE version,
+		// and without one established every version that might run is read.
+		private string ResolveVersions(Guid callee, int depth, out List<Guid> targets) {
+			targets = [];
 			if (depth > MaxDepth) {
 				return "calls processes nested deeper than clio checks";
 			}
@@ -239,28 +259,16 @@ internal sealed class ProcessCredentialSourceDetector(IProcessModelGenerator gen
 			catch (Exception exception) when (exception is not OutOfMemoryException) {
 				return "calls a process clio could not check";
 			}
-			// A sub-process element runs the ACTIVE version. Without one established, every version that might run is read.
-			List<Guid> targets;
 			if (Guid.TryParse(facts?.ActiveVersionSchemaUId, out Guid active) && active != Guid.Empty) {
 				targets = [active];
+				return null;
 			}
-			else if (facts?.Versions is null || facts.FamilyTruncated) {
+			if (facts?.Versions is null || facts.FamilyTruncated) {
 				return "calls a process whose running version clio could not establish";
 			}
-			else {
-				targets = [callee, .. facts.Versions
-					.Select(member => Guid.TryParse(member.SchemaUId, out Guid id) ? id : Guid.Empty)
-					.Where(id => id != Guid.Empty)];
-			}
-			foreach (Guid target in targets.Distinct()) {
-				if (target != callee && !Visited.Add(target)) {
-					continue;
-				}
-				string found = ScanSchema(target, settings, depth);
-				if (found is not null) {
-					return found;
-				}
-			}
+			targets = [callee, .. facts.Versions
+				.Select(member => Guid.TryParse(member.SchemaUId, out Guid id) ? id : Guid.Empty)
+				.Where(id => id != Guid.Empty)];
 			return null;
 		}
 

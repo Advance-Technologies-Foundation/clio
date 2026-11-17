@@ -550,14 +550,15 @@ public class RunProcessCommand(
 		switch (node) {
 			case System.Text.Json.Nodes.JsonObject json:
 				foreach (string key in json.Select(pair => pair.Key).ToList()) {
+					if (json[key] is not { } child) {
+						continue;
+					}
 					// A string under a secret name (a Password or ApiKey column) goes whole: the leaf alone does not
 					// say what it is.
-					json[key] = json[key] switch {
-						System.Text.Json.Nodes.JsonValue leaf when leaf.TryGetValue(out string _)
-							&& CredentialShapeMasker.IsSecretName(key) => System.Text.Json.Nodes.JsonValue.Create("[redacted]"),
-						{ } child => MaskNode(child.DeepClone()),
-						null => null
-					};
+					json[key] = child is System.Text.Json.Nodes.JsonValue leaf && leaf.TryGetValue(out string _)
+						&& CredentialShapeMasker.IsSecretName(key)
+						? System.Text.Json.Nodes.JsonValue.Create("[redacted]")
+						: MaskNode(child.DeepClone());
 				}
 				return json;
 			case System.Text.Json.Nodes.JsonArray array:
