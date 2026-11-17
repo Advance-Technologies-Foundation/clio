@@ -318,6 +318,9 @@ public sealed class BuildCaseClientTests {
 		body.ContainsKey("caption").Should().BeFalse(because: "a case caption left out keeps the stored one");
 		body["confirmRunningInstances"]!.GetValue<bool>().Should().BeTrue(because: "the user's yes is forwarded");
 		body["validateOnly"]!.GetValue<bool>().Should().BeTrue(because: "a dry run is forwarded as validateOnly");
+		body.ContainsKey("confirmStageRecords").Should().BeFalse(
+			because: "a yes not given is not sent, so a package without the key does not refuse it as unknown");
+		body.ContainsKey("confirmValueRename").Should().BeFalse(because: "a yes not given is not sent");
 	}
 
 	[Test]

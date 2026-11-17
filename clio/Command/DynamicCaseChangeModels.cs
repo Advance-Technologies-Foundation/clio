@@ -212,13 +212,14 @@ public sealed record ModifyCaseRequest {
 	[JsonPropertyName("confirmRunningInstances")]
 	public bool ConfirmRunningInstances { get; init; }
 
-	/// <summary>The user's yes to removing a stage that records hold, finished cases included.</summary>
+	/// <summary>The user's yes to removing a stage that records hold, finished cases included; null when not given,
+	/// so the key is not sent to a package whose contract lacks it.</summary>
 	[JsonPropertyName("confirmStageRecords")]
-	public bool ConfirmStageRecords { get; init; }
+	public bool? ConfirmStageRecords { get; init; }
 
-	/// <summary>The user's yes to renaming a stage's lookup value, which every record shares.</summary>
+	/// <summary>The user's yes to renaming a stage's lookup value, which every record shares; null when not given.</summary>
 	[JsonPropertyName("confirmValueRename")]
-	public bool ConfirmValueRename { get; init; }
+	public bool? ConfirmValueRename { get; init; }
 
 	/// <summary>True to run every check and answer the planned change without writing anything.</summary>
 	[JsonPropertyName("validateOnly")]
