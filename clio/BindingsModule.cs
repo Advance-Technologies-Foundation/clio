@@ -522,6 +522,7 @@ public class BindingsModule {
 		services.AddTransient<IBusinessRuleLookupReferenceValidator, BusinessRuleLookupReferenceValidator>();
 		services.AddTransient<IBusinessRuleValidator, BusinessRuleValidator>();
 		services.AddTransient<IEntityBusinessRuleSchemaProvider, EntityBusinessRuleSchemaProvider>();
+		services.AddTransient<Clio.Command.Filters.IWidgetFilterValidator, Clio.Command.Filters.WidgetFilterValidator>();
 		services.AddTransient<IEntityBusinessRuleAttributeProvider, EntityBusinessRuleAttributeProvider>();
 		services.AddTransient<IEntityBusinessRuleService, EntityBusinessRuleService>();
 		services.AddTransient<IPageBusinessRuleSchemaProvider, PageBusinessRuleSchemaProvider>();

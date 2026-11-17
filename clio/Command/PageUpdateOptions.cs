@@ -5,6 +5,7 @@
 	using System.Globalization;
 	using System.IO;
 	using System.Linq;
+	using Clio.Command.Filters;
 	using Clio.Command.McpServer;
 	using Clio.Common;
 	using CommandLine;
@@ -256,6 +257,7 @@
 		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
 		private readonly IPageUnresolvedMergeDetector? _unresolvedMergeDetector;
 		private readonly IPageLayerInspector? _pageLayerInspector;
+		private readonly IWidgetFilterValidator? _widgetFilterValidator;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -297,7 +299,8 @@
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null,
 			Func<IJsonDiffApplier> viewConfigApplierFactory = null,
 			IPageUnresolvedMergeDetector? unresolvedMergeDetector = null,
-			IPageLayerInspector? pageLayerInspector = null) {
+			IPageLayerInspector? pageLayerInspector = null,
+			IWidgetFilterValidator? widgetFilterValidator = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
@@ -308,6 +311,7 @@
 			_persistedResourceKeyReader = persistedResourceKeyReader;
 			_unresolvedMergeDetector = unresolvedMergeDetector;
 			_pageLayerInspector = pageLayerInspector;
+			_widgetFilterValidator = widgetFilterValidator;
 		}
 
 		/// <summary>
@@ -401,7 +405,8 @@
 			IReadOnlyList<string> DowngradeWarnings,
 			IReadOnlyList<string> InertWarnings,
 			PageConfigMergeReport ConfigMergeReport,
-			PageUpdateResponse CaptionGateFailure);
+			PageUpdateResponse CaptionGateFailure,
+			PageWidgetFilterReport WidgetFilterReport);
 
 		/// <summary>
 		/// Resolves the write both paths would perform, WITHOUT saving anything. Read-only against the
@@ -427,14 +432,38 @@
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 			PageConfigMergeReport configMergeReport = DetectUnresolvedConfigMerges(bodyToWrite, context);
+			PageWidgetFilterReport widgetFilterReport = ValidateWidgetFilters(options, context, bodyToWrite);
 			(List<string> registeredKeys, List<string> updatedKeys) = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
 				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context);
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys, updatedKeys,
-				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure);
+				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure, widgetFilterReport);
 			return true;
 		}
+
+		// ENG-95270: the semantic half of the widget-filter check (does the column exist on the widget's
+		// schema, does the operator, macro or lookup value fit it). It needs the environment, so it lives on the
+		// save path rather than in validate-page. Anything that only failed to be READ is a warning: a schema
+		// read must never be the reason a save is refused.
+		private PageWidgetFilterReport ValidateWidgetFilters(
+			PageUpdateOptions options, EditableSchemaContext context, string bodyToWrite) {
+			if (!options.Validate || _widgetFilterValidator is null || context.SchemaType == PageSchemaType.Mobile
+				|| !Guid.TryParse(context.DesignPackageUId, out Guid packageUId)) {
+				return PageWidgetFilterReport.Empty;
+			}
+			try {
+				return _widgetFilterValidator.Validate(bodyToWrite, packageUId);
+			} catch (Exception ex) {
+				return new PageWidgetFilterReport([], [$"Widget filters were not checked against the entity schemas: {ex.Message}"]);
+			}
+		}
+
+		private static IReadOnlyList<string> WidgetFilterWarningsForDryRun(PageWidgetFilterReport report) =>
+			[
+				.. report.Errors.Select(error => $"Widget filter would block the save: {error}"),
+				.. report.Warnings
+			];
 
 		// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check does not) and on
 		// update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page can then
@@ -541,7 +570,8 @@
 					BuildDryRunWidgetCaptionWarnings(options, context.SchemaType, explicitResources,
 						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
 					PageInertOperationDetector.Detect(options.Body),
-					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)));
+					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)),
+					WidgetFilterWarningsForDryRun(ValidateWidgetFilters(options, context, options.Body)));
 				return true;
 			}
 			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
@@ -566,7 +596,8 @@
 				prepared.DowngradeWarnings,
 				prepared.InertWarnings,
 				WithAppendModeHint(ConfigMergeWarningsForDryRun(prepared.ConfigMergeReport), options,
-					prepared.ConfigMergeReport.Errors.Count > 0));
+					prepared.ConfigMergeReport.Errors.Count > 0),
+				WidgetFilterWarningsForDryRun(prepared.WidgetFilterReport));
 			return true;
 		}
 
@@ -590,6 +621,16 @@
 				};
 				return false;
 			}
+			if (prepared.WidgetFilterReport.Errors.Count > 0) {
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = "Widget filter validation failed: " + string.Join(Environment.NewLine, prepared.WidgetFilterReport.Errors),
+					Warnings = CombineWarnings(
+						BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+						prepared.ConfigMergeReport.Warnings, prepared.WidgetFilterReport.Warnings)
+				};
+				return false;
+			}
 			if (!TrySaveSchema(prepared.Schema, options, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys, prepared.UpdatedKeys);
 			// The save reports the same projection: a caller who skipped the dry run has no other place to
@@ -598,6 +639,7 @@
 			response.Warnings = CombineWarnings(
 				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
 				prepared.ConfigMergeReport.Warnings,
+				prepared.WidgetFilterReport.Warnings,
 				explicitResources?.Count > 0 || prepared.RegisteredKeys?.Count > 0
 					? new List<string> { ResourceWorkspaceCaptureWarning } : null);
 			PopulatePostSaveChecksum(options, context, response);
