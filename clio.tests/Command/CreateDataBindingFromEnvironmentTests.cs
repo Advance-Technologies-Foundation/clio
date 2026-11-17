@@ -28,6 +28,7 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 	private const string SelectUrl = "http://localhost/0/DataService/json/SyncReply/SelectQuery";
 	private const string RegistrationId = "0292fcc5-22f0-44c0-9677-f602c7f09d7e";
 	private const string BindingUId = "dba513e4-9693-4900-9008-a9d76f938c6e";
+	private const char ByteOrderMark = '﻿';
 	private const string StoredData =
 		"{\r\n\t\"PackageData\": [\r\n\t\t{\r\n\t\t\t\"Row\": [\r\n\t\t\t\t{\r\n\t\t\t\t\t\"SchemaColumnUId\": \"ae0e45ca-c495-4fe7-a39d-3ab7278e1617\",\r\n\t\t\t\t\t\"Value\": \"68b50750-f294-4211-aee8-c5288b29ecb5\"\r\n\t\t\t\t},\r\n\t\t\t\t{\r\n\t\t\t\t\t\"SchemaColumnUId\": \"8585929c-62ae-4673-ae8d-bb37f87e5144\",\r\n\t\t\t\t\t\"Value\": \"null\",\r\n\t\t\t\t\t\"DisplayValue\": \"null\"\r\n\t\t\t\t}\r\n\t\t\t]\r\n\t\t}\r\n\t]\r\n}\r\n";
 	private const string StoredEnglish =
@@ -487,6 +488,64 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
 		FileSystem.Directory.Exists(BindingPath()).Should().BeFalse(because: "a refused call writes nothing");
 	}
+
+	[Test]
+	[Description("Writes a stored data.json snapshot that starts with a UTF-8 byte-order mark (seen on PostgreSQL) instead of refusing it, and keeps the mark: the package export copies the stored bytes unchanged (ENG-106290).")]
+	public void Execute_ShouldWriteDataWithByteOrderMark_WhenStoredDataStartsWithByteOrderMark() {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_registrationRowsJson)!.AsArray();
+		rows[0]!["Data"] = ByteOrderMark + StoredData;
+		_registrationRowsJson = rows.ToJsonString();
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a byte-order mark before the JSON is still package data JSON");
+		FileSystem.File.ReadAllBytes(BindingPath("data.json")).Should().Equal(Utf8WithByteOrderMark(StoredData),
+			because: "the export writes the stored bytes, mark included, so the file matches it byte for byte");
+	}
+
+	[Test]
+	[Description("Writes a stored Localization snapshot that starts with a UTF-8 byte-order mark, counts its rows without the mark, and keeps the mark in the file (ENG-106290).")]
+	public void Execute_ShouldWriteLocalizationWithByteOrderMark_WhenStoredLocalizationStartsWithByteOrderMark() {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_localizationRowsJson)!.AsArray();
+		rows[1]!["Data"] = ByteOrderMark + StoredUkrainian;
+		_localizationRowsJson = rows.ToJsonString();
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a byte-order mark before the JSON is still package data JSON");
+		FileSystem.File.ReadAllBytes(BindingPath("Localization", "data.uk-UA.json")).Should().Equal(
+			Utf8WithByteOrderMark(StoredUkrainian),
+			because: "the export writes the stored bytes, mark included, so the file matches it byte for byte");
+		ReadBindingFile("Localization", "data.en-US.json").Should().Be(StoredEnglish,
+			because: "a culture without a mark is still written as stored");
+	}
+
+	[TestCase("﻿{\"PackageData\":[]}", TestName = "Mark before a snapshot without rows")]
+	[TestCase("﻿", TestName = "Only a mark")]
+	[Description("Writes no Localization file for a culture whose stored snapshot, read without its byte-order mark, has no rows or is blank (ENG-106290).")]
+	public void Execute_ShouldSkipCulture_WhenStoredLocalizationWithByteOrderMarkHasNoRows(string storedLocalization) {
+		// Arrange
+		JsonArray rows = JsonNode.Parse(_localizationRowsJson)!.AsArray();
+		rows[1]!["Data"] = storedLocalization;
+		_localizationRowsJson = rows.ToJsonString();
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(0, because: "a snapshot without rows is no culture to write, not an error");
+		FileSystem.File.Exists(BindingPath("Localization", "data.uk-UA.json")).Should().BeFalse(
+			because: "the row count is taken from the snapshot without its mark");
+	}
+
+	private static byte[] Utf8WithByteOrderMark(string text) =>
+		[0xEF, 0xBB, 0xBF, .. System.Text.Encoding.UTF8.GetBytes(text)];
 
 	private static CreateDataBindingOptions FromEnvironmentOptions() => new() {
 		Environment = "dev",

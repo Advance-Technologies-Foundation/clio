@@ -52,6 +52,10 @@ internal sealed class DataBindingSnapshotReader(
 	private const string ColumnSchemaName = "SysPackageSchemaDataColumn";
 	private const string LocalizationSchemaName = "SysPackageDataLcz";
 
+	/// <summary>The marks the platform trims before it parses a stored snapshot: a byte-order mark and a zero-width
+	/// space.</summary>
+	private static readonly char[] SnapshotLeadingMarks = ['﻿', '​'];
+
 	/// <inheritdoc />
 	public DataBindingSnapshot Read(string packageName, string bindingName) {
 		RegistrationRow registration = ReadRegistration(packageName, bindingName);
@@ -166,13 +170,20 @@ internal sealed class DataBindingSnapshotReader(
 	/// Returns a stored snapshot verbatim with its row count, or <see langword="null"/> when none is stored. A
 	/// snapshot that is not package data JSON is refused rather than written.
 	/// </summary>
+	/// <remarks>
+	/// A stored snapshot can start with a UTF-8 byte-order mark (seen on PostgreSQL), which the JSON parser rejects.
+	/// The check parses the text without it, as the platform does when it reads a snapshot
+	/// (<c>PackageElementUtilities.ExtractRecordIds</c>), but the text returned keeps it: the package export copies
+	/// the stored bytes to the file unchanged, so the file on disk matches the export byte for byte.
+	/// </remarks>
 	private static StoredSnapshot? ReadSnapshot(string? text, string bindingName, string fileName) {
-		if (string.IsNullOrWhiteSpace(text)) {
+		string? json = text?.TrimStart(SnapshotLeadingMarks);
+		if (string.IsNullOrWhiteSpace(json)) {
 			return null;
 		}
 
 		try {
-			if (JsonNode.Parse(text)?["PackageData"] is JsonArray packageData) {
+			if (JsonNode.Parse(json)?["PackageData"] is JsonArray packageData) {
 				return new StoredSnapshot(text, packageData.Count);
 			}
 		}
