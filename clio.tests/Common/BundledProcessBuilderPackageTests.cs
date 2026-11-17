@@ -73,7 +73,9 @@ public class BundledProcessBuilderPackageTests {
 	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>58abfb5b</c>,
 	/// tagged <c>crtprocessbuilder-1.6.6.186</c>; the stamp is its child <c>fc736c90</c>): branch
 	/// <c>feature/ENG-96034-send-chat-message</c> with <c>main</c> merged in at 1.6.6.185 (<c>4f8fc389</c>), so the cut
-	/// carries everything 1.6.6.185 carries and the Send chat message element.
+	/// carries everything 1.6.6.185 carries - the cut master bundles before this one, from producing commit
+	/// <c>34e0204b</c>, whose package sources differ from main's <c>31cf9f09</c> only by <c>descriptor.json</c> - and the
+	/// Send chat message element.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
 	/// marker, the script stamped the package descriptor to 1.6.6.186 and packed that commit with it overlaid (407
 	/// entries), and the stamp was committed after it as the child commit <c>fc736c90</c>.
@@ -93,9 +95,7 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.179, the last one clio shipped: the dynamic-case fixes of 1.6.6.181 to
-	/// 1.6.6.185 from the package's main (ENG-106378: the stage value rename, records per stage, every confirmation asked
-	/// once), and (ENG-96034) the Send chat message element -
+	/// <para>What this cut carries over 1.6.6.185, the cut master bundles (ENG-96034): the Send chat message element -
 	/// the <c>sendChatMessage</c> element type and its <c>chatMessage</c> block (<c>SendChatMessageDescriptor</c>, read
 	/// back as <c>DescribeSendChatMessageInfo</c>) on build, addElement and setElement, the refusal of the generic userTask
 	/// route naming <c>SendChatMessageUserTask</c>, and the raw-mapping guard on the block-owned chat parameters. It also
@@ -103,11 +103,12 @@ public class BundledProcessBuilderPackageTests {
 	/// canonical (the name or replacing-schema segment becomes the object's root schema UId, lower case, with a "stored
 	/// as" notice) on <c>changeData.values</c>, <c>addData.values</c>, <c>openEditPage.defaultValues</c> and
 	/// <c>chatMessage.columnValues</c>, and describe reads that canonical text back. The service surface is unchanged from
-	/// 1.6.6.179 - 11 operations, 6 design-gate call sites and three case-gate call sites, counted in the shipped archive
+	/// 1.6.6.185 - 11 operations, 6 design-gate call sites and three case-gate call sites, counted in the shipped archive
 	/// by the guards below (the entries were not re-audited against the producing commit for this cut). The create,
 	/// modify and modify-as-new-version floors move to 1.6.6.186, because an older server refuses the new type and block
-	/// as undeclared keys; the dynamic-case floors stay at 1.6.6.179. What 1.6.6.179 itself carried (the dynamic-case
-	/// filter, <c>DescribeCase</c> and <c>ModifyCase</c>) and what earlier cuts carried is in this file's git history.
+	/// as undeclared keys; the dynamic-case floors stay as master set them (<c>create-dynamic-case</c> 1.6.6.179, the case
+	/// describe and modify tools 1.6.6.185). What 1.6.6.185 itself carried (records per stage, the stage value rename,
+	/// every confirmation asked once) and what earlier cuts carried is in this file's git history.
 	/// </para>
 	/// <para>
 	/// The package suite ran on the sources of this cut, not carried over from a previous one: 6761 passed, 0 failed, on
@@ -233,8 +234,8 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180 and 1.6.6.186 are script
-	/// cuts.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
+	/// 1.6.6.185 and 1.6.6.186 are script cuts.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -953,6 +954,27 @@ public class BundledProcessBuilderPackageTests {
 			(carriesDescribeCase || carriesModifyCase).Should().BeFalse(
 				because: $"the bundled {bundledVersion} is below the floor {floor}; an archive below it that already "
 					+ "carries the operations means the floor is higher than it needs to be");
+		}
+	}
+
+	[Test]
+	[Description("An archive that meets the case-change floor must read the two confirmations and report records: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused the confirmations as unknown keys.")]
+	public void BundledArchive_ShouldAcceptTheCaseChangeConfirmations_WhenItMeetsTheirFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.DynamicCaseChangeRequirement.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool readsStageRecords = archive.Contains("[DataMember(Name = \"confirmStageRecords\")]", StringComparison.Ordinal);
+		bool readsValueRename = archive.Contains("[DataMember(Name = \"confirmValueRename\")]", StringComparison.Ordinal);
+		bool reportsRecords = archive.Contains("[DataMember(Name = \"records\"", StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			readsStageRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+			readsValueRename.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+			reportsRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
 		}
 	}
 

@@ -110,16 +110,19 @@ public sealed class ModifyDynamicCaseToolTests {
 		options.Caption.Should().BeNull(because: "no caption keeps the stored one");
 		options.Enabled.Should().BeNull(because: "enabled is changed only when named");
 		options.ConfirmRunningInstances.Should().BeFalse(because: "the user's yes is never assumed");
+		options.ConfirmStageRecords.Should().BeFalse(because: "the user's yes is never assumed");
+		options.ConfirmValueRename.Should().BeFalse(because: "the user's yes is never assumed");
 		options.DryRun.Should().BeFalse(because: "a call writes unless it asks for a dry run");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("dry-run, confirm-running-instances, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
+	[Description("dry-run, the three confirmations, enabled and caption map onto the options the service sends (dry-run becomes validateOnly there).")]
 	public void ModifyDynamicCase_ShouldMapTheFlags() {
 		// Arrange
 		ModifyDynamicCaseArgs args = Args("{" + Identity
-			+ ",\"dry-run\":true,\"confirm-running-instances\":true,\"enabled\":false,\"caption\":\" Orders \"}");
+			+ ",\"dry-run\":true,\"confirm-running-instances\":true,\"confirm-stage-records\":true,"
+			+ "\"confirm-value-rename\":true,\"enabled\":false,\"caption\":\" Orders \"}");
 
 		// Act
 		_tool.ModifyDynamicCase(args);
@@ -127,6 +130,8 @@ public sealed class ModifyDynamicCaseToolTests {
 		// Assert
 		_resolved.Captured!.DryRun.Should().BeTrue(because: "dry-run asks for the planned diff only");
 		_resolved.Captured.ConfirmRunningInstances.Should().BeTrue(because: "the user's yes is passed through");
+		_resolved.Captured.ConfirmStageRecords.Should().BeTrue(because: "the user's yes is passed through");
+		_resolved.Captured.ConfirmValueRename.Should().BeTrue(because: "the user's yes is passed through");
 		_resolved.Captured.Enabled.Should().BeFalse(because: "enabled=false disables the case");
 		_resolved.Captured.Caption.Should().Be("Orders", because: "the caption is forwarded trimmed");
 	}
@@ -341,8 +346,12 @@ public sealed class ModifyDynamicCaseToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
-		description.Should().Contain("Read get-guidance name=process-dynamic-case first.",
-			because: "the article owns the workflow");
+		description.Should().Contain("Read get-guidance name=process-dynamic-case-change first.",
+			because: "the change article owns the workflow of changing a case");
+		description.Should().Contain("cancelled at their record's next stage change",
+			because: "a disable next to another enabled case cancels running cases (measured, dev testing X7)");
+		description.Should().Contain("a stage caption renames that value for every record",
+			because: "a stage shows its value's name, so a stage rename renames the value (dev testing A6)");
 		description.Should().Contain("describe-dynamic-case").And.Contain("dry-run=true")
 			.And.Contain("ask before writing", because: "the user sees the planned diff before anything is written");
 		description.Should().Contain("WHOLE desired list").And.Contain("left out is removed",
@@ -361,6 +370,20 @@ public sealed class ModifyDynamicCaseToolTests {
 
 		// Assert
 		description.Should().StartWith("LEAVE IT OUT unless the user said yes to changing a case that has running cases",
+			because: "the flag stands for the user's consent, not the agent's");
+		description.Should().Contain("never set it on your own", because: "an agent must not consent for the user");
+	}
+
+	[TestCase("confirm-stage-records", "removing a stage that records hold")]
+	[TestCase("confirm-value-rename", "renaming the stage's lookup value")]
+	[Category("Unit")]
+	[Description("The two new confirmations tell the agent to leave them out unless the user said yes, as confirm-running-instances does.")]
+	public void NewConfirmations_ShouldBeDescribedAsTheUsersYesOnly(string parameter, string subject) {
+		// Arrange & Act
+		string description = ParameterDescription(parameter);
+
+		// Assert
+		description.Should().StartWith($"LEAVE IT OUT unless the user said yes to {subject}",
 			because: "the flag stands for the user's consent, not the agent's");
 		description.Should().Contain("never set it on your own", because: "an agent must not consent for the user");
 	}

@@ -313,7 +313,7 @@ namespace Clio.Command;
 // update cures it; the literal turns that into the install hint before anything is sent. 1.6.6.173 is another branch's
 // cut (ENG-106378), never this work; 1.6.6.174 to 1.6.6.177 and 1.6.6.180 were cuts of this work that were never
 // released, and 1.6.6.178, 1.6.6.179 and 1.6.6.181 to 1.6.6.185 were cut on the dynamic-case branches; this cut
-// includes 1.6.6.185 (the package's main; master bundles 1.6.6.179).
+// includes 1.6.6.185 (master bundles it).
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.186",
