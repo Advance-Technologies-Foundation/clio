@@ -203,7 +203,8 @@ public sealed class ObjectRightsSnapshot {
 /// <param name="AdministratedByRecords">Whether "Use record permissions" is on.</param>
 /// <param name="RecordRules">The object's default record rules; <see langword="null"/> when the read failed.</param>
 /// <param name="SchemaUId">The UId of the schema the service answered for (the base schema).</param>
-/// <param name="AdministratedByColumns">Whether "Use column permissions" is on.</param>
+/// <param name="AdministratedByColumns">Whether "Use column permissions" is on; <see langword="null"/> when the read
+/// failed or the answer carried no readable switch.</param>
 /// <param name="Columns">The object's column permission rows per column; <see langword="null"/> when the read
 /// failed.</param>
 public sealed record ObjectRightsInfo(
@@ -218,7 +219,7 @@ public sealed record ObjectRightsInfo(
 	bool AdministratedByRecords = false,
 	IReadOnlyList<DefaultRecordRule> RecordRules = null,
 	Guid SchemaUId = default,
-	bool AdministratedByColumns = false,
+	bool? AdministratedByColumns = null,
 	IReadOnlyList<ColumnRights> Columns = null) {
 
 	/// <summary>The state the planner works on.</summary>

@@ -121,7 +121,11 @@ clio set-column-rights --entity-schema-name UsrOrder --disable-column-permission
 
 - Refused before any write: a grant while column permissions are OFF without `--enable-column-permissions`; a removal
   or a move of a row the grantee does not have; a grantee with several rows in the column; a position past the end; an
-  unknown column, an unknown grantee, several objects with the title.
+  unknown column, an unknown grantee, several objects with the title; a read with no readable switch (never taken for
+  OFF); a row of the changed column with no readable position, level or grantee (its rows must go back exactly as
+  stored); a column entry whose UId is not a GUID (it could be the changed column, which would then be stored twice).
+- Columns the call does not change are sent back as their raw read nodes, so a repeated entry or an irregular row in
+  them is stored exactly as it was. When the service lists the changed column twice, nothing is sent.
 - Exit code 0 when the save's read-back matches the plan (a column dropped as all-edit is reported), when the call
   changes nothing, for a preview, or when the prompt is answered no; 1 otherwise.
 - On MCP the tool is `set-column-rights` (destructive, idempotent: a repeated call finds its change in place). The host

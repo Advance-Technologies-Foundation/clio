@@ -359,6 +359,19 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				$"position {change.Request.Position} is past the end of column {change.ColumnLabel} of {change.Label}: "
 				+ $"it has {plan.ColumnRowsBefore.Count} row(s), so the positions are 0.."
 				+ $"{LastPosition(change)}.",
+			ColumnRightsRefusal.SwitchUnknown =>
+				$"the read of {change.Label} carried no readable \"Use column permissions\" switch, so what a save would "
+				+ "turn on or off is unknown. Check the object with get-column-rights.",
+			ColumnRightsRefusal.UnreadableColumnRows =>
+				$"column {change.ColumnLabel} of {change.Label} has rows the service returned without a readable position, "
+				+ $"level or grantee ({FormatRows(plan.UnreadableRows)}). The save replaces every column's rows with the "
+				+ "list it sends, so the column's rows must go back exactly as stored, and these cannot. Fix them in the "
+				+ "Column permissions designer, then re-run.",
+			ColumnRightsRefusal.UnreadableColumnUId =>
+				$"{change.Label} lists column rows under a UId that is not a GUID "
+				+ $"('{string.Join("', '", plan.UnreadableColumnUIds.Select(ObjectRightsSupport.Display))}'), so they "
+				+ $"cannot be told apart from column {change.ColumnLabel}, and a save could store that column twice. Check "
+				+ "the object with get-column-rights.",
 			_ => $"the change on {change.Label} is refused ({plan.Refusal})."
 		};
 	}
@@ -407,7 +420,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			? "No other column has rows."
 			: $"The save replaces every column's rows, so the rows of the {plan.OtherColumns.Count} other column(s) are "
 				+ "sent back exactly as read.");
-		if (!plan.After.AdministratedByColumns) {
+		if (plan.After.AdministratedByColumns == false) {
 			facts.Add($"Column permissions on {change.Label} are OFF: the rows apply only once they are turned on.");
 		}
 		return facts;
@@ -445,7 +458,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		ColumnRightsReadBackComparison comparison = _readBackVerifier.Compare(change.Plan, actual.ColumnState);
 		if (comparison.Critical.Count > 0) {
 			_logger.WriteError($"Error: {change.Label}: {failure}. Column permissions now: "
-				+ $"{(actual.ColumnState.AdministratedByColumns ? "ON" : "OFF")}"
+				+ $"{FormatSwitch(actual.ColumnState)}"
 				+ (change.Column is null
 					? "."
 					: $"; column {change.ColumnLabel} rows "
@@ -507,8 +520,14 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			: $"{code} '{ObjectRightsSupport.Display(caption)}'";
 
 	private static string FormatRow(ColumnRightRow row) =>
-		$"[{row.Position}] {ObjectRightsSupport.Display(row.GranteeName)} ({row.GranteeId}): "
-		+ ColumnRightLevelNames.Of(row.Level);
+		$"[{row.Position?.ToString() ?? "?"}] {ObjectRightsSupport.Display(row.GranteeName)} ({row.GranteeId}): "
+		+ ColumnRightLevelNames.Of(row);
+
+	private static string FormatSwitch(ColumnRightsState state) => state.AdministratedByColumns switch {
+		true => "ON",
+		false => "OFF",
+		null => "UNKNOWN (no readable switch)"
+	};
 
 	private static string FormatRows(IReadOnlyList<ColumnRightRow> rows) =>
 		rows.Count == 0 ? "none" : string.Join(", ", rows.Select(FormatRow));

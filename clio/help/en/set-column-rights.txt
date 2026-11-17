@@ -85,7 +85,9 @@ EXIT CODES
         reported), the call changed nothing, the preview ran, or the prompt was answered no.
     1   An argument was missing, invalid or in a combination that is refused; the object, the column or
         the grantee was not found; several objects have the title; the plan was refused (the switch is
-        OFF, the grantee has no row or several rows in the column, the position is past the end); the
+        OFF, the grantee has no row or several rows in the column, the position is past the end; the read
+        carried no readable switch; a row of the column has no readable position, level or grantee, so the
+        column's rows could not be sent back exactly as stored; a column entry's UId is not a GUID); the
         save failed; or the read-back failed or does not match the plan.
 
 EXAMPLES

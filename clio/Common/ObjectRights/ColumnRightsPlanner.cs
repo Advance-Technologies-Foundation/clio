@@ -47,7 +47,24 @@ public enum ColumnRightsRefusal {
 	DuplicateGranteeRows,
 
 	/// <summary>The position is past the column's last row (or past one after it, for a new row).</summary>
-	PositionOutOfRange
+	PositionOutOfRange,
+
+	/// <summary>
+	/// The read carried no readable "Use column permissions" switch: what a save would turn on or off is unknown.
+	/// </summary>
+	SwitchUnknown,
+
+	/// <summary>
+	/// A row of the column the call changes has no position, no readable level or no readable grantee: the save sends
+	/// the column's rows back, and such a row could not be sent exactly as stored.
+	/// </summary>
+	UnreadableColumnRows,
+
+	/// <summary>
+	/// A column entry carries a UId that is not a GUID: it cannot be told apart from the column the call changes, so a
+	/// save could store that column twice.
+	/// </summary>
+	UnreadableColumnUId
 }
 
 /// <summary>
@@ -58,14 +75,15 @@ public enum ColumnRightsRefusal {
 /// <param name="Before">The column layer as read.</param>
 /// <param name="After">The planned column layer; equal to <see cref="Before"/> for a refused plan.</param>
 /// <param name="Refusal">Why nothing may be written; <see langword="null"/> when the plan may be saved.</param>
-/// <param name="DuplicatePositions">The positions of the grantee's rows when it has several in the column.</param>
+/// <param name="DuplicatePositions">The positions of the grantee's rows when it has several in the column (a row without
+/// a position as <see langword="null"/>).</param>
 /// <param name="ColumnUId">The column the call changes; <see cref="Guid.Empty"/> for a switch-only call.</param>
 /// <param name="RewritesColumns">Whether the save sends the column list (every call but a switch-only one).</param>
 public sealed record ColumnRightsPlan(
 	ColumnRightsState Before,
 	ColumnRightsState After,
 	ColumnRightsRefusal? Refusal,
-	IReadOnlyList<int> DuplicatePositions,
+	IReadOnlyList<int?> DuplicatePositions,
 	Guid ColumnUId,
 	bool RewritesColumns) {
 
@@ -77,10 +95,12 @@ public sealed record ColumnRightsPlan(
 		|| !ColumnRightsComparer.SameRows(RowsOf(Before, ColumnUId), RowsOf(After, ColumnUId)));
 
 	/// <summary>The call turns column permissions on.</summary>
-	public bool EnablesColumnPermissions => !Before.AdministratedByColumns && After.AdministratedByColumns;
+	public bool EnablesColumnPermissions =>
+		Before.AdministratedByColumns == false && After.AdministratedByColumns == true;
 
 	/// <summary>The call turns column permissions off.</summary>
-	public bool DisablesColumnPermissions => Before.AdministratedByColumns && !After.AdministratedByColumns;
+	public bool DisablesColumnPermissions =>
+		Before.AdministratedByColumns == true && After.AdministratedByColumns == false;
 
 	/// <summary>The rows of the changed column before the call, in stored position order.</summary>
 	public IReadOnlyList<ColumnRightRow> ColumnRowsBefore => RowsOf(Before, ColumnUId);
@@ -98,15 +118,32 @@ public sealed record ColumnRightsPlan(
 	public IReadOnlyList<ColumnRights> OtherColumns =>
 		Before.RestrictedColumns.Where(column => column.ColumnUId != ColumnUId).ToArray();
 
-	internal static IReadOnlyList<ColumnRightRow> RowsOf(ColumnRightsState state, Guid columnUId) =>
+	internal static IReadOnlyList<ColumnRightRow> RowsOf(ColumnRightsState state, Guid? columnUId) =>
 		state.Columns.Where(column => column.ColumnUId == columnUId).SelectMany(column => column.Rows)
-			.OrderBy(row => row.Position).ToArray();
+			.OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0).ToArray();
+
+	/// <summary>
+	/// The rows of the changed column the save could not send back exactly as stored: a row with no position, no readable
+	/// level (absent, or present but not a number) or no readable grantee id.
+	/// </summary>
+	public IReadOnlyList<ColumnRightRow> UnreadableRows =>
+		ColumnRowsBefore.Where(IsUnreadable).ToArray();
+
+	/// <summary>The column entries read with a UId that is not a GUID, as the service returned it.</summary>
+	public IReadOnlyList<string> UnreadableColumnUIds =>
+		Before.Columns.Where(column => column.ColumnUId is null).Select(column => column.UnreadableUId ?? "(absent)")
+			.ToArray();
+
+	internal static bool IsUnreadable(ColumnRightRow row) =>
+		row.Position is null || row.Level is null || row.GranteeId == Guid.Empty;
 }
 
 /// <summary>Plans one <c>set-column-rights</c> change on the column layer as read. Pure: no I/O.</summary>
 public interface IColumnRightsPlanner {
 	/// <summary>
-	/// Plans <paramref name="request"/> on <paramref name="before"/>. A level change keeps every position as read; a new
+	/// Plans <paramref name="request"/> on <paramref name="before"/>. Any call is refused when the read carried no readable
+	/// switch; a row change is refused when a column entry's UId is not a GUID, or when a row of the changed column has no
+	/// position, no readable level or no readable grantee. A level change keeps every position as read; a new
 	/// row without a position goes after the column's last row; a row placed at a position, a move and a removal renumber
 	/// the column's rows 0..n-1 in their new order. The other columns are never changed. The switch changes only through
 	/// its flags: a grant while column permissions are off is refused unless the request turns them on.
@@ -124,16 +161,28 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 	public ColumnRightsPlan Plan(ColumnRightsState before, ColumnRightsChangeRequest request) {
 		ArgumentNullException.ThrowIfNull(before);
 		ArgumentNullException.ThrowIfNull(request);
+		// What the switch is decides what a save turns on or off; an unknown one is never taken for OFF (or ON).
+		if (before.AdministratedByColumns is not { } switchRead) {
+			return Refuse(before, request, ColumnRightsRefusal.SwitchUnknown);
+		}
 		if (request.SwitchOnly) {
-			bool switchOn = request.EnableColumnPermissions
-				|| (before.AdministratedByColumns && !request.DisableColumnPermissions);
+			bool switchOn = request.EnableColumnPermissions || (switchRead && !request.DisableColumnPermissions);
 			return new ColumnRightsPlan(before, before with { AdministratedByColumns = switchOn }, null, [], Guid.Empty,
 				false);
 		}
-		if (request.Access is not null && !before.AdministratedByColumns && !request.EnableColumnPermissions) {
+		if (request.Access is not null && !switchRead && !request.EnableColumnPermissions) {
 			return Refuse(before, request, ColumnRightsRefusal.EnableNotRequested);
 		}
+		// The save sends the whole list: another column goes back as its raw read node, but an entry whose UId is not a
+		// GUID could be the changed column itself, which would then be stored twice.
+		if (before.Columns.Any(column => column.ColumnUId is null)) {
+			return Refuse(before, request, ColumnRightsRefusal.UnreadableColumnUId);
+		}
 		List<ColumnRightRow> rows = ColumnRightsPlan.RowsOf(before, request.ColumnUId).ToList();
+		// The changed column's rows are rebuilt from the projection, so each must be one it carries exactly.
+		if (rows.Any(ColumnRightsPlan.IsUnreadable)) {
+			return Refuse(before, request, ColumnRightsRefusal.UnreadableColumnRows);
+		}
 		ColumnRightRow[] granteeRows = rows.Where(row => row.GranteeId == request.Grantee).ToArray();
 		if (granteeRows.Length > 1) {
 			return Refuse(before, request, ColumnRightsRefusal.DuplicateGranteeRows,
@@ -148,7 +197,7 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 			return Refuse(before, request, ColumnRightsRefusal.PositionOutOfRange);
 		}
 		List<ColumnRightRow> planned = PlanRows(rows, existing, request);
-		bool on = before.AdministratedByColumns || request.EnableColumnPermissions;
+		bool on = switchRead || request.EnableColumnPermissions;
 		return new ColumnRightsPlan(before, new ColumnRightsState(on, Replace(before, request, planned)), null, [],
 			request.ColumnUId, true);
 	}
@@ -160,7 +209,7 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 		}
 		ColumnRightRow changed = existing is null
 			? new ColumnRightRow(request.Grantee, request.GranteeName,
-				rows.Count == 0 ? 0 : rows.Max(row => row.Position) + 1, request.Access)
+				rows.Count == 0 ? 0 : rows.Max(row => row.Position ?? 0) + 1, request.Access)
 			: existing with { Level = request.Access ?? existing.Level };
 		if (request.Position is not { } position) {
 			// A level change or an appended row: every other row keeps its position as read.
@@ -197,7 +246,7 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 	}
 
 	private static ColumnRightsPlan Refuse(ColumnRightsState before, ColumnRightsChangeRequest request,
-		ColumnRightsRefusal refusal, IReadOnlyList<int> duplicatePositions = null) =>
+		ColumnRightsRefusal refusal, IReadOnlyList<int?> duplicatePositions = null) =>
 		new(before, before, refusal, duplicatePositions ?? [], request.ColumnUId, false);
 }
 
@@ -223,7 +272,8 @@ public static class ColumnRightsComparer {
 		List<ColumnRightRow> missing = new();
 		foreach (ColumnRightRow row in planned) {
 			int match = extra.FindIndex(candidate => candidate.GranteeId == row.GranteeId
-				&& candidate.Position == row.Position && candidate.Level == row.Level);
+				&& candidate.Position == row.Position && candidate.Level == row.Level
+				&& candidate.UnreadableLevel == row.UnreadableLevel);
 			if (match >= 0) {
 				extra.RemoveAt(match);
 			} else {
@@ -248,7 +298,7 @@ public static class ColumnRightsComparer {
 public sealed record ColumnRightsReadBackComparison(
 	IReadOnlyList<string> Critical,
 	IReadOnlyList<string> Differences,
-	IReadOnlyList<Guid> DroppedAllEditColumns);
+	IReadOnlyList<Guid?> DroppedAllEditColumns);
 
 /// <summary>
 /// Compares the column layer read back after a save with the plan. The service answers success even for rows it did
@@ -274,15 +324,15 @@ public sealed class ColumnRightsReadBackVerifier : IColumnRightsReadBackVerifier
 		ArgumentNullException.ThrowIfNull(actual);
 		List<string> critical = new();
 		List<string> differences = new();
-		List<Guid> dropped = new();
+		List<Guid?> dropped = new();
 		if (actual.AdministratedByColumns != plan.After.AdministratedByColumns) {
 			critical.Add($"column permissions are {Switch(actual)}, the plan turned them {Switch(plan.After)}");
 		}
 		List<string> columnDifferences = plan.RewritesColumns ? critical : differences;
-		IEnumerable<Guid> columns = plan.After.Columns.Select(column => column.ColumnUId)
+		IEnumerable<Guid?> columns = plan.After.Columns.Select(column => column.ColumnUId)
 			.Concat(actual.Columns.Select(column => column.ColumnUId))
 			.Distinct();
-		foreach (Guid column in columns) {
+		foreach (Guid? column in columns) {
 			IReadOnlyList<ColumnRightRow> planned = ColumnRightsPlan.RowsOf(plan.After, column);
 			IReadOnlyList<ColumnRightRow> read = ColumnRightsPlan.RowsOf(actual, column);
 			if (read.Count == 0 && plan.RewritesColumns && ColumnRightsComparer.IsAllEdit(planned)) {
@@ -291,15 +341,20 @@ public sealed class ColumnRightsReadBackVerifier : IColumnRightsReadBackVerifier
 			}
 			(IReadOnlyList<ColumnRightRow> missing, IReadOnlyList<ColumnRightRow> extra) =
 				ColumnRightsComparer.Diff(planned, read);
-			columnDifferences.AddRange(missing.Select(row => $"column {column}: {Format(row)} is missing"));
-			columnDifferences.AddRange(extra.Select(row => $"column {column}: {Format(row)} is not in the plan"));
+			string label = column?.ToString() ?? "(UId not a GUID)";
+			columnDifferences.AddRange(missing.Select(row => $"column {label}: {Format(row)} is missing"));
+			columnDifferences.AddRange(extra.Select(row => $"column {label}: {Format(row)} is not in the plan"));
 		}
 		return new ColumnRightsReadBackComparison(critical, differences, dropped);
 	}
 
-	private static string Switch(ColumnRightsState state) => state.AdministratedByColumns ? "ON" : "OFF";
+	private static string Switch(ColumnRightsState state) => state.AdministratedByColumns switch {
+		true => "ON",
+		false => "OFF",
+		null => "UNKNOWN (the read carried no readable switch)"
+	};
 
 	private static string Format(ColumnRightRow row) =>
-		$"[{row.Position}] {ObjectRightsSupport.Display(row.GranteeName)} ({row.GranteeId}): "
-		+ ColumnRightLevelNames.Of(row.Level);
+		$"[{row.Position?.ToString() ?? "?"}] {ObjectRightsSupport.Display(row.GranteeName)} ({row.GranteeId}): "
+		+ ColumnRightLevelNames.Of(row);
 }

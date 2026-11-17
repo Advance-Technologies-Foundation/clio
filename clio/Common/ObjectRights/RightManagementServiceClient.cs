@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -17,7 +18,7 @@ public interface IObjectRightsReader {
 	/// <summary>
 	/// Reads the object permissions of the entity schema <paramref name="schemaName"/>: the operation switch and every
 	/// role's row in priority order, the record switch and the default record rules, the column switch and every
-	/// column's rows in priority order, and a snapshot a save can write back. A failed read is reported in
+	/// column's rows in stored position order, and a snapshot a save can write back. A failed read is reported in
 	/// <see cref="ObjectRightsInfo.ReadError"/> and never as "not administered".
 	/// </summary>
 	/// <param name="schemaName">The entity schema name.</param>
@@ -163,6 +164,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	private const string RecordRulesField = "entitySchemaRecordDefRights";
 	private const string AdministratedByColumnsField = "administratedByColumns";
 	private const string ColumnRightsField = "entitySchemaColumnsRights";
+	private const string ColumnUIdField = "columnUId";
+	private const string RightLevelField = "rightLevel";
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
@@ -190,7 +193,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			Flag(node, AdministratedByOperationsField), ProjectRoles(node), Snapshot: new ObjectRightsSnapshot(node),
 			AdministratedByRecords: Flag(node, AdministratedByRecordsField), RecordRules: ProjectRecordRules(node),
 			SchemaUId: Guid.TryParse(Str(node["uId"]), out Guid uId) ? uId : Guid.Empty,
-			AdministratedByColumns: Flag(node, AdministratedByColumnsField), Columns: ProjectColumnRights(node));
+			AdministratedByColumns: OptionalFlag(node, AdministratedByColumnsField), Columns: ProjectColumnRights(node));
 	}
 
 	/// <inheritdoc />
@@ -650,24 +653,73 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	private static string ServiceMessage(string message, string fallback) =>
 		string.IsNullOrWhiteSpace(message) ? fallback : ObjectRightsSupport.DisplayError(message);
 
-	// Every column the service listed, in its order, each with its rows in priority order. A column entry that is not an
-	// object is skipped; a column with no rights list (null or absent) has no rows. A row without a readable position is
-	// placed at its index, only so that it stays visible; a level that is absent stays null and a number outside the
-	// lookup is kept as it is, so neither is ever shown as a level the service did not return.
-	private static List<ColumnRights> ProjectColumnRights(JsonObject node) =>
-		((node[ColumnRightsField] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>())
-			.Select(column => new ColumnRights(
-				Guid.TryParse(Str(column["columnUId"]), out Guid columnUId) ? columnUId : Guid.Empty,
-				Str(column["columnCaption"]),
-				((column["rights"] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>())
-					.Select((row, index) => new ColumnRightRow(GranteeId(row),
-						Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)", Position(row) ?? index, ColumnLevel(row)))
-					.OrderBy(row => row.Position)
-					.ToList()))
-			.ToList();
+	// Every column the service listed, in the order of its first entry, one entry per column UId: an entry that repeats a
+	// UId is merged into the first, its rows added. A column entry that is not an object is skipped; a column with no
+	// rights list (null or absent) has no rows; an entry whose UId is not a GUID stays on its own, with the UId as the
+	// service returned it, and is never merged with another. Rows are in stored position order; which row wins for a user
+	// in several roles is not measured for columns, so the order claims nothing more.
+	private static List<ColumnRights> ProjectColumnRights(JsonObject node) {
+		List<ColumnRights> columns = new();
+		Dictionary<Guid, int> indexByUId = new();
+		foreach (JsonObject column in (node[ColumnRightsField] as JsonArray)?.OfType<JsonObject>()
+				?? Enumerable.Empty<JsonObject>()) {
+			Guid? uId = Guid.TryParse(Str(column[ColumnUIdField]), out Guid parsed) ? parsed : null;
+			string caption = Str(column["columnCaption"]);
+			IEnumerable<ColumnRightRow> rows = ((column["rights"] as JsonArray)?.OfType<JsonObject>()
+					?? Enumerable.Empty<JsonObject>())
+				.Select(row => {
+					(ColumnRightLevel? level, string unreadable) = ColumnLevel(row);
+					return new ColumnRightRow(GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)",
+						Position(row), level, unreadable);
+				});
+			if (uId is { } known && indexByUId.TryGetValue(known, out int index)) {
+				ColumnRights first = columns[index];
+				columns[index] = first with {
+					ColumnCaption = string.IsNullOrWhiteSpace(first.ColumnCaption) ? caption : first.ColumnCaption,
+					Rows = InStoredOrder(first.Rows.Concat(rows))
+				};
+				continue;
+			}
+			if (uId is { } added) {
+				indexByUId[added] = columns.Count;
+			}
+			columns.Add(new ColumnRights(uId, caption, InStoredOrder(rows),
+				uId is null ? RawValue(column, ColumnUIdField) : null));
+		}
+		return columns;
+	}
 
-	private static ColumnRightLevel? ColumnLevel(JsonObject row) =>
-		row["rightLevel"] is JsonValue value && value.TryGetValue(out int level) ? (ColumnRightLevel)level : null;
+	// Lowest position first; a row without a readable position last, in the order the service listed it. Rows with the
+	// same position keep the service's order.
+	private static List<ColumnRightRow> InStoredOrder(IEnumerable<ColumnRightRow> rows) =>
+		rows.OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0).ToList();
+
+	// The level of a row: the number the service returned (text that is a number is read as that number). A value that is
+	// present but not a number has no level and is kept as returned; only an absent level is "no level". Neither is ever
+	// shown as a level the service did not return, and a number outside the lookup is kept as it is.
+	private static (ColumnRightLevel? Level, string Unreadable) ColumnLevel(JsonObject row) {
+		if (!row.TryGetPropertyValue(RightLevelField, out JsonNode node)) {
+			return (null, null);
+		}
+		if (node is JsonValue value && (value.TryGetValue(out int level)
+				|| value.TryGetValue(out string text)
+				&& int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out level))) {
+			return ((ColumnRightLevel)level, null);
+		}
+		return (null, RawValue(row, RightLevelField));
+	}
+
+	// A field as the service returned it, for a value that could not be read: text as it is, anything else as its JSON
+	// (null included); null when the field is absent.
+	private static string RawValue(JsonObject node, string name) =>
+		!node.TryGetPropertyValue(name, out JsonNode value) ? null
+		: value is JsonValue text && text.TryGetValue(out string raw) ? raw
+		: value?.ToJsonString() ?? "null";
+
+	// A switch the answer may lack: null when it carries no boolean under that name, so a missing switch is never read
+	// as OFF.
+	private static bool? OptionalFlag(JsonObject node, string name) =>
+		node[name] is JsonValue value && value.TryGetValue(out bool flag) ? flag : null;
 
 	// Every row, in priority order.
 	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>

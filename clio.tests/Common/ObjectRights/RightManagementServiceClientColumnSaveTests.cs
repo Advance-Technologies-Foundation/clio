@@ -45,6 +45,7 @@ public class RightManagementServiceClientColumnSaveTests {
 
 	[SetUp]
 	public void SetUp() {
+		_savedPayload = null;
 		_applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
@@ -154,5 +155,48 @@ public class RightManagementServiceClientColumnSaveTests {
 			+ "{\"sysAdminUnit\":{\"id\":\"" + Role + "\",\"name\":\"Role\"},\"position\":0,\"rightLevel\":0}]}]");
 		JsonNode.DeepEquals(Saved()["entitySchemaColumnsRights"], expected).Should().BeTrue(
 			because: "the new column carries columnUId, columnCaption and rights of {position, rightLevel, sysAdminUnit}");
+	}
+
+	[Test]
+	[Description("Columns the call does not change go back as their RAW read nodes: a repeated entry stays repeated (never merged), an entry whose UId is not a GUID and a row without a position or with an unreadable level stay exactly as read.")]
+	public void Save_ShouldSendUnchangedColumnsAsRawNodes_WhenTheReadIsIrregular() {
+		// Arrange
+		string duplicate = "{\"columnUId\":\"" + Description + "\",\"columnCaption\":\"Description\",\"rights\":["
+			+ "{\"rightLevel\":\"x\",\"sysAdminUnit\":{\"id\":\"" + Admins + "\",\"name\":\"System administrators\"}}]}";
+		string unreadableUId = "{\"columnUId\":\"not-a-guid\",\"columnCaption\":\"Odd\",\"rights\":[]}";
+		ObjectRightsInfo read = Read($"[{DescriptionNode},{unreadableUId},{duplicate}]");
+		ColumnRightsState after = new(true, [
+			.. read.ColumnState.Columns,
+			new ColumnRights(Amount, "Amount", [Row(Role, "Role", 0, ColumnRightLevel.Denied)])
+		]);
+
+		// Act
+		_client.Save(read.Snapshot, after, Amount, new CreatioRequestOptions());
+
+		// Assert
+		JsonNode expected = JsonNode.Parse($"[{DescriptionNode},{unreadableUId},{duplicate},"
+			+ "{\"columnUId\":\"" + Amount + "\",\"columnCaption\":\"Amount\",\"rights\":["
+			+ "{\"sysAdminUnit\":{\"id\":\"" + Role + "\",\"name\":\"Role\"},\"position\":0,\"rightLevel\":0}]}]");
+		JsonNode.DeepEquals(Saved()["entitySchemaColumnsRights"], expected).Should().BeTrue(
+			because: $"every unchanged entry must go back exactly as read, in its order; sent {Saved()["entitySchemaColumnsRights"]}");
+	}
+
+	[Test]
+	[Description("When the service lists the changed column twice, nothing is sent: which entry's rows to replace is ambiguous.")]
+	public void Save_ShouldSendNothing_WhenTheChangedColumnIsListedTwice() {
+		// Arrange
+		ObjectRightsInfo read = Read($"[{AmountNode},{AmountNode}]");
+		ColumnRightsState after = new(true, [
+			new ColumnRights(Amount, "Amount", [Row(Role, "Role", 0, ColumnRightLevel.Denied)])
+		]);
+
+		// Act
+		ObjectRightsSaveResult result = _client.Save(read.Snapshot, after, Amount, new CreatioRequestOptions());
+
+		// Assert
+		result.Succeeded.Should().BeFalse(because: "the rows to replace are ambiguous");
+		result.Error.Should().Contain("nothing was sent", because: "the refusal says nothing changed");
+		result.OutcomeUnknown.Should().BeFalse(because: "a save that was never sent has a known outcome");
+		_savedPayload.Should().BeNull(because: "no save request may go out");
 	}
 }

@@ -260,7 +260,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the switch is off on the read-back");
 		_writer.Received(1).Save(Arg.Any<ObjectRightsSnapshot>(),
-			Arg.Is<ColumnRightsState>(state => !state.AdministratedByColumns), null, Arg.Any<CreatioRequestOptions>());
+			Arg.Is<ColumnRightsState>(state => state.AdministratedByColumns == false), null, Arg.Any<CreatioRequestOptions>());
 		_granteeLookup.DidNotReceiveWithAnyArgs().ResolveGranteeName(default, default);
 	}
 
@@ -304,5 +304,54 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		exitCode.Should().Be(1, because: "the arguments are refused");
 		_errors.Should().Contain(line => line.Contains(expected), because: "the error says what is wrong");
 		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+	}
+
+	[Test]
+	[Description("A read with no readable switch refuses the call before any write, and says why.")]
+	public void Execute_ShouldRefuse_WhenTheSwitchIsUnknown() {
+		// Arrange
+		Reads(new ObjectRightsInfo(true, "UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(),
+			AdministratedByColumns: null, Columns: Array.Empty<ColumnRights>()));
+
+		// Act
+		int exitCode = _command.Execute(Grant(enable: true));
+
+		// Assert
+		exitCode.Should().Be(1, because: "an unknown switch is never taken for OFF or ON");
+		_errors.Should().Contain(line => line.Contains("no readable") && line.Contains("Nothing was changed"),
+			because: "the refusal says the switch could not be read");
+		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+	}
+
+	[Test]
+	[Description("A row of the changed column without a position refuses the call before any write, naming the row and why the list must go back exactly.")]
+	public void Execute_ShouldRefuse_WhenTheChangedColumnHasAnUnreadableRow() {
+		// Arrange
+		Reads(Object(true, Amount(new ColumnRightRow(Employees, "All employees", null, ColumnRightLevel.Read))));
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the column's rows could not be sent back exactly as stored");
+		_errors.Should().Contain(line => line.Contains("[?] All employees") && line.Contains("exactly as stored"),
+			because: "the refusal names the row and the reason");
+		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+	}
+
+	[Test]
+	[Description("A column entry whose UId is not a GUID refuses a row change before any write, naming the raw UId.")]
+	public void Execute_ShouldRefuse_WhenAColumnUIdIsUnreadable() {
+		// Arrange
+		Reads(Object(true, new ColumnRights(null, "Odd",
+			new[] { new ColumnRightRow(Employees, "All employees", 0, ColumnRightLevel.Read) }, "not-a-guid")));
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the entry could be the changed column, which a save would then store twice");
+		_errors.Should().Contain(line => line.Contains("'not-a-guid'"), because: "the refusal names the raw UId");
+		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
 	}
 }

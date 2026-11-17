@@ -130,7 +130,7 @@ public class ColumnRightsPlannerTests {
 		// Assert
 		partial.ColumnRowsAfter.Should().Equal(new[] { Row(Employees, 0, ColumnRightLevel.Read) },
 			because: "the remaining row is renumbered to 0");
-		emptied.After.Columns.Select(column => column.ColumnUId).Should().Equal(new[] { Description },
+		emptied.After.Columns.Select(column => column.ColumnUId).Should().Equal(new Guid?[] { Description },
 			because: "an emptied column is left out, and the other column stays");
 	}
 
@@ -228,7 +228,7 @@ public class ColumnRightsPlannerTests {
 
 		// Assert
 		ambiguous.Refusal.Should().Be(ColumnRightsRefusal.DuplicateGranteeRows, because: "the row to change is ambiguous");
-		ambiguous.DuplicatePositions.Should().Equal(new[] { 0, 1 }, because: "the refusal names the positions");
+		ambiguous.DuplicatePositions.Should().Equal(new int?[] { 0, 1 }, because: "the refusal names the positions");
 		pastEnd.Refusal.Should().Be(ColumnRightsRefusal.PositionOutOfRange, because: "a new row may go at most one past the end");
 		atEnd.Refused.Should().BeFalse(because: "one past the last row is where a new row may go");
 	}
@@ -248,6 +248,76 @@ public class ColumnRightsPlannerTests {
 		disable.After.Columns.Should().Equal(on.Columns, because: "turning the switch off keeps every row");
 		disable.RewritesColumns.Should().BeFalse(because: "a switch-only save sends the column list as null");
 		enableAgain.Changes.Should().BeFalse(because: "the switch is already on");
+	}
+
+	[Test]
+	[Description("A read with no readable switch refuses every call, a switch-only one included: an unknown switch is never taken for OFF or ON.")]
+	public void Plan_ShouldRefuseEveryCall_WhenTheSwitchIsUnknown() {
+		// Arrange
+		ColumnRightsState before = new(null, [AmountColumn(Row(Role, 0, ColumnRightLevel.Read))]);
+
+		// Act
+		ColumnRightsPlan grant = _planner.Plan(before, Grant(ColumnRightLevel.Denied, enable: true));
+		ColumnRightsPlan disable = _planner.Plan(before, Switch(enable: false));
+
+		// Assert
+		grant.Refusal.Should().Be(ColumnRightsRefusal.SwitchUnknown, because: "what the save turns on or off is unknown");
+		disable.Refusal.Should().Be(ColumnRightsRefusal.SwitchUnknown, because: "a switch-only call is refused too");
+		disable.After.Should().BeSameAs(before, because: "a refused plan writes nothing");
+	}
+
+	[TestCase(true, false, false, TestName = "Plan_ShouldRefuse_WhenATargetRowHasNoPosition")]
+	[TestCase(false, true, false, TestName = "Plan_ShouldRefuse_WhenATargetRowHasAnUnreadableLevel")]
+	[TestCase(false, false, true, TestName = "Plan_ShouldRefuse_WhenATargetRowHasNoReadableGrantee")]
+	[Description("A row of the changed column that the projection cannot carry exactly (no position, an unreadable level, no grantee id) refuses the change: the save rebuilds that column's rows from the projection.")]
+	public void Plan_ShouldRefuse_WhenTheChangedColumnHasAnUnreadableRow(bool noPosition, bool unreadableLevel,
+		bool noGrantee) {
+		// Arrange
+		ColumnRightRow odd = new(noGrantee ? Guid.Empty : Employees, "All employees", noPosition ? null : 1,
+			unreadableLevel ? null : ColumnRightLevel.Read, unreadableLevel ? "\"x\"" : null);
+		ColumnRightsState before = State(true, AmountColumn(Row(Admins, 0, ColumnRightLevel.Edit), odd));
+
+		// Act
+		ColumnRightsPlan plan = _planner.Plan(before, Grant(ColumnRightLevel.Denied));
+
+		// Assert
+		plan.Refusal.Should().Be(ColumnRightsRefusal.UnreadableColumnRows,
+			because: "the row could not be sent back exactly as stored");
+		plan.UnreadableRows.Should().Equal(new[] { odd }, because: "the refusal names the row");
+	}
+
+	[Test]
+	[Description("An unreadable row in ANOTHER column does not refuse the change: that column goes back as its raw read node.")]
+	public void Plan_ShouldNotRefuse_WhenOnlyAnotherColumnHasAnUnreadableRow() {
+		// Arrange
+		ColumnRights description = new(Description, "Description",
+			[new ColumnRightRow(Employees, "All employees", null, null, "\"x\"")]);
+		ColumnRightsState before = State(true, description);
+
+		// Act
+		ColumnRightsPlan plan = _planner.Plan(before, Grant(ColumnRightLevel.Denied));
+
+		// Assert
+		plan.Refused.Should().BeFalse(because: "only the changed column is rebuilt from the projection");
+		plan.After.Columns[0].Should().BeSameAs(description, because: "the other column is carried as read");
+	}
+
+	[Test]
+	[Description("A column entry whose UId is not a GUID refuses a row change (it could be the changed column itself) but not a switch-only call, which sends no list.")]
+	public void Plan_ShouldRefuseARowChange_WhenAColumnUIdIsUnreadable() {
+		// Arrange
+		ColumnRightsState before = State(true, new ColumnRights(null, "Amount",
+			[Row(Employees, 0, ColumnRightLevel.Read)], "not-a-guid"));
+
+		// Act
+		ColumnRightsPlan grant = _planner.Plan(before, Grant(ColumnRightLevel.Denied));
+		ColumnRightsPlan disable = _planner.Plan(before, Switch(enable: false));
+
+		// Assert
+		grant.Refusal.Should().Be(ColumnRightsRefusal.UnreadableColumnUId,
+			because: "a save could store the changed column twice");
+		grant.UnreadableColumnUIds.Should().Equal(new[] { "not-a-guid" }, because: "the refusal names the raw UId");
+		disable.Refused.Should().BeFalse(because: "a switch-only save leaves the column list alone");
 	}
 
 	[Test]
@@ -347,7 +417,7 @@ public class ColumnRightsReadBackVerifierTests {
 
 		// Assert
 		comparison.Critical.Should().BeEmpty(because: "the service does not store an all-edit column, by design");
-		comparison.DroppedAllEditColumns.Should().Equal(new[] { Amount }, because: "the drop is reported, not silent");
+		comparison.DroppedAllEditColumns.Should().Equal(new Guid?[] { Amount }, because: "the drop is reported, not silent");
 	}
 
 	[Test]
