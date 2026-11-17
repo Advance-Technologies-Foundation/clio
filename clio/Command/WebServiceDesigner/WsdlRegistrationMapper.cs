@@ -672,21 +672,7 @@ public static partial class WsdlRegistrationMapper {
 				GiveBack(code, previous, codes);
 				return null;
 			}
-			string defaultValue = null;
-			if (previous is { DefaultMasked: false, DefaultValue: { Length: > 0 } shown }) {
-				if (IsSecretInHeader(code, path, shown, soapHeader, underSecretParent)) {
-					Warn($"Operation '{Shown(_operation)}': request element '{Shown(path)}' goes into the SOAP Header, where its "
-						+ "constant default counts as a credential (a key-like value, or a credential-like parent), so it is "
-						+ "not carried; reference a system setting with default-sys-setting and ask the user to fill its value.");
-				} else {
-					defaultValue = shown;
-				}
-			} else if (previous is { DefaultMasked: true } && previousInHeader && !soapHeader
-					&& !WebServiceSchemaView.IsSecretName(code) && !WebServiceSchemaView.IsSecretName(path)) {
-				Warn($"Operation '{Shown(_operation)}': request element '{Shown(path)}' leaves the SOAP Header, where its "
-					+ "hidden constant default was kept; outside it describe would show the value, so register refuses to "
-					+ "keep it: send default-value \"\" to clear it or default-sys-setting to replace it.");
-			}
+			string defaultValue = CarriedDefault(previous, code, path, soapHeader, underSecretParent, previousInHeader);
 			// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method).
 			return new WebServiceParameterArg(code,
 				Type: parameter.Type,
@@ -699,6 +685,29 @@ public static partial class WsdlRegistrationMapper {
 				Items: items.Count > 0 ? items : null,
 				SoapHeader: soapHeader ? true : null,
 				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);
+		}
+
+		// The constant default describe showed on the matched parameter, carried unless the SOAP Header would make it a
+		// secret; a warning names a constant that is left out, and one describe hid that leaves the Header, where register
+		// would refuse to keep it.
+		private string CarriedDefault(WebServiceParameterView previous, string code, string path, bool soapHeader,
+			bool underSecretParent, bool previousInHeader) {
+			if (previous is { DefaultMasked: false, DefaultValue: { Length: > 0 } shown }) {
+				if (!IsSecretInHeader(code, path, shown, soapHeader, underSecretParent)) {
+					return shown;
+				}
+				Warn($"Operation '{Shown(_operation)}': request element '{Shown(path)}' goes into the SOAP Header, where its "
+					+ "constant default counts as a credential (a key-like value, or a credential-like parent), so it is "
+					+ "not carried; reference a system setting with default-sys-setting and ask the user to fill its value.");
+				return null;
+			}
+			if (previous is { DefaultMasked: true } && previousInHeader && !soapHeader
+					&& !WebServiceSchemaView.IsSecretName(code) && !WebServiceSchemaView.IsSecretName(path)) {
+				Warn($"Operation '{Shown(_operation)}': request element '{Shown(path)}' leaves the SOAP Header, where its "
+					+ "hidden constant default was kept; outside it describe would show the value, so register refuses to "
+					+ "keep it: send default-value \"\" to clear it or default-sys-setting to replace it.");
+			}
+			return null;
 		}
 
 		// A constant describe showed is carried unless the WSDL puts it where register would take it for a secret: a
