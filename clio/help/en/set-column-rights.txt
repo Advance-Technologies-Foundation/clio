@@ -57,11 +57,13 @@ DESCRIPTION
     are sent back as stored. While column permissions are ON, a column with no rows is sent with none,
     so it stays as it is. When the call turns them ON, a column with no rows is not sent, so it gets
     the default row. While column permissions are ON, a column whose last row is removed is sent with
-    none, so it ends with no rows and every user follows the object's operation permissions; the summary
-    and the result say when that widens the removed row's access. For an external (portal) role or user
-    they compare with the All external users row, not All employees (external users are not in it); when
-    clio cannot tell whether the grantee is external, the removal is refused. Removing the only row of a
-    column that has just the default is refused: it changes no one's access. A disable sends no list.
+    none, so it ends with no rows and every user follows the object's operation permissions. Every
+    removal's summary and result say what then applies to the removed row's members and whether that
+    widens their access: the All employees row for an internal role or user, the All external users row
+    for an external (portal) one (external users are not in All employees), otherwise the column's other
+    rows or the object's operation permissions. While such a row remains, a removal is refused when clio
+    cannot tell whether the grantee is external. Removing the only row of a column that has just the
+    default is refused: it changes no one's access. A disable sends no list.
 
     Before planning, while column permissions are ON, the stored rows are checked against what the
     service lists (every restricted column with its rows, a column with no rows with none, a default
@@ -113,9 +115,11 @@ OPTIONS
 
     --remove-row
         Remove the grantee's row; no change when it has none. Removing the column's last row leaves it
-        with no rows: every user then follows the object's operation permissions; the summary and the
-        result say when that widens access, comparing an external (portal) role or user with the All
-        external users row. A call of its own: not with --access, --position or a switch flag.
+        with no rows: every user then follows the object's operation permissions. The summary and the
+        result say what then applies to the removed row's members and whether that widens their access
+        (All external users' row, not All employees', for an external role or user); while an All
+        employees or All external users row remains, the removal is refused when clio cannot tell whether
+        the grantee is external. A call of its own: not with --access, --position or a switch flag.
 
     --enable-column-permissions
         Turn column permissions ON: with --access, or alone. Rows kept on columns since a disable apply

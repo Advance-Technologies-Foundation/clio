@@ -1060,26 +1060,32 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		options.Preview = true;
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(0, because: "the preview ran to its end");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("left with no rows"),
+			because: "the summary was written without the lookup");
 		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
 	}
 
 	[TestCase("employees", TestName = "Execute_ShouldNotLookUpTheGrantee_WhenAllEmployeesRowIsRemoved")]
 	[TestCase("grant", TestName = "Execute_ShouldNotLookUpTheGrantee_WhenARowIsGranted")]
-	[Description("Only a removal of a role other than the two broad roles asks whether the grantee is external.")]
+	[Description("Only a removal of a role other than the two broad roles asks whether the grantee is external: All employees is known to be internal even while an All external users row remains, and a grant has no removal effect.")]
 	public void Execute_ShouldNotLookUpTheGrantee_WhenTheAnswerCannotMatter(string call) {
 		// Arrange
-		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(AllExternalUsers, 1, ColumnRightLevel.Read),
+			Row(Employees, 2, ColumnRightLevel.Read))]);
 		SetColumnRightsOptions options = call == "grant" ? Grant("read", preview: true) : Remove(Employees);
 		options.Confirm = false;
 		options.Preview = true;
 
 		// Act
-		_command.Execute(options);
+		int exitCode = _command.Execute(options);
 
 		// Assert
+		exitCode.Should().Be(0, because: "the preview ran to its end");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW"), because: "the plan was shown");
 		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
 	}
 
@@ -1108,6 +1114,9 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	public void Execute_ShouldPassTheCallsRequestOptions_ToTheExternalLookup() {
 		// Arrange
 		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		CreatioRequestOptions readOptions = null;
+		_reader.When(reader => reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()))
+			.Do(call => readOptions ??= (CreatioRequestOptions)call[1]);
 		SetColumnRightsOptions options = Remove(Role);
 		options.Confirm = false;
 		options.Preview = true;
@@ -1116,9 +1125,10 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		_command.Execute(options);
 
 		// Assert
+		readOptions.Should().NotBeNull(because: "the object was read with the call's options");
 		_granteeLookup.Received(1).FindExternalUnits(
 			Arg.Is<IReadOnlyCollection<Guid>>(units => units.Count == 1 && units.Contains(Role)),
-			Arg.Is<CreatioRequestOptions>(requestOptions => requestOptions != null));
+			Arg.Is<CreatioRequestOptions>(requestOptions => ReferenceEquals(requestOptions, readOptions)));
 	}
 
 	[Test]

@@ -46,11 +46,11 @@ public class SetColumnRightsOptions : RemoteCommandOptions {
 	/// <summary>Remove the grantee's row from the column; a call of its own.</summary>
 	[Option("remove-row", Required = false, HelpText =
 		"Remove the grantee's row from the column; no change when it has none. Removing the column's last row leaves it "
-		+ "with no rows: every user then follows the object's operation permissions (Creatio documentation); the "
-		+ "summary and the result say when that widens the removed row's access. For an external (portal) role or user "
-		+ "they compare with the All external users row, not All employees (external users are not in it); when clio "
-		+ "cannot tell whether the grantee is external, the removal is refused. A call of its own: not with --access, "
-		+ "--position or a switch flag.")]
+		+ "with no rows: every user then follows the object's operation permissions (Creatio documentation). The summary "
+		+ "and the result say what then applies to the removed row's members and whether that widens their access "
+		+ "(All external users' row, not All employees', for an external role or user); while an All employees or All "
+		+ "external users row remains, the removal is refused when clio cannot tell whether the grantee is external. A "
+		+ "call of its own: not with --access, --position or a switch flag.")]
 	public bool RemoveRow { get; set; }
 
 	/// <summary>Put the grantee's row at this position of the column's stored position order, 0 first.</summary>
@@ -827,7 +827,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	private int ReportSaved(Change change, IReadOnlyList<string> facts, ReadBack readBack) {
 		if (!readBack.IsRead) {
 			_logger.WriteError($"Error: {change.Label}: saved, but NOT verified — on the read-back "
-				+ $"{ReadBackFailure(readBack)}. Check it with get-column-rights before retrying: the plan was:");
+				+ $"{ReadBackFailure(readBack)}. Check it with get-column-rights before retrying: the plan was: "
+				+ change.Summary);
 			WriteFacts(facts);
 			return 1;
 		}
