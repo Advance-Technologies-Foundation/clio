@@ -265,6 +265,13 @@ public sealed class DynamicCaseStage {
 	/// <summary>Running cases that sit in this stage now; absent where it was not read.</summary>
 	[JsonPropertyName("runningInstances")]
 	public int? RunningInstances { get; init; }
+
+	/// <summary>
+	/// The records whose stage column holds this stage's value, finished cases included (a record in a final stage
+	/// has one); for a filtered case only the records it is for. Absent where it was not read.
+	/// </summary>
+	[JsonPropertyName("records")]
+	public int? Records { get; init; }
 }
 
 /// <summary>One value of a case filter: the lookup value's Id and the display value the filter stores with it.</summary>

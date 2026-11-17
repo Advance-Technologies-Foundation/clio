@@ -47,6 +47,12 @@ public sealed class ModifyDynamicCaseOptions : EnvironmentOptions {
 	/// <summary>The user's yes to changing a case that has running cases.</summary>
 	public bool ConfirmRunningInstances { get; set; }
 
+	/// <summary>The user's yes to removing a stage that records hold.</summary>
+	public bool ConfirmStageRecords { get; set; }
+
+	/// <summary>The user's yes to renaming a stage's lookup value for every record.</summary>
+	public bool ConfirmValueRename { get; set; }
+
 	/// <summary>Run every check and return the planned change without writing anything.</summary>
 	public bool DryRun { get; set; }
 }

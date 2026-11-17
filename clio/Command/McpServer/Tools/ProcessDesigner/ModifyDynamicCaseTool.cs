@@ -21,7 +21,8 @@ public class ModifyDynamicCaseTool(
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused.</summary>
 	internal const string ValidArgsHint = "Valid: environment-name, case-name, case-uid, entity-schema-name, stages, "
-		+ "caption, filter, remove-filter, enabled, confirm-running-instances, dry-run.";
+		+ "caption, filter, remove-filter, enabled, confirm-running-instances, confirm-stage-records, "
+		+ "confirm-value-rename, dry-run.";
 
 	/// <summary>Refusal for a call whose whole argument object is absent.</summary>
 	/// <remarks>
@@ -57,18 +58,21 @@ public class ModifyDynamicCaseTool(
 	// again finds nothing to change and answers unchanged. Destructive also keeps it out of the read-response deadline.
 	[McpServerTool(Name = ModifyDynamicCaseToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		 OpenWorld = false),
-	 Description("Change an existing dynamic case (DCM) in place. Read get-guidance name=process-dynamic-case first. "
-		 + "Call describe-dynamic-case, then this tool with dry-run=true, show the user the planned diff and ask "
-		 + "before writing. Name the case by case-name or case-uid, or by entity-schema-name when the object has one "
-		 + "case. stages is the WHOLE desired list in order, matched to the stored stages by lookup value: a stage "
-		 + "left out is removed, a new value is added, and an item member left out keeps its stored value. caption "
-		 + "renames the case. filter gives the case a filter (which new records start it; the object's first filter "
-		 + "splits all its cases by that column) and remove-filter=true removes it; running cases continue. "
-		 + "enabled=false disables the case and true enables it; send enabled alone, with no other "
-		 + "change. A case that has running cases is changed only after the user agreed "
-		 + "(confirm-running-instances). Every refusal answers outcome refused with a stable errorCode and writes "
-		 + "nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and no restart, "
-		 + "but open pages of the object need a reload (F5). Requires a CrtProcessBuilder that carries ModifyCase "
+	 Description("Change an existing dynamic case (DCM) in place. Read get-guidance name=process-dynamic-case-change "
+		 + "first. Call describe-dynamic-case, then this tool with dry-run=true, show the user the planned diff and the "
+		 + "notes and ask before writing. Name the case by case-name or case-uid, or by entity-schema-name when the "
+		 + "object has one case. stages is the WHOLE desired list in order, matched to the stored stages by lookup "
+		 + "value: a stage left out is removed, a new value is added, and an item member left out keeps its stored "
+		 + "value. A stage shows its lookup value's name, so a stage caption renames that value for every record "
+		 + "(confirm-value-rename). caption renames the case. filter gives the case a filter (which new records start "
+		 + "it; the object's first filter splits all its cases by that column) and remove-filter=true removes it. "
+		 + "enabled=false disables the case and true enables it; send enabled alone. Disabled, its running cases "
+		 + "continue only when no other case of the object is enabled; otherwise they are cancelled at their record's "
+		 + "next stage change. Three writes need the user's yes first, each refused until then with the counts to "
+		 + "show: running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
+		 + "stage value rename (confirm-value-rename). Every refusal answers outcome refused with a stable errorCode "
+		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
+		 + "no restart, but open pages of the object need a reload (F5). Requires a CrtProcessBuilder that carries ModifyCase "
 		 + "(install-process-builder, after user approval). Steps inside stages are not supported.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -129,6 +133,8 @@ public class ModifyDynamicCaseTool(
 			Filter = filter,
 			RemoveFilter = args.RemoveFilter ?? false,
 			ConfirmRunningInstances = args.ConfirmRunningInstances ?? false,
+			ConfirmStageRecords = args.ConfirmStageRecords ?? false,
+			ConfirmValueRename = args.ConfirmValueRename ?? false,
 			DryRun = args.DryRun ?? false
 		};
 		// A case is interpreted, so the deterministic note can never contradict the response; it rides success only,
@@ -145,7 +151,8 @@ public class ModifyDynamicCaseTool(
 		[
 			"environment-name (registered environment)",
 			"case-name, case-uid or entity-schema-name (the case, or its object when the object has one case)",
-			"optional: stages, caption, enabled, confirm-running-instances, dry-run (see the tool description)"
+			"optional: stages, caption, filter, remove-filter, enabled, confirm-running-instances, "
+				+ "confirm-stage-records, confirm-value-rename, dry-run (see the tool description)"
 		],
 		MinimalExample);
 
@@ -194,8 +201,8 @@ public sealed record ModifyDynamicCaseArgs(
 		+ "is {\"value\"}). A stored stage left out is removed; a member left out keeps its stored value. group: the "
 		+ "parent stage's value, a stage of the list in no group itself (one level); \"group\": null takes the stage out "
 		+ "of its group. successful: false for a stage of the final group (the last top-level stage and its members) "
-		+ "that ends the case unsuccessfully. caption renames the stage in the case only, never the lookup value. "
-		+ "Omit to keep the stages.")]
+		+ "that ends the case unsuccessfully. caption renames the stage's lookup value for every record "
+		+ "(a stage shows its value's name), only with confirm-value-rename. Omit to keep the stages.")]
 	JsonElement? Stages = null,
 
 	[property: JsonPropertyName("caption")]
@@ -215,8 +222,9 @@ public sealed record ModifyDynamicCaseArgs(
 	bool? RemoveFilter = null,
 
 	[property: JsonPropertyName("enabled")]
-	[property: Description("Optional: false disables the case (running cases continue, new records start none), true "
-		+ "enables it. Send it alone, with no other change.")]
+	[property: Description("Optional: false disables the case (new records start none; its running cases continue only "
+		+ "when no other case of the object is enabled, otherwise they are cancelled at their record's next stage "
+		+ "change), true enables it. Send it alone, with no other change.")]
 	bool? Enabled = null,
 
 	[property: JsonPropertyName("confirm-running-instances")]
@@ -224,6 +232,18 @@ public sealed record ModifyDynamicCaseArgs(
 		+ "set it on your own. Without it such a change is refused (running-instances-confirmation-required) with "
 		+ "the counts to show the user.")]
 	bool? ConfirmRunningInstances = null,
+
+	[property: JsonPropertyName("confirm-stage-records")]
+	[property: Description("LEAVE IT OUT unless the user said yes to removing a stage that records hold (finished "
+		+ "cases included); never set it on your own. Without it such a removal is refused "
+		+ "(stage-records-confirmation-required) with the counts.")]
+	bool? ConfirmStageRecords = null,
+
+	[property: JsonPropertyName("confirm-value-rename")]
+	[property: Description("LEAVE IT OUT unless the user said yes to renaming the stage's lookup value, which every "
+		+ "record shares; never set it on your own. Without it a stage caption change is refused "
+		+ "(value-rename-confirmation-required).")]
+	bool? ConfirmValueRename = null,
 
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("Run every check and return the planned diff without writing anything; default false.")]

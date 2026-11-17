@@ -7,13 +7,18 @@ namespace Clio.Command;
 
 /// <summary>The package floor of <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c>.</summary>
 public static class DynamicCaseChangeRequirement {
-	/// <summary>The first CrtProcessBuilder archive whose <c>DescribeCase</c> and <c>ModifyCase</c> carry case filters.</summary>
+	/// <summary>
+	/// The first CrtProcessBuilder archive whose <c>DescribeCase</c> counts the records per stage and whose
+	/// <c>ModifyCase</c> reads <c>confirmStageRecords</c> and <c>confirmValueRename</c>.
+	/// </summary>
 	/// <remarks>
 	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
 	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
-	/// that answers its route with a 404. 1.6.6.179 is the first shipped cut that reads and reports a case's filter.
+	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.180 is the first
+	/// whose stage rename renames the lookup value and whose describe reports <c>records</c>. An older package would
+	/// ignore the two confirmations, and a stage rename there would write a caption no one sees.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.179";
+	public const string MinimumProcessBuilderVersion = "1.6.6.180";
 }
 
 /// <summary>
@@ -206,6 +211,14 @@ public sealed record ModifyCaseRequest {
 	/// <summary>The user's yes to changing a case that has running cases.</summary>
 	[JsonPropertyName("confirmRunningInstances")]
 	public bool ConfirmRunningInstances { get; init; }
+
+	/// <summary>The user's yes to removing a stage that records hold, finished cases included.</summary>
+	[JsonPropertyName("confirmStageRecords")]
+	public bool ConfirmStageRecords { get; init; }
+
+	/// <summary>The user's yes to renaming a stage's lookup value, which every record shares.</summary>
+	[JsonPropertyName("confirmValueRename")]
+	public bool ConfirmValueRename { get; init; }
 
 	/// <summary>True to run every check and answer the planned change without writing anything.</summary>
 	[JsonPropertyName("validateOnly")]
