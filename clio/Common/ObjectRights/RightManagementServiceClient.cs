@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -16,8 +17,8 @@ namespace Clio.Common.ObjectRights;
 public interface IObjectRightsReader {
 	/// <summary>
 	/// Reads the object permissions of the entity schema <paramref name="schemaName"/>: the operation switch and every
-	/// role's row in priority order, the record switch and the default record rules, and a snapshot a save can write
-	/// back. A failed read is reported in
+	/// role's row in priority order, the record switch and the default record rules, the column switch and every
+	/// column's rows in stored position order, and a snapshot a save can write back. A failed read is reported in
 	/// <see cref="ObjectRightsInfo.ReadError"/> and never as "not administered".
 	/// </summary>
 	/// <param name="schemaName">The entity schema name.</param>
@@ -98,6 +99,30 @@ public interface IDefaultRecordRightsWriter {
 }
 
 /// <summary>
+/// Saves a planned column-permissions state — the "Use column permissions" switch and the column rows — through
+/// <c>RightManagementService.svc/SaveAdministratedObject</c>. The writer holds no policy (see
+/// <see cref="IColumnRightsPlanner"/>).
+/// </summary>
+public interface IColumnRightsWriter {
+	/// <summary>
+	/// Writes the switch and <paramref name="columns"/> onto the object read as <paramref name="snapshot"/>. Measured on
+	/// storage: a list gives each column IN it exactly the listed rows (<c>[]</c>: none) and each column of the object
+	/// NOT in it the default row (All employees, edit, position 0); <see langword="null"/> leaves the stored rows alone.
+	/// Each column is sent as <c>{columnUId, columnCaption, rights: [{position, rightLevel, sysAdminUnit: {id, name}}]}</c>.
+	/// The operation, record and entity-operation collections are always sent as null.
+	/// </summary>
+	/// <param name="snapshot">The object as it was read.</param>
+	/// <param name="administratedByColumns">The switch to send.</param>
+	/// <param name="columns">The column list; <see langword="null"/> to leave the stored rows alone.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns><see cref="ObjectRightsSaveResult.Saved"/> when the service reported success — which it does even for
+	/// rows it did not store, so the caller must read storage back — otherwise why the save failed or was not sent (a
+	/// row without a position or a level is never sent).</returns>
+	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, bool administratedByColumns,
+		IReadOnlyList<ColumnRights> columns, CreatioRequestOptions requestOptions);
+}
+
+/// <summary>
 /// Resolves a SysAdminUnit (role or user) id to its name, to confirm that a grantee — or a default record rule's author —
 /// exists before a write.
 /// </summary>
@@ -130,12 +155,16 @@ public interface IGranteeLookup {
 /// DataService (the clio name→UId convention), reads the object's operation rows, and saves a planned state.
 /// </summary>
 public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsReader, IObjectRightsWriter,
-	IDefaultRecordRightsWriter, IGranteeLookup {
+	IDefaultRecordRightsWriter, IColumnRightsWriter, IGranteeLookup {
 
 	private const string AdministratedByOperationsField = "administratedByOperations";
 	private const string OperationRowsField = "entitySchemaOperationsRights";
 	private const string AdministratedByRecordsField = "administratedByRecords";
 	private const string RecordRulesField = "entitySchemaRecordDefRights";
+	private const string AdministratedByColumnsField = "administratedByColumns";
+	private const string ColumnRightsField = "entitySchemaColumnsRights";
+	private const string ColumnUIdField = "columnUId";
+	private const string RightLevelField = "rightLevel";
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
@@ -162,7 +191,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName, Str(node["caption"]),
 			Flag(node, AdministratedByOperationsField), ProjectRoles(node), Snapshot: new ObjectRightsSnapshot(node),
 			AdministratedByRecords: Flag(node, AdministratedByRecordsField), RecordRules: ProjectRecordRules(node),
-			SchemaUId: Guid.TryParse(Str(node["uId"]), out Guid uId) ? uId : Guid.Empty);
+			SchemaUId: Guid.TryParse(Str(node["uId"]), out Guid uId) ? uId : Guid.Empty,
+			AdministratedByColumns: OptionalFlag(node, AdministratedByColumnsField), Columns: ProjectColumnRights(node));
 	}
 
 	/// <inheritdoc />
@@ -184,7 +214,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// column and entity-operation collections are sent as null ("leave untouched") so the save neither
 		// re-processes nor risks clobbering them.
 		payload[RecordRulesField] = null;
-		payload["entitySchemaColumnsRights"] = null;
+		payload[ColumnRightsField] = null;
 		payload["entityOperationGrantees"] = null;
 		return SendSave(payload, requestOptions);
 	}
@@ -215,7 +245,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		payload[OperationRowsField] = rows;
 		payload[RecordRulesField] = null;
-		payload["entitySchemaColumnsRights"] = null;
+		payload[ColumnRightsField] = null;
 		payload["entityOperationGrantees"] = null;
 		return SendSave(payload, requestOptions);
 	}
@@ -233,7 +263,47 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			.RulesDifferFrom(after);
 		payload[RecordRulesField] = rulesChange ? BuildRecordRules(payload, after.Rules) : null;
 		payload[OperationRowsField] = null;
-		payload["entitySchemaColumnsRights"] = null;
+		payload[ColumnRightsField] = null;
+		payload["entityOperationGrantees"] = null;
+		return SendSave(payload, requestOptions);
+	}
+
+	/// <inheritdoc />
+	public ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, bool administratedByColumns,
+		IReadOnlyList<ColumnRights> columns, CreatioRequestOptions requestOptions) {
+		ArgumentNullException.ThrowIfNull(snapshot);
+		JsonObject payload = snapshot.Node.DeepClone().AsObject();
+		payload[AdministratedByColumnsField] = administratedByColumns;
+		if (columns is null) {
+			payload[ColumnRightsField] = null;
+		} else {
+			JsonArray list = new();
+			foreach (ColumnRights column in columns) {
+				if (column.ColumnUId is not { } uId) {
+					return new ObjectRightsSaveResult("a column without a UId cannot be sent; nothing was sent");
+				}
+				JsonArray rights = new();
+				foreach (ColumnRightRow row in column.Rows) {
+					if (row.Position is not { } position || row.Level is not { } level) {
+						return new ObjectRightsSaveResult($"a row of column {uId} has no position or level, so it cannot "
+							+ "be sent as stored; nothing was sent");
+					}
+					rights.Add(new JsonObject {
+						["position"] = position,
+						["rightLevel"] = (int)level,
+						["sysAdminUnit"] = new JsonObject { ["id"] = row.GranteeId.ToString(), ["name"] = row.GranteeName }
+					});
+				}
+				list.Add(new JsonObject {
+					[ColumnUIdField] = uId.ToString(),
+					["columnCaption"] = column.ColumnCaption,
+					["rights"] = rights
+				});
+			}
+			payload[ColumnRightsField] = list;
+		}
+		payload[OperationRowsField] = null;
+		payload[RecordRulesField] = null;
 		payload["entityOperationGrantees"] = null;
 		return SendSave(payload, requestOptions);
 	}
@@ -525,6 +595,74 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// checks for null, and as nothing at all to the operator. The platform's text is rendered on one line.
 	private static string ServiceMessage(string message, string fallback) =>
 		string.IsNullOrWhiteSpace(message) ? fallback : ObjectRightsSupport.DisplayError(message);
+
+	// Every column the service listed, in the order of its first entry, one entry per column UId: an entry that repeats a
+	// UId is merged into the first, its rows added. A column entry that is not an object is skipped; a column with no
+	// rights list (null or absent) has no rows; an entry whose UId is not a GUID stays on its own, with the UId as the
+	// service returned it, and is never merged with another. Rows are in stored position order; which row wins for a user
+	// in several roles is not measured for columns, so the order claims nothing more.
+	private static List<ColumnRights> ProjectColumnRights(JsonObject node) {
+		List<ColumnRights> columns = new();
+		Dictionary<Guid, int> indexByUId = new();
+		foreach (JsonObject column in (node[ColumnRightsField] as JsonArray)?.OfType<JsonObject>()
+				?? Enumerable.Empty<JsonObject>()) {
+			Guid? uId = Guid.TryParse(Str(column[ColumnUIdField]), out Guid parsed) ? parsed : null;
+			string caption = Str(column["columnCaption"]);
+			IEnumerable<ColumnRightRow> rows = ((column["rights"] as JsonArray)?.OfType<JsonObject>()
+					?? Enumerable.Empty<JsonObject>())
+				.Select(row => {
+					(ColumnRightLevel? level, string unreadable) = ColumnLevel(row);
+					return new ColumnRightRow(GranteeId(row), Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)",
+						Position(row), level, unreadable);
+				});
+			if (uId is { } known && indexByUId.TryGetValue(known, out int index)) {
+				ColumnRights first = columns[index];
+				columns[index] = first with {
+					ColumnCaption = string.IsNullOrWhiteSpace(first.ColumnCaption) ? caption : first.ColumnCaption,
+					Rows = InStoredOrder(first.Rows.Concat(rows))
+				};
+				continue;
+			}
+			if (uId is { } added) {
+				indexByUId[added] = columns.Count;
+			}
+			columns.Add(new ColumnRights(uId, caption, InStoredOrder(rows),
+				uId is null ? RawValue(column, ColumnUIdField) : null));
+		}
+		return columns;
+	}
+
+	// Lowest position first; a row without a readable position last, in the order the service listed it. Rows with the
+	// same position keep the service's order.
+	private static List<ColumnRightRow> InStoredOrder(IEnumerable<ColumnRightRow> rows) =>
+		rows.OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0).ToList();
+
+	// The level of a row: the number the service returned (text that is a number is read as that number). A value that is
+	// present but not a number has no level and is kept as returned; only an absent level is "no level". Neither is ever
+	// shown as a level the service did not return, and a number outside the lookup is kept as it is.
+	private static (ColumnRightLevel? Level, string Unreadable) ColumnLevel(JsonObject row) {
+		if (!row.TryGetPropertyValue(RightLevelField, out JsonNode node)) {
+			return (null, null);
+		}
+		if (node is JsonValue value && (value.TryGetValue(out int level)
+				|| value.TryGetValue(out string text)
+				&& int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out level))) {
+			return ((ColumnRightLevel)level, null);
+		}
+		return (null, RawValue(row, RightLevelField));
+	}
+
+	// A field as the service returned it, for a value that could not be read: text as it is, anything else as its JSON
+	// (null included); null when the field is absent.
+	private static string RawValue(JsonObject node, string name) =>
+		!node.TryGetPropertyValue(name, out JsonNode value) ? null
+		: value is JsonValue text && text.TryGetValue(out string raw) ? raw
+		: value?.ToJsonString() ?? "null";
+
+	// A switch the answer may lack: null when it carries no boolean under that name, so a missing switch is never read
+	// as OFF.
+	private static bool? OptionalFlag(JsonObject node, string name) =>
+		node[name] is JsonValue value && value.TryGetValue(out bool flag) ? flag : null;
 
 	// Every row, in priority order.
 	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>

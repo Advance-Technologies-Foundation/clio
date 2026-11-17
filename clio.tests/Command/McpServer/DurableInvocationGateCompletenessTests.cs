@@ -104,6 +104,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-process-page-facts",
 		"get-process-signature",
 		"get-object-rights",
+		"get-column-rights",
 		"get-record-rights",
 		"get-related-page-addon",
 		"get-page-modal-size",

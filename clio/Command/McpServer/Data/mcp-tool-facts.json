@@ -166,6 +166,7 @@
   "get-client-unit-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
       {"argument": "output-file", "kind": "file", "access": "write"}
   ]},
+  "get-column-rights": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-component-info": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-component-info-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
       {"argument": "output-file", "kind": "file", "access": "write"}
@@ -433,6 +434,9 @@
   "set-active-business-process-version": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "set-background-image": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
       {"argument": "file", "kind": "file", "access": "read"}
+  ]},
+  "set-column-rights": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
+      {"argument": "preview", "value": "true", "effect": "read"}
   ]},
   "set-default-record-rights": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "preview", "value": "true", "effect": "read"},

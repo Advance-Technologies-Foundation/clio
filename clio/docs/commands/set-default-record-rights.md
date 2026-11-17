@@ -94,6 +94,14 @@ clio set-default-record-rights --entity-schema-name UsrOrder --author <author-id
 
 ## Notes
 
+- Right after the confirmation (never across the prompt) a write takes the object's write lease (keyed by the
+  environment's resolved URL and the object's code), shared with `set-object-rights` and `set-column-rights`; a second write of the same object while
+  one runs is refused, and nothing is changed. A preview takes none. If no lock folder can be used (the user's data
+  folder, then the temp folder), the write goes on without the lease and warns: the read under it still guards.
+- Under the lease the object is read again: if any of its three switches (column, operation, record permissions), its
+  schema UId or a default record rule changed since the plan read it, nothing is saved; otherwise the save goes out from that fresh
+  read, so it sends the switches as they are. A switch the call does not change that differs on the read-back was
+  changed by another client after the save: that is a warning after the call's own result.
 - `author` and `grantee` must exist in `SysAdminUnit`. Common roles: All employees
   `a29a3ba5-4b0d-de11-9a51-005056c00008`, All external users `720b771c-e7a7-4f31-9cfb-52cd21c3739f`, System
   administrators `83a43ebc-f36b-1410-298d-001e8c82bcad`. Portal users see a record only through a rule (author or
