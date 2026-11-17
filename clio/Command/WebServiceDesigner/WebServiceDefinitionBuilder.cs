@@ -974,17 +974,19 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	/// <summary>
-	/// Whether describe hid the previous constant: it is secret-like itself, or it travelled in a SOAP Header (its own
-	/// flag or its parent's). The NEW placement never decides it: a visible constant moved into the Header is not
-	/// carried, or a body constant could be turned into a stored Header constant in two calls.
+	/// Whether describe hid the previous constant, by the rule describe hides it with
+	/// (<see cref="WebServiceSchemaView.IsSecretLike(ServiceParameterDto, bool)"/>), judged where it was: a SOAP-header
+	/// one (its own flag or its parent's) as a header constant. The NEW placement never decides it: a visible constant
+	/// moved to where it would be hidden is not carried, or a constant describe showed could be turned into a hidden
+	/// stored one in two calls.
 	/// </summary>
 	private static bool IsHiddenSecretConstant(ServiceParameterDto previous, bool previousInSoapHeader) =>
 		previous?.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst } value && !string.IsNullOrEmpty(value.Value)
-		&& (previousInSoapHeader || previous.IsSoapHeader == true || WebServiceSchemaView.IsSecretLike(previous));
+		&& WebServiceSchemaView.IsSecretLike(previous, previousInSoapHeader);
 
 	/// <param name="soapHeader">
-	/// Whether the parameter travels in a SOAP Header (WS-Security and licence values): its constant default is treated
-	/// like a header constant and refused.
+	/// Whether the parameter travels in a SOAP Header (WS-Security and licence values): its constant default is judged
+	/// like a header constant.
 	/// </param>
 	/// <param name="previousInSoapHeader">Whether the previous parameter's parent travelled in a SOAP Header.</param>
 	private static ServiceParameterValueDto BuildDefault(WebServiceParameterArg arg, ServiceParameterDto previous,
@@ -1001,8 +1003,10 @@ public static partial class WebServiceDefinitionBuilder {
 		string wireName = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path : arg.Path;
 		if (hasConstant && (WebServiceSchemaView.IsSecretLike(arg.Code, placement, arg.DefaultValue)
 				|| WebServiceSchemaView.IsSecretLike(wireName, placement, arg.DefaultValue))) {
-			errors.Add($"{owner}: a constant default is refused on a header, cookie or credential-like parameter; "
-				+ "reference a system setting with default-sys-setting and let the user fill its value.");
+			errors.Add($"{owner}: a constant default is refused on a cookie, under a credential-like code or wire name "
+				+ "(key, token, secret, password, auth, session...), and where the value looks like a key (a header or "
+				+ "soap-header value with a part of 16+ characters mixing letters and digits, or a query key); reference "
+				+ "a system setting with default-sys-setting and let the user fill its value.");
 			return Empty();
 		}
 		if (hasSetting) {

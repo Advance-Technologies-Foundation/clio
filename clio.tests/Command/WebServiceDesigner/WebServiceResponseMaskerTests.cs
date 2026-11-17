@@ -49,11 +49,12 @@ public sealed class WebServiceResponseMaskerTests {
 		// Arrange
 		ServiceMethodDto method = Method(
 			new WebServiceParameterArg("XPartner", "header", Path: "X-Partner"),
+			new WebServiceParameterArg("XLang", "header", Path: "X-Lang"),
 			new WebServiceParameterArg("apiKey", "query"),
 			new WebServiceParameterArg("lang", "query"));
 		foreach (ServiceParameterDto parameter in method.Request.Parameters.Items.Values) {
 			parameter.DefValue = new ServiceParameterValueDto {
-				Value = parameter.Name switch { "XPartner" => "partner-secret-1", "apiKey" => "query-key-2", _ => "en-GB" },
+				Value = parameter.Name switch { "XPartner" => "Lk7Hd93Qz20mWr4TbN8e", "XLang" => "en-US", "apiKey" => "query-key-2", _ => "en-GB" },
 				Source = ServiceSchemaCodes.ValueSourceConst
 			};
 		}
@@ -62,8 +63,8 @@ public sealed class WebServiceResponseMaskerTests {
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, "GET https://x/ HTTP/1.1", null);
 
 		// Assert
-		secrets.Should().BeEquivalentTo(["partner-secret-1", "query-key-2"],
-			because: "a constant on a header or under a credential-like name is hidden by describe, so an echo must hide it too, while 'lang' is shown by describe anyway");
+		secrets.Should().BeEquivalentTo(["Lk7Hd93Qz20mWr4TbN8e", "query-key-2"],
+			because: "a key-like header constant or one under a credential-like name is hidden by describe, so an echo must hide it too, while the plain X-Lang and lang constants are shown by describe anyway");
 	}
 
 	[Test]

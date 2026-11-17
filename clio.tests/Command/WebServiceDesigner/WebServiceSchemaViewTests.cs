@@ -143,6 +143,91 @@ public sealed class WebServiceSchemaViewTests {
 		secret.Should().Be(expected, because: "read masking and the write refusal follow the same rule");
 	}
 
+	[TestCase("Lk7Hd93Qz20mWr4TbN8e", true, Description = "a letters-and-digits key")]
+	[TestCase("0123456789abcdef", true, Description = "a 16-character hex key, the shortest key length")]
+	[TestCase("0123456789abcde", false, Description = "15 characters is under the key length")]
+	[TestCase("Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc", true, Description = "a key behind a scheme")]
+	[TestCase("\"QmFzZTY0U2lnbmF0dXJlVmFsdWUx==\"", true, Description = "a quoted, padded base64 key")]
+	[TestCase("sig=QmFzZTY0U2lnbmF0dXJlVmFsdWUx", true, Description = "a name=value part with a key value")]
+	[TestCase("3fa85f64-5717-4562-b3fc-2c963f66afa6", true, Description = "a GUID, a known false positive")]
+	[TestCase("https://bot:hunter2@hooks.example.com/in", true, Description = "an address with user information")]
+	[TestCase("https://hooks.example.com/in?token=abc", true, Description = "an address with a credential-named query key")]
+	[TestCase("https://hooks.example.com/in?x=QmFzZTY0U2lnbmF0dXJlVmFsdWUx", true, Description = "an address with a key-like query value")]
+	[TestCase("https://hooks.example.com/v2/orders/2024/archive?mode=full", false, Description = "an address with digits in its host and path")]
+	[TestCase("en-US,en;q=0.9", false, Description = "a language list")]
+	[TestCase("en-US", false, Description = "a language tag")]
+	[TestCase("2", false, Description = "a version")]
+	[TestCase("application/xml", false, Description = "a media type")]
+	[TestCase("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", false, Description = "a long media type without digits")]
+	[TestCase("text/xml; charset=utf-8", false, Description = "a media type with a parameter")]
+	[TestCase("max-age=31536000", false, Description = "a directive judged by its value")]
+	[TestCase("gzip, deflate, br", false, Description = "a list of words")]
+	[TestCase("", false, Description = "an empty value")]
+	[TestCase(null, false, Description = "no value")]
+	[Description("IsKeyLikeValue takes a part of 16+ characters mixing letters and digits (after quotes, padding and a name= prefix) for a key, and an address only by its user information or query; words, media types, language tags, versions and directives are not keys.")]
+	public void IsKeyLikeValue_Should_Tell_Keys_From_Plain_Header_Values(string value, bool expected) {
+		// Act
+		bool keyLike = WebServiceSchemaView.IsKeyLikeValue(value);
+
+		// Assert
+		keyLike.Should().Be(expected, because: "a header constant is hidden and refused only when its value looks like a key");
+	}
+
+	[TestCase("Accept-Language", "header", "en-US", false, Description = "neutral name, plain value: shown")]
+	[TestCase("X-Partner", "header", "Lk7Hd93Qz20mWr4TbN8e", true, Description = "neutral name, key-like value: secret")]
+	[TestCase("X-Api-Key", "header", "1", true, Description = "credential name: secret whatever the value")]
+	[TestCase("Authorization", "header", "Basic", true, Description = "Authorization is a credential name")]
+	[TestCase("theme", "cookie", "dark", true, Description = "a cookie is secret on its placement")]
+	[TestCase("format", "query", "Lk7Hd93Qz20mWr4TbN8e", false, Description = "a query value keeps the query rule: a neutral name is not judged by value")]
+	[TestCase("sig", "query", "Lk7Hd93Qz20mWr4TbN8e", true, Description = "a query value keeps the hosting-key rule")]
+	[TestCase("mode", "body", "Lk7Hd93Qz20mWr4TbN8e", false, Description = "a body value is judged by name only")]
+	[Description("IsSecretLike is the one rule every web service tool follows for a constant default: a cookie always, a credential-like name always, a query value by the query rule, a header value when it looks like a key.")]
+	public void IsSecretLike_Should_Apply_One_Rule_Per_Placement(string name, string placement, string value, bool expected) {
+		// Act
+		bool secret = WebServiceSchemaView.IsSecretLike(name, ServiceSchemaCodes.Placements[placement], value);
+
+		// Assert
+		secret.Should().Be(expected, because: "register refuses, describe hides and a test call masks by this one rule");
+	}
+
+	[Test]
+	[Description("A header constant describe shows is not masked in a test call's echo, and one describe hides is, so no constant is shown in one place and masked in the other.")]
+	public void Describe_And_Masker_Should_Agree_On_Header_Constants() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Send", "GET", "send",
+			RequestParameters: [
+				new WebServiceParameterArg("AcceptLanguage", "header", Path: "Accept-Language"),
+				new WebServiceParameterArg("XPartner", "header", Path: "X-Partner"),
+				new WebServiceParameterArg("XApiVersion", "header", Path: "X-Api-Version")
+			]), null, false, errors);
+		foreach (ServiceParameterDto parameter in method.Request.Parameters.Items.Values) {
+			parameter.DefValue = new ServiceParameterValueDto {
+				Value = parameter.Name switch {
+					"AcceptLanguage" => "en-US,en;q=0.9", "XPartner" => "Lk7Hd93Qz20mWr4TbN8e", _ => "2024-11"
+				},
+				Source = ServiceSchemaCodes.ValueSourceConst
+			};
+		}
+		var schema = new ServiceSchemaDto { Name = "UsrHeaders", Type = ServiceSchemaCodes.ServiceTypeRest };
+		schema.Methods.Items[method.UId.ToString()] = method;
+
+		// Act
+		IReadOnlyList<WebServiceParameterView> shown = WebServiceSchemaView.From(schema, "Custom").Methods.Single().RequestParameters;
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method,
+			"GET https://x/send HTTP/1.1\r\nAccept-Language: en-US,en;q=0.9\r\nX-Partner: Lk7Hd93Qz20mWr4TbN8e\r\nX-Api-Version: 2024-11", null);
+
+		// Assert
+		errors.Should().BeEmpty(because: "the method has no defaults when it is built");
+		shown.Single(p => p.Code == "AcceptLanguage").DefaultValue.Should().Be("en-US,en;q=0.9",
+			because: "a language list under a neutral name is not a credential");
+		shown.Single(p => p.Code == "XApiVersion").DefaultValue.Should().Be("2024-11", because: "a version is not a credential");
+		shown.Single(p => p.Code == "XPartner").Should().Match<WebServiceParameterView>(p => p.DefaultValue == null && p.DefaultMasked,
+			because: "a key-like value under a neutral name Studio stored stays hidden");
+		secrets.Should().Equal(["Lk7Hd93Qz20mWr4TbN8e"],
+			because: "a test call masks exactly the header constant describe hides, and leaves the shown ones readable");
+	}
+
 	[Test]
 	[Description("A method's parameters are listed in stored order, the order the platform renders them in, not sorted by name.")]
 	public void From_Should_List_Parameters_In_Stored_Order() {

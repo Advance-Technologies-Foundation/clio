@@ -117,7 +117,7 @@ public sealed record WebServiceParameterArg(
 	bool? Required = null,
 
 	[property: JsonPropertyName("default-value")]
-	[property: Description("Optional constant default. Refused on header, cookie and soap-header parameters and on any key, token, secret or password parameter: use default-sys-setting there.")]
+	[property: Description("Optional constant default. Refused on a cookie, on any key, token, secret, password, auth (Authorization) or session parameter, and on a header or soap-header parameter when the value looks like a key (a part of 16+ characters mixing letters and digits): use default-sys-setting there. A plain header constant such as Accept-Language: en-US or X-Api-Version: 2 is allowed and describe shows it.")]
 	string DefaultValue = null,
 
 	[property: JsonPropertyName("default-sys-setting")]
@@ -369,32 +369,105 @@ public static partial class WebServiceSchemaView {
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
 	private static partial Regex SecretNamePattern();
 
-	public static bool IsSecretLike(string parameterName, int placement) =>
-		placement == ServiceSchemaCodes.Placements["header"]
-		|| placement == ServiceSchemaCodes.Placements["cookie"]
-		|| IsSecretName(parameterName);
-
 	/// <summary>
-	/// Whether a parameter's constant default must be hidden: a header or cookie, a SOAP-header element (WS-Security
-	/// and licence headers travel there), or a code or wire name that looks like a credential.
+	/// Whether a parameter's constant default must be hidden, in the place where the platform sends it: a cookie, a code
+	/// or wire name that looks like a credential, or a value that looks like a key (<see cref="IsSecretLike(string, int, string)"/>).
+	/// A SOAP-header element (its own flag, or <paramref name="inSoapHeader"/> for an item the platform renders under a
+	/// SOAP-header parent) is judged as a header.
 	/// </summary>
-	public static bool IsSecretLike(ServiceParameterDto parameter) {
-		int placement = parameter.IsSoapHeader == true ? ServiceSchemaCodes.Placements["header"] : parameter.Type;
+	/// <param name="parameter">The stored parameter.</param>
+	/// <param name="inSoapHeader">Whether a parent of the parameter travels in a SOAP Header.</param>
+	/// <returns>Whether its constant default is a secret.</returns>
+	public static bool IsSecretLike(ServiceParameterDto parameter, bool inSoapHeader = false) {
+		int placement = inSoapHeader || parameter.IsSoapHeader == true
+			? ServiceSchemaCodes.Placements["header"]
+			: parameter.Type;
 		string value = parameter.DefValue?.Value;
 		return IsSecretLike(parameter.Name, placement, value) || IsSecretLike(parameter.Path, placement, value);
 	}
 
 	/// <summary>
-	/// As <see cref="IsSecretLike(string, int)"/>, and for a query parameter also a key-length constant under a hosting
-	/// key name (<see cref="IsSecretQueryValue"/>), the rule a key written into a URI follows.
+	/// The one rule by which a constant default is a secret, shared by register and modify-web-service (refused),
+	/// describe-web-service and list-web-services (hidden), the carry-over of a hidden constant, read-wsdl's carry-over
+	/// of a Studio constant, and a test call (masked in the echo): a cookie is always one; under a credential-like name
+	/// (<see cref="IsSecretName"/>, Authorization included) any value is; a query value follows
+	/// <see cref="IsSecretQueryValue"/>; a header or SOAP-header value is one when it looks like a key
+	/// (<see cref="IsKeyLikeValue"/>), so <c>Accept-Language: en-US</c> or <c>X-Api-Version: 2</c> is an ordinary
+	/// constant, as Studio allows it.
 	/// </summary>
 	/// <param name="parameterName">The parameter code or wire name.</param>
-	/// <param name="placement">The parameter placement.</param>
+	/// <param name="placement">The parameter placement; a SOAP-header element counts as a header.</param>
 	/// <param name="value">The constant default, or null.</param>
 	/// <returns>Whether a constant default there is a secret.</returns>
 	public static bool IsSecretLike(string parameterName, int placement, string value) =>
-		IsSecretLike(parameterName, placement)
-		|| (placement == ServiceSchemaCodes.Placements["query"] && IsSecretQueryValue(parameterName, value));
+		placement == ServiceSchemaCodes.Placements["cookie"]
+		|| IsSecretName(parameterName)
+		|| (placement == ServiceSchemaCodes.Placements["query"] && IsSecretQueryValue(parameterName, value))
+		|| (placement == ServiceSchemaCodes.Placements["header"] && IsKeyLikeValue(value));
+
+	// A value part at least this long can be a generated key: 16 characters is the shortest key in common use (a 64-bit
+	// key in hex) and the length MinHostingKeyLength takes for a key under a hosting key name. Shorter parts are versions,
+	// language tags, short media types and flags.
+	private const int MinKeyLikeLength = 16;
+
+	// Where a header value splits into parts judged one by one: a scheme and its key (Bearer abc...), list items
+	// (gzip, deflate) and parameters (text/xml; charset=utf-8). A key in base64, base64url, hex or a JWT holds none.
+	private static readonly char[] HeaderValueSeparators = [' ', '\t', '\r', '\n', ',', ';'];
+
+	/// <summary>
+	/// Whether a header value looks like a key, judged without its name, because a header carrying a key is often named
+	/// neutrally (<c>X-Partner</c>, <c>X-Client</c>). The value is split at spaces, commas and semicolons; a part is a key
+	/// when, without quotes, base64 padding and a leading <c>name=</c>, it is at least 16 characters and mixes letters
+	/// and digits. A generated key almost always does: a random 16-character letters-and-digits key lacks a digit about
+	/// one time in 17 ((52/62)^16), a 32-character one about one time in 280, and a hex key of 16 or more lacks a letter
+	/// or a digit less often than one time in 1,000; a key that does slip through is still caught by a credential-like
+	/// name. Words, media types (<c>application/json</c>), language tags (<c>en-US,en;q=0.9</c>), versions and
+	/// <c>max-age=3600</c> are not keys. An address (<c>scheme://</c>) is a key only where an address carries one: user
+	/// information, or a query value <see cref="IsSecretQueryValue"/> or this rule calls a key. Known false positives,
+	/// hidden and refused like keys: a GUID and an ISO timestamp (<c>2024-01-01T00:00:00Z</c>).
+	/// </summary>
+	/// <param name="value">The header value, or null.</param>
+	/// <returns>Whether any part of it looks like a key.</returns>
+	public static bool IsKeyLikeValue(string value) =>
+		!string.IsNullOrEmpty(value)
+		&& value.Split(HeaderValueSeparators, StringSplitOptions.RemoveEmptyEntries).Any(IsKeyLikePart);
+
+	private static bool IsKeyLikePart(string part) {
+		part = part.Trim('"', '\'');
+		int scheme = part.IndexOf("://", StringComparison.Ordinal);
+		return scheme >= 0 ? IsKeyLikeAddress(part[(scheme + 3)..]) : IsKeyLikeToken(part);
+	}
+
+	// A host and a path are not keys; user information and a query value can be.
+	private static bool IsKeyLikeAddress(string rest) {
+		int authorityEnd = rest.IndexOfAny(['/', '?', '#']);
+		if ((authorityEnd < 0 ? rest : rest[..authorityEnd]).Contains('@')) {
+			return true;
+		}
+		int question = rest.IndexOf('?');
+		if (question < 0) {
+			return false;
+		}
+		int hash = rest.IndexOf('#', question);
+		string query = hash < 0 ? rest[(question + 1)..] : rest[(question + 1)..hash];
+		return query.Split('&', StringSplitOptions.RemoveEmptyEntries).Any(pair => {
+			int equals = pair.IndexOf('=');
+			string name = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
+			string pairValue = equals < 0 ? string.Empty : Uri.UnescapeDataString(pair[(equals + 1)..]);
+			return IsSecretQueryValue(name, pairValue) || IsKeyLikeToken(pairValue);
+		});
+	}
+
+	// Base64 padding is dropped first, so a key's trailing '=' is not read as a name=value separator; a name=value part
+	// (max-age=3600, sig=...) is judged by its value.
+	private static bool IsKeyLikeToken(string token) {
+		string core = token.TrimEnd('=');
+		int equals = core.IndexOf('=');
+		if (equals > 0) {
+			core = core[(equals + 1)..];
+		}
+		return core.Length >= MinKeyLikeLength && core.Any(char.IsAsciiLetter) && core.Any(char.IsAsciiDigit);
+	}
 
 	/// <summary>Whether a parameter code or wire name looks like a credential (key, token, secret, password, ...).</summary>
 	public static bool IsSecretName(string name) => SecretNamePattern().IsMatch(name ?? string.Empty);
@@ -845,7 +918,7 @@ public static partial class WebServiceSchemaView {
 			.ToList();
 
 	// The platform renders the items of a SOAP-header parameter under the Header whatever their own flag says, so a
-	// constant there is hidden like a header constant even when an item lacks the flag.
+	// constant there is judged like a header constant (IsSecretLike) even when an item lacks the flag.
 	private static WebServiceParameterView Parameter(ServiceParameterDto parameter, bool soap, bool inSoapHeader,
 		IReadOnlyDictionary<string, string> secretPaths = null) {
 		ServiceParameterValueDto value = parameter.DefValue;
@@ -853,7 +926,7 @@ public static partial class WebServiceSchemaView {
 		bool header = inSoapHeader || (soap && parameter.IsSoapHeader == true);
 		bool fillsKey = parameter.Type == ServiceSchemaCodes.Placements["path"]
 			&& secretPaths?.ContainsKey(parameter.Path ?? string.Empty) == true;
-		bool masked = isConstant && (header || fillsKey || IsSecretLike(parameter));
+		bool masked = isConstant && (fillsKey || IsSecretLike(parameter, header));
 		// The platform stores isSoapHeader false and sequenceElementName "item" on every SOAP parameter, so only the
 		// values that change the envelope are reported: a SOAP-header flag, and the item name of a SOAP array.
 		bool? soapHeader = soap && parameter.IsSoapHeader == true ? true : null;

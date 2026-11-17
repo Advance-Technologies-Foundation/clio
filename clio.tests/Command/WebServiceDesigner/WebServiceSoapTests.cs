@@ -380,8 +380,8 @@ public sealed class WebServiceSoapTests {
 	}
 
 	[Test]
-	[Description("A constant default on a SOAP-header element is hidden by describe like a header constant.")]
-	public void From_Should_Hide_A_Soap_Header_Constant() {
+	[Description("A constant default on a SOAP-header element whose element path runs through a credential-like element (wsse:UsernameToken) is hidden by describe whatever the value.")]
+	public void From_Should_Hide_A_Soap_Header_Constant_Under_A_Credential_Path() {
 		// Arrange
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
 		ServiceParameterDto user = schema.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrUser");
@@ -392,7 +392,7 @@ public sealed class WebServiceSoapTests {
 			.Single(p => p.Code == "UsrUser");
 
 		// Assert
-		view.DefaultValue.Should().BeNull(because: "WS-Security and licence values travel in the SOAP Header");
+		view.DefaultValue.Should().BeNull(because: "the element path names a token, so any value under it is a credential");
 		view.DefaultMasked.Should().BeTrue(because: "the reader learns a constant exists");
 	}
 

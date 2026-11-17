@@ -666,7 +666,28 @@ public static partial class WsdlRegistrationMapper {
 				GiveBack(code, previous, codes);
 				return null;
 			}
-			return Argument(parameter, isRequest, code, path, sequenceElement, previous, items);
+			bool soapHeader = parameter.IsSoapHeader && isRequest;
+			string defaultValue = CarriedConstant(previous, code, path, soapHeader);
+			if (defaultValue is null && !string.IsNullOrEmpty(previous?.DefaultValue)) {
+				Warn($"Operation '{Shown(_operation)}': request element '{Shown(path)}' moves into the SOAP Header, where its "
+					+ "constant default looks like a key, so it is not carried; reference a system setting with "
+					+ "default-sys-setting and ask the user to fill its value.");
+			}
+			return Argument(parameter, code, path, sequenceElement, previous, items, soapHeader, defaultValue);
+		}
+
+		// A constant describe showed is carried unless the WSDL moves it to where register would take it for a secret: a
+		// parameter Studio kept in the body that the WSDL puts in the SOAP Header is judged as a header constant there
+		// (WebServiceSchemaView.IsSecretLike), with the same code and path, since the parameter was matched by its path.
+		private static string CarriedConstant(WebServiceParameterView previous, string code, string path, bool soapHeader) {
+			if (previous is not { DefaultMasked: false, DefaultValue: { Length: > 0 } value }) {
+				return null;
+			}
+			int placement = ServiceSchemaCodes.Placements[soapHeader ? "header" : "body"];
+			return WebServiceSchemaView.IsSecretLike(code, placement, value)
+				|| WebServiceSchemaView.IsSecretLike(path, placement, value)
+					? null
+					: value;
 		}
 
 		// The name a parameter's code is built from: the names of the whole path (never empty here: LeaveOutReason refuses
@@ -691,18 +712,18 @@ public static partial class WsdlRegistrationMapper {
 			}
 		}
 
-		// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method). A
-		// constant is not carried onto a soap header, where register refuses one.
-		private static WebServiceParameterArg Argument(WsdlParameter parameter, bool isRequest, string code, string path,
-				string sequenceElement, WebServiceParameterView previous, List<WebServiceParameterArg> items) {
-			bool soapHeader = parameter.IsSoapHeader && isRequest;
+		// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method); the
+		// constant default is the one CarriedConstant keeps.
+		private static WebServiceParameterArg Argument(WsdlParameter parameter, string code, string path,
+				string sequenceElement, WebServiceParameterView previous, List<WebServiceParameterArg> items, bool soapHeader,
+				string defaultValue) {
 			return new WebServiceParameterArg(code,
 				Type: parameter.Type,
 				Path: path,
 				Caption: parameter.Caption,
 				Array: parameter.IsArray ? true : null,
 				Required: previous?.Required == true ? true : null,
-				DefaultValue: previous is { DefaultMasked: false } && !soapHeader ? previous.DefaultValue : null,
+				DefaultValue: defaultValue,
 				DefaultSysSetting: previous?.DefaultSysSetting,
 				Items: items.Count > 0 ? items : null,
 				SoapHeader: soapHeader ? true : null,

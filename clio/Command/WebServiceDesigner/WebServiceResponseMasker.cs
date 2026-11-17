@@ -457,10 +457,11 @@ public static partial class WebServiceResponseMasker {
 	private static IEnumerable<string> SecretConstants(ServiceItemCollection<ServiceParameterDto> parameters,
 		bool inSoapHeader = false) {
 		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
-			// The items of a SOAP-header parameter travel in the Header whatever their own flag says.
+			// The items of a SOAP-header parameter travel in the Header whatever their own flag says, so they are judged
+			// as header constants, by the rule by which describe hides one.
 			bool header = inSoapHeader || parameter.IsSoapHeader == true;
 			if (parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value: { Length: > 0 } value }
-					&& (header || WebServiceSchemaView.IsSecretLike(parameter))) {
+					&& WebServiceSchemaView.IsSecretLike(parameter, header)) {
 				yield return value;
 			}
 			foreach (string nested in SecretConstants(parameter.ItemProperties, header)) {

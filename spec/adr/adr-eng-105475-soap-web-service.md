@@ -414,6 +414,20 @@ again and then replaced the generated code at registration, against the guide's 
 are". Rejected: reading an unregistered `service-code` as a new service. It would remove the failed call, but a typo in
 an existing service's code would silently build a second service instead of extending the first.
 
+### D17. Header and SOAP-header constants follow a name-and-value rule (owner, 2026-11-17; supersedes part of D4, D8)
+
+QA note 4: every header constant was refused and hidden on its placement alone, so a non-secret one Studio allows
+(`Accept-Language: en-US`, a SOAP 1.2 `Content-Type`) could not be written and describe hid it. Owner's choice
+(the third option offered, "follow the query rule"): a constant default on a header, or on a SOAP-header element and its items, is a secret only when a code or
+wire name looks like a credential (`Authorization` included) or the value looks like a key
+(`WebServiceSchemaView.IsKeyLikeValue`: a part of 16+ characters mixing letters and digits, or an address with user
+information or a key in its query). A cookie stays refused on its placement. One predicate,
+`WebServiceSchemaView.IsSecretLike`, decides the register/modify refusal, describe's hiding, the carry-over of a hidden
+constant, read-wsdl's carry-over into the Header and a test call's masking, so no constant is shown in one place and
+masked in another. A key-like constant Studio stored under a neutral name stays hidden and masked. Rejected: a value
+check only by the hosting-key names the query rule uses (a header carrying a key is usually named neutrally); an
+entropy threshold (no better separation on 16-character values, and harder to state to an agent).
+
 ## Consequences
 
 - Slice A changes no write path: register still creates REST only and modify still refuses SOAP until slice B.
