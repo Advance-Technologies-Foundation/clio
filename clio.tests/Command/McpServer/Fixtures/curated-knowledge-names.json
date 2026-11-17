@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.235",
-  "sequence": 1015235000,
+  "libraryVersion": "1.15.236",
+  "sequence": 1015236000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -16,6 +16,7 @@
     "business-rule-filters",
     "business-rules",
     "chart-widget",
+    "column-rights",
     "composable-app-e2e-test-implementation",
     "composable-app-repo-bootstrap",
     "configuration-entity-event-listener",
@@ -40,6 +41,7 @@
     "creatio.business-rule-filters",
     "creatio.business-rules",
     "creatio.chart-widget",
+    "creatio.column-rights",
     "creatio.composable-app-e2e-test-implementation",
     "creatio.composable-app-repo-bootstrap",
     "creatio.configuration-entity-event-listener",
