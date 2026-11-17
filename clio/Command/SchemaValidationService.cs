@@ -2522,9 +2522,11 @@ public static class SchemaValidationService
 			ValidateValueAgainstTypeExpression(value, boundArgument, typeDefinitions, path, result, report);
 			return;
 		}
-		// Inline object shape (e.g. aggregation: { column: { required } }).
+		// Inline object shape (e.g. aggregation: { column: { required } }). Its records may be another
+		// generic's default expanded in place, whose "typeParameter" markers name THAT generic's
+		// parameters, so the bindings of the generic being walked must not leak into it.
 		if (fieldDefinition.TryGetProperty("shape", out JsonElement shape) && shape.ValueKind == JsonValueKind.Object) {
-			ValidateFieldsMap(value, shape, substitution, typeDefinitions, path, result, report);
+			ValidateFieldsMap(value, shape, EmptyTypeSubstitution, typeDefinitions, path, result, report);
 			return;
 		}
 		if (!fieldDefinition.TryGetProperty("type", out JsonElement typeElement) ||

@@ -11354,6 +11354,27 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("ENG-92174: a generic's bindings stay with its own fields — a typeParameter marker inside an inline shape belongs to whatever generic was expanded there, so an equally named outer parameter is not bound into it.")]
+	public void ValidateChartWidgetConfig_TypeParameterMarkerInsideInlineShape_IsNotBoundByOuterGeneric() {
+		// Arrange
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"column":{"expression":{}}},"holder":{"inner":{"nested":{}}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+		IReadOnlyDictionary<string, JsonElement> withHolder = ChartTypeDefs(typeDefinitions => {
+			typeDefinitions["WidgetDataProvidingConfig"]!["fields"]!["holder"] =
+				System.Text.Json.Nodes.JsonNode.Parse("""{ "type": "Holder<SeriesDataProvidingConfig>" }""");
+			typeDefinitions["Holder"] = System.Text.Json.Nodes.JsonNode.Parse(
+				"""{ "typeParameters": ["T"], "fields": { "inner": { "type": "object", "shape": { "nested": { "type": "object", "typeParameter": "T" } } } } }""");
+		});
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, withHolder);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because 'nested' is not one of Holder's own fields, so Holder's T must not be bound into it");
+		result.Errors.Should().BeEmpty("because binding T there would check an empty object against SeriesDataProvidingConfig");
+	}
+
+	[Test]
 	[Description("ENG-92174: the runtime series' data-providing subtype is checked against the WidgetDataProvidingConfig contract — a missing contract field is reported, a missing subtype-only field (rowCount) is not.")]
 	public void ValidateChartWidgetConfig_SubtypeOnlyFieldMissing_NotFlagged_ContractFieldMissing_Flagged() {
 		// Arrange
