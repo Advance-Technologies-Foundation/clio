@@ -14,7 +14,8 @@ namespace Clio.Common.ObjectRights;
 /// <param name="Access">The level the grantee's row gets; <see langword="null"/> for a move, a removal or a switch.</param>
 /// <param name="RemoveRow">Remove the grantee's row from the column.</param>
 /// <param name="Position">Where the grantee's row goes in the column's stored position order, 0 first;
-/// <see langword="null"/> keeps it (or appends a new row after the last one).</param>
+/// <see langword="null"/> keeps an existing row in place, and puts a new row at the top — a new All employees row at the
+/// bottom.</param>
 /// <param name="EnableColumnPermissions">Turn column permissions on: with a grant, or alone.</param>
 /// <param name="DisableColumnPermissions">Turn column permissions off, alone.</param>
 public sealed record ColumnRightsChangeRequest(
@@ -81,8 +82,9 @@ public enum ColumnRightsRefusal {
 	/// measured, so the call asks to turn them on first.</summary>
 	SwitchOffForLayout,
 
-	/// <summary>A removal of the All employees row of a column whose only row it is (the default): the column would
-	/// have no rows, the save would not name it, and the service would write the same default row back.</summary>
+	/// <summary>A removal of the All employees row of a column whose only row it is (the default): with no rows every user
+	/// follows the object's operation permissions (Creatio documentation), which the default row already amounts to for
+	/// members of All employees, so the removal changes no one's access.</summary>
 	RemovesTheDefault,
 
 	/// <summary>Two rows of the changed column share a stored position, so the column's order — which per Creatio's
@@ -157,18 +159,18 @@ public sealed record ColumnRightsPlan(
 	public int MaxPosition { get; init; }
 
 	/// <summary>
-	/// Rows of the changed column that sit below an All employees row and grant less than it (edit over read or denied,
-	/// read over denied). Per Creatio's documentation the higher row wins for a user in several roles (documented, not
-	/// measured), so for members of All employees such a row does not narrow anything; the output warns about it.
+	/// Rows of the changed column that sit below an All employees row and grant a different level (less or more). Per
+	/// Creatio's documentation the higher row wins for a user in several roles (documented, not measured), so for members
+	/// of All employees such a row changes nothing — the All employees row decides; the output warns about it.
 	/// </summary>
-	public IReadOnlyList<ColumnRightRow> NarrowerRowsBelowAllEmployees {
+	public IReadOnlyList<ColumnRightRow> RowsBelowAllEmployeesWithAnotherLevel {
 		get {
 			ColumnRightRow allEmployees = ColumnRowsAfter.FirstOrDefault(row => row.GranteeId == SysAdminUnitIds.AllEmployees
 				&& row.Level is not null);
 			return allEmployees is null
 				? []
 				: ColumnRowsAfter.Where(row => row.GranteeId != SysAdminUnitIds.AllEmployees && row.Level is not null
-					&& (int)row.Level < (int)allEmployees.Level && row.Position > allEmployees.Position).ToArray();
+					&& row.Level != allEmployees.Level && row.Position > allEmployees.Position).ToArray();
 		}
 	}
 
@@ -187,8 +189,9 @@ public interface IColumnRightsPlanner {
 	/// row change or an enable sends a column list built from STORAGE: every column whose stored rows are not exactly the
 	/// default, as stored, with the changed column's planned rows; a column that has no stored row is sent with none
 	/// while column permissions are on (so it stays as it is), and is left out when the call turns them on (so it gets
-	/// the default); a column the call empties is left out (it gets the default); a removal of a row the grantee no longer
-	/// has is no change. A disable sends no list. A level change keeps every position as stored; a new row without a
+	/// the default); a column the call empties is sent with none while column permissions are on, so it ends with no rows
+	/// (every user then follows the object's operation permissions, per Creatio's documentation); a removal of a row the
+	/// grantee no longer has is no change. A disable sends no list. A level change keeps every position as stored; a new row without a
 	/// position goes to the top (position 0), which per Creatio's documentation wins — one for All employees to the
 	/// bottom, so a broad grant does not override the specific rows; a new row with a position, a move
 	/// and a removal go where named; the column's rows are then renumbered 0..n-1. When the call turns column permissions
@@ -292,8 +295,10 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 			bool target = !request.SwitchOnly && uId == request.ColumnUId;
 			IReadOnlyList<ColumnRightRow> rows = target ? plannedTarget : ColumnRightsPlan.RowsOf(before, uId);
 			string caption = (target ? request.ColumnCaption : null) ?? captions.GetValueOrDefault(uId);
+			// The changed column is always named, even emptied: sent with none it ends with no rows; left out it would get
+			// the default row instead.
 			bool send = target
-				? rows.Count > 0
+				? rows.Count > 0 || switchWasOn
 				: !ColumnRightsDefaults.IsDefaultOnly(rows) && (rows.Count > 0 || switchWasOn);
 			if (send) {
 				ColumnRights column = new(uId, caption, rows);

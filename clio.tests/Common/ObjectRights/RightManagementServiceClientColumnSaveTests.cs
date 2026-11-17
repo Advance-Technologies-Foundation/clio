@@ -344,19 +344,35 @@ public class AdministratedObjectWriteLeaseTests {
 	}
 
 	[Test]
-	[Description("An IO failure that is not another holder — here, a lock folder that cannot be created — is reported as it is, never as another call running.")]
-	public void Acquire_ShouldReportTheIoFailure_WhenTheLockFolderCannotBeCreated() {
+	[Description("A lock folder that cannot be used — here a file stands where the folder should be — is skipped for the next one, the temp folder in production; never reported as another call running.")]
+	public void Acquire_ShouldFallBackToTheNextFolder_WhenAFolderCannotBeUsed() {
 		// Arrange
 		System.IO.File.WriteAllText(_root, "a file where the lock folder should be");
-		AdministratedObjectWriteLease lease = new(new EnvironmentSettings { Uri = "https://dev.example.com" }, _root);
+		string fallback = _root + "-fallback";
+		AdministratedObjectWriteLease lease = new(new EnvironmentSettings { Uri = "https://dev.example.com" }, _root, fallback);
 
 		// Act
-		Action act = () => lease.Acquire("UsrHoliday").Dispose();
+		IDisposable held = lease.Acquire("UsrHoliday");
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>(because: "the lock cannot be taken")
-			.Where(ex => ex.Message.Contains("cannot take the permissions lock") && !ex.Message.Contains("another call"),
-				because: "a failure that is not contention must not be reported as another call");
+		held.Should().BeOfType<System.IO.FileStream>(because: "the second folder holds the lock");
+		held.Dispose();
+		System.IO.Directory.Delete(fallback, true);
+	}
+
+	[Test]
+	[Description("When no lock folder can be used the lease is not refused: an unheld lease names why, and the write goes on (the caller warns).")]
+	public void Acquire_ShouldReturnAnUnheldLease_WhenNoFolderCanBeUsed() {
+		// Arrange
+		System.IO.File.WriteAllText(_root, "a file where the lock folder should be");
+		AdministratedObjectWriteLease lease = new(new EnvironmentSettings { Uri = "https://dev.example.com" }, _root, _root);
+
+		// Act
+		IDisposable held = lease.Acquire("UsrHoliday");
+
+		// Assert
+		held.Should().BeOfType<UnheldLease>(because: "a read-only container must not refuse every write")
+			.Which.Reason.Should().Contain(_root, because: "the reason names the folder that could not be used");
 	}
 
 	[TestCase("https://dev.example.com/", "HTTPS://DEV.EXAMPLE.COM")]

@@ -39,14 +39,16 @@ public class SetColumnRightsOptions : RemoteCommandOptions {
 	/// <summary>The access the grantee's row gets: denied, read or edit.</summary>
 	[Option("access", Required = false, HelpText =
 		"Access the grantee's row in the column gets: denied, read or edit. A grantee with no row gets one at the top "
-		+ "(position 0, which per Creatio's documentation wins), or at --position; an existing row keeps its place.")]
+		+ "(position 0, which per Creatio's documentation wins) - All employees at the bottom - or at --position; an "
+		+ "existing row keeps its place.")]
 	public string Access { get; set; }
 
 	/// <summary>Remove the grantee's row from the column; a call of its own.</summary>
 	[Option("remove-row", Required = false, HelpText =
-		"Remove the grantee's row from the column; no change when it has none. Removing the column's last row other "
-		+ "than the default leaves the default row (All employees: edit), which widens access. A call of its own: not "
-		+ "with --access, --position or a switch flag.")]
+		"Remove the grantee's row from the column; no change when it has none. Removing the column's last row leaves it "
+		+ "with no rows: every user then follows the object's operation permissions (Creatio documentation); the "
+		+ "summary says when that widens the removed row's access. A call of its own: not with --access, --position or "
+		+ "a switch flag.")]
 	public bool RemoveRow { get; set; }
 
 	/// <summary>Put the grantee's row at this position of the column's stored position order, 0 first.</summary>
@@ -243,9 +245,10 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		if (!TryReadFresh(schemaName, label, before, stored, plan, requestOptions, out ObjectRightsInfo fresh)) {
 			return 1;
 		}
-		// The save, then the read-back of the switches and of storage, counted: four requests.
-		if (!ObjectRightsCommandInput.HasTimeFor(requestOptions, 4, schemaName, "save",
-				"the save and the read-back need", "nothing was changed", _logger)) {
+		// Time is reserved for the save and one read-back request; a read-back the limit then cuts short reports the save
+		// as saved but NOT verified, a failure, rather than refusing a save that had room.
+		if (!ObjectRightsCommandInput.HasTimeFor(requestOptions, 2, schemaName, "save",
+				"the save and its read-back need", "nothing was changed", _logger)) {
 			return 1;
 		}
 		ObjectRightsSaveResult save = _writer.Save(fresh.Snapshot, plan.SwitchAfter, plan.SaveList, requestOptions);
@@ -253,7 +256,11 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName, readBackOptions);
 		IReadOnlyList<ColumnRights> actualStored = null;
 		string actualStoredError = null;
-		if (actual.IsRead
+		if (!storedRead) {
+			// A disable that went ahead without reading the stored rows has nothing to compare them with: only its switch
+			// is checked, and no stored row is blamed on another client.
+			actualStored = plan.Before.Columns;
+		} else if (actual.IsRead
 			&& !TryReadStored(actual, label, readBackOptions, true, out actualStored, out actualStoredError)) {
 			actualStored = null;
 			// A disable sends no list: its result is the switch, and rows not read back are only said.
@@ -337,7 +344,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			.Select(entry => (Guid?)entry.UId).ToHashSet();
 		ColumnRights[] ownInSchema = stored.Where(entry => schemaColumnUIds.Contains(entry.ColumnUId)).ToArray();
 		StoredColumnRights[] elsewhere = byColumn
-			.Where(entry => entry.SubjectSchemaUId != schemaUId && ownColumnUIds.Contains(entry.Column.ColumnUId))
+			.Where(entry => entry.SubjectSchemaUId != schemaUId && ownColumnUIds.Contains(entry.Column.ColumnUId)
+				&& !InheritsColumn(entry.SubjectSchemaUId, entry.Column.ColumnUId, requestOptions))
 			.ToArray();
 		if (!SameStorage(ownInSchema, own) || elsewhere.Length > 0) {
 			_logger.WriteError($"Error: the stored column permission rows of {label} read by column UId differ from the "
@@ -356,6 +364,31 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			+ (others > 0 ? $" (and {others} row(s) of other objects on inherited columns, which they share)." : "."));
 		return true;
 	}
+
+	// Whether the schema with that UId inherits the column — a child object with column permissions of its own on a column
+	// it inherits from this one. Anything the reads cannot confirm (no such entity schema, its columns not read, the
+	// column its own) is not inheritance, so the rows count against the enable.
+	private bool InheritsColumn(Guid schemaUId, Guid? columnUId, CreatioRequestOptions requestOptions) {
+		if (!_schemaNames.TryGetValue(schemaUId, out string name)) {
+			try {
+				foreach (KeyValuePair<Guid, string> found in _storage.FindSchemaNames([schemaUId], requestOptions)) {
+					_schemaNames[found.Key] = found.Value;
+				}
+			}
+			catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
+				return false;
+			}
+			if (!_schemaNames.TryGetValue(schemaUId, out name)) {
+				return false;
+			}
+		}
+		return ObjectRightsCommandInput.TryReadSchemaColumns(_columnManager, name, requestOptions,
+				out IReadOnlyList<EntitySchemaPropertyColumnInfo> columns, out _)
+			&& columns.Any(entry => entry.UId == columnUId
+				&& !string.Equals(entry.Source, "own", StringComparison.OrdinalIgnoreCase));
+	}
+
+	private readonly Dictionary<Guid, string> _schemaNames = new();
 
 	// The object and its rows read again right before the save; a switch, the schema UId or — for a save that names
 	// columns — a stored row that changed since the plan refuses the save. A disable sends no list, so its rows are not
@@ -426,11 +459,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 					return $"Turn column permissions {(Request.DisableColumnPermissions ? "OFF" : "ON")} on {Label}.";
 				}
 				if (Request.RemoveRow) {
-					return $"Remove the row of grantee {GranteeLabel} from column {ColumnLabel} on {Label}."
-						+ (ColumnRightsDefaults.IsDefaultOnly(Plan.ColumnRowsAfter)
-							? " The column is left with the default row only (All employees: edit), which WIDENS access "
-								+ "to it."
-							: "");
+					return $"Remove the row of grantee {GranteeLabel} from column {ColumnLabel} on {Label}.{RemovalEffect}";
 				}
 				if (Request.MovesOnly) {
 					return $"Move the row of grantee {GranteeLabel} in column {ColumnLabel} to position "
@@ -439,6 +468,31 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				return $"Set {ColumnRightLevelNames.Of(Request.Access)} for grantee {GranteeLabel} on column "
 					+ $"{ColumnLabel} of {Label}"
 					+ (Request.Position is { } position ? $", at position {position}." : ".");
+			}
+		}
+
+		// What applies to the removed row's members afterwards, and whether that widens their access. Per Creatio's
+		// documentation a role with no row in a column follows the other rows it matches — All employees, for an internal
+		// user — or, with none, the object's operation permissions (taken as up to edit: they are not read here).
+		public string RemovalEffect {
+			get {
+				ColumnRightRow removed = Plan.ColumnRowsBefore.FirstOrDefault(row => row.GranteeId == Request.Grantee);
+				if (removed?.Level is not { } level) {
+					return "";
+				}
+				ColumnRightRow allEmployees = Plan.ColumnRowsAfter.FirstOrDefault(row =>
+					row.GranteeId == SysAdminUnitIds.AllEmployees && row.Level is not null);
+				string applies = Plan.ColumnRowsAfter.Count == 0
+					? "the column is left with no rows: every user then follows the object's operation permissions "
+						+ "(Creatio documentation)"
+					: allEmployees is not null && Request.Grantee != SysAdminUnitIds.AllEmployees
+						? $"its members then follow the All employees row ({ColumnRightLevelNames.Of(allEmployees.Level)})"
+						: "its members then follow the column's other rows they match, or the object's operation permissions";
+				ColumnRightLevel after = allEmployees is not null && Request.Grantee != SysAdminUnitIds.AllEmployees
+					? allEmployees.Level!.Value
+					: ColumnRightLevel.Edit;
+				return $" The removed row granted {ColumnRightLevelNames.Of(level)}; {applies}"
+					+ ((int)level < (int)after ? ", which WIDENS their access." : ".");
 			}
 		}
 
@@ -632,9 +686,9 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ "permissions designer, then re-run.",
 			ColumnRightsRefusal.RemovesTheDefault =>
 				$"column {change.ColumnLabel} of {change.Label} has only the default row (All employees: edit). Removing "
-				+ "it would leave the column with no rows, which the save does not name, so the service would write the "
-				+ "same default row back. To restrict the column, add a row for a role, or set All employees to read or "
-				+ "denied with --access.",
+				+ "it changes no one's access: with no rows every user follows the object's operation permissions "
+				+ "(Creatio documentation), which the default row already amounts to. To restrict the column, add a row "
+				+ "for a role, or set All employees to read or denied with --access.",
 			ColumnRightsRefusal.SwitchUnknown =>
 				$"the read of {change.Label} carried no readable \"Use column permissions\" switch, so what a save would "
 				+ "turn on or off is unknown. Check the object with get-column-rights.",
@@ -701,12 +755,12 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 						: "The new row goes to position 0, the top: per Creatio's documentation the higher row wins for a "
 							+ "user in several roles. The other rows move down one.");
 			}
-			IReadOnlyList<ColumnRightRow> narrower = plan.NarrowerRowsBelowAllEmployees;
-			if (narrower.Count > 0) {
-				facts.Add($"Warning: in column {change.ColumnLabel}, All employees sits above {FormatRows(narrower)}, "
-					+ "which grant less. Per Creatio's documentation the higher row wins for a user in several roles "
-					+ "(documented, not measured), so for members of All employees those rows narrow nothing: put them "
-					+ "above the All employees row (--position).");
+			IReadOnlyList<ColumnRightRow> below = plan.RowsBelowAllEmployeesWithAnotherLevel;
+			if (below.Count > 0) {
+				facts.Add($"Warning: in column {change.ColumnLabel}, All employees sits above {FormatRows(below)}, which "
+					+ "grant another level. Per Creatio's documentation the higher row wins for a user in several roles "
+					+ "(documented, not measured), so for members of All employees the All employees row decides and those "
+					+ "rows change nothing: put them above it (--position) if they are meant to apply.");
 			}
 		}
 		if (plan.RewritesColumns) {

@@ -142,8 +142,8 @@ public class ColumnRightsPlannerTests {
 	}
 
 	[Test]
-	[Description("Removing a column's last row leaves the column out of the list, so it gets the default row instead of keeping no rows.")]
-	public void Plan_ShouldGiveTheDefault_WhenTheLastRowIsRemoved() {
+	[Description("While ON, removing a column's last row sends the column with no rows — so every user follows the object's operation permissions, per Creatio's documentation — instead of leaving it out, which would write the default row.")]
+	public void Plan_ShouldSendTheColumnEmpty_WhenTheLastRowIsRemoved() {
 		// Arrange
 		ColumnRightsLayer layer = Layer(true, Known(Amount), Column(Amount, Row(Role, 0, ColumnRightLevel.Denied)));
 
@@ -151,9 +151,10 @@ public class ColumnRightsPlannerTests {
 		ColumnRightsPlan plan = _planner.Plan(layer, Remove());
 
 		// Assert
-		Listed(plan, Amount).Should().BeNull(because: "an emptied column is not sent with no rows");
-		plan.DefaultedColumns.Should().Equal(new[] { Amount }, because: "the output names it as getting the default");
-		plan.ColumnRowsAfter.Should().Equal(new[] { ColumnRightsDefaults.Row }, because: "storage then holds the default");
+		Listed(plan, Amount).Should().NotBeNull(because: "the emptied column is named in the list");
+		Listed(plan, Amount).Rows.Should().BeEmpty(because: "it is sent with no rows");
+		plan.DefaultedColumns.Should().BeEmpty(because: "it does not get the default row");
+		plan.ColumnRowsAfter.Should().BeEmpty(because: "storage then holds no row for it");
 	}
 
 	[Test]
@@ -311,12 +312,12 @@ public class ColumnRightsPlannerTests {
 		// Assert
 		plan.ColumnRowsAfter.Should().Equal(new[] { Row(Role, 0, ColumnRightLevel.Denied), Row(Admins, 1, ColumnRightLevel.Edit),
 			Row(Employees, 2, ColumnRightLevel.Read) }, because: "the broad row goes below every specific row");
-		plan.NarrowerRowsBelowAllEmployees.Should().BeEmpty(because: "nothing sits below the All employees row");
+		plan.RowsBelowAllEmployeesWithAnotherLevel.Should().BeEmpty(because: "nothing sits below the All employees row");
 	}
 
 	[Test]
-	[Description("Any All employees row above a row that grants less is reported — with or without a position, edit over read or denied, read over denied.")]
-	public void Plan_ShouldReportNarrowerRowsBelowAllEmployees_WhenAllEmployeesSitsAboveThem() {
+	[Description("Any row below an All employees row with another level is reported — lower (denied below edit, denied below read) or higher (edit below read): for members of All employees the All employees row decides.")]
+	public void Plan_ShouldReportRowsBelowAllEmployeesWithAnotherLevel_WhenAllEmployeesSitsAboveThem() {
 		// Arrange
 		ColumnRightsLayer readAbove = Layer(true, Known(Amount), Column(Amount, Row(Employees, 0, ColumnRightLevel.Read),
 			Row(Role, 1, ColumnRightLevel.Read)));
@@ -324,30 +325,33 @@ public class ColumnRightsPlannerTests {
 		// Act
 		ColumnRightsPlan editPlaced = _planner.Plan(Layer(false, Known(Amount)),
 			Grant(ColumnRightLevel.Denied, position: 1, enable: true));
-		ColumnRightsPlan readOverDenied = _planner.Plan(readAbove, Grant(ColumnRightLevel.Denied));
+		ColumnRightsPlan lowerBelow = _planner.Plan(readAbove, Grant(ColumnRightLevel.Denied));
+		ColumnRightsPlan higherBelow = _planner.Plan(readAbove, Grant(ColumnRightLevel.Edit));
 
 		// Assert
-		editPlaced.NarrowerRowsBelowAllEmployees.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
-			because: "a deny row placed below All employees: edit narrows nothing for its members");
-		readOverDenied.NarrowerRowsBelowAllEmployees.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
+		editPlaced.RowsBelowAllEmployeesWithAnotherLevel.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
+			because: "a deny row below All employees: edit changes nothing for its members");
+		lowerBelow.RowsBelowAllEmployeesWithAnotherLevel.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Denied) },
 			because: "a level change, without a position, leaves All employees: read above the deny row");
+		higherBelow.RowsBelowAllEmployeesWithAnotherLevel.Should().Equal(new[] { Row(Role, 1, ColumnRightLevel.Edit) },
+			because: "an edit row below All employees: read changes nothing for its members either");
 	}
 
 	[Test]
-	[Description("No warning when the rows below All employees grant as much or more, or when the restriction sits above it.")]
-	public void Plan_ShouldNotReportNarrowerRows_WhenNoneSitsBelowAllEmployees() {
+	[Description("No warning when the rows below All employees grant the same level, or when the other row sits above it.")]
+	public void Plan_ShouldNotReportRows_WhenNoneBelowAllEmployeesHasAnotherLevel() {
 		// Arrange
 		ColumnRightsLayer layer = Layer(true, Known(Amount), Column(Amount, Row(Employees, 0, ColumnRightLevel.Read),
-			Row(Admins, 1, ColumnRightLevel.Edit)));
+			Row(Admins, 1, ColumnRightLevel.Read)));
 
 		// Act
-		ColumnRightsPlan higherBelow = _planner.Plan(layer, Grant(ColumnRightLevel.Read, position: 2));
+		ColumnRightsPlan sameBelow = _planner.Plan(layer, Grant(ColumnRightLevel.Read, position: 2));
 		ColumnRightsPlan restrictionOnTop = _planner.Plan(Layer(false, Known(Amount)),
 			Grant(ColumnRightLevel.Denied, enable: true));
 
 		// Assert
-		higherBelow.NarrowerRowsBelowAllEmployees.Should().BeEmpty(because: "edit and read below All employees: read do not grant less");
-		restrictionOnTop.NarrowerRowsBelowAllEmployees.Should().BeEmpty(because: "the new deny row goes above the default row");
+		sameBelow.RowsBelowAllEmployeesWithAnotherLevel.Should().BeEmpty(because: "rows with the same level below it change nothing");
+		restrictionOnTop.RowsBelowAllEmployeesWithAnotherLevel.Should().BeEmpty(because: "the new deny row goes above the default row");
 	}
 
 	[Test]

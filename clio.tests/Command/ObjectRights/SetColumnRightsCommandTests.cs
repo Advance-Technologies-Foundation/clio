@@ -65,6 +65,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		base.AdditionalRegistrations(containerBuilder);
 		_reader = Substitute.For<IObjectRightsReader>();
 		_storage = Substitute.For<IColumnRightsStorageReader>();
+		_storage.FindSchemaNames(default, default).ReturnsForAnyArgs(new Dictionary<Guid, string>());
 		_writer = Substitute.For<IColumnRightsWriter>();
 		_lease = Substitute.For<IAdministratedObjectWriteLease>();
 		_granteeLookup = Substitute.For<IGranteeLookup>();
@@ -410,9 +411,9 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		// Arrange
 		Reads(true, []);
 		SetColumnRightsOptions options = Grant();
-		// Between three and four timeouts: room for a three-request read-back, not for the counted four.
+		// Between one and two timeouts: room for the save alone, not for the save and a read-back request.
 		options.TimeOut = 10_000;
-		options.CallBudget = TimeSpan.FromSeconds(35);
+		options.CallBudget = TimeSpan.FromSeconds(15);
 
 		// Act
 		int exitCode = _command.Execute(options);
@@ -471,7 +472,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 		// Assert
 		placedBelow.Should().Contain(line => line.Contains("Warning: in column UsrAmount 'Amount', All employees sits above")
-			&& line.Contains("narrow nothing"), because: "the deny row sits below All employees: edit");
+			&& line.Contains("change nothing"), because: "the deny row sits below All employees: edit");
 		_infos.Should().NotContain(line => line.Contains("Warning: in column"),
 			because: "a new row without a position goes to the top, above the default row");
 		_infos.Should().Contain(line => line.Contains("The new row goes to position 0, the top"),
@@ -580,7 +581,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("Removing the only row of a default-only column is refused with why: the service would write the same default back.")]
+	[Description("Removing the only row of a default-only column is refused with why: with no rows every user follows the object's operation permissions, which the default row already amounts to.")]
 	public void Execute_ShouldRefuse_WhenRemovingTheDefaultRow() {
 		// Arrange
 		Reads(true, [Stored(AmountUId, ColumnRightsDefaults.Row)]);
@@ -590,7 +591,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "the removal would change nothing");
-		_errors.Should().Contain(line => line.Contains("only the default row") && line.Contains("same default row back"),
+		_errors.Should().Contain(line => line.Contains("only the default row") && line.Contains("changes no one's access"),
 			because: "the refusal explains why");
 	}
 
@@ -889,7 +890,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	}
 
 	[Test]
-	[Description("Removing a column's last row other than the default says, in the summary the host approves, that the column gets the default row and its access WIDENS.")]
+	[Description("Removing a column's last row while ON sends it with no rows; the summary the host approves says every user then follows the object's operation permissions, and that this WIDENS the removed deny row's access.")]
 	public void Execute_ShouldSayTheAccessWidens_WhenTheLastRowIsRemoved() {
 		// Arrange
 		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
@@ -902,8 +903,104 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the preview ran");
-		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("WIDENS access"),
-			because: "the summary line names the widening");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("left with no rows")
+			&& line.Contains("operation permissions") && line.Contains("WIDENS"),
+			because: "the summary line names what applies afterwards and the widening");
+	}
+
+	[Test]
+	[Description("Removing a row that granted edit, with All employees: read left, does not claim a widening: its members then follow All employees' read.")]
+	public void Execute_ShouldNotSayWidens_WhenTheRemovedRowGrantedMore() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Edit), Row(Employees, 1, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("follow the All employees row (read)"),
+			because: "the summary says what applies afterwards");
+		_infos.Should().NotContain(line => line.StartsWith("PREVIEW") && line.Contains("WIDENS"),
+			because: "edit was not narrower than what then applies");
+	}
+
+	[Test]
+	[Description("The emptied column is sent with no rows, and storage must then hold none for it.")]
+	public void Execute_ShouldSendTheEmptiedColumnWithNoRows_WhenTheLastRowIsRemoved() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))], storedAfter: []);
+
+		// Act
+		int exitCode = _command.Execute(Remove(Role));
+
+		// Assert
+		exitCode.Should().Be(0, because: "storage holds no row for the column, as planned");
+		_sentList.Single(column => column.ColumnUId == AmountUId).Rows.Should().BeEmpty(
+			because: "the column is named with no rows, not left to the default");
+	}
+
+	[Test]
+	[Description("A disable that went ahead without reading the stored rows checks only its switch on the read-back: no stored row is blamed on another client.")]
+	public void Execute_ShouldNotCompareRows_WhenADisableDidNotReadThem() {
+		// Arrange
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
+			.Returns(Object(true, []), Object(true, []), Object(false, []));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>())
+			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: Access denied"),
+				_ => [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the switch is off on the read-back");
+		_warnings.Should().NotContain(line => line.Contains("Differs from the plan"),
+			because: "rows that were never read are not compared");
+		Calls(_storage, nameof(IColumnRightsStorageReader.ReadStoredColumns)).Should().ContainSingle(
+			because: "the stored rows are not read back for such a disable");
+	}
+
+	[Test]
+	[Description("Turning column permissions on is not blocked by rows a child object stores on a column it inherits from this one.")]
+	public void Execute_ShouldEnable_WhenAnotherSchemaInheritsTheColumn() {
+		// Arrange
+		Guid child = Guid.NewGuid();
+		Reads(false, [], onAfter: true, storedAfter: [Stored(AmountUId, ColumnRightsDefaults.Row),
+			Stored(DescriptionUId, ColumnRightsDefaults.Row), Stored(NameUId, ColumnRightsDefaults.Row)]);
+		_storage.ReadStoredRowsByColumns(default, default).ReturnsForAnyArgs(
+			[new StoredColumnRights(child, Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied)))]);
+		_storage.FindSchemaNames(default, default).ReturnsForAnyArgs(new Dictionary<Guid, string> { [child] = "UsrChild" });
+		_columnManager.GetSchemaProperties(Arg.Is<GetEntitySchemaPropertiesOptions>(read => read.SchemaName == "UsrChild"))
+			.Returns(new EntitySchemaPropertiesInfo("UsrChild", "Child", null, "(merged: all packages)", null, false, "Id",
+				"Name", 1, 0, null, false, false, null, false, null, false, false, true, false, null, null,
+				new[] { SchemaColumn("UsrAmount", AmountUId, "Amount", "inherited") }));
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: true));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a child's rows on an inherited column are not this object's rows");
+		_sent.Should().BeTrue(because: "the enable is saved");
+	}
+
+	[Test]
+	[Description("When no lock folder can be used the write goes on without the lease, with a warning; the read right before the save still guards.")]
+	public void Execute_ShouldWriteWithAWarning_WhenNoLockFolderCanBeUsed() {
+		// Arrange
+		_lease.Acquire(default).ReturnsForAnyArgs(new UnheldLease("'/locks': read-only file system"));
+		Reads(true, [], storedAfter: [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(0, because: "a lock folder that cannot be used does not block a write");
+		_sent.Should().BeTrue(because: "the change is saved");
+		_warnings.Should().Contain(line => line.Contains("no lock folder could be used") && line.Contains("read-only"),
+			because: "the write says it ran without the lease");
 	}
 
 	[Test]

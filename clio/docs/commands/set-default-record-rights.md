@@ -96,7 +96,8 @@ clio set-default-record-rights --entity-schema-name UsrOrder --author <author-id
 
 - Right after the confirmation (never across the prompt) a write takes the object's write lease (keyed by the
   environment's resolved URL and the object's code), shared with `set-object-rights` and `set-column-rights`; a second write of the same object while
-  one runs is refused, and nothing is changed. A preview takes none.
+  one runs is refused, and nothing is changed. A preview takes none. If no lock folder can be used (the user's data
+  folder, then the temp folder), the write goes on without the lease and warns: the read under it still guards.
 - Under the lease the object is read again: if any of its three switches (column, operation, record permissions), its
   schema UId or a default record rule changed since the plan read it, nothing is saved; otherwise the save goes out from that fresh
   read, so it sends the switches as they are. A switch the call does not change that differs on the read-back was

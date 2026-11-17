@@ -365,10 +365,11 @@ internal static class ObjectRightsCommandInput {
 
 	/// <summary>
 	/// Takes the object's write lease (<see cref="IAdministratedObjectWriteLease"/>) for a write that is not a preview, so
-	/// every writer of one object — set-object-rights, set-default-record-rights, set-column-rights — runs alone from its
-	/// first read to its read-back. The object is named by its code in every writer (a title is refused), so the lease is
-	/// keyed by <paramref name="named"/> as a code before anything is read; a name that is not a code takes no lease,
-	/// since the call refuses it before any write.
+	/// the saves of every writer of one object — set-object-rights, set-default-record-rights, set-column-rights — run one
+	/// at a time. Each writer takes it after its confirmation prompt (never across it) and holds it over its fresh read,
+	/// its save and its read-back. A name that is not a code takes no lease. When no lock folder can be used, the write
+	/// goes on without the lease and a warning says so: the fresh read right before the save still refuses a change made
+	/// since the plan.
 	/// </summary>
 	/// <param name="lease">The lease.</param>
 	/// <param name="named">The object as the caller named it.</param>
@@ -384,6 +385,11 @@ internal static class ObjectRightsCommandInput {
 		}
 		try {
 			held = lease.Acquire(code);
+			if (held is UnheldLease unheld) {
+				logger.WriteWarning($"Warning: no lock folder could be used ({unheld.Reason}): this write runs without the "
+					+ "object's lease, so a parallel write of the object by clio is not kept out; the read right before the "
+					+ "save still refuses a change made since the plan.");
+			}
 			return true;
 		}
 		catch (InvalidOperationException ex) {

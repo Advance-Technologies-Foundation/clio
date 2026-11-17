@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -23,31 +24,48 @@ public interface IAdministratedObjectWriteLease {
 	/// </summary>
 	/// <param name="schemaName">The object's code.</param>
 	/// <returns>The lease; dispose it after the read-back.</returns>
-	/// <exception cref="InvalidOperationException">Another call holds the lease, or the lock directory cannot be
-	/// used; the message says which.</exception>
+	/// <returns>An <see cref="UnheldLease"/> when no lock folder can be used; the write then goes on without the lease,
+	/// and the caller warns.</returns>
+	/// <exception cref="InvalidOperationException">Another call holds the lease.</exception>
 	IDisposable Acquire(string schemaName);
+}
+
+/// <inheritdoc />
+/// <summary>
+/// What <see cref="IAdministratedObjectWriteLease.Acquire"/> returns when no lock folder could be used (a read-only
+/// container, a service account without a writable profile): the write goes on without the lease, and the caller says
+/// so. The fresh read right before the save still refuses a change made since the plan.
+/// </summary>
+/// <param name="Reason">Why no lock folder could be used.</param>
+public sealed record UnheldLease(string Reason) : IDisposable {
+	/// <inheritdoc />
+	public void Dispose() { }
 }
 
 /// <inheritdoc />
 public sealed class AdministratedObjectWriteLease : IAdministratedObjectWriteLease {
 
-	private readonly string _lockRoot;
+	private readonly IReadOnlyList<string> _lockRoots;
 	private readonly string _environment;
 
-	/// <summary>Creates the lease for the environment the command runs against, next to the deployment locks.</summary>
+	/// <summary>
+	/// Creates the lease for the environment the command runs against: next to the deployment locks, and in the temp
+	/// folder when that one cannot be used.
+	/// </summary>
 	/// <param name="settings">The resolved environment; its URL is the lease's environment key.</param>
 	public AdministratedObjectWriteLease(EnvironmentSettings settings)
 		: this(settings, Path.Combine(System.Environment.GetFolderPath(OperatingSystem.IsWindows()
-			? System.Environment.SpecialFolder.CommonApplicationData
-			: System.Environment.SpecialFolder.LocalApplicationData), "Creatio", "clio", "administrated-object-locks")) {
+				? System.Environment.SpecialFolder.CommonApplicationData
+				: System.Environment.SpecialFolder.LocalApplicationData), "Creatio", "clio", "administrated-object-locks"),
+			Path.Combine(Path.GetTempPath(), "clio-administrated-object-locks")) {
 	}
 
-	/// <summary>Creates the lease over <paramref name="lockRoot"/>; tests use a folder of their own.</summary>
+	/// <summary>Creates the lease over <paramref name="lockRoots"/>, tried in order; tests use folders of their own.</summary>
 	/// <param name="settings">The resolved environment.</param>
-	/// <param name="lockRoot">The directory that holds the lock files.</param>
-	internal AdministratedObjectWriteLease(EnvironmentSettings settings, string lockRoot) {
+	/// <param name="lockRoots">The directories that may hold the lock files, the preferred one first.</param>
+	internal AdministratedObjectWriteLease(EnvironmentSettings settings, params string[] lockRoots) {
 		_environment = EnvironmentKey(settings);
-		_lockRoot = lockRoot;
+		_lockRoots = lockRoots;
 	}
 
 	// The environment by its resolved URL, normalised: two names of one site, or one URL written with a trailing slash
@@ -63,25 +81,25 @@ public sealed class AdministratedObjectWriteLease : IAdministratedObjectWriteLea
 	public IDisposable Acquire(string schemaName) {
 		string identity = $"{_environment}|{schemaName.Trim().ToUpperInvariant()}";
 		string lockKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)));
-		try {
-			Directory.CreateDirectory(_lockRoot);
-			return new FileStream(Path.Combine(_lockRoot, $"object-{lockKey}.lock"), FileMode.OpenOrCreate,
-				FileAccess.Read, FileShare.None);
+		List<string> failures = new();
+		foreach (string root in _lockRoots) {
+			try {
+				Directory.CreateDirectory(root);
+				return new FileStream(Path.Combine(root, $"object-{lockKey}.lock"), FileMode.OpenOrCreate,
+					FileAccess.Read, FileShare.None);
+			}
+			catch (IOException exception) when (IsLockContention(exception)) {
+				throw new InvalidOperationException($"another call is changing the permissions of '{schemaName}' on this "
+					+ "environment (set-object-rights, set-default-record-rights and set-column-rights take one lease per "
+					+ "object): calls for one object must not run in parallel. Nothing was changed: re-run it after that "
+					+ "call completes.");
+			}
+			catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+				// This folder cannot hold the lock (read-only, no profile): the next one is tried.
+				failures.Add($"'{root}': {exception.Message}");
+			}
 		}
-		catch (IOException exception) when (!IsLockContention(exception)) {
-			throw new InvalidOperationException($"clio cannot take the permissions lock of '{schemaName}' in "
-				+ $"'{_lockRoot}': {exception.Message} Nothing was changed.", exception);
-		}
-		catch (IOException) {
-			throw new InvalidOperationException($"another call is changing the permissions of '{schemaName}' on this "
-				+ "environment (set-object-rights, set-default-record-rights and set-column-rights take one lease per "
-				+ "object): calls for one object must not run in parallel. Nothing was changed: re-run it after that call "
-				+ "completes.");
-		}
-		catch (UnauthorizedAccessException exception) {
-			throw new InvalidOperationException("clio cannot use its permissions lock directory "
-				+ $"'{_lockRoot}'; nothing was changed.", exception);
-		}
+		return new UnheldLease(string.Join("; ", failures));
 	}
 
 	// Whether the open failed because another handle holds the file: a sharing or lock violation on Windows, the

@@ -63,6 +63,18 @@ public interface IColumnRightsStorageReader {
 	/// may be cut off.</exception>
 	IReadOnlyList<StoredColumnRights> ReadStoredRowsByColumns(IReadOnlyCollection<Guid> columnUIds,
 		CreatioRequestOptions requestOptions);
+
+	/// <summary>
+	/// The codes of the entity schemas whose UId is one of <paramref name="schemaUIds"/> (<c>SysSchema</c>, entity schema
+	/// manager), so the rows a read by column found under another schema can be told apart: an object that inherits the
+	/// column holds rows of its own on it.
+	/// </summary>
+	/// <param name="schemaUIds">The schema UIds; no request is sent when empty.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns>The code per UId; a UId no entity schema has is left out.</returns>
+	/// <exception cref="Exception">A service failure is thrown.</exception>
+	IReadOnlyDictionary<Guid, string> FindSchemaNames(IReadOnlyCollection<Guid> schemaUIds,
+		CreatioRequestOptions requestOptions);
 }
 
 /// <summary>The stored rows of one column of one object, as a read by column UId returns them.</summary>
@@ -167,6 +179,50 @@ public sealed class ColumnRightsStorageReader : IColumnRightsStorageReader {
 			.Select(group => new StoredColumnRights(group.Key.SubjectSchemaUId, new ColumnRights(group.Key.SubjectColumnUId,
 				null, group.Select(Project).OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0).ToList())))
 			.ToList();
+	}
+
+	/// <inheritdoc />
+	public IReadOnlyDictionary<Guid, string> FindSchemaNames(IReadOnlyCollection<Guid> schemaUIds,
+		CreatioRequestOptions requestOptions) {
+		ArgumentNullException.ThrowIfNull(schemaUIds);
+		if (schemaUIds.Count == 0) {
+			return new Dictionary<Guid, string>();
+		}
+		object query = SelectQueryHelper.BuildSelectQueryWithInFilter(
+			"SysSchema",
+			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("ManagerName", "ManagerName")
+			},
+			"UId",
+			schemaUIds.Distinct().Select(uId => uId.ToString()).ToArray(),
+			SelectQueryHelper.GuidDataValueType,
+			RowCap);
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
+		SchemaNameResponse response = SelectQueryHelper.ExecuteSelectQuery<SchemaNameResponse>(
+			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
+		return (response.Rows ?? new List<SchemaNameRow>())
+			.Where(row => string.Equals(row.ManagerName, "EntitySchemaManager", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(row.Name))
+			.GroupBy(row => row.UId)
+			.ToDictionary(group => group.Key, group => group.First().Name);
+	}
+
+	private sealed class SchemaNameResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<SchemaNameRow> Rows { get; set; }
+	}
+
+	private sealed class SchemaNameRow {
+		[JsonPropertyName("UId")]
+		public Guid UId { get; set; }
+
+		[JsonPropertyName("Name")]
+		public string Name { get; set; }
+
+		[JsonPropertyName("ManagerName")]
+		public string ManagerName { get; set; }
 	}
 
 	private static ColumnRightRow Project(StoredRow row) =>

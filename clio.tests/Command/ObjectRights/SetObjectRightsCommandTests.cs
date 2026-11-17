@@ -172,6 +172,34 @@ public class SetObjectRightsCommandTests : BaseCommandTests<SetObjectRightsOptio
 			.Which[0].Should().BeSameAs(fresh.Snapshot, because: "the switches go out as they are right before the save");
 	}
 
+	[TestCase("row", TestName = "Execute_ShouldRefuse_WhenAnOperationRowChangedBeforeTheSave")]
+	[TestCase("schema", TestName = "Execute_ShouldRefuse_WhenTheSchemaUIdChangedBeforeTheSave")]
+	[TestCase("unread", TestName = "Execute_ShouldRefuse_WhenTheFreshReadFails")]
+	[Description("The read under the lease right before the save refuses the call — nothing saved — when an operation row or the schema UId changed since the plan, or when it cannot read the object.")]
+	public void Execute_ShouldRefuseBeforeTheSave_WhenTheFreshReadDoesNotMatch(string change) {
+		// Arrange
+		ObjectRightsInfo before = Info(true, Row(AllEmployees, 0, "RCED"));
+		ObjectRightsInfo fresh = change switch {
+			"row" => Info(true, Row(AllEmployees, 0, "R")),
+			"schema" => before with { SchemaUId = Guid.NewGuid() },
+			_ => ObjectRightsInfo.ReadFailed("UsrFoo", "Access denied")
+		};
+		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()).Returns(before, fresh);
+		string expected = change switch {
+			"row" => "the operation rows changed",
+			"schema" => "the schema UId is",
+			_ => "could not be read again before the save"
+		};
+
+		// Act
+		int exitCode = _command.Execute(Options("read,edit"));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the plan no longer matches the object, or the object cannot be checked");
+		_errors.Should().Contain(m => m.Contains(expected), because: "the refusal says what changed");
+		NothingSaved();
+	}
+
 	[Test]
 	[Description("A switch another client changed while the prompt was open — here the column switch, which set-object-rights does not change — refuses the save: the fresh read under the lease differs from the plan's, and nothing is sent back.")]
 	public void Execute_ShouldRefuse_WhenASwitchMovedBeforeTheSave() {

@@ -33,12 +33,12 @@ leaves every user to the object's operation permissions. In the designer a role 
   level.
 - `--position N` places the row (with `--access`) or moves the grantee's row (alone) to `N`, and renumbers the column's
   rows `0..n-1`.
-- Whenever an All employees row ends above a row that grants less (edit over read or denied, read over denied), the
-  preview, the prompt and the result **warn**: for members of All employees that row narrows nothing.
+- Whenever an All employees row ends above a row with another level (less or more), the preview, the prompt and the
+  result **warn**: for members of All employees the All employees row decides, so that row changes nothing.
 - A column whose rows share a position is refused: its order is ambiguous.
 - `--remove-row` deletes the grantee's row; a removal of a row the grantee no longer has is no change. Removing a
-  column's last row other than the default leaves it the default row (All employees: edit), which **widens** access;
-  the summary says so.
+  column's last row (while column permissions are ON) sends the column with no rows: every user then follows the
+  object's operation permissions; the summary says when that **widens** the removed row's access.
 
 The switch changes only through its flags: a grant while column permissions are OFF is refused unless
 `--enable-column-permissions` is passed with it; a move or a removal while they are OFF is refused (turn them on
@@ -60,12 +60,12 @@ the list is built from **storage**:
 - while column permissions are ON, a column with no rows is sent with `rights: []`, so it stays as it is;
 - when the call turns them ON, a column with no rows is not sent, so it gets the default row; the output names those
   columns;
-- a column whose last row is removed is not sent, so it gets the default row;
+- a column whose last row is removed is sent with `rights: []`, so it ends with no rows;
 - a default-only column is not sent: the service writes the same default.
 
 A disable sends `null` and does not depend on the stored rows: when they cannot be read it goes ahead with a warning.
 The operation, record and entity-operation collections are always sent as null. Removing the only row of a
-default-only column is refused: the default would come back.
+default-only column is refused: it changes no one's access.
 
 ### Guards before the save
 
@@ -81,7 +81,9 @@ default-only column is refused: the default would come back.
   the object — keyed by the environment's resolved URL and the object's code; an exclusive OS file handle, released if
   the process dies, shared among clio processes of one OS user (on Windows, of the machine) — shared with
   `set-object-rights` and `set-default-record-rights`; a second write of the object while it is held is refused.
-  **Calls for one object must not run in parallel.**
+  **Calls for one object must not run in parallel.** If no lock folder can be used (a read-only
+  container, a service account without a writable profile) — the user's data folder, then the temp folder — the write
+  goes on without the lease and warns; the re-read before the save still guards.
 - **Re-read before the save:** under the lease the object and its stored rows are read again; if any of the three
   switches (column, operation, record permissions), the schema UId or a stored row changed since the plan, nothing is
   saved. The save goes out from that fresh read.
@@ -126,16 +128,17 @@ Column code whose rows change. Required unless the call only turns the switch.
 SysAdminUnit id (role or user) whose row changes. Required unless the call only turns the switch.
 
 --access denied|read|edit
-The level the grantee's row gets. A new row goes to the top (position 0) unless --position is given.
+The level the grantee's row gets. A new row goes to the top (position 0) - a new All employees row to the bottom -
+unless --position is given.
 
 --position N
 Position in the column's stored position order, 0 first: with --access it places the row, alone it moves the
 grantee's row. Past the end is refused.
 
 --remove-row
-Remove the grantee's row; no change when it has none. Removing the column's last row other than the default leaves the
-default row (All employees: edit), which widens access. A call of its own: not with --access, --position or a switch
-flag.
+Remove the grantee's row; no change when it has none. Removing the column's last row leaves it with no rows: every user
+then follows the object's operation permissions; the summary says when that widens access. A call of its own: not with
+--access, --position or a switch flag.
 
 --enable-column-permissions
 Turn column permissions ON: with --access, or alone. Rows kept on columns since a disable apply again, and every column
@@ -194,7 +197,7 @@ clio set-column-rights --entity-schema-name UsrOrder --disable-column-permission
   prompt is answered no; 1 otherwise.
 - On MCP the tool is `set-column-rights` (destructive, idempotent: a repeated call finds its change in place). The host
   approval is the confirmation; `preview=true` writes nothing. A write makes up to thirteen requests in sequence; each
-  gets one attempt of at most 20 s, all of them share a 100 s limit, and the save is sent only while four timeouts are
-  left for it and its counted read-back.
+  gets one attempt of at most 20 s, all of them share a 100 s limit, and the save is sent only while two timeouts are
+  left for it and a read-back request; a read-back the limit cuts short reports the save as saved but NOT verified.
 - See `docs/knowledge/platform/column-permissions-come-from-the-administrated-object.md` for the measured service
   facts.
