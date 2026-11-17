@@ -26,6 +26,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	private const string PackageName = "Custom";
 
+	// A key-like value a service made in Studio can keep under a neutral header name.
+	private const string PartnerKey = "Lk7Hd93Qz20mWr4TbN8e";
+
 	/// <summary>The first CrtProcessBuilder that builds a Call web service element (ENG-92710).</summary>
 	private const string CallWebServiceElementPackageVersion = "1.6.6.150";
 
@@ -601,6 +604,88 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		refused.Success.Should().BeFalse(because: "Studio refuses an xml method with a body parameter and a GET with one");
 		refused.Error.Should().Contain("xml method", because: "the xml refusal is reported");
 		refused.Error.Should().Contain("GET method", because: "the GET refusal is reported in the same answer");
+	}
+
+	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureTag(DescribeWebServiceTool.ToolName)]
+	[AllureTag(TestWebServiceMethodTool.ToolName)]
+	[AllureName("plain header constants are written, shown and sent; key-like ones are refused, hidden and masked")]
+	[Description("Registers a REST service on an echo API with a plain Accept-Language header constant, stores a key-like constant under the neutral X-Partner header the way Studio can, expects a key-like header constant sent through modify-web-service to be refused, describe to show the plain constant and hide the key, and a test call's echo to carry the plain constant and the key masked. Ignored when the echo API answers with an error or the stand cannot reach it, since the sent headers cannot be read back then.")]
+	public async Task WebServiceTools_Should_Show_Plain_Header_Constants_And_Hide_Key_Like_Ones() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(settings, cts.Token);
+		_serviceCode = UniqueCode("E2eWsHdr");
+		string methodCode = Prefixed("Echo");
+		Dictionary<string, object?> EchoMethod(string? partnerValue) => new() {
+			["code"] = methodCode, ["http-method"] = "GET", ["uri"] = "anything/headers",
+			["request-parameters"] = new object[] {
+				new Dictionary<string, object?> {
+					["code"] = Prefixed("AcceptLanguage"), ["in"] = "header", ["path"] = "Accept-Language",
+					["default-value"] = "en-US"
+				},
+				new Dictionary<string, object?> {
+					["code"] = Prefixed("Partner"), ["in"] = "header", ["path"] = "X-Partner", ["default-value"] = partnerValue
+				}
+			}
+		};
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["package-name"] = PackageName, ["code"] = _serviceCode,
+				["base-uri"] = "https://httpbin.org", ["methods"] = new[] { EchoMethod(null) }
+			}, cts.Token);
+		registered.Success.Should().BeTrue(because: $"a plain header constant registers; error: {registered.Error}");
+		await WebServiceStand.StoreConstantDefaultAsync(settings, _environmentName, _serviceCode, Prefixed("Partner"),
+			PartnerKey, cts.Token);
+
+		// Act
+		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode,
+				["operations"] = new[] {
+					new Dictionary<string, object?> { ["op"] = "setMethod", ["method"] = EchoMethod(PartnerKey + "x") }
+				}
+			}, cts.Token);
+		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode }, cts.Token);
+		WebServiceTestResult echo = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = methodCode
+			}, cts.Token);
+
+		// Assert
+		refused.Success.Should().BeFalse(because: "a key-like value under a neutral header name is a stored credential");
+		refused.Error.Should().Contain("default-sys-setting", because: "the refusal points the agent at the setting route");
+		refused.Error.Should().NotContain(PartnerKey, because: "a refused key is never echoed back");
+		described.Success.Should().BeTrue(because: $"describe reads the service back; error: {described.Error}");
+		IReadOnlyList<WebServiceParameterView> parameters = described.Service!.Methods.Single().RequestParameters;
+		WebServiceParameterView language = parameters.Single(p => p.Code == Prefixed("AcceptLanguage"));
+		(language.DefaultValue, language.DefaultMasked).Should().Be(("en-US", false),
+			because: "a plain header constant is shown, as Studio shows it");
+		WebServiceParameterView partner = parameters.Single(p => p.Code == Prefixed("Partner"));
+		(partner.DefaultValue, partner.DefaultMasked).Should().Be(((string?)null, true),
+			because: "a key-like constant Studio stored under a neutral header name stays hidden");
+		JsonSerializer.Serialize(described).Should().NotContain(PartnerKey, because: "describe never prints the key");
+		JsonSerializer.Serialize(echo).Should().NotContain(PartnerKey,
+			because: "the key went out with the call, and the echo must not hand it back whatever the API answered");
+		if (echo.StatusCode is not 200) {
+			Assert.Ignore($"'{_environmentName}' got no answer from httpbin.org (status {echo.StatusCode}, error "
+				+ $"{echo.Error}), so the sent headers cannot be read back.");
+		}
+		echo.Success.Should().BeTrue(because: $"the echo API answers the call; error: {echo.Error}");
+		using JsonDocument body = JsonDocument.Parse(echo.ResponseBody!);
+		JsonElement headers = body.RootElement.GetProperty("headers");
+		headers.GetProperty("Accept-Language").GetString().Should().Be("en-US",
+			because: "the plain constant went out and its echo stays readable");
+		headers.GetProperty("X-Partner").GetString().Should().Be(WebServiceResponseMasker.Mask,
+			because: "the key-like constant went out and its echo is masked");
 	}
 
 	/// <summary>

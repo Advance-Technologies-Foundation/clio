@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Command.WebServiceDesigner;
 using FluentAssertions;
 
 namespace Clio.Mcp.E2E.Support.Creatio;
@@ -79,8 +80,46 @@ internal static class WebServiceStand {
 	/// <param name="baseUri">The base URI to store.</param>
 	/// <param name="methodUri">The URI to store on every method.</param>
 	/// <param name="token">Cancels the CLI calls.</param>
-	public static async Task StoreUrisAsync(McpE2ESettings settings, string environmentName, string code,
-		string baseUri, string methodUri, CancellationToken token) {
+	public static Task StoreUrisAsync(McpE2ESettings settings, string environmentName, string code,
+		string baseUri, string methodUri, CancellationToken token) =>
+		EditSchemaAsync(settings, environmentName, code, schema => {
+			schema["baseUri"] = baseUri;
+			foreach (KeyValuePair<string, JsonNode?> method in schema["methods"]!["Items"]!.AsObject()) {
+				method.Value!["request"]!["uri"] = methodUri;
+			}
+		}, token);
+
+	/// <summary>
+	/// Stores a constant default on a request parameter of every method of a registered service through the platform's
+	/// own read and save, as Studio stores one: the web service tools refuse a constant that looks like a key, so a test
+	/// of how such a constant is hidden and masked has to put it there this way.
+	/// </summary>
+	/// <param name="settings">The E2E settings.</param>
+	/// <param name="environmentName">The registered stand.</param>
+	/// <param name="code">The service code.</param>
+	/// <param name="parameterCode">The code of the top-level request parameter.</param>
+	/// <param name="value">The constant to store.</param>
+	/// <param name="token">Cancels the CLI calls.</param>
+	public static Task StoreConstantDefaultAsync(McpE2ESettings settings, string environmentName, string code,
+		string parameterCode, string value, CancellationToken token) =>
+		EditSchemaAsync(settings, environmentName, code, schema => {
+			int stored = 0;
+			foreach (KeyValuePair<string, JsonNode?> method in schema["methods"]!["Items"]!.AsObject()) {
+				foreach (KeyValuePair<string, JsonNode?> parameter
+						in method.Value!["request"]!["parameters"]!["Items"]!.AsObject()) {
+					if (parameter.Value!["name"]?.GetValue<string>() == parameterCode) {
+						parameter.Value["defValue"] = new JsonObject { ["value"] = value, ["source"] = ServiceSchemaCodes.ValueSourceConst };
+						stored++;
+					}
+				}
+			}
+			stored.Should().BePositive(because: $"the service {code} must have a request parameter {parameterCode}");
+		}, token);
+
+	// Reads a registered service through ServiceSchemaRequest, lets the caller change it, and saves it through
+	// ServiceDataContract, as Studio's designer does.
+	private static async Task EditSchemaAsync(McpE2ESettings settings, string environmentName, string code,
+		Action<JsonNode> edit, CancellationToken token) {
 		ClioCliCommandResult rows = await ClioCliCommandRunner.RunAsync(settings, [
 			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
 			"-b", SelectByName(code)
@@ -88,7 +127,7 @@ internal static class WebServiceStand {
 		rows.ExitCode.Should().Be(0, because: $"the service must be found; output: {rows.StandardError}");
 		using JsonDocument found = ParseJson(rows, $"the lookup of {code}");
 		JsonElement row = found.RootElement.GetProperty("rows").EnumerateArray().ToList().Should().ContainSingle(
-			because: $"the service {code} must be registered before its URIs are stored").Subject;
+			because: $"the service {code} must be registered before it is changed").Subject;
 		ClioCliCommandResult read = await ClioCliCommandRunner.RunAsync(settings, [
 			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/ServiceSchemaRequest",
 			"-b", JsonSerializer.Serialize(new {
@@ -99,10 +138,7 @@ internal static class WebServiceStand {
 		int json = read.StandardOutput.IndexOf('{');
 		json.Should().BeGreaterThanOrEqualTo(0, because: $"the schema read answers JSON; output: {read.StandardOutput}");
 		JsonNode schema = JsonNode.Parse(read.StandardOutput[json..])!["schema"]!;
-		schema["baseUri"] = baseUri;
-		foreach (KeyValuePair<string, JsonNode?> method in schema["methods"]!["Items"]!.AsObject()) {
-			method.Value!["request"]!["uri"] = methodUri;
-		}
+		edit(schema);
 		ClioCliCommandResult saved = await ClioCliCommandRunner.RunAsync(settings, [
 			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/ServiceDataContract",
 			"-b", schema.ToJsonString()

@@ -630,10 +630,12 @@ public static partial class WsdlRegistrationMapper {
 			(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
 		private List<WebServiceParameterArg> Parameters(IReadOnlyList<WsdlParameter> parameters, bool isRequest,
-			string parentName, CodePool codes, ExistingParameters existing) {
+			string parentName, CodePool codes, ExistingParameters existing, bool underSecretParent = false,
+			bool previousParentInHeader = false) {
 			var result = new List<WebServiceParameterArg>();
 			foreach (WsdlParameter parameter in parameters) {
-				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentName, codes, existing);
+				WebServiceParameterArg arg = Parameter(parameter, isRequest, parentName, codes, existing, underSecretParent,
+					previousParentInHeader);
 				if (arg is not null) {
 					result.Add(arg);
 				}
@@ -642,7 +644,7 @@ public static partial class WsdlRegistrationMapper {
 		}
 
 		private WebServiceParameterArg Parameter(WsdlParameter parameter, bool isRequest, string parentName,
-			CodePool codes, ExistingParameters existing) {
+			CodePool codes, ExistingParameters existing, bool underSecretParent, bool previousParentInHeader) {
 			string path = ElementPath(parameter.Path);
 			string sequenceElement = parameter.IsArray ? ElementPath(parameter.SequenceElement) : null;
 			string refusal = LeaveOutReason(parameter, path, sequenceElement, isRequest);
@@ -658,16 +660,64 @@ public static partial class WsdlRegistrationMapper {
 			}
 			string name = CodeName(parentName, path, sequenceElement);
 			string code = previous?.Code ?? UniqueCode(prefix, name, "Param", codes, MaxParameterCodeLength);
+			bool soapHeader = parameter.IsSoapHeader && isRequest;
+			// Describe reports an item's own stored flag; one under a SOAP-header parent travelled in the Header too.
+			bool previousInHeader = previousParentInHeader || previous?.SoapHeader == true;
 			List<WebServiceParameterArg> items = isObject
-				? Parameters(parameter.Items, isRequest, name, codes, new ExistingParameters(previous?.Items))
+				? Parameters(parameter.Items, isRequest, name, codes, new ExistingParameters(previous?.Items),
+					WebServiceSchemaView.IsSecretSoapParent(soapHeader, underSecretParent, code, path), previousInHeader)
 				: [];
 			if (isObject && items.Count == 0) {
 				Warn($"{where}: none of its fields can be described, so neither can the object.");
 				GiveBack(code, previous, codes);
 				return null;
 			}
-			return Argument(parameter, isRequest, code, path, sequenceElement, previous, items);
+			string defaultValue = CarriedDefault(previous, code, path, soapHeader, underSecretParent, previousInHeader);
+			// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method).
+			return new WebServiceParameterArg(code,
+				Type: parameter.Type,
+				Path: path,
+				Caption: parameter.Caption,
+				Array: parameter.IsArray ? true : null,
+				Required: previous?.Required == true ? true : null,
+				DefaultValue: defaultValue,
+				DefaultSysSetting: previous?.DefaultSysSetting,
+				Items: items.Count > 0 ? items : null,
+				SoapHeader: soapHeader ? true : null,
+				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);
 		}
+
+		// The constant default describe showed on the matched parameter, carried unless the SOAP Header would make it a
+		// secret; a warning names a constant that is left out, and one describe hid that leaves the Header, where register
+		// would refuse to keep it.
+		private string CarriedDefault(WebServiceParameterView previous, string code, string path, bool soapHeader,
+			bool underSecretParent, bool previousInHeader) {
+			if (previous is { DefaultMasked: false, DefaultValue: { Length: > 0 } shown }) {
+				if (!IsSecretInHeader(code, path, shown, soapHeader, underSecretParent)) {
+					return shown;
+				}
+				Warn($"Operation '{Shown(_operation)}': request element '{Shown(path)}' goes into the SOAP Header, where its "
+					+ "constant default counts as a credential (a key-like value, or a credential-like parent), so it is "
+					+ "not carried; reference a system setting with default-sys-setting and ask the user to fill its value.");
+				return null;
+			}
+			if (previous is { DefaultMasked: true } && previousInHeader && !soapHeader
+					&& !WebServiceSchemaView.IsSecretName(code) && !WebServiceSchemaView.IsSecretName(path)) {
+				Warn($"Operation '{Shown(_operation)}': request element '{Shown(path)}' leaves the SOAP Header, where its "
+					+ "hidden constant default was kept; outside it describe would show the value, so register refuses to "
+					+ "keep it: send default-value \"\" to clear it or default-sys-setting to replace it.");
+			}
+			return null;
+		}
+
+		// A constant describe showed is carried unless the WSDL puts it where register would take it for a secret: a
+		// parameter Studio kept in the body that the WSDL puts in the SOAP Header is judged as a header constant there
+		// (WebServiceSchemaView.IsSecretConstantAt), with the same code and path, since the parameter was matched by its
+		// path, and under a credential-like SOAP-header parent as a secret. In the body a shown constant stays shown.
+		private static bool IsSecretInHeader(string code, string path, string value, bool soapHeader,
+			bool underSecretParent) =>
+			soapHeader && WebServiceSchemaView.IsSecretConstantAt(code, path, ServiceSchemaCodes.Placements["body"], value,
+				true, underSecretParent);
 
 		// The name a parameter's code is built from: the names of the whole path (never empty here: LeaveOutReason refuses
 		// an empty path), an array's adds the element that repeats, and an item's starts with its array's, so fields of
@@ -689,24 +739,6 @@ public static partial class WsdlRegistrationMapper {
 			} else {
 				_matched.Remove(previous);
 			}
-		}
-
-		// The argument, with what Studio set on the matched parameter carried over (setMethod replaces the method). A
-		// constant is not carried onto a soap header, where register refuses one.
-		private static WebServiceParameterArg Argument(WsdlParameter parameter, bool isRequest, string code, string path,
-				string sequenceElement, WebServiceParameterView previous, List<WebServiceParameterArg> items) {
-			bool soapHeader = parameter.IsSoapHeader && isRequest;
-			return new WebServiceParameterArg(code,
-				Type: parameter.Type,
-				Path: path,
-				Caption: parameter.Caption,
-				Array: parameter.IsArray ? true : null,
-				Required: previous?.Required == true ? true : null,
-				DefaultValue: previous is { DefaultMasked: false } && !soapHeader ? previous.DefaultValue : null,
-				DefaultSysSetting: previous?.DefaultSysSetting,
-				Items: items.Count > 0 ? items : null,
-				SoapHeader: soapHeader ? true : null,
-				SequenceElement: string.IsNullOrEmpty(sequenceElement) ? null : sequenceElement);
 		}
 
 		private string LeftOut(string path, bool isRequest) =>

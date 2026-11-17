@@ -57,7 +57,7 @@ value). Masked forms: plain, URL-, JSON- and XML-escaped (`&amp;`, `&lt;`, `&gt;
 form of a multi-line value (the envelope is written with CRLF) and each of its lines. An XML response body is masked
 by its decoded text and attribute values, so numeric character references are covered, then as text. A Guid or a
 number equal to a secret once both are parsed is masked whole (the platform converts parsed values to the parameter
-type). A constant default on a SOAP-header element is hidden like a header constant. Rejected: keeping the clio#1900
+type). A constant default on a SOAP-header element is hidden like a header constant (superseded by D17). Rejected: keeping the clio#1900
 stopgap (every SOAP call with a setting-bound element loses its body, which makes the test useless exactly for
 WS-Security services); masking by path match only (the envelope adds `Envelope/Body/<message element>` above the
 stored path, and a SOAP-header element sits under `Header`).
@@ -107,7 +107,7 @@ segment; every prefix in the message element or in a body request path segment i
 clio refuses); request placements body, header, cookie; a response path starting with `$` is refused for XML; no
 trailing slash is added to a SOAP base URI; a `prefix:name` segment the platform would cut (its regex stops at the
 first character outside letters, digits, `_` and `-`, so `tem:Api.Key` renders as `tem:Api`) is refused; a constant
-default on a SOAP-header parameter is refused like a header constant (WS-Security and licence values travel there).
+default on a SOAP-header parameter is refused like a header constant (WS-Security and licence values travel there; superseded by D17).
 The REST rule "an xml method has no body parameters" applies to REST only.
 
 ### D9. `read-wsdl` (slice C)
@@ -394,7 +394,7 @@ custom binding and `WSHttpBinding` with security mode None); the user decided to
   advice agents registered the ASMX calculator over SOAP 1.1, although it answers SOAP 1.2 (TC-25 expects Studio's
   pick). With none, the warning gives the workaround measured to work (a request header parameter with the
   path `Content-Type` carrying `action="..."`, one per method; two `soap-header` parameters with the paths `wsa:Action`
-  and `wsa:To`), whose values come from a system setting or the process because a constant is refused there; none for
+  and `wsa:To`), whose values come from a system setting or the process because a constant is refused there (since D17 a plain constant is taken); none for
   message security. The scan walks each binding and policy once with the parse clock checked (a hostile WSDL cannot
   outrun the parse limit); policy normal form with an empty alternative, nested references and port-level policies
   are not read. `studio-pick` keeps meaning Studio's
@@ -413,6 +413,38 @@ Why: in two isolated runs agents passed the new service's code as `service-code`
 again and then replaced the generated code at registration, against the guide's "register the arguments as they
 are". Rejected: reading an unregistered `service-code` as a new service. It would remove the failed call, but a typo in
 an existing service's code would silently build a second service instead of extending the first.
+
+### D17. Header and SOAP-header constants follow a name-and-value rule (owner, 2026-11-17; supersedes part of D4, D8, D15)
+
+QA note 4: every header constant was refused and hidden on its placement alone, so a non-secret one Studio allows
+(`Accept-Language: en-US`, a SOAP 1.2 `Content-Type`) could not be written and describe hid it. Owner's choice
+(the third option offered, "follow the query rule"): a constant default on a header, or on a SOAP-header element and
+its items, is a secret only when a code or wire name looks like a credential (`Authorization` included), an item sits
+under a credential-like SOAP-header parent (`tem:AuthHeader/tem:Pin`: an array item's path does not name its parent),
+or the value looks like a key (`WebServiceSchemaView.KeyLikeParts`): an authentication scheme and what follows it, a
+credential `name=value` pair (or a hosting-key one with 16+ characters), 16+ characters mixing letters and digits, 24+
+letters, 12+ digits, a password-shaped word (upper, lower, digit and one of `!@#$%^&*?~`, 8+), any user information of
+an address, or an address path segment, query or fragment value that is one (a service or contract name in a path, ICustomerService2 or CustomerServiceV2.svc, a WCF
+contract name, is not); text made of words (at least one of 5+ letters), short numbers and at most one short mixed piece, not equal-length groups, is plain (a media type, a
+product token, a host name, `production-eu-west-1`). Known false positives: a GUID, an ISO timestamp, a build tag, a
+multipart boundary, a value whose first word is a scheme name. A constant that holds the `[masked]` text describe
+shows is refused in a header too. A cookie stays
+refused on its placement. One predicate (`IsSecretLike` / `IsSecretConstant`, with `IsSecretSoapParent` passed down
+the item tree) decides the register/modify refusal, describe's hiding, the carry-over of a hidden constant, read-wsdl's
+carry-over into the Header and a test call's masking, so no constant is shown in one place and masked in another; a
+test call also masks each key-like part of a hidden value on its own (an API often echoes only the key) and the
+decoded user and password of a Basic value. A key-like constant Studio stored under a neutral name stays hidden and
+masked.
+
+Accepted risk (security review, 2026-11-17): a value rule is a deny-list, so a short chosen secret under a neutral
+header name (`X-Pin: 4821`, `hunter2`) is shown, written and not masked; so is any hidden value shorter than the
+masking length (four characters), as before. The guidance keeps every key and password on a system setting, which
+the agent is told to use whatever the tool accepts. Rejected: a value check only by the hosting-key names the query
+rule uses (a header carrying a key is usually named neutrally); an entropy threshold (no better separation on
+16-character values, and harder to state to an agent); keeping SOAP-header elements secret by placement, or showing
+a header constant only under an allow-list of header names (both reverse the owner's choice, and the QA scenario needs
+a plain SOAP-header constant); adding words such as pin, otp or sid to the credential-name pattern (they match inside
+ordinary names: shipping, footprint, inside).
 
 ## Consequences
 
