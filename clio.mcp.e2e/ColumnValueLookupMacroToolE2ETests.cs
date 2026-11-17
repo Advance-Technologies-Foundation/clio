@@ -36,7 +36,7 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 
 	/// <summary>The first CrtProcessBuilder that stores column-value lookup macros in the designer's form.</summary>
-	private const string MinimumPackageVersion = "1.6.6.177";
+	private const string MinimumPackageVersion = "1.6.6.180";
 
 	private const string Subject = "column-value lookup macro";
 
