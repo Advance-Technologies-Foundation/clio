@@ -1,0 +1,96 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Clio.Command.ObjectRights;
+using Clio.Common;
+using ModelContextProtocol.Server;
+
+namespace Clio.Command.McpServer.Tools;
+
+/// <summary>
+/// MCP surface of <c>get-column-rights</c>: reads the column (field-level) permissions of an object — the switch and,
+/// per column, every role's access level in priority order.
+/// </summary>
+[McpServerToolType]
+public sealed class GetColumnRightsTool(
+	GetColumnRightsCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<GetColumnRightsOptions>(command, logger, commandResolver) {
+
+	internal const string ToolName = "get-column-rights";
+
+	internal const string ValidArguments = "Valid: environment-name, entity-schema-name, column, grantee.";
+
+	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[Description("Reads column permissions. COLUMN (field-level) layer of an object, read-only companion of get-object-rights from the same service read. " +
+		"entity-schema-name is the object's code; when no object has that code, the object with that title is read (several are refused, listing them). " +
+		"Reports whether column permissions are ON and, per column with rows (its code and caption), every row in priority order: [position] (0 is the highest), grantee name and id, access denied/read/edit. " +
+		"OFF: every column is governed only by object and record permissions. A column whose rows all grant edit is not stored, so it never appears. column limits it to one column code; grantee shows that role's row and the rows above it per column. " +
+		"Facts only, no coverage verdict. Fails (success=false) when the object cannot be read. Unknown argument names are refused.")]
+	public ObjectRightsToolResponse GetColumnRights(
+		[Description("Parameters: environment-name, entity-schema-name (required); column, grantee (optional).")]
+		[Required]
+		GetColumnRightsArgs args) {
+		// The serializer would silently drop a misspelled key — e.g. "column-name" — and the read would then answer for
+		// EVERY column instead of the one asked about. Refuse it instead.
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArguments);
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return ObjectRightsToolResponse.FromValidationError(aliasError);
+		}
+		try {
+			return ObjectRightsToolResponse.From(InternalExecute<GetColumnRightsCommand>(BuildOptions(args)));
+		} catch (Exception ex) {
+			return ObjectRightsToolResponse.FromError(ex);
+		}
+	}
+
+	/// <summary>The command options an MCP call runs with.</summary>
+	/// <param name="args">The call's arguments.</param>
+	/// <returns>The options, with the MCP request limits of get-object-rights.</returns>
+	internal static GetColumnRightsOptions BuildOptions(GetColumnRightsArgs args) => new() {
+		Environment = args.EnvironmentName,
+		EntitySchemaName = args.EntitySchemaName,
+		Column = args.Column,
+		Grantee = args.Grantee,
+		TimeOut = GetObjectRightsTool.McpReadTimeoutMilliseconds,
+		MaxAttempts = 1,
+		ReadBudget = GetObjectRightsTool.McpReadBudget
+	};
+}
+
+/// <summary>Arguments of the <c>get-column-rights</c> MCP tool.</summary>
+public sealed record GetColumnRightsArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("entity-schema-name")]
+	[property: Description("The object to read: its code (entity schema name), or its title when no object has that code.")]
+	[property: Required]
+	string EntitySchemaName,
+
+	[property: JsonPropertyName("column")]
+	[property: Description("Optional column code (for example UsrDescription): show only that column. Omit to list every column with rows.")]
+	string Column = null,
+
+	[property: JsonPropertyName("grantee")]
+	[property: Description("Optional SysAdminUnit id (role or user): per column, show its row and the rows above it (every row of a column where it has none). Omit to list every row.")]
+	string Grantee = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

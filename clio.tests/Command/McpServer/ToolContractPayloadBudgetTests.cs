@@ -174,6 +174,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// -> "max 48 chars"; "it is in tools/list, call it directly, never through clio-run" -> "call it directly"
 	// (the next sentence names clio-run for the other lines); "Without (R), call it via clio-run" -> "No (R): call
 	// via clio-run". The resident sentence the toolkit mirrors and the (D) sentence are unchanged.
+	// get-column-rights, one more long-tail tool and line: measured 18733 with the purpose "Reads column
+	// permissions.", 45 over. Paid by its object-rights siblings, whose first sentences the 48-character cut
+	// truncated: get-object-rights -> "Reads object permissions.", set-object-rights -> "Changes object
+	// permissions."; the rest of each old first sentence is now their second. Measured 18681, 7 under; the object
+	// index above measured 50334, under its ceiling without a re-pin.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

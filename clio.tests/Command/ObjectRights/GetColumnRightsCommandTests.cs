@@ -1,0 +1,390 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
+using Clio.Command.ObjectRights;
+using Clio.Common;
+using Clio.Common.ObjectRights;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.ObjectRights;
+
+[TestFixture]
+[Property("Module", "Command")]
+public class GetColumnRightsCommandTests : BaseCommandTests<GetColumnRightsOptions> {
+
+	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
+	private static readonly Guid Admins = Guid.Parse("83a43ebc-f36b-1410-298d-001e8c82bcad");
+	private static readonly Guid Role = Guid.Parse("11111111-2222-3333-4444-555555555555");
+	private static readonly Guid DescriptionUId = Guid.Parse("9e53fd7c-1111-4c5b-9c3a-2a7b0e7e0001");
+	private static readonly Guid AmountUId = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
+	private static readonly Guid NameUId = Guid.Parse("9e53fd7c-3333-4c5b-9c3a-2a7b0e7e0003");
+
+	private GetColumnRightsCommand _command;
+	private IObjectRightsReader _rightsReader;
+	private IRemoteEntitySchemaColumnManager _columnManager;
+	private ILogger _logger;
+
+	public override void Setup() {
+		base.Setup();
+		_command = Container.GetRequiredService<GetColumnRightsCommand>();
+	}
+
+	public override void TearDown() {
+		_rightsReader.ClearReceivedCalls();
+		_columnManager.ClearReceivedCalls();
+		_logger.ClearReceivedCalls();
+		base.TearDown();
+	}
+
+	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
+		base.AdditionalRegistrations(containerBuilder);
+		_rightsReader = Substitute.For<IObjectRightsReader>();
+		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_logger = Substitute.For<ILogger>();
+		// Default: the object's columns resolve to their codes.
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(Schema(
+			("UsrDescription", DescriptionUId), ("UsrAmount", AmountUId), ("Name", NameUId)));
+		containerBuilder.AddTransient(_ => _rightsReader);
+		containerBuilder.AddTransient(_ => _columnManager);
+		containerBuilder.AddTransient(_ => _logger);
+	}
+
+	private static EntitySchemaPropertiesInfo Schema(params (string Name, Guid UId)[] columns) =>
+		new("UsrHoliday", "Holiday", null, "(merged: all packages)", null, false, "Id", "Name", columns.Length, 0, null,
+			false, false, null, false, null, false, false, true, false, null, null,
+			columns.Select(column => new EntitySchemaPropertyColumnInfo(column.Name, column.UId, "own", column.Name,
+				null, "Text", false, false, null)).ToList());
+
+	private static ObjectRightsInfo Object(bool administratedByColumns, params ColumnRights[] columns) =>
+		new(true, "UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(),
+			AdministratedByColumns: administratedByColumns, Columns: columns);
+
+	private static ColumnRights Column(Guid uId, string caption, params ColumnRightRow[] rows) => new(uId, caption, rows);
+
+	private static ColumnRightRow Row(Guid grantee, string name, int position, ColumnRightLevel? level) =>
+		new(grantee, name, position, level);
+
+	private void Returns(ObjectRightsInfo info) =>
+		_rightsReader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(info);
+
+	private int Run(string column = null, string grantee = null, string name = "UsrHoliday") =>
+		_command.Execute(new GetColumnRightsOptions { EntitySchemaName = name, Column = column, Grantee = grantee });
+
+	[Test]
+	[Description("With column permissions OFF and no stored row, says so plainly — every column is governed only by object and record permissions — and never prints an empty list.")]
+	public void Execute_ShouldSayColumnPermissionsAreOff_WhenSwitchIsOff() {
+		// Arrange
+		Returns(Object(false));
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(0, because: "an OFF switch is a fact, not a failure");
+		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("Columns with rows")));
+		_columnManager.DidNotReceiveWithAnyArgs().GetSchemaProperties(default);
+	}
+
+	[Test]
+	[Description("With column permissions ON and no row, states only the measured fact that no column has a permission row.")]
+	public void Execute_ShouldSayNoColumnHasARow_WhenSwitchIsOnWithoutRows() {
+		// Arrange
+		Returns(Object(true));
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(0, because: "an empty column layer is a fact, not a failure");
+		_logger.Received().WriteInfo($"  {GetColumnRightsCommand.OnWithoutRows}");
+		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
+	}
+
+	[Test]
+	[Description("With column permissions ON, each column is shown by its code (resolved from its UId) and caption, with its rows in priority order and the level as a word.")]
+	public void Execute_ShouldListEachColumnByCodeAndCaption_WhenSwitchIsOnWithRows() {
+		// Arrange
+		Returns(Object(true,
+			Column(DescriptionUId, "Description",
+				Row(Admins, "System administrators", 0, ColumnRightLevel.Edit),
+				Row(Employees, "All employees", 1, ColumnRightLevel.Denied)),
+			Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Read))));
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		Received.InOrder(() => {
+			_logger.WriteInfo("Column permissions for 'Holiday' (UsrHoliday):");
+			_logger.WriteInfo($"  {GetColumnRightsCommand.PriorityRule}");
+			_logger.WriteInfo("  Column permissions: ON. Columns with rows:");
+			_logger.WriteInfo("    UsrAmount 'Amount':");
+			_logger.WriteInfo($"      [0] All employees ({Employees}): read");
+			_logger.WriteInfo("    UsrDescription 'Description':");
+			_logger.WriteInfo($"      [0] System administrators ({Admins}): edit");
+			_logger.WriteInfo($"      [1] All employees ({Employees}): denied");
+		});
+	}
+
+	[Test]
+	[Description("A level the service returned that is none of denied/read/edit is shown as the number it is, never as a known level.")]
+	public void Execute_ShouldShowUnknownLevel_WhenRowCarriesAnUnknownLevel() {
+		// Arrange
+		Returns(Object(true, Column(AmountUId, "Amount", Row(Employees, "All employees", 0, (ColumnRightLevel)7))));
+
+		// Act
+		Run();
+
+		// Assert
+		_logger.Received().WriteInfo($"      [0] All employees ({Employees}): unknown (7)");
+	}
+
+	[Test]
+	[Description("Rows stored while column permissions are OFF are listed under the OFF line, not as rows in effect.")]
+	public void Execute_ShouldListStoredRowsUnderOff_WhenSwitchIsOffWithRows() {
+		// Arrange
+		Returns(Object(false, Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Denied))));
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		Received.InOrder(() => {
+			_logger.WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
+			_logger.WriteInfo("  Rows stored while column permissions are OFF:");
+			_logger.WriteInfo("    UsrAmount 'Amount':");
+			_logger.WriteInfo($"      [0] All employees ({Employees}): denied");
+		});
+	}
+
+	[Test]
+	[Description("A failed service read fails the call (exit 1) and is never reported as column permissions OFF.")]
+	public void Execute_ShouldFail_WhenTheReadFails() {
+		// Arrange
+		Returns(ObjectRightsInfo.ReadFailed("UsrHoliday", "Access denied"));
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a read that did not happen is a failure");
+		_logger.Received().WriteError("  UsrHoliday: its column permissions could not be read: Access denied.");
+		_logger.DidNotReceive().WriteInfo($"  {GetColumnRightsCommand.SwitchOff}");
+	}
+
+	[Test]
+	[Description("A service failure that escapes the reader is reported the same way as a failed read, and fails the call.")]
+	public void Execute_ShouldFail_WhenTheReaderThrowsAServiceFailure() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new TimeoutException("timed out"));
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(1, because: "a read that timed out did not happen");
+		_logger.Received().WriteError(Arg.Is<string>(line =>
+			line.StartsWith("  UsrHoliday: its column permissions could not be read:") && line.Contains("timed out")));
+	}
+
+	[Test]
+	[Description("--column shows only that column, matched by its code through the entity schema.")]
+	public void Execute_ShouldShowOnlyTheNamedColumn_WhenColumnIsGiven() {
+		// Arrange
+		Returns(Object(true,
+			Column(DescriptionUId, "Description", Row(Employees, "All employees", 0, ColumnRightLevel.Denied)),
+			Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Read))));
+
+		// Act
+		int exitCode = Run(column: "usramount");
+
+		// Assert
+		exitCode.Should().Be(0, because: "the column exists");
+		_logger.Received().WriteInfo("    UsrAmount 'Amount':");
+		_logger.DidNotReceive().WriteInfo("    UsrDescription 'Description':");
+		_logger.Received().WriteInfo("Column permissions for 'Holiday' (UsrHoliday) (column usramount):");
+	}
+
+	[Test]
+	[Description("--column naming a column of the object that has no row reports it has none.")]
+	public void Execute_ShouldSayTheColumnHasNoRows_WhenNamedColumnIsUnrestricted() {
+		// Arrange
+		Returns(Object(true, Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Read))));
+
+		// Act
+		int exitCode = Run(column: "Name");
+
+		// Assert
+		exitCode.Should().Be(0, because: "an unrestricted column is a fact");
+		_logger.Received().WriteInfo("    Name: no column permission rows.");
+		_logger.DidNotReceive().WriteInfo("    UsrAmount 'Amount':");
+	}
+
+	[Test]
+	[Description("--column naming no column of the object fails the call instead of answering with nothing.")]
+	public void Execute_ShouldFail_WhenNamedColumnIsNotAColumnOfTheObject() {
+		// Arrange
+		Returns(Object(true));
+
+		// Act
+		int exitCode = Run(column: "UsrMissing");
+
+		// Assert
+		exitCode.Should().Be(1, because: "a typo in the column must not read as 'no rows'");
+		_logger.Received().WriteError("Error: 'Holiday' (UsrHoliday) has no column 'UsrMissing'.");
+	}
+
+	[Test]
+	[Description("--column that is not a column code is refused before anything is read.")]
+	public void Execute_ShouldRefuse_WhenColumnIsNotACode() {
+		// Arrange & Act
+		int exitCode = Run(column: "Amount; drop");
+
+		// Assert
+		exitCode.Should().Be(1, because: "only a column code is accepted");
+		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+	}
+
+	[Test]
+	[Description("When the columns cannot be read, each column is shown by its UId and caption with a warning, and the call still succeeds.")]
+	public void Execute_ShouldShowColumnsByUId_WhenColumnCodesCannotBeRead() {
+		// Arrange
+		Returns(Object(true, Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Read))));
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(_ => throw new EntitySchemaDesignerException("schema read failed"));
+
+		// Act
+		int exitCode = Run();
+
+		// Assert
+		exitCode.Should().Be(0, because: "the rights were read; only the column codes are missing");
+		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("could not be read")
+			&& line.Contains("schema read failed")));
+		_logger.Received().WriteInfo($"    column {AmountUId} 'Amount' (code not resolved):");
+	}
+
+	[Test]
+	[Description("With --column, columns that cannot be read fail the call: the column cannot be found.")]
+	public void Execute_ShouldFail_WhenColumnIsGivenAndColumnCodesCannotBeRead() {
+		// Arrange
+		Returns(Object(true, Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Read))));
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>())
+			.Returns(_ => throw new EntitySchemaDesignerException("schema read failed"));
+
+		// Act
+		int exitCode = Run(column: "UsrAmount");
+
+		// Assert
+		exitCode.Should().Be(1, because: "the filter cannot be applied without the column codes");
+		_logger.Received().WriteError(Arg.Is<string>(line => line.Contains("--column UsrAmount cannot be found")));
+	}
+
+	[Test]
+	[Description("--grantee shows, per column, the grantee's row and the rows above it.")]
+	public void Execute_ShouldShowGranteeRowAndRowsAbove_WhenGranteeIsGiven() {
+		// Arrange
+		Returns(Object(true, Column(AmountUId, "Amount",
+			Row(Admins, "System administrators", 0, ColumnRightLevel.Edit),
+			Row(Role, "Sales managers", 1, ColumnRightLevel.Read),
+			Row(Employees, "All employees", 2, ColumnRightLevel.Denied))));
+
+		// Act
+		int exitCode = Run(grantee: Role.ToString());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read completed");
+		Received.InOrder(() => {
+			_logger.WriteInfo($"      [1] Sales managers ({Role}): read");
+			_logger.WriteInfo("      Rows above it:");
+			_logger.WriteInfo($"        [0] System administrators ({Admins}): edit");
+		});
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(line => line.Contains("All employees")));
+	}
+
+	[Test]
+	[Description("--grantee with no row in a column says so and lists every row of that column.")]
+	public void Execute_ShouldListEveryRow_WhenGranteeHasNoRowInTheColumn() {
+		// Arrange
+		Returns(Object(true, Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Denied))));
+
+		// Act
+		Run(grantee: Role.ToString());
+
+		// Assert
+		_logger.Received().WriteInfo($"      grantee {Role} has NO row in this column. Its rows:");
+		_logger.Received().WriteInfo($"        [0] All employees ({Employees}): denied");
+	}
+
+	[Test]
+	[Description("--grantee that is not a GUID is refused before anything is read.")]
+	public void Execute_ShouldRefuse_WhenGranteeIsNotAGuid() {
+		// Arrange & Act
+		int exitCode = Run(grantee: "Sales managers");
+
+		// Assert
+		exitCode.Should().Be(1, because: "the grantee is a SysAdminUnit id");
+		_logger.Received().WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
+		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+	}
+
+	[Test]
+	[Description("When no object has the code, the one object with that title is read and the output says it was found by its title.")]
+	public void Execute_ShouldReadTheObjectByTitle_WhenNoObjectHasTheCode() {
+		// Arrange
+		_rightsReader.GetObjectRights("Holiday", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "Holiday", null, false, Array.Empty<RoleOperationRights>()));
+		_rightsReader.FindObjectsByTitle("Holiday", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("UsrHoliday", "Holiday") });
+		Returns(Object(true));
+
+		// Act
+		int exitCode = Run(name: "Holiday");
+
+		// Assert
+		exitCode.Should().Be(0, because: "the title names one object");
+		_logger.Received().WriteInfo("  'Holiday' is not an object code: it is the title of UsrHoliday, which is read.");
+	}
+
+	[Test]
+	[Description("A title several objects share is refused, listing them, and nothing is read: the read never guesses between objects.")]
+	public void Execute_ShouldRefuse_WhenSeveralObjectsHaveTheTitle() {
+		// Arrange
+		_rightsReader.GetObjectRights("Holiday", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "Holiday", null, false, Array.Empty<RoleOperationRights>()));
+		_rightsReader.FindObjectsByTitle("Holiday", Arg.Any<CreatioRequestOptions>())
+			.Returns(new[] { new ObjectTitleMatch("UsrHoliday", "Holiday"), new ObjectTitleMatch("UsrDayOff", "Holiday") });
+
+		// Act
+		int exitCode = Run(name: "Holiday");
+
+		// Assert
+		exitCode.Should().Be(1, because: "an ambiguous title is refused");
+		_logger.Received().WriteError(Arg.Is<string>(line => line.Contains("is the title of 2 objects")
+			&& line.EndsWith("Re-run with the exact code.")));
+		_rightsReader.DidNotReceive().GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("The column codes are read with the request timeout, so the schema read honours the call's limits like the rights read.")]
+	public void Execute_ShouldReadColumnCodesWithTheRequestTimeout_WhenColumnsHaveRows() {
+		// Arrange
+		Returns(Object(true, Column(AmountUId, "Amount", Row(Employees, "All employees", 0, ColumnRightLevel.Read))));
+		GetColumnRightsOptions options = new() { EntitySchemaName = "UsrHoliday", TimeOut = 30_000 };
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_columnManager.Received(1).GetSchemaProperties(Arg.Is<GetEntitySchemaPropertiesOptions>(read =>
+			read.SchemaName == "UsrHoliday" && read.RuntimeReadTimeoutMilliseconds == 30_000 && read.Package == null));
+	}
+}

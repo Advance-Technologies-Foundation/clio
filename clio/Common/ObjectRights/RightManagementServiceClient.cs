@@ -16,8 +16,8 @@ namespace Clio.Common.ObjectRights;
 public interface IObjectRightsReader {
 	/// <summary>
 	/// Reads the object permissions of the entity schema <paramref name="schemaName"/>: the operation switch and every
-	/// role's row in priority order, the record switch and the default record rules, and a snapshot a save can write
-	/// back. A failed read is reported in
+	/// role's row in priority order, the record switch and the default record rules, the column switch and every
+	/// column's rows in priority order, and a snapshot a save can write back. A failed read is reported in
 	/// <see cref="ObjectRightsInfo.ReadError"/> and never as "not administered".
 	/// </summary>
 	/// <param name="schemaName">The entity schema name.</param>
@@ -136,6 +136,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	private const string OperationRowsField = "entitySchemaOperationsRights";
 	private const string AdministratedByRecordsField = "administratedByRecords";
 	private const string RecordRulesField = "entitySchemaRecordDefRights";
+	private const string AdministratedByColumnsField = "administratedByColumns";
+	private const string ColumnRightsField = "entitySchemaColumnsRights";
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
@@ -162,7 +164,8 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName, Str(node["caption"]),
 			Flag(node, AdministratedByOperationsField), ProjectRoles(node), Snapshot: new ObjectRightsSnapshot(node),
 			AdministratedByRecords: Flag(node, AdministratedByRecordsField), RecordRules: ProjectRecordRules(node),
-			SchemaUId: Guid.TryParse(Str(node["uId"]), out Guid uId) ? uId : Guid.Empty);
+			SchemaUId: Guid.TryParse(Str(node["uId"]), out Guid uId) ? uId : Guid.Empty,
+			AdministratedByColumns: Flag(node, AdministratedByColumnsField), Columns: ProjectColumnRights(node));
 	}
 
 	/// <inheritdoc />
@@ -184,7 +187,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// column and entity-operation collections are sent as null ("leave untouched") so the save neither
 		// re-processes nor risks clobbering them.
 		payload[RecordRulesField] = null;
-		payload["entitySchemaColumnsRights"] = null;
+		payload[ColumnRightsField] = null;
 		payload["entityOperationGrantees"] = null;
 		return SendSave(payload, requestOptions);
 	}
@@ -215,7 +218,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		payload[OperationRowsField] = rows;
 		payload[RecordRulesField] = null;
-		payload["entitySchemaColumnsRights"] = null;
+		payload[ColumnRightsField] = null;
 		payload["entityOperationGrantees"] = null;
 		return SendSave(payload, requestOptions);
 	}
@@ -233,7 +236,7 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			.RulesDifferFrom(after);
 		payload[RecordRulesField] = rulesChange ? BuildRecordRules(payload, after.Rules) : null;
 		payload[OperationRowsField] = null;
-		payload["entitySchemaColumnsRights"] = null;
+		payload[ColumnRightsField] = null;
 		payload["entityOperationGrantees"] = null;
 		return SendSave(payload, requestOptions);
 	}
@@ -525,6 +528,25 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	// checks for null, and as nothing at all to the operator. The platform's text is rendered on one line.
 	private static string ServiceMessage(string message, string fallback) =>
 		string.IsNullOrWhiteSpace(message) ? fallback : ObjectRightsSupport.DisplayError(message);
+
+	// Every column the service listed, in its order, each with its rows in priority order. A column entry that is not an
+	// object is skipped; a column with no rights list (null or absent) has no rows. A row without a readable position is
+	// placed at its index, only so that it stays visible; a level that is absent stays null and a number outside the
+	// lookup is kept as it is, so neither is ever shown as a level the service did not return.
+	private static List<ColumnRights> ProjectColumnRights(JsonObject node) =>
+		((node[ColumnRightsField] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>())
+			.Select(column => new ColumnRights(
+				Guid.TryParse(Str(column["columnUId"]), out Guid columnUId) ? columnUId : Guid.Empty,
+				Str(column["columnCaption"]),
+				((column["rights"] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>())
+					.Select((row, index) => new ColumnRightRow(GranteeId(row),
+						Str(row["sysAdminUnit"]?["name"]) ?? "(unknown)", Position(row) ?? index, ColumnLevel(row)))
+					.OrderBy(row => row.Position)
+					.ToList()))
+			.ToList();
+
+	private static ColumnRightLevel? ColumnLevel(JsonObject row) =>
+		row["rightLevel"] is JsonValue value && value.TryGetValue(out int level) ? (ColumnRightLevel)level : null;
 
 	// Every row, in priority order.
 	private static List<RoleOperationRights> ProjectRoles(JsonObject node) =>

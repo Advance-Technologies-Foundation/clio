@@ -166,6 +166,7 @@
   "get-client-unit-schema": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
       {"argument": "output-file", "kind": "file", "access": "write"}
   ]},
+  "get-column-rights": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-component-info": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none"},
   "get-component-info-to-file": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
       {"argument": "output-file", "kind": "file", "access": "write"}

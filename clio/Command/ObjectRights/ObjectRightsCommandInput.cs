@@ -129,6 +129,65 @@ internal static class ObjectRightsCommandInput {
 	}
 
 	/// <summary>
+	/// The read commands' policy for a name (<see cref="TryResolveObjectName"/> owns the code-first rule): when no object
+	/// has the code, the one object with that title is read, and several are refused with the candidates, so the read
+	/// never guesses between them. An object with the code that is not found is returned like any object that is not
+	/// found, for the caller to report.
+	/// </summary>
+	/// <param name="named">The trimmed name the caller passed.</param>
+	/// <param name="readByCode">Reads the object with a code, the way the command reads it.</param>
+	/// <param name="reader">The object-rights reader, for the title lookup.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <param name="logger">Where an error is written.</param>
+	/// <param name="code">The code of the object read.</param>
+	/// <param name="info">The object as read.</param>
+	/// <param name="byTitle">The object was found by its title.</param>
+	/// <returns><see langword="false"/> after writing the error.</returns>
+	internal static bool TryReadNamedObject(string named, Func<string, ObjectRightsInfo> readByCode,
+		IObjectRightsReader reader, CreatioRequestOptions requestOptions, ILogger logger, out string code,
+		out ObjectRightsInfo info, out bool byTitle) {
+		code = null;
+		info = null;
+		byTitle = false;
+		if (!TryResolveObjectName(named, readByCode, reader, requestOptions, logger,
+				out ObjectNameResolution resolution)) {
+			return false;
+		}
+		if (resolution.TitleMatches.Count == 0) {
+			code = resolution.Code;
+			info = resolution.ByCode;
+			return true;
+		}
+		if (resolution.TitleMatches.Count > 1) {
+			logger.WriteError($"Error: {NotACode(named, resolution.TitleMatches)}. Re-run with the exact code.");
+			return false;
+		}
+		code = resolution.TitleMatches[0].Name;
+		info = readByCode(code);
+		byTitle = true;
+		return true;
+	}
+
+	/// <summary>
+	/// Reads an optional SysAdminUnit id filter (<c>--grantee</c>, <c>--author</c>): omitted means "every role"; a given
+	/// one must be a non-empty GUID.
+	/// </summary>
+	/// <param name="raw">The value as the caller passed it.</param>
+	/// <param name="filter">The id, or <see langword="null"/> when omitted.</param>
+	/// <returns><see langword="false"/> when a value was given that is not a non-empty GUID.</returns>
+	internal static bool TryParseUnitFilter(string raw, out Guid? filter) {
+		filter = null;
+		if (string.IsNullOrWhiteSpace(raw)) {
+			return true;
+		}
+		if (!Guid.TryParse(raw, out Guid parsed) || parsed == Guid.Empty) {
+			return false;
+		}
+		filter = parsed;
+		return true;
+	}
+
+	/// <summary>
 	/// States that <paramref name="named"/> is a title, naming the object(s) it belongs to by their code:
 	/// <c>'Creatio functionality' is not an object code: it is the title of Feature</c>.
 	/// </summary>
