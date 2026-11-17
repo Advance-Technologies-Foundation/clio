@@ -315,28 +315,35 @@ public static partial class WebServiceResponseMasker {
 	/// <param name="method">The called method.</param>
 	/// <returns><c>true</c> when an error text may carry such a default.</returns>
 	public static bool HasCredentialResponseDefault(ServiceMethodDto method) =>
-		Flatten(method?.Response?.Parameters).Any(parameter =>
-			parameter.DefValue?.Source == ServiceSchemaCodes.ValueSourceSysSetting
-			|| (parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value.Length: > 0 }
-				&& WebServiceSchemaView.IsSecretLike(parameter)));
+		Walk(method?.Response?.Parameters).Any(p =>
+			p.Parameter.DefValue?.Source == ServiceSchemaCodes.ValueSourceSysSetting || p.SecretConstant);
 
-	private static IEnumerable<ServiceParameterDto> Flatten(ServiceItemCollection<ServiceParameterDto> parameters) =>
-		(parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>())
-			.SelectMany(parameter => Flatten(parameter.ItemProperties).Prepend(parameter));
+	/// <summary>
+	/// Every parameter of a tree (array item fields included) with whether its constant is a secret, judged in the
+	/// context describe judges it in: under a SOAP-header parent as a header constant, under a credential-like one as a
+	/// secret (<see cref="WebServiceSchemaView.IsSecretConstant"/>), so the masker and describe agree.
+	/// </summary>
+	private static IEnumerable<(ServiceParameterDto Parameter, bool SecretConstant)> Walk(
+		ServiceItemCollection<ServiceParameterDto> parameters, bool inSoapHeader = false, bool underSecretParent = false) {
+		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
+			// The items of a SOAP-header parameter travel in the Header whatever their own flag says.
+			bool header = inSoapHeader || parameter.IsSoapHeader == true;
+			yield return (parameter, WebServiceSchemaView.IsSecretConstant(parameter, header, underSecretParent));
+			foreach ((ServiceParameterDto, bool) nested in Walk(parameter.ItemProperties, header,
+					WebServiceSchemaView.IsSecretSoapParent(header, underSecretParent, parameter.Name, parameter.Path))) {
+				yield return nested;
+			}
+		}
+	}
 
 	private static IEnumerable<string> CredentialResponseCodes(ServiceItemCollection<ServiceParameterDto> parameters) {
-		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
+		foreach ((ServiceParameterDto parameter, bool secretConstant) in Walk(parameters)) {
 			bool fromSetting = parameter.DefValue?.Source == ServiceSchemaCodes.ValueSourceSysSetting;
-			bool secretConstant = parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value.Length: > 0 }
-				&& WebServiceSchemaView.IsSecretLike(parameter);
 			bool credentialPlacement = parameter.Type == PlacementCookie
 				|| (parameter.Type == PlacementHeader
 					&& (WebServiceSchemaView.IsSecretName(parameter.Name) || WebServiceSchemaView.IsSecretName(parameter.Path)));
 			if (fromSetting || secretConstant || credentialPlacement) {
 				yield return parameter.Name;
-			}
-			foreach (string nested in CredentialResponseCodes(parameter.ItemProperties)) {
-				yield return nested;
 			}
 		}
 	}
@@ -454,19 +461,26 @@ public static partial class WebServiceResponseMasker {
 		}
 	}
 
-	private static IEnumerable<string> SecretConstants(ServiceItemCollection<ServiceParameterDto> parameters,
-		bool inSoapHeader = false) {
-		foreach (ServiceParameterDto parameter in parameters?.Items.Values ?? Enumerable.Empty<ServiceParameterDto>()) {
-			// The items of a SOAP-header parameter travel in the Header whatever their own flag says.
-			bool header = inSoapHeader || parameter.IsSoapHeader == true;
-			if (parameter.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst, Value: { Length: > 0 } value }
-					&& (header || WebServiceSchemaView.IsSecretLike(parameter))) {
-				yield return value;
+	private static IEnumerable<string> SecretConstants(ServiceItemCollection<ServiceParameterDto> parameters) {
+		foreach ((ServiceParameterDto parameter, bool secretConstant) in Walk(parameters)) {
+			if (!secretConstant) {
+				continue;
 			}
-			foreach (string nested in SecretConstants(parameter.ItemProperties, header)) {
-				yield return nested;
+			string value = parameter.DefValue.Value;
+			yield return value;
+			// An API may echo only the key part of a value (Bearer <key>, password=<key>, a webhook URL's token), so each
+			// part that made it a key is masked on its own too, and a Basic value also by its decoded user and password.
+			foreach (string part in WebServiceSchemaView.KeyLikeParts(value).Concat(BasicParts(value))) {
+				yield return part;
 			}
 		}
+	}
+
+	private static IEnumerable<string> BasicParts(string value) {
+		string[] words = value.Split((char[])null, 2, StringSplitOptions.RemoveEmptyEntries);
+		return words.Length == 2 && words[0].Equals("Basic", StringComparison.OrdinalIgnoreCase)
+			? AuthorizationParts("Basic " + words[1].Trim())
+			: [];
 	}
 
 	/// <summary>

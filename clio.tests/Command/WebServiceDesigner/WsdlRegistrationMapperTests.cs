@@ -495,6 +495,81 @@ public sealed class WsdlRegistrationMapperTests {
 	}
 
 	[Test]
+	[Description("A constant describe showed on a body parameter the WSDL puts in the SOAP Header is carried when it is a plain value, and left out with a warning when it looks like a key there, where register would refuse it.")]
+	public void Map_Should_Carry_A_Plain_Constant_Into_The_Soap_Header_And_Leave_Out_A_Key() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add",
+			new WsdlParameter("mode", "tem:mode", "Text", false, true, "tem:mode", [], "UsrMode", false),
+			new WsdlParameter("partner", "tem:partner", "Text", false, true, "tem:partner", [], "UsrPartner", false)));
+		var mode = new WebServiceParameterView("UsrMode", "Mode", "body", "tem:mode", "Text", false, false, null, "fast",
+			false, []);
+		var partner = new WebServiceParameterView("UsrPartner", "Partner", "body", "tem:partner", "Text", false, false, null,
+			"Lk7Hd93Qz20mWr4TbN8e", false, []);
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 9000, "xml", true, [mode, partner], [], "tem:Add", "urn:Add")
+		]);
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, warnings);
+
+		// Assert
+		IReadOnlyList<WebServiceParameterArg> request = result.Arguments.Methods.Single().RequestParameters;
+		request.Single(p => p.Code == "UsrMode").DefaultValue.Should().Be("fast",
+			because: "a plain value is an ordinary SOAP-header constant that register takes and describe shows");
+		request.Single(p => p.Code == "UsrPartner").DefaultValue.Should().BeNull(
+			because: "a key-like value in the Header would be refused by register");
+		warnings.Kept.Should().Contain(w => w.Contains("tem:partner") && w.Contains("default-sys-setting"),
+			because: "the agent is told the constant was not carried and what to use instead");
+		string.Join("\n", warnings.Kept).Should().NotContain("Lk7Hd93Qz20mWr4TbN8e",
+			because: "a warning never repeats a value that looks like a key");
+		warnings.Kept.Should().NotContain(w => w.Contains("tem:mode"), because: "the carried plain constant needs no warning");
+	}
+
+	[Test]
+	[Description("A constant describe hid on a SOAP-header element the WSDL now puts in the body is named in a warning, since register refuses to keep it where describe would show it.")]
+	public void Map_Should_Warn_When_A_Hidden_Header_Constant_Leaves_The_Soap_Header() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add", Parameter("partner", "tem:partner")));
+		var partner = new WebServiceParameterView("UsrPartner", "Partner", "body", "tem:partner", "Text", false, false, null,
+			null, true, [], SoapHeader: true);
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 9000, "xml", true, [partner], [], "tem:Add", "urn:Add")
+		]);
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, warnings);
+
+		// Assert
+		warnings.Kept.Should().Contain(w => w.Contains("tem:partner") && w.Contains("leaves the SOAP Header")
+				&& w.Contains("default-value \"\""),
+			because: "without it the registration is refused with no hint at the cause");
+	}
+
+	[Test]
+	[Description("A hidden constant on an item whose own flag is not set, hidden because its parent travelled in the SOAP Header, is named in a warning when the WSDL takes the parent out of the Header.")]
+	public void Map_Should_Warn_When_A_Hidden_Item_Leaves_The_Soap_Header_With_Its_Parent() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add", Parameter("ctx", "tem:ctx", "Object", true, "tem:ctx", false,
+			Parameter("mode", "mode"))));
+		var item = new WebServiceParameterView("UsrCtxMode", "Mode", "body", "mode", "Text", false, false, null, null, true, []);
+		var context = new WebServiceParameterView("UsrCtx", "Ctx", "body", "tem:ctx", "Object", true, false, null, null, false,
+			[item], SoapHeader: true, SequenceElement: "tem:ctx");
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 9000, "xml", true, [context], [], "tem:Add", "urn:Add")
+		]);
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, warnings);
+
+		// Assert
+		warnings.Kept.Should().Contain(w => w.Contains("'mode'") && w.Contains("leaves the SOAP Header"),
+			because: "the item travelled in the Header with its parent although its own flag was never set");
+	}
+
+	[Test]
 	[Description("use-auth false on a matched method is carried, since without it register gives the method the service's authentication.")]
 	public void Map_Should_Carry_Use_Auth_False_From_A_Matched_Method() {
 		// Arrange
