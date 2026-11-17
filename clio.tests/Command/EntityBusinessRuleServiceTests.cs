@@ -112,6 +112,57 @@ public sealed class EntityBusinessRuleServiceTests {
 			because: "the resolver-provided data value type must reach the persisted operand");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Category("Unit")]
+	[Description("ENG-95270: apply-static-filter runs the envelope it built on the environment before saving; a rejected filter is never written, an accepted one is saved after exactly one probe.")]
+	public void Create_Should_Probe_The_Static_Filter_Before_Saving(bool environmentRejects) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(environmentRejects
+				? """{"success":false,"errorInfo":{"message":"Column by path Status not found."}}"""
+				: """{"success":true,"rows":[{"ProbeCount":3}]}""");
+		EntityBusinessRuleSchemaProvider schemaProvider = new(_entitySchemaDesignerClient);
+		EntityBusinessRuleService service = new(
+			new BusinessRulePackageResolver(_applicationPackageListProvider),
+			new EntityBusinessRuleAttributeProvider(schemaProvider),
+			new BusinessRuleAddonService(_addonSchemaDesignerClient),
+			_formulaValidationService,
+			new BusinessRuleValidator(_lookupReferenceValidator),
+			new StaticFilterContextFactory(schemaProvider, applicationClient, urls),
+			_sysSettingResolver);
+		BusinessRule rule = CreateRule(caption: "Owners starting with A", actions: [
+			new ApplyStaticFilterBusinessRuleAction("Owner", JsonSerializer.Deserialize<JsonElement>(
+				"""{"logicalOperation":"AND","filters":[{"columnPath":"Status","comparisonType":"START_WITH","value":"A"}]}"""))
+		]);
+
+		// Act
+		BusinessRuleCreateResult? result = null;
+		Exception? failure = null;
+		try {
+			result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrOrder", rule));
+		} catch (ArgumentException ex) {
+			failure = ex;
+		}
+
+		// Assert
+		applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"filters\"") && body.Contains("Terrasoft.FilterGroup")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		if (environmentRejects) {
+			failure.Should().NotBeNull(because: "a filter the server rejects must not become a saved rule");
+			failure!.Message.Should().Contain("Nothing was saved", because: "the agent must know nothing was written");
+			_savedAddonSchema.Should().BeNull(because: "the probe runs before the add-on is saved");
+		} else {
+			failure.Should().BeNull(because: "the server ran the filter, so the rule is saved");
+			result!.RuleName.Should().NotBeNullOrEmpty(because: "an accepted filter yields a saved rule");
+			_savedAddonSchema.Should().NotBeNull(because: "an accepted filter is written to the entity add-on");
+		}
+	}
+
 	[TestCase("", "UsrOrder", true, "package-name is required.")]
 	[TestCase("UsrPkg", "", true, "entity-schema-name is required.")]
 	[TestCase("UsrPkg", "UsrOrder", false, "rule is required.")]

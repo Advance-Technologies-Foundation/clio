@@ -78,7 +78,8 @@ internal sealed class EntityBusinessRuleService(
 			attributeContext.EntitySchema.Name,
 			staticFilterContext?.SchemaProvider,
 			staticFilterContext?.LookupResolver,
-			sysSettingMap: sysSettingMap);
+			sysSettingMap: sysSettingMap,
+			staticFilterProbe: staticFilterContext?.Probe);
 		return AddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			rule,
@@ -117,7 +118,8 @@ internal sealed class EntityBusinessRuleService(
 					attributeContext.EntitySchema.Name,
 					staticFilterContext?.SchemaProvider,
 					staticFilterContext?.LookupResolver,
-					sysSettingMap: sysSettingMap);
+					sysSettingMap: sysSettingMap,
+					staticFilterProbe: staticFilterContext?.Probe);
 			});
 	}
 
@@ -162,7 +164,8 @@ internal sealed class EntityBusinessRuleService(
 					staticFilterContext?.SchemaProvider,
 					staticFilterContext?.LookupResolver,
 					existing,
-					sysSettingMap);
+					sysSettingMap,
+					staticFilterContext?.Probe);
 			});
 	}
 

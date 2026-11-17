@@ -3590,6 +3590,7 @@ internal static class ToolContractCatalog {
 			[
 				"Call get-guidance with name business-rules before calling create-entity-business-rules.",
 				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
+				"clio runs the filter it builds for an apply-static-filter action on the environment before saving (a one-row count on the target lookup's reference schema); when the server rejects it, that rule fails with the server's message and nothing is saved, so no separate execute-esq dry run of the filter is needed.",
 				"Call get-tool-contract for create-entity-business-rules before building the final payload.",
 				"When any lookup condition or lookup set-values constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id."
 			]);
