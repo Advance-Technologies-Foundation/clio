@@ -1023,7 +1023,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 						+ "refuses every call (DestinationUnreachable, To '')."
 						+ (instead ?? $" If the user needs this port, declare the namespace {required.AddressingNamespace} and "
 							+ "give each method two soap-header body parameters (prefixed codes) with the paths wsa:Action (its "
-							+ "soap-action) and wsa:To (the base URI), filled from system settings or the process; then test a "
+							+ "soap-action) and wsa:To (the base URI), as constants (default-value) unless register refuses one as key-like; then test a "
 							+ "call."));
 				} else if (wcf ??= WrittenByWcf(definitions)) {
 					Warn($"Port '{port.Name}' is SOAP 1.2 and the WSDL was written by WCF: the platform sends the action only as "
@@ -1031,8 +1031,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 						+ "WCF answers every call with ActionNotSupported (Action '')."
 						+ (instead ?? " If the user needs this port, give each method a request header parameter (a prefixed "
 							+ "code) with the path Content-Type and the value "
-							+ "application/soap+xml;charset=utf-8;action=\"<its soap-action>\", one per method, from a system "
-							+ "setting or the process; then test a call."));
+							+ "application/soap+xml;charset=utf-8;action=\"<its soap-action>\", one per method, as a constant "
+							+ "(default-value); then test a call."));
 				} else {
 					Warn($"Port '{port.Name}' is SOAP 1.2: the platform sends the action only as a SOAPAction header. An ASMX "
 						+ "service answers (measured); one that dispatches SOAP 1.2 by the action parameter of Content-Type "
@@ -1040,8 +1040,8 @@ public sealed partial class WsdlParser : IWsdlParser {
 						+ "port; if a test call fails so, "
 						+ (alternative is null
 							? "give the method a request header parameter (a prefixed code) with the path Content-Type and the "
-								+ "value application/soap+xml;charset=utf-8;action=\"<its soap-action>\" from a system setting or "
-								+ "the process."
+								+ "value application/soap+xml;charset=utf-8;action=\"<its soap-action>\" as a constant "
+								+ "(default-value)."
 							: $"switch to port '{alternative.Port.Name}' (SOAP 1.1){alternative.Caveat()}."));
 				}
 			}
