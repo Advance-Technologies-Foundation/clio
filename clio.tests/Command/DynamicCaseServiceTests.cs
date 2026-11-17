@@ -1026,6 +1026,22 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
+	[Description("A yes not given maps to an absent key, not false: a package whose contract lacks the key would refuse it as unknown.")]
+	public void Modify_ShouldLeaveTheNewConfirmationsOut_WhenNotGiven() {
+		// Arrange
+		_session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new ModifyCaseResponse { Success = true, Outcome = "planned" }, null));
+		ModifyDynamicCaseOptions options = ModifyOptions(dryRun: true);
+
+		// Act
+		_service.Modify(options);
+
+		// Assert
+		_session.Received(1).Modify(Arg.Is<ModifyCaseRequest>(request =>
+			request.ConfirmStageRecords == null && request.ConfirmValueRename == null));
+	}
+
+	[Test]
 	[Description("A modify that names no stages leaves the stages out of the request, so the server keeps them.")]
 	public void Modify_ShouldSendNoStages_WhenTheCallNamesNone() {
 		// Arrange

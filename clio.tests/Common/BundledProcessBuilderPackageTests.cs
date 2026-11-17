@@ -70,15 +70,15 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>f8c8ed98</c>,
-	/// tagged <c>crtprocessbuilder-1.6.6.179</c>): branch <c>feature/ENG-106472-phase-b-filters</c> with
-	/// <c>feature/ENG-106378-modify-dynamic-case</c> merged in at 1.6.6.173 (<c>75404536</c>), which carries
-	/// <c>main</c> at 1.6.6.172, so the cut carries everything 1.6.6.173 shipped.
-	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.179 and packed that commit with it overlaid (398
-	/// entries), and the stamp was committed after it as the child commit <c>dce24566</c>.
-	/// 1.6.6.179 replaces this branch's 1.6.6.178, which no clio release shipped, with the review fixes; it is the first
-	/// number above every cut in both histories, and whichever package branch lands after this one restamps above it.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>418180d3</c>): branch
+	/// <c>feature/ENG-106378-ai-toolkit-change-an-existing</c>, which carries <c>main</c> at 1.6.6.179 (merged at
+	/// <c>ebcaba0a</c>), so the cut carries everything 1.6.6.179 shipped.
+	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the script stamped the package descriptor to
+	/// 1.6.6.184 and packed the producing commit with it overlaid, and the stamp was committed after it as the child
+	/// commit <c>88796df3</c>.
+	/// 1.6.6.184 replaces this branch's 1.6.6.180 to 1.6.6.183, which reached only dev-testing stands, with three review
+	/// rounds; 1.6.6.180 is also another branch's cut (Send chat message), and whichever of the two lands second
+	/// restamps above both.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -91,20 +91,17 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.172, the last one shipped: <c>DescribeCase</c> and <c>ModifyCase</c> with
-	/// stage groups (1.6.6.173, ENG-106378), and several dynamic cases on one object split by a filter column
-	/// (ENG-106472). <c>BuildCase</c> and <c>ModifyCase</c> take a <c>filter</c> (a lookup column of the object and its
-	/// values, or <c>empty</c>); the case designer's rules are kept on the server (one filter column per object, no
-	/// value shared by two enabled cases, a case without a filter only alone); the first filter sets the settings row's
-	/// filter column; <c>BuildCase</c> disables the one unfiltered case only on <c>deactivateUnfiltered</c>; and a call
-	/// with a filter needs edit on <c>SysDcmSettings</c>. The service surface is 11 operations, 6 design-gate call sites
-	/// and three case-gate call sites, counted in the producing sources: the filter adds request keys, not operations.
-	/// The <c>[RequiresPackage]</c> floors of <c>create-dynamic-case</c> and of the case describe and modify tools move
-	/// to 1.6.6.179, the first shipped package that reads <c>filter</c>. What earlier cuts carried is in this file's git
-	/// history rather than here: it described archives that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.179, the last one shipped: <c>DescribeCase</c> reports the records per
+	/// stage (finished cases included); <c>ModifyCase</c> takes <c>confirmStageRecords</c> (removing a stage that
+	/// records hold) and <c>confirmValueRename</c> (a stage caption renames its lookup value, as the case designer does),
+	/// one refusal names every missing confirmation, and a disable next to another enabled case says its running cases
+	/// are cancelled. The service surface is still 11 operations, 6 design-gate call sites and three case-gate call
+	/// sites: the change adds request keys, not operations. The <c>[RequiresPackage]</c> floor of the case describe and
+	/// modify tools moves to 1.6.6.184; <c>create-dynamic-case</c> stays at 1.6.6.179. What earlier cuts carried is in
+	/// this file's git history rather than here.</para>
 	/// <para>
-	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6525 passed,
-	/// 0 failed, on <c>dev-nf</c> and on <c>dev-n8</c>.
+	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6585 passed,
+	/// 0 failed, on <c>dev-nf</c> (the script's own run).
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
@@ -186,7 +183,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"89CCFA3960088266139798A9967597142E7DFA75AEACD33740CA14467CBE4934";
+		"4C21855B86DB21E38124348711B5D6F548A93104D0801BE62073FD150E166A0A";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -214,7 +211,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.183";
+	private const string ExpectedArchiveVersion = "1.6.6.184";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -225,7 +222,8 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173 and 1.6.6.179 are script cuts.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179 and 1.6.6.184 are script
+	/// cuts.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -233,7 +231,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "a7f78ba3cf8f57b4bf7426100eb8f8bb9da6b751";
+	private const string ExpectedProducingCommit = "418180d34111644c856e5828c1ecadeccc5dc99a";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +257,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794921604000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794923801000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -944,6 +942,27 @@ public class BundledProcessBuilderPackageTests {
 			(carriesDescribeCase || carriesModifyCase).Should().BeFalse(
 				because: $"the bundled {bundledVersion} is below the floor {floor}; an archive below it that already "
 					+ "carries the operations means the floor is higher than it needs to be");
+		}
+	}
+
+	[Test]
+	[Description("An archive that meets the case-change floor must read the two confirmations and report records: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused the confirmations as unknown keys.")]
+	public void BundledArchive_ShouldAcceptTheCaseChangeConfirmations_WhenItMeetsTheirFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.DynamicCaseChangeRequirement.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool readsStageRecords = archive.Contains("[DataMember(Name = \"confirmStageRecords\")]", StringComparison.Ordinal);
+		bool readsValueRename = archive.Contains("[DataMember(Name = \"confirmValueRename\")]", StringComparison.Ordinal);
+		bool reportsRecords = archive.Contains("[DataMember(Name = \"records\"", StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			readsStageRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+			readsValueRename.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+			reportsRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
 		}
 	}
 

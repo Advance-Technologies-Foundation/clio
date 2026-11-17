@@ -227,7 +227,7 @@ public sealed class BuildCaseClientTests {
 		_client.ExecutePostRequest(DescribeCaseUrl, Arg.Do<string>(body => sent = body)).Returns(
 			"{\"DescribeCaseResult\":{\"success\":true,\"cases\":[{\"schemaName\":\"UsrOrderCase\",\"status\":\"existing\","
 			+ "\"runningInstances\":2,\"packageReadOnly\":true,\"stages\":[{\"value\":\"v1\",\"runningInstances\":2,"
-			+ "\"hasSteps\":true}]}],\"settings\":[{\"sysDcmSettingsId\":\"s1\",\"stageColumnName\":\"UsrStatus\","
+			+ "\"hasSteps\":true,\"records\":5}]}],\"settings\":[{\"sysDcmSettingsId\":\"s1\",\"stageColumnName\":\"UsrStatus\","
 			+ "\"hasFilterColumn\":false}],\"notes\":[\"n\"]}}");
 
 		// Act
@@ -245,6 +245,8 @@ public sealed class BuildCaseClientTests {
 		reply.Response.Cases[0].RunningInstances.Should().Be(2, because: "the running cases of the case are read");
 		reply.Response.Cases[0].PackageReadOnly.Should().BeTrue(because: "a read-only package is reported");
 		reply.Response.Cases[0].Stages[0].HasSteps.Should().BeTrue(because: "a stage with steps is reported");
+		reply.Response.Cases[0].Stages[0].Records.Should().Be(5,
+			because: "the records holding the stage's value are read, finished cases included");
 		reply.Response.Settings.Should().ContainSingle(row => row.StageColumnName == "UsrStatus",
 			because: "the settings rows are read");
 	}
@@ -282,7 +284,7 @@ public sealed class BuildCaseClientTests {
 	}
 
 	[Test]
-	[Description("A modify is posted to the ModifyCase route: an explicit null group travels as JSON null, a group left out stays absent, members left out are omitted, and the flags are sent.")]
+	[Description("A modify is posted to the ModifyCase route: an explicit null group travels as JSON null, a group left out stays absent, members left out are omitted, and only the flags given are sent.")]
 	public void Modify_ShouldKeepAnExplicitNullGroupApartFromAnAbsentOne() {
 		// Arrange
 		string sent = null;
@@ -321,6 +323,26 @@ public sealed class BuildCaseClientTests {
 		body.ContainsKey("confirmStageRecords").Should().BeFalse(
 			because: "a yes not given is not sent, so a package without the key does not refuse it as unknown");
 		body.ContainsKey("confirmValueRename").Should().BeFalse(because: "a yes not given is not sent");
+	}
+
+	[Test]
+	[Description("The two new confirmations travel as JSON true when the user said yes, under the keys the package declares.")]
+	public void Modify_ShouldSendTheNewConfirmations_AsTrue_WhenGiven() {
+		// Arrange
+		string sent = null;
+		_client.ExecutePostRequest(ModifyCaseUrl, Arg.Do<string>(body => sent = body))
+			.Returns("{\"ModifyCaseResult\":{\"success\":true,\"outcome\":\"planned\"}}");
+		ModifyCaseRequest request = new() { CaseName = "UsrOrderCase", ConfirmStageRecords = true, ConfirmValueRename = true };
+
+		// Act
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			session.Modify(request);
+		}
+
+		// Assert
+		JsonObject body = JsonNode.Parse(sent)!["request"]!.AsObject();
+		body["confirmStageRecords"]!.GetValue<bool>().Should().BeTrue(because: "the user's yes is forwarded");
+		body["confirmValueRename"]!.GetValue<bool>().Should().BeTrue(because: "the user's yes is forwarded");
 	}
 
 	[Test]

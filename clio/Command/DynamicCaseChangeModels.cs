@@ -14,12 +14,12 @@ public static class DynamicCaseChangeRequirement {
 	/// <remarks>
 	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
 	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
-	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.183 is the first
+	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.184 is the first
 	/// shipped cut whose stage rename renames the lookup value and whose describe reports <c>records</c>. Not 1.6.6.180:
 	/// that number is also another branch's cut without this code. An older package would ignore the two
 	/// confirmations, and a stage rename there would write a caption no one sees.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.183";
+	public const string MinimumProcessBuilderVersion = "1.6.6.184";
 }
 
 /// <summary>
@@ -303,6 +303,11 @@ public sealed class DynamicCaseDiff {
 	/// <summary>Final stages whose successful flag changed.</summary>
 	[JsonPropertyName("successChanged")]
 	public List<DynamicCaseStageChange> SuccessChanged { get; init; }
+
+	/// <summary>The lookup values a stage rename renames, from / to; a stored caption may already read the new name,
+	/// so <see cref="Recaptioned"/> alone can miss one.</summary>
+	[JsonPropertyName("valueRenamed")]
+	public List<DynamicCaseStageChange> ValueRenamed { get; init; }
 
 	/// <summary>The case caption change, when there is one.</summary>
 	[JsonPropertyName("caption")]

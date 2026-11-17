@@ -48,7 +48,7 @@ public class DescribeDynamicCaseTool(
 		 + "with the designer link per case. Call "
 		 + "it before answering any question about an existing case and before changing one with "
 		 + "modify-dynamic-case. Name the case by case-name or case-uid, or the object by entity-schema-name. "
-		 + "Requires a CrtProcessBuilder that carries DescribeCase (install-process-builder, after user approval).")]
+		 + "Requires CrtProcessBuilder 1.6.6.184 or later (install-process-builder, after user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
