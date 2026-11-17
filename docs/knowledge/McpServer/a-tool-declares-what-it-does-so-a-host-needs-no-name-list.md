@@ -30,6 +30,13 @@ Two exclusions are deliberate. Writing a file the call names is not an effect (a
 the facts are not on the line index, the `index-entries` objects or the contracts: those are budgeted to the byte
 (`ToolContractPayloadBudgetTests`) and ClioRing parses `index-entries`. A host asks once with `detail=facts`.
 
+**How the MCP hints relate** — every tool states all four MCP hints, and `readOnlyHint` is `true` exactly when the
+facts say `read` and no host path may be written; three tools that hand out or drop a credential stay `false` by name
+(`get-identity-assertion`, `get-browser-session`, `clear-browser-session`). `destructiveHint` keeps clio's `(D)`
+meaning (overwrites or deletes), which is wider than `effect: destroy`. A host that pins clio may trust the hints; the
+facts say more, and `scope: machine` with `host-paths` is clio's mark for a call that acts on this machine
+(`spec/adr/adr-mcp-tool-facts.md` D9).
+
 **What breaks if you ignore it** — a new tool without a catalog entry, with a field left out, with facts its
 `ReadOnly` / `Destructive` contradict, or with an argument entry wider than the tool fails
 `McpToolFactsCoverageTests`. Declaring the facts from the tool's name instead of its code brings back exactly what
