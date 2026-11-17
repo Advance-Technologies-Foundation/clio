@@ -44,7 +44,7 @@ public sealed class SetDefaultRecordRightsTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Turn RECORD permissions on/off for ONE object and grant or revoke ONE of its default record rules — the \"Use record permissions\" layer of Object permissions (DESTRUCTIVE — changes access rights). " +
+	[Description("Changes default record rules. Turns RECORD permissions on/off for ONE object and grants or revokes ONE of its default record rules — the \"Use record permissions\" layer of Object permissions (DESTRUCTIVE — changes access rights). " +
 		"A default rule says: records created by members of author get read/edit/delete for grantee. Rules have no order and add up. One call changes at most one rule (one author+grantee pair) and/or the switch; every other rule is kept exactly as read, and the read-back proves it. " +
 		"A call is EITHER a rule change (author + grantee + operations, all three; author and grantee are SysAdminUnit ids that must exist; operations read,edit,delete is required, nothing is granted by default) OR a switch-only change (none of them, plus enable-record-permissions or disable-record-permissions). " +
 		"level granted|delegated (default granted) is what a grant sets for the named operations; do-not-apply-for-manager true/false sets the rule's flag (omitted: kept, false for a new rule). revoke=true sets the named operations to not set; a rule left with no right is removed; a revoke is allowed while record permissions are OFF (it cleans a stored rule before an enable brings it into effect). " +
