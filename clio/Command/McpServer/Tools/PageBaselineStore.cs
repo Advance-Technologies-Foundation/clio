@@ -37,12 +37,73 @@ internal static class PageBaselineStore {
 	private const string LocksDirectoryName = ".locks";
 
 	/// <summary>
+	/// Tells why <paramref name="schemaName"/> may not be used as a page schema name, or returns
+	/// <see langword="null"/> when it may. clio joins the name into local paths
+	/// (<c>.clio-pages/{schema}/</c>, <c>.clio-pages/.locks/{schema}.lock</c>), so a name with a path
+	/// separator, <c>..</c>, a drive or a root would make clio read, lock, write or delete outside
+	/// <c>.clio-pages</c>. The rule is <see cref="DataBindingPathGuard.IsPlainName"/>, plus one rule of this
+	/// tree: the name may not start with a dot. <c>.clio-pages/.locks</c> and <c>.clio-pages/.staging</c> are
+	/// clio's own folders and <c>.gitignore</c> its own file, so a name such as <c>.locks</c> would make clio
+	/// use them as a page folder. A Creatio schema name never starts with a dot.
+	/// </summary>
+	/// <remarks>
+	/// A blank name returns <see langword="null"/>: every page tool already reports a missing
+	/// <c>schema-name</c> in its own words, and the path builders of this class refuse a blank name themselves.
+	/// Each page tool calls this before it probes a file or sends a request to Creatio.
+	/// </remarks>
+	/// <param name="schemaName">The <c>schema-name</c> argument as the caller supplied it.</param>
+	/// <returns>The error to return to the caller, or <see langword="null"/>.</returns>
+	internal static string DescribeSchemaNameRefusal(string schemaName) =>
+		string.IsNullOrWhiteSpace(schemaName) || IsPlainPageSchemaName(schemaName)
+			? null
+			: BuildSchemaNameRefusal(schemaName);
+
+	// The page-specific rule: a plain name (the shared rule) that does not start with a dot, because the
+	// dot-names under .clio-pages (.locks, .staging, .gitignore) are clio's own.
+	private static bool IsPlainPageSchemaName(string schemaName) =>
+		DataBindingPathGuard.IsPlainName(schemaName) && !schemaName.StartsWith('.');
+
+	/// <summary>
+	/// Throws unless <paramref name="schemaName"/> is a plain name that does not start with a dot (see
+	/// <see cref="DescribeSchemaNameRefusal"/> for the rule). Every path builder of the
+	/// <c>.clio-pages</c> tree calls it, so a name that reached one without the tool's own check still
+	/// cannot leave the tree.
+	/// </summary>
+	/// <param name="schemaName">The page schema name about to be joined into a path.</param>
+	/// <exception cref="InvalidOperationException">The name is blank or not a plain name.</exception>
+	internal static void RequirePlainSchemaName(string schemaName) {
+		if (!IsPlainPageSchemaName(schemaName)) {
+			throw new InvalidOperationException(BuildSchemaNameRefusal(schemaName));
+		}
+	}
+
+	/// <summary>
+	/// Resolves the directory of one schema's page files, <c>{clioPagesRootDir}/{schemaName}</c>. This is the
+	/// only place a schema name becomes a directory under <c>.clio-pages</c>.
+	/// </summary>
+	/// <param name="fileSystem">The file system.</param>
+	/// <param name="clioPagesRootDir">The <c>.clio-pages</c> root directory.</param>
+	/// <param name="schemaName">The page schema name.</param>
+	/// <returns>The schema directory path. The directory is not required to exist.</returns>
+	/// <exception cref="InvalidOperationException">The name is blank or not a plain name.</exception>
+	internal static string ResolveSchemaDirectory(IFileSystem fileSystem, string clioPagesRootDir, string schemaName) {
+		RequirePlainSchemaName(schemaName);
+		return fileSystem.Path.Combine(clioPagesRootDir, schemaName);
+	}
+
+	private static string BuildSchemaNameRefusal(string schemaName) =>
+		$"schema-name '{schemaName}' is not a plain page schema name. Pass the schema name alone, for example "
+		+ "UsrLeads_FormPage: no path separators, no '..', no drive or root, no leading dot. clio uses the name as the folder "
+		+ "name under .clio-pages.";
+
+	/// <summary>
 	/// Resolves the <c>meta.json</c> path for <paramref name="schemaName"/>. When
 	/// <paramref name="bodyFile"/> points inside a <c>.clio-pages/{schema-name}/</c> directory the
 	/// sibling <c>meta.json</c> wins (covers custom anchors without an explicit output directory);
 	/// otherwise the path is derived from <see cref="PageOutputDirectoryResolver.ResolveAnchor"/>.
 	/// The file is not required to exist.
 	/// </summary>
+	/// <exception cref="InvalidOperationException"><paramref name="schemaName"/> is blank or not a plain name.</exception>
 	/// <param name="warning">
 	/// Set when the supplied <paramref name="bodyFile"/> could not be inspected, so the sibling
 	/// meta.json may have been passed over in favour of the anchor-derived one — a silent switch of
@@ -64,6 +125,7 @@ internal static class PageBaselineStore {
 		string schemaName,
 		out string warning) {
 		warning = null;
+		RequirePlainSchemaName(schemaName);
 		if (!string.IsNullOrWhiteSpace(bodyFile)) {
 			try {
 				string bodyDir = fileSystem.Path.GetDirectoryName(fileSystem.Path.GetFullPath(bodyFile));
@@ -85,7 +147,9 @@ internal static class PageBaselineStore {
 		}
 		string anchor = PageOutputDirectoryResolver.ResolveAnchor(
 			fileSystem, currentDirectory, homeDirectory, homeFallbackAnchor, outputDirectory);
-		return fileSystem.Path.Combine(anchor, ClioPagesDirectoryName, schemaName, MetaFileName);
+		return fileSystem.Path.Combine(
+			ResolveSchemaDirectory(fileSystem, fileSystem.Path.Combine(anchor, ClioPagesDirectoryName), schemaName),
+			MetaFileName);
 	}
 
 	/// <summary>
@@ -100,7 +164,13 @@ internal static class PageBaselineStore {
 	/// at the <c>.clio-pages</c> root already excludes everything below it, <c>.locks</c> included.
 	/// </para>
 	/// </summary>
-	/// <returns>The lock file path, or <c>null</c> when it cannot be derived from the supplied path.</returns>
+	/// <returns>
+	/// The lock file path, or <c>null</c> when it cannot be derived from the supplied path. That includes a
+	/// schema folder name the three-argument overload refuses: its exception is caught here and answered
+	/// with <c>null</c>. Every caller passes a path built by <see cref="ResolveMetaFilePath"/> or
+	/// <see cref="ResolveSchemaDirectory"/>, which have already refused such a name, so the case is not
+	/// reached through them.
+	/// </returns>
 	internal static string ResolveSchemaLockFilePath(IFileSystem fileSystem, string metaFilePath) {
 		if (string.IsNullOrWhiteSpace(metaFilePath)) {
 			return null;
@@ -126,10 +196,17 @@ internal static class PageBaselineStore {
 	/// <c>.clio-pages</c> root directory. See <see cref="ResolveSchemaLockFilePath(IFileSystem,string)"/>
 	/// for why the sentinel lives outside the per-schema directory.
 	/// </summary>
+	/// <returns>The lock file path, or <c>null</c> when the root directory or the name is blank.</returns>
+	/// <exception cref="InvalidOperationException"><paramref name="schemaName"/> is not a plain name.</exception>
 	internal static string ResolveSchemaLockFilePath(IFileSystem fileSystem, string clioPagesRootDir, string schemaName) {
 		if (string.IsNullOrWhiteSpace(clioPagesRootDir) || string.IsNullOrWhiteSpace(schemaName)) {
 			return null;
 		}
+		// This overload throws for such a name instead of answering null: null means "run without the gate",
+		// and its direct callers (PageFileWriter, PageSyncTool) would then touch the files of a name that must
+		// not be touched at all. The two-argument overload above does answer null for it (its catch); see
+		// its <returns> for why that is not reached.
+		RequirePlainSchemaName(schemaName);
 		return fileSystem.Path.Combine(clioPagesRootDir, LocksDirectoryName, $"{schemaName}.lock");
 	}
 

@@ -347,7 +347,9 @@
         "clio/Command/McpServer/Tools/ProcessPageFactsTool.cs",
         "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs",
         "clio/Command/McpServer/Tools/ProcessDesigner/",
-        "clio/Command/McpServer/Tools/TriggerSmokeTool.cs"
+        "clio/Command/McpServer/Tools/TriggerSmokeTool.cs",
+        "clio/Command/McpServer/Tools/WebServiceTools.cs",
+        "clio/Command/WebServiceDesigner/"
       ]
     },
     {
@@ -522,6 +524,8 @@
         "clio/Command/McpServer/Tools/UninstallIdentityTool.cs",
         "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs",
         "clio/Command/McpServer/Tools/ApplyDefaultRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/GetColumnRightsTool.cs",
+        "clio/Command/McpServer/Tools/SetColumnRightsTool.cs",
         "clio/Command/McpServer/Tools/GetObjectRightsTool.cs",
         "clio/Command/McpServer/Tools/SetDefaultRecordRightsTool.cs",
         "clio/Command/McpServer/Tools/SetObjectRightsTool.cs"

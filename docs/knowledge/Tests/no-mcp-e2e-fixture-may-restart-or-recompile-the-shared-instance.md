@@ -3,6 +3,7 @@ description: no automatic clio.mcp.e2e fixture restarts or recompiles the Creati
 applies-to:
   - clio.mcp.e2e/
   - clio.mcp.e2e/Support/Configuration/ClioCliCommandRunner.cs
+  - clio.mcp.e2e/Support/Mcp/ProcessPublishE2ESupport.cs
 ticket: ENG-94385
 date: 2026-08-19
 ---
@@ -18,7 +19,11 @@ destructive sub-tier `clio.mcp.e2e/AGENTS.md` documents (`LocalOnly` + `[Explici
 TeamCity/GitHub guard and the `McpE2E__AllowDestructiveMcpTests` opt-in): `UserTaskUnlimitedTextToolE2ETests`
 and `ScriptTaskCompileLifecycleE2ETests`, a process-name compile that builds - and on a .NET host a restart
 after it, because there the compiled code does not run before one (measured on a .NET 8 stand,
-2026-09-28). A **restart** on its own, with no compile, is the case that sub-tier does not name.
+2026-09-28). A **restart** on its own, with no compile, is the case that sub-tier does not name. One automatic
+fixture may compile, and only outside automation: `ProcessPublishE2ESupport.RunCompilingWhenRequiredAsync` (used by
+`WebServiceElementToolE2ETests` TC-I-08) compiles a process by name when the stand refuses its first run as not
+published - a locally built core does not interpret new processes - and IGNORES the test instead under TeamCity or
+GitHub Actions.
 
 **Why it is this way** — one Creatio instance backs the whole run and
 `clio.mcp.e2e.runsettings` sets `NumberOfTestWorkers=2`, so a restart lands in the middle of other

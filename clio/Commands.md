@@ -276,6 +276,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-workspace"></a>
 <a id="createw"></a>
 - [`create-workspace`](docs/commands/create-workspace.md) - Create a local workspace, `createw`
+<a id="delete-data-binding-db"></a>
+- [`delete-data-binding-db`](docs/commands/delete-data-binding-db.md) - Delete a remote DB-first data binding from its package; the bound records stay in the table
 <a id="link-core-src"></a>
 <a id="lcs"></a>
 - [`link-core-src`](docs/commands/link-core-src.md) - Link core source code to environment for development, `lcs`
@@ -656,7 +658,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="flush-themes"></a>
 - [`clear-themes-cache`](docs/commands/clear-themes-cache.md) - Refresh the Creatio theme cache (Creatio 10.0.0+), `flush-themes`
 <a id="create-theme"></a>
-- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment (Creatio 10.0.0+)
+- [`create-theme`](docs/commands/create-theme.md) - Create a custom Creatio theme on an environment, optionally with its background (Creatio 10.0.0+)
 <a id="delete-theme"></a>
 - [`delete-theme`](docs/commands/delete-theme.md) - Delete a custom Creatio theme from an environment (Creatio 10.0.0+)
 <a id="get-theme"></a>
@@ -668,7 +670,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="apply-user-theme"></a>
 - [`set-user-theme`](docs/commands/set-user-theme.md) - Apply a theme to the current user's profile on an environment (Creatio 10.0.0+), `apply-user-theme`
 <a id="update-theme"></a>
-- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment, or change its background (Creatio 10.0.0+)
 
 ## Branding
 
@@ -698,6 +700,12 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 <a id="get-object-rights"></a>
 - [`get-object-rights`](docs/commands/get-object-rights.md) - Read object operation permissions (read/create/edit/delete per role, in priority order) and record permissions (the switch and the default record rules) for an object and, optionally, its connected objects
+
+<a id="get-column-rights"></a>
+- [`get-column-rights`](docs/commands/get-column-rights.md) - Read column permissions (whether they are on for an object and, per column, every role's access level denied/read/edit in stored position order)
+
+<a id="set-column-rights"></a>
+- [`set-column-rights`](docs/commands/set-column-rights.md) - Set one role's access (denied/read/edit) to one column of one object, move or remove that role's row (`--position`, `--remove-row`), or turn the object's column permissions on or off (destructive); written to the environment only, not bound to a package
 
 <a id="set-default-record-rights"></a>
 - [`set-default-record-rights`](docs/commands/set-default-record-rights.md) - Turn record permissions on/off for one object and grant or revoke one of its default record rules (destructive)

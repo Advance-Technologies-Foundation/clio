@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Command.BusinessRules;
@@ -357,6 +358,10 @@ public sealed record ToolContractGetArgs(
 /// The default answer to a request without names: one line per tool, built from the same entries as
 /// <paramref name="Index"/> (see <see cref="ToolContractCatalog.BuildToolIndexLine"/>).
 /// </param>
+/// <param name="Facts">
+/// What each tool does (<see cref="McpToolFacts.ToJson"/>), by tool name; present only for
+/// <c>detail=</c><see cref="ToolContractCatalog.FactsDetail"/>.
+/// </param>
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("tools")] IReadOnlyList<ToolContractDefinition>? Tools = null,
@@ -367,7 +372,9 @@ public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("legend"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	string? Legend = null,
 	[property: JsonPropertyName("tool-index"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	IReadOnlyList<string>? ToolIndex = null
+	IReadOnlyList<string>? ToolIndex = null,
+	[property: JsonPropertyName("facts"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyDictionary<string, JsonObject>? Facts = null
 );
 
 /// <summary>One requested tool name that could not be resolved.</summary>
@@ -773,6 +780,10 @@ internal static class ToolContractCatalog {
 	private const string IncludeOperationsFieldName = "include-operations";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
+	private const string DataBindingPackageNameDescription = "Target package name: a plain folder name under packages/, without path separators or '..'.";
+
+	private const string DataBindingBindingNameDescription = "Binding folder name under the package Data folder: a plain folder name, without path separators or '..'.";
+
 	private const string DataBindingWorkspacePathDescription = "Absolute local workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root. Network-share paths are not supported.";
 	private const string WorkspacePathFieldName = "workspace-path";
 	private const string DataForgePlatformRequirementDescription =
@@ -923,6 +934,7 @@ internal static class ToolContractCatalog {
 			[CreateDataBindingDbTool.CreateDataBindingDbToolName] = BuildCreateDataBindingDb(),
 			[UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName] = BuildUpsertDataBindingRowDb(),
 			[RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName] = BuildRemoveDataBindingRowDb(),
+			[DeleteDataBindingDbTool.DeleteDataBindingDbToolName] = BuildDeleteDataBindingDb(),
 			[PlaceSectionInWorkplaceTool.ToolName] = BuildPlaceSectionInWorkplace(),
 			[PageSmokeTool.ToolName] = BuildPageSmoke(),
 			[GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName] = BuildGetEntitySchemaProperties(),
@@ -1017,6 +1029,7 @@ internal static class ToolContractCatalog {
 		CreateDataBindingDbTool.CreateDataBindingDbToolName,
 		UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
 		RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
+		DeleteDataBindingDbTool.DeleteDataBindingDbToolName,
 		FindEntitySchemaTool.FindEntitySchemaToolName,
 		GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
@@ -1111,9 +1124,82 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry = null,
 		string? detail = null,
 		bool legacyNoNamesFullShape = false) {
+		// Ahead of everything else, the legacy-client shape included: an explicit request names its shape.
+		if (ToolContractShortForm.IsDetail(detail, FactsDetail)) {
+			return ResolveFacts(toolNames, toolInvokerRegistry);
+		}
 		return toolNames is null || toolNames.Count == 0
 			? ResolveNoNamesContracts(toolInvokerRegistry, detail, legacyNoNamesFullShape)
 			: ResolveNamedContracts(toolNames, toolInvokerRegistry, detail);
+	}
+
+	/// <summary>
+	/// The <c>detail</c> value that answers with what each tool does (<see cref="McpToolFacts"/>) under <c>facts</c>,
+	/// by tool name: every tool for a request without names, the named ones otherwise. Meant for a host deciding how
+	/// to treat a call, so it never touches the index, the contracts or their byte budgets. An older clio ignores the
+	/// unknown value and returns the index, which carries no <c>facts</c>; that absence is how a host tells.
+	/// </summary>
+	internal const string FactsDetail = "facts";
+
+	/// <summary>
+	/// Resolves <c>detail=facts</c>. Without names: every tool the index lists, plus get-tool-contract itself, and
+	/// each deprecated alias under its own name, so a host can look up whatever name a call carries. With names: those
+	/// tools, a name that is no tool reported in <c>not-found</c> as a contract lookup reports it.
+	/// </summary>
+	private static ToolContractGetResponse ResolveFacts(
+		IReadOnlyList<string>? toolNames,
+		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		// Only the tools this server serves: a feature-gated-off tool stays invisible here as on every surface.
+		HashSet<string> served = new(BuildIndexToolNames(toolInvokerRegistry), StringComparer.OrdinalIgnoreCase) {
+			ToolContractGetTool.ToolName
+		};
+		Dictionary<string, string> canonicalByAlias = new(StringComparer.OrdinalIgnoreCase);
+		foreach ((string canonical, IReadOnlyList<string> aliases) in McpToolCompatibilityCatalog.SeedAliasesByCanonical) {
+			foreach (string alias in aliases) {
+				canonicalByAlias.TryAdd(alias, canonical);
+			}
+		}
+		SortedDictionary<string, JsonObject> facts = new(StringComparer.Ordinal);
+		if (toolNames is null || toolNames.Count == 0) {
+			foreach (string name in served) {
+				AddFacts(facts, name, name);
+			}
+			foreach ((string alias, string canonical) in canonicalByAlias) {
+				if (served.Contains(canonical)) {
+					AddFacts(facts, alias, canonical);
+				}
+			}
+			return new ToolContractGetResponse(true, Facts: facts);
+		}
+		List<ToolContractNotFound> notFound = [];
+		foreach (string requested in toolNames
+			.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Select(name => name.Trim())
+			.Distinct(StringComparer.OrdinalIgnoreCase)) {
+			string canonical = canonicalByAlias.TryGetValue(requested, out string target) ? target : requested;
+			if (served.Contains(canonical) && AddFacts(facts, requested, canonical)) {
+				continue;
+			}
+			notFound.Add(new ToolContractNotFound(
+				requested,
+				new ToolContractError(
+					"tool-not-found",
+					$"Tool '{requested}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
+					BuildSuggestions(requested, toolInvokerRegistry))));
+		}
+		return new ToolContractGetResponse(
+			facts.Count > 0,
+			Error: facts.Count == 0 && notFound.Count > 0 ? notFound[0].Error : null,
+			NotFound: notFound.Count > 0 ? notFound : null,
+			Facts: facts);
+	}
+
+	private static bool AddFacts(IDictionary<string, JsonObject> facts, string key, string toolName) {
+		if (!McpToolFactsReader.TryGet(toolName, out McpToolFacts declared)) {
+			return false;
+		}
+		facts[key] = declared.ToJson();
+		return true;
 	}
 
 	/// <summary>
@@ -1191,10 +1277,27 @@ internal static class ToolContractCatalog {
 	/// and the line index had no room left under the spill line for a tool and the sentence together (ENG-105556).
 	/// </summary>
 	internal static readonly string ToolIndexLegend =
-		$"Each line: name (R)(D) [aka old names]: purpose, cut to {MaxToolIndexPurposeLength} chars. "
-		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
-		+ "A tool without (R) is called through clio-run {\"command\":\"<name>\",\"args\":{...}}. "
+		$"Each line: name (R)(D) [aka old names]: purpose, max {MaxToolIndexPurposeLength} chars. "
+		+ "(R) = resident, resident=true in detail=index-entries: call it directly. "
+		+ "No (R): call via clio-run {\"command\":\"<name>\",\"args\":{...}}. "
 		+ "(D) = destructive: may delete or overwrite data; a line without (D) can still write.";
+
+	/// <summary>
+	/// Explains one <c>facts</c> entry (<see cref="McpToolFacts.ToJson"/>). The same object sits in a resident tool's
+	/// <c>_meta</c> under <see cref="McpToolFacts.MetaKey"/> in <c>tools/list</c>.
+	/// </summary>
+	internal const string FactsFieldDescription =
+		"effect (read | change | destroy: removes, overwrites more than the call names, or runs code or SQL), "
+		+ "rebuilds-environment (compiles, restarts or installs: every user feels it), scope (local | environment | "
+		+ "machine: this computer beyond the files the call names) and connections (none | read | change: clio's "
+		+ "registered environments and credentials). by-argument lists argument values that narrow these: argument "
+		+ "as the caller writes it (inside args for an args-record tool), value compared case-insensitively, "
+		+ "when-absent when it also applies to a call that leaves the argument out; when several match, take the "
+		+ "widest of each fact. host-paths lists the arguments whose value is a path on the machine clio runs on "
+		+ "(full, or relative to clio's working folder): kind (file | folder | file-or-folder), access (read | write | "
+		+ "read-write: also deletes there, or stores the folder for later calls), list when the value holds several "
+		+ "paths, or (name | url) when the value may be that instead. not-host-paths lists arguments that only read "
+		+ "like a path, with why. A resident tool carries the same object in tools/list under _meta clio/facts.";
 
 	/// <summary>
 	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the
@@ -1552,7 +1655,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their contracts, fitted to one reply (detail=full for all in full)."),
-					Field(DetailFieldName, StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index as tool-index lines; 'index-entries' returns it as index objects; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
+					Field(DetailFieldName, StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index as tool-index lines; 'index-entries' returns it as index objects; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form. 'facts' (with or without tool-names) returns, under facts, what each tool does, for a host deciding how to treat a call.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1565,6 +1668,7 @@ internal static class ToolContractCatalog {
 				Field("index", ArrayType, "Compact tool index as objects (name, purpose, contract-available, resident, destructive, aliases); populated for a no-names request with detail=index-entries. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run — never wrap a resident tool in clio-run."),
 				Field("tool-index", ArrayType, $"The default answer to a no-names request: one line per tool, 'name (R)(D) [aka old names]: purpose', the purpose cut to {MaxToolIndexPurposeLength} characters; legend explains the (R) and (D) markers."),
 				Field("legend", StringType, "Explains the tool-index line format and markers; returned only with tool-index."),
+				Field("facts", ObjectType, "Returned only for detail=facts: by tool name (and deprecated alias), what the tool does at most - " + FactsFieldDescription),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
 			CommonErrorContract,
@@ -1574,6 +1678,9 @@ internal static class ToolContractCatalog {
 				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
 				Example("Return the compact index as per-tool objects with the resident and destructive flags", new Dictionary<string, object?> {
 					[DetailFieldName] = IndexEntriesDetail
+				}),
+				Example("Return what every tool does (effect, rebuilds-environment, scope, connections), for a host", new Dictionary<string, object?> {
+					[DetailFieldName] = FactsDetail
 				}),
 				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
 					[DetailFieldName] = ToolContractShortForm.FullDetail
@@ -4851,7 +4958,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed. `ownBodySummary` counts the operations of the schema's own body per operation type in `viewConfigDiffOpCounts`, or, with include-operations=true, lists them in `viewConfigDiffOps` instead."),
+				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed. `ownBodySummary` counts the operations of the schema's own body per operation type in `viewConfigDiffOpCounts`, or, with include-operations=true, lists them in `viewConfigDiffOps` instead. `packageChoice`: `required` is true when another unlocked (or lock-unknown) package also holds a replacing layer of the page — ask the user which package to change before any write and pass the chosen layer's `packageUId` (or `defaultTargetPackageUId`, named by `defaultTargetPackageName`, to keep the default) as update-page `target-package-uid`, with `mode: append` for another layer; `layers` (only when required, lowest first, the base page excluded) carry packageName, packageUId, schemaUId, hierarchyLevel (the highest wins at runtime), packageLocked, isDefaultTarget, `changes` (that layer's own viewConfigDiff operations and handler requests) and `moreChanges` (how many were left out of `changes`); `warning` (only when needed) says why some lock states are unknown."),
 				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
 				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(WarningsFieldName, ArrayType, "OPTIONAL \u2014 omitted when empty. Present when the page was read but its bundle could not be resolved exactly as stored: a `viewConfigDiff` insert/move names a parentName but no propertyName, which the Creatio differ rejects (the page does not render), so `bundle.json` was resolved WITHOUT that operation. Each entry names the schema, the operation index and the fix; repair the operation in `body.js` and save it with update-page."),
@@ -5144,6 +5251,41 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildDeleteDataBindingDb() {
+		return new ToolContractDefinition(
+			DeleteDataBindingDbTool.DeleteDataBindingDbToolName,
+			"Deletes a binding, keeps its records. " +
+			"Removes the package schema data record of the named DB-first binding from the package; the records it bound stay in the table and no row is deleted or changed. " +
+			"Works for a binding that holds rows and for an empty one, so use it to drop a binding created by mistake or left empty; the next package export ships without it. " +
+			"Fails without deleting anything when the binding does not exist in that package. " +
+			"To delete a live record together with its binding row, use remove-data-binding-row-db instead. " +
+			"For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName],
+				EnvironmentPackageFields(
+					Field(BindingNameFieldName, StringType, BindingNameDescription))),
+			CommandExecutionOutput(),
+			new ToolErrorContract([
+				..CommonErrorContract.Codes,
+				new ToolErrorCodeContract("binding-not-found",
+					"The specified binding does not exist in that package on the remote environment. Nothing was deleted.")
+			]),
+			EnvironmentPackageAliases(
+				BindingNameParameterAlias()),
+			[],
+			[
+				Example("Delete a binding and keep its records", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[BindingNameFieldName] = ExampleTaskStatusSchemaName
+				})
+			],
+			Flow([ReadDataBindingDbTool.ReadDataBindingDbToolName, DeleteDataBindingDbTool.DeleteDataBindingDbToolName],
+				"read-data-binding-db → delete-data-binding-db: check what the binding ships, then delete it."),
+			[],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildPlaceSectionInWorkplace() {
 		const string sectionCodeField = "section-code";
 		const string workplaceNameField = "workplace-name";
@@ -5325,13 +5467,13 @@ internal static class ToolContractCatalog {
 				[PackageNameFieldName, SchemaNameFieldName, WorkspacePathFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
-						Field(PackageNameFieldName, StringType, PackageNameDescription),
+						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
 						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
-						Field(BindingNameFieldName, StringType, "Optional binding name; defaults to the schema name."),
+						Field(BindingNameFieldName, StringType, "Optional binding folder name; defaults to the schema name. A plain folder name, without path separators or '..'."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
 					],
 					Validators: [
 						new ToolContractValidator(
@@ -5399,11 +5541,11 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 					[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, ValuesFieldName],
 					[
-						Field(PackageNameFieldName, StringType, PackageNameDescription),
-						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
+						Field(BindingNameFieldName, StringType, DataBindingBindingNameDescription),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(ValuesFieldName, StringType, "JSON object keyed by column name for the row to add or replace."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture then column name.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name.")
 					]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -5438,8 +5580,8 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[PackageNameFieldName, BindingNameFieldName, WorkspacePathFieldName, KeyValueFieldName],
 				[
-						Field(PackageNameFieldName, StringType, PackageNameDescription),
-						Field(BindingNameFieldName, StringType, BindingNameDescription),
+						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
+						Field(BindingNameFieldName, StringType, DataBindingBindingNameDescription),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(KeyValueFieldName, StringType, "Primary-key value of the row to remove.")
 					]),
@@ -6083,11 +6225,11 @@ internal static class ToolContractCatalog {
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page - see `page-schema-resources` guidance." + McpToolDescriptions.PageResourcesAdditive),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort - verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. `replace` (default) saves the body verbatim. `append` merges the incoming fragment with the schema's current body - viewConfigDiff entries are replaced only when BOTH `operation` and `name` match - and, for a `remove` or a `set`, whether it targets `properties` - with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`, in place. An append body is a FRAGMENT OF A PAGE BODY, not a bare list of operations: it may omit sections, but it must carry at least one section marker pair (e.g. /**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/) or it is rejected up-front - a bare array is valid JavaScript, so without this rule every section read as empty and the merge discarded the whole fragment while reporting success. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific - a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`. Reordering the array changes nothing."),
-					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
+					Field("mode", StringType, "Write mode. `replace` (default) saves the body verbatim. `append` merges the incoming fragment with the schema's current body - viewConfigDiff entries are replaced only when BOTH `operation` and `name` match - and, for a `remove` or a `set`, whether it targets `properties` - with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`, in place. An append body is a FRAGMENT OF A PAGE BODY, not a bare list of operations: it may omit sections, but it must carry at least one section marker pair (e.g. /**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/) or it is rejected up-front. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific - a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`."),
+					Field("target-package-uid", StringType, "Target package UId; overrides design-package resolution. Replacing an existing non-default layer is refused (`package-choice-replace-refused`) unless `force`: use `mode: append`. A new layer needs no force."),
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely - the UId is used as given, with no name resolution or existence check. With `mode: append` this is also the body a `dry-run` fetches and projects against, so an unintended UId is read, not just written to."),
 					Field("checksum", StringType, "Conflict baseline: the `editable.checksum` returned by the get-page call this edit is based on. When supplied it is the authoritative baseline, so the save is compared against the body you actually fetched rather than the on-disk .clio-pages baseline, which can be stale or anchored elsewhere."),
-					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared with the resolved target and a mismatch remains a conflict."),
+					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and overwrite out-of-band changes. Set true ONLY after the user explicitly confirms that. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared. Also lifts `package-choice-replace-refused`, erasing the own changes of that layer: needs a separate user confirmation."),
 					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup - pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved."),
 					Field(IncludeOperationsFieldName, BooleanType, "Optional, default true. Applies only with verify=true: false leaves `page.ownBodySummary.viewConfigDiffOps` out of the read-back page and puts `page.ownBodySummary.viewConfigDiffOpCounts` (number of operations per operation type) in its place.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
@@ -6305,7 +6447,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationDelete() {
 		return new ToolContractDefinition(
 			ApplicationDeleteTool.ToolName,
-			"Deletes an installed application by name or code.",
+			"Deletes an installed app by name or code.",
 			new ToolInputSchemaContract(
 				[AppNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
@@ -6786,15 +6928,15 @@ internal static class ToolContractCatalog {
 				[
 					InstallProcessBuilderTool.InstallProcessBuilderToolName
 				],
-				"Once the user approves, install the package, then retry whichever process-designer tool sent you here - that retry IS the verification, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: any gated process tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, and compile-creatio with process-name) may have sent the caller here, and only the caller knows which call to retry. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
+				"Once the user approves, install the package, then retry whichever process-designer tool sent you here - that retry IS the verification, because its package gate re-checks the environment and refuses again if the install did not take. The flow cannot name the follow-up tool: any gated process tool (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, describe-dynamic-case, modify-dynamic-case, and compile-creatio with process-name) may have sent the caller here, and only the caller knows which call to retry. The install's own success proves the package is COMPILED and serving - it asks the package's ungated Ping and fails unless it answers, which is the one question no database read can answer. It does NOT prove WHICH build is serving: on an upgrade a stale assembly that still answers passes, so treat a new version as verified only once the functionality works."),
 			[],
 			[],
 			Preconditions: [
 				"The target environment is registered (see list-environments / reg-web-app).",
 				"The user approved this install on this environment after you warned them it builds the configuration and restarts the site for every connected user. A refusal, its hint, or an approval given earlier in the session is not that approval.",
-				"A process tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, and compile-creatio with process-name) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
+				"A process tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, describe-dynamic-case, modify-dynamic-case, and compile-creatio with process-name) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
 				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
-				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it. create-dynamic-case is gated differently: a General user with CanManageDcm, CanManageSolution and the right to add SysDcmSettings and SysDcmSchemaInSettings records; it does not need CanManageProcessDesign."
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it. create-dynamic-case, describe-dynamic-case and modify-dynamic-case are gated differently: a General user with CanManageDcm, CanManageSolution and the right to add SysDcmSettings and SysDcmSchemaInSettings records (and to edit SysDcmSettings for a call with a filter); they do not need CanManageProcessDesign."
 			]);
 	}
 

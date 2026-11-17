@@ -13,7 +13,9 @@ date: 2026-08-19
 `SensitiveErrorTextRedactor`. Redaction is applied to error text and to exactly one advisory,
 `BuildThemeTool.ResolveVersionSettings`'s environment-fallback message, which is the only warning
 composed at the MCP layer and the only one that interpolates an `environment-name`. A redaction pass
-over `CollectWarnings` output was added and then deliberately removed; do not reinstate it.
+over `CollectWarnings` output was added and then deliberately removed; do not reinstate it. The
+background warnings of `create-theme` are a separate list and are redacted, because a binding failure
+can carry a server message.
 
 **Why it is this way** — `CollectWarnings` emits static text plus two locally computed values (an accent
 hex and a font family that already passed `FontFamilyName`'s letters/digits/spaces/hyphens grammar), so

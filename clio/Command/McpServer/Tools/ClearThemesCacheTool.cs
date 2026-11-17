@@ -29,7 +29,7 @@ public class ClearThemesCacheTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false),
-	 Description("Refresh the Creatio theme cache for a registered environment. " +
+	 Description("Refresh the Creatio theme cache. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult ClearThemesCache(

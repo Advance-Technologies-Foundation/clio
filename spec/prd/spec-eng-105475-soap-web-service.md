@@ -39,7 +39,10 @@ check a SOAP response path through the test call.
   When any exists, exactly one must be the default; otherwise the call fails with "Sequence contains no matching
   element" and no HTTP request is sent (measured).
 - A method carries `soapAction`. An empty one sends no `SOAPAction` header (measured); SOAP 1.2 sends it as a header,
-  not as an `action=` Content-Type parameter.
+  not as an `action=` Content-Type parameter, which WCF on a SOAP 1.2 binding refuses (`ActionNotSupported`), and no
+  WS-Addressing header is ever written (measured 2026-11-14, ADR D15).
+- Authentication is sent per method (`UseAuthInfo`) for SOAP exactly as for REST: Basic as `Authorization: Basic`,
+  Digest as preemptive Basic (measured 2026-11-14, ADR D15).
 - A parameter carries `isSoapHeader` (a top-level body parameter rendered under `<soapenv:Header>`) and
   `sequenceElementName` (the item element of an array; the platform stores `item` on every SOAP parameter by default).
   Paths are element paths `prefix:a/prefix:b`; response paths are local-name element paths `a/b` (JSONPath reads null,

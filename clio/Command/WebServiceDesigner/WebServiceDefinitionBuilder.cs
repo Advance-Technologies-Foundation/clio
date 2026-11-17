@@ -160,7 +160,14 @@ public static partial class WebServiceDefinitionBuilder {
 		if (string.IsNullOrWhiteSpace(arg.Uri) || arg.Uri.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) {
 			return $"namespace '{arg.Prefix}' needs a uri without spaces, e.g. http://tempuri.org/.";
 		}
-		return HasUserInfo(arg.Uri) ? $"namespace '{arg.Prefix}': the uri must not carry credentials (user:password@)." : null;
+		if (HasUserInfo(arg.Uri)) {
+			return $"namespace '{arg.Prefix}': the uri must not carry credentials (user:password@).";
+		}
+		// describe shows a namespace URI through the same masking as a base URI, so a key there would be hidden on read.
+		UriQueryKeys keys = WebServiceSchemaView.FindQueryKeys(arg.Uri);
+		return keys.SecretKeys.Count + keys.MaskKeys.Count > 0
+			? $"namespace '{arg.Prefix}': the uri must not carry a key in its query, or the mask describe shows for one."
+			: null;
 	}
 
 	/// <summary>
@@ -368,31 +375,14 @@ public static partial class WebServiceDefinitionBuilder {
 		if (string.IsNullOrWhiteSpace(baseUri)
 			|| !Uri.TryCreate(baseUri.Trim(), UriKind.Absolute, out Uri parsed)
 			|| (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)) {
-			errors.Add($"base-uri '{WebServiceSchemaView.StripUserInfo(baseUri)}' must be an absolute http or https URI.");
+			errors.Add($"base-uri '{WebServiceSchemaView.ShownUri(baseUri)}' must be an absolute http or https URI.");
 			return baseUri;
 		}
 		if (!string.IsNullOrEmpty(parsed.UserInfo)) {
 			errors.Add("base-uri must not carry credentials (user:password@); use auth with system settings.");
 			return baseUri;
 		}
-		if (soap && baseUri.Contains('?') && !baseUri.Contains('#')) {
-			// A SOAP call goes to the base URI as stored, query included (ServiceClientRequest), and SOAP has no query
-			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here. A credential-like key with a
-			// constant value would be printed by list and describe, so that is refused.
-			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
-			if (WsdlQueryKey(baseUri) is { } wsdlKey) {
-				errors.Add($"base-uri: '?{wsdlKey}' is the address of the WSDL, not of the endpoint; every call would be "
-					+ "posted to it. Give the endpoint, the WSDL's soap:address location, usually the same URL without "
-					+ "the query.");
-				return baseUri;
-			}
-		} else if (baseUri.IndexOfAny(['?', '#']) >= 0) {
-			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
-			// method path, and a key in it would be a stored constant that list and describe print.
-			errors.Add(soap
-				? "base-uri must not have a fragment."
-				: "base-uri must not have a query or a fragment; give query values as query parameters "
-					+ "(a key or token with default-sys-setting).");
+		if (!CheckBaseUriQuery(baseUri, soap, errors)) {
 			return baseUri;
 		}
 		string trimmed = baseUri.Trim();
@@ -402,6 +392,42 @@ public static partial class WebServiceDefinitionBuilder {
 			return baseUri;
 		}
 		return soap || trimmed.EndsWith('/') ? trimmed : trimmed + "/";
+	}
+
+	// The query and fragment rules of a base URI; false when one refused it (the reason is in errors).
+	private static bool CheckBaseUriQuery(string baseUri, bool soap, Errors errors) {
+		// A key anywhere in a base URI (its query, or a ;name=value path parameter) is refused by the rule list and
+		// describe hide one by, read with the same scanner; the agent could never send it back either. A REST base URI
+		// with a query gets the refusal below, which names query parameters instead.
+		int errorsBefore = errors.Count;
+		bool queryOrFragment = baseUri.IndexOfAny(['?', '#']) >= 0;
+		if (soap || !queryOrFragment) {
+			ValidateUriQuery("base-uri", baseUri.Trim(), errors);
+		}
+		if (errors.Count > errorsBefore) {
+			return false;
+		}
+		if (soap && baseUri.Contains('?') && !baseUri.Contains('#')) {
+			// A SOAP call goes to the base URI as stored, query included (ServiceClientRequest), and SOAP has no query
+			// parameters, so a fixed query such as SAP's ?sap-client=100 can only live here.
+			if (WsdlQueryKey(baseUri) is not { } wsdlKey) {
+				return true;
+			}
+			errors.Add($"base-uri: '?{wsdlKey}' is the address of the WSDL, not of the endpoint; every call would be "
+				+ "posted to it. Give the endpoint, the WSDL's soap:address location, usually the same URL without "
+				+ "the query.");
+			return false;
+		}
+		if (queryOrFragment) {
+			// The designer appends the method URI to the base verbatim, so a query here ends up in front of every
+			// method path, and a key in it would be a stored constant that list and describe would have to hide.
+			errors.Add(soap
+				? "base-uri must not have a fragment."
+				: "base-uri must not have a query or a fragment; give query values as query parameters "
+					+ "(a key or token with default-sys-setting).");
+			return false;
+		}
+		return true;
 	}
 
 	public static ServiceAuthInfoDto BuildAuth(WebServiceAuthArg auth, Guid? oauthAppId, Errors errors) {
@@ -503,6 +529,7 @@ public static partial class WebServiceDefinitionBuilder {
 		};
 		ValidatePathPlaceholders(code, uri, baseUri, method.Request.Parameters, errors);
 		ValidateUriQuery($"method '{code}': uri", uri, errors);
+		ValidateKeyPlaceholders(arg, uri, method, existing, errors);
 		ValidateBodyRules(code, verb, contentType, method, errors);
 		return method;
 	}
@@ -512,6 +539,13 @@ public static partial class WebServiceDefinitionBuilder {
 	/// keeps the address, and the SOAP action. Its parameters follow the SOAP placements and element-path rules. The
 	/// method replaces the stored one: an omitted soap-action is empty, as an omitted REST field is reset.
 	/// </summary>
+	// The method's SOAP action: the one sent, else the stored one when it carries a key describe hides (describe output
+	// sent back, or a WSDL operation matched to the method, can carry none, as with a hidden constant), else empty.
+	private static string KeptSoapAction(string sent, string stored) =>
+		sent is null && !string.IsNullOrEmpty(stored) && WebServiceSchemaView.FindQueryKeys(stored).SecretKeys.Count > 0
+			? stored
+			: sent?.Trim() ?? string.Empty;
+
 	private static ServiceMethodDto BuildSoapMethod(WebServiceMethodArg arg, ServiceMethodDto existing,
 		bool serviceHasAuth, Errors errors, string prefix, SoapContext soap) {
 		string code = arg.Code;
@@ -536,7 +570,7 @@ public static partial class WebServiceDefinitionBuilder {
 			RequestTimeout = arg.TimeoutMs is > 0 ? arg.TimeoutMs.Value : existing?.RequestTimeout ?? DefaultTimeoutMs,
 			Caption = Caption(arg.Caption ?? code),
 			UseAuthInfo = arg.UseAuth ?? serviceHasAuth,
-			SoapAction = arg.SoapAction?.Trim() ?? string.Empty,
+			SoapAction = KeptSoapAction(arg.SoapAction, existing?.SoapAction),
 			Extra = existing?.Extra,
 			Request = new ServiceMethodRequestDto {
 				Uri = messageElement, ContentType = ServiceSchemaCodes.ContentTypeXml,
@@ -653,6 +687,39 @@ public static partial class WebServiceDefinitionBuilder {
 
 	public static Dictionary<string, string> Caption(string text) => new() { ["en-US"] = text };
 
+	/// <summary>
+	/// The caption a parameter gets when none is sent: the name the API sees, as Studio's quick setup names it, and
+	/// the code only when there is none. Only a path that is itself a path is split: a REST body path (dotted, or a
+	/// response JSONPath) gives its last field, a SOAP element path its last element without the namespace prefix;
+	/// a query, header, cookie or path name is the name as given. The code carries the schema prefix and reads
+	/// poorly on the Call web service element.
+	/// </summary>
+	/// <param name="path">The parameter path.</param>
+	/// <param name="code">The parameter code.</param>
+	/// <param name="body">Whether the parameter is in the body.</param>
+	/// <param name="soap">Whether the service is SOAP.</param>
+	/// <returns>The caption text.</returns>
+	public static string DefaultParameterCaption(string path, string code, bool body = true, bool soap = false) {
+		string text = (path ?? string.Empty).Trim();
+		if (soap) {
+			// A dot belongs to a SOAP element name; the separator is '/'.
+			string element = text.Split('/').LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
+			int colon = element.IndexOf(':');
+			text = colon >= 0 ? element[(colon + 1)..] : element;
+		} else if (body) {
+			string field = text.StartsWith('$') ? text[1..] : text;
+			int quoted = field.LastIndexOf("['", StringComparison.Ordinal);
+			if (quoted >= 0 && field.EndsWith("']", StringComparison.Ordinal)) {
+				text = field[(quoted + 2)..^2];
+			} else {
+				text = field.Split('.').LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
+				int bracket = text.IndexOf('[');
+				text = bracket >= 0 ? text[..bracket] : text;
+			}
+		}
+		return text.Length > 0 ? text : code;
+	}
+
 	/// <summary>Where a parameter list is built: request or response, its owner for messages, nesting and the SOAP rules.</summary>
 	private sealed record ParameterScope(bool IsRequest, string Owner, Errors Errors, string Prefix,
 		bool Nested = false, SoapContext Soap = null, bool InSoapHeader = false, bool PreviousInSoapHeader = false);
@@ -768,7 +835,8 @@ public static partial class WebServiceDefinitionBuilder {
 			IsArray = arg.Array ?? false,
 			IsRequired = arg.Required ?? placement == ServiceSchemaCodes.Placements["path"],
 			DefValue = defValue,
-			Caption = Caption(arg.Caption ?? arg.Code),
+			Caption = Caption(arg.Caption ?? DefaultParameterCaption(path, arg.Code,
+				placement == ServiceSchemaCodes.Placements["body"], scope.Soap is not null)),
 			// SOAP: the parameter is rebuilt as given, with the defaults Studio writes (not a SOAP header, item
 			// elements named "item"); a SOAP-header parameter passes the flag to its items, as Studio does. REST: the
 			// typed members the platform sent are carried like the extension bag, so a save keeps them as read.
@@ -931,8 +999,8 @@ public static partial class WebServiceDefinitionBuilder {
 			return Empty();
 		}
 		string wireName = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path : arg.Path;
-		if (hasConstant && (WebServiceSchemaView.IsSecretLike(arg.Code, placement)
-				|| WebServiceSchemaView.IsSecretLike(wireName, placement))) {
+		if (hasConstant && (WebServiceSchemaView.IsSecretLike(arg.Code, placement, arg.DefaultValue)
+				|| WebServiceSchemaView.IsSecretLike(wireName, placement, arg.DefaultValue))) {
 			errors.Add($"{owner}: a constant default is refused on a header, cookie or credential-like parameter; "
 				+ "reference a system setting with default-sys-setting and let the user fill its value.");
 			return Empty();
@@ -947,8 +1015,8 @@ public static partial class WebServiceDefinitionBuilder {
 		// URL, so that move is refused instead.
 		bool clears = arg.DefaultValue is { Length: 0 };
 		if (previous is not null && !hasConstant && !clears && IsHiddenSecretConstant(previous, previousInSoapHeader)) {
-			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement)
-					&& !WebServiceSchemaView.IsSecretLike(wireName, placement)) {
+			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement, previous.DefValue.Value)
+					&& !WebServiceSchemaView.IsSecretLike(wireName, placement, previous.DefValue.Value)) {
 				errors.Add($"{owner}: it carries a secret constant default that describe hides, and the new placement "
 					+ "or path would show it; reference a system setting with default-sys-setting, or send "
 					+ "default-value \"\" to clear it.");
@@ -974,23 +1042,59 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	/// <summary>
-	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a credential-like key there would be a
-	/// stored constant that describe prints and every reader of the schema sees.
+	/// A method URI may carry a fixed query (<c>search?format=json</c>), but a key there would be a stored constant:
+	/// a value <see cref="WebServiceSchemaView.IsSecretQueryValue"/> calls a secret is refused, the same rule by which
+	/// describe-web-service hides one, and so is the mask describe shows in its place.
 	/// </summary>
 	private static void ValidateUriQuery(string owner, string uri, Errors errors) {
-		int question = uri.IndexOf('?');
-		if (question < 0) {
+		// Read exactly as describe reads a stored URI (keys unescaped, since the platform sends api%5Fkey as api_key),
+		// so nothing describe would hide can be written, and the mask cannot be written in place of a key.
+		UriQueryKeys keys = WebServiceSchemaView.FindQueryKeys(uri);
+		foreach (string key in keys.MaskKeys) {
+			errors.Add($"{owner} query '{key}' holds {WebServiceResponseMasker.Mask}, which describe-web-service shows for "
+				+ "a key kept in that URI. The tools cannot write that key back: leave this method or base URI out of the "
+				+ "call, make the key a parameter with default-sys-setting the user fills (REST), or ask the user to "
+				+ "change it in Studio > Web services.");
+		}
+		foreach (string key in keys.SecretKeys) {
+			errors.Add($"{owner} query '{key}' looks like a credential and has a constant value; "
+				+ "make it a parameter with default-sys-setting instead.");
+		}
+	}
+
+	/// <summary>
+	/// A path parameter whose <c>{placeholder}</c> is the whole value of a key in the method URI
+	/// (<c>search?api_key={k}</c>) carries that key: a new secret constant there is refused like the key itself. One
+	/// describe hid (so describe output sent back carries none) is kept, as other hidden constants are, while the new
+	/// URI still hides it; <c>default-value ""</c> clears it. Where the new URI would show it, it is refused rather than
+	/// erased.
+	/// </summary>
+	private static void ValidateKeyPlaceholders(WebServiceMethodArg arg, string uri, ServiceMethodDto method,
+		ServiceMethodDto existing, Errors errors) {
+		string code = arg.Code;
+		foreach (string path in WebServiceSchemaView.SecretPlaceholderPaths(uri, method.Request.Parameters).Keys) {
+			errors.Add($"method '{code}': path parameter '{path}' fills a key in the uri query and has a constant "
+				+ "default; reference a system setting with default-sys-setting and let the user fill its value.");
+		}
+		if (existing?.Request is null) {
 			return;
 		}
-		foreach (string pair in uri[(question + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries)) {
-			int equals = pair.IndexOf('=');
-			// The platform sends the key unescaped, so api%5Fkey is api_key on the wire.
-			string key = Uri.UnescapeDataString(equals < 0 ? pair : pair[..equals]);
-			string value = equals < 0 ? string.Empty : pair[(equals + 1)..];
-			if (value.Length > 0 && !PathPlaceholderPattern().IsMatch(value)
-					&& WebServiceSchemaView.IsSecretLike(key, ServiceSchemaCodes.Placements["query"])) {
-				errors.Add($"{owner} query '{key}' looks like a credential and has a constant value; "
-					+ "make it a parameter with default-sys-setting instead.");
+		foreach ((string path, string constant) in
+				WebServiceSchemaView.SecretPlaceholderPaths(existing.Request.Uri, existing.Request.Parameters)) {
+			ServiceParameterDto kept = method.Request.Parameters.Items.Values.FirstOrDefault(p =>
+				p.Type == ServiceSchemaCodes.Placements["path"] && string.Equals(p.Path, path, StringComparison.Ordinal));
+			bool clears = arg.RequestParameters?.FirstOrDefault(p =>
+				string.Equals(p?.Code, kept?.Name, StringComparison.Ordinal))?.DefaultValue is { Length: 0 };
+			if (kept is null || clears || !string.IsNullOrEmpty(kept.DefValue?.Value)) {
+				continue;
+			}
+			kept.DefValue = new ServiceParameterValueDto { Value = constant, Source = ServiceSchemaCodes.ValueSourceConst };
+			if (!WebServiceSchemaView.SecretPlaceholderPaths(uri, method.Request.Parameters).ContainsKey(path)) {
+				kept.DefValue = Empty();
+				errors.Add($"method '{code}': path parameter '{path}' fills a key in the uri query, and its constant, "
+					+ "which describe hides, would show in the new uri; keep the key in the uri, send default-value \"\" "
+					+ "to clear the constant, reference a system setting with default-sys-setting the user fills, or ask "
+					+ "the user to change it in Studio > Web services.");
 			}
 		}
 	}
@@ -999,18 +1103,22 @@ public static partial class WebServiceDefinitionBuilder {
 		ServiceItemCollection<ServiceParameterDto> parameters, Errors errors) {
 		// Ordinal: the platform substitutes "{" + Path + "}" with a case-sensitive Replace, so {Id} is never
 		// filled from a parameter whose path is "id". It fills placeholders in the base URI too.
-		var placeholders = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value)
-			.Concat(PathPlaceholderPattern().Matches(baseUri ?? string.Empty).Select(m => m.Groups[1].Value))
+		var inUri = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+		var inBase = PathPlaceholderPattern().Matches(baseUri ?? string.Empty).Select(m => m.Groups[1].Value)
 			.ToHashSet(StringComparer.Ordinal);
 		var pathParameters = parameters.Items.Values
 			.Where(p => p.Type == ServiceSchemaCodes.Placements["path"])
 			.Select(p => p.Path)
 			.ToHashSet(StringComparer.Ordinal);
-		foreach (string missing in placeholders.Except(pathParameters)) {
+		foreach (string missing in inUri.Except(pathParameters)) {
 			errors.Add($"method '{code}': uri placeholder {{{missing}}} has no path parameter.");
 		}
-		foreach (string unused in pathParameters.Except(placeholders)) {
-			errors.Add($"method '{code}': path parameter '{unused}' has no {{{unused}}} placeholder in the uri.");
+		// A placeholder in the base URI is the service's, so the message names where it is.
+		foreach (string missing in inBase.Except(inUri).Except(pathParameters)) {
+			errors.Add($"method '{code}': base-uri placeholder {{{missing}}} has no path parameter.");
+		}
+		foreach (string unused in pathParameters.Except(inUri).Except(inBase)) {
+			errors.Add($"method '{code}': path parameter '{unused}' has no {{{unused}}} placeholder in the uri or the base-uri.");
 		}
 	}
 

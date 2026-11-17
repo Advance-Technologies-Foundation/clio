@@ -5,6 +5,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.WebServiceDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -110,7 +111,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("register, list, describe, test-call and modify a REST web service")]
-	[Description("Registers a REST service with a path parameter, a system-setting header and a nested response array, finds it through list-web-services, reads it back through describe-web-service with no credential value, test-calls a method through the platform and gets a readable failure for an unresolvable host and for an unknown method, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
+	[Description("Registers a REST service with a path parameter, a system-setting header and a nested response array, stores keys in its URI queries as Studio can, finds it through list-web-services and reads it back through describe-web-service with no credential value and the keys masked, refuses the described method sent back with the mask, test-calls a method through the platform and gets a readable failure for an unresolvable host and for an unknown method, refuses a constant header key, then replaces the method keeping the UIds of the parameters it keeps.")]
 	public async Task WebServiceTools_Should_Register_Read_And_Modify_A_Rest_Service() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -130,14 +131,30 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["package-name"] = PackageName,
 				["code"] = _serviceCode,
 				["caption"] = "E2E orders",
+				["description"] = "Orders API used by the E2E suite",
 				["base-uri"] = "https://example.invalid/api",
 				["methods"] = new[] { OrdersMethod(withHeader: true) }
 			}, cts.Token);
+		// The tools refuse to write a key into a URI, but Studio stores one; put keys there through the platform's own
+		// save, as a service made in Studio would have them.
+		await WebServiceStand.StoreUrisAsync(settings, _environmentName, _serviceCode,
+			"https://example.invalid/api/?sig=" + HiddenKey, "orders/{id}?api_key=" + HiddenKey, cts.Token);
 		WebServiceListResult listed = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
 			new Dictionary<string, object?> { ["environment-name"] = _environmentName }, cts.Token);
 		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["usages"] = true
+			}, cts.Token);
+		// describe's method sent back as it is: the mask stands where the key was, and the tools never write a key back.
+		WebServiceToolResult echoed = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode,
+				["operations"] = new[] {
+					new Dictionary<string, object?> {
+						["op"] = "setMethod",
+						["method"] = JsonSerializer.SerializeToElement(described.Service?.Methods.FirstOrDefault())
+					}
+				}
 			}, cts.Token);
 		// A real call through the platform's test-request service. The host never resolves, so the call fails in
 		// the platform the same way on every stand; what is checked is the path through the tool: argument
@@ -166,7 +183,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode,
 				["operations"] = new[] {
 					new Dictionary<string, object?> { ["op"] = "setMethod", ["method"] = OrdersMethod(withHeader: false) },
-					new Dictionary<string, object?> { ["op"] = "setRetryCount", ["retry-count"] = 2 }
+					new Dictionary<string, object?> { ["op"] = "setRetryCount", ["retry-count"] = 2 },
+					new Dictionary<string, object?> { ["op"] = "setDescription", ["description"] = "" }
 				}
 			}, cts.Token);
 
@@ -176,12 +194,24 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the designer joins base and method URI verbatim, so the tool stores the base with a trailing slash");
 		listed.Services.Should().Contain(s => s.Code == _serviceCode,
 			because: "the registered service must appear where the Process Designer's picker reads services from");
-		listed.Services!.Single(s => s.Code == _serviceCode).BaseUri.Should().Be("https://example.invalid/api/",
-			because: "the list carries each base URI so an agent can find a service for the same API before registering");
+		listed.Services!.Single(s => s.Code == _serviceCode).BaseUri.Should().Be("https://example.invalid/api/?sig=[masked]",
+			because: "the list carries each base URI, with a key kept in its query hidden");
+		JsonSerializer.Serialize(listed).Should().NotContain(HiddenKey, because: "the list must not print a key kept in a URI");
 		described.Success.Should().BeTrue(because: $"describe must read the service back; error: {described.Error}");
+		described.Service!.Description.Should().Be("Orders API used by the E2E suite",
+			because: "the description given at registration is stored and read back as Studio shows it");
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
-		method.Uri.Should().Be("orders/{id}", because: "the method address is stored without a leading slash");
+		method.Uri.Should().Be("orders/{id}?api_key=[masked]",
+			because: "describe never returns a key kept in a method URI's query");
+		described.Service.BaseUri.Should().Be("https://example.invalid/api/?sig=[masked]",
+			because: "a key-length sig in the base URI is hidden the same way");
+		JsonSerializer.Serialize(described).Should().NotContain(HiddenKey,
+			because: "describe must not print a key kept in a URI query");
+		echoed.Success.Should().BeFalse(because: "the mask would otherwise be stored and sent as the key");
+		echoed.Error.Should().Contain("cannot write that key back",
+			because: "the refusal tells the agent what to do instead of sending the mask");
+		echoed.Error.Should().NotContain(HiddenKey, because: "a refusal never shows the hidden key");
 		method.RequestParameters.Should().Contain(p => p.Code == Prefixed("ApiKey") && p.DefaultSysSetting == "SchemaNamePrefix",
 			because: "a header bound to a system setting is returned as the setting code, never as its value");
 		method.ResponseParameters.Single(p => p.Code == Prefixed("Items")).Items.Should().ContainSingle(p => p.Code == Prefixed("Number"),
@@ -191,6 +221,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		testCall.Error.Should().NotBeNullOrWhiteSpace(
 			because: "the platform's failure reaches the agent as text, not as a thrown tool error");
 		testCall.ResponseBody.Should().BeNullOrEmpty(because: "no response came back from an unresolvable host");
+		JsonSerializer.Serialize(testCall).Should().NotContain(HiddenKey,
+			because: "the keys kept in the URIs went out with the call, and an error quoting the URL must not show them");
 		unknownMethod.Success.Should().BeFalse(because: "a method the service does not have cannot be called");
 		unknownMethod.Error.Should().Contain(MethodCode,
 			because: "the refusal lists the methods the service does have");
@@ -200,15 +232,17 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		literalKey.Error.Should().NotContain("sk-live-123", because: "a refused credential value is never echoed back");
 		modified.Success.Should().BeTrue(because: $"a valid setMethod must save; error: {modified.Error}");
 		modified.Service!.RetryCount.Should().Be(2, because: "setRetryCount is applied in the same call");
+		modified.Service.Description.Should().BeNull(because: "setDescription with an empty text clears the description on the stand");
 		modified.Service.Methods.Single().RequestParameters.Select(p => p.Code).Should().BeEquivalentTo([Prefixed("Id")],
 			because: "setMethod replaces the whole method definition, so the dropped header is gone");
 	}
 
 	[Test]
+	[Category(McpE2ECategories.ProcessDesigner)]
 	[AllureTag(ModifyWebServiceTool.ToolName)]
-	[AllureName("modify-web-service refuses a change to a method that a process calls")]
-	[Description("Registers a throwaway service, builds a process whose Call web service element calls its method, expects describe-web-service usages to name that process and element, then asks to remove the called method without acknowledge-usages and expects a refusal that names the process and changes nothing.")]
-	public async Task ModifyWebService_Should_Refuse_Changing_A_Method_A_Process_Calls() {
+	[AllureName("modify-web-service refuses a change to a method, or the base URI, of a service a process calls")]
+	[Description("Registers a throwaway service, builds a process whose Call web service element calls its method, expects describe-web-service usages to name that process and element, then asks to remove the called method, and separately to give the service a new base URI, without acknowledge-usages and expects each refused naming the process (the second as a change of every call) with nothing changed.")]
+	public async Task ModifyWebService_Should_Refuse_Changing_A_Called_Method_Or_The_Base_Uri() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		if (!settings.AllowDestructiveMcpTests) {
@@ -255,6 +289,13 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 						new Dictionary<string, object?> { ["op"] = "removeMethod", ["method-code"] = MethodCode }
 					}
 				}, context.CancellationTokenSource.Token);
+			WebServiceToolResult refusedBaseUri = await CallAsync<WebServiceToolResult>(ModifyWebServiceTool.ToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = _environmentName, ["code"] = _serviceCode,
+					["operations"] = new[] {
+						new Dictionary<string, object?> { ["op"] = "setBaseUri", ["base-uri"] = "https://example.invalid/other" }
+					}
+				}, context.CancellationTokenSource.Token);
 			WebServiceToolResult after = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
 				new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode },
 				context.CancellationTokenSource.Token);
@@ -266,8 +307,14 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			refused.Success.Should().BeFalse(because: "removing a called method without acknowledge-usages must be refused");
 			refused.Usages.Should().Contain(u => u.Process == processName,
 				because: "the refusal must name the processes the user has to approve breaking");
+			refusedBaseUri.Success.Should().BeFalse(because: "a new base URI changes every call the process makes");
+			refusedBaseUri.Error.Should().Contain("base URI", because: "the refusal says what changes for every call");
+			refusedBaseUri.Usages.Should().Contain(u => u.Process == processName,
+				because: "the refusal names the process the user has to agree to change");
 			after.Service!.Methods.Should().Contain(m => m.Code == MethodCode,
 				because: "a refused modify must not have saved anything");
+			after.Service.BaseUri.Should().Be("https://example.invalid/api/",
+				because: "the refused base URI must not have been saved (a REST base URI is stored with a trailing slash)");
 		} finally {
 			if (processCreated) {
 				// The process goes first: the service teardown must not leave a caller of a removed service behind.
@@ -278,8 +325,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("register-web-service links an existing OAuth 2.0 application")]
-	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, describe returning the same reference, and a setAuth rebuilt from that describe reply linking the same application.")]
+	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, describe returning the same reference, a setAuth rebuilt from that describe reply linking the same application, and a test call that cannot get a token being withheld with a message that points at the OAuth application.")]
 	public async Task RegisterWebService_Should_Link_An_Existing_OAuth_Application() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -322,6 +370,12 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				}
 			}, cts.Token);
 
+		// The application's token URL never resolves, so the platform fails before sending anything.
+		WebServiceTestResult testCall = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = MethodCode
+			}, cts.Token);
+
 		// Assert
 		registered.Success.Should().BeTrue(because: $"an existing OAuth application must be accepted; error: {registered.Error}");
 		registered.Service!.Auth!.Type.Should().Be("oauth20", because: "the service authenticates with OAuth 2.0");
@@ -334,6 +388,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		restored.Success.Should().BeTrue(because: $"setAuth accepts the oauth-app-id describe reports; error: {restored.Error}");
 		restored.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(_oauthApplicationId,
 			because: "authentication rebuilt from a describe reply links the same application");
+		testCall.Success.Should().BeFalse(because: "the access token cannot be retrieved from an unresolvable token URL");
+		testCall.ResponseBody.Should().BeNull(because: "a token endpoint's error can quote the client secret, so nothing is returned");
+		testCall.Error.Should().Contain("OAuth application",
+			because: "a call that sent nothing points at the OAuth application, not at a system setting");
 	}
 
 	[Test]
@@ -629,6 +687,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		},
 		mappings = new[] { new { elementName = CallerElement, elementParameter = Prefixed("Id") + "_In", value = "1" } }
 	});
+
+	// A key the stand stores in the service's URIs the way Studio can; long enough to count as a key under sig.
+	private const string HiddenKey = "e2e-hidden-key-0042-0042";
 
 	private Dictionary<string, object?> OrdersMethod(bool withHeader, string? literalHeader = null) {
 		var requestParameters = new List<Dictionary<string, object?>> {

@@ -28,7 +28,9 @@ Members today: `UninstallCreatioWarningE2ETests`, `DbHubLifecycleWarningE2ETests
 (`CreatioUninstallerTestFixture`, `AppPoolProfileCleanerTests`, and `SchemaTestFixture` +
 `DataBindingDbCommandTests` for the Color mapping); `McpFixturePolicyTests` enforces the attribute
 invariant and `TeamCityRunGuardTests` covers the guard's runtime behavior. When adding another
-destructive lifecycle fixture, follow the same marking.
+destructive lifecycle fixture, follow the same marking. The one exception is
+`ProcessPublishE2ESupport.RunCompilingWhenRequiredAsync`: it compiles a process by name only when a locally built core
+refuses its first run as not published, and ignores the test under TeamCity or GitHub Actions instead.
 
 Publishing configuration counts as a destructive lifecycle even when nothing is uninstalled.
 `create-entity-schema` returns as soon as it has started the **asynchronous, global OData rebuild**, and

@@ -423,6 +423,8 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.SetObjectRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.GetObjectRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.GetColumnRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.SetColumnRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.SetDefaultRecordRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.ApplyDefaultRecordRightsCommand>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRecordCounter, Clio.Common.ObjectRights.ObjectRecordCounter>();
@@ -555,6 +557,8 @@ public class BindingsModule {
 		services.AddTransient<IDynamicCasePageStep, DynamicCasePageStep>();
 		services.AddTransient<IDynamicCaseService, DynamicCaseService>();
 		services.AddTransient<CreateDynamicCaseCommand>();
+		services.AddTransient<DescribeDynamicCaseCommand>();
+		services.AddTransient<ModifyDynamicCaseCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -579,6 +583,7 @@ public class BindingsModule {
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
+		services.AddTransient<IPageLayerInspector, PageLayerInspector>();
 		// Owns the persisted-resource-key read for one logical page write. Transient is deliberate: the
 		// caching scope is flow-local and STATIC inside the implementation, so the page tools (resolved
 		// from this container) and PageUpdateCommand (resolved from a SEPARATE per-tenant container built
@@ -1027,6 +1032,7 @@ public class BindingsModule {
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
+		services.AddTransient<DeleteDataBindingDbCommand>();
 		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
 		services.AddTransient<IWorkplaceRepository, WorkplaceRepository>();
 		services.AddTransient<IWorkplacePlacementService, WorkplacePlacementService>();
@@ -1085,6 +1091,8 @@ public class BindingsModule {
 		services.AddTransient<IThemeCatalog, ListThemesCommand>();
 		services.AddTransient<GetThemeCommand>();
 		services.AddTransient<CreateThemeCommand>();
+		services.AddTransient<IBrandingBackgroundService, BrandingBackgroundService>();
+		services.AddTransient<IThemeBackgroundWriter, ThemeBackgroundWriter>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();
@@ -1111,6 +1119,11 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsPlanner, Clio.Common.ObjectRights.ObjectRightsPlanner>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReadBackVerifier, Clio.Common.ObjectRights.ObjectRightsReadBackVerifier>();
 		services.AddTransient<Clio.Common.ObjectRights.IDefaultRecordRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsStorageReader, Clio.Common.ObjectRights.ColumnRightsStorageReader>();
+		services.AddTransient<Clio.Common.ObjectRights.IAdministratedObjectWriteLease, Clio.Common.ObjectRights.AdministratedObjectWriteLease>();
+		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsPlanner, Clio.Common.ObjectRights.ColumnRightsPlanner>();
+		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsReadBackVerifier, Clio.Common.ObjectRights.ColumnRightsReadBackVerifier>();
 		services.AddTransient<Clio.Common.ObjectRights.IDefaultRecordRightsPlanner, Clio.Common.ObjectRights.DefaultRecordRightsPlanner>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
@@ -1268,6 +1281,7 @@ public class BindingsModule {
 		services.AddTransient<AddItemCommand>();
 		services.AddTransient<IZipFile, ZipFileWrapper>();
 		services.AddTransient<IProcessModelGenerator, ProcessModelGenerator>();
+		services.AddTransient<IProcessCredentialSourceDetector, ProcessCredentialSourceDetector>();
 		services.AddTransient<IProcessModelWriter, ProcessModelWriter>();
 		services.AddTransient<IZipBasedApplicationDownloader, ZipBasedApplicationDownloader>();
 		services.AddTransient<ICreatioHostService, CreatioHostService>();
@@ -1691,6 +1705,8 @@ public class BindingsModule {
 				});
 		McpFeatureToggleFilter.RegisterEnabledPrimitives(
 			mcpServerBuilder, mcpAssembly, mcpFeatureToggleService.IsEnabled, mcpSerializerOptions);
+		// After the SDK fills the tool collection: each listed tool's _meta carries what it does (McpToolFacts).
+		services.PostConfigure<McpServerOptions>(McpToolFactsListing.Attach);
 		return mcpServerBuilder;
 	}
 

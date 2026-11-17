@@ -264,6 +264,8 @@ internal class Program {
 		typeof(Command.ObjectRights.SetDefaultRecordRightsOptions),
 		typeof(Command.ObjectRights.ApplyDefaultRecordRightsOptions),
 		typeof(Command.ObjectRights.GetObjectRightsOptions),
+		typeof(Command.ObjectRights.GetColumnRightsOptions),
+		typeof(Command.ObjectRights.SetColumnRightsOptions),
 		typeof(Command.Administration.ManageUserOptions),
 		typeof(Command.Administration.ManageRoleOptions),
 		typeof(Command.Administration.ManageAccessOptions),
@@ -308,6 +310,7 @@ internal class Program {
 		typeof(RegenerateIdentitySigningKeyOptions),
 		typeof(CheckAuthCodeFlowOptions),
 		typeof(RegisterSsoProviderOptions),
+		typeof(DeleteDataBindingDbOptions),
 
 
 	];
@@ -545,6 +548,8 @@ internal class Program {
 			Command.ObjectRights.SetDefaultRecordRightsOptions opts => Resolve<Command.ObjectRights.SetDefaultRecordRightsCommand>(opts).Execute(opts),
 			Command.ObjectRights.ApplyDefaultRecordRightsOptions opts => Resolve<Command.ObjectRights.ApplyDefaultRecordRightsCommand>(opts).Execute(opts),
 			Command.ObjectRights.GetObjectRightsOptions opts => Resolve<Command.ObjectRights.GetObjectRightsCommand>(opts).Execute(opts),
+			Command.ObjectRights.GetColumnRightsOptions opts => Resolve<Command.ObjectRights.GetColumnRightsCommand>(opts).Execute(opts),
+			Command.ObjectRights.SetColumnRightsOptions opts => Resolve<Command.ObjectRights.SetColumnRightsCommand>(opts).Execute(opts),
 			Command.Administration.ManageUserOptions opts => Resolve<Command.Administration.ManageUserCommand>(opts).Execute(opts),
 			Command.Administration.ManageRoleOptions opts => Resolve<Command.Administration.ManageRoleCommand>(opts).Execute(opts),
 			Command.Administration.ManageAccessOptions opts => Resolve<Command.Administration.ManageAccessCommand>(opts).Execute(opts),
@@ -647,6 +652,7 @@ internal class Program {
 			CreateDataBindingDbOptions opts => Resolve<CreateDataBindingDbCommand>(opts).Execute(opts),
 			UpsertDataBindingRowDbOptions opts => Resolve<UpsertDataBindingRowDbCommand>(opts).Execute(opts),
 			RemoveDataBindingRowDbOptions opts => Resolve<RemoveDataBindingRowDbCommand>(opts).Execute(opts),
+			DeleteDataBindingDbOptions opts => Resolve<DeleteDataBindingDbCommand>(opts).Execute(opts),
 			UnlockPackageOptions opts => Resolve<UnlockPackageCommand>(opts).Execute(opts),
 			LockPackageOptions opts => Resolve<LockPackageCommand>(opts).Execute(opts),
 			DataServiceQueryOptions opts => Resolve<DataServiceQuery>(opts).Execute(opts),

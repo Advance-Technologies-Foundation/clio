@@ -50,7 +50,7 @@ public sealed class SetObjectRightsTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object, or move or remove that role's row — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
+	[Description("Changes object permissions. Grants or revokes OBJECT operation permissions (read/create/edit/delete) for one role on ONE object, or moves or removes that role's row — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Works like the Object permissions designer, one object per call, for ANY role. To cover an object's lookups, read them with get-object-rights include-connected, decide per object, and make one call per object. " +
 		"entity-schema-name is the object's CODE, not its title: the developer's word can be another object's title, so a title is refused with the code it belongs to, and the output shows the title next to the code ('Creatio functionality' (Feature)) — before a write, name the object to the developer by both. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique); it must exist. " +

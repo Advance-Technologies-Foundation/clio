@@ -55,8 +55,9 @@ internal sealed class ProcessRunLogReader(IApplicationClient applicationClient, 
 		if (string.IsNullOrWhiteSpace(text)) {
 			return null;
 		}
-		return text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+		// The logged exception can quote what a web service element sent or received (ENG-105475).
+		return CredentialShapeMasker.Mask(text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
 			.Select(line => line.Trim())
-			.FirstOrDefault(line => line.Length > 0);
+			.FirstOrDefault(line => line.Length > 0));
 	}
 }

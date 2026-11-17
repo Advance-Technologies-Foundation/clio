@@ -60,8 +60,9 @@ public static partial class WebServiceResponseMasker {
 	/// <param name="secretUnlocated">
 	/// Whether a setting-bound value may have been sent but cannot be located: a path value not found in the URL,
 	/// a header, query or cookie value with no request line and headers reported, a body value when the reported
-	/// body is missing or is neither JSON nor XML, or a top-level body element missing from an XML body (a SOAP
-	/// envelope, its Header included).
+	/// body is missing or is neither JSON nor XML, or a body value missing from a JSON body or an XML body (a SOAP
+	/// envelope, its Header included): a top-level one always, an array item field when its array went out with items
+	/// or may have been given a value.
 	/// </param>
 	/// <returns>Distinct values, longest first.</returns>
 	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
@@ -83,16 +84,19 @@ public static partial class WebServiceResponseMasker {
 		SentSecrets(method, requestRawData, requestBody, serviceHasAuth, null, out secretUnlocated);
 
 	/// <summary>
-	/// As <see cref="SentSecrets(ServiceMethodDto, string, string, bool, out bool)"/>, knowing which top-level request
-	/// parameters the call gave a value. A field of an array item whose array element is not in an XML body was not
-	/// sent only when its top-level parameter had no value: no value from the call and no default. Unknown (null), or
-	/// with a value, the missing element is a lookup miss and fails closed.
+	/// As <see cref="SentSecrets(ServiceMethodDto, string, string, bool, out bool)"/>, knowing which request parameters
+	/// the call gave a value. A field of an array item whose array element is not in an XML body was not sent only when
+	/// that array had no value: no value from the call (in no item, for an array inside an array item) and no default.
+	/// Unknown (null), or with a value, the missing element is a lookup miss and fails closed.
 	/// </summary>
 	/// <param name="method">The called method.</param>
 	/// <param name="requestRawData">The request line and headers the platform reports as sent.</param>
 	/// <param name="requestBody">The request body the platform reports as sent.</param>
 	/// <param name="serviceHasAuth">Whether the service has authentication.</param>
-	/// <param name="sentCodes">The top-level request parameter codes the call gave a value, or null when unknown.</param>
+	/// <param name="sentCodes">
+	/// The request parameter codes the call gave a value, the fields of array items included (see
+	/// <see cref="WebServiceTestCall.SentCodes"/>), or null when unknown.
+	/// </param>
 	/// <param name="secretUnlocated">See the four-argument overload.</param>
 	/// <returns>Distinct values, longest first.</returns>
 	public static IReadOnlyList<string> SentSecrets(ServiceMethodDto method, string requestRawData, string requestBody,
@@ -112,37 +116,23 @@ public static partial class WebServiceResponseMasker {
 		secretUnlocated |= serviceHasAuth && method?.UseAuthInfo == true && !rawReported;
 		foreach ((ServiceParameterDto parameter, ServiceParameterDto parent, ServiceParameterDto root)
 				in SettingBound(method?.Request?.Parameters, null, null)) {
-			string name = WireName(parameter);
-			// Values are found in what the platform reports as sent; when that part is missing or is neither JSON nor
-			// XML, a value that went out cannot be found, so the caller withholds the response instead.
-			secretUnlocated |= parameter.Type == PlacementBody ? body is null && xmlBody is null : !rawReported;
-			if (parameter.Type == PlacementBody && xmlBody is not null) {
-				List<string> found = XmlBodyValues(xmlBody, name);
-				secretUnlocated |= found.Count == 0 && XmlFieldMayHaveBeenSent(xmlBody, parent, root, sentCodes);
-				secrets.AddRange(found);
+			// The platform renders every field of an array item into the body, whatever placement the field itself
+			// carries (Terrasoft.Services RequestBodyBuilder), and renders items only under a body array: a non-body
+			// parameter's items are never sent.
+			if (parent is not null && root?.Type != PlacementBody) {
 				continue;
 			}
-			switch (parameter.Type) {
-				case PlacementHeader:
-					secrets.AddRange(Lookup(headers, name));
-					break;
-				case PlacementQuery:
-					secrets.AddRange(Lookup(query, name));
-					break;
-				case PlacementCookie:
-					secrets.AddRange(Lookup(cookies, name));
-					break;
-				case PlacementBody:
-					// A field of a nested object is described by a dotted path (customer.name, $.auth.secret);
-					// the body carries it under its last segment.
-					secrets.AddRange(BodyValues(body, LastPathSegment(name)));
-					break;
-				case PlacementPath:
-					List<string> located = PathValues(lines.FirstOrDefault(), method?.Request?.Uri, name);
-					secretUnlocated |= located is null;
-					secrets.AddRange(located ?? []);
-					break;
+			if (parent is not null || parameter.Type == PlacementBody) {
+				secrets.AddRange(SentBodyValues(body, xmlBody, parameter, parent, root, sentCodes, out bool bodyUnlocated));
+				secretUnlocated |= bodyUnlocated;
+				continue;
 			}
+			// A path, query, header or cookie value is found in the reported request line and headers; without them, a value
+			// that went out cannot be found, so the caller withholds the response instead.
+			IEnumerable<string> located = SentRequestLineValues(parameter.Type, WireName(parameter), lines.FirstOrDefault(),
+				method?.Request?.Uri, headers, query, cookies);
+			secretUnlocated |= !rawReported || located is null;
+			secrets.AddRange(located ?? []);
 		}
 		// describe-web-service hides a secret constant (an API key typed in Studio); an echo must not show it
 		// either. It is known from the schema, so it is masked whether or not the request carried it.
@@ -575,8 +565,11 @@ public static partial class WebServiceResponseMasker {
 	/// Whether a setting-bound element missing from an XML body may still have been sent, so its absence means the lookup
 	/// missed it. A top-level element is always rendered. A field of an array item is rendered whenever its parent is:
 	/// a parent element with content and no such field is a miss, an empty parent is an array sent empty. A parent
-	/// element that is missing too is either an array the platform skipped (its top-level parameter had no value) or a
-	/// parent the lookup also missed; only a top-level parameter known to have had no value tells them apart.
+	/// element that is missing too is either an array the platform skipped (the call gave that array no value, at
+	/// whatever depth it sits) or a parent the lookup also missed; only a parent array known to have had no value tells
+	/// them apart. The platform renders an array only from a value the call gives it, never from a default (Terrasoft.
+	/// Services <c>RequestBodyBuilder.ProcessArrayNode</c>), so an inner array left out of every item renders nothing
+	/// (measured on a .NET Framework stand). A code shared by two parents can only make this answer yes.
 	/// </summary>
 	private static bool XmlFieldMayHaveBeenSent(XDocument body, ServiceParameterDto parent, ServiceParameterDto root,
 		IReadOnlyCollection<string> sentCodes) {
@@ -587,11 +580,25 @@ public static partial class WebServiceResponseMasker {
 		if (parents.Count > 0) {
 			return parents.Any(e => e.HasElements);
 		}
-		bool rootHasDefault = root?.DefValue is { Source: not ServiceSchemaCodes.ValueSourceNone } value
-			&& (value.Source == ServiceSchemaCodes.ValueSourceSysSetting || !string.IsNullOrEmpty(value.Value));
-		return sentCodes is null || rootHasDefault
-			|| sentCodes.Contains(root?.Name ?? string.Empty, StringComparer.Ordinal);
+		return ParentMayHaveBeenGiven(parent, root, sentCodes);
 	}
+
+	/// <summary>
+	/// Whether an array whose element is missing from the body may still have been rendered, so the miss is the
+	/// lookup's: unknown (<paramref name="sentCodes"/> null), or the call gave it a value. A default on the array or on
+	/// its top-level ancestor also answers yes: no platform path is known to render an array from one, and this keeps a
+	/// fail-closed margin for a path that would. A parent that is not an array (a single Object, which clio and Studio
+	/// refuse to create but an older schema may hold) is never given a value of its own, so whether it went out cannot
+	/// be told: it answers yes.
+	/// </summary>
+	private static bool ParentMayHaveBeenGiven(ServiceParameterDto parent, ServiceParameterDto root,
+		IReadOnlyCollection<string> sentCodes) =>
+		sentCodes is null || !parent.IsArray || HasDefault(root) || HasDefault(parent)
+		|| sentCodes.Contains(parent.Name ?? string.Empty, StringComparer.Ordinal);
+
+	private static bool HasDefault(ServiceParameterDto parameter) =>
+		parameter?.DefValue is { Source: not ServiceSchemaCodes.ValueSourceNone } value
+		&& (value.Source == ServiceSchemaCodes.ValueSourceSysSetting || !string.IsNullOrEmpty(value.Value));
 
 	private static string WireName(ServiceParameterDto parameter) =>
 		string.IsNullOrEmpty(parameter.Path) ? parameter.Name : parameter.Path;
@@ -698,6 +705,48 @@ public static partial class WebServiceResponseMasker {
 		return cookies;
 	}
 
+	/// <summary>
+	/// The values a body parameter, or a field of an array item (always rendered in the body), went out with, found in
+	/// the reported JSON or XML body. <paramref name="unlocated"/> is set when a value may have gone out but cannot be
+	/// found there, including when the body is missing or is neither JSON nor XML. A body array is rendered only from a
+	/// value the call gives it, never from its default, so its values are the caller's own and its absence hides nothing.
+	/// </summary>
+	private static List<string> SentBodyValues(JsonNode body, XDocument xmlBody, ServiceParameterDto parameter,
+		ServiceParameterDto parent, ServiceParameterDto root, IReadOnlyCollection<string> sentCodes, out bool unlocated) {
+		bool mayCarrySetting = !parameter.IsArray;
+		string name = WireName(parameter);
+		if (xmlBody is not null) {
+			List<string> found = XmlBodyValues(xmlBody, name);
+			unlocated = mayCarrySetting && found.Count == 0 && XmlFieldMayHaveBeenSent(xmlBody, parent, root, sentCodes);
+			return found;
+		}
+		if (body is not null) {
+			// The platform reads a JSON path in parts (customer.name, $.auth.secret, items[0], $['key']) and writes the
+			// value under the last named part, inside an array when an index follows it.
+			string key = JsonKey(name, parent is null);
+			unlocated = mayCarrySetting && !HasJsonKey(body, key) && JsonFieldMayHaveBeenSent(body, parent, root, sentCodes);
+			return BodyValues(body, key).ToList();
+		}
+		unlocated = mayCarrySetting;
+		return [];
+	}
+
+	/// <summary>
+	/// The values a top-level path, query, header or cookie parameter went out with, read from the reported request
+	/// line and headers. A path, query, header or cookie value takes its default whatever its array flag says. Returns
+	/// null when a path value cannot be located.
+	/// </summary>
+	private static IEnumerable<string> SentRequestLineValues(int placement, string name, string requestLine,
+		string uriTemplate, Dictionary<string, List<string>> headers, Dictionary<string, List<string>> query,
+		Dictionary<string, List<string>> cookies) =>
+		placement switch {
+			PlacementHeader => Lookup(headers, name),
+			PlacementQuery => Lookup(query, name),
+			PlacementCookie => Lookup(cookies, name),
+			PlacementPath => PathValues(requestLine, uriTemplate, name),
+			_ => []
+		};
+
 	private static JsonNode ParseBody(string requestBody) {
 		if (string.IsNullOrWhiteSpace(requestBody)) {
 			return null;
@@ -709,29 +758,120 @@ public static partial class WebServiceResponseMasker {
 		}
 	}
 
-	private static string LastPathSegment(string path) {
-		int dot = path.LastIndexOf('.');
-		return dot >= 0 && dot < path.Length - 1 ? path[(dot + 1)..] : path;
+	/// <summary>
+	/// The property name a JSON request path writes its value under, read as Terrasoft.Services
+	/// <c>JsonPathUtils.GetPathParts</c> reads the paths it can write (where the two differ, such as a dot inside
+	/// brackets, the key read here is one the platform never writes, so it matches nothing and fails closed): the path
+	/// splits at dots and brackets, <c>['name']</c> is a name and
+	/// <c>[0]</c> an array index, and the value lands under the last name (inside an array when an index follows it). A
+	/// leading <c>$</c> or <c>$.</c> is dropped only from a top-level parameter's path
+	/// (<paramref name="topLevel"/>): the platform trims the root there (<c>JsonRequestBodyRenderer</c>) and keeps an
+	/// item field's path as written, so an item field <c>$apiKey</c> goes out under <c>$apiKey</c>, and reading it as
+	/// <c>apiKey</c> could take a decoy field of that name for the setting's value. Returns an empty string when the path
+	/// names no property, and when it ends inside an unclosed bracket, which the platform writes under a name of its own
+	/// (<c>a[b</c> → <c>"[b"</c>): an empty key is never found, so such a value fails closed.
+	/// </summary>
+	private static string JsonKey(string path, bool topLevel) {
+		string last = string.Empty;
+		var name = new StringBuilder();
+		bool inBracket = false;
+		foreach (char c in topLevel ? WithoutJsonRoot(path ?? string.Empty) : path ?? string.Empty) {
+			if (!EndsJsonPathPart(c, inBracket)) {
+				name.Append(c);
+				continue;
+			}
+			last = JsonPathPartName(name.ToString(), inBracket, last);
+			name.Clear();
+			inBracket = c == '[';
+		}
+		if (inBracket) {
+			return string.Empty;
+		}
+		return name.Length > 0 ? name.ToString() : last;
 	}
 
-	private static IEnumerable<string> BodyValues(JsonNode node, string name) {
+	/// <summary>The path without a leading <c>$.</c> or <c>$</c>, which names the body root.</summary>
+	private static string WithoutJsonRoot(string path) {
+		if (path.StartsWith("$.", StringComparison.Ordinal)) {
+			return path[2..];
+		}
+		return path.StartsWith('$') ? path[1..] : path;
+	}
+
+	/// <summary>Outside brackets a dot or an opening bracket ends a part; inside, only the closing bracket does.</summary>
+	private static bool EndsJsonPathPart(char c, bool inBracket) => inBracket ? c == ']' : c is '.' or '[';
+
+	/// <summary>
+	/// The name a finished path part leaves as the last one: a bracketed index (<c>[0]</c>) keeps the previous name, a
+	/// bracketed name (<c>['key']</c>) is the name without quotes, and an empty dotted part keeps the previous name.
+	/// Only single quotes are stripped: Terrasoft.Services <c>JsonPathUtils</c> strips only those and writes
+	/// <c>["key"]</c> under a name that keeps its double quotes, so stripping them would look up another property.
+	/// </summary>
+	private static string JsonPathPartName(string part, bool bracketed, string previous) {
+		if (bracketed) {
+			return int.TryParse(part, out _) ? previous : part.Trim('\'');
+		}
+		return part.Length > 0 ? part : previous;
+	}
+
+	/// <summary>
+	/// The values a JSON body carries under a property name, at any depth: a value, or every leaf value of an array
+	/// (a path with an index writes the value inside one).
+	/// </summary>
+	private static IEnumerable<string> BodyValues(JsonNode node, string name) =>
+		JsonProperties(node, name).SelectMany(Leaves).Select(value => value.ToString());
+
+	private static IEnumerable<JsonValue> Leaves(JsonNode node) => node switch {
+		JsonValue value => [value],
+		JsonArray array => array.SelectMany(Leaves),
+		_ => []
+	};
+
+	/// <summary>The values a JSON body carries under a property name, at any depth, null values included.</summary>
+	private static IEnumerable<JsonNode> JsonProperties(JsonNode node, string name) {
 		switch (node) {
 			case JsonObject obj:
 				foreach (KeyValuePair<string, JsonNode> property in obj) {
-					if (property.Value is JsonValue value && string.Equals(property.Key, name, StringComparison.Ordinal)) {
-						yield return value.ToString();
+					if (string.Equals(property.Key, name, StringComparison.Ordinal)) {
+						yield return property.Value;
 					}
-					foreach (string nested in BodyValues(property.Value, name)) {
+					foreach (JsonNode nested in JsonProperties(property.Value, name)) {
 						yield return nested;
 					}
 				}
 				break;
 			case JsonArray array:
-				foreach (string nested in array.SelectMany(item => BodyValues(item, name))) {
+				foreach (JsonNode nested in array.SelectMany(item => JsonProperties(item, name))) {
 					yield return nested;
 				}
 				break;
 		}
+	}
+
+	/// <summary>
+	/// Whether a JSON body has a property of that name anywhere that holds a value it could mask: a value, null (a missing
+	/// setting) or an array of values. A property holding only an object is not the value: the path wrote it under a
+	/// name of its own, so it counts as missing and fails closed.
+	/// </summary>
+	private static bool HasJsonKey(JsonNode body, string key) =>
+		key.Length > 0 && JsonProperties(body, key).Any(value => value is null or JsonValue || Leaves(value).Any());
+
+	/// <summary>
+	/// Whether a setting-bound value missing from a JSON body may still have been sent, by the rules of
+	/// <see cref="XmlFieldMayHaveBeenSent"/>: a top-level value is always rendered (null when the setting is empty), an
+	/// item field whenever its array is rendered with items.
+	/// </summary>
+	private static bool JsonFieldMayHaveBeenSent(JsonNode body, ServiceParameterDto parent, ServiceParameterDto root,
+		IReadOnlyCollection<string> sentCodes) {
+		if (parent is null) {
+			return true;
+		}
+		string parentKey = JsonKey(WireName(parent), ReferenceEquals(parent, root));
+		List<JsonNode> parents = parentKey.Length == 0 ? [] : JsonProperties(body, parentKey).ToList();
+		if (parents.Count > 0) {
+			return parents.Any(p => p is JsonArray { Count: > 0 } or JsonObject { Count: > 0 });
+		}
+		return ParentMayHaveBeenGiven(parent, root, sentCodes);
 	}
 
 	private static IEnumerable<string> AuthorizationParts(string authorization) {

@@ -110,8 +110,39 @@ public sealed class WsdlRegistrationMapperTests {
 		result.Arguments.BaseUri.Should().Be("http://host.example/svc.asmx?region=eu",
 			because: "only the credentials and the keys go, sig as the wsdl-url check counts it too");
 		warnings.Kept.Should().Contain(w => w.Contains("credentials"), because: "the agent is told to set them up with a setting");
-		warnings.Kept.Should().Contain(w => w.Contains("key or token"), because: "the agent is told how to send the key");
+		warnings.Kept.Should().Contain(w => w.Contains("key or token"),
+			because: "the agent is told the endpoint may need the key and where a SOAP service gets one");
 		string.Join(" ", warnings.Kept).Should().NotContain("SECRET", because: "the warnings do not repeat the values");
+	}
+
+	[Test]
+	[Description("A key between ';'-separated pairs of the WSDL's address is left out, and the pairs kept keep their own separators.")]
+	public void Map_Should_Keep_The_Separators_Of_The_Pairs_It_Keeps() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add")) with { BaseUri = "http://host.example/svc.asmx?a=1;sig=SIG-SECRET;region=eu&b=2" };
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, new WarningLog());
+
+		// Assert
+		result.Arguments.BaseUri.Should().Be("http://host.example/svc.asmx?a=1;region=eu&b=2",
+			because: "a server that does not split on ';' must get the kept pairs exactly as the WSDL gave them");
+	}
+
+	[TestCase("http://host.example/svc.asmx?ret=/cb?api_key=KEY-SECRET")]
+	[TestCase("http://host.example/Svc;token=KEY-SECRET?x=1")]
+	[Description("A WSDL address with a key the name check keeps (behind a second '?', or in a ;name=value path parameter) is left out of base-uri, and the warning shows it with the key masked.")]
+	public void Map_Should_Leave_Out_An_Address_With_A_Hidden_Key_Without_Showing_It(string address) {
+		// Arrange
+		WsdlPort port = Port(Operation("Add")) with { BaseUri = address };
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", null, warnings);
+
+		// Assert
+		result.Arguments.BaseUri.Should().BeNull(because: "register would refuse the key, so the endpoint is asked for");
+		string.Join(" ", warnings.Kept).Should().NotContain("KEY-SECRET", because: "a warning never prints the key");
 	}
 
 	[Test]
@@ -411,6 +442,29 @@ public sealed class WsdlRegistrationMapperTests {
 
 		// Assert
 		result.ExistingMethods.Should().Equal(["UsrAdd"], because: "the method registered without the action is the same one");
+	}
+
+	[Test]
+	[Description("A method whose stored soapAction carries a key is matched although describe shows the key masked, so read-wsdl with service-code does not add the operation a second time.")]
+	public void Map_Should_Match_A_Method_Whose_Soap_Action_Key_Is_Masked() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add") with { SoapAction = "http://example.org/t/Add?code=fn-key-0042-0042-0042" });
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 5000, "xml", false, [], [], "tem:Add",
+				"http://example.org/t/Add?code=[masked]")
+		]);
+
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlServiceArguments result = WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, warnings);
+
+		// Assert
+		result.ExistingMethods.Should().Equal(["UsrAdd"], because: "the stored action is the WSDL's, shown masked");
+		result.Arguments.Methods.Single().SoapAction.Should().BeNull(
+			because: "register refuses a key in an action, so read-wsdl leaves that action out");
+		warnings.Kept.Should().Contain(w => w.Contains("a key in its query") && !w.Contains("fn-key-0042"),
+			because: "the agent learns why the action is missing, without the key");
 	}
 
 	[Test]

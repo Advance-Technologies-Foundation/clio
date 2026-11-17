@@ -115,7 +115,7 @@ The REST rule "an xml method has no body parameters" applies to REST only.
 Read-only, `OpenWorld = true`. Inputs: `environment-name`, `wsdl-url` or `wsdl-files` (absolute local paths, for a WSDL
 the stand cannot reach or one with non-ASCII text, which the platform download turns into `?`; an import is matched by
 its `schemaLocation` or by that location's file name; at most 100 files of 10 MB, the platform endpoint's own caps),
-optional `port`, `service-code` (D11) and `operations` (names to return; a port with none of them is left out). The URL is fetched through
+optional `port`, `code` (a new service's code, D16), `service-code` (D11) and `operations` (names to return; a port with none of them is left out). The URL is fetched through
 `GetXmlSchemaFilesContent` (CanManageSolution, as Studio; route `DownloadWsdlSchemaFiles`), never by clio itself, so
 clio adds no network reach of its own; only the URL the user gave is fetched (the platform follows the
 `schemaLocation`s), a URL with `user:password@` or a key or token in its query is refused, and the platform's error
@@ -213,6 +213,50 @@ sending it through `register-web-service` itself.
 `parameters` accepts arrays and arrays of objects, sent through the platform's `nested` member of
 `CallServiceSchemaService.Execute`. A single object stays refused, as the parameter model has none.
 
+**Measured** on stand `Creatio` (.NET Framework, prefix `Usr`) on 2026-11-13 with raw `call-service` calls on a throwaway
+REST service (echo `https://httpbin.org/anything`) and a SOAP 1.1 service (`http://localhost/<code>`), each with a Text
+array, an Integer array and an Object array whose items hold a Text, an Integer, a setting-bound Text, a Text array
+and an inner Object array (the script and its raw log are kept with the slice A research evidence, outside the
+repository). The shape is the one Studio's Send test request sends (creatio-ui `service-client-form.component.ts`,
+`_getParameterValue`):
+
+| Parameter | Wire | REST body / SOAP envelope |
+| --- | --- | --- |
+| scalar | `{code, value: "text"}` | as before |
+| array of scalars | `{code, value: ["a", "b"]}`, texts or numbers | `"tags":["a","b"]`; `<tem:Tags arrayType="xsd:array[]"><tem:Tag>a</tem:Tag>...`; converted to the item type (`"1"` → `1`) |
+| array of objects | `{code, nested: [[{code, value}, ...], ...]}`, one list per item, no `value` | `"lines":[{"sku":"S1",...}]`; `<tem:Lines ...><tem:Line><tem:Sku>S1</tem:Sku>...` |
+| inside an item | the same rules, recursively (a scalar array in `value`, an inner object array in `nested`) | rendered under the item |
+| path, query, header or cookie, array or not | `{code, value: "text"}` | the value's `ToString()`, sent as given (`"1,2"` → `?ids=1%2C2`); a JSON array goes out as `System.Object[]` (Terrasoft.Services `ServiceClientRequest`, measured) |
+
+What the platform does with anything else, which is why clio checks the shape first: a text for an array goes out one
+item per character (`"ab"` → `["a","b"]`); objects in `value` go out as an empty array; `nested` on an array of scalars
+sends the text `System.Collections.Generic.Dictionary...`; an unknown code inside an item is dropped silently; a code
+given twice (top level or in an item) fails the call with "An item with the same key has already been added." and
+nothing is sent; a null item of a scalar array goes out empty. An empty array is sent empty (`[]`, an empty element);
+an array the call leaves out is not rendered at all, an inner one included, and a setting-bound item field is filled
+in every item, also in an item given no fields.
+
+Decisions taken from the measurement: values are checked against the method's parameter tree in the designer (the tool
+has no schema), every problem is reported in one refusal with its location (`parameters.UsrLines[0].UsrSku`), a value
+outside the body takes one text whatever its array flag says (a JSON array there is refused), arrays of objects are told
+apart by their item fields as the platform does (`RequestBodyBuilder.GetNodeInQueue`), a null array item is refused
+rather than sent empty, and the masking judges a missing array element by whether the call gave
+THAT array a value (the codes given a value at any depth), not its top-level ancestor, so a call that leaves an inner
+array out is not withheld for it.
+
+The pre-PR security review added three masking rules, since nested values make array items reachable for the first
+time: an item field is looked for in the body whatever placement it carries (the platform renders every item property
+there); a JSON body now fails closed like XML, finding a value under the name the platform writes it to (`k[0]`,
+`$['k']` included) and withholding the response when a top-level value, or an item field whose array went out, is
+missing; and a body array never withholds for its own setting default, which the platform never uses.
+
+The final review (2026-11-13) added three more: a leading `$` is dropped only from a top-level JSON path, since the
+platform trims the root of the body's direct children only (`JsonRequestBodyRenderer.TrimStartRoot`, read in source,
+not measured; if it does not hold, an item field such as `$apiKey` is not found and the response is withheld) and a
+decoy item field `apiKey` must not be taken for the setting's value; a setting-bound field under a single Object,
+which an older schema may hold, withholds the response when neither is found, since the Object is never given a value
+of its own; and the codes a refusal echoes are sanitized, cut to 120 characters and at most ten.
+
 ### D11. Stable codes in `read-wsdl` (owner, 2026-11-12; full names, owner, 2026-11-13)
 
 A generated method or parameter code is the environment's `SchemaNamePrefix` (read with `IWebServicePrefixReader`,
@@ -286,6 +330,89 @@ declared" and "Check a response array's sequence-element by local name only"): `
 `prefix:name`; on a request array the prefix must be declared and the name must survive the platform's regex, and it
 counts as a used prefix for `setNamespaces`; on a response array only the local name is checked. `read-wsdl` leaves out
 an array whose item element would be refused.
+
+### D14. A test call that can change data waits for the user's explicit yes (owner, 2026-11-13)
+
+Before `test-web-service-method` calls a POST, PUT, PATCH or DELETE method, or any SOAP method (every SOAP call is a
+POST whose effect clio cannot know), the agent tells the user the call sends a real request that can change data in
+that API and calls only after the user's explicit yes, even when the user asked to "test" it: a request to test is not
+a confirmation. A GET needs no question. A REST method with an XML body is not exempt although the platform usually
+sends nothing for it: a custom body builder (`bodyBuilderId`) makes it go out (gate review, 2026-11-13).
+
+clio enforces it (owner, 2026-11-13, after the measurement below): such a call without `user-confirmed: true` is refused
+before anything is sent, with `confirmation-required: true` and an error that tells the agent to ask the user, not to
+set the flag itself, and to repeat the same call with it after the yes. The check runs after the values are checked, so
+the repeated call is already valid. A confirmation under another name (`confirmed`, `userConfirmed`) gets a rename hint
+and is never taken as the yes. The tool description states the rule right after its first sentence, and the
+clio-knowledge registration guide (REST) and SOAP guide carry it.
+
+Why a gate and not only words, measured on 2026-11-13 with an isolated agent (TC-13 step 1, "add 2 and 3 as a test",
+stand studio-16317520, clio with the rule only in the description, published guides of library 1.15.213): the agent
+called without asking. It never read the description: `test-web-service-method` is a long-tail tool called through
+`clio-run`, and the `get-tool-contract` index shows only the first sentence; the published guides still said "confirm
+with the user first". A refusal reaches the agent on its first call whatever it read.
+
+Rerun with the gate (same case, stand and guides, 2026-11-13): the agent's first call was refused with nothing sent;
+it told the user the SOAP call sends a real request and asked for a yes. After "Yes, send it." it repeated the call with
+`user-confirmed: true` and got HTTP 200 and 5.
+
+### D15. Follow-up checks: every-call changes, per-method authentication, ports the platform cannot call (2026-11-14)
+
+Three questions left open by slices A-D were measured on stand `Creatio` (.NET Framework) against httpbin and a WCF
+host (.NET Framework 4.8, one contract on `BasicHttpBinding`, a SOAP 1.2 custom binding, a SOAP 1.2 WS-Addressing
+custom binding and `WSHttpBinding` with security mode None); the user decided to fix all three in clio.
+
+- **Usage guard.** `setBaseUri` changes every call a process makes, exactly like `setNamespaces` and `setType` (D7),
+  and `setAuth` every call of a method that sends the authentication, but neither added anything to the guard:
+  clio#1900 guarded only `setMethod` and `removeMethod`, and nothing decided to exempt them. The guard now compares the
+  service before and after the whole call (the base URI as stored after normalisation; the authentication type and
+  every value with its source; the namespace list; the type): a new base URI, namespace list or version counts as
+  changing every method, new authentication as changing the methods with `use-auth` after the call. Describe output
+  sent back, or a value changed and changed back in one call, scans nothing. `setRetryCount` stays exempt: retries
+  change no request the API receives. The refusal names every change, also next to a broken method ("the new base URI
+  and authentication change every call ...").
+- **Authentication is per method.** The platform attaches the service authentication only for a method with
+  `UseAuthInfo` (Terrasoft.Services `ServiceClientRequest.GetRequestData`), whatever the service type: SOAP 1.1 and 1.2
+  send `Authorization: Basic` exactly as REST does (measured; Digest is sent as preemptive Basic, OAuth 2.0 as
+  `Bearer`, source). `setAuth` leaves the kept methods' `use-auth` as it was (measured: a method saved without it still
+  sends nothing), so after a call that changed the authentication a notice names the methods with `use-auth` false,
+  except the ones the call defined with an explicit `use-auth`. Rejected: switching them on silently; a method may
+  have been saved without authentication on purpose (a public health-check).
+- **Ports the platform cannot call.** The platform sends a SOAP 1.2 action only as a `SOAPAction` header, never as the
+  `action` parameter of `Content-Type`; WCF on a SOAP 1.2 binding dispatches by that parameter and answers every call
+  with `ActionNotSupported` (Action ''); ASMX answers. A binding that requires WS-Addressing gets no `wsa:Action` or
+  `wsa:To` and answers `DestinationUnreachable`: a `wsaw:UsingAddressing`, `wsam:Addressing` or WCF's August 2004
+  `wsap:UsingAddressing` in a policy the binding references (not under `wsp:Optional`), or one directly in the binding
+  with `wsdl:required="true"` (WSDL 1.1 reads an extension without it as optional). A policy with a WS-SecurityPolicy
+  symmetric or asymmetric binding (a default `wsHttpBinding`) cannot be called at all. `read-wsdl` warns on each and
+  names a SOAP 1.1 port of the same port type that needs neither, preferring one of the same service at the same scheme
+  and host; one elsewhere (another host, or http where the warned port is https) is named with that difference and
+  left to the user. A plain SOAP 1.2 port is a definite failure only on WCF, so the SOAP 1.1 port is named to register
+  only when WCF wrote the WSDL (the WCF contract namespace on its root; a `wsaw`/`wsam` Action on a port-type message
+  is no sign, Axis2 and the JAX-WS RI write one too); elsewhere it is named as the way out after a test call that
+  fails because the action is not found, switched with `setType` soap11. The isolated run of TC-32..TC-38 showed why: with an unconditional
+  advice agents registered the ASMX calculator over SOAP 1.1, although it answers SOAP 1.2 (TC-25 expects Studio's
+  pick). With none, the warning gives the workaround measured to work (a request header parameter with the
+  path `Content-Type` carrying `action="..."`, one per method; two `soap-header` parameters with the paths `wsa:Action`
+  and `wsa:To`), whose values come from a system setting or the process because a constant is refused there; none for
+  message security. The scan walks each binding and policy once with the parse clock checked (a hostile WSDL cannot
+  outrun the parse limit); policy normal form with an empty alternative, nested references and port-level policies
+  are not read. `studio-pick` keeps meaning Studio's
+  choice (D12) and is documented as not a recommendation. Rejected: moving `studio-pick` to the SOAP 1.1 port (it would
+  no longer say what Studio does) and a platform-side fix (out of clio's scope; worth a platform ticket).
+
+### D16. A new service's code is its own `read-wsdl` argument (owner, 2026-11-14)
+
+`read-wsdl` takes `code`, the code the user named for a NEW service: the returned arguments carry it instead of the code
+built from the WSDL service name, so they can still be registered as they are. `service-code` stays only for an
+existing SOAP service the operations go into; both together are refused, `code` is checked like a registered code
+(Latin identifier, schema-name prefix), and a `service-code` that names no service is refused before the stand
+downloads the WSDL, pointing to `code`.
+
+Why: in two isolated runs agents passed the new service's code as `service-code` in 5 of 7 WSDL reads, failed, read
+again and then replaced the generated code at registration, against the guide's "register the arguments as they
+are". Rejected: reading an unregistered `service-code` as a new service. It would remove the failed call, but a typo in
+an existing service's code would silently build a second service instead of extending the first.
 
 ## Consequences
 

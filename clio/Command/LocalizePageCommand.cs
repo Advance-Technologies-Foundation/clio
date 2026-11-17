@@ -333,6 +333,11 @@ public sealed class LocalizePageCommand : Command<LocalizePageOptions>, ILocaliz
 		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
 			return Failure(options.SchemaName, "schema-name is required");
 		}
+		// Before the culture and the schema are read from Creatio: after a save the name anchors the
+		// .clio-pages/{schema-name}/meta.json baseline refresh.
+		if (PageBaselineStore.DescribeSchemaNameRefusal(options.SchemaName) is { } schemaNameRefusal) {
+			return Failure(options.SchemaName, schemaNameRefusal);
+		}
 		if (string.IsNullOrWhiteSpace(options.Culture)) {
 			return Failure(options.SchemaName, "culture is required");
 		}

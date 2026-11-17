@@ -262,8 +262,8 @@ public sealed class WebServiceSoapWriteTests {
 		JsonSerializer.Serialize(WebServiceSchemaView.From(_saved, "Custom")).Should().Be(JsonSerializer.Serialize(before),
 			because: "describe reads the service exactly as before");
 		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Keys
-			.Should().BeEquivalentTo(original.Methods.Items.Values.Single().Request.Parameters.Items.Keys,
-				because: "kept parameters keep their UIds, so calling processes still resolve them");
+			.Should().Equal(original.Methods.Items.Values.Single().Request.Parameters.Items.Keys,
+				because: "kept parameters keep their UIds and their order: the platform renders the envelope in stored order");
 		_saved.Namespaces.Items.Keys.Should().BeEquivalentTo(original.Namespaces.Items.Keys,
 			because: "a namespace keeps its UId by prefix");
 		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrUser").DefValue.Value
@@ -286,7 +286,7 @@ public sealed class WebServiceSoapWriteTests {
 		// Assert
 		refused.Success.Should().BeFalse(because: "the version changes every call of the service");
 		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
-		refused.Error.Should().Contain("change every call", because: "the version or namespaces change every call the caller makes");
+		refused.Error.Should().Contain("changes every call", because: "the version or namespaces change every call the caller makes");
 		refused.Error.Should().NotContain("lose their parameters",
 			because: "the caller's element keeps its parameters (measured), so the refusal does not claim it breaks");
 		acknowledged.Success.Should().BeTrue(because: "the user agreed");
@@ -318,7 +318,7 @@ public sealed class WebServiceSoapWriteTests {
 		// Assert
 		result.Success.Should().BeFalse(because: "both callers need the user's yes");
 		result.Error.Should().Contain("lose their parameters", because: "the caller of the changed method may break");
-		result.Error.Should().Contain("change every call", because: "the other caller keeps its element but every call changes");
+		result.Error.Should().Contain("changes every call", because: "the other caller keeps its element but every call changes");
 	}
 
 	[Test]
@@ -533,7 +533,7 @@ public sealed class WebServiceSoapWriteTests {
 		unchanged.Success.Should().BeTrue(because: "describe's own list sent back changes no call");
 		refused.Success.Should().BeFalse(because: "a new namespace changes every envelope the service sends");
 		refused.Usages.Should().ContainSingle(u => u.Process == "UsrCallerProcess", because: "the refusal names the caller");
-		refused.Error.Should().Contain("change every call", because: "the version or namespaces change every call the caller makes");
+		refused.Error.Should().Contain("changes every call", because: "the version or namespaces change every call the caller makes");
 		refused.Error.Should().NotContain("lose their parameters",
 			because: "the caller's element keeps its parameters (measured), so the refusal does not claim it breaks");
 	}
@@ -947,5 +947,87 @@ public sealed class WebServiceSoapWriteTests {
 
 		// Assert
 		_saved.BaseUri.Should().Be("http://x.example/service.asmx", because: "a SOAP call goes to the base URI as given");
+	}
+
+	[Test]
+	[Description("A SOAP base URI or soap-action sent back with the mask describe-web-service shows for a key kept there is refused and nothing is saved.")]
+	public void Modify_Should_Refuse_A_Masked_Base_Uri_Or_Soap_Action_Sent_Back() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		schema.BaseUri = "http://x.example/svc.asmx?sig=sig-0042-secret-key";
+		schema.Methods.Items.Values.Single().SoapAction = "http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042";
+		GivenRegistered(schema);
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+		WebServiceMethodArg methodArg = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(view.Methods.Single()));
+
+		// Act
+		Action baseUri = () => _sut.Modify(schema.Name, [new WebServiceOperationArg("setBaseUri", BaseUri: view.BaseUri)], null);
+		Action soapAction = () => _sut.Modify(schema.Name, [new WebServiceOperationArg("setMethod", methodArg)], null);
+
+		// Assert
+		view.BaseUri.Should().Be("http://x.example/svc.asmx?sig=[masked]", because: "describe hides the stored key");
+		view.Methods.Single().SoapAction.Should().Be("http://example.org/UsrSoapR/UsrOp?code=[masked]",
+			because: "describe hides a key-length Functions key in the action");
+		baseUri.Should().Throw<ArgumentException>(because: "the mask would be stored as the key")
+			.WithMessage("*base-uri query 'sig'*cannot write that key back*", because: "the refusal names the key, not its value");
+		soapAction.Should().Throw<ArgumentException>(because: "the mask would be sent as the action's key")
+			.WithMessage("*soap-action query 'code'*", because: "the refusal names the key, not its value");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("register refuses a key-length sig in a SOAP base URI by the rule describe masks it with, and keeps a fixed SAP client number.")]
+	public void Register_Should_Refuse_A_Key_In_A_Soap_Base_Uri() {
+		// Act
+		WebServiceToolResult kept = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null,
+			"http://x.example/svc?sap-client=100", null, null, [AddMethod()], "soap11", Tem));
+		Action refused = () => _sut.Register("Custom", new WebServiceRegistration("UsrCalc2", null,
+			"http://x.example/svc?sig=sig-0042-secret-key", null, null, [AddMethod()], "soap11", Tem));
+
+		// Assert
+		kept.Success.Should().BeTrue(because: $"a fixed query value is no key; error: {kept.Error}");
+		refused.Should().Throw<ArgumentException>(because: "a key in a base URI would be a stored constant")
+			.Where(e => !e.Message.Contains("sig-0042-secret-key"), "the refusal never echoes the value")
+			.WithMessage("*base-uri query 'sig' looks like a credential*", because: "the refusal names the key");
+	}
+
+	[Test]
+	[Description("A namespace URI with a key in its query is refused on register, and one stored in Studio is shown masked by describe.")]
+	public void Namespaces_Should_Neither_Take_Nor_Show_A_Key() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		schema.Namespaces.Items.Values.First().Name = "http://example.org/UsrSoapR?sig=sig-0042-secret-key";
+
+		// Act
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+		Action refused = () => _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null,
+			null, [AddMethod()], "soap11", [new("tem", "http://tempuri.org/?sig=sig-0042-secret-key")]));
+
+		// Assert
+		JsonSerializer.Serialize(view.Namespaces).Should().NotContain("sig-0042-secret-key",
+			because: "describe hides a key in a namespace URI like one in the base URI");
+		refused.Should().Throw<ArgumentException>(because: "a namespace URI goes out in every envelope")
+			.Where(e => !e.Message.Contains("sig-0042-secret-key"), "the value is never echoed")
+			.WithMessage("*namespace 'tem'*key in its query*", because: "the refusal names the namespace");
+	}
+
+	[Test]
+	[Description("setMethod without soap-action keeps a stored action that carries a key describe hides, as a WSDL operation matched to the method sends none.")]
+	public void Modify_Should_Keep_A_Hidden_Soap_Action_When_None_Is_Sent() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		const string keyed = "http://example.org/UsrSoapR/UsrOp?code=fn-key-0042-0042-0042";
+		schema.Methods.Items.Values.Single().SoapAction = keyed;
+		GivenRegistered(schema);
+		WebServiceMethodArg described = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single())) with { SoapAction = null };
+
+		// Act
+		WebServiceToolResult result = _sut.Modify(schema.Name, [new WebServiceOperationArg("setMethod", described)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "nothing about the action was asked to change");
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => s.Methods.Items.Values.Single().SoapAction == keyed));
 	}
 }

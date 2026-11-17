@@ -293,6 +293,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["dataforge-status"] = PassthroughClassification.NotApplicable,
 			["dataforge-update"] = PassthroughClassification.NotApplicable,
 			["delete-app"] = PassthroughClassification.NotApplicable,
+			["delete-data-binding-db"] = PassthroughClassification.NotApplicable,
 			["delete-entity-business-rules"] = PassthroughClassification.NotApplicable,
 			["delete-page-business-rules"] = PassthroughClassification.NotApplicable,
 			["delete-schema"] = PassthroughClassification.NotApplicable,
@@ -300,6 +301,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["deploy-identity"] = PassthroughClassification.NotApplicable,
 			["uninstall-identity"] = PassthroughClassification.NotApplicable, // BaseTool with per-environment command resolver.
 			["describe-business-process"] = PassthroughClassification.NotApplicable,
+			["describe-dynamic-case"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as create-dynamic-case
 			["describe-web-service"] = PassthroughClassification.NotApplicable,
 			["list-web-services"] = PassthroughClassification.NotApplicable,
 			["modify-web-service"] = PassthroughClassification.NotApplicable,
@@ -384,6 +386,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["list-user-tasks"] = PassthroughClassification.NotApplicable,
 			["modify-business-process"] = PassthroughClassification.NotApplicable,
 			["modify-business-process-as-new-version"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as modify-business-process
+			["modify-dynamic-case"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - the same already-resolver-backed class (a) pattern as create-dynamic-case
 			["modify-entity-schema-column"] = PassthroughClassification.NotApplicable,
 			["modify-user-task-parameters"] = PassthroughClassification.NotApplicable,
 			["new-integration-test-project"] = PassthroughClassification.NotApplicable,
@@ -424,6 +427,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["set-default-record-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as set-object-rights
 			["apply-default-record-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as set-object-rights
 			["get-object-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as get-record-rights
+			["get-column-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as get-object-rights
+			["set-column-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as set-object-rights
 			["set-user-theme"] = PassthroughClassification.NotApplicable,
 			["upload-image"] = PassthroughClassification.NotApplicable,
 			["upload-file"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved - resolver-backed, same pattern as upload-image

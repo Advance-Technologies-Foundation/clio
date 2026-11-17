@@ -262,7 +262,7 @@ public sealed class WebServiceDesignerTests {
 		schema.Methods.Items.Clear();
 		schema.Methods.Items[method.UId.ToString()] = method;
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 401, """{"error":"key sk-live-0042 is not valid"}""", null,
 				"GET https://api.bing.example/search HTTPS/1.1\r\nX-Api-Key: sk-live-0042\r\nHost: api.bing.example"));
 
@@ -381,39 +381,6 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("An object or array as a test-call value is refused by name instead of being sent as raw JSON.")]
-	public void ToWireValues_Should_Refuse_Objects_And_Arrays() {
-		// Arrange
-		var values = new Dictionary<string, JsonElement> { ["UsrItems"] = JsonDocument.Parse("[1,2]").RootElement };
-
-		// Act
-		Action act = () => Clio.Command.McpServer.Tools.WebServiceToolRunner.ToWireValues(values);
-
-		// Assert
-		act.Should().Throw<ArgumentException>(because: "the test call takes one scalar per top-level parameter")
-			.WithMessage("*UsrItems*", because: "the refusal names the parameter");
-	}
-
-	[Test]
-	[Description("Test-call values arrive as text: numbers and booleans as their JSON text, null left out.")]
-	public void ToWireValues_Should_Turn_Json_Scalars_Into_Text() {
-		// Arrange
-		var values = new Dictionary<string, JsonElement> {
-			["UsrAmount"] = JsonDocument.Parse("1.5").RootElement,
-			["UsrActive"] = JsonDocument.Parse("true").RootElement,
-			["UsrName"] = JsonDocument.Parse("\"Alice\"").RootElement,
-			["UsrNote"] = JsonDocument.Parse("null").RootElement
-		};
-
-		// Act
-		IReadOnlyDictionary<string, string> wire = Clio.Command.McpServer.Tools.WebServiceToolRunner.ToWireValues(values);
-
-		// Assert
-		wire.Should().BeEquivalentTo(new Dictionary<string, string> { ["UsrAmount"] = "1.5", ["UsrActive"] = "true", ["UsrName"] = "Alice" },
-			because: "the platform's test call takes text, and a null value means the parameter is not sent");
-	}
-
-	[Test]
 	[Description("Every tool that reads or writes a service refuses a user without CanManageSolution.")]
 	public void Describe_Should_Require_CanManageSolution() {
 		// Arrange
@@ -473,7 +440,7 @@ public sealed class WebServiceDesignerTests {
 		schema.Methods.Items.Clear();
 		schema.Methods.Items[method.UId.ToString()] = method;
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 404, "no tenant hidden-tenant-77", null,
 				"GET https://api.bing.example/elsewhere HTTPS/1.1\r\nHost: api.bing.example"));
 
@@ -563,13 +530,177 @@ public sealed class WebServiceDesignerTests {
 		GivenRegisteredService(BingSchema());
 
 		// Act
-		Action act = () => _sut.TestMethod("BingSearchApiCall", "Search", new Dictionary<string, string> { ["qq"] = "x" });
+		Action act = () => _sut.TestMethod("BingSearchApiCall", "Search",
+			new Dictionary<string, JsonElement> { ["qq"] = JsonSerializer.SerializeToElement("x") });
 
 		// Assert
 		act.Should().Throw<ArgumentException>(because: "the platform would drop the value silently")
 			.WithMessage("*'qq'*valid codes: q*", because: "the refusal lists the codes the method has");
 		_client.DidNotReceive().CallMethod(Arg.Any<string>(), Arg.Any<string>(),
-			Arg.Any<IReadOnlyDictionary<string, string>>());
+			Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[TestCase("POST")]
+	[TestCase("PUT")]
+	[TestCase("PATCH")]
+	[TestCase("DELETE")]
+	[Description("A test call of a method that can change data, without the user's confirmation, is refused with confirmation-required and nothing is sent; with the confirmation it goes out.")]
+	public void TestMethod_Should_Refuse_A_Data_Changing_Call_Until_The_User_Confirms(string verb) {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", verb, "search")));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "{}", null, "POST https://api.bing.example/search HTTP/1.1", "{}"));
+
+		// Act
+		WebServiceTestResult refused = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		int sentWhenRefused = _client.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IWebServiceDesignerClient.CallMethod));
+		WebServiceTestResult confirmed = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
+
+		// Assert
+		sentWhenRefused.Should().Be(0, because: "nothing reaches the external API before the user's yes");
+		refused.Success.Should().BeFalse(because: "a request to test is not a confirmation");
+		refused.ConfirmationRequired.Should().BeTrue(because: "the result says the user has to be asked first");
+		refused.StatusCode.Should().BeNull(because: "nothing was sent");
+		refused.Error.Should().Contain($"a {verb} method", because: "the refusal names why the call needs a yes")
+			.And.Contain("do not set user-confirmed yourself", because: "the agent must ask, not confirm on its own")
+			.And.Contain("user-confirmed: true", because: "the refusal says how to repeat the call after the yes");
+		confirmed.Success.Should().BeTrue(because: "the confirmed call goes out");
+		confirmed.ConfirmationRequired.Should().BeNull(because: "a confirmed call carries no confirmation flag");
+		_client.Received(1).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[Test]
+	[Description("Every SOAP test call needs the user's confirmation, because each one is a POST whose effect clio cannot know.")]
+	public void TestMethod_Should_Refuse_A_Soap_Call_Until_The_User_Confirms() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+
+		// Assert
+		result.ConfirmationRequired.Should().BeTrue(because: "a SOAP call can change data in the external API");
+		result.Error.Should().Contain("a SOAP method", because: "the refusal names why the call needs a yes");
+		_client.DidNotReceive().CallMethod(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[Test]
+	[Description("A GET is sent without the user's confirmation: it does not change data.")]
+	public void TestMethod_Should_Send_A_Get_Without_Confirmation() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "{}", null, "GET https://api.bing.example/search HTTP/1.1", null));
+
+		// Act
+		WebServiceTestResult get = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		get.ConfirmationRequired.Should().BeNull(because: "a GET does not change data");
+		get.Success.Should().BeTrue(because: "the GET went out");
+		_client.Received(1).CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[TestCase("xml", "a POST method")]
+	[TestCase("unknown verb", "a non-GET method")]
+	[Description("A REST method with an XML body and a method of an unknown verb need the user's confirmation: a custom body builder can send the first, and the second may change data.")]
+	public void TestMethod_Should_Ask_Before_An_Xml_Or_Unknown_Verb_Call(string kind, string named) {
+		// Arrange
+		ServiceSchemaDto schema = kind == "xml"
+			? SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml"))
+			: SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search"));
+		if (kind != "xml") {
+			foreach (ServiceMethodDto method in schema.Methods.Items.Values) {
+				method.Request.HttpMethodType = 0;
+			}
+		}
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ConfirmationRequired.Should().BeTrue(because: $"a {kind} method may change data when it goes out");
+		result.Error.Should().Contain(named, because: "the refusal names why the call needs a yes");
+		_client.DidNotReceiveWithAnyArgs().CallMethod(default, default, default);
+	}
+
+	private ServiceSchemaDto OrdersSchema() => SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "orders",
+		ContentType: "json", RequestParameters: [
+			new WebServiceParameterArg("UsrLines", "body", "Object", "lines", Array: true, Items: [
+				new WebServiceParameterArg("UsrSku", Path: "sku"),
+				new WebServiceParameterArg("UsrKey", Path: "key", DefaultSysSetting: "UsrErpKey")
+			])
+		]));
+
+	[Test]
+	[Description("An array of objects reaches the platform in nested, and a setting value the platform filled into every item and an API echoed is masked in the body and the parsed values.")]
+	public void TestMethod_Should_Send_An_Object_Array_And_Mask_A_Setting_Value_Filled_Into_Items() {
+		// Arrange
+		GivenRegisteredService(OrdersSchema());
+		IReadOnlyList<ServiceCallParameter> sent = null;
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Do<IReadOnlyList<ServiceCallParameter>>(p => sent = p))
+			.Returns(new ServiceMethodCallResult(true, 200,
+				"{\"json\":{\"lines\":[{\"sku\":\"S1\",\"key\":\"sk-erp-4711\"},{\"sku\":\"S2\",\"key\":\"sk-erp-4711\"}]}}", null,
+				"POST https://api.bing.example/orders HTTP/1.1\r\nContent-Type: application/json",
+				"{\"lines\":[{\"sku\":\"S1\",\"key\":\"sk-erp-4711\"},{\"sku\":\"S2\",\"key\":\"sk-erp-4711\"}]}",
+				"{\"UsrEcho\":\"sk-erp-4711\"}"));
+		var values = new Dictionary<string, JsonElement> {
+			["UsrLines"] = JsonDocument.Parse("[{\"UsrSku\":\"S1\"},{\"UsrSku\":\"S2\"}]").RootElement
+		};
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", values, userConfirmed: true);
+
+		// Assert
+		JsonSerializer.Serialize(sent).Should().Be(
+			"[{\"code\":\"UsrLines\",\"nested\":[[{\"code\":\"UsrSku\",\"value\":\"S1\"}],[{\"code\":\"UsrSku\",\"value\":\"S2\"}]]}]",
+			because: "an array of objects goes out one list of field values per item, as Studio's test request sends it");
+		result.ResponseBody.Should().NotContain("sk-erp-4711", because: "the setting value of an item field is found by its name")
+			.And.Contain("[masked]", because: "the echoed value is replaced, not removed");
+		result.ResponseValues!.Value.GetRawText().Should().NotContain("sk-erp-4711",
+			because: "the parsed values are masked like the body");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+	}
+
+	[Test]
+	[Description("An unknown field inside an array item is refused with its location before any request is sent.")]
+	public void TestMethod_Should_Refuse_An_Unknown_Field_Inside_An_Item_Before_Calling() {
+		// Arrange
+		GivenRegisteredService(OrdersSchema());
+		var values = new Dictionary<string, JsonElement> {
+			["UsrLines"] = JsonDocument.Parse("[{\"UsrSku\":\"S1\",\"UsrPrice\":5}]").RootElement
+		};
+
+		// Act
+		Action act = () => _sut.TestMethod("BingSearchApiCall", "Search", values);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the platform would drop an unknown field silently")
+			.WithMessage("*parameters.UsrLines[0]: 'UsrPrice' is not a field of 'UsrLines' items; valid codes: UsrKey, UsrSku.*",
+				because: "the refusal names the item and the codes it has");
+		_client.DidNotReceive().CallMethod(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<IReadOnlyList<ServiceCallParameter>>());
+	}
+
+	[Test]
+	[Description("A SOAP call that filled an array of objects but left its inner array out returns the masked response instead of withholding it, because nothing of the inner array was sent.")]
+	public void TestMethod_Should_Return_A_Soap_Response_When_An_Inner_Array_Was_Left_Out() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.SchemaWithInnerArray(), "UsrSoapProbe");
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, $"<ok>{SoapServiceFixture.LineTokenValue}</ok>", null,
+				SoapServiceFixture.SentRaw, SoapServiceFixture.SentWithItem));
+		var values = new Dictionary<string, JsonElement> { ["UsrLines"] = JsonDocument.Parse("[{}]").RootElement };
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", values, userConfirmed: true);
+
+		// Assert
+		result.ResponseBody.Should().Be("<ok>[masked]</ok>",
+			because: "the item token the platform filled is found and masked, and the unsent inner array withholds nothing");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
 	}
 
 	[Test]
@@ -578,7 +709,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
 			new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, "echo sk-live-0042", "timeout"));
 
 		// Act
@@ -598,7 +729,7 @@ public sealed class WebServiceDesignerTests {
 			new WebServiceAuthArg("basic", UsernameSysSetting: "UsrUser", PasswordSysSetting: "UsrPassword"), null,
 			new WebServiceDefinitionBuilder.Errors());
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 401, "bad credentials for admin:hunter2", null));
 
 		// Act
@@ -610,11 +741,201 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("An OAuth call that fails before anything is sent is still withheld, but the message points at the OAuth application instead of system settings.")]
+	public void TestMethod_Should_Explain_An_OAuth_Call_That_Sent_Nothing() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "Access token cannot be retrieved: client_secret=s3cr3t"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().Contain("OAuth application", because: "the call failed while getting the token, not on a setting")
+			.And.Contain("Send client credentials", because: "the measured cause is the client-credentials placement")
+			.And.NotContain("system setting could not be located", because: "no system setting is involved")
+			.And.NotContain("s3cr3t", because: "the token endpoint's error can quote the client secret, which clio cannot mask");
+		result.ResponseBody.Should().BeNull(because: "nothing of the platform's answer is returned");
+	}
+
+	[TestCase(true, "Typical causes")]
+	[TestCase(false, "system setting could not be located")]
+	[Description("A withheld call names the right cause: nothing sent without OAuth lists typical causes; something sent keeps the system-setting wording.")]
+	public void TestMethod_Should_Word_The_Withheld_Answer_By_What_Was_Sent(bool nothingSent, string expected) {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", RequestParameters: [
+			new WebServiceParameterArg("UsrToken", Path: "token", DefaultSysSetting: "UsrBingToken")])));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "timeout", nothingSent ? null : "POST https://x/search HTTPS/1.1",
+				nothingSent ? null : "token=plain text, neither JSON nor XML"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "the answer stays withheld in both cases");
+		result.Error.Should().Contain(expected, because: "the message matches what the platform reported as sent");
+	}
+
+	[Test]
+	[Description("A successful OAuth call with nothing reported as sent is withheld without claiming a failure or a token problem.")]
+	public void TestMethod_Should_Not_Call_A_Successful_Withheld_Call_A_Failure() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "{\"token\":\"echo\"}", null));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "the credentials it carried could not be located to mask");
+		result.Error.Should().Contain("the call succeeded", because: "the message stays true to what happened")
+			.And.NotContain("access token could not be retrieved", because: "the token was retrieved for a call that worked");
+	}
+
+	[Test]
+	[Description("An OAuth service's method that does not use the authentication gets no OAuth hint when it sent nothing.")]
+	public void TestMethod_Should_Not_Blame_OAuth_For_A_Method_Without_Authentication() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: false,
+			RequestParameters: [new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")]));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "host unreachable"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().NotContain("OAuth application", because: "the method requests no token")
+			.And.Contain("Typical causes", because: "the generic causes still apply");
+	}
+
+	[Test]
+	[Description("setAuth none clears use-auth on every method after the usage guard, so Studio does not show a ticked, disabled flag.")]
+	public void Modify_SetAuth_None_Should_Clear_Use_Auth() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(
+			new WebServiceAuthArg("basic", UsernameSysSetting: "UsrUser", PasswordSysSetting: "UsrPassword"), null,
+			new WebServiceDefinitionBuilder.Errors());
+		GivenRegisteredService(schema);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("none"))], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service in this test");
+		saved.Methods.Items.Values.Should().OnlyContain(m => !m.UseAuthInfo,
+			because: "a service without authentication sends none, and the flag would show ticked and disabled in Studio");
+		result.Notices.Should().Contain(n => n.Contains("use-auth was cleared on Search"),
+			because: "the user learns which methods must be set again if authentication comes back");
+	}
+
+	[Test]
+	[Description("Registering a method with use-auth but no authentication saves it without use-auth and names it in a notice.")]
+	public void Register_Should_Clear_Use_Auth_Without_Authentication() {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => saved);
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrErp", null,
+			"https://erp.example/", null, null, [new WebServiceMethodArg("UsrGetOrders", "GET", "orders", UseAuth: true)]));
+
+		// Assert
+		saved.Methods.Items.Values.Single().UseAuthInfo.Should().BeFalse(
+			because: "a service without authentication sends none, so the flag would only show ticked and disabled in Studio");
+		result.Notices.Should().Contain(n => n.Contains("use-auth was cleared on UsrGetOrders"),
+			because: "the caller asked for use-auth and learns why it was not kept");
+	}
+
+	[Test]
+	[Description("setDescription writes the new text into every culture the service already has, so no culture keeps the old one.")]
+	public void Modify_SetDescription_Should_Replace_Every_Culture() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Description = new Dictionary<string, string> { ["uk-UA"] = "Old text" };
+		GivenRegisteredService(schema);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "New text")], null);
+
+		// Assert
+		saved.Description.Should().BeEquivalentTo(new Dictionary<string, string> { ["uk-UA"] = "New text", ["en-US"] = "New text" },
+			because: "the platform keeps a culture the contract does not send, which would show the old text in that culture");
+	}
+
+	[Test]
+	[Description("A change that does not remove the authentication leaves use-auth as it was.")]
+	public void Modify_Should_Not_Clear_Use_Auth_Without_Removing_Authentication() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true)));
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setRetryCount", RetryCount: 1)], null);
+
+		// Assert
+		saved.Methods.Items.Values.Single().UseAuthInfo.Should().BeTrue(
+			because: "only the call that removes the authentication clears the flags");
+	}
+
+	[Test]
+	[Description("setDescription without a description is refused instead of clearing it by accident.")]
+	public void Modify_SetDescription_Should_Refuse_A_Missing_Description() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription")], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "an omitted description is not a request to clear it")
+			.WithMessage("*setDescription*", because: "the refusal names the operation");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("setDescription sets the service description and an empty one clears it.")]
+	public void Modify_SetDescription_Should_Set_And_Clear_The_Description() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		var saved = new List<string>();
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>()))
+			.Do(call => saved.Add(string.Join("|", call.Arg<ServiceSchemaDto>().Description.Values)));
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "Orders API of the ERP")], null);
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "")], null);
+
+		// Assert
+		saved[0].Should().Be("Orders API of the ERP", because: "the description is stored like Studio's");
+		saved[1].Should().BeEmpty(because: "an empty description clears it, sent as an empty value per culture");
+	}
+
+	[Test]
 	[Description("A method that keeps use-auth after the service authentication was removed sends no Authorization, so nothing is withheld for it.")]
 	public void TestMethod_Should_Not_Withhold_When_The_Service_Has_No_Authentication() {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true)));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 404, "not found", null));
 
 		// Act
@@ -706,13 +1027,13 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", RequestParameters: [
 			new WebServiceParameterArg("UsrToken", Path: "token", DefaultSysSetting: "UsrBingToken")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 500, "<fault>bad token tok-secret-9</fault>", null,
 				"POST https://api.bing.example/search HTTPS/1.1\r\nHost: api.bing.example",
 				"token=tok-secret-9"));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
 
 		// Assert
 		result.ResponseBody.Should().BeNull(because: "a fault that echoes the body would carry the token");
@@ -724,13 +1045,13 @@ public sealed class WebServiceDesignerTests {
 	public void TestMethod_Should_Mask_A_Setting_Value_Echoed_From_A_Soap_Envelope() {
 		// Arrange
 		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 500,
 				"<soap:Fault><soap:Reason>bad password pw-s3cret&amp;&lt;9&gt; for inner-key-77</soap:Reason></soap:Fault>",
 				null, SoapServiceFixture.SentRaw, SoapServiceFixture.SentEnvelope));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		result.ResponseBody.Should().Be("<soap:Fault><soap:Reason>bad password [masked] for [masked]</soap:Reason></soap:Fault>",
@@ -745,14 +1066,14 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
 		const string values = "{\"UsrResult\":\"echo inner-key-77\",\"UsrCount\":5,\"UsrMissing\":null}";
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(
 				new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw, SoapServiceFixture.SentEnvelope, values),
 				new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw, "not xml", values));
 
 		// Act
-		WebServiceTestResult located = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
-		WebServiceTestResult withheld = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult located = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
+		WebServiceTestResult withheld = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		located.ResponseValues.Should().NotBeNull(because: "the platform parsed the response parameters");
@@ -773,13 +1094,13 @@ public sealed class WebServiceDesignerTests {
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
 		schema.Methods.Items.Values.Single().Response.Parameters.Items.Values.Single().Path = "$.UsrOpResult";
 		GivenRegisteredService(schema, "UsrSoapProbe");
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(true, 200, "<UsrOpResult>5</UsrOpResult>", null, SoapServiceFixture.SentRaw,
 				SoapServiceFixture.SentEnvelope, "{\"UsrResult\":null}"));
 
 		// Act
 		WebServiceToolResult described = _sut.Describe("UsrSoapProbe", false);
-		WebServiceTestResult tested = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult tested = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		string notice = described.Notices.Should().ContainSingle(because: "one response path does not fit its XML response")
@@ -814,12 +1135,12 @@ public sealed class WebServiceDesignerTests {
 		string values = JsonSerializer.Serialize(new Dictionary<string, string> {
 			["UsrResult"] = new string('x', Clio.Command.WebServiceDesigner.WebServiceDesigner.MaxResponseBodyLength)
 		});
-		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw,
 				SoapServiceFixture.SentEnvelope, values));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null);
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
 
 		// Assert
 		result.ResponseValues.Should().BeNull(because: "a JSON tree past the limit cannot be cut like text");
@@ -832,11 +1153,11 @@ public sealed class WebServiceDesignerTests {
 	public void TestMethod_Should_Explain_The_Rest_Xml_Failure() {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", ContentType: "xml")));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "the platform sent nothing");
@@ -853,11 +1174,11 @@ public sealed class WebServiceDesignerTests {
 				DefaultSysSetting: "UsrBingKey")]));
 		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthBasic };
 		GivenRegisteredService(schema);
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, null, "Rest:Xml"));
 
 		// Act
-		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
 
 		// Assert
 		result.Error.Should().Contain("RequestBody", because: "with nothing sent there is no secret to locate");
@@ -870,7 +1191,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
 			new WebServiceParameterArg("UsrCount", "header", Type: "Integer", Path: "X-Absent", DefaultSysSetting: "UsrApiSecret")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, null, null, "The input string 'live-setting-value' was not in a correct format."));
 
 		// Act
@@ -887,7 +1208,7 @@ public sealed class WebServiceDesignerTests {
 		// Arrange
 		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", ResponseParameters: [
 			new WebServiceParameterArg("UsrToken", "header", Path: "X-Absent", DefaultSysSetting: "UsrApiSecret")])));
-		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
 			.Returns(new ServiceMethodCallResult(false, 401, "{}", null,
 				"GET https://api.bing.example/search HTTPS/1.1\r\nHost: api.bing.example", null,
 				"{\"UsrToken\":\"live-setting-value\"}"));
@@ -939,6 +1260,588 @@ public sealed class WebServiceDesignerTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "an unread prefix must not switch the rule off")
 			.WithMessage("*SchemaNamePrefix*", because: "the message names what failed");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	private void GivenSettingsExist() =>
+		_client.FindExistingSysSettingCodes(Arg.Any<IReadOnlyCollection<string>>())
+			.Returns(ci => ci.Arg<IReadOnlyCollection<string>>().ToList());
+
+	private void DidNotScanUsages() =>
+		_client.DidNotReceive().Select("SysSchema", Arg.Any<IReadOnlyList<string>>(),
+			Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>());
+
+	// The Bing service with its Search method sending the service authentication (use-auth true).
+	private static ServiceSchemaDto BingSchemaSendingAuth(bool withBasicAuth) {
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().UseAuthInfo = true;
+		if (withBasicAuth) {
+			schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(
+				new WebServiceAuthArg("basic", "UsrBingUser", "UsrBingPassword"), null, new WebServiceDefinitionBuilder.Errors());
+		}
+		return schema;
+	}
+
+	private static WebServiceOperationArg SetBasicAuth() =>
+		new("setAuth", Auth: new WebServiceAuthArg("basic", "UsrBingUser", "UsrBingPassword"));
+
+	private static IEnumerable<TestCaseData> EveryCallChanges() {
+		yield return new TestCaseData(new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/"),
+			"base URI").SetArgDisplayNames("setBaseUri");
+		yield return new TestCaseData(SetBasicAuth(), "authentication").SetArgDisplayNames("setAuth");
+	}
+
+	[TestCaseSource(nameof(EveryCallChanges))]
+	[Description("A new base URI, or new authentication of a method that sends it, changes every call a process makes, so it is refused, naming the process and what changes, until the user agrees.")]
+	public void Modify_Should_Refuse_An_Every_Call_Change_Of_A_Called_Service(WebServiceOperationArg operation,
+		string what) {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [operation], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: $"a new {what} changes every call BingSearchProcess makes");
+		result.Error.Should().Contain($"the new {what} changes every call",
+			because: "the refusal says what changes, so the user can decide");
+		result.Error.Should().NotContain("lose their parameters",
+			because: "the element keeps its parameters; only the call changes");
+		result.Usages.Should().ContainSingle(u => u.Process == "BingSearchProcess",
+			because: "the refusal names the process to show the user");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCaseSource(nameof(EveryCallChanges))]
+	[Description("The same base URI or authentication change saves when the user acknowledged the named process.")]
+	public void Modify_Should_Save_An_Every_Call_Change_When_Acknowledged(WebServiceOperationArg operation, string what) {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [operation], ["BingSearchProcess"]);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"the user agreed that the {what} of BingSearchProcess's calls changes");
+		result.Usages.Should().ContainSingle(u => u.Process == "BingSearchProcess",
+			because: "the saved result still lists the affected process");
+		_client.Received(1).SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("Removing the authentication a called method sends is a change of every call it makes.")]
+	public void Modify_Should_Refuse_Removing_The_Authentication_Of_A_Called_Service() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: true));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("none"))], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "every call of BingSearchProcess would stop sending its credentials");
+		result.Error.Should().Contain("the new authentication changes every call", because: "the refusal names what changes");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("New authentication of a service whose called method does not send it (use-auth false) changes no call, so it saves without looking for callers and a notice names that method.")]
+	public void Modify_Should_Save_New_Authentication_When_No_Method_Sends_It() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		GivenRegisteredService(schema);
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [SetBasicAuth()], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "Search sends no authentication, so BingSearchProcess's calls stay the same");
+		DidNotScanUsages();
+		result.Notices.Should().Contain(n => n.Contains("Method 'Search' has use-auth false")
+				&& n.Contains("Ask the user whether it should be; do not change use-auth yourself"),
+			because: "the user must hear that the new authentication does not reach Search (measured) and decide it");
+	}
+
+	[Test]
+	[Description("The base URI and authentication the service already has, sent back as describe returns them, change nothing and are not looked up in processes; no use-auth notice either.")]
+	public void Modify_Should_Not_Scan_Usages_When_Base_Uri_And_Auth_Are_Unchanged() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: true));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.bing.example/"), SetBasicAuth()
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the same values change no call");
+		DidNotScanUsages();
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "an unchanged authentication needs no notice");
+		_client.Received(1).SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("A base URI changed and changed back in one call is no change: the guard compares the service before and after the whole call.")]
+	public void Modify_Should_Not_Scan_Usages_When_A_Value_Is_Changed_And_Changed_Back() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/"),
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.bing.example/")
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the stored base URI ends as it was");
+		DidNotScanUsages();
+	}
+
+	[Test]
+	[Description("A new retry count changes no request the API receives, so it saves without looking for callers.")]
+	public void Modify_Should_Not_Scan_Usages_For_A_New_Retry_Count() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setRetryCount", RetryCount: 3)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "retries change no request, so no caller has to agree");
+		DidNotScanUsages();
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => s.RetryCount == 3));
+	}
+
+	[Test]
+	[Description("A base URI and authentication changed together are named together in the refusal.")]
+	public void Modify_Should_Name_Every_Change_Together() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/"), SetBasicAuth()
+		], null);
+
+		// Assert
+		result.Error.Should().Contain("the new base URI and authentication change every call",
+			because: "the user must hear both changes before agreeing");
+	}
+
+	[Test]
+	[Description("A call that changes a called method and the base URI names both: the method change and that every call goes elsewhere.")]
+	public void Modify_Should_Name_The_Base_Uri_Change_Also_For_A_Changed_Method() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		GivenSelect("SysSchema", ProcessRow("BingSearchProcess", "Search"));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			new WebServiceOperationArg("removeMethod", MethodCode: "Search"),
+			new WebServiceOperationArg("setBaseUri", BaseUri: "https://api.other.example/")
+		], null);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the process calls the removed method");
+		result.Error.Should().Contain("lose their parameters", because: "the removed method breaks the caller");
+		result.Error.Should().Contain("the new base URI changes every call",
+			because: "the user must also hear that the calls go to another address before agreeing");
+	}
+
+	[Test]
+	[Description("After setAuth none, no method is named: with no authentication there is nothing a method could fail to send.")]
+	public void Modify_Should_Not_Name_Methods_When_SetAuth_Removes_The_Authentication() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: true));
+		GivenSelect("SysSchema");
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("none"))], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "a service without authentication sends none from any method");
+	}
+
+	[Test]
+	[Description("A method this call defines with an explicit use-auth false is not named in the notice: that was the agent's choice.")]
+	public void Modify_Should_Not_Name_A_Method_Defined_With_Explicit_Use_Auth() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			SetBasicAuth(),
+			new WebServiceOperationArg("addMethod", new WebServiceMethodArg("UsrHealth", "GET", "health", UseAuth: false))
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "UsrHealth was defined without authentication on purpose, and Search sends it");
+	}
+
+	[Test]
+	[Description("A method sent back with the use-auth it already has, as describe-web-service prints it, is still named in the notice after new authentication: keeping the stored value is not a choice.")]
+	public void Modify_Should_Name_A_Method_Sent_Back_With_Its_Stored_Use_Auth() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+		var search = new WebServiceMethodArg("Search", "GET", "search",
+			RequestParameters: [new WebServiceParameterArg("q", "query")], UseAuth: false);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[SetBasicAuth(), new WebServiceOperationArg("setMethod", search)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service");
+		result.Notices.Should().Contain(n => n.Contains("Method 'Search' has use-auth false"),
+			because: "Search keeps the use-auth false it had, so the new authentication does not reach it");
+	}
+
+	[Test]
+	[Description("A method removed and added again in one call with use-auth false is the agent's choice, so the notice after new authentication leaves it out.")]
+	public void Modify_Should_Treat_A_Readded_Method_Use_Auth_As_Explicit() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Name = "UsrSearch";
+		GivenRegisteredService(schema);
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+		var search = new WebServiceMethodArg("UsrSearch", "GET", "search",
+			RequestParameters: [new WebServiceParameterArg("UsrQ", "query", Path: "q")], UseAuth: false);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [
+			SetBasicAuth(),
+			new WebServiceOperationArg("removeMethod", MethodCode: "UsrSearch"),
+			new WebServiceOperationArg("addMethod", search)
+		], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"no process calls the service; error: {result.Error}");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "addMethod defines the method anew, so its use-auth is a choice the agent made");
+	}
+
+	[Test]
+	[Description("A setMethod that changes a method's use-auth to false together with new authentication is the agent's choice, so the notice leaves that method out.")]
+	public void Modify_Should_Treat_A_Changed_Use_Auth_As_Explicit() {
+		// Arrange
+		GivenRegisteredService(BingSchemaSendingAuth(withBasicAuth: false));
+		GivenSelect("SysSchema");
+		GivenSettingsExist();
+		var search = new WebServiceMethodArg("Search", "GET", "search",
+			RequestParameters: [new WebServiceParameterArg("q", "query")], UseAuth: false);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[SetBasicAuth(), new WebServiceOperationArg("setMethod", search)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"no process calls the service; error: {result.Error}");
+		(result.Notices ?? []).Should().NotContain(n => n.Contains("use-auth false"),
+			because: "Search was stored with use-auth true, so false here is a choice the agent made");
+	}
+
+	[Test]
+	[Description("describe-web-service masks the value of a credential-like query parameter in a stored base URI and method URI, and keeps the other query values.")]
+	public void Describe_Should_Mask_A_Secret_Query_Value_Of_A_Stored_Uri() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.BaseUri = "https://api.bing.example/?sig=sig-0042-secret-key";
+		schema.Methods.Items.Values.Single().Request.Uri = "search?api_key=sk-live-0042&format=json";
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", false);
+
+		// Assert
+		string view = JsonSerializer.Serialize(result.Service);
+		view.Should().NotContain("sk-live-0042", because: "a key typed into a method URI in Studio is a credential");
+		view.Should().NotContain("sig-0042-secret-key", because: "an Azure SAS signature in the base URI is a credential");
+		result.Service.Methods.Single().Uri.Should().Be("search?api_key=[masked]&format=json",
+			because: "only the secret value is hidden; the reader still sees which query parameters go out");
+		result.Service.BaseUri.Should().Be("https://api.bing.example/?sig=[masked]",
+			because: "the base URI is masked the same way");
+	}
+
+	[Test]
+	[Description("list-web-services masks a credential-like query value of a stored base URI.")]
+	public void BaseUriFromMetadata_Should_Mask_A_Secret_Query_Value() {
+		// Arrange
+		string metadata = """{"MetaData":{"Schema":{"IQ1":"https://erp.example/Orders.svc?code=fn-key-0042-0042-0042"}}}""";
+
+		// Act
+		string baseUri = Clio.Command.WebServiceDesigner.WebServiceDesigner.BaseUriFromMetadata(metadata);
+
+		// Assert
+		baseUri.Should().Be("https://erp.example/Orders.svc?code=[masked]",
+			because: "an Azure Functions key in the base URI must not reach the list either");
+	}
+
+	[Test]
+	[Description("A method sent back from describe-web-service with a key kept in its URI (shown as the mask) is refused without the key and nothing is saved: the tools never write such a key.")]
+	public void Modify_Should_Refuse_A_Hidden_Query_Key_Sent_Back_From_Describe() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Request.Uri = "search?sig=sig-0042-secret-key&format=json";
+		GivenRegisteredService(schema);
+		WebServiceMethodArg described = JsonSerializer.Deserialize<WebServiceMethodArg>(
+			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single()));
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", described)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the mask would be stored and sent as the key")
+			.Where(e => !e.Message.Contains("sig-0042-secret-key"), "the refusal never shows the hidden key")
+			.WithMessage("*cannot write that key back*", because: "the refusal says what the agent can do instead");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("A changed method URI that still carries the mask placeholder is refused and nothing is saved.")]
+	public void Modify_Should_Refuse_The_Mask_Placeholder_In_A_Changed_Uri() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Request.Uri = "search?sig=sig-0042-secret-key";
+		GivenRegisteredService(schema);
+		GivenSelect("SysSchema");
+		var changed = new WebServiceMethodArg("Search", "GET", "find?sig=[masked]",
+			RequestParameters: [new WebServiceParameterArg("q", "query")]);
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", changed)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the placeholder would be stored and sent as the key")
+			.WithMessage("*which describe-web-service shows for a key kept in that URI*",
+				because: "the refusal names the mask");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("search?code=fn-key-0042-0042-0042", false)]
+	[TestCase("search?appid=0123456789abcdef0123", false)]
+	[TestCase("search?format=json;api_key=sk-live-0042", false)]
+	[TestCase("search?api_key=sk{x}", false)]
+	[TestCase("search?ret=/cb?api_key=sk-live-0042", false)]
+	[TestCase("search?a=1?api_key=sk-live-0042", false)]
+	[TestCase("search?sign=0123456789abcdef", false)]
+	[TestCase("search?api_key={key}", true)]
+	[TestCase("rates?code=USD", true)]
+	[TestCase("rates?code=USD;callback=handleResponse", true)]
+	[TestCase("odata/Orders(OrderKey={key})/Items", true)]
+	[Description("register refuses a key kept in a method URI by the same rule describe masks one with, ';' separators and partial placeholders included, and keeps an ordinary short value or a whole placeholder.")]
+	public void Register_Should_Refuse_A_Key_In_A_Method_Uri(string uri, bool accepted) {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		GivenSettingsExist();
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => saved);
+		WebServiceParameterArg[] parameters = uri.Contains("{key}")
+			? [new WebServiceParameterArg("UsrKey", "path", Path: "key", DefaultSysSetting: "UsrErpKey")]
+			: [];
+
+		// Act
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("UsrSearch", "GET", uri, RequestParameters: parameters)]));
+
+		// Assert
+		if (accepted) {
+			act.Should().NotThrow(because: "an ordinary short value or a placeholder filled per call is no stored key");
+		} else {
+			act.Should().Throw<ArgumentException>(because: "a key in a method URI would be a stored constant")
+				.Where(e => !e.Message.Contains("0042") && !e.Message.Contains("0123456789"),
+					"the refusal never echoes the value")
+				.WithMessage("*looks like a credential*", because: "the refusal points at default-sys-setting");
+		}
+	}
+
+	[TestCase("search?ret=/cb?sig=[masked]")]
+	[TestCase("search?x=1?sig=%5Bmasked%5D")]
+	[Description("A method URI that carries the mask anywhere in a pair, after a second '?' or URL-escaped, is refused like the mask itself, so the mask is never stored in place of a key.")]
+	public void Modify_Should_Refuse_The_Mask_Inside_A_Query_Pair(string uri) {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		var changed = new WebServiceMethodArg("Search", "GET", uri, RequestParameters: [new WebServiceParameterArg("q", "query")]);
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", changed)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the mask would be sent as the key")
+			.WithMessage("*query 'sig' holds*", because: "the refusal names the key before the mask");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[TestCase("appid", "0123456789abcdef0123", false)]
+	[TestCase("code", "USD", true)]
+	[Description("A query parameter's constant default follows the URI key rule: a key-length value under a hosting key name is refused, a short one is kept.")]
+	public void Register_Should_Apply_The_Query_Key_Rule_To_A_Query_Parameter_Default(string path, string value, bool accepted) {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => saved);
+
+		// Act
+		Action act = () => _sut.Register("Custom", new WebServiceRegistration("UsrErp", null, "https://erp.example/", null, null,
+			[new WebServiceMethodArg("UsrWeather", "GET", "weather", RequestParameters: [
+				new WebServiceParameterArg("UsrUnits", "query", Path: path, DefaultValue: value)
+			])]));
+
+		// Assert
+		if (accepted) {
+			act.Should().NotThrow(because: "a short value under a hosting key name is ordinary");
+		} else {
+			act.Should().Throw<ArgumentException>(because: "an OpenWeatherMap key is a credential, sent in every URL")
+				.Where(e => !e.Message.Contains(value), "the refusal never echoes the value")
+				.WithMessage("*constant default is refused*", because: "the refusal points at default-sys-setting");
+		}
+	}
+
+	[Test]
+	[Description("A path parameter whose placeholder is a key's whole value in the method URI carries that key: a new secret constant on it is refused, and one stored is hidden by describe and kept when describe output comes back.")]
+	public void Modify_Should_Treat_A_Path_Parameter_That_Fills_A_Key_Like_The_Key() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		ServiceMethodDto stored = schema.Methods.Items.Values.Single();
+		stored.Request.Uri = "search?api_key={k}";
+		var filler = new ServiceParameterDto {
+			UId = Guid.NewGuid(), Name = "k", Path = "k", Type = ServiceSchemaCodes.Placements["path"],
+			DataValueTypeName = "Text", Caption = new() { ["en-US"] = "k" },
+			DefValue = new ServiceParameterValueDto { Value = "sk-live-0042", Source = ServiceSchemaCodes.ValueSourceConst }
+		};
+		stored.Request.Parameters.Items[filler.UId.ToString()] = filler;
+		GivenRegisteredService(schema);
+		WebServiceView view = WebServiceSchemaView.From(schema, "Custom");
+		WebServiceMethodArg described = JsonSerializer.Deserialize<WebServiceMethodArg>(JsonSerializer.Serialize(view.Methods.Single()));
+		var literal = new WebServiceMethodArg("Search", "GET", "search?api_key={k}", RequestParameters: [
+			new WebServiceParameterArg("q", "query"), new WebServiceParameterArg("k", "path", Path: "k", DefaultValue: "sk-live-0042")
+		]);
+
+		// Act
+		Action echo = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", described)], null);
+		Action write = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", literal)], null);
+
+		// Assert
+		JsonSerializer.Serialize(view).Should().NotContain("sk-live-0042", because: "the constant is the key of the URI");
+		echo.Should().NotThrow(because: "the hidden constant is kept, as other hidden constants are");
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => s.Methods.Items.Values.Single().Request.Parameters
+			.Items.Values.Single(p => p.Name == "k").DefValue.Value == "sk-live-0042"));
+		write.Should().Throw<ArgumentException>(because: "a constant there is a key written into the URL")
+			.Where(e => !e.Message.Contains("sk-live-0042"), "the refusal never echoes the value")
+			.WithMessage("*fills a key in the uri query and has a constant default*", because: "the refusal names the parameter");
+	}
+
+	[TestCase("https://erp.example/svc;jsessionid=0123456789abcdef-token")]
+	[TestCase("https://erp.example/svc;token=SECRET-42")]
+	[Description("setBaseUri refuses a key in a ;name=value path parameter of the base URI, which describe would hide.")]
+	public void Modify_Should_Refuse_A_Key_In_The_Base_Uri_Path(string baseUri) {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setBaseUri", BaseUri: baseUri)], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "a key in the base URI would be a stored constant")
+			.Where(e => !e.Message.Contains("SECRET-42") && !e.Message.Contains("0123456789"), "the value is never echoed")
+			.WithMessage("*base-uri query*looks like a credential*", because: "the refusal names the key");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("A test call masks a secret query value of the stored method URI when the API echoes it.")]
+	public void TestMethod_Should_Mask_An_Echoed_Secret_Query_Value_Of_The_Stored_Uri() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Values.Single().Request.Uri = "search?sig=sig-0042-secret-key";
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200,
+				"""{"url":"https://api.bing.example/search?sig=sig-0042-secret-key"}""", null,
+				"GET https://api.bing.example/search?sig=sig-0042-secret-key HTTPS/1.1\r\nHost: api.bing.example"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().NotContain("sig-0042-secret-key", because: "describe hides the value, so an echo must too");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+	}
+
+	// The Bing service whose Search method fills api_key from path parameter k, with a constant describe hides.
+	private ServiceSchemaDto GivenKeyPlaceholderService() {
+		ServiceSchemaDto schema = BingSchema();
+		ServiceMethodDto stored = schema.Methods.Items.Values.Single();
+		stored.Request.Uri = "search?api_key={k}";
+		var filler = new ServiceParameterDto {
+			UId = Guid.NewGuid(), Name = "k", Path = "k", Type = ServiceSchemaCodes.Placements["path"],
+			DataValueTypeName = "Text", Caption = new() { ["en-US"] = "k" },
+			DefValue = new ServiceParameterValueDto { Value = "sk-live-0042", Source = ServiceSchemaCodes.ValueSourceConst }
+		};
+		stored.Request.Parameters.Items[filler.UId.ToString()] = filler;
+		GivenRegisteredService(schema);
+		return schema;
+	}
+
+	[Test]
+	[Description("default-value \"\" clears the hidden constant of a path parameter that fills a key.")]
+	public void Modify_Should_Clear_A_Hidden_Key_Placeholder_Constant() {
+		// Arrange
+		GivenKeyPlaceholderService();
+		var clear = new WebServiceMethodArg("Search", "GET", "search?api_key={k}", RequestParameters: [
+			new WebServiceParameterArg("q", "query"), new WebServiceParameterArg("k", "path", Path: "k", DefaultValue: "")
+		]);
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", clear)], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "an explicit empty default clears the constant, as the refusals offer");
+		_client.Received(1).SaveSchema(Arg.Is<ServiceSchemaDto>(s => string.IsNullOrEmpty(s.Methods.Items.Values.Single()
+			.Request.Parameters.Items.Values.Single(p => p.Name == "k").DefValue.Value)));
+	}
+
+	[Test]
+	[Description("A new uri that would show the kept hidden constant of a path parameter is refused, not saved.")]
+	public void Modify_Should_Refuse_A_Uri_That_Would_Show_A_Hidden_Key_Placeholder_Constant() {
+		// Arrange
+		GivenKeyPlaceholderService();
+		var shown = new WebServiceMethodArg("Search", "GET", "search/{k}", RequestParameters: [
+			new WebServiceParameterArg("q", "query"), new WebServiceParameterArg("k", "path", Path: "k")
+		]);
+
+		// Act
+		Action moved = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setMethod", shown)], null);
+
+		// Assert
+		moved.Should().Throw<ArgumentException>(because: "the kept constant would be a visible path segment")
+			.Where(e => !e.Message.Contains("sk-live-0042"), "the refusal never echoes the value")
+			.WithMessage("*would show in the new uri*", because: "the refusal says why and how to clear it");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
 }

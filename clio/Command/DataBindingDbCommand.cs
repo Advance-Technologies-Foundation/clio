@@ -60,6 +60,18 @@ public class RemoveDataBindingRowDbOptions : EnvironmentOptions {
 }
 
 /// <summary>
+/// Options for the <c>delete-data-binding-db</c> command.
+/// </summary>
+[Verb("delete-data-binding-db", HelpText = "Delete a remote DB-first data binding from its package; the bound records stay in the table")]
+public class DeleteDataBindingDbOptions : EnvironmentOptions {
+	[Option("package", Required = true, HelpText = "Target package name")]
+	public string PackageName { get; set; } = string.Empty;
+
+	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
+	public string BindingName { get; set; } = string.Empty;
+}
+
+/// <summary>
 ///     Options for <see cref="ReadDataBindingDbCommand" />.
 /// </summary>
 [Verb("read-data-binding-db", Aliases = ["get-data-binding-db"],
@@ -165,6 +177,28 @@ public class RemoveDataBindingRowDbCommand(IDataBindingDbService dataBindingDbSe
 }
 
 /// <summary>
+/// Deletes a remote DB-first data binding from its package and leaves the bound records in the table.
+/// </summary>
+public class DeleteDataBindingDbCommand(IDataBindingDbService dataBindingDbService, ILogger logger)
+	: Command<DeleteDataBindingDbOptions> {
+	/// <inheritdoc />
+	public override int Execute(DeleteDataBindingDbOptions options) {
+		try {
+			int boundRowCount = dataBindingDbService.DeleteBinding(options);
+			logger.WriteInfo(
+				$"Deleted binding '{options.BindingName}' from package '{options.PackageName}' "
+				+ $"({boundRowCount} bound {(boundRowCount == 1 ? "row" : "rows")}). The records stay in the table.");
+			logger.WriteInfo("Done");
+			return 0;
+		}
+		catch (Exception exception) {
+			logger.WriteError(exception.Message);
+			return 1;
+		}
+	}
+}
+
+/// <summary>
 ///     Reports which columns a remote DB-first data binding ships, so the transfer contract can be checked without
 ///     exporting and unpacking the whole package.
 /// </summary>
@@ -215,6 +249,16 @@ public interface IDataBindingDbService {
 	/// Removes a row from a remote DB-first binding and deletes the package schema data record when empty.
 	/// </summary>
 	void RemoveRow(RemoveDataBindingRowDbOptions options);
+
+	/// <summary>
+	/// Deletes a remote DB-first binding (the package schema data record) from its package without touching
+	/// the records it bound: they stay in the table. Works for a binding that holds rows and for an empty one.
+	/// </summary>
+	/// <param name="options">Environment, package name and binding name.</param>
+	/// <returns>The number of rows the binding held when it was deleted.</returns>
+	/// <exception cref="InvalidOperationException">The package does not exist on the environment, or the
+	/// binding does not exist in that package; nothing is deleted in either case.</exception>
+	int DeleteBinding(DeleteDataBindingDbOptions options);
 
 	/// <summary>
 	/// Reads what a remote DB-first binding actually ships: its entity schema and, per row, the exact set of
@@ -494,6 +538,9 @@ internal sealed class DataBindingDbService(
 
 	/// <summary>Creatio runtime <c>dataValueType</c> of a native Color column.</summary>
 	private const int ColorRuntimeDataValueType = 18;
+	private const int DateTimeRuntimeDataValueType = 7;
+	private const int DateRuntimeDataValueType = 8;
+	private const int TimeRuntimeDataValueType = 9;
 
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -833,6 +880,20 @@ internal sealed class DataBindingDbService(
 		}
 	}
 
+	/// <inheritdoc />
+	public int DeleteBinding(DeleteDataBindingDbOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		ValidateEnvironment(options);
+
+		PackageRef packageRef = bindingWriter.ResolvePackage(options.PackageName);
+		(_, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName,
+			$"Binding '{options.BindingName}' was not found in package '{options.PackageName}'. "
+			+ "Nothing was deleted.");
+		int boundRowCount = bindingWriter.FetchBoundRows(bindingUId).Count;
+		bindingWriter.DeleteBinding(packageRef, options.BindingName);
+		return boundRowCount;
+	}
+
 	private static void ValidateEnvironment(EnvironmentOptions options) {
 		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrWhiteSpace(options.Uri)) {
 			throw new InvalidOperationException("--environment or --uri is required.");
@@ -882,11 +943,12 @@ internal sealed class DataBindingDbService(
 			""";
 	}
 
-	private (string EntitySchemaName, Guid BindingUId) LookupBindingInfo(Guid packageUId, string bindingName) {
+	private (string EntitySchemaName, Guid BindingUId) LookupBindingInfo(Guid packageUId, string bindingName,
+		string? notFoundMessage = null) {
 		PackageDataBindingRef? binding = bindingWriter.FindBinding(packageUId, bindingName);
 		if (binding is null) {
 			throw new InvalidOperationException(
-				$"Binding '{bindingName}' was not found in the remote environment.");
+				notFoundMessage ?? $"Binding '{bindingName}' was not found in the remote environment.");
 		}
 
 		return (string.IsNullOrWhiteSpace(binding.EntitySchemaName) ? bindingName : binding.EntitySchemaName,
@@ -965,9 +1027,15 @@ internal sealed class DataBindingDbService(
 	}
 
 	/// <summary>
-	/// Shapes a row value for an Insert/Update query parameter, applying the Color rules at the DataService boundary.
+	/// Shapes a row value for an Insert/Update query parameter, applying the Color and the date and time rules at the
+	/// DataService boundary.
 	/// </summary>
 	/// <remarks>
+	/// <para>
+	/// A DateTime, Date or Time parameter is read by DataService as JSON, so the text has to arrive as a quoted JSON
+	/// string. Bare text is refused there: <c>2026-01-01</c> as "Input string '2026-01-01' is not a valid number" and
+	/// <c>2026-01-01T00:00:00</c> as "Value cannot be null".
+	/// </para>
 	/// Every other column is written the way it always was - the JSON node stringified, null collapsed to an
 	/// empty string. Color cannot use that rule: the parameter keeps <c>dataValueType</c> 18, so a number
 	/// would be POSTed as "123", an object as its JSON text, and a null as "", none of which is a valid
@@ -975,9 +1043,38 @@ internal sealed class DataBindingDbService(
 	/// the DB-first create and upsert paths.
 	/// </remarks>
 	private static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
-		dataValueType == ColorRuntimeDataValueType
-			? ConvertColorValue(columnName, value)
-			: value?.ToString() ?? "";
+		dataValueType switch {
+			ColorRuntimeDataValueType => ConvertColorValue(columnName, value),
+			_ when IsDateOrTimeDataValueType(dataValueType) => ConvertDateOrTimeValue(columnName, value, dataValueType),
+			_ => value?.ToString() ?? ""
+		};
+
+	private static bool IsDateOrTimeDataValueType(int dataValueType) =>
+		dataValueType is DateTimeRuntimeDataValueType or DateRuntimeDataValueType or TimeRuntimeDataValueType;
+
+	/// <summary>
+	/// Returns a DateTime, Date or Time value as the quoted JSON string DataService reads, preserving null, and
+	/// rejects any other wire shape.
+	/// </summary>
+	private static string? ConvertDateOrTimeValue(string columnName, JsonNode? value, int dataValueType) {
+		if (value is null) {
+			//Preserved as null rather than "": an empty string is not a date, and DataService cannot read it as one.
+			return null;
+		}
+
+		if (value is JsonValue jsonValue && jsonValue.TryGetValue(out string? text) && !string.IsNullOrWhiteSpace(text)) {
+			return JsonSerializer.Serialize(text);
+		}
+
+		string typeName = dataValueType switch {
+			DateRuntimeDataValueType => "Date",
+			TimeRuntimeDataValueType => "Time",
+			_ => "DateTime"
+		};
+		throw new InvalidOperationException(
+			$"Column '{columnName}' value '{value.ToJsonString()}' is not valid for data type '{typeName}'. "
+			+ "Pass it as a string, for example \"2026-01-31T09:00:00.000\".");
+	}
 
 	/// <summary>
 	/// Returns the hex literal of a Color value, preserving null, and rejects any other wire shape.
@@ -1086,6 +1183,10 @@ internal sealed class DataBindingDbService(
 					//the first POST: validating only inside InsertEntityRow would leave earlier rows of the
 					//same create already inserted on the stand when a later one carries a malformed Color.
 					ConvertColorValue(requested.Key, requested.Value);
+				}
+				else if (IsDateOrTimeDataValueType(column.DataValueType)) {
+					//Same reason as Color: a number or an object under a date column is refused before the first POST.
+					ConvertDateOrTimeValue(requested.Key, requested.Value, column.DataValueType);
 				}
 			}
 		}
@@ -1260,16 +1361,22 @@ internal sealed class DataBindingDbService(
 
 		List<DataBindingDbRowInput> result = [];
 		foreach (JsonNode? item in array) {
-			if (item is JsonObject rowObj &&
-				rowObj.TryGetPropertyValue("values", out JsonNode? valuesNode) &&
-				valuesNode is JsonObject valuesObj) {
-				Dictionary<string, JsonNode?> values = valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value);
-				string rowLabel = DescribeRow(values, result.Count);
-				rowObj.TryGetPropertyValue("localizations", out JsonNode? localizationsNode);
-				result.Add(new DataBindingDbRowInput(
-					values,
-					new DataBindingRowLocalization(rowLabel, ParseRowLocalizations(localizationsNode, rowLabel))));
+			if (item is not JsonObject rowObj ||
+				!rowObj.TryGetPropertyValue("values", out JsonNode? valuesNode) ||
+				valuesNode is not JsonObject valuesObj) {
+				//Refused rather than skipped: a skipped row leaves an empty binding behind and reports success, so a
+				//caller who passed the columns directly never learns that nothing was bound.
+				throw new InvalidOperationException(
+					$"--rows item #{result.Count + 1} must be an object with a 'values' object that holds the column values, "
+					+ "for example [{\"values\":{\"Name\":\"Row\"}}]. Nothing was written.");
 			}
+
+			Dictionary<string, JsonNode?> values = valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value);
+			string rowLabel = DescribeRow(values, result.Count);
+			rowObj.TryGetPropertyValue("localizations", out JsonNode? localizationsNode);
+			result.Add(new DataBindingDbRowInput(
+				values,
+				new DataBindingRowLocalization(rowLabel, ParseRowLocalizations(localizationsNode, rowLabel))));
 		}
 
 		return result;
