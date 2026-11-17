@@ -2501,7 +2501,7 @@ public static class SchemaValidationService
 				if (report && required) {
 					result.Errors.Add(
 						$"{path}.{field.Name} is required by the component registry but is missing. " +
-						"Call get-guidance with name 'chart-widget' for the full contract.");
+						GuidanceHint($"{path}.{field.Name}"));
 				}
 				continue;
 			}
@@ -2529,11 +2529,26 @@ public static class SchemaValidationService
 			ValidateFieldsMap(value, shape, EmptyTypeSubstitution, typeDefinitions, path, result, report);
 			return;
 		}
+		if (report && !ValueIsAllowed(value, fieldDefinition, path, result)) {
+			return;
+		}
 		if (!fieldDefinition.TryGetProperty("type", out JsonElement typeElement) ||
 		    typeElement.ValueKind != JsonValueKind.String) {
 			return;
 		}
 		string typeExpression = typeElement.GetString() ?? string.Empty;
+		// Record<string, T>: every entry is a T (an ESQ filter group's `items`).
+		if (string.Equals(typeExpression, "Record", StringComparison.Ordinal)) {
+			if (value.ValueKind == JsonValueKind.Object &&
+			    fieldDefinition.TryGetProperty("valueType", out JsonElement valueType) &&
+			    valueType.ValueKind == JsonValueKind.String) {
+				foreach (JsonProperty entry in value.EnumerateObject()) {
+					ValidateValueAgainstTypeExpression(entry.Value, valueType.GetString() ?? string.Empty, typeDefinitions,
+						$"{path}.{entry.Name}", result, report);
+				}
+			}
+			return;
+		}
 		// Array: validate each element against the item type.
 		if (string.Equals(typeExpression, "array", StringComparison.Ordinal)) {
 			if (value.ValueKind == JsonValueKind.Array &&
@@ -2562,12 +2577,140 @@ public static class SchemaValidationService
 				typeDefinitions, path, result, report);
 			return;
 		}
-		// Union ("A | B | C"): cannot pick a branch deterministically — stop rather than false-positive.
-		if (typeExpression.Contains('|')) {
+		string resolved = ResolveTypeAliasExpression(typeExpression.Trim(), typeDefinitions);
+		if (resolved.Contains('|')) {
+			ValidateValueAgainstUnion(value, resolved, typeDefinitions, path, result, report);
 			return;
 		}
-		ValidateValueAgainstType(value, typeExpression.Trim(), EmptyTypeSubstitution, typeDefinitions, path, result, report);
+		if (report && !PrimitiveMatches(value, resolved)) {
+			result.Errors.Add($"{path} must be a {resolved}. {GuidanceHint(path)}");
+			return;
+		}
+		ValidateValueAgainstType(value, resolved, EmptyTypeSubstitution, typeDefinitions, path, result, report);
 	}
+
+	/// <summary>
+	/// ENG-95270: picks the branch of a tagged union by its discriminators — the fields a branch pins to a
+	/// single value (an ESQ filter's <c>filterType</c>, an expression's <c>expressionType</c> and
+	/// <c>functionType</c>) — and validates the value against it. A union without such branches (an older
+	/// registry, or plain alternatives like <c>string | ButtonIcon</c>) still stops the walk: guessing a
+	/// branch there would turn valid configs into false errors.
+	/// </summary>
+	private static void ValidateValueAgainstUnion(
+		JsonElement value, string unionExpression,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		if (value.ValueKind != JsonValueKind.Object) {
+			return;
+		}
+		List<string> tagged = [];
+		bool anyDiscriminated = false;
+		foreach (string branch in unionExpression.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)) {
+			if (!TryGetTypeFields(branch, typeDefinitions, out JsonElement fields)) {
+				continue;
+			}
+			IReadOnlyList<(string Name, JsonElement Value)> discriminators = GetDiscriminators(fields);
+			if (discriminators.Count == 0) {
+				continue;
+			}
+			anyDiscriminated = true;
+			if (discriminators.All(discriminator => value.TryGetProperty(discriminator.Name, out JsonElement actual) &&
+				    JsonElement.DeepEquals(actual, discriminator.Value))) {
+				tagged.Add(branch);
+			}
+		}
+		if (!anyDiscriminated) {
+			return;
+		}
+		if (tagged.Count == 0) {
+			if (report) {
+				result.Errors.Add($"{path} does not match any of {unionExpression}: its discriminator fields " +
+					$"({DescribeDiscriminators(unionExpression, typeDefinitions)}) name no known variant. {GuidanceHint(path)}");
+			}
+			return;
+		}
+		SchemaValidationResult? firstFailure = null;
+		foreach (string branch in tagged) {
+			var branchResult = new SchemaValidationResult { IsValid = true };
+			ValidateValueAgainstType(value, branch, EmptyTypeSubstitution, typeDefinitions, path, branchResult, report);
+			if (branchResult.Errors.Count == 0) {
+				return;
+			}
+			firstFailure ??= branchResult;
+		}
+		result.Errors.AddRange(firstFailure!.Errors);
+	}
+
+	private static IReadOnlyList<(string Name, JsonElement Value)> GetDiscriminators(JsonElement fields) {
+		List<(string Name, JsonElement Value)> discriminators = [];
+		foreach (JsonProperty field in fields.EnumerateObject()) {
+			if (field.Value.ValueKind == JsonValueKind.Object &&
+			    field.Value.TryGetProperty("values", out JsonElement values) &&
+			    values.ValueKind == JsonValueKind.Array && values.GetArrayLength() == 1) {
+				discriminators.Add((field.Name, values[0]));
+			}
+		}
+		return discriminators;
+	}
+
+	private static string DescribeDiscriminators(string unionExpression, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
+		var names = new SortedSet<string>(StringComparer.Ordinal);
+		foreach (string branch in unionExpression.Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)) {
+			if (TryGetTypeFields(branch, typeDefinitions, out JsonElement fields)) {
+				foreach ((string name, JsonElement _) in GetDiscriminators(fields)) {
+					names.Add(name);
+				}
+			}
+		}
+		return string.Join(", ", names);
+	}
+
+	/// <summary>
+	/// Follows a definition that is only a type expression (<c>IESQFilter</c> → its union text) to the
+	/// expression itself. Bounded, since an alias chain in a registry is short and could in theory cycle.
+	/// </summary>
+	private static string ResolveTypeAliasExpression(string typeExpression, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
+		string current = typeExpression;
+		for (int hop = 0; hop < 8; hop++) {
+			if (!typeDefinitions.TryGetValue(current, out JsonElement definition) ||
+			    definition.ValueKind != JsonValueKind.Object ||
+			    definition.TryGetProperty("fields", out _) ||
+			    !definition.TryGetProperty("type", out JsonElement aliased) ||
+			    aliased.ValueKind != JsonValueKind.String ||
+			    definition.TryGetProperty("values", out _)) {
+				return current;
+			}
+			current = (aliased.GetString() ?? current).Trim();
+		}
+		return current;
+	}
+
+	private static bool ValueIsAllowed(JsonElement value, JsonElement fieldDefinition, string path, SchemaValidationResult result) {
+		if (!fieldDefinition.TryGetProperty("values", out JsonElement values) || values.ValueKind != JsonValueKind.Array ||
+		    values.GetArrayLength() == 0 || value.ValueKind is JsonValueKind.Object or JsonValueKind.Array) {
+			return true;
+		}
+		foreach (JsonElement allowed in values.EnumerateArray()) {
+			if (JsonElement.DeepEquals(allowed, value)) {
+				return true;
+			}
+		}
+		result.Errors.Add($"{path} is {value.GetRawText()}, which is not one of {values.GetRawText()}. {GuidanceHint(path)}");
+		return false;
+	}
+
+	private static bool PrimitiveMatches(JsonElement value, string typeExpression) =>
+		typeExpression switch {
+			"string" => value.ValueKind == JsonValueKind.String,
+			"number" => value.ValueKind == JsonValueKind.Number,
+			"boolean" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+			_ => true
+		};
+
+	private static string GuidanceHint(string path) =>
+		path.Contains(".filters.filter", StringComparison.Ordinal)
+			? "Call get-guidance with name 'esq-filters-frontend' for the filter contract."
+			: "Call get-guidance with name 'chart-widget' for the full contract.";
 
 	/// <summary>
 	/// Binds the positional <paramref name="arguments"/> of an instantiation to the parameter names the
