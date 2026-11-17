@@ -603,11 +603,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		refused.Error.Should().Contain("GET method", because: "the GET refusal is reported in the same answer");
 	}
 
-	/// <summary>
-	/// Inserts an OAuth application with placeholder endpoints and a placeholder client id; it carries no secret.
-	/// Only ClientId is required by the entity. The id is recorded BEFORE the insert, so the teardown deletes the
-	/// row even when the insert's answer fails an assertion.
-	/// </summary>
+	// A key-like value a service made in Studio can keep under a neutral header name.
+	private const string PartnerKey = "Lk7Hd93Qz20mWr4TbN8e";
+
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureTag(DescribeWebServiceTool.ToolName)]
@@ -690,9 +688,11 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the key-like constant went out and its echo is masked");
 	}
 
-	// A key-like value a service made in Studio can keep under a neutral header name.
-	private const string PartnerKey = "Lk7Hd93Qz20mWr4TbN8e";
-
+	/// <summary>
+	/// Inserts an OAuth application with placeholder endpoints and a placeholder client id; it carries no secret.
+	/// Only ClientId is required by the entity. The id is recorded BEFORE the insert, so the teardown deletes the
+	/// row even when the insert's answer fails an assertion.
+	/// </summary>
 	private async Task CreateOAuthApplicationAsync(McpE2ESettings settings, string name, CancellationToken token) {
 		string id = Guid.NewGuid().ToString();
 		_oauthApplicationId = id;

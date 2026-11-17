@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Command.WebServiceDesigner;
 using FluentAssertions;
 
 namespace Clio.Mcp.E2E.Support.Creatio;
@@ -107,7 +108,7 @@ internal static class WebServiceStand {
 				foreach (KeyValuePair<string, JsonNode?> parameter
 						in method.Value!["request"]!["parameters"]!["Items"]!.AsObject()) {
 					if (parameter.Value!["name"]?.GetValue<string>() == parameterCode) {
-						parameter.Value["defValue"] = new JsonObject { ["value"] = value, ["source"] = 1 };
+						parameter.Value["defValue"] = new JsonObject { ["value"] = value, ["source"] = ServiceSchemaCodes.ValueSourceConst };
 						stored++;
 					}
 				}

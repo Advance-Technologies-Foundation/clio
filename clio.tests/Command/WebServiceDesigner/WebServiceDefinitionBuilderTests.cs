@@ -98,6 +98,33 @@ public sealed class WebServiceDefinitionBuilderTests {
 	}
 
 	[Test]
+	[Description("A key-like constant Studio stored under a neutral header name is kept when describe's output is sent back without it, and refused rather than erased when the rebuild moves it to the body, where describe would show it.")]
+	public void BuildMethod_Should_Keep_A_Key_Like_Neutral_Header_Constant_And_Refuse_A_Body_Move() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Send", "POST", "send",
+				RequestParameters: [new WebServiceParameterArg("XPartner", "header", Path: "X-Partner")]), null, false, errors);
+		existing.Request.Parameters.Items.Values.Single().DefValue =
+			new ServiceParameterValueDto { Value = "Lk7Hd93Qz20mWr4TbN8e", Source = ServiceSchemaCodes.ValueSourceConst };
+		var bodyErrors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		ServiceMethodDto kept = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Send", "POST", "send",
+			RequestParameters: [new WebServiceParameterArg("XPartner", "header", Path: "X-Partner", DefaultMasked: true)]),
+			existing, false, errors);
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Send", "POST", "send",
+			RequestParameters: [new WebServiceParameterArg("XPartner", "body", Path: "partner")]), existing, false, bodyErrors);
+
+		// Assert
+		errors.Should().BeEmpty(because: "describe's output sent back is valid input");
+		kept.Request.Parameters.Items.Values.Single().DefValue.Value.Should().Be("Lk7Hd93Qz20mWr4TbN8e",
+			because: "describe hid the key, so leaving it out must not erase it");
+		bodyErrors.Should().ContainSingle(because: "a body parameter is judged by name only, so describe would print the key")
+			.Which.Should().NotContain("Lk7Hd93Qz20mWr4TbN8e", because: "the refusal never repeats the hidden value");
+	}
+
+	[Test]
 	[Description("A plain constant Studio stored on a header is shown by describe, so a rebuild that leaves it out drops it instead of keeping it hidden.")]
 	public void BuildMethod_Should_Drop_A_Visible_Header_Constant_The_Rebuild_Omits() {
 		// Arrange

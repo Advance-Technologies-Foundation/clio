@@ -146,7 +146,7 @@ public sealed class WebServiceSoapTests {
 		secrets.Should().Contain(SoapServiceFixture.PasswordValue,
 			because: "the WS-Security password is read from the SOAP Header, unescaped");
 		secrets.Should().Contain(SoapServiceFixture.InnerValue, because: "a nested body element is found by its local name");
-		secrets.Should().NotContain("bob", because: "a constant user name that is not secret-like is not collected");
+		secrets.Should().NotContain("bob", because: "a value shorter than the masking length (four characters) is never collected, hidden by describe or not");
 	}
 
 	[Test]

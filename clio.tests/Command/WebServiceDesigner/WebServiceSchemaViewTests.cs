@@ -154,6 +154,23 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("https://hooks.example.com/in?token=abc", true, Description = "an address with a credential-named query key")]
 	[TestCase("https://hooks.example.com/in?x=QmFzZTY0U2lnbmF0dXJlVmFsdWUx", true, Description = "an address with a key-like query value")]
 	[TestCase("https://hooks.example.com/v2/orders/2024/archive?mode=full", false, Description = "an address with digits in its host and path")]
+	[TestCase("https://hooks.example.com/services/team/channel/Lk7Hd93Qz20mWr4TbN8eXy12", true, Description = "a webhook token in the path")]
+	[TestCase("https://app.example.com/cb#access_token=abc", true, Description = "a credential in the fragment")]
+	[TestCase("id=Lk7Hd93Qz20mWr4TbN8e&return=https://app.example/done", true, Description = "a key before an address that is not a scheme")]
+	[TestCase("user=svc;password=Winter2024", true, Description = "a credential name=value pair, whatever the value's length")]
+	[TestCase("Basic dXNlcjpwYXNz", true, Description = "an authentication scheme over short credentials")]
+	[TestCase("Bearer abc123", true, Description = "a scheme and a short token")]
+	[TestCase("correcthorsebatterystaple", true, Description = "a letters-only passphrase")]
+	[TestCase("7340012345678901", true, Description = "a digits-only account number")]
+	[TestCase("Summer2024!", true, Description = "a password-shaped word")]
+	[TestCase("internationalization", false, Description = "a long word")]
+	[TestCase("application/vnd.github.v3+json", false, Description = "a vendor media type with a version")]
+	[TestCase("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36", false, Description = "a user agent")]
+	[TestCase("Chrome/120.0.0.0", false, Description = "a product token")]
+	[TestCase("lic/AB12-CD34-EF56-GH78", true, Description = "a structured licence key behind a slash")]
+	[TestCase("acct/123456789012345", true, Description = "a long account number behind a slash")]
+	[TestCase("application/soap+xml;charset=utf-8;action=\"http://tempuri.org/IService/Add\"", false, Description = "a SOAP 1.2 content type with its action")]
+	[TestCase("1700000000", false, Description = "a 10-digit number")]
 	[TestCase("en-US,en;q=0.9", false, Description = "a language list")]
 	[TestCase("en-US", false, Description = "a language tag")]
 	[TestCase("2", false, Description = "a version")]
@@ -164,13 +181,29 @@ public sealed class WebServiceSchemaViewTests {
 	[TestCase("gzip, deflate, br", false, Description = "a list of words")]
 	[TestCase("", false, Description = "an empty value")]
 	[TestCase(null, false, Description = "no value")]
-	[Description("IsKeyLikeValue takes a part of 16+ characters mixing letters and digits (after quotes, padding and a name= prefix) for a key, and an address only by its user information or query; words, media types, language tags, versions and directives are not keys.")]
+	[Description("IsKeyLikeValue takes for a key a generated key, a long letters-only or digits-only run, a password-shaped word, a credential name=value pair, the credentials after an authentication scheme, and an address's user information, path segment, query or fragment value judged the same way; words, media types, product tokens, language tags, versions and directives are not keys.")]
 	public void IsKeyLikeValue_Should_Tell_Keys_From_Plain_Header_Values(string value, bool expected) {
 		// Act
 		bool keyLike = WebServiceSchemaView.IsKeyLikeValue(value);
 
 		// Assert
 		keyLike.Should().Be(expected, because: "a header constant is hidden and refused only when its value looks like a key");
+	}
+
+	[TestCase("Token Lk7Hd93Qz20mWr4TbN8e", "Lk7Hd93Qz20mWr4TbN8e", Description = "the key after a scheme")]
+	[TestCase("user=svc;password=Winter2024", "Winter2024", Description = "the value of a credential pair")]
+	[TestCase("https://hooks.example.com/in/Lk7Hd93Qz20mWr4TbN8e", "Lk7Hd93Qz20mWr4TbN8e", Description = "a webhook token")]
+	[TestCase("https://bot:hunter2@hooks.example.com/in", "hunter2", Description = "the password of the user information")]
+	[TestCase("Token token=abcdef0123456789abcd", "abcdef0123456789abcd", Description = "a scheme parameter's value")]
+	[TestCase("OAuth oauth_signature=\"tnnArxj06cWHq44gCs1OSKk%2FjY%3D\"", "tnnArxj06cWHq44gCs1OSKk/jY=", Description = "an escaped scheme parameter, unescaped")]
+	[TestCase("sig=abc%2Bdef0123456789xyz", "abc+def0123456789xyz", Description = "an escaped pair value, unescaped")]
+	[Description("KeyLikeParts gives the part that made a header value a key on its own, so a test call masks it when an API echoes only that part.")]
+	public void KeyLikeParts_Should_Give_The_Key_Part_On_Its_Own(string value, string keyPart) {
+		// Act
+		IReadOnlyList<string> parts = WebServiceSchemaView.KeyLikeParts(value);
+
+		// Assert
+		parts.Should().Contain(keyPart, because: "an API that echoes only the key would otherwise hand it back");
 	}
 
 	[TestCase("Accept-Language", "header", "en-US", false, Description = "neutral name, plain value: shown")]

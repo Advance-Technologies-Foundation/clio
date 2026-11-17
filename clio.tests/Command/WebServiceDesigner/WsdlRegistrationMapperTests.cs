@@ -523,6 +523,28 @@ public sealed class WsdlRegistrationMapperTests {
 			because: "the agent is told the constant was not carried and what to use instead");
 		string.Join("\n", warnings.Kept).Should().NotContain("Lk7Hd93Qz20mWr4TbN8e",
 			because: "a warning never repeats a value that looks like a key");
+		warnings.Kept.Should().NotContain(w => w.Contains("tem:mode"), because: "the carried plain constant needs no warning");
+	}
+
+	[Test]
+	[Description("A constant describe hid on a SOAP-header element the WSDL now puts in the body is named in a warning, since register refuses to keep it where describe would show it.")]
+	public void Map_Should_Warn_When_A_Hidden_Header_Constant_Leaves_The_Soap_Header() {
+		// Arrange
+		WsdlPort port = Port(Operation("Add", Parameter("partner", "tem:partner")));
+		var partner = new WebServiceParameterView("UsrPartner", "Partner", "body", "tem:partner", "Text", false, false, null,
+			null, true, [], SoapHeader: true);
+		var target = new WsdlTargetService("UsrCalc", [new WebServiceNamespaceView("tem", "http://example.org/t/", true)], [
+			new WebServiceMethodView("UsrAdd", "Add", "POST", null, 9000, "xml", true, [partner], [], "tem:Add", "urn:Add")
+		]);
+		var warnings = new WarningLog();
+
+		// Act
+		WsdlRegistrationMapper.Map(port, true, "Usr", "dev", target, warnings);
+
+		// Assert
+		warnings.Kept.Should().Contain(w => w.Contains("tem:partner") && w.Contains("leaves the SOAP Header")
+				&& w.Contains("default-value \"\""),
+			because: "without it the registration is refused with no hint at the cause");
 	}
 
 	[Test]

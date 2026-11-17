@@ -46,7 +46,7 @@
 | TC-U-A18 | unit | A multi-line setting value is masked in its CRLF form and line by line | 4 |
 | TC-U-A19 | unit | An XML response is masked by decoded values (numeric character references) | 4 |
 | TC-U-A20 | unit | Parsed values are masked by code for setting defaults, cookies and credential-named headers, and by value for a Guid or number the platform converted; an ordinary header stays readable | 6 |
-| TC-U-A21 | unit | A constant default on a SOAP-header element is hidden by describe | 2 |
+| TC-U-A21 | unit | A constant default on a SOAP-header element under a credential-like element path is hidden by describe (D17) | 2 |
 | TC-U-A22 | unit | The Rest:Xml explanation is returned, not withheld, for a method with authentication and a setting-bound parameter | 7 |
 | TC-U-A23 | unit | A response value filled from a setting default is masked in `response-values` | 6 |
 | TC-U-A24 | unit | An error with nothing reported as sent is withheld when a response default comes from a setting | 6 |
@@ -71,7 +71,7 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WebServiceSoapWriteTest
 | TC-U-B04 | unit | A namespace marked default wins over the first; soap12 is SOAP 1.2 | 1 |
 | TC-U-B05 | unit | Namespaces, message-element, soap-action, soap-header and sequence-element on a REST service are refused | 2 |
 | TC-U-B06 | unit | An empty soap-action is saved with a notice that no SOAPAction header is sent | 3 |
-| TC-U-B07 | unit | A SOAP-header parameter passes the flag to its items; a constant default on a SOAP-header parameter is refused | 1, 2 |
+| TC-U-B07 | unit | A SOAP-header parameter passes the flag to its items; a key-like or credential-named SOAP-header constant is refused, a plain one registers and describe shows it (D17) | 1, 2 |
 | TC-U-B08 | unit | describe output sent back as setNamespaces + setMethod leaves describe unchanged and keeps every UId, and a hidden SOAP-header constant is kept | 5 |
 | TC-U-B09 | unit | setType switches 1.2 to 1.1 and the usage guard treats it as changing every method | 4 |
 | TC-U-B10 | unit | setType to REST or to an unknown type is refused | 4 |
@@ -83,7 +83,7 @@ Unit rows live in `clio.tests/Command/WebServiceDesigner/WebServiceSoapWriteTest
 | TC-U-B16 | unit | Reserved prefixes (xml*, soapenv) are refused | 2 |
 | TC-U-B17 | unit | A soap-action with a line break or credentials, a namespace uri with credentials, a message element with a path and a SOAP base-URI placeholder are refused without echoing the values | 2 |
 | TC-U-B18 | unit | setType with an unknown type reports that error alone | 4 |
-| TC-U-B19 | unit | A constant on an item of a SOAP-header parameter is hidden by describe even when the item lacks the flag | 2 |
+| TC-U-B19 | unit | A constant on an item of a SOAP-header parameter is judged as a header constant by describe and the masker even when the item lacks the flag; an item under a credential-like parent is a secret (D17) | 2 |
 | TC-U-B20 | unit | A refusal lists at most 50 problems and counts the rest | 2 |
 | TC-U-B21 | unit | A namespace row with null uId / isDefault reads, and setNamespaces keeps its collection key as UId (#1925 review note) | 5 |
 | TC-U-B22 | unit | A namespace row's null uId / isDefault is left out on write, never sent as null | 5 |
@@ -229,6 +229,12 @@ The wire shape was measured first (ADR D10). Unit rows live in
 | TC-I-F02 | e2e | read-wsdl on the WCF WSDL (wsdl-files) returns the four ports with a SOAP 1.2 or WS-Addressing warning on each of the last three, naming the SOAP 1.1 port (`WsdlReadToolE2ETests`) | D15 |
 | TC-I-F03 | e2e (existing) | The REST, SOAP, read-wsdl and contract web service e2e suites stay green | D15 |
 | TC-I-F04 | e2e | read-wsdl with `code` returns that code in the arguments, which register as they are (`WsdlReadToolE2ETests`) | D16 |
+| TC-U-G01 | unit | `IsKeyLikeValue` / `KeyLikeParts`: generated keys, scheme credentials, credential pairs, opaque runs, password-shaped words and address parts are keys; words, media types, product tokens, language tags, versions and directives are not (`WebServiceSchemaViewTests`) | D17 |
+| TC-U-G02 | unit | `IsSecretLike` per placement: cookie always, credential name always, query by the query rule, header by value, body by name (`WebServiceSchemaViewTests`) | D17 |
+| TC-U-G03 | unit | Describe and the masker agree on header constants; the masker also masks each key part and decoded Basic parts (`WebServiceSchemaViewTests`, `WebServiceResponseMaskerTests`) | D17 |
+| TC-U-G04 | unit | Register takes plain header constants and refuses secret ones and every cookie constant; a key-like neutral-name constant Studio stored is kept on rebuild, refused when moved to the body or a query, and a plain one is dropped when left out (`WebServiceDefinitionBuilderTests`) | D17 |
+| TC-U-G05 | unit | read-wsdl carries a plain constant into the SOAP Header, leaves out a key-like one with a warning, and warns when a hidden Header constant leaves the Header (`WsdlRegistrationMapperTests`) | D17 |
+| TC-I-G06 | e2e | A plain Accept-Language header constant registers, describe shows it and an echo API returns it readable; a key-like constant stored the Studio way under X-Partner is hidden, masked in the echo and refused on write (`WebServiceToolsE2ETests`) | D17 |
 
 ## Knowledge (story 5)
 
