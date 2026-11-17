@@ -137,8 +137,8 @@ public sealed class WebServiceDesigner(
 	public WebServiceToolResult Register(string packageName, WebServiceRegistration registration) {
 		ArgumentNullException.ThrowIfNull(registration);
 		(string code, string caption, string baseUri, int? retryCount, WebServiceAuthArg auth,
-			IReadOnlyList<WebServiceMethodArg> methods, string type, IReadOnlyList<WebServiceNamespaceArg> namespaces) =
-			registration;
+			IReadOnlyList<WebServiceMethodArg> methods, string type, IReadOnlyList<WebServiceNamespaceArg> namespaces,
+			string description) = registration;
 		RequireManageSolution();
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		int serviceType = WebServiceDefinitionBuilder.ParseServiceType(type, errors);
@@ -164,6 +164,9 @@ public sealed class WebServiceDesigner(
 			RetryCount = Math.Max(retryCount ?? 0, 0),
 			AuthInfo = WebServiceDefinitionBuilder.BuildAuth(auth, FindOAuthApp(auth), errors)
 		};
+		if (!string.IsNullOrWhiteSpace(description)) {
+			schema.Description = WebServiceDefinitionBuilder.Caption(description.Trim());
+		}
 		if (soap) {
 			schema.Namespaces = WebServiceDefinitionBuilder.BuildNamespaces(namespaces, null, errors);
 		}
@@ -179,10 +182,12 @@ public sealed class WebServiceDesigner(
 		}
 		(IReadOnlyCollection<string> settings, _) = RequireSysSettings(schema, [], errors);
 		errors.ThrowIfAny();
+		IReadOnlyList<string> cleared = ClearUseAuthWithoutAuthentication(schema);
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
-			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName)]);
+			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName),
+				.. ClearedUseAuthNotices(cleared)]);
 	}
 
 	/// <summary>
@@ -295,12 +300,16 @@ public sealed class WebServiceDesigner(
 			return new WebServiceToolResult(false, UsageRefusal(operations, unacknowledged, everyCallChanges),
 				Usages: unacknowledged);
 		}
+		// Only the call that removes the authentication clears the flags; any other change leaves them as they are.
+		IReadOnlyList<string> cleared = authBefore.Length > 0 && AuthSignature(schema.AuthInfo).Length == 0
+			? ClearUseAuthWithoutAuthentication(schema)
+			: [];
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
 		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
 			Usages: affected,
 			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations, useAuthBefore),
-				.. Notices(settings, row.Package, missingKept)]);
+				.. Notices(settings, row.Package, missingKept), .. ClearedUseAuthNotices(cleared)]);
 	}
 
 	/// <summary>
@@ -361,9 +370,7 @@ public sealed class WebServiceDesigner(
 		if (secretUnlocated) {
 			// The value is unknown, so it cannot be masked: fail closed and return the status only. The parsed
 			// response values come from the same response and are withheld with it.
-			return new WebServiceTestResult(result.Success,
-				"The response is withheld: a value filled from a system setting could not be located in what the "
-				+ "platform reports as sent (or the request body is neither JSON nor XML), so it could not be masked.",
+			return new WebServiceTestResult(result.Success, UnlocatedSecretMessage(schema, method, result),
 				result.StatusCode, null, false, true);
 		}
 		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
@@ -379,6 +386,37 @@ public sealed class WebServiceDesigner(
 			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
 			bodyMasked || errorMasked || valuesMasked, responseValues, valuesOmitted ? true : null,
 			notices.Count > 0 ? notices : null);
+	}
+
+	/// <summary>
+	/// Why a test call's answer is withheld. When the platform reports nothing as sent, the call failed before or
+	/// while sending (a token that could not be retrieved, an unreachable host, a timeout), so the system-setting
+	/// wording would point the agent at the wrong thing; the answer stays withheld because an OAuth server's error
+	/// can quote the client secret, which clio does not know and cannot mask.
+	/// </summary>
+	private static string UnlocatedSecretMessage(ServiceSchemaDto schema, ServiceMethodDto method,
+		ServiceMethodCallResult result) {
+		if (!string.IsNullOrEmpty(result.RequestRawData) || !string.IsNullOrEmpty(result.RequestBody)) {
+			return "The response is withheld: a value filled from a system setting could not be located in what the "
+				+ "platform reports as sent (or the request body is neither JSON nor XML), so it could not be masked.";
+		}
+		if (result.Success) {
+			// Not a failure: the cause hints below would be wrong for a call that worked.
+			return "The response is withheld: the call succeeded, but the platform reported nothing as sent, so the "
+				+ "credentials it carried could not be located to mask. Studio > Web services shows the answer for the "
+				+ "same test request.";
+		}
+		string lead = "The platform's answer is withheld: the call failed with nothing reported as sent, so the "
+			+ "credentials it would have carried could not be located to mask.";
+		return method.UseAuthInfo && schema.AuthInfo is { AuthType: ServiceSchemaCodes.AuthOAuth20 }
+			? lead + " The service uses OAuth 2.0, and a call that fails before sending usually means the access token "
+				+ "could not be retrieved (or the API host is unreachable): ask the user to check the OAuth application "
+				+ "(client id and secret, scope, token URL; when the token endpoint refuses a Basic header, set Send client "
+				+ "credentials to In request body) and to send the test request in Studio > Web services, which shows the "
+				+ "platform's error."
+			: lead + " Typical causes: the host is unreachable or refuses the connection, the call timed out, or the "
+				+ "authentication could not be prepared. Studio > Web services shows the platform's error for the same "
+				+ "test request.";
 	}
 
 	/// <summary>
@@ -557,12 +595,26 @@ public sealed class WebServiceDesigner(
 				// Retries change no request the API receives, so no caller has to agree.
 				schema.RetryCount = Math.Max(operation.RetryCount ?? 0, 0);
 				break;
+			case "setDescription":
+				// Shown in Studio only; no request changes, so no caller has to agree.
+				if (operation.Description is null) {
+					errors.Add("setDescription: give description (\"\" clears it).");
+					break;
+				}
+				// The platform changes only the cultures the contract sends and keeps the others (measured: an empty
+				// dictionary keeps the stored text), so every culture the service has gets the new value, en-US
+				// included; an empty value clears it.
+				string text = string.IsNullOrWhiteSpace(operation.Description) ? string.Empty : operation.Description.Trim();
+				schema.Description = (schema.Description?.Keys ?? Enumerable.Empty<string>()).Append("en-US")
+					.Distinct(StringComparer.OrdinalIgnoreCase)
+					.ToDictionary(culture => culture, _ => text);
+				break;
 			case "setAuth":
 				schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(operation.Auth, FindOAuthApp(operation.Auth), errors);
 				break;
 			default:
 				errors.Add($"op '{operation?.Op}' must be addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, "
-					+ "setAuth, setNamespaces or setType.");
+					+ "setAuth, setDescription, setNamespaces or setType.");
 				break;
 		}
 	}
@@ -660,6 +712,32 @@ public sealed class WebServiceDesigner(
 			}
 		}
 		return changes;
+	}
+
+	/// <summary>
+	/// A service without authentication sends none, yet Studio shows "Use authentication" ticked and disabled on a
+	/// method that keeps the flag. Cleared only after the usage guard ran, which reads the flag to find the callers
+	/// the removed authentication changes.
+	/// </summary>
+	/// <returns>The codes of the methods whose flag was cleared.</returns>
+	private static IReadOnlyList<string> ClearUseAuthWithoutAuthentication(ServiceSchemaDto schema) {
+		if (schema.AuthInfo is not (null or { AuthType: ServiceSchemaCodes.AuthNone })) {
+			return [];
+		}
+		var cleared = new List<string>();
+		foreach (ServiceMethodDto method in schema.Methods.Items.Values.Where(m => m.UseAuthInfo)) {
+			method.UseAuthInfo = false;
+			cleared.Add(method.Name);
+		}
+		return cleared;
+	}
+
+	private static IEnumerable<string> ClearedUseAuthNotices(IReadOnlyList<string> cleared) {
+		if (cleared.Count > 0) {
+			yield return $"The service has no authentication, so use-auth was cleared on {string.Join(", ", cleared)}. "
+				+ "If authentication is added later, these methods send none until the user agrees to set use-auth on "
+				+ "each of them again (setMethod with use-auth: true).";
+		}
 	}
 
 	/// <summary>

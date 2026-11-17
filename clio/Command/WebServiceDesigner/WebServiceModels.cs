@@ -67,9 +67,10 @@ public sealed record WebServiceMethodArg(
 /// <param name="Methods">At least one method.</param>
 /// <param name="Type">rest (default), soap11 or soap12.</param>
 /// <param name="Namespaces">SOAP only, at least one: the namespaces the envelope declares.</param>
+/// <param name="Description">Optional description Studio shows on the service.</param>
 public sealed record WebServiceRegistration(string Code, string Caption, string BaseUri, int? RetryCount,
 	WebServiceAuthArg Auth, IReadOnlyList<WebServiceMethodArg> Methods, string Type = null,
-	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null);
+	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null, string Description = null);
 
 /// <summary>A SOAP namespace the envelope declares; exactly one is the default.</summary>
 public sealed record WebServiceNamespaceArg(
@@ -178,7 +179,7 @@ public sealed record WebServiceAuthArg(
 
 public sealed record WebServiceOperationArg(
 	[property: JsonPropertyName("op")]
-	[property: Description("addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, setAuth; for a SOAP service also setNamespaces and setType")]
+	[property: Description("addMethod, setMethod, removeMethod, setBaseUri, setRetryCount, setAuth, setDescription; for a SOAP service also setNamespaces and setType")]
 	string Op,
 
 	[property: JsonPropertyName("method")]
@@ -204,7 +205,11 @@ public sealed record WebServiceOperationArg(
 
 	[property: JsonPropertyName("type")]
 	[property: Description("setType: soap11 or soap12 (SOAP 1.1 / SOAP 1.2); a REST service cannot become SOAP or back")]
-	string Type = null
+	string Type = null,
+
+	[property: JsonPropertyName("description")]
+	[property: Description("setDescription: the service description Studio shows; an empty string clears it")]
+	string Description = null
 ) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
@@ -289,7 +294,12 @@ public sealed record WebServiceView(
 	[property: JsonPropertyName("namespaces")]
 	[property: Description("SOAP: the namespaces the envelope declares, the default first")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	IReadOnlyList<WebServiceNamespaceView> Namespaces = null);
+	IReadOnlyList<WebServiceNamespaceView> Namespaces = null,
+
+	[property: JsonPropertyName("description")]
+	[property: Description("The service description, when it has one")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string Description = null);
 
 public sealed record WebServiceListItem(
 	[property: JsonPropertyName("uid")] Guid UId,
@@ -709,7 +719,8 @@ public static partial class WebServiceSchemaView {
 			ShownUri(schema.BaseUri), schema.RetryCount, Auth(schema.AuthInfo),
 			schema.Methods.Items.Values.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
 				.Select(m => Method(m, soap)).ToList(),
-			soap ? Namespaces(schema.Namespaces) : null);
+			soap ? Namespaces(schema.Namespaces) : null,
+			string.IsNullOrWhiteSpace(Localized(schema.Description)) ? null : Localized(schema.Description));
 	}
 
 	/// <summary>
