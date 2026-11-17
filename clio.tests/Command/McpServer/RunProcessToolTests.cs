@@ -2268,6 +2268,8 @@ public sealed class RunProcessToolTests {
 			because: "a value in a process with no source can still quote a credential, for example one a Script task wrote");
 		response.WithheldResultParameters.Should().NotContain("Plain",
 			because: "a process with no web service and no secret setting returns its text results");
+		response.Warnings.Should().Contain(w => w.Contains("'Plain' had text that looks like a credential", StringComparison.Ordinal),
+			because: "a business text can look like a credential, so the caller is told the value was changed");
 	}
 
 	[Test]
@@ -2392,6 +2394,8 @@ public sealed class RunProcessToolTests {
 		// Assert
 		detector.DidNotReceiveWithAnyArgs().FindCredentialSource(default, default);
 		response.ResultParameterValues["Code"].ToString().Should().Be("200", because: "an integer is returned as is");
+		response.Warnings.Should().NotContain(w => w.Contains("looks like a credential", StringComparison.Ordinal),
+			because: "a value masking left unchanged is not reported");
 	}
 
 	[Test]

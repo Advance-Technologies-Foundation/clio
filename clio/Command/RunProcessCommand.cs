@@ -517,8 +517,22 @@ public class RunProcessCommand(
 		if (response.ResultParameterValues is not { Count: > 0 } values) {
 			return;
 		}
+		List<string> masked = [];
 		foreach (string name in values.Keys.ToList()) {
-			values[name] = MaskValue(values[name]);
+			object original = values[name];
+			object result = MaskValue(original);
+			if (!ReferenceEquals(result, original) && StjSerializer.Serialize(result) != StjSerializer.Serialize(original)) {
+				masked.Add($"'{name}'");
+			}
+			values[name] = result;
+		}
+		// A business text can look like a credential ("Password: reset sent"); the caller learns the value was changed
+		// rather than reading the replacement as data.
+		if (masked.Count > 0) {
+			(response.Warnings ??= []).Add($"resultParameterValues {string.Join(", ", masked)} had text that looks "
+				+ "like a credential (an Authorization or Bearer value, a secret-named field or pair) replaced by "
+				+ "[redacted]; the rest of each value is as the run returned it. The user can see the original in "
+				+ "Creatio's process log.");
 		}
 	}
 
