@@ -718,6 +718,25 @@ public sealed class WsdlReaderTests {
 	}
 
 	[Test]
+	[Description("A caption another service already shows gets a notice, so Studio does not list two services under one name.")]
+	public void Read_Should_Notice_A_Caption_In_Use() {
+		// Arrange
+		string path = GivenFixture("calculator.wsdl");
+		_client.Select("VwWebServiceV2", Arg.Any<IReadOnlyList<string>>(),
+				Arg.Is<IReadOnlyDictionary<string, string>>(f => f.ContainsKey("Caption") && f["Caption"] == "Calculator"),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns([new JsonObject { ["Name"] = "UsrCalculatorStudio" }]);
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		result.Notices.Should().ContainSingle(n => n.Contains("caption 'Calculator'"),
+				because: "the WSDL's service name is already shown by another service")
+			.Which.Should().Contain("UsrCalculatorStudio", because: "the notice names the service that shows it");
+	}
+
+	[Test]
 	[Description("A name downloaded with '?' (the platform's ASCII download of a non-ASCII character) gives a warning to use wsdl-files.")]
 	public void Read_Should_Warn_About_Replaced_Characters_In_A_Download() {
 		// Arrange

@@ -131,6 +131,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["package-name"] = PackageName,
 				["code"] = _serviceCode,
 				["caption"] = "E2E orders",
+				["description"] = "Orders API used by the E2E suite",
 				["base-uri"] = "https://example.invalid/api",
 				["methods"] = new[] { OrdersMethod(withHeader: true) }
 			}, cts.Token);
@@ -182,7 +183,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode,
 				["operations"] = new[] {
 					new Dictionary<string, object?> { ["op"] = "setMethod", ["method"] = OrdersMethod(withHeader: false) },
-					new Dictionary<string, object?> { ["op"] = "setRetryCount", ["retry-count"] = 2 }
+					new Dictionary<string, object?> { ["op"] = "setRetryCount", ["retry-count"] = 2 },
+					new Dictionary<string, object?> { ["op"] = "setDescription", ["description"] = "" }
 				}
 			}, cts.Token);
 
@@ -196,6 +198,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the list carries each base URI, with a key kept in its query hidden");
 		JsonSerializer.Serialize(listed).Should().NotContain(HiddenKey, because: "the list must not print a key kept in a URI");
 		described.Success.Should().BeTrue(because: $"describe must read the service back; error: {described.Error}");
+		described.Service!.Description.Should().Be("Orders API used by the E2E suite",
+			because: "the description given at registration is stored and read back as Studio shows it");
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
 		method.Uri.Should().Be("orders/{id}?api_key=[masked]",
@@ -228,6 +232,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		literalKey.Error.Should().NotContain("sk-live-123", because: "a refused credential value is never echoed back");
 		modified.Success.Should().BeTrue(because: $"a valid setMethod must save; error: {modified.Error}");
 		modified.Service!.RetryCount.Should().Be(2, because: "setRetryCount is applied in the same call");
+		modified.Service.Description.Should().BeNull(because: "setDescription with an empty text clears the description on the stand");
 		modified.Service.Methods.Single().RequestParameters.Select(p => p.Code).Should().BeEquivalentTo([Prefixed("Id")],
 			because: "setMethod replaces the whole method definition, so the dropped header is gone");
 	}
@@ -320,8 +325,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureTag(TestWebServiceMethodTool.ToolName)]
 	[AllureName("register-web-service links an existing OAuth 2.0 application")]
-	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, describe returning the same reference, and a setAuth rebuilt from that describe reply linking the same application.")]
+	[Description("Creates a throwaway OAuth application, registers a REST service with auth oauth20 naming it, and expects the application's id in the read-back, the method sending the authentication, describe returning the same reference, a setAuth rebuilt from that describe reply linking the same application, and a test call that cannot get a token being withheld with a message that points at the OAuth application.")]
 	public async Task RegisterWebService_Should_Link_An_Existing_OAuth_Application() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -364,6 +370,12 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				}
 			}, cts.Token);
 
+		// The application's token URL never resolves, so the platform fails before sending anything.
+		WebServiceTestResult testCall = await CallAsync<WebServiceTestResult>(TestWebServiceMethodTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = MethodCode
+			}, cts.Token);
+
 		// Assert
 		registered.Success.Should().BeTrue(because: $"an existing OAuth application must be accepted; error: {registered.Error}");
 		registered.Service!.Auth!.Type.Should().Be("oauth20", because: "the service authenticates with OAuth 2.0");
@@ -376,6 +388,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 		restored.Success.Should().BeTrue(because: $"setAuth accepts the oauth-app-id describe reports; error: {restored.Error}");
 		restored.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(_oauthApplicationId,
 			because: "authentication rebuilt from a describe reply links the same application");
+		testCall.Success.Should().BeFalse(because: "the access token cannot be retrieved from an unresolvable token URL");
+		testCall.ResponseBody.Should().BeNull(because: "a token endpoint's error can quote the client secret, so nothing is returned");
+		testCall.Error.Should().Contain("OAuth application",
+			because: "a call that sent nothing points at the OAuth application, not at a system setting");
 	}
 
 	[Test]
