@@ -1,6 +1,6 @@
 # ADR: Send chat message element (ENG-96034)
 
-**Status**: Accepted. The task owner decided Q1-Q18 on 2026-11-13 (Q13 deferred until before the clio PR merges).
+**Status**: Accepted. The task owner decided Q1-Q18 on 2026-11-13 (Q13, deferred that day, was answered by the process-designer lane run, TeamCity build 16326369).
 **Date**: 2026-11-13
 **Jira**: ENG-96034 Send chat message element (Story; epic ENG-92704 Create BP via AI Toolkit)
 **Spec**: [spec-eng-96034-send-chat-message-element.md](../prd/spec-eng-96034-send-chat-message-element.md)
@@ -62,7 +62,7 @@ edit, so the describe prompt and the guide say to ignore them (the generic suppr
 
 **D7 - OmnichannelMessaging stays a runtime prerequisite, not a dependency.** CrtProcessBuilder's `DependsOn` stays
 empty and the package never references OmnichannelMessaging types. The e2e class skips with "install
-OmnichannelMessaging" where the task is missing; whether the process-designer lane stand carries it is Q13.
+OmnichannelMessaging" where the task is missing; the process-designer lane stand (Studio) carries it (Q13).
 
 **D8 - Floor.** create, modify and modify-as-new-version raise their `[RequiresPackage]` literal to the chat cut: an
 older server refuses the type and block as unknown keys, in a message that does not say the package is behind.
@@ -72,7 +72,7 @@ older server refuses the type and block as unknown keys, in a message that does 
 - One package cut, one knowledge generation and one clio rebundle; merge order package -> knowledge -> clio.
 - The contract budgets are close to spent again (create 16, describe 11, modify 31 bytes of headroom after this
   change); the em dashes that paid for it are a finite source.
-- The chat e2e cases prove nothing on a stand without OmnichannelMessaging; Q13 decides whether the lane proves them.
+- The chat e2e cases prove nothing on a stand without OmnichannelMessaging; the lane's Studio stand carries it, so the lane proves them (Q13).
 - The bundled cut changes stored values beyond the chat element: from CrtProcessBuilder 1.6.6.180 (the first released cut carrying it) a `[#Lookup…#]`
   macro accepted in column values is stored canonical - the name or replacing-schema segment becomes the object's root
   schema UId, lower case, with a "stored as" notice - on Modify data (`changeData.values`), Add data

@@ -6,8 +6,8 @@
 [2](../stories/story-eng-96034-send-chat-message-element-2.md) (modify semantics),
 [3](../stories/story-eng-96034-send-chat-message-element-3.md) (guidance and run-time proof)
 **Test plan**: [tp-eng-96034-send-chat-message-element.md](../test-plans/tp-eng-96034-send-chat-message-element.md)
-**Status**: decided. The task owner decided Q1-Q18 on 2026-11-13 (Q13 deferred; it must be answered before the clio
-PR merges). The analysis, the designer captures and the stand runs are kept with the team's research notes outside
+**Status**: decided. The task owner decided Q1-Q18 on 2026-11-13 (Q13, deferred that day, has since been
+answered: the process-designer lane runs the chat cases, TeamCity build 16326369). The analysis, the designer captures and the stand runs are kept with the team's research notes outside
 this repository; this file and the ADR carry every decision the clio side depends on.
 
 > One clio PR carries this BMAD set together with the code. The analysis proposed a separate spec-only PR first (the

@@ -312,7 +312,7 @@ namespace Clio.Command;
 // `chatMessage` block. An older server from 1.6.6.136 refuses both as undeclared keys, in a message that does not say an
 // update cures it; the literal turns that into the install hint before anything is sent. 1.6.6.173 is another branch's
 // cut (ENG-106378), never this work; 1.6.6.174 to 1.6.6.177 were cuts of this work that were never released, and
-// 1.6.6.178 and 1.6.6.179 were cut on other branches (master bundles 1.6.6.179).
+// 1.6.6.178 and 1.6.6.179 were cut on the dynamic-case branches; this cut includes 1.6.6.179 (master bundles it).
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.180",
