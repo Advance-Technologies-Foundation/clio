@@ -233,6 +233,21 @@ public sealed partial class WsdlReader(
 					+ "pick a code yourself: register under another code the user names (read the WSDL again with that code as "
 					+ $"code), or change that service (read the WSDL again with service-code '{code}', then use "
 					+ "modify-web-service)."));
+			// The caption comes from the WSDL's service name, which another service registered from the same API (by
+			// Studio's wizard, say) already shows: Studio would list two services under one name.
+			foreach (WsdlRegistrationArgs arguments in services.Select(service => service.Arguments)
+					.Where(arguments => !string.IsNullOrWhiteSpace(arguments.Caption))
+					.DistinctBy(arguments => arguments.Caption, StringComparer.OrdinalIgnoreCase)) {
+				string taken = client.Select("VwWebServiceV2", ["Name"],
+						new Dictionary<string, string> { ["Caption"] = arguments.Caption })
+					.Select(row => row[WebServiceDesignerClient.ColumnAlias("Name")]?.ToString())
+					.FirstOrDefault(name => !string.Equals(name, arguments.Code, StringComparison.OrdinalIgnoreCase));
+				if (taken is not null) {
+					notices.Add($"The caption '{WsdlParser.Shown(arguments.Caption)}' is already shown by web service "
+						+ $"'{WsdlParser.Shown(taken)}', so Studio would list two services under one name. Pass a caption "
+						+ "the user names, or leave caption out to use the code.");
+				}
+			}
 		}
 		// The WSDL names the endpoint the calls (and any credentials set up later) go to; tell the user when it is not the
 		// host the WSDL came from.
