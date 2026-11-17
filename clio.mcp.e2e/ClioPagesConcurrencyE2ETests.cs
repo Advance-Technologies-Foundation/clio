@@ -10,7 +10,11 @@ using Allure.NUnit.Attributes;
 using Clio.Common;
 using Clio.Common.BrowserSession;
 using Clio.Mcp.E2E.Support.Configuration;
+using Clio.Mcp.E2E.Support.Creatio;
+using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using FluentAssertions.Execution;
 
 namespace Clio.Mcp.E2E;
 
@@ -40,7 +44,7 @@ public sealed class ClioPagesConcurrencyE2ETests {
 
 	// The page seeded on the sandbox stand for the page fixtures; reused here so this test needs no
 	// schema creation of its own.
-	private const string SeededPageSchemaName = "ClioMcp_BlankPageToSave";
+	private const string SeededPageSchemaName = SeededBlankPage.SchemaName;
 	private const string FallbackEnvironmentName = "d2";
 
 	[Test]
@@ -56,6 +60,9 @@ public sealed class ClioPagesConcurrencyE2ETests {
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMinutes(10));
 		string environmentName = await ResolveReachableEnvironmentAsync(settings, cancellation.Token);
 		string anchor = CreateTemporaryDirectory("clio-pages-concurrency-e2e");
+		McpServerSession? session = null;
+		bool raceStarted = false;
+		(SeededBlankPage.PageObservation Read, SeededBlankPage.StoredRows Stored)? afterRace = null;
 		try {
 			// A real CLI get-page writes body.js + meta.json (with the conflict baseline) under the anchor.
 			// Without this the update-page runs would have no baseline to race on and the test would pass
@@ -71,6 +78,17 @@ public sealed class ClioPagesConcurrencyE2ETests {
 			string bodyFile = Path.Combine(schemaDirectory, "body.js");
 			string metaFile = Path.Combine(schemaDirectory, "meta.json");
 			File.Exists(metaFile).Should().BeTrue(because: "get-page must persist the conflict baseline for the race to touch");
+			// What the page held BEFORE the race decides what a green tripwire below proves: only when the design
+			// package held no stored schema of the page could both saves take the "create" branch.
+			session = await McpServerSession.StartAsync(settings, cancellation.Token);
+			(SeededBlankPage.PageObservation Read, SeededBlankPage.StoredRows Stored)? beforeRace =
+				await ReadSeedPageStateQuietlyAsync(session, environmentName, "before the race", diagnosticsOnly: true);
+			string precondition = DescribeRacePrecondition(beforeRace);
+			WriteOutput($"[seed-page] {precondition}");
+			// This test writes the seed page outside a lease: the next lease must not compare the page with the
+			// reset the lease before this test verified.
+			SeededBlankPage.RecordWriteOutsideLease(nameof(ClioPagesMetaJson_Should_StayWhole_When_TwoProcessesSaveOneSchema));
+			raceStarted = true;
 
 			// Act — two independent clio processes save the same schema at the same time. Both pass --force
 			// so the second is not stopped by a LEGITIMATE conflict: the subject here is the meta.json
@@ -84,6 +102,9 @@ public sealed class ClioPagesConcurrencyE2ETests {
 			Task<ClioCliCommandResult> secondSave = ClioCliCommandRunner.RunAsync(
 				settings, saveArguments, anchor, cancellation.Token);
 			ClioCliCommandResult[] saves = await Task.WhenAll(firstSave, secondSave);
+			// Read before any assertion, so a rejected save or a broken meta.json still leaves the evidence.
+			afterRace = await ReadSeedPageStateQuietlyAsync(
+				session, environmentName, "after two simultaneous saves", diagnosticsOnly: false);
 
 			// Assert
 			foreach (ClioCliCommandResult save in saves) {
@@ -103,7 +124,48 @@ public sealed class ClioPagesConcurrencyE2ETests {
 				because: "the surviving baseline must carry the post-save checksum the next save will compare against");
 			checksum.GetString().Should().NotBeNullOrWhiteSpace(
 				because: "a blank checksum would disarm conflict detection for this page — the silent loss this story removes");
+
+			// Tripwire, deliberate: when the page has no editable schema in its design package before this
+			// test (see the precondition line above), update-page decides "create the replacing schema" by a
+			// lookup with no lock around lookup-and-save. If both processes took that branch, the package now
+			// holds two schemas of the page, and get-page / update-page (name lookup, one row, no order) can
+			// address different ones afterwards - the leading explanation of the page e2e failures of TeamCity
+			// builds 16330337 and 16330482. Whatever the precondition, after two completed saves get-page must
+			// resolve the one stored schema in the design package, with its checksum.
+			using (new AssertionScope()) {
+				afterRace.Should().NotBeNull(
+					because: "the state of '{0}' after the race must be read for the tripwire to prove anything; see the "
+						+ "test output for why it could not be. {1}",
+					SeededPageSchemaName, precondition);
+				if (afterRace is { } state) {
+					string storedDescription = SeededBlankPage.DescribeStoredRows(state.Stored);
+					SeededBlankPage.JudgeStoredRows(state.Stored, state.Read.DesignPackageUId, requireOneInDesignPackage: true,
+							unreadableIsFailure: true)
+						.Should().BeNull(
+							because: "both saves succeeded, so the design package {0} ({1}) must hold exactly ONE stored schema "
+								+ "named '{2}'. A second row means the two processes each created a replacing schema of the page: "
+								+ "from then on a read and a write can resolve different schemas, so a completed save is not what "
+								+ "the next get-page returns - the defect behind the page e2e clusters. {3} Rows: {4}",
+							state.Read.DesignPackageName, state.Read.DesignPackageUId, SeededPageSchemaName, precondition,
+							storedDescription);
+					SeededBlankPage.JudgeReadAgainstDesignPackageRow(state.Read, state.Stored)
+						.Should().BeNull(
+							because: "after two completed saves the next get-page must return what they stored: the editable "
+								+ "schema it resolves must be the one stored schema of '{0}' in the design package, with its "
+								+ "checksum. get-page resolved: {1}. Rows: {2}",
+							SeededPageSchemaName, state.Read.Describe(), storedDescription);
+				}
+			}
 		} finally {
+			// The saves may have thrown before the state after them was read: collect it here, so the evidence of
+			// the race is in the output whatever failed. The read never throws.
+			if (raceStarted && afterRace is null && session is not null) {
+				await ReadSeedPageStateQuietlyAsync(session, environmentName, "after the race (read in finally)",
+					diagnosticsOnly: false);
+			}
+			if (session is not null) {
+				await session.DisposeAsync();
+			}
 			DeleteDirectoryQuietly(anchor);
 		}
 	}
@@ -275,6 +337,53 @@ public sealed class ClioPagesConcurrencyE2ETests {
 		} finally {
 			DeleteDirectoryQuietly(home);
 		}
+	}
+
+	// Reads what get-page resolves for the seed page and its stored rows and writes both to the output. Never
+	// throws: it is evidence for the tripwire, and a failure to collect it must not replace the test's own
+	// failure. Before the race the read is a report only, so a parse failure's payload dump is deleted; after
+	// it, a failed read fails the tripwire and the dump is kept as evidence.
+	private static async Task<(SeededBlankPage.PageObservation Read, SeededBlankPage.StoredRows Stored)?>
+		ReadSeedPageStateQuietlyAsync(McpServerSession session, string environmentName, string when, bool diagnosticsOnly) {
+		using CancellationTokenSource readCts = new(TimeSpan.FromMinutes(2));
+		try {
+			(SeededBlankPage.PageObservation read, SeededBlankPage.StoredRows stored) =
+				await SeededBlankPage.ReadStoredStateAsync(session, environmentName, readCts.Token);
+			WriteOutput($"[seed-page] {when}, get-page resolves: {read.Describe()}");
+			WriteOutput($"[seed-page] stored schemas of '{SeededPageSchemaName}' {when}:{Environment.NewLine}"
+				+ SeededBlankPage.DescribeStoredRows(stored));
+			return (read, stored);
+		} catch (Exception readFailure) {
+			if (diagnosticsOnly) {
+				PayloadDumpReader.DeleteIfPresent(readFailure.Message);
+			}
+			WriteOutput($"[seed-page] {when}, the state of '{SeededPageSchemaName}' could not be read: {readFailure.Message}");
+			return null;
+		}
+	}
+
+	// Says whether this run's race could exercise two simultaneous FIRST saves, so a green tripwire says what it
+	// proved.
+	private static string DescribeRacePrecondition(
+		(SeededBlankPage.PageObservation Read, SeededBlankPage.StoredRows Stored)? beforeRace) {
+		if (beforeRace is not { } state) {
+			return "Precondition unknown: the state of the page before the race could not be read, so whether both "
+				+ "saves could create the replacing schema is unknown.";
+		}
+		int inDesignPackage = SeededBlankPage.CountRowsInPackage(state.Stored, state.Read.DesignPackageUId);
+		return !state.Read.EditableSchemaExists && inDesignPackage == 0
+			? "Precondition held: before the race the design package held no stored schema of the page "
+				+ "(editableSchemaExists=False, 0 rows), so both saves could take the 'create the replacing schema' branch "
+				+ "and this run tested two simultaneous FIRST saves."
+			: $"Precondition NOT held: before the race the page already had an editable schema (editableSchemaExists="
+				+ $"{state.Read.EditableSchemaExists}, {(inDesignPackage < 0 ? "rows unreadable" : $"{inDesignPackage} row(s)")} in "
+				+ "the design package), so both saves updated it and a green tripwire says nothing about two simultaneous "
+				+ "FIRST saves.";
+	}
+
+	private static void WriteOutput(string line) {
+		TestContext.Out.WriteLine(line);
+		TestContext.Progress.WriteLine(line);
 	}
 
 	// A storageState-shaped payload whose length varies with the cookie count, so a non-atomic rewrite

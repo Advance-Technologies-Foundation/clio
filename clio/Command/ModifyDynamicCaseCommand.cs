@@ -38,6 +38,12 @@ public sealed class ModifyDynamicCaseOptions : EnvironmentOptions {
 	/// <summary>Disable or enable the case; the server accepts it only with no other change.</summary>
 	public bool? Enabled { get; set; }
 
+	/// <summary>The case's new filter; <see langword="null"/> leaves it unless <see cref="RemoveFilter"/>.</summary>
+	public DynamicCaseFilterArgument Filter { get; set; }
+
+	/// <summary>Remove the case's filter, so that it starts for every record.</summary>
+	public bool RemoveFilter { get; set; }
+
 	/// <summary>The user's yes to changing a case that has running cases.</summary>
 	public bool ConfirmRunningInstances { get; set; }
 

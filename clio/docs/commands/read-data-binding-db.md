@@ -96,3 +96,4 @@ summary or a ticket.
 - [`create-data-binding-db`](create-data-binding-db.md) — create a binding
 - [`upsert-data-binding-row-db`](upsert-data-binding-row-db.md) — change a bound row
 - [`remove-data-binding-row-db`](remove-data-binding-row-db.md) — **deletes the live record**, not just the binding
+- [`delete-data-binding-db`](delete-data-binding-db.md) — deletes the binding and keeps its records

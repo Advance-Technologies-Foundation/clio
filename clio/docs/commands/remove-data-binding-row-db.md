@@ -32,6 +32,9 @@ present in the remaining bound rows.
 On a SysSettingsValue binding, a remaining row of a SecureText setting refuses the
 removal before anything is deleted, so its secret never ships.
 When no rows remain, deletes the binding schema data record via DeletePackageSchemaDataRequest.
+A binding that already has no rows cannot be removed here, because there is no row to
+name: delete it with [`delete-data-binding-db`](delete-data-binding-db.md), which also drops
+a binding without deleting its records.
 After remote mutation, read back from Creatio instead of treating the request payload
 or install log as proof.
 

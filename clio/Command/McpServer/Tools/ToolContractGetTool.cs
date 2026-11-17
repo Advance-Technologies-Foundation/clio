@@ -934,6 +934,7 @@ internal static class ToolContractCatalog {
 			[CreateDataBindingDbTool.CreateDataBindingDbToolName] = BuildCreateDataBindingDb(),
 			[UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName] = BuildUpsertDataBindingRowDb(),
 			[RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName] = BuildRemoveDataBindingRowDb(),
+			[DeleteDataBindingDbTool.DeleteDataBindingDbToolName] = BuildDeleteDataBindingDb(),
 			[PlaceSectionInWorkplaceTool.ToolName] = BuildPlaceSectionInWorkplace(),
 			[PageSmokeTool.ToolName] = BuildPageSmoke(),
 			[GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName] = BuildGetEntitySchemaProperties(),
@@ -1028,6 +1029,7 @@ internal static class ToolContractCatalog {
 		CreateDataBindingDbTool.CreateDataBindingDbToolName,
 		UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName,
 		RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName,
+		DeleteDataBindingDbTool.DeleteDataBindingDbToolName,
 		FindEntitySchemaTool.FindEntitySchemaToolName,
 		GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName,
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
@@ -1275,9 +1277,9 @@ internal static class ToolContractCatalog {
 	/// and the line index had no room left under the spill line for a tool and the sentence together (ENG-105556).
 	/// </summary>
 	internal static readonly string ToolIndexLegend =
-		$"Each line: name (R)(D) [aka old names]: purpose, cut to {MaxToolIndexPurposeLength} chars. "
-		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
-		+ "Without (R), call it via clio-run {\"command\":\"<name>\",\"args\":{...}}. "
+		$"Each line: name (R)(D) [aka old names]: purpose, max {MaxToolIndexPurposeLength} chars. "
+		+ "(R) = resident, resident=true in detail=index-entries: call it directly. "
+		+ "No (R): call via clio-run {\"command\":\"<name>\",\"args\":{...}}. "
 		+ "(D) = destructive: may delete or overwrite data; a line without (D) can still write.";
 
 	/// <summary>
@@ -4956,7 +4958,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed. `ownBodySummary` counts the operations of the schema's own body per operation type in `viewConfigDiffOpCounts`, or, with include-operations=true, lists them in `viewConfigDiffOps` instead."),
+				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed. `ownBodySummary` counts the operations of the schema's own body per operation type in `viewConfigDiffOpCounts`, or, with include-operations=true, lists them in `viewConfigDiffOps` instead. `packageChoice`: `required` is true when another unlocked (or lock-unknown) package also holds a replacing layer of the page — ask the user which package to change before any write and pass the chosen layer's `packageUId` (or `defaultTargetPackageUId`, named by `defaultTargetPackageName`, to keep the default) as update-page `target-package-uid`, with `mode: append` for another layer; `layers` (only when required, lowest first, the base page excluded) carry packageName, packageUId, schemaUId, hierarchyLevel (the highest wins at runtime), packageLocked, isDefaultTarget, `changes` (that layer's own viewConfigDiff operations and handler requests) and `moreChanges` (how many were left out of `changes`); `warning` (only when needed) says why some lock states are unknown."),
 				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
 				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(WarningsFieldName, ArrayType, "OPTIONAL \u2014 omitted when empty. Present when the page was read but its bundle could not be resolved exactly as stored: a `viewConfigDiff` insert/move names a parentName but no propertyName, which the Creatio differ rejects (the page does not render), so `bundle.json` was resolved WITHOUT that operation. Each entry names the schema, the operation index and the fix; repair the operation in `body.js` and save it with update-page."),
@@ -5245,6 +5247,41 @@ internal static class ToolContractCatalog {
 				})
 			],
 			Flow([RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName], "Standalone DB-first binding maintenance."),
+			[],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildDeleteDataBindingDb() {
+		return new ToolContractDefinition(
+			DeleteDataBindingDbTool.DeleteDataBindingDbToolName,
+			"Deletes a binding, keeps its records. " +
+			"Removes the package schema data record of the named DB-first binding from the package; the records it bound stay in the table and no row is deleted or changed. " +
+			"Works for a binding that holds rows and for an empty one, so use it to drop a binding created by mistake or left empty; the next package export ships without it. " +
+			"Fails without deleting anything when the binding does not exist in that package. " +
+			"To delete a live record together with its binding row, use remove-data-binding-row-db instead. " +
+			"For workflow selection and verification discipline, call get-guidance with name `data-bindings`.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, PackageNameFieldName, BindingNameFieldName],
+				EnvironmentPackageFields(
+					Field(BindingNameFieldName, StringType, BindingNameDescription))),
+			CommandExecutionOutput(),
+			new ToolErrorContract([
+				..CommonErrorContract.Codes,
+				new ToolErrorCodeContract("binding-not-found",
+					"The specified binding does not exist in that package on the remote environment. Nothing was deleted.")
+			]),
+			EnvironmentPackageAliases(
+				BindingNameParameterAlias()),
+			[],
+			[
+				Example("Delete a binding and keep its records", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[BindingNameFieldName] = ExampleTaskStatusSchemaName
+				})
+			],
+			Flow([ReadDataBindingDbTool.ReadDataBindingDbToolName, DeleteDataBindingDbTool.DeleteDataBindingDbToolName],
+				"read-data-binding-db → delete-data-binding-db: check what the binding ships, then delete it."),
 			[],
 			[]);
 	}
@@ -6188,11 +6225,11 @@ internal static class ToolContractCatalog {
 					Field(ResourcesFieldName, StringType, "Optional JSON object string of localizable strings the platform does NOT auto-provide (custom tab/group titles, button captions, validator messages, explicit overrides). Only include keys with NO matching DS-bound view model attribute on the page - see `page-schema-resources` guidance." + McpToolDescriptions.PageResourcesAdditive),
 					Field("optional-properties", StringType, "JSON array of {key, value} objects merged into schema optionalProperties (e.g. '[{\"key\":\"entitySchemaName\",\"value\":\"UsrMyEntity\"}]')."),
 					Field(VerifyFieldName, BooleanType, "If true, read the page back after saving and return its metadata. Best-effort - verify failure does not fail the update."),
-					Field("mode", StringType, "Write mode. `replace` (default) saves the body verbatim. `append` merges the incoming fragment with the schema's current body - viewConfigDiff entries are replaced only when BOTH `operation` and `name` match - and, for a `remove` or a `set`, whether it targets `properties` - with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`, in place. An append body is a FRAGMENT OF A PAGE BODY, not a bare list of operations: it may omit sections, but it must carry at least one section marker pair (e.g. /**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/) or it is rejected up-front - a bare array is valid JavaScript, so without this rule every section read as empty and the merge discarded the whole fragment while reporting success. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific - a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`. Reordering the array changes nothing."),
-					Field("target-package-uid", StringType, "Explicit target package UId for the replacing schema. Overrides automatic design-package resolution."),
+					Field("mode", StringType, "Write mode. `replace` (default) saves the body verbatim. `append` merges the incoming fragment with the schema's current body - viewConfigDiff entries are replaced only when BOTH `operation` and `name` match - and, for a `remove` or a `set`, whether it targets `properties` - with incoming winning in place. Every existing operation the fragment does not collide with is preserved, including a second operation on the same component. The one exception: a FURTHER existing entry of an identity the fragment already superseded is dropped rather than re-applied after the replacement. Handlers dedupe by `request`, in place. An append body is a FRAGMENT OF A PAGE BODY, not a bare list of operations: it may omit sections, but it must carry at least one section marker pair (e.g. /**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/) or it is rejected up-front. SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and incoming wins, and the final merged web body is rejected when a custom validator reference has no matching SCHEMA_VALIDATORS declaration. Separately, at APPLY time: preserved is not the same as applied, and this part is not append-specific - a 'replace' body produces it too. The differ applies whole operation GROUPS in a fixed order (merges, then removes/inserts/moves, `set` last), never in viewConfigDiff array order. So a `merge`, `move`, or element `remove` that ends up beside an `insert` for one `name`, or a `move` whose name the same body also element-removes, resolves against a base without that component and is silently dropped. The same holds for any two operations whose groups run in sequence for one name: a `merge` beside an element `remove` or a `set`, and a property `remove` beside an element `remove` or beside a `set`. The response then carries an advisory `warnings` entry naming the component; fold the transform's values into the `insert`, or use `set`."),
+					Field("target-package-uid", StringType, "Target package UId; overrides design-package resolution. Replacing an existing non-default layer is refused (`package-choice-replace-refused`) unless `force`: use `mode: append`. A new layer needs no force."),
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely - the UId is used as given, with no name resolution or existence check. With `mode: append` this is also the body a `dry-run` fetches and projects against, so an unintended UId is read, not just written to."),
 					Field("checksum", StringType, "Conflict baseline: the `editable.checksum` returned by the get-page call this edit is based on. When supplied it is the authoritative baseline, so the save is compared against the body you actually fetched rather than the on-disk .clio-pages baseline, which can be stale or anchored elsewhere."),
-					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared with the resolved target and a mismatch remains a conflict."),
+					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and overwrite out-of-band changes. Set true ONLY after the user explicitly confirms that. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared. Also lifts `package-choice-replace-refused`, erasing the own changes of that layer: needs a separate user confirmation."),
 					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup - pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved."),
 					Field(IncludeOperationsFieldName, BooleanType, "Optional, default true. Applies only with verify=true: false leaves `page.ownBodySummary.viewConfigDiffOps` out of the read-back page and puts `page.ownBodySummary.viewConfigDiffOpCounts` (number of operations per operation type) in its place.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
@@ -6899,7 +6936,7 @@ internal static class ToolContractCatalog {
 				"The user approved this install on this environment after you warned them it builds the configuration and restarts the site for every connected user. A refusal, its hint, or an approval given earlier in the session is not that approval.",
 				"A process tool reported that the CrtProcessBuilder package is missing or older than required. Those tools (create-business-process, modify-business-process, describe-business-process, list-user-tasks, validate-process-graph, modify-business-process-as-new-version, set-active-business-process-version, create-dynamic-case, describe-dynamic-case, modify-dynamic-case, and compile-creatio with process-name) are long-tail like this one: absent from tools/list, discoverable through the get-tool-contract index, reachable through clio-run / clio-run-destructive.",
 				"The caller can install a package on the target environment, With DataService read access to SysPackage the downgrade check runs; WITHOUT it the install proceeds and says so, so a missing read permission is not a reason to decline this call.",
-				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it. create-dynamic-case, describe-dynamic-case and modify-dynamic-case are gated differently: a General user with CanManageDcm, CanManageSolution and the right to add SysDcmSettings and SysDcmSchemaInSettings records; they do not need CanManageProcessDesign."
+				"NOTE for the follow-up call, not for this one: the process-designer tools additionally need the CanManageProcessDesign operation and a General (non-portal) user, which is the gate ProcessDesignService enforces. cliogate's broader CanManageSolution does NOT grant it. create-dynamic-case, describe-dynamic-case and modify-dynamic-case are gated differently: a General user with CanManageDcm, CanManageSolution and the right to add SysDcmSettings and SysDcmSchemaInSettings records (and to edit SysDcmSettings for a call with a filter); they do not need CanManageProcessDesign."
 			]);
 	}
 

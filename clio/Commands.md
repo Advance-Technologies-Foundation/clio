@@ -276,6 +276,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="create-workspace"></a>
 <a id="createw"></a>
 - [`create-workspace`](docs/commands/create-workspace.md) - Create a local workspace, `createw`
+<a id="delete-data-binding-db"></a>
+- [`delete-data-binding-db`](docs/commands/delete-data-binding-db.md) - Delete a remote DB-first data binding from its package; the bound records stay in the table
 <a id="link-core-src"></a>
 <a id="lcs"></a>
 - [`link-core-src`](docs/commands/link-core-src.md) - Link core source code to environment for development, `lcs`

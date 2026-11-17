@@ -42,7 +42,9 @@ public class DescribeDynamicCaseTool(
 		 OpenWorld = false),
 	 Description("Reads a dynamic case (DCM), read-only. One case, or every case of an object. Answers the "
 		 + "stages in order with their groups, the final stages, which stages hold steps, the running cases per stage, "
-		 + "whether the case is enabled, and the object's case settings rows, with the designer link per case. Call "
+		 + "whether the case is enabled, its filter ({column, values}, {column, empty: true}, or {unreadable: true} for a "
+		 + "designer-built filter clio cannot change), and the object's case settings rows with their filterColumnName, "
+		 + "with the designer link per case. Call "
 		 + "it before answering any question about an existing case and before changing one with "
 		 + "modify-dynamic-case. Name the case by case-name or case-uid, or the object by entity-schema-name. "
 		 + "Requires a CrtProcessBuilder that carries DescribeCase (install-process-builder, after user approval).")]

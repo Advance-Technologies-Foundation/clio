@@ -744,4 +744,39 @@ public sealed class WebServiceDefinitionBuilderTests {
 		collection!.Items.Remove("ab12cd34-0000-0000-0000-000000000001").Should().BeTrue(
 			because: "the platform's key case must not decide whether setMethod replaces or duplicates a method");
 	}
+
+	[TestCase("customer.name", "UsrCustomerName", true, false, "name")]
+	[TestCase("$.items[*].number", "UsrNumber", true, false, "number")]
+	[TestCase("$.items[0]", "UsrItems", true, false, "items")]
+	[TestCase("$['first name']", "UsrFirstName", true, false, "first name")]
+	[TestCase("tem:total/ns0:amount", "UsrTotalAmount", true, true, "amount")]
+	[TestCase("tem:Order.Id", "UsrOrderId", true, true, "Order.Id")]
+	[TestCase("X-Api-Key", "UsrApiKey", false, false, "X-Api-Key")]
+	[TestCase("$filter", "UsrFilter", false, false, "$filter")]
+	[TestCase("page[size]", "UsrPageSize", false, false, "page[size]")]
+	[TestCase("api.version", "UsrApiVersion", false, false, "api.version")]
+	[TestCase(null, "UsrPage", false, false, "UsrPage")]
+	[Description("A parameter sent without a caption is captioned with the name the API sees: only a body or SOAP element path is split, a query, header, cookie or path name is kept as given, and the code is used only without a path.")]
+	public void DefaultParameterCaption_Should_Use_The_Wire_Name(string path, string code, bool body, bool soap, string expected) {
+		// Act
+		string caption = WebServiceDefinitionBuilder.DefaultParameterCaption(path, code, body, soap);
+
+		// Assert
+		caption.Should().Be(expected, because: "the prefixed code reads poorly on the Call web service element");
+	}
+
+	[Test]
+	[Description("A base-URI placeholder no path parameter fills is reported as a base-uri placeholder, not as one of the method uri.")]
+	public void BuildMethod_Should_Name_A_Missing_Base_Uri_Placeholder_As_Such() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Orders", "GET", "orders"),
+			null, false, errors, null, "https://api.example.com/{version}/");
+
+		// Assert
+		errors.Should().ContainSingle(because: "{version} has no path parameter")
+			.Which.Should().Contain("base-uri placeholder {version}", because: "the message names where the placeholder is");
+	}
 }

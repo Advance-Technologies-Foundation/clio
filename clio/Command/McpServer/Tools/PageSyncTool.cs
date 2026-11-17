@@ -69,6 +69,7 @@ public sealed class PageSyncTool(
 	             PageBodyAstLinter.DesignerSafetySummary +
 	             "For each page: validates body client-side (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
+	             "`package-choice-required`: ask the user which package to change, then write that page with update-page target-package-uid. " +
 		             "CONFLICT DETECTION: pass the per-page `checksum` — the `editable.checksum` from the get-page that page's edit is based on — on every save that follows a get-page; it becomes the authoritative baseline for that page. Without it the check falls back to the baseline get-page stored in .clio-pages/{schema}/meta.json for the same environment, which is keyed by directory and schema name and can therefore describe a different body than the one you read. A page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry. Re-sending a conflict response's `actualChecksum` as `checksum` is NOT a resolution - it discards the external change exactly like force=true. Inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. A saved page with `conflict-check: not-applied` had no conflict protection — tell the user. " +
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
@@ -109,7 +110,9 @@ public sealed class PageSyncTool(
 		// the registry/version is unavailable (fail-open).
 		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions = null;
 		string? mobileCatalogVersion = null;
-		if (args.Validate ?? true) {
+		// A batch in which every page has a refused schema name asks the environment nothing.
+		if ((args.Validate ?? true)
+			&& pages.Any(page => PageBaselineStore.DescribeSchemaNameRefusal(page.SchemaName) is null)) {
 			string? platformVersion = await ResolvePlatformVersionAsync(args.EnvironmentName, cancellationToken).ConfigureAwait(false);
 			chartTypeDefinitions = await ChartWidgetValidation
 				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
@@ -260,6 +263,16 @@ public sealed class PageSyncTool(
 		for (int i = 0; i < pages.Count; i++) {
 			PageSyncPrePassEntry entry = prePass.Entries[i];
 			PageSyncPageInput page = pages[i];
+			// First, before the gates below read the page's persisted keys from Creatio and long before the
+			// baseline guard probes .clio-pages/{schema-name}: the page fails alone, the batch goes on.
+			if (PageBaselineStore.DescribeSchemaNameRefusal(page.SchemaName) is { } schemaNameRefusal) {
+				results.Add(new PageSyncPageResult {
+					SchemaName = page.SchemaName,
+					Success = false,
+					Error = schemaNameRefusal
+				});
+				continue;
+			}
 			if (entry.SyntaxFailureMessage is { } syntaxMsg) {
 				results.Add(BuildPrePassFailureResult(page, ResolvePrePassSyntaxFailureMessage(page, syntaxMsg, validate)));
 				continue;
@@ -902,6 +915,9 @@ public sealed class PageSyncTool(
 			Force = page.Force ?? false,
 			Validate = opOptions.Validate,
 			NotifyDesignerPresence = false,
+			// sync-pages cannot name a target package, so a page another editable package also customizes is
+			// refused here and written through update-page with target-package-uid (ENG-105680).
+			EnforcePackageChoice = true,
 			// Passed VERBATIM. TryArm is the single normalization chokepoint for a pinned checksum (it
 			// trims, and collapses whitespace-only to "not supplied"), so trimming here too would be a
 			// second copy of a rule that must not be able to diverge from update-page's.
@@ -990,7 +1006,7 @@ public sealed class PageSyncTool(
 				outputDirectory);
 		}
 		string rootDir = fileSystem.Path.Combine(anchor, ".clio-pages");
-		string schemaDir = fileSystem.Path.Combine(rootDir, schemaName);
+		string schemaDir = PageBaselineStore.ResolveSchemaDirectory(fileSystem, rootDir, schemaName);
 		string bodyFile = fileSystem.Path.Combine(schemaDir, "body.js");
 		string metaFile = fileSystem.Path.Combine(schemaDir, "meta.json");
 		// H-1: the verify read-back rewrites files a concurrent clio process may be reading, so the

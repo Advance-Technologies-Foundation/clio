@@ -33,13 +33,14 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 				 Credentials are never values: basic/digest auth and every header, cookie, key or token parameter reference a SYSTEM SETTING code (it must exist), and the user fills its value; a constant there (a soap-header parameter included), or user:password@ in base-uri, a namespace uri or a soap-action, is refused, and so is a key in a URI query or a query parameter's constant (a credential name, or a 16+ character sig, sas, code, appid, sign or hmac). The service code and every method and parameter code must carry the environment's schema-name prefix (Studio refuses to save a method without it; wire names go in uri and path), and the service code must not be used by another service (an existing service is changed with modify-web-service). The caller needs CanManageSolution. Returns the registered service with its parameter tree and the steps left to the user.
 				 """)]
 	public WebServiceToolResult RegisterWebService(
-		[Description("Parameters: environment-name, package-name, code, base-uri, methods (required); caption, retry-count, auth, type, namespaces (optional)")]
+		[Description("Parameters: environment-name, package-name, code, base-uri, methods (required); caption, description, retry-count, auth, type, namespaces (optional)")]
 		[Required]
 		RegisterWebServiceArgs args) =>
 		WebServiceToolRunner.Run(commandResolver, args?.EnvironmentName, args?.ExtensionData,
-			"Valid: environment-name, package-name, code, base-uri, methods, caption, retry-count, auth, type, namespaces.",
+			"Valid: environment-name, package-name, code, base-uri, methods, caption, description, retry-count, auth, type, namespaces.",
 			designer => designer.Register(args.PackageName, new WebServiceRegistration(
-				args.Code, args.Caption, args.BaseUri, args.RetryCount, args.Auth, args.Methods, args.Type, args.Namespaces)));
+				args.Code, args.Caption, args.BaseUri, args.RetryCount, args.Auth, args.Methods, args.Type, args.Namespaces,
+				args.Description)));
 }
 
 /// <summary>Lists registered web services with code, caption, type, package and base URI; method trees come from describe-web-service.</summary>
@@ -108,7 +109,7 @@ public sealed class ModifyWebServiceTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
-				 Changes a web service. For a REST or SOAP service it applies ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth. Credentials follow the register-web-service rules; a method with use-auth false sends no authentication, so after a change of the authentication a notice names such methods. Codes the service already has are kept as they are, prefix or not (never rename one to add it); a method or parameter this call adds follows the register-web-service prefix and path rules.
+				 Changes a web service. For a REST or SOAP service it applies ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth, setDescription. Credentials follow the register-web-service rules; a method with use-auth false sends no authentication, so after a change of the authentication a notice names such methods, and setAuth none clears use-auth on every method, with a notice. Codes the service already has are kept as they are, prefix or not (never rename one to add it); a method or parameter this call adds follows the register-web-service prefix and path rules.
 
 				 A SOAP service also takes setNamespaces (the whole list; a prefix a kept method uses must stay) and setType (soap11 or soap12; REST and SOAP cannot be switched); both change every call, as does setBaseUri, so the usage guard treats them as changing every method; setAuth changes the calls of the methods with use-auth true. Its methods follow the register-web-service SOAP rules, and describe-web-service output is valid setMethod and setNamespaces input, except a uri, soap-action, base URI or namespace uri that shows a [masked] key: that is refused.
 
@@ -338,7 +339,11 @@ public sealed record RegisterWebServiceArgs(
 
 	[property: JsonPropertyName("namespaces")]
 	[property: Description("SOAP only, at least one: the namespaces the envelope declares, e.g. [{\"prefix\": \"tem\", \"uri\": \"http://tempuri.org/\"}]; the first is the default unless one is marked default")]
-	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null) {
+	IReadOnlyList<WebServiceNamespaceArg> Namespaces = null,
+
+	[property: JsonPropertyName("description")]
+	[property: Description("Optional description Studio shows on the service")]
+	string Description = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

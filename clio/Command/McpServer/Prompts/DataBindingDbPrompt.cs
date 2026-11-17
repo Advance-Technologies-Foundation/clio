@@ -100,4 +100,27 @@ public static class DataBindingDbPrompt {
 		 After the remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 		 {FileSystemModeNote}
 		 """;
+
+	/// <summary>
+	/// Builds a prompt for deleting a DB-first data binding from its package while keeping the bound records.
+	/// </summary>
+	[McpServerPrompt(Name = DeleteDataBindingDbTool.DeleteDataBindingDbToolName),
+	 Description("Prompt to delete a DB-first data binding and keep its records")]
+	public static string DeleteDataBindingDb(
+		[Required] [Description("Creatio environment name")] string environmentName,
+		[Required] [Description("Target package name")] string packageName,
+		[Required] [Description("Binding folder name")] string bindingName) =>
+		$"""
+		 Use clio mcp server `{DeleteDataBindingDbTool.DeleteDataBindingDbToolName}` to delete binding `{bindingName}`
+		 from package `{packageName}` on environment `{environmentName}`.
+		 For canonical workflow selection and verification discipline, call `{GuidanceGetTool.ToolName}` with `name`
+		 set to `data-bindings` when the overall binding path is not already fixed.
+		 Pass `environment-name` `{environmentName}` exactly as provided.
+		 The tool deletes only the package schema data record: the records the binding held stay in the table, and
+		 the next package export ships without the binding. It works for a binding with rows and for an empty one.
+		 To delete a live record together with its binding row, use
+		 `{RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName}` instead.
+		 After the remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
+		 {FileSystemModeNote}
+		 """;
 }

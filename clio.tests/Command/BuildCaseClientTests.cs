@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json.Nodes;
@@ -249,6 +250,38 @@ public sealed class BuildCaseClientTests {
 	}
 
 	[Test]
+	[Description("The filter fields keep their wire names: a describe answer's case filter (values, empty, unreadable) and the settings row's filterColumnName, and a build answer's deactivatedCases.")]
+	public void Replies_ShouldReadTheFilterFields_ByTheirWireNames() {
+		// Arrange
+		_client.ExecutePostRequest(DescribeCaseUrl, Arg.Any<string>()).Returns(
+			"{\"DescribeCaseResult\":{\"success\":true,\"cases\":["
+			+ "{\"schemaName\":\"B2bCase\",\"filter\":{\"column\":\"UsrType\",\"values\":[{\"value\":\"t1\",\"caption\":\"B2B\"}]}},"
+			+ "{\"schemaName\":\"EmptyCase\",\"filter\":{\"column\":\"UsrType\",\"empty\":true}},"
+			+ "{\"schemaName\":\"DesignerCase\",\"filter\":{\"unreadable\":true}}],"
+			+ "\"settings\":[{\"sysDcmSettingsId\":\"s1\",\"hasFilterColumn\":true,\"filterColumnName\":\"UsrType\"}]}}");
+		_client.ExecutePostRequest(BuildCaseUrl, Arg.Any<string>()).Returns(
+			"{\"BuildCaseResult\":{\"success\":true,\"outcome\":\"planned\",\"deactivatedCases\":[\"OldCase\"]}}");
+
+		// Act
+		DynamicCaseReply<DescribeCaseResponse> described;
+		DynamicCaseReply<BuildCaseResponse> built;
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			described = session.Describe(new DescribeCaseRequest { EntitySchemaName = "UsrOrder" });
+			built = session.Build(new BuildCaseRequest { ValidateOnly = true });
+		}
+
+		// Assert
+		List<BuildCaseCaseInfo> cases = described.Response.Cases;
+		cases[0].Filter.Column.Should().Be("UsrType", because: "the filter column is read");
+		cases[0].Filter.Values.Should().ContainSingle(value => value.Value == "t1" && value.Caption == "B2B",
+			because: "each filter value carries its Id and display value");
+		cases[1].Filter.Empty.Should().BeTrue(because: "the empty-value case is read");
+		cases[2].Filter.Unreadable.Should().BeTrue(because: "a designer-built filter is reported, not dropped");
+		described.Response.Settings[0].FilterColumnName.Should().Be("UsrType", because: "the settings row names it");
+		built.Response.DeactivatedCases.Should().Equal(["OldCase"], because: "the cases the build disables are read");
+	}
+
+	[Test]
 	[Description("A modify is posted to the ModifyCase route: an explicit null group travels as JSON null, a group left out stays absent, members left out are omitted, and the flags are sent.")]
 	public void Modify_ShouldKeepAnExplicitNullGroupApartFromAnAbsentOne() {
 		// Arrange
@@ -312,5 +345,67 @@ public sealed class BuildCaseClientTests {
 		planned.Response.Diff.Enabled.To.Should().Be("false", because: "the enabled change is read");
 		planned.Response.RunningInstances.Total.Should().Be(3, because: "the running cases are read");
 		missing.Kind.Should().Be(DynamicCaseReplyKind.RouteMissing, because: "a 404 means the operation does not exist");
+	}
+
+	[Test]
+	[Description("A filtered build sends the filter with the server's keys and deactivateUnfiltered only when set; a build without them sends neither key, so it reads the same to every package that carries BuildCase.")]
+	public void Build_ShouldSendTheFilter_AndOmitItWhenAbsent() {
+		// Arrange
+		var sentBodies = new System.Collections.Generic.List<string>();
+		_client.ExecutePostRequest(BuildCaseUrl, Arg.Do<string>(body => sentBodies.Add(body)))
+			.Returns("{\"BuildCaseResult\":{\"success\":true,\"outcome\":\"planned\"}}");
+		BuildCaseRequest filtered = Request() with {
+			Filter = BuildCaseFilterRequest.From(new DynamicCaseFilterArgument("UsrType", ["B2B"], false)),
+			DeactivateUnfiltered = true
+		};
+		BuildCaseRequest empty = Request() with {
+			Filter = BuildCaseFilterRequest.From(new DynamicCaseFilterArgument("UsrType", [], true))
+		};
+
+		// Act
+		Build(filtered);
+		Build(empty);
+		Build(Request());
+
+		// Assert
+		JsonObject first = JsonNode.Parse(sentBodies[0])!["request"]!.AsObject();
+		first["filter"]!["column"]!.GetValue<string>().Should().Be("UsrType", because: "the filter column is sent");
+		first["filter"]!["values"]!.AsArray()[0]!.GetValue<string>().Should().Be("B2B", because: "the values are sent");
+		first["filter"]!.AsObject().ContainsKey("empty").Should().BeFalse(because: "an IN filter sends no empty key");
+		first["deactivateUnfiltered"]!.GetValue<bool>().Should().BeTrue(because: "the user's yes is forwarded");
+		JsonObject second = JsonNode.Parse(sentBodies[1])!["request"]!.AsObject();
+		second["filter"]!["empty"]!.GetValue<bool>().Should().BeTrue(because: "an empty-value case is sent as empty");
+		second["filter"]!.AsObject().ContainsKey("values").Should().BeFalse(because: "an empty-value case has no values");
+		JsonObject third = JsonNode.Parse(sentBodies[2])!["request"]!.AsObject();
+		third.ContainsKey("filter").Should().BeFalse(because: "a case without a filter sends no filter key");
+		third.ContainsKey("deactivateUnfiltered").Should().BeFalse(because: "the flag is sent only when set");
+	}
+
+	[Test]
+	[Description("A modify sends a new filter as an object and a removal as JSON null, and leaves the key out when the call names neither.")]
+	public void Modify_ShouldSendTheFilterChange_AndANullForARemoval() {
+		// Arrange
+		var sentBodies = new System.Collections.Generic.List<string>();
+		_client.ExecutePostRequest(ModifyCaseUrl, Arg.Do<string>(body => sentBodies.Add(body)))
+			.Returns("{\"ModifyCaseResult\":{\"success\":true,\"outcome\":\"planned\"}}");
+
+		// Act
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			session.Modify(new ModifyCaseRequest {
+				CaseName = "UsrOrderCase",
+				Filter = new CaseFilterPatch(BuildCaseFilterRequest.From(new DynamicCaseFilterArgument("UsrType", ["B2B"], false)))
+			});
+			session.Modify(new ModifyCaseRequest { CaseName = "UsrOrderCase", Filter = new CaseFilterPatch(null) });
+			session.Modify(new ModifyCaseRequest { CaseName = "UsrOrderCase", Caption = "X" });
+		}
+
+		// Assert
+		JsonNode.Parse(sentBodies[0])!["request"]!["filter"]!["values"]!.AsArray().Should().HaveCount(1,
+			because: "the new filter travels as an object");
+		JsonObject removal = JsonNode.Parse(sentBodies[1])!["request"]!.AsObject();
+		removal.ContainsKey("filter").Should().BeTrue(because: "a removal is an explicit filter key");
+		removal["filter"].Should().BeNull(because: "the removal is JSON null");
+		JsonNode.Parse(sentBodies[2])!["request"]!.AsObject().ContainsKey("filter").Should().BeFalse(
+			because: "a call that names no filter keeps the stored one");
 	}
 }

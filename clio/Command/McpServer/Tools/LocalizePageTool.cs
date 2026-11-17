@@ -64,6 +64,9 @@ public sealed class LocalizePageTool(
 		if (!string.IsNullOrWhiteSpace(legacyAliasError)) {
 			return Failure(args.SchemaName, legacyAliasError);
 		}
+		if (PageBaselineStore.DescribeSchemaNameRefusal(args.SchemaName) is { } schemaNameRefusal) {
+			return Failure(args.SchemaName, schemaNameRefusal);
+		}
 		LocalizePageOptions options = BuildOptions(args);
 		return ExecuteWithCleanLog(options, () => {
 			try {
