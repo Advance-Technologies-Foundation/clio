@@ -48,22 +48,28 @@ public class GetColumnRightsOptions : RemoteCommandOptions {
 }
 
 /// <summary>
-/// Reports the facts of an object's column permissions, read from the same <c>GetAdministratedObject</c> answer as
-/// <c>get-object-rights</c>: whether "Use column permissions" is on, and every column the service lists with its rows
-/// in stored position order — the column's code (resolved from its UId through the entity schema) and caption, each
-/// row's position, grantee and access level. Which row wins for a user in several roles is not measured for columns, so
-/// the order claims nothing more. It draws no coverage verdict.
+/// Reports the facts of an object's column permissions: whether "Use column permissions" is on (from the same
+/// <c>GetAdministratedObject</c> answer as <c>get-object-rights</c>) and the rows in STORAGE
+/// (<c>VwSysEntitySchemaColumnRight</c>) per column in stored position order — the column's code (resolved from its UId
+/// through the entity schema), each row's position, grantee and access level. The service read filters (it omits a
+/// column whose only row is the default while the switch is on, and every column while it is off), so storage is what
+/// is shown: while the switch is on, a column with only the default row (All employees, edit) is reported as such, and
+/// a column of the schema with no stored row as one only system administrators can access, per Creatio's documentation.
+/// When storage cannot be read, the service's answer is shown with a warning. Which row wins for a user in several
+/// roles is not measured for columns, so the order claims nothing more. It draws no coverage verdict.
 /// </summary>
 public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 
 	private readonly IObjectRightsReader _rightsReader;
+	private readonly IColumnRightsStorageReader _storage;
 	private readonly IRemoteEntitySchemaColumnManager _columnManager;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
-	public GetColumnRightsCommand(IObjectRightsReader rightsReader, IRemoteEntitySchemaColumnManager columnManager,
-		ILogger logger) {
+	public GetColumnRightsCommand(IObjectRightsReader rightsReader, IColumnRightsStorageReader storage,
+		IRemoteEntitySchemaColumnManager columnManager, ILogger logger) {
 		_rightsReader = rightsReader;
+		_storage = storage;
 		_columnManager = columnManager;
 		_logger = logger;
 	}
@@ -93,12 +99,15 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 			_logger.WriteError($"  {rootName}: {FailureReason(root)}.");
 			return 1;
 		}
-		ColumnRightsState state = root.ColumnState;
+		bool storedRead = TryReadStored(root, requestOptions, out IReadOnlyList<ColumnRights> stored,
+			out string storedError);
+		ColumnRightsState state = storedRead ? new ColumnRightsState(root.AdministratedByColumns, stored) : root.ColumnState;
 		IReadOnlyList<ColumnRights> shown = state.RestrictedColumns;
 		IReadOnlyDictionary<Guid, string> codes = new Dictionary<Guid, string>();
 		bool codesRead = false;
 		Guid? columnUId = null;
-		if (column is not null || shown.Count > 0) {
+		// While the switch is on, the schema's columns are what tells a column with no stored row.
+		if (column is not null || shown.Count > 0 || (storedRead && state.AdministratedByColumns == true)) {
 			codesRead = TryReadColumnCodes(rootName, requestOptions, out codes, out string codesError);
 			if (!codesRead) {
 				if (column is not null) {
@@ -128,9 +137,96 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 			_logger.WriteInfo($"  {ObjectRightsCommandInput.NotACode(named, new[] { new ObjectTitleMatch(rootName, root.Caption) })}, "
 				+ "which is read.");
 		}
+		if (!storedRead) {
+			_logger.WriteWarning($"  The stored rows could not be read ({storedError}): shown is GetAdministratedObject's "
+				+ "answer, which omits a column whose only row is the default (All employees, edit) while column "
+				+ "permissions are ON and every column while they are OFF, so default and locked columns cannot be told "
+				+ "apart.");
+			ReportColumns(state, columnUId, column, codes, codesRead, granteeFilter);
+			return 0;
+		}
+		if (state.AdministratedByColumns == true) {
+			ReportStoredWhileOn(state, KnownColumns(codes, root), columnUId, column, codes, codesRead, granteeFilter);
+			return 0;
+		}
 		ReportColumns(state, columnUId, column, codes, codesRead, granteeFilter);
 		return 0;
 	}
+
+	// The stored rows, by the object's schema UId. A failure is returned, never an empty list.
+	private bool TryReadStored(ObjectRightsInfo info, CreatioRequestOptions requestOptions,
+		out IReadOnlyList<ColumnRights> stored, out string error) {
+		stored = null;
+		error = null;
+		if (info.SchemaUId == Guid.Empty) {
+			error = "the schema UId was not read";
+			return false;
+		}
+		try {
+			if (requestOptions.Deadline is { IsSpent: true }) {
+				error = "the call's time limit is spent";
+				return false;
+			}
+			stored = _storage.ReadStoredColumns(info.SchemaUId, requestOptions);
+			return true;
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
+			error = ObjectRightsSupport.DisplayFailure(ex);
+			return false;
+		}
+	}
+
+	// The object's columns: the schema's, and those the service listed (it lists a column with no rows while the switch
+	// is on).
+	private static IReadOnlyList<Guid> KnownColumns(IReadOnlyDictionary<Guid, string> codes, ObjectRightsInfo info) =>
+		codes.Keys.Concat((info.Columns ?? []).Where(entry => entry.ColumnUId is not null)
+				.Select(entry => entry.ColumnUId!.Value))
+			.Distinct()
+			.ToArray();
+
+	// Column permissions ON, from storage: the columns with rows other than the default, then the columns with only the
+	// default row (not a restriction), then the columns with no stored row, which per Creatio's documentation only system
+	// administrators can access.
+	private void ReportStoredWhileOn(ColumnRightsState state, IReadOnlyList<Guid> known, Guid? columnUId, string column,
+		IReadOnlyDictionary<Guid, string> codes, bool codesRead, Guid? granteeFilter) {
+		List<ColumnRights> restricted = state.RestrictedColumns
+			.Where(entry => !ColumnRightsDefaults.IsDefaultOnly(entry.Rows))
+			.Where(entry => columnUId is null || entry.ColumnUId == columnUId)
+			.OrderBy(entry => CodeOf(entry, codes) is null ? 1 : 0)
+			.ThenBy(entry => CodeOf(entry, codes) ?? entry.ColumnCaption ?? "", StringComparer.OrdinalIgnoreCase)
+			.ToList();
+		Guid[] defaults = state.RestrictedColumns.Where(entry => ColumnRightsDefaults.IsDefaultOnly(entry.Rows))
+			.Where(entry => entry.ColumnUId is not null).Select(entry => entry.ColumnUId!.Value)
+			.Where(uId => columnUId is null || uId == columnUId).ToArray();
+		HashSet<Guid?> withRows = state.RestrictedColumns.Select(entry => entry.ColumnUId).ToHashSet();
+		Guid[] locked = known.Where(uId => !withRows.Contains(uId))
+			.Where(uId => columnUId is null || uId == columnUId).ToArray();
+		_logger.WriteInfo(restricted.Count > 0 ? "  Column permissions: ON. Columns with rows:" : $"  {OnWithoutRows}");
+		foreach (ColumnRights entry in restricted) {
+			_logger.WriteInfo($"    {FormatColumn(entry, codes, codesRead)}:");
+			ReportRows(entry.Rows, granteeFilter);
+		}
+		if (defaults.Length > 0) {
+			_logger.WriteInfo($"  {DefaultOnly} ({defaults.Length}): {FormatColumnList(defaults, codes)}.");
+		}
+		if (locked.Length > 0) {
+			_logger.WriteInfo($"  {NoRowsLocked} ({locked.Length}): {FormatColumnList(locked, codes)}.");
+		}
+		if (column is not null && restricted.Count == 0 && defaults.Length == 0 && locked.Length == 0) {
+			_logger.WriteInfo($"    {column}: no column permission rows.");
+		}
+	}
+
+	// Columns by their code, or by their UId when the schema does not name them; a long list is cut.
+	private static string FormatColumnList(IReadOnlyList<Guid> columns, IReadOnlyDictionary<Guid, string> codes) {
+		string[] names = columns.Select(uId => codes.TryGetValue(uId, out string code) ? code : uId.ToString())
+			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray();
+		return names.Length <= ListedColumnsShown
+			? string.Join(", ", names)
+			: $"{string.Join(", ", names.Take(ListedColumnsShown))} and {names.Length - ListedColumnsShown} more";
+	}
+
+	private const int ListedColumnsShown = 20;
 
 	private void ReportHeader(string rootName, string caption, string column, Guid? granteeFilter) {
 		_logger.WriteInfo($"Column permissions for {ObjectRightsSupport.FormatObject(rootName, caption)}"
@@ -271,10 +367,18 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		+ "access: denied, read or edit.";
 
 	internal const string SwitchOff =
-		"Column permissions: OFF — every column is governed only by object and record permissions.";
+		"Column permissions: OFF — every column is governed only by object and record permissions; stored rows are kept "
+		+ "but not applied.";
 
 	internal const string SwitchMissing =
 		"Column permissions: unknown — the service did not return the column switch (administratedByColumns).";
 
-	internal const string OnWithoutRows = "Column permissions: ON, and no column has a permission row.";
+	internal const string OnWithoutRows =
+		"Column permissions: ON. No column has rows other than the default row (All employees, edit).";
+
+	internal const string DefaultOnly =
+		"Default row only (All employees: edit), not a restriction";
+
+	internal const string NoRowsLocked =
+		"No rows - per Creatio's documentation only system administrators can access these columns";
 }

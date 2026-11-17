@@ -28,9 +28,11 @@ public sealed class ColumnRightsToolTests {
 	private const string Grantee = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
 	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
 	private static readonly Guid AmountUId = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
+	private static readonly Guid SchemaUId = Guid.Parse("35a9057f-800d-414b-acfb-c919c215857a");
 
 	private ILogger _logger;
 	private IObjectRightsReader _reader;
+	private IColumnRightsStorageReader _storage;
 	private IRemoteEntitySchemaColumnManager _columnManager;
 	private IToolCommandResolver _resolver;
 	private GetColumnRightsOptions _captured;
@@ -47,6 +49,8 @@ public sealed class ColumnRightsToolTests {
 		_logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => messages.Add(new ErrorMessage((string)call[0])));
 		_logger.When(l => l.ClearMessages()).Do(_ => messages.Clear());
 		_reader = Substitute.For<IObjectRightsReader>();
+		_storage = Substitute.For<IColumnRightsStorageReader>();
+		_storage.ReadStoredColumns(default, default).ReturnsForAnyArgs(Array.Empty<ColumnRights>());
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
 			new EntitySchemaPropertiesInfo("UsrHoliday", "Holiday", null, "(merged: all packages)", null, false, "Id",
@@ -59,7 +63,7 @@ public sealed class ColumnRightsToolTests {
 			.Returns(_ => Command());
 	}
 
-	private GetColumnRightsCommand Command() => new(_reader, _columnManager, _logger);
+	private GetColumnRightsCommand Command() => new(_reader, _storage, _columnManager, _logger);
 
 	private GetColumnRightsTool Tool() => new(Command(), _logger, _resolver);
 
@@ -142,10 +146,12 @@ public sealed class ColumnRightsToolTests {
 	[Description("A successful read runs the command resolved for the call's environment and returns its output.")]
 	public void GetColumnRights_ShouldReturnTheOutput_WhenTheReadSucceeds() {
 		// Arrange
+		ColumnRights[] columns = { new(AmountUId, "Amount",
+			new[] { new ColumnRightRow(Employees, "All employees", 0, ColumnRightLevel.Denied) }) };
 		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
-			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), AdministratedByColumns: true,
-			Columns: new[] { new ColumnRights(AmountUId, "Amount",
-				new[] { new ColumnRightRow(Employees, "All employees", 0, ColumnRightLevel.Denied) }) }));
+			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
+			AdministratedByColumns: true, Columns: columns));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>()).Returns(columns);
 
 		// Act
 		ObjectRightsToolResponse response = Tool().GetColumnRights(new GetColumnRightsArgs("dev", "UsrHoliday"));
@@ -187,9 +193,11 @@ public sealed class SetColumnRightsToolTests {
 
 	private const string Grantee = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
 	private static readonly Guid AmountUId = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
+	private static readonly Guid SchemaUId = Guid.Parse("35a9057f-800d-414b-acfb-c919c215857a");
 
 	private ILogger _logger;
 	private IObjectRightsReader _reader;
+	private IColumnRightsStorageReader _storage;
 	private IColumnRightsWriter _writer;
 	private IGranteeLookup _granteeLookup;
 	private IRemoteEntitySchemaColumnManager _columnManager;
@@ -206,9 +214,11 @@ public sealed class SetColumnRightsToolTests {
 		_logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => messages.Add(new ErrorMessage((string)call[0])));
 		_logger.When(l => l.ClearMessages()).Do(_ => messages.Clear());
 		_reader = Substitute.For<IObjectRightsReader>();
+		_storage = Substitute.For<IColumnRightsStorageReader>();
+		_storage.ReadStoredColumns(default, default).ReturnsForAnyArgs(Array.Empty<ColumnRights>());
 		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
-			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), AdministratedByColumns: true,
-			Columns: Array.Empty<ColumnRights>()));
+			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
+			AdministratedByColumns: true, Columns: Array.Empty<ColumnRights>()));
 		_writer = Substitute.For<IColumnRightsWriter>();
 		_granteeLookup = Substitute.For<IGranteeLookup>();
 		_granteeLookup.ResolveGranteeName(Guid.Parse(Grantee), Arg.Any<CreatioRequestOptions>()).Returns("Role");
@@ -224,7 +234,7 @@ public sealed class SetColumnRightsToolTests {
 			.Returns(_ => Command());
 	}
 
-	private SetColumnRightsCommand Command() => new(_reader, _writer, new ColumnRightsPlanner(),
+	private SetColumnRightsCommand Command() => new(_reader, _storage, _writer, new ColumnRightsPlanner(),
 		new ColumnRightsReadBackVerifier(), _granteeLookup, _columnManager, Substitute.For<IInteractiveConsole>(), _logger);
 
 	private SetColumnRightsTool Tool() => new(Command(), _logger, _resolver);

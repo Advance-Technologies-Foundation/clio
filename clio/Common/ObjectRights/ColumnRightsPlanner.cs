@@ -8,7 +8,7 @@ namespace Clio.Common.ObjectRights;
 /// One <c>set-column-rights</c> change: one grantee's row in one column, or the "Use column permissions" switch alone.
 /// </summary>
 /// <param name="ColumnUId">The column's UId; <see cref="Guid.Empty"/> for a call that only turns the switch.</param>
-/// <param name="ColumnCaption">The column's caption, sent when the column has no rows yet.</param>
+/// <param name="ColumnCaption">The column's caption, sent with the column's rows.</param>
 /// <param name="Grantee">The SysAdminUnit id whose row changes; <see cref="Guid.Empty"/> for a switch-only call.</param>
 /// <param name="GranteeName">The grantee's name, for a row the call adds.</param>
 /// <param name="Access">The level the grantee's row gets; <see langword="null"/> for a move, a removal or a switch.</param>
@@ -35,6 +35,23 @@ public sealed record ColumnRightsChangeRequest(
 	public bool MovesOnly => !SwitchOnly && Access is null && !RemoveRow && Position is not null;
 }
 
+/// <summary>A column of the object the planner knows of: from the entity schema, or listed by the service.</summary>
+/// <param name="UId">The column's UId.</param>
+/// <param name="Caption">Its caption, sent with its rows; <see langword="null"/> when unknown.</param>
+public sealed record KnownColumn(Guid UId, string Caption);
+
+/// <summary>
+/// What a <c>set-column-rights</c> call plans from: the switch (from <c>GetAdministratedObject</c>), the rows in STORAGE
+/// per column, and every column of the object it knows of.
+/// </summary>
+/// <param name="AdministratedByColumns">The switch; <see langword="null"/> when the read carried no readable one.</param>
+/// <param name="Stored">The stored rows per column (columns with no stored row are not listed).</param>
+/// <param name="KnownColumns">The object's columns: the entity schema's, and those the service listed.</param>
+public sealed record ColumnRightsLayer(
+	bool? AdministratedByColumns,
+	IReadOnlyList<ColumnRights> Stored,
+	IReadOnlyList<KnownColumn> KnownColumns);
+
 /// <summary>Why <see cref="IColumnRightsPlanner"/> refuses a change; nothing is written for a refused plan.</summary>
 public enum ColumnRightsRefusal {
 	/// <summary>A grant on an object whose column permissions are off, without <c>--enable-column-permissions</c>.</summary>
@@ -55,134 +72,131 @@ public enum ColumnRightsRefusal {
 	SwitchUnknown,
 
 	/// <summary>
-	/// A row of the column the call changes has no position, no readable level or no readable grantee: the save sends
-	/// the column's rows back, and such a row could not be sent exactly as stored.
+	/// A stored row has no position, no readable level or no readable grantee: the save sends every restricted column's
+	/// stored rows back, and such a row could not be sent exactly as stored.
 	/// </summary>
 	UnreadableColumnRows,
 
-	/// <summary>
-	/// A column entry carries a UId that is not a GUID: it cannot be told apart from the column the call changes, so a
-	/// save could store that column twice.
-	/// </summary>
-	UnreadableColumnUId
+	/// <summary>A move or a removal while column permissions are off: a save with a column list while off is not
+	/// measured, so the call asks to turn them on first.</summary>
+	SwitchOffForLayout
 }
 
 /// <summary>
-/// What a <c>set-column-rights</c> call writes: the column layer before and after. A save sends the WHOLE column list of
-/// <see cref="After"/> — the service replaces every column's rows with the list it gets — unless the call only turns the
-/// switch, which sends no list (<see cref="RewritesColumns"/>).
+/// What a <c>set-column-rights</c> call writes, and what storage must hold afterwards. Measured on storage: a save with a
+/// column list gives each column IN the list exactly the listed rows (<c>[]</c>: none), and each column of the object NOT
+/// in it the default row (<see cref="ColumnRightsDefaults"/>); a save with <c>null</c> leaves the stored rows alone.
 /// </summary>
-/// <param name="Before">The column layer as read.</param>
-/// <param name="After">The planned column layer; equal to <see cref="Before"/> for a refused plan.</param>
+/// <param name="Before">The switch and the stored rows as read.</param>
+/// <param name="SwitchAfter">The switch the save sends.</param>
+/// <param name="SaveList">The column list the save sends; <see langword="null"/> to leave the stored rows alone.</param>
+/// <param name="ExpectedStored">The switch and the stored rows the read-back must show: every listed column with its
+/// listed rows, every other column the planner knows of with the default row.</param>
+/// <param name="DefaultedColumns">Columns that had no stored row, or that the call empties, and so get the default row
+/// because the list does not name them.</param>
 /// <param name="Refusal">Why nothing may be written; <see langword="null"/> when the plan may be saved.</param>
-/// <param name="DuplicatePositions">The positions of the grantee's rows when it has several in the column (a row without
-/// a position as <see langword="null"/>).</param>
+/// <param name="DuplicatePositions">The positions of the grantee's rows when it has several in the column.</param>
 /// <param name="ColumnUId">The column the call changes; <see cref="Guid.Empty"/> for a switch-only call.</param>
-/// <param name="RewritesColumns">Whether the save sends the column list (every call but a switch-only one).</param>
 public sealed record ColumnRightsPlan(
 	ColumnRightsState Before,
-	ColumnRightsState After,
+	bool SwitchAfter,
+	IReadOnlyList<ColumnRights> SaveList,
+	ColumnRightsState ExpectedStored,
+	IReadOnlyList<Guid> DefaultedColumns,
 	ColumnRightsRefusal? Refusal,
 	IReadOnlyList<int?> DuplicatePositions,
-	Guid ColumnUId,
-	bool RewritesColumns) {
+	Guid ColumnUId) {
 
 	/// <summary>Whether the plan is refused.</summary>
 	public bool Refused => Refusal is not null;
 
+	/// <summary>Whether the save sends a column list (every call but a disable).</summary>
+	public bool RewritesColumns => SaveList is not null;
+
 	/// <summary>Whether saving the plan changes anything: the switch, or a row of the column.</summary>
-	public bool Changes => !Refused && (Before.AdministratedByColumns != After.AdministratedByColumns
-		|| !ColumnRightsComparer.SameRows(RowsOf(Before, ColumnUId), RowsOf(After, ColumnUId)));
+	public bool Changes => !Refused && (Before.AdministratedByColumns != SwitchAfter
+		|| !ColumnRightsComparer.SameRows(ColumnRowsBefore, ColumnRowsAfter));
 
 	/// <summary>The call turns column permissions on.</summary>
-	public bool EnablesColumnPermissions =>
-		Before.AdministratedByColumns == false && After.AdministratedByColumns == true;
+	public bool EnablesColumnPermissions => Before.AdministratedByColumns == false && SwitchAfter;
 
 	/// <summary>The call turns column permissions off.</summary>
-	public bool DisablesColumnPermissions =>
-		Before.AdministratedByColumns == true && After.AdministratedByColumns == false;
+	public bool DisablesColumnPermissions => Before.AdministratedByColumns == true && !SwitchAfter;
 
-	/// <summary>The rows of the changed column before the call, in stored position order.</summary>
+	/// <summary>The stored rows of the changed column before the call.</summary>
 	public IReadOnlyList<ColumnRightRow> ColumnRowsBefore => RowsOf(Before, ColumnUId);
 
-	/// <summary>The rows of the changed column after the call, in stored position order.</summary>
-	public IReadOnlyList<ColumnRightRow> ColumnRowsAfter => RowsOf(After, ColumnUId);
+	/// <summary>The rows the changed column must have in storage after the call.</summary>
+	public IReadOnlyList<ColumnRightRow> ColumnRowsAfter => RowsOf(ExpectedStored, ColumnUId);
 
-	/// <summary>
-	/// The changed column ends with rows that all grant edit, which the service does not store (edit is the default): the
-	/// read-back then has no rows for it, by design.
-	/// </summary>
-	public bool ColumnDroppedAsAllEdit => RewritesColumns && ColumnRightsComparer.IsAllEdit(ColumnRowsAfter);
+	/// <summary>The columns the list sends with no rows: columns that have none while column permissions are on, kept
+	/// that way (per Creatio's documentation only system administrators can access them).</summary>
+	public IReadOnlyList<Guid> ColumnsKeptWithoutRows =>
+		(SaveList ?? []).Where(column => column.Rows.Count == 0 && column.ColumnUId is not null)
+			.Select(column => column.ColumnUId!.Value).ToArray();
 
-	/// <summary>The other columns with rows, which the save sends exactly as read.</summary>
-	public IReadOnlyList<ColumnRights> OtherColumns =>
-		Before.RestrictedColumns.Where(column => column.ColumnUId != ColumnUId).ToArray();
+	/// <summary>The stored rows a list save could not send back exactly: no position, level or grantee.</summary>
+	public IReadOnlyList<ColumnRightRow> UnreadableRows =>
+		Before.Columns.SelectMany(column => column.Rows).Where(IsUnreadable).ToArray();
+
+	internal static bool IsUnreadable(ColumnRightRow row) =>
+		row.Position is null || row.Level is null || row.GranteeId == Guid.Empty;
 
 	internal static IReadOnlyList<ColumnRightRow> RowsOf(ColumnRightsState state, Guid? columnUId) =>
 		state.Columns.Where(column => column.ColumnUId == columnUId).SelectMany(column => column.Rows)
 			.OrderBy(row => row.Position is null).ThenBy(row => row.Position ?? 0).ToArray();
-
-	/// <summary>
-	/// The rows of the changed column the save could not send back exactly as stored: a row with no position, no readable
-	/// level (absent, or present but not a number) or no readable grantee id.
-	/// </summary>
-	public IReadOnlyList<ColumnRightRow> UnreadableRows =>
-		ColumnRowsBefore.Where(IsUnreadable).ToArray();
-
-	/// <summary>The column entries read with a UId that is not a GUID, as the service returned it.</summary>
-	public IReadOnlyList<string> UnreadableColumnUIds =>
-		Before.Columns.Where(column => column.ColumnUId is null).Select(column => column.UnreadableUId ?? "(absent)")
-			.ToArray();
-
-	internal static bool IsUnreadable(ColumnRightRow row) =>
-		row.Position is null || row.Level is null || row.GranteeId == Guid.Empty;
 }
 
-/// <summary>Plans one <c>set-column-rights</c> change on the column layer as read. Pure: no I/O.</summary>
+/// <summary>Plans one <c>set-column-rights</c> change on the stored column rows. Pure: no I/O.</summary>
 public interface IColumnRightsPlanner {
 	/// <summary>
-	/// Plans <paramref name="request"/> on <paramref name="before"/>. Any call is refused when the read carried no readable
-	/// switch; a row change is refused when a column entry's UId is not a GUID, or when a row of the changed column has no
-	/// position, no readable level or no readable grantee. A level change keeps every position as read; a new
-	/// row without a position goes after the column's last row; a row placed at a position, a move and a removal renumber
-	/// the column's rows 0..n-1 in their new order. The other columns are never changed. The switch changes only through
-	/// its flags: a grant while column permissions are off is refused unless the request turns them on.
+	/// Plans <paramref name="request"/> on <paramref name="layer"/>. Every call is refused while the switch is unknown. A
+	/// row change or an enable sends a column list built from STORAGE: every column whose stored rows are not exactly the
+	/// default, as stored, with the changed column's planned rows; a column that has no stored row is sent with none
+	/// while column permissions are on (so it stays as it is), and is left out when the call turns them on (so it gets
+	/// the default and no column is locked); a column the call empties is left out (it gets the default). A disable sends
+	/// no list. A level change keeps every position as stored; a new row goes after the column's last row; a placement, a
+	/// move and a removal renumber the column's rows 0..n-1. When the call turns column permissions on, a column with no
+	/// stored row starts from the default row it would get.
 	/// </summary>
-	/// <param name="before">The column layer as read.</param>
+	/// <param name="layer">The switch, the stored rows and the known columns.</param>
 	/// <param name="request">The change.</param>
 	/// <returns>The plan, or a refused one.</returns>
-	ColumnRightsPlan Plan(ColumnRightsState before, ColumnRightsChangeRequest request);
+	ColumnRightsPlan Plan(ColumnRightsLayer layer, ColumnRightsChangeRequest request);
 }
 
 /// <inheritdoc />
 public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 
 	/// <inheritdoc />
-	public ColumnRightsPlan Plan(ColumnRightsState before, ColumnRightsChangeRequest request) {
-		ArgumentNullException.ThrowIfNull(before);
+	public ColumnRightsPlan Plan(ColumnRightsLayer layer, ColumnRightsChangeRequest request) {
+		ArgumentNullException.ThrowIfNull(layer);
 		ArgumentNullException.ThrowIfNull(request);
+		ColumnRightsState before = new(layer.AdministratedByColumns, layer.Stored);
 		// What the switch is decides what a save turns on or off; an unknown one is never taken for OFF (or ON).
-		if (before.AdministratedByColumns is not { } switchRead) {
+		if (layer.AdministratedByColumns is not { } switchRead) {
 			return Refuse(before, request, ColumnRightsRefusal.SwitchUnknown);
 		}
 		if (request.SwitchOnly) {
-			bool switchOn = request.EnableColumnPermissions || (switchRead && !request.DisableColumnPermissions);
-			return new ColumnRightsPlan(before, before with { AdministratedByColumns = switchOn }, null, [], Guid.Empty,
-				false);
+			if (request.DisableColumnPermissions || !request.EnableColumnPermissions || switchRead) {
+				bool after = request.EnableColumnPermissions || (switchRead && !request.DisableColumnPermissions);
+				// A disable sends no list: every stored row is kept.
+				return new ColumnRightsPlan(before, after, null, before with { AdministratedByColumns = after }, [], null,
+					[], Guid.Empty);
+			}
+			return BuildListPlan(layer, before, switchWasOn: false, request, null);
 		}
 		if (request.Access is not null && !switchRead && !request.EnableColumnPermissions) {
 			return Refuse(before, request, ColumnRightsRefusal.EnableNotRequested);
 		}
-		// The save sends the whole list: another column goes back as its raw read node, but an entry whose UId is not a
-		// GUID could be the changed column itself, which would then be stored twice.
-		if (before.Columns.Any(column => column.ColumnUId is null)) {
-			return Refuse(before, request, ColumnRightsRefusal.UnreadableColumnUId);
+		if (request.Access is null && !switchRead) {
+			return Refuse(before, request, ColumnRightsRefusal.SwitchOffForLayout);
 		}
-		List<ColumnRightRow> rows = ColumnRightsPlan.RowsOf(before, request.ColumnUId).ToList();
-		// The changed column's rows are rebuilt from the projection, so each must be one it carries exactly.
-		if (rows.Any(ColumnRightsPlan.IsUnreadable)) {
-			return Refuse(before, request, ColumnRightsRefusal.UnreadableColumnRows);
-		}
+		IReadOnlyList<ColumnRightRow> stored = ColumnRightsPlan.RowsOf(before, request.ColumnUId);
+		// Turning column permissions on gives a column with no stored row the default row; the change starts from it.
+		List<ColumnRightRow> rows = stored.Count == 0 && !switchRead
+			? [ColumnRightsDefaults.Row]
+			: stored.ToList();
 		ColumnRightRow[] granteeRows = rows.Where(row => row.GranteeId == request.Grantee).ToArray();
 		if (granteeRows.Length > 1) {
 			return Refuse(before, request, ColumnRightsRefusal.DuplicateGranteeRows,
@@ -196,10 +210,51 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 		if (request.Position is { } position && (position < 0 || position > lastPosition)) {
 			return Refuse(before, request, ColumnRightsRefusal.PositionOutOfRange);
 		}
-		List<ColumnRightRow> planned = PlanRows(rows, existing, request);
-		bool on = switchRead || request.EnableColumnPermissions;
-		return new ColumnRightsPlan(before, new ColumnRightsState(on, Replace(before, request, planned)), null, [],
-			request.ColumnUId, true);
+		return BuildListPlan(layer, before, switchRead, request, PlanRows(rows, existing, request));
+	}
+
+	// The list save: every column whose stored rows are not exactly the default, as stored; the changed column with its
+	// planned rows; a column with no stored row sent empty while the switch was on, left out (default) when the call
+	// turns it on; a column the call empties left out (default). Every stored row sent must be sendable exactly.
+	private static ColumnRightsPlan BuildListPlan(ColumnRightsLayer layer, ColumnRightsState before, bool switchWasOn,
+		ColumnRightsChangeRequest request, IReadOnlyList<ColumnRightRow> plannedTarget) {
+		if (before.Columns.SelectMany(column => column.Rows).Any(ColumnRightsPlan.IsUnreadable)) {
+			return Refuse(before, request, ColumnRightsRefusal.UnreadableColumnRows);
+		}
+		Dictionary<Guid, string> captions = layer.KnownColumns
+			.GroupBy(column => column.UId)
+			.ToDictionary(group => group.Key, group => group.Select(column => column.Caption)
+				.FirstOrDefault(caption => !string.IsNullOrWhiteSpace(caption)));
+		List<Guid> columns = layer.KnownColumns.Select(column => column.UId)
+			.Concat(before.Columns.Where(column => column.ColumnUId is not null).Select(column => column.ColumnUId!.Value))
+			.Append(request.SwitchOnly ? Guid.Empty : request.ColumnUId)
+			.Where(uId => uId != Guid.Empty)
+			.Distinct()
+			.ToList();
+		List<ColumnRights> list = new();
+		List<ColumnRights> expected = new();
+		List<Guid> defaulted = new();
+		foreach (Guid uId in columns) {
+			bool target = !request.SwitchOnly && uId == request.ColumnUId;
+			IReadOnlyList<ColumnRightRow> rows = target ? plannedTarget : ColumnRightsPlan.RowsOf(before, uId);
+			string caption = (target ? request.ColumnCaption : null) ?? captions.GetValueOrDefault(uId);
+			bool send = target
+				? rows.Count > 0
+				: !ColumnRightsDefaults.IsDefaultOnly(rows) && (rows.Count > 0 || switchWasOn);
+			if (send) {
+				ColumnRights column = new(uId, caption, rows);
+				list.Add(column);
+				expected.Add(column);
+				continue;
+			}
+			// Not in the list: the service writes the default row for it.
+			if (rows.Count == 0 || target) {
+				defaulted.Add(uId);
+			}
+			expected.Add(new ColumnRights(uId, caption, [ColumnRightsDefaults.Row]));
+		}
+		return new ColumnRightsPlan(before, true, list, new ColumnRightsState(true, expected), defaulted, null, [],
+			request.SwitchOnly ? Guid.Empty : request.ColumnUId);
 	}
 
 	private static List<ColumnRightRow> PlanRows(List<ColumnRightRow> rows, ColumnRightRow existing,
@@ -212,8 +267,8 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 				rows.Count == 0 ? 0 : rows.Max(row => row.Position ?? 0) + 1, request.Access)
 			: existing with { Level = request.Access ?? existing.Level };
 		if (request.Position is not { } position) {
-			// A level change or an appended row: every other row keeps its position as read.
-			return rows.Where(row => row != existing).Append(changed).OrderBy(row => row.Position).ToList();
+			// A level change or an appended row: every other row keeps its position as stored.
+			return rows.Where(row => row != existing).Append(changed).OrderBy(row => row.Position ?? 0).ToList();
 		}
 		List<ColumnRightRow> ordered = rows.Where(row => row != existing).ToList();
 		ordered.Insert(position, changed);
@@ -223,31 +278,10 @@ public sealed class ColumnRightsPlanner : IColumnRightsPlanner {
 	private static List<ColumnRightRow> Renumber(IEnumerable<ColumnRightRow> rows) =>
 		rows.Select((row, index) => row with { Position = index }).ToList();
 
-	// The column layer with the changed column's rows replaced; a column the call empties is left out, and a column that
-	// had no rows is added at the end. Every other column stays exactly as read.
-	private static IReadOnlyList<ColumnRights> Replace(ColumnRightsState before, ColumnRightsChangeRequest request,
-		IReadOnlyList<ColumnRightRow> planned) {
-		List<ColumnRights> columns = new();
-		bool found = false;
-		foreach (ColumnRights column in before.Columns) {
-			if (column.ColumnUId != request.ColumnUId) {
-				columns.Add(column);
-				continue;
-			}
-			found = true;
-			if (planned.Count > 0) {
-				columns.Add(column with { Rows = planned });
-			}
-		}
-		if (!found && planned.Count > 0) {
-			columns.Add(new ColumnRights(request.ColumnUId, request.ColumnCaption, planned));
-		}
-		return columns;
-	}
-
 	private static ColumnRightsPlan Refuse(ColumnRightsState before, ColumnRightsChangeRequest request,
 		ColumnRightsRefusal refusal, IReadOnlyList<int?> duplicatePositions = null) =>
-		new(before, before, refusal, duplicatePositions ?? [], request.ColumnUId, false);
+		new(before, before.AdministratedByColumns ?? false, null, before, [], refusal, duplicatePositions ?? [],
+			request.SwitchOnly ? Guid.Empty : request.ColumnUId);
 }
 
 /// <summary>Compares column permission rows by grantee, position and level, as a multiset.</summary>
@@ -282,73 +316,62 @@ public static class ColumnRightsComparer {
 		}
 		return (missing, extra);
 	}
-
-	/// <summary>Whether every row grants edit — a column the service does not store.</summary>
-	/// <param name="rows">The column's rows.</param>
-	/// <returns><see langword="true"/> for a non-empty list whose rows are all edit.</returns>
-	public static bool IsAllEdit(IReadOnlyList<ColumnRightRow> rows) =>
-		rows.Count > 0 && rows.All(row => row.Level == ColumnRightLevel.Edit);
 }
 
-/// <summary>The comparison of the column layer read back after a save with the plan.</summary>
-/// <param name="Critical">Differences that mean the save did not store what was sent: the call fails on any.</param>
-/// <param name="Differences">Differences in columns the save did not send, reported as facts.</param>
-/// <param name="DroppedAllEditColumns">Planned columns whose rows all grant edit and that the read-back does not have:
-/// the service does not store such a column, by design.</param>
-public sealed record ColumnRightsReadBackComparison(
-	IReadOnlyList<string> Critical,
-	IReadOnlyList<string> Differences,
-	IReadOnlyList<Guid?> DroppedAllEditColumns);
+/// <summary>The comparison of the switch and the stored rows read back after a save with the plan.</summary>
+/// <param name="Critical">Differences that mean the save did not store what was planned: the call fails on any.</param>
+/// <param name="Differences">Differences in rows the save did not send (a disable), reported as facts.</param>
+public sealed record ColumnRightsReadBackComparison(IReadOnlyList<string> Critical, IReadOnlyList<string> Differences);
 
 /// <summary>
-/// Compares the column layer read back after a save with the plan. The service answers success even for rows it did
-/// not store, so only this comparison proves a save. A save that sends the column list replaces every column's rows,
-/// so after one a difference in ANY column is critical, except a planned column whose rows are all edit and that the
-/// read-back lacks: the service drops such a column by design, and it is reported as dropped. A switch-only save sends
-/// no list, so only the switch is critical and a column difference is another client's change. Pure: no I/O.
+/// Compares the switch and the rows in STORAGE after a save with the plan. The service answers success even for rows it
+/// did not store, and its read filters what it returns, so only storage proves a save. After a list save every column
+/// the plan knows must hold exactly its expected rows (a listed column its listed rows, any other the default row); a
+/// stored column the plan did not know is accepted only with the default row. After a disable (no list) only the switch
+/// is critical, and a changed row is another client's. Pure: no I/O.
 /// </summary>
 public interface IColumnRightsReadBackVerifier {
-	/// <summary>Compares <paramref name="actual"/> with the state <paramref name="plan"/> saved.</summary>
+	/// <summary>Compares the read-back with the plan.</summary>
 	/// <param name="plan">The plan the save carried out.</param>
-	/// <param name="actual">The column layer as read back.</param>
-	/// <returns>The critical differences, the others, and the columns dropped as all-edit.</returns>
-	ColumnRightsReadBackComparison Compare(ColumnRightsPlan plan, ColumnRightsState actual);
+	/// <param name="actualSwitch">The switch read back from <c>GetAdministratedObject</c>.</param>
+	/// <param name="actualStored">The rows read back from storage, per column.</param>
+	/// <returns>The critical differences and the others.</returns>
+	ColumnRightsReadBackComparison Compare(ColumnRightsPlan plan, bool? actualSwitch,
+		IReadOnlyList<ColumnRights> actualStored);
 }
 
 /// <inheritdoc />
 public sealed class ColumnRightsReadBackVerifier : IColumnRightsReadBackVerifier {
 
 	/// <inheritdoc />
-	public ColumnRightsReadBackComparison Compare(ColumnRightsPlan plan, ColumnRightsState actual) {
+	public ColumnRightsReadBackComparison Compare(ColumnRightsPlan plan, bool? actualSwitch,
+		IReadOnlyList<ColumnRights> actualStored) {
 		ArgumentNullException.ThrowIfNull(plan);
-		ArgumentNullException.ThrowIfNull(actual);
+		ArgumentNullException.ThrowIfNull(actualStored);
 		List<string> critical = new();
 		List<string> differences = new();
-		List<Guid?> dropped = new();
-		if (actual.AdministratedByColumns != plan.After.AdministratedByColumns) {
-			critical.Add($"column permissions are {Switch(actual)}, the plan turned them {Switch(plan.After)}");
+		if (actualSwitch != plan.SwitchAfter) {
+			critical.Add($"column permissions are {Switch(actualSwitch)}, the plan turned them {Switch(plan.SwitchAfter)}");
 		}
+		ColumnRightsState actual = new(actualSwitch, actualStored);
 		List<string> columnDifferences = plan.RewritesColumns ? critical : differences;
-		IEnumerable<Guid?> columns = plan.After.Columns.Select(column => column.ColumnUId)
-			.Concat(actual.Columns.Select(column => column.ColumnUId))
-			.Distinct();
-		foreach (Guid? column in columns) {
-			IReadOnlyList<ColumnRightRow> planned = ColumnRightsPlan.RowsOf(plan.After, column);
+		HashSet<Guid?> planned = plan.ExpectedStored.Columns.Select(column => column.ColumnUId).ToHashSet();
+		foreach (Guid? column in planned.Concat(actualStored.Select(column => column.ColumnUId)).Distinct()) {
 			IReadOnlyList<ColumnRightRow> read = ColumnRightsPlan.RowsOf(actual, column);
-			if (read.Count == 0 && plan.RewritesColumns && ColumnRightsComparer.IsAllEdit(planned)) {
-				dropped.Add(column);
+			// A column the plan did not know gets the default row from a list save: that is not a difference.
+			if (!planned.Contains(column) && plan.RewritesColumns && ColumnRightsDefaults.IsDefaultOnly(read)) {
 				continue;
 			}
 			(IReadOnlyList<ColumnRightRow> missing, IReadOnlyList<ColumnRightRow> extra) =
-				ColumnRightsComparer.Diff(planned, read);
-			string label = column?.ToString() ?? "(UId not a GUID)";
+				ColumnRightsComparer.Diff(ColumnRightsPlan.RowsOf(plan.ExpectedStored, column), read);
+			string label = column?.ToString() ?? "(no UId)";
 			columnDifferences.AddRange(missing.Select(row => $"column {label}: {Format(row)} is missing"));
 			columnDifferences.AddRange(extra.Select(row => $"column {label}: {Format(row)} is not in the plan"));
 		}
-		return new ColumnRightsReadBackComparison(critical, differences, dropped);
+		return new ColumnRightsReadBackComparison(critical, differences);
 	}
 
-	private static string Switch(ColumnRightsState state) => state.AdministratedByColumns switch {
+	private static string Switch(bool? state) => state switch {
 		true => "ON",
 		false => "OFF",
 		null => "UNKNOWN (the read carried no readable switch)"

@@ -1,39 +1,47 @@
 ---
-description: column (field-level) permissions are the administratedByColumns switch plus entitySchemaColumnsRights in the same GetAdministratedObject answer as object permissions - per column columnUId + columnCaption + rights[{position, rightLevel 0 denied/1 read/2 edit, sysAdminUnit}], no column code and no row id; the server does not store a column whose rows are all edit, and a save answers success for rows it dropped
+description: column (field-level) permissions - the switch is administratedByColumns in GetAdministratedObject, but the rows must be read from storage (VwSysEntitySchemaColumnRight) because that read filters; a save with a column list gives every column it does not name the default row (All employees, edit), null leaves the rows alone, and only a storage read-back proves a save
 applies-to:
   - clio/Common/ObjectRights/RightManagementServiceClient.cs
   - clio/Common/ObjectRights/ColumnRightsModel.cs
+  - clio/Common/ObjectRights/ColumnRightsStorage.cs
+  - clio/Common/ObjectRights/ColumnRightsPlanner.cs
   - clio/Command/ObjectRights/GetColumnRightsCommand.cs
   - clio/Command/ObjectRights/SetColumnRightsCommand.cs
-  - clio/Common/ObjectRights/ColumnRightsPlanner.cs
 date: 2026-11-17
 ---
 
-**What is true** — `RightManagementService.svc/GetAdministratedObject` returns the column layer next to the
-operation and record layers: `administratedByColumns` (the "Use column permissions" switch) and
-`entitySchemaColumnsRights`, a list of `{columnUId, columnCaption, rights: [{position, rightLevel, sysAdminUnit:
-{id, name}}]}`. `rightLevel` is the `Value` of the `SysEntitySchemaColRightLevel` lookup: 0 Access denied, 1 Reading,
-2 Editing. Storage is the view `VwSysEntitySchemaColumnRight` (`SubjectSchemaUId`, `SubjectColumnUId`,
-`SysAdminUnitId`, `RightLevelId`, `Position`). Measured on Creatio (stand brightwater, object `UsrHoliday`,
-2026-11-17) through `SaveAdministratedObject` and read-back:
+**What is true** — measured on Creatio (stand brightwater, object `UsrHoliday`, 2026-11-17) against STORAGE:
 
-- a row read back has no `id`, and the answer carries the column's UId and caption but not its code;
-- a column whose rows are all `rightLevel` 2 (Editing, the default) is dropped by the server; Editing next to a deny
-  row is kept as sent, positions included;
-- with the switch on and no rows the server stores no rows itself;
-- `entitySchemaColumnsRights: null` leaves the stored column rows alone, `[]` clears every column, and a list
-  REPLACES every column's rows (sending one column dropped the others);
-- row fields that are not these (`subjectColumnUId`, `column{...}`, `canRead`) are ignored, and the save still
-  answers `success: true` while storing nothing.
+- **Storage** is the view `VwSysEntitySchemaColumnRight`: `Id`, `SubjectSchemaUId`, `SubjectColumnUId`,
+  `SysAdminUnit` (→ `VwSysAdminUnit`), `RightLevel` (→ the `SysEntitySchemaColRightLevel` lookup; read its `Value`
+  through the column path `RightLevel.Value`: 0 denied, 1 read, 2 edit — the lookup's ids differ per site), `Position`.
+  clio's own login reads it through DataService `SelectQuery` and OData. There is no entity `SysEntitySchemaColumnRight`,
+  and a DataService DELETE on the view is refused.
+- **The switch** is `administratedByColumns` in `RightManagementService.svc/GetAdministratedObject`.
+- **The read filters.** With the switch ON, `entitySchemaColumnsRights` OMITS a column whose only row is the default
+  (All employees `a29a3ba5-4b0d-de11-9a51-005056c00008`, edit), lists a column with no rows with `rights: []`, and
+  lists the others with their rows. With the switch OFF it lists no column at all, though the rows stay stored.
+- **Save with a list** (`SaveAdministratedObject`, switch on): each column IN the list gets exactly the listed rows
+  (`rights: []` → none); each column of the object NOT in the list gets one default row (All employees, edit, position
+  0). Rows written by one save come back with the positions sent.
+- **Save with `null`**: the stored rows are untouched, also when the switch changes.
+- **Enable with `null`** on an object with nothing stored leaves every column with no rows; per Creatio's
+  documentation, "users, except for system administrators, will not be able to access that column". **Enable with
+  `[]`** gives every column the default row: access is unchanged.
+- The save answers `success: true` whatever it stores, so only a storage read-back proves a save.
 
-Which column row wins for a user in several roles (the precedence of `position`) is not measured, so
-`get-column-rights` lists rows in stored position order (0 first) and claims nothing more about them.
+Which column row wins for a user in several roles (the precedence of `position`) is not measured; positions are
+reported as the stored order (0 first) and nothing more.
 
-**Why it is this way** — it is the platform's own payload for the System Designer "Column permissions" tab; nothing
-in it names the column by code, and the save has no per-column endpoint.
+**Why it is this way** — `GetAdministratedObject` is the System Designer "Column permissions" tab's own read, which
+hides the default row it shows as "no restriction"; the save has no per-column endpoint, so a list must name every
+column whose rows are not the default.
 
-**What breaks if you ignore it** — a reader that prints only the UId leaves the agent unable to name the column, so
-`get-column-rights` resolves the code from the merged entity schema. A reader that expects every restricted column
-to be listed reports a column made all-edit as missing data; it is not stored by design. A writer that sends a partial
-list wipes every other column's rows, and one that trusts `success: true` reports rows the server dropped: only a
-read-back proves a column-rights save.
+**What breaks if you ignore it** — a writer that builds its list from the filtered read leaves out the columns it
+did not see: a column with rows the read omitted is reset to the default, and a list sent while the switch is off
+(when the read shows nothing) resets every column. A writer that enables with `null` locks every column with no rows.
+`set-column-rights` therefore builds the list from storage — every column whose stored rows are not exactly the
+default, a column with no rows sent with none while the switch is on and left to the default when the call turns it
+on — and checks the result against storage. A reader that trusts the filtered read reports a default column as
+missing and cannot tell it from a column only system administrators can access; `get-column-rights` reads storage and
+says which is which, and falls back to the read only with a warning.

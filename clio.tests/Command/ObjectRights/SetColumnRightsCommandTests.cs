@@ -14,9 +14,9 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ObjectRights;
 
 /// <summary>
-/// <c>set-column-rights</c> end to end over substitutes for the service: the real planner and read-back verifier, the
-/// refusals before any write, the whole column list handed to the writer, preview, and the read-back that decides the
-/// result — a mismatch fails the call, a column dropped as all-edit is reported as such.
+/// <c>set-column-rights</c> over substitutes for the service and storage: the real planner and read-back verifier, the
+/// list built from STORAGE (a locked column kept, a default column left out), defaults rather than a lock when enabling,
+/// no list on a disable, the storage read-back that decides the result, and the refusals before any write.
 /// </summary>
 [TestFixture]
 [Property("Module", "Command")]
@@ -24,11 +24,14 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
 	private static readonly Guid Role = Guid.Parse("11111111-2222-3333-4444-555555555555");
+	private static readonly Guid SchemaUId = Guid.Parse("35a9057f-800d-414b-acfb-c919c215857a");
 	private static readonly Guid AmountUId = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
 	private static readonly Guid DescriptionUId = Guid.Parse("9e53fd7c-1111-4c5b-9c3a-2a7b0e7e0001");
+	private static readonly Guid NameUId = Guid.Parse("9e53fd7c-3333-4c5b-9c3a-2a7b0e7e0003");
 
 	private SetColumnRightsCommand _command;
 	private IObjectRightsReader _reader;
+	private IColumnRightsStorageReader _storage;
 	private IColumnRightsWriter _writer;
 	private IGranteeLookup _granteeLookup;
 	private IRemoteEntitySchemaColumnManager _columnManager;
@@ -36,6 +39,8 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	private ILogger _logger;
 	private List<string> _errors;
 	private List<string> _infos;
+	private IReadOnlyList<ColumnRights> _sentList;
+	private bool _sent;
 
 	public override void Setup() {
 		base.Setup();
@@ -44,6 +49,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 	public override void TearDown() {
 		_reader.ClearReceivedCalls();
+		_storage.ClearReceivedCalls();
 		_writer.ClearReceivedCalls();
 		_granteeLookup.ClearReceivedCalls();
 		_columnManager.ClearReceivedCalls();
@@ -54,6 +60,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_reader = Substitute.For<IObjectRightsReader>();
+		_storage = Substitute.For<IColumnRightsStorageReader>();
 		_writer = Substitute.For<IColumnRightsWriter>();
 		_granteeLookup = Substitute.For<IGranteeLookup>();
 		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
@@ -61,20 +68,26 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		_logger = Substitute.For<ILogger>();
 		_errors = new List<string>();
 		_infos = new List<string>();
+		_sent = false;
+		_sentList = null;
 		_logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => _errors.Add((string)call[0]));
 		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => _infos.Add((string)call[0]));
 		_granteeLookup.ResolveGranteeName(Role, Arg.Any<CreatioRequestOptions>()).Returns("Role");
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
 			new EntitySchemaPropertiesInfo("UsrHoliday", "Holiday", null, "(merged: all packages)", null, false, "Id",
-				"Name", 2, 0, null, false, false, null, false, null, false, false, true, false, null, null,
+				"Name", 3, 0, null, false, false, null, false, null, false, false, true, false, null, null,
 				new[] {
-					new EntitySchemaPropertyColumnInfo("UsrAmount", AmountUId, "own", "Amount", null, "Decimal", false,
-						false, null),
-					new EntitySchemaPropertyColumnInfo("UsrDescription", DescriptionUId, "own", "Description", null, "Text",
-						false, false, null)
+					SchemaColumn("UsrAmount", AmountUId, "Amount"),
+					SchemaColumn("UsrDescription", DescriptionUId, "Description"),
+					SchemaColumn("Name", NameUId, "Name")
 				}));
-		_writer.Save(default, default, default, default).ReturnsForAnyArgs(ObjectRightsSaveResult.Saved);
+		_writer.Save(default, default, default, default).ReturnsForAnyArgs(call => {
+			_sent = true;
+			_sentList = (IReadOnlyList<ColumnRights>)call[2];
+			return ObjectRightsSaveResult.Saved;
+		});
 		containerBuilder.AddTransient(_ => _reader);
+		containerBuilder.AddTransient(_ => _storage);
 		containerBuilder.AddTransient(_ => _writer);
 		containerBuilder.AddTransient(_ => _granteeLookup);
 		containerBuilder.AddTransient(_ => _columnManager);
@@ -82,18 +95,25 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		containerBuilder.AddTransient(_ => _logger);
 	}
 
-	private static ColumnRights Description() =>
-		new(DescriptionUId, "Description", new[] { new ColumnRightRow(Employees, "All employees", 0, ColumnRightLevel.Read) });
+	private static EntitySchemaPropertyColumnInfo SchemaColumn(string name, Guid uId, string title) =>
+		new(name, uId, "own", title, null, "Text", false, false, null);
 
-	private static ColumnRights Amount(params ColumnRightRow[] rows) => new(AmountUId, "Amount", rows);
+	private static ColumnRightRow Row(Guid grantee, int position, ColumnRightLevel level) =>
+		new(grantee, grantee == Employees ? "All employees" : "Role", position, level);
 
-	private static ObjectRightsInfo Object(bool on, params ColumnRights[] columns) =>
-		new(true, "UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), AdministratedByColumns: on,
-			Columns: columns);
+	private static ColumnRights Stored(Guid column, params ColumnRightRow[] rows) => new(column, null, rows);
 
-	// The first read is the object before the call; the second is the read-back after the save.
-	private void Reads(ObjectRightsInfo before, ObjectRightsInfo after = null) =>
-		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(before, after ?? before);
+	private static ObjectRightsInfo Object(bool? on) =>
+		new(true, "UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), SchemaUId: SchemaUId,
+			AdministratedByColumns: on, Columns: Array.Empty<ColumnRights>());
+
+	// The switch before and after (service read), and the stored rows before and after (storage read).
+	private void Reads(bool? on, IReadOnlyList<ColumnRights> stored, bool? onAfter = null,
+		IReadOnlyList<ColumnRights> storedAfter = null) {
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>())
+			.Returns(Object(on), Object(onAfter ?? on));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>()).Returns(stored, storedAfter ?? stored);
+	}
 
 	private static SetColumnRightsOptions Grant(string access = "denied", bool enable = false, bool preview = false,
 		string grantee = null, string column = "UsrAmount") =>
@@ -102,173 +122,195 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 			EnableColumnPermissions = enable, Preview = preview, Confirm = !preview
 		};
 
+	private static SetColumnRightsOptions Switch(bool enable) =>
+		new() { EntitySchemaName = "UsrHoliday", EnableColumnPermissions = enable, DisableColumnPermissions = !enable,
+			Confirm = true };
+
 	[Test]
-	[Description("A grant hands the writer the WHOLE column list — the other column exactly as read, the changed one with the new row — and succeeds when the read-back matches.")]
-	public void Execute_ShouldSaveTheWholeListAndSucceed_WhenTheReadBackMatches() {
+	[Description("A grant while ON sends the list built from storage — a restricted column as stored, a locked column (no rows) with none, a default-only column left out — and succeeds when storage reads back as planned.")]
+	public void Execute_ShouldSendTheListBuiltFromStorage_WhenSwitchIsOn() {
 		// Arrange
-		ColumnRights description = Description();
-		ObjectRightsInfo before = Object(true, description);
-		ColumnRightsState saved = null;
-		_writer.Save(Arg.Any<ObjectRightsSnapshot>(), Arg.Do<ColumnRightsState>(state => saved = state), AmountUId,
-			Arg.Any<CreatioRequestOptions>()).Returns(ObjectRightsSaveResult.Saved);
-		Reads(before, Object(true, description,
-			Amount(new ColumnRightRow(Role, "Role", 0, ColumnRightLevel.Denied))));
+		ColumnRights description = Stored(DescriptionUId, Row(Role, 0, ColumnRightLevel.Read));
+		ColumnRights nameDefault = Stored(NameUId, ColumnRightsDefaults.Row);
+		ColumnRights amountAfter = Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied));
+		// UsrAmount has no stored row, so while ON it is a locked column; the grant gives it a row.
+		Reads(true, [description, nameDefault], storedAfter: [amountAfter, description, nameDefault]);
 
 		// Act
 		int exitCode = _command.Execute(Grant());
 
 		// Assert
-		exitCode.Should().Be(0, because: "the read-back shows the planned rows");
-		saved.Should().NotBeNull(because: "the change is saved");
-		saved.Columns.Should().HaveCount(2, because: "the save carries every column, not only the changed one");
-		saved.Columns[0].Should().BeSameAs(description, because: "the other column goes back exactly as read");
-		saved.Columns[1].Rows.Should().Equal(new[] { new ColumnRightRow(Role, "Role", 0, ColumnRightLevel.Denied) },
-			because: "the changed column carries the new row");
-		_infos.Should().Contain(line => line.Contains("not bound to a package"),
-			because: "the result says the rows live only in this environment");
+		exitCode.Should().Be(0, because: "storage holds the planned rows");
+		_sentList.Select(column => column.ColumnUId).Should().BeEquivalentTo(new Guid?[] { AmountUId, DescriptionUId },
+			because: "the default-only column is left out and every other column is named");
+		_sentList.Single(column => column.ColumnUId == DescriptionUId).Rows.Should().Equal(description.Rows,
+			because: "another column goes back as stored");
+		_infos.Should().Contain(line => line.Contains("not bound to a package"), because: "the rows stay in this environment");
 	}
 
 	[Test]
-	[Description("A grant while column permissions are OFF is refused before any write unless enable is passed; with enable the switch goes on in the save.")]
-	public void Execute_ShouldRefuseAGrant_WhenColumnPermissionsAreOffWithoutEnable() {
+	[Description("While ON, a column with no stored row other than the changed one is sent with none, so it stays locked, and the facts say so.")]
+	public void Execute_ShouldKeepALockedColumnLocked_WhenAnotherColumnChanges() {
 		// Arrange
-		Reads(Object(false));
+		ColumnRights amount = Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Read));
+		Reads(true, [amount, Stored(NameUId, ColumnRightsDefaults.Row)], storedAfter: [
+			Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied)), Stored(NameUId, ColumnRightsDefaults.Row)
+		]);
 
 		// Act
-		int refused = _command.Execute(Grant());
+		int exitCode = _command.Execute(Grant());
 
 		// Assert
-		refused.Should().Be(1, because: "a grant never turns the switch on as a side effect");
-		_errors.Should().Contain(line => line.Contains("--enable-column-permissions"),
-			because: "the refusal names the flag that allows it");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		exitCode.Should().Be(0, because: "storage holds the plan");
+		_sentList.Single(column => column.ColumnUId == DescriptionUId).Rows.Should().BeEmpty(
+			because: "a column with no rows while ON is sent with none, never left to the default");
+		_infos.Should().Contain(line => line.Contains("Sent with no rows") && line.Contains("UsrDescription"),
+			because: "the facts name the column kept without rows");
 	}
 
 	[Test]
-	[Description("An unknown column is refused before any write, naming the object and the column.")]
-	public void Execute_ShouldRefuse_WhenTheColumnIsUnknown() {
+	[Description("Enabling with nothing stored sends an empty list, so every column gets the default row instead of being locked, and the output names them.")]
+	public void Execute_ShouldGiveDefaultsNotALock_WhenEnablingFromEmptyStorage() {
 		// Arrange
-		Reads(Object(true));
+		Reads(false, [], onAfter: true, storedAfter: [
+			Stored(AmountUId, ColumnRightsDefaults.Row), Stored(DescriptionUId, ColumnRightsDefaults.Row),
+			Stored(NameUId, ColumnRightsDefaults.Row)
+		]);
 
 		// Act
-		int exitCode = _command.Execute(Grant(column: "UsrMissing"));
+		int exitCode = _command.Execute(Switch(enable: true));
 
 		// Assert
-		exitCode.Should().Be(1, because: "a column the schema does not have cannot be changed");
-		_errors.Should().Contain(line => line.Contains("has no column 'UsrMissing'"), because: "the error names the column");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		exitCode.Should().Be(0, because: "every column holds the default row afterwards");
+		_sentList.Should().NotBeNull(because: "a null list would leave every column with no rows: locked");
+		_sentList.Should().BeEmpty(because: "no column has rows to keep");
+		_infos.Should().Contain(line => line.Contains("Get the default row") && line.Contains("Name, UsrAmount, UsrDescription"),
+			because: "the output names the columns that get the default");
 	}
 
 	[Test]
-	[Description("An unknown grantee is refused before the object is even read.")]
-	public void Execute_ShouldRefuse_WhenTheGranteeIsUnknown() {
+	[Description("A disable sends no list, so every stored row is kept, and the output says the rows are kept, not applied.")]
+	public void Execute_ShouldSendNoList_WhenDisabling() {
+		// Arrange
+		IReadOnlyList<ColumnRights> stored = [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))];
+		Reads(true, stored, onAfter: false);
+
+		// Act
+		int exitCode = _command.Execute(Switch(enable: false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the switch is off on the read-back");
+		_sent.Should().BeTrue(because: "the switch is saved");
+		_sentList.Should().BeNull(because: "null leaves the stored rows alone");
+		_infos.Should().Contain(line => line.Contains("kept, not applied"), because: "the output says the rows stay");
+	}
+
+	[Test]
+	[Description("A save the service answered success for whose rows storage does not hold fails the call, naming what differs.")]
+	public void Execute_ShouldFail_WhenStorageDoesNotMatchThePlan() {
+		// Arrange
+		Reads(true, [], storedAfter: []);
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(1, because: "only storage proves a column-rights save");
+		_errors.Should().Contain(line => line.Contains("do not match the plan") && line.Contains("is missing"),
+			because: "the failure says the planned row is not stored");
+		_storage.Received(2).ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>());
+	}
+
+	[Test]
+	[Description("When storage cannot be read the call is refused before any write: the list is built from it.")]
+	public void Execute_ShouldRefuse_WhenStorageCannotBeRead() {
+		// Arrange
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(Object(true));
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: Access denied"));
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(1, because: "a list built without storage could reset other columns");
+		_errors.Should().Contain(line => line.Contains("stored column permission rows") && line.Contains("Access denied"),
+			because: "the refusal says why");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("A grant while OFF without enable, an unknown switch, an unknown column, an unknown grantee and an ambiguous title are refused before any write.")]
+	public void Execute_ShouldRefuseBeforeAnyWrite_WhenTheCallCannotBePlanned() {
 		// Arrange
 		Guid unknown = Guid.NewGuid();
 		_granteeLookup.ResolveGranteeName(unknown, Arg.Any<CreatioRequestOptions>()).Returns((string)null);
-		Reads(Object(true));
-
-		// Act
-		int exitCode = _command.Execute(Grant(grantee: unknown.ToString()));
-
-		// Assert
-		exitCode.Should().Be(1, because: "a row for a principal nobody holds must not be written");
-		_errors.Should().Contain(line => line.Contains("was not found in SysAdminUnit"), because: "the error says why");
-		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
-	}
-
-	[Test]
-	[Description("A title several objects share is refused with the candidates; nothing is written.")]
-	public void Execute_ShouldRefuse_WhenTheTitleIsAmbiguous() {
-		// Arrange
-		_reader.GetObjectRights("Holiday", Arg.Any<CreatioRequestOptions>())
-			.Returns(new ObjectRightsInfo(false, "Holiday", null, false, Array.Empty<RoleOperationRights>()));
 		_reader.FindObjectsByTitle("Holiday", Arg.Any<CreatioRequestOptions>()).Returns(new[] {
 			new ObjectTitleMatch("UsrHoliday", "Holiday"), new ObjectTitleMatch("UsrHolidayOld", "Holiday")
 		});
-		SetColumnRightsOptions options = Grant();
-		options.EntitySchemaName = "Holiday";
+		_reader.GetObjectRights("Holiday", Arg.Any<CreatioRequestOptions>())
+			.Returns(new ObjectRightsInfo(false, "Holiday", null, false, Array.Empty<RoleOperationRights>()));
+		SetColumnRightsOptions byTitle = Grant();
+		byTitle.EntitySchemaName = "Holiday";
 
 		// Act
-		int exitCode = _command.Execute(options);
+		Reads(false, []);
+		int off = _command.Execute(Grant());
+		Reads(null, []);
+		int unknownSwitch = _command.Execute(Grant(enable: true));
+		Reads(true, []);
+		int unknownColumn = _command.Execute(Grant(column: "UsrMissing"));
+		int unknownGrantee = _command.Execute(Grant(grantee: unknown.ToString()));
+		int ambiguous = _command.Execute(byTitle);
 
 		// Assert
-		exitCode.Should().Be(1, because: "the tool never guesses between objects with the same title");
-		_errors.Should().Contain(line => line.Contains("UsrHolidayOld"), because: "the refusal lists the candidates");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		new[] { off, unknownSwitch, unknownColumn, unknownGrantee, ambiguous }.Should().AllBeEquivalentTo(1,
+			because: "each call is refused");
+		_errors.Should().Contain(line => line.Contains("--enable-column-permissions"), because: "OFF names the flag");
+		_errors.Should().Contain(line => line.Contains("no readable"), because: "an unknown switch is said");
+		_errors.Should().Contain(line => line.Contains("has no column 'UsrMissing'"), because: "the column is named");
+		_errors.Should().Contain(line => line.Contains("was not found in SysAdminUnit"), because: "the grantee is checked");
+		_errors.Should().Contain(line => line.Contains("UsrHolidayOld"), because: "the candidates are listed");
+		_sent.Should().BeFalse(because: "nothing is written");
 	}
 
 	[Test]
-	[Description("A preview writes nothing and shows the column's rows before and after.")]
+	[Description("A stored row without a level refuses a row change before any write, naming the row.")]
+	public void Execute_ShouldRefuse_WhenAStoredRowIsUnreadable() {
+		// Arrange
+		Reads(true, [Stored(DescriptionUId, new ColumnRightRow(Employees, "All employees", 0, null, "(none)"))]);
+
+		// Act
+		int exitCode = _command.Execute(Grant());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the row could not be sent back as stored");
+		_errors.Should().Contain(line => line.Contains("[0] All employees") && line.Contains("exactly as stored"),
+			because: "the refusal names the row and the reason");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("A preview writes nothing and shows the column's stored rows before and after.")]
 	public void Execute_ShouldWriteNothing_WhenPreviewIsRequested() {
 		// Arrange
-		Reads(Object(true, Description()));
+		Reads(true, []);
 
 		// Act
 		int exitCode = _command.Execute(Grant(preview: true));
 
 		// Assert
 		exitCode.Should().Be(0, because: "a preview that would succeed is not a failure");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		_sent.Should().BeFalse(because: "a preview writes nothing");
 		_infos.Should().Contain(line => line.StartsWith("PREVIEW"), because: "the output says nothing was changed");
-		_infos.Should().Contain(line => line.Contains("rows after: [0] Role"), because: "the plan shows the row added");
-		_reader.Received(1).GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>());
-	}
-
-	[Test]
-	[Description("A save the service answered success for but did not store fails the call, naming what differs.")]
-	public void Execute_ShouldFail_WhenTheReadBackDoesNotMatchThePlan() {
-		// Arrange
-		Reads(Object(true, Description()), Object(true, Description()));
-
-		// Act
-		int exitCode = _command.Execute(Grant());
-
-		// Assert
-		exitCode.Should().Be(1, because: "only the read-back proves a column-rights save");
-		_errors.Should().Contain(line => line.Contains("do not match the plan") && line.Contains("is missing"),
-			because: "the failure says the planned row is not stored");
-	}
-
-	[Test]
-	[Description("A column left with rows that all grant edit is dropped by the service by design: the call succeeds and says so.")]
-	public void Execute_ShouldReportTheDrop_WhenTheColumnEndsAllEdit() {
-		// Arrange
-		Reads(Object(true), Object(true));
-
-		// Act
-		int exitCode = _command.Execute(Grant(access: "edit"));
-
-		// Assert
-		exitCode.Should().Be(0, because: "an all-edit column is not stored by design, which is not a failure");
-		_infos.Should().Contain(line => line.Contains("stored no row for it"),
-			because: "the drop is reported, never silent");
-	}
-
-	[Test]
-	[Description("Turning column permissions off alone sends no column list, so the stored rows are left as they are.")]
-	public void Execute_ShouldSendNoColumnList_WhenOnlyDisabling() {
-		// Arrange
-		ColumnRights amount = Amount(new ColumnRightRow(Role, "Role", 0, ColumnRightLevel.Denied));
-		Reads(Object(true, amount), Object(false, amount));
-
-		// Act
-		int exitCode = _command.Execute(new SetColumnRightsOptions {
-			EntitySchemaName = "UsrHoliday", DisableColumnPermissions = true, Confirm = true
-		});
-
-		// Assert
-		exitCode.Should().Be(0, because: "the switch is off on the read-back");
-		_writer.Received(1).Save(Arg.Any<ObjectRightsSnapshot>(),
-			Arg.Is<ColumnRightsState>(state => state.AdministratedByColumns == false), null, Arg.Any<CreatioRequestOptions>());
-		_granteeLookup.DidNotReceiveWithAnyArgs().ResolveGranteeName(default, default);
+		_infos.Should().Contain(line => line.Contains("stored rows after: [0] Role"), because: "the plan shows the row");
 	}
 
 	[Test]
 	[Description("A non-interactive run without --confirm is refused before any write.")]
 	public void Execute_ShouldRefuse_WhenNotConfirmedNonInteractively() {
 		// Arrange
-		Reads(Object(true));
+		Reads(true, []);
 		_console.IsInteractive.Returns(false);
 		SetColumnRightsOptions options = Grant();
 		options.Confirm = false;
@@ -278,7 +320,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 		// Assert
 		exitCode.Should().Be(1, because: "a destructive change needs confirmation");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		_sent.Should().BeFalse(because: "nothing is written");
 	}
 
 	[TestCase(true, false, null, false, null, "--disable-column-permissions is a call of its own")]
@@ -304,54 +346,5 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		exitCode.Should().Be(1, because: "the arguments are refused");
 		_errors.Should().Contain(line => line.Contains(expected), because: "the error says what is wrong");
 		_reader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
-	}
-
-	[Test]
-	[Description("A read with no readable switch refuses the call before any write, and says why.")]
-	public void Execute_ShouldRefuse_WhenTheSwitchIsUnknown() {
-		// Arrange
-		Reads(new ObjectRightsInfo(true, "UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(),
-			AdministratedByColumns: null, Columns: Array.Empty<ColumnRights>()));
-
-		// Act
-		int exitCode = _command.Execute(Grant(enable: true));
-
-		// Assert
-		exitCode.Should().Be(1, because: "an unknown switch is never taken for OFF or ON");
-		_errors.Should().Contain(line => line.Contains("no readable") && line.Contains("Nothing was changed"),
-			because: "the refusal says the switch could not be read");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
-	}
-
-	[Test]
-	[Description("A row of the changed column without a position refuses the call before any write, naming the row and why the list must go back exactly.")]
-	public void Execute_ShouldRefuse_WhenTheChangedColumnHasAnUnreadableRow() {
-		// Arrange
-		Reads(Object(true, Amount(new ColumnRightRow(Employees, "All employees", null, ColumnRightLevel.Read))));
-
-		// Act
-		int exitCode = _command.Execute(Grant());
-
-		// Assert
-		exitCode.Should().Be(1, because: "the column's rows could not be sent back exactly as stored");
-		_errors.Should().Contain(line => line.Contains("[?] All employees") && line.Contains("exactly as stored"),
-			because: "the refusal names the row and the reason");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
-	}
-
-	[Test]
-	[Description("A column entry whose UId is not a GUID refuses a row change before any write, naming the raw UId.")]
-	public void Execute_ShouldRefuse_WhenAColumnUIdIsUnreadable() {
-		// Arrange
-		Reads(Object(true, new ColumnRights(null, "Odd",
-			new[] { new ColumnRightRow(Employees, "All employees", 0, ColumnRightLevel.Read) }, "not-a-guid")));
-
-		// Act
-		int exitCode = _command.Execute(Grant());
-
-		// Assert
-		exitCode.Should().Be(1, because: "the entry could be the changed column, which a save would then store twice");
-		_errors.Should().Contain(line => line.Contains("'not-a-guid'"), because: "the refusal names the raw UId");
-		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
 	}
 }

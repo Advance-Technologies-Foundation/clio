@@ -28,20 +28,30 @@ must exist.
 - `--remove-row` deletes the grantee's row.
 
 The switch changes only through its flags: a grant while column permissions are OFF is refused unless
-`--enable-column-permissions` is passed with it; `--enable-column-permissions` alone turns them on with the stored rows
-as they are; `--disable-column-permissions` alone turns them off and keeps every stored row.
+`--enable-column-permissions` is passed with it; a move or a removal while they are OFF is refused (turn them on
+first); `--enable-column-permissions` alone turns them on; `--disable-column-permissions` alone turns them off and keeps
+every stored row, not applied.
 
 ### What the save sends, and how it is checked
 
-Measured on Creatio (17 Nov 2026): `entitySchemaColumnsRights: null` leaves the stored column rows alone, a list
-**replaces every column's rows**, and `[]` clears them all. So a row change sends the **whole** list read, with only
-the named column changed — every other column goes back exactly as read; a switch-only call sends the list as null.
-The operation, record and entity-operation collections are always sent as null.
+Measured on Creatio storage (`VwSysEntitySchemaColumnRight`, 17 Nov 2026): a save with a column list gives each column
+**in** the list exactly the listed rows (`[]`: none) and **every other column of the object the default row** (All
+employees, edit, position 0); `entitySchemaColumnsRights: null` leaves the stored rows alone. `GetAdministratedObject`
+filters what it returns (it omits a default-only column while the switch is ON, and every column while it is OFF), so
+the list is built from **storage**:
 
-The service answers `success: true` even for rows it did not store, so after every save the object is **read back and
-compared** with the plan. Any difference fails the call and names it. A column whose rows all grant `edit` is not
-stored by the service (edit is the default): when the plan leaves a column all-edit, the preview says so and the
-result reports that the column has no rows — by design, not a failure.
+- every column whose stored rows are not exactly the default, as stored, with the named column changed;
+- while column permissions are ON, a column with no rows is sent with `rights: []`, so it stays as it is (per Creatio's
+  documentation only system administrators can access it);
+- when the call turns them ON, a column with no rows is not sent, so it gets the default row and no column is locked
+  (enabling with `null` would leave every such column locked); the output names those columns;
+- a column whose last row is removed is not sent, so it gets the default row;
+- a default-only column is not sent: the service writes the same default.
+
+A disable sends `null`. The operation, record and entity-operation collections are always sent as null. The service
+answers `success: true` whatever it stores, so after every save the switch and the **stored rows are read back** and
+compared with the plan: every column the plan names must hold its expected rows (a column the list leaves out, the
+default row). Any difference fails the call and names it.
 
 ### No package binding
 
@@ -119,15 +129,13 @@ clio set-column-rights --entity-schema-name UsrOrder --disable-column-permission
 
 ## Notes
 
-- Refused before any write: a grant while column permissions are OFF without `--enable-column-permissions`; a removal
-  or a move of a row the grantee does not have; a grantee with several rows in the column; a position past the end; an
-  unknown column, an unknown grantee, several objects with the title; a read with no readable switch (never taken for
-  OFF); a row of the changed column with no readable position, level or grantee (its rows must go back exactly as
-  stored); a column entry whose UId is not a GUID (it could be the changed column, which would then be stored twice).
-- Columns the call does not change are sent back as their raw read nodes, so a repeated entry or an irregular row in
-  them is stored exactly as it was. When the service lists the changed column twice, nothing is sent.
-- Exit code 0 when the save's read-back matches the plan (a column dropped as all-edit is reported), when the call
-  changes nothing, for a preview, or when the prompt is answered no; 1 otherwise.
+- Refused before any write: a grant while column permissions are OFF without `--enable-column-permissions`; a move or a
+  removal while they are OFF; a removal or a move of a row the grantee does not have; a grantee with several rows in
+  the column; a position past the end; an unknown column, an unknown grantee, several objects with the title; a read
+  with no readable switch (never taken for OFF); a stored row with no readable position, level or grantee (every
+  restricted column goes back as stored); stored rows or schema columns that cannot be read.
+- Exit code 0 when the storage read-back matches the plan, when the call changes nothing, for a preview, or when the
+  prompt is answered no; 1 otherwise.
 - On MCP the tool is `set-column-rights` (destructive, idempotent: a repeated call finds its change in place). The host
   approval is the confirmation; `preview=true` writes nothing. Each request gets one attempt of at most 25 s, and all
   of them share a 100 s limit, as for `set-object-rights`.

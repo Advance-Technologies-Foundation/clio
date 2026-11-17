@@ -105,22 +105,21 @@ public interface IDefaultRecordRightsWriter {
 /// </summary>
 public interface IColumnRightsWriter {
 	/// <summary>
-	/// Writes <paramref name="after"/> onto the object read as <paramref name="snapshot"/>. The service REPLACES every
-	/// column's rows with the list it gets (<c>[]</c> clears them all; <c>null</c> leaves them alone), so a change to one
-	/// column sends the WHOLE list: every other column exactly as read, and <paramref name="changedColumn"/> with its
-	/// planned rows — a read row keeps its node with only its position and level replaced, a new row is
-	/// <c>{position, rightLevel, sysAdminUnit: {id, name}}</c>, and a column left with no rows is not sent. With
-	/// <paramref name="changedColumn"/> <see langword="null"/> (a switch-only call) the list is sent as null. The
-	/// operation, record and entity-operation collections are always sent as null.
+	/// Writes the switch and <paramref name="columns"/> onto the object read as <paramref name="snapshot"/>. Measured on
+	/// storage: a list gives each column IN it exactly the listed rows (<c>[]</c>: none) and each column of the object
+	/// NOT in it the default row (All employees, edit, position 0); <see langword="null"/> leaves the stored rows alone.
+	/// Each column is sent as <c>{columnUId, columnCaption, rights: [{position, rightLevel, sysAdminUnit: {id, name}}]}</c>.
+	/// The operation, record and entity-operation collections are always sent as null.
 	/// </summary>
 	/// <param name="snapshot">The object as it was read.</param>
-	/// <param name="after">The planned column layer.</param>
-	/// <param name="changedColumn">The column the call changes; <see langword="null"/> to send no column list.</param>
+	/// <param name="administratedByColumns">The switch to send.</param>
+	/// <param name="columns">The column list; <see langword="null"/> to leave the stored rows alone.</param>
 	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
 	/// <returns><see cref="ObjectRightsSaveResult.Saved"/> when the service reported success — which it does even for
-	/// rows it did not store, so the caller must read the object back — otherwise why the save failed.</returns>
-	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, ColumnRightsState after, Guid? changedColumn,
-		CreatioRequestOptions requestOptions);
+	/// rows it did not store, so the caller must read storage back — otherwise why the save failed or was not sent (a
+	/// row without a position or a level is never sent).</returns>
+	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, bool administratedByColumns,
+		IReadOnlyList<ColumnRights> columns, CreatioRequestOptions requestOptions);
 }
 
 /// <summary>
@@ -270,100 +269,44 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	}
 
 	/// <inheritdoc />
-	public ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, ColumnRightsState after, Guid? changedColumn,
-		CreatioRequestOptions requestOptions) {
+	public ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, bool administratedByColumns,
+		IReadOnlyList<ColumnRights> columns, CreatioRequestOptions requestOptions) {
 		ArgumentNullException.ThrowIfNull(snapshot);
-		ArgumentNullException.ThrowIfNull(after);
 		JsonObject payload = snapshot.Node.DeepClone().AsObject();
-		payload[AdministratedByColumnsField] = after.AdministratedByColumns;
-		if (changedColumn is { } column) {
-			string conflict = BuildColumnRights(payload, after, column, out JsonArray columns);
-			if (conflict is not null) {
-				return new ObjectRightsSaveResult(conflict);
-			}
-			payload[ColumnRightsField] = columns;
-		} else {
+		payload[AdministratedByColumnsField] = administratedByColumns;
+		if (columns is null) {
 			payload[ColumnRightsField] = null;
+		} else {
+			JsonArray list = new();
+			foreach (ColumnRights column in columns) {
+				if (column.ColumnUId is not { } uId) {
+					return new ObjectRightsSaveResult("a column without a UId cannot be sent; nothing was sent");
+				}
+				JsonArray rights = new();
+				foreach (ColumnRightRow row in column.Rows) {
+					if (row.Position is not { } position || row.Level is not { } level) {
+						return new ObjectRightsSaveResult($"a row of column {uId} has no position or level, so it cannot "
+							+ "be sent as stored; nothing was sent");
+					}
+					rights.Add(new JsonObject {
+						["position"] = position,
+						["rightLevel"] = (int)level,
+						["sysAdminUnit"] = new JsonObject { ["id"] = row.GranteeId.ToString(), ["name"] = row.GranteeName }
+					});
+				}
+				list.Add(new JsonObject {
+					[ColumnUIdField] = uId.ToString(),
+					["columnCaption"] = column.ColumnCaption,
+					["rights"] = rights
+				});
+			}
+			payload[ColumnRightsField] = list;
 		}
 		payload[OperationRowsField] = null;
 		payload[RecordRulesField] = null;
 		payload["entityOperationGrantees"] = null;
 		return SendSave(payload, requestOptions);
 	}
-
-	// The whole column list the save replaces the stored one with: every read column but the changed one exactly as read
-	// (a node the projection cannot fully represent round-trips), then the changed column in its read place — or at the
-	// end when it had no rows — unless the plan leaves it with none. Returns why nothing may be sent, or null.
-	private static string BuildColumnRights(JsonObject payload, ColumnRightsState after, Guid changedColumn,
-		out JsonArray columns) {
-		columns = new JsonArray();
-		ColumnRights planned = after.Columns.FirstOrDefault(entry => entry.ColumnUId == changedColumn);
-		bool placed = false;
-		foreach (JsonObject column in ReadColumnNodes(payload)) {
-			if (ColumnUIdOf(column) != changedColumn) {
-				columns.Add(column.DeepClone());
-				continue;
-			}
-			if (placed) {
-				return $"the service listed column {changedColumn} twice, so the rows to replace are ambiguous; nothing "
-					+ "was sent";
-			}
-			placed = true;
-			if (planned is { Rows.Count: > 0 }) {
-				string conflict = BuildColumnNode(column, planned, out JsonObject node);
-				if (conflict is not null) {
-					return conflict;
-				}
-				columns.Add(node);
-			}
-		}
-		if (!placed && planned is { Rows.Count: > 0 }) {
-			BuildColumnNode(null, planned, out JsonObject node);
-			columns.Add(node);
-		}
-		return null;
-	}
-
-	// The changed column: its read node with the rights replaced, or a new node. A read row is matched by grantee (the
-	// planner refuses a grantee with several rows in the column) and keeps every field it was read with but its position
-	// and level; a row the plan adds carries exactly the measured shape.
-	private static string BuildColumnNode(JsonObject read, ColumnRights planned, out JsonObject node) {
-		node = read?.DeepClone().AsObject() ?? new JsonObject {
-			["columnUId"] = planned.ColumnUId.ToString(),
-			["columnCaption"] = planned.ColumnCaption
-		};
-		List<JsonObject> readRows = ((read?["rights"] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>())
-			.ToList();
-		JsonArray rights = new();
-		foreach (ColumnRightRow row in planned.Rows.OrderBy(row => row.Position)) {
-			JsonObject[] matches = readRows.Where(candidate => GranteeId(candidate) == row.GranteeId).ToArray();
-			if (matches.Length > 1) {
-				return $"{matches.Length} rows of {ObjectRightsSupport.Display(row.GranteeName)} are in column "
-					+ $"{planned.ColumnUId}, so the row to change is ambiguous; nothing was sent";
-			}
-			JsonObject rowNode = matches.Length == 1
-				? matches[0].DeepClone().AsObject()
-				: new JsonObject {
-					["sysAdminUnit"] = new JsonObject {
-						["id"] = row.GranteeId.ToString(),
-						["name"] = row.GranteeName
-					}
-				};
-			rowNode["position"] = row.Position;
-			if (row.Level is { } level) {
-				rowNode["rightLevel"] = (int)level;
-			}
-			rights.Add(rowNode);
-		}
-		node["rights"] = rights;
-		return null;
-	}
-
-	private static IEnumerable<JsonObject> ReadColumnNodes(JsonObject node) =>
-		(node[ColumnRightsField] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>();
-
-	private static Guid ColumnUIdOf(JsonObject column) =>
-		Guid.TryParse(Str(column["columnUId"]), out Guid uId) ? uId : Guid.Empty;
 
 	// Read-modify-write is last-writer-wins: SaveAdministratedObject carries no version, so a change another client saves
 	// between our read and our save is overwritten. The caller reads the object back and reports any difference from

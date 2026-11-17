@@ -33,10 +33,11 @@ public sealed class GetColumnRightsTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Reads column permissions. COLUMN (field-level) layer of an object, read-only companion of get-object-rights from the same service read. " +
+	[Description("Reads column permissions. COLUMN (field-level) layer of an object: the switch from the service read get-object-rights uses, the rows from storage (VwSysEntitySchemaColumnRight), because the service read omits default columns. " +
 		"entity-schema-name is the object's code; when no object has that code, the object with that title is read (several are refused, listing them). " +
-		"Reports whether column permissions are ON and, per column with rows (its code and caption), every row in stored position order: [position] (0 first; which row wins for a user in several roles is not measured), grantee name and id, access denied/read/edit. " +
-		"OFF: every column is governed only by object and record permissions. A column whose rows all grant edit is not stored, so it never appears. column limits it to one column code; grantee lists, per column, the rows whose grantee is exactly that id first, then the other rows (role membership is not resolved). " +
+		"Reports whether column permissions are ON and, per column with rows (its code), every row in stored position order: [position] (0 first; which row wins for a user in several roles is not measured), grantee name and id, access denied/read/edit. " +
+		"ON: columns whose only row is the default (All employees, edit) are listed as default, not a restriction; schema columns with NO row are listed as accessible only to system administrators (Creatio documentation). OFF: rows are stored but not applied. If storage cannot be read, the service read is shown with a warning that default and locked columns cannot be told apart. " +
+		"column limits it to one column code; grantee lists, per column, the rows whose grantee is exactly that id first, then the other rows (role membership is not resolved). " +
 		"Facts only, no coverage verdict. Fails (success=false) when the object cannot be read. Unknown argument names are refused.")]
 	public ObjectRightsToolResponse GetColumnRights(
 		[Description("Parameters: environment-name, entity-schema-name (required); column, grantee (optional).")]
