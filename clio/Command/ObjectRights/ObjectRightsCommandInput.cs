@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.Common.ObjectRights;
 
@@ -314,6 +316,51 @@ internal static class ObjectRightsCommandInput {
 			return ConfirmDecision.Cancelled;
 		}
 		return ConfirmDecision.Approved;
+	}
+
+	/// <summary>
+	/// Reads the columns of <paramref name="schemaName"/> from the merged entity schema (every package layer, inherited
+	/// columns included), for the column-rights commands, which get a column's UId from the service and are given its
+	/// code. The read gets what is left of the call's budget; once it is spent the columns are not read.
+	/// </summary>
+	/// <param name="columnManager">The entity schema reader.</param>
+	/// <param name="schemaName">The object's code.</param>
+	/// <param name="requestOptions">The call's request options.</param>
+	/// <param name="columns">The columns with a UId and a code; empty when the read failed.</param>
+	/// <param name="error">Why the columns were not read; <see langword="null"/> on success.</param>
+	/// <returns><see langword="false"/> when the columns could not be read.</returns>
+	internal static bool TryReadSchemaColumns(IRemoteEntitySchemaColumnManager columnManager, string schemaName,
+		CreatioRequestOptions requestOptions, out IReadOnlyList<EntitySchemaPropertyColumnInfo> columns,
+		out string error) {
+		columns = Array.Empty<EntitySchemaPropertyColumnInfo>();
+		error = null;
+		int timeout;
+		try {
+			if (requestOptions.Deadline is { IsSpent: true }) {
+				error = "the call's time limit is spent";
+				return false;
+			}
+			timeout = requestOptions.ForNextRequest().TimeOut;
+		}
+		catch (TimeoutException) {
+			error = "the call's time limit is spent";
+			return false;
+		}
+		EntitySchemaPropertiesInfo schema;
+		// Only the service call is guarded: a failure in the code that works on its result is a bug, not a service failure.
+		try {
+			schema = columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+				SchemaName = schemaName, RuntimeReadTimeoutMilliseconds = timeout
+			});
+		}
+		catch (Exception ex) when (ex is EntitySchemaDesignerException || ObjectRightsSupport.IsServiceFailure(ex)) {
+			error = ObjectRightsSupport.DisplayFailure(ex);
+			return false;
+		}
+		columns = (schema?.Columns ?? Array.Empty<EntitySchemaPropertyColumnInfo>())
+			.Where(entry => entry.UId != Guid.Empty && !string.IsNullOrWhiteSpace(entry.Name))
+			.ToArray();
+		return true;
 	}
 
 	/// <summary>

@@ -435,6 +435,9 @@
   "set-background-image": {"effect": "change", "rebuilds-environment": false, "scope": "environment", "connections": "none", "host-paths": [
       {"argument": "file", "kind": "file", "access": "read"}
   ]},
+  "set-column-rights": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
+      {"argument": "preview", "value": "true", "effect": "read"}
+  ]},
   "set-default-record-rights": {"effect": "destroy", "rebuilds-environment": false, "scope": "environment", "connections": "none", "by-argument": [
       {"argument": "preview", "value": "true", "effect": "read"},
       {"argument": "revoke", "value": "false", "when-absent": true, "effect": "change"}

@@ -1,0 +1,102 @@
+COMMAND TYPE
+    Object rights
+
+NAME
+    set-column-rights - Set one role's access (denied/read/edit) to one column of one object, move or remove that
+    role's row, or turn the object's column permissions on or off (destructive)
+
+SYNOPSIS
+    set-column-rights --entity-schema-name <EntitySchemaName> --column <ColumnCode> --grantee <SysAdminUnitId>
+        --access <denied|read|edit> [--position <N>] [--enable-column-permissions] [--preview | --confirm] [OPTIONS]
+    set-column-rights --entity-schema-name <EntitySchemaName> --column <ColumnCode> --grantee <SysAdminUnitId>
+        (--remove-row | --position <N>) [--preview | --confirm] [OPTIONS]
+    set-column-rights --entity-schema-name <EntitySchemaName>
+        (--enable-column-permissions | --disable-column-permissions) [--preview | --confirm] [OPTIONS]
+
+DESCRIPTION
+    Changes the COLUMN (field-level) permissions of ONE object, one column and one grantee per call, through
+    RightManagementService SaveAdministratedObject - the payload of the System Designer "Column
+    permissions" tab. Read the result with get-column-rights.
+
+    The object is named by its code (entity schema name); when no object has that code, the one object
+    whose title it is is changed, and the output says so. Several objects with that title are refused.
+    --column is the column's code, resolved to its UId through the entity schema (every package layer
+    included). --grantee is a SysAdminUnit id, which must exist.
+
+    --access sets the grantee's row in the column: a grantee with no row gets one after the column's last
+    row; an existing row keeps its place and gets the new level. --position N places the row (with
+    --access) or moves the grantee's row (alone) to N in the column's stored position order, 0 first, and
+    the column's rows are renumbered 0..n-1. Only an explicit number is accepted: how Creatio ranks the
+    rows of one column against each other is not measured, so the command claims no precedence.
+    --remove-row deletes the grantee's row.
+
+    The switch changes only through its flags. A grant while the object's column permissions are OFF is
+    refused unless --enable-column-permissions is passed with it. --enable-column-permissions alone turns
+    them on with the stored rows as they are; --disable-column-permissions alone turns them off and keeps
+    every stored row.
+
+    The service REPLACES every column's rows with the list a save sends, so a row change sends the whole
+    list read, with only the named column changed: every other column goes back exactly as read. The
+    service answers success even for rows it did not store, so after every save the object is read back
+    and compared with the plan; any difference fails the call. A column whose rows all grant edit is not
+    stored by the service (edit is the default): the result reports that the column has no rows, by
+    design, instead of failing.
+
+    The rows are written to the environment only. They are NOT bound to a package: how Creatio carries
+    column permissions in a package is not established yet.
+
+OPTIONS
+    --entity-schema-name
+        The object: its code, or its title when no object has that code. Required.
+
+    --column
+        Column code whose rows change. Required unless the call only turns the switch.
+
+    --grantee
+        SysAdminUnit id (role or user) whose row changes. Required unless the call only turns the switch.
+
+    --access
+        denied, read or edit: the level the grantee's row gets.
+
+    --position
+        Position in the column's stored position order, 0 first. With --access it places the row; alone it
+        moves the grantee's row. Past the end is refused.
+
+    --remove-row
+        Remove the grantee's row. A call of its own: not with --access, --position or a switch flag.
+
+    --enable-column-permissions
+        Turn column permissions ON: with --access, or alone.
+
+    --disable-column-permissions
+        Turn column permissions OFF, keeping every stored row. A call of its own.
+
+    --preview
+        Write nothing: show the change, the column's rows before and after, and whether it would be refused.
+
+    --confirm
+        Apply without a prompt (required in a non-interactive run).
+
+    -e, --environment
+        Name of the registered environment.
+
+EXIT CODES
+    0   The change was saved and the read-back matches the plan (a column dropped as all-edit is
+        reported), the call changed nothing, the preview ran, or the prompt was answered no.
+    1   An argument was missing, invalid or in a combination that is refused; the object, the column or
+        the grantee was not found; several objects have the title; the plan was refused (the switch is
+        OFF, the grantee has no row or several rows in the column, the position is past the end); the
+        save failed; or the read-back failed or does not match the plan.
+
+EXAMPLES
+    Preview denying a role the Amount column, turning column permissions on:
+        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access denied --enable-column-permissions --preview -e dev
+
+    Let a role read the column, first in the column's position order:
+        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --access read --position 0 --confirm -e dev
+
+    Remove the role's row:
+        clio set-column-rights --entity-schema-name UsrOrder --column UsrAmount --grantee <role-id> --remove-row --confirm -e dev
+
+    Turn column permissions off, keeping the rows:
+        clio set-column-rights --entity-schema-name UsrOrder --disable-column-permissions --confirm -e dev

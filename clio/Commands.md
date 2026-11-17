@@ -704,6 +704,9 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="get-column-rights"></a>
 - [`get-column-rights`](docs/commands/get-column-rights.md) - Read column permissions (whether they are on for an object and, per column, every role's access level denied/read/edit in priority order)
 
+<a id="set-column-rights"></a>
+- [`set-column-rights`](docs/commands/set-column-rights.md) - Set one role's access (denied/read/edit) to one column of one object, move or remove that role's row (`--position`, `--remove-row`), or turn the object's column permissions on or off (destructive); written to the environment only, not bound to a package
+
 <a id="set-default-record-rights"></a>
 - [`set-default-record-rights`](docs/commands/set-default-record-rights.md) - Turn record permissions on/off for one object and grant or revoke one of its default record rules (destructive)
 

@@ -204,39 +204,15 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		$"[{row.Position}] {ObjectRightsSupport.Display(row.GranteeName)} ({row.GranteeId}): "
 		+ ColumnRightLevelNames.Of(row.Level);
 
-	// The column codes by UId, from the merged entity schema (every package layer, inherited columns included). The read
-	// gets what is left of the call's budget; once it is spent the codes are not read. Returns false with why.
+	// The column codes by UId, from the merged entity schema (every package layer, inherited columns included).
 	private bool TryReadColumnCodes(string schemaName, CreatioRequestOptions requestOptions,
 		out IReadOnlyDictionary<Guid, string> codes, out string error) {
 		codes = new Dictionary<Guid, string>();
-		error = null;
-		int timeout;
-		try {
-			if (requestOptions.Deadline is { IsSpent: true }) {
-				error = "the call's time limit is spent";
-				return false;
-			}
-			timeout = requestOptions.ForNextRequest().TimeOut;
-		}
-		catch (TimeoutException) {
-			error = "the call's time limit is spent";
+		if (!ObjectRightsCommandInput.TryReadSchemaColumns(_columnManager, schemaName, requestOptions,
+				out IReadOnlyList<EntitySchemaPropertyColumnInfo> columns, out error)) {
 			return false;
 		}
-		EntitySchemaPropertiesInfo schema;
-		// Only the service call is guarded: a failure in the code that works on its result is a bug, not a service failure.
-		try {
-			schema = _columnManager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
-				SchemaName = schemaName, RuntimeReadTimeoutMilliseconds = timeout
-			});
-		}
-		catch (Exception ex) when (ex is EntitySchemaDesignerException || ObjectRightsSupport.IsServiceFailure(ex)) {
-			error = ObjectRightsSupport.DisplayFailure(ex);
-			return false;
-		}
-		codes = (schema?.Columns ?? Array.Empty<EntitySchemaPropertyColumnInfo>())
-			.Where(entry => entry.UId != Guid.Empty && !string.IsNullOrWhiteSpace(entry.Name))
-			.GroupBy(entry => entry.UId)
-			.ToDictionary(group => group.Key, group => group.First().Name);
+		codes = columns.GroupBy(entry => entry.UId).ToDictionary(group => group.Key, group => group.First().Name);
 		return true;
 	}
 

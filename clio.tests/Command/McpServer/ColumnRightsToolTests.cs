@@ -175,3 +175,152 @@ public sealed class ColumnRightsToolTests {
 		response.Error.Should().NotContain("OFF", because: "a failed read is never reported as OFF");
 	}
 }
+
+/// <summary>
+/// The <c>set-column-rights</c> MCP tool: its safety hints, argument binding and mapping (no package argument), the
+/// refusal of unknown argument names before any read or write, and a preview that writes nothing.
+/// </summary>
+[TestFixture]
+[Category("Unit")]
+[Property("Module", "McpServer")]
+public sealed class SetColumnRightsToolTests {
+
+	private const string Grantee = "720b771c-e7a7-4f31-9cfb-52cd21c3739f";
+	private static readonly Guid AmountUId = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
+
+	private ILogger _logger;
+	private IObjectRightsReader _reader;
+	private IColumnRightsWriter _writer;
+	private IGranteeLookup _granteeLookup;
+	private IRemoteEntitySchemaColumnManager _columnManager;
+	private IToolCommandResolver _resolver;
+	private SetColumnRightsOptions _captured;
+
+	[SetUp]
+	public void SetUp() {
+		_logger = Substitute.For<ILogger>();
+		List<LogMessage> messages = new();
+		_logger.LogMessages.Returns(_ => messages.ToList());
+		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => messages.Add(new InfoMessage((string)call[0])));
+		_logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(call => messages.Add(new WarningMessage((string)call[0])));
+		_logger.When(l => l.WriteError(Arg.Any<string>())).Do(call => messages.Add(new ErrorMessage((string)call[0])));
+		_logger.When(l => l.ClearMessages()).Do(_ => messages.Clear());
+		_reader = Substitute.For<IObjectRightsReader>();
+		_reader.GetObjectRights("UsrHoliday", Arg.Any<CreatioRequestOptions>()).Returns(new ObjectRightsInfo(true,
+			"UsrHoliday", "Holiday", false, Array.Empty<RoleOperationRights>(), AdministratedByColumns: true,
+			Columns: Array.Empty<ColumnRights>()));
+		_writer = Substitute.For<IColumnRightsWriter>();
+		_granteeLookup = Substitute.For<IGranteeLookup>();
+		_granteeLookup.ResolveGranteeName(Guid.Parse(Grantee), Arg.Any<CreatioRequestOptions>()).Returns("Role");
+		_columnManager = Substitute.For<IRemoteEntitySchemaColumnManager>();
+		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			new EntitySchemaPropertiesInfo("UsrHoliday", "Holiday", null, "(merged: all packages)", null, false, "Id",
+				"Name", 1, 0, null, false, false, null, false, null, false, false, true, false, null, null,
+				new[] { new EntitySchemaPropertyColumnInfo("UsrAmount", AmountUId, "own", "Amount", null, "Decimal",
+					false, false, null) }));
+		_resolver = Substitute.For<IToolCommandResolver>();
+		_captured = null;
+		_resolver.Resolve<SetColumnRightsCommand>(Arg.Do<EnvironmentOptions>(o => _captured = (SetColumnRightsOptions)o))
+			.Returns(_ => Command());
+	}
+
+	private SetColumnRightsCommand Command() => new(_reader, _writer, new ColumnRightsPlanner(),
+		new ColumnRightsReadBackVerifier(), _granteeLookup, _columnManager, Substitute.For<IInteractiveConsole>(), _logger);
+
+	private SetColumnRightsTool Tool() => new(Command(), _logger, _resolver);
+
+	private static T Bind<T>(string json) =>
+		JsonSerializer.Deserialize<T>(json, Clio.BindingsModule.CreateMcpSerializerOptions())!;
+
+	[Test]
+	[Description("Declares set-column-rights destructive, not read-only, idempotent and closed-world under its canonical name: a grant can take access away, and a repeated identical call finds its change in place.")]
+	public void SetColumnRightsTool_ShouldDeclareDestructiveSafetyFlags_WhenInspectingAttribute() {
+		// Arrange & Act
+		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(SetColumnRightsTool)
+			.GetMethod(nameof(SetColumnRightsTool.SetColumnRights))!
+			.GetCustomAttributes(typeof(McpServerToolAttribute), false)
+			.Single();
+
+		// Assert
+		attribute.Name.Should().Be("set-column-rights", because: "the tool publishes under its canonical kebab-case name");
+		attribute.ReadOnly.Should().BeFalse(because: "the tool writes column permissions");
+		attribute.Destructive.Should().BeTrue(because: "a deny or a removal takes access away");
+		attribute.Idempotent.Should().BeTrue(because: "repeating the same call changes nothing further");
+		attribute.OpenWorld.Should().BeFalse(because: "the tool talks only to the registered environment");
+	}
+
+	[Test]
+	[Description("Marks the single args wrapper as schema-required so an omitted args object fails with a structured error.")]
+	public void SetColumnRightsTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
+		// Arrange & Act
+		object[] required = typeof(SetColumnRightsTool)
+			.GetMethod(nameof(SetColumnRightsTool.SetColumnRights))!
+			.GetParameters()[0]
+			.GetCustomAttributes(typeof(RequiredAttribute), false);
+
+		// Assert
+		required.Should().NotBeEmpty(because: "the args wrapper must be schema-required");
+	}
+
+	[Test]
+	[Description("Binds every set-column-rights argument from kebab-case JSON and maps it onto a confirmed command call with the request limits of set-object-rights.")]
+	public void SetColumnRightsArgs_ShouldBindAndMapEveryArgument_WhenDeserializedWithMcpOptions() {
+		// Arrange
+		SetColumnRightsArgs args = Bind<SetColumnRightsArgs>(
+			$$"""{"environment-name":"dev","entity-schema-name":"UsrHoliday","column":"UsrAmount","grantee":"{{Grantee}}","access":"read","position":0,"remove-row":false,"enable-column-permissions":true,"disable-column-permissions":false}""");
+
+		// Act
+		SetColumnRightsOptions options = SetColumnRightsTool.BuildOptions(args);
+
+		// Assert
+		args.ExtensionData.Should().BeNullOrEmpty(because: "every key is a known argument");
+		options.Environment.Should().Be("dev", because: "environment-name maps to the environment");
+		options.Column.Should().Be("UsrAmount", because: "column maps to --column");
+		options.Grantee.Should().Be(Grantee, because: "grantee maps to --grantee");
+		options.Access.Should().Be("read", because: "access maps to --access");
+		options.Position.Should().Be(0, because: "position maps to --position");
+		options.EnableColumnPermissions.Should().BeTrue(because: "the enable flag maps through");
+		options.Confirm.Should().BeTrue(because: "the host's approval of the call is the confirmation");
+		options.TimeOut.Should().Be(SetObjectRightsTool.McpRequestTimeoutMilliseconds,
+			because: "each request gets the set-object-rights limit");
+		options.MaxAttempts.Should().Be(1, because: "a write is not retried");
+		options.CallBudget.Should().Be(SetObjectRightsTool.McpCallBudget, because: "all requests share one limit");
+		SetColumnRightsTool.ValidArguments.Should().NotContain("package",
+			because: "column rights are not bound to a package: the delivery path is not established");
+	}
+
+	[TestCase("package")]
+	[TestCase("remove_row")]
+	[TestCase("operations")]
+	[Description("An unknown argument — package included, which this tool does not have — is refused before any read or write, so a typo never turns into a different change.")]
+	public void SetColumnRights_ShouldRefuseBeforeAnyReadOrWrite_WhenAnArgumentIsUnknown(string unknown) {
+		// Arrange
+		SetColumnRightsArgs args = Bind<SetColumnRightsArgs>(
+			$$"""{"environment-name":"dev","entity-schema-name":"UsrHoliday","column":"UsrAmount","grantee":"{{Grantee}}","access":"read","{{unknown}}":"x"}""");
+
+		// Act
+		ObjectRightsToolResponse response = Tool().SetColumnRights(args);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unknown argument name must be refused, not silently dropped");
+		response.Error.Should().Contain(unknown, because: "the refusal names the offending key");
+		_resolver.DidNotReceive().Resolve<SetColumnRightsCommand>(Arg.Any<EnvironmentOptions>());
+		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+	}
+
+	[Test]
+	[Description("preview=true is a dry run: never confirmed, nothing saved, and the plan comes back in the output.")]
+	public void SetColumnRights_ShouldWriteNothing_WhenPreviewIsTrue() {
+		// Arrange
+		SetColumnRightsArgs args = new("dev", "UsrHoliday", "UsrAmount", Grantee, "denied", Preview: true);
+
+		// Act
+		ObjectRightsToolResponse response = Tool().SetColumnRights(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a preview of a valid change succeeds");
+		_captured!.Confirm.Should().BeFalse(because: "a preview is never confirmed");
+		_writer.DidNotReceiveWithAnyArgs().Save(default, default, default, default);
+		response.Output.Should().Contain("PREVIEW", because: "the output says nothing was changed");
+	}
+}

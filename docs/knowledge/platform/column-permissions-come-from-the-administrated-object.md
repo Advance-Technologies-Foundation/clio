@@ -4,6 +4,8 @@ applies-to:
   - clio/Common/ObjectRights/RightManagementServiceClient.cs
   - clio/Common/ObjectRights/ColumnRightsModel.cs
   - clio/Command/ObjectRights/GetColumnRightsCommand.cs
+  - clio/Command/ObjectRights/SetColumnRightsCommand.cs
+  - clio/Common/ObjectRights/ColumnRightsPlanner.cs
 date: 2026-11-17
 ---
 

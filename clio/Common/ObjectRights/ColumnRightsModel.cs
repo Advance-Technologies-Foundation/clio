@@ -35,6 +35,24 @@ public static class ColumnRightLevelNames {
 		ColumnRightLevel.Edit => "edit",
 		_ => $"unknown ({(int)level.Value})"
 	};
+
+	/// <summary>The accepted names: <c>denied</c>, <c>read</c>, <c>edit</c>.</summary>
+	public const string Accepted = "denied, read or edit";
+
+	/// <summary>Reads one level name, in any case: <c>denied</c>, <c>read</c> or <c>edit</c>.</summary>
+	/// <param name="name">The name as the caller passed it.</param>
+	/// <param name="level">The level, when the name is one of them.</param>
+	/// <returns><see langword="true"/> when the name is a level's.</returns>
+	public static bool TryParse(string name, out ColumnRightLevel level) {
+		foreach (ColumnRightLevel candidate in new[] { ColumnRightLevel.Denied, ColumnRightLevel.Read, ColumnRightLevel.Edit }) {
+			if (string.Equals(Of(candidate), name?.Trim(), StringComparison.OrdinalIgnoreCase)) {
+				level = candidate;
+				return true;
+			}
+		}
+		level = default;
+		return false;
+	}
 }
 
 /// <summary>

@@ -523,6 +523,7 @@
         "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs",
         "clio/Command/McpServer/Tools/ApplyDefaultRecordRightsTool.cs",
         "clio/Command/McpServer/Tools/GetColumnRightsTool.cs",
+        "clio/Command/McpServer/Tools/SetColumnRightsTool.cs",
         "clio/Command/McpServer/Tools/GetObjectRightsTool.cs",
         "clio/Command/McpServer/Tools/SetDefaultRecordRightsTool.cs",
         "clio/Command/McpServer/Tools/SetObjectRightsTool.cs"

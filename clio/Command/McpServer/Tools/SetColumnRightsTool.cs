@@ -1,0 +1,150 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Clio.Command.ObjectRights;
+using Clio.Common;
+using ModelContextProtocol.Server;
+
+namespace Clio.Command.McpServer.Tools;
+
+/// <summary>
+/// MCP surface of <c>set-column-rights</c>: sets, moves or removes one role's row in ONE column of ONE object, or turns
+/// the object's column permissions on or off. Destructive: the call applies the change, and the host's approval of the
+/// call is the confirmation — the arguments name every access-changing transition. <c>preview</c> writes nothing.
+/// Idempotent: a repeated identical call finds its change in place and writes nothing (a repeated removal is refused
+/// because the row is gone, which changes nothing either).
+/// </summary>
+[McpServerToolType]
+public sealed class SetColumnRightsTool(
+	SetColumnRightsCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<SetColumnRightsOptions>(command, logger, commandResolver) {
+
+	internal const string ToolName = "set-column-rights";
+
+	internal const string ValidArguments =
+		"Valid: environment-name, entity-schema-name, column, grantee, access, remove-row, position, "
+		+ "enable-column-permissions, disable-column-permissions, preview.";
+
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[Description("Changes column permissions. Sets one role's access (denied/read/edit) to ONE column of ONE object, moves or removes that role's row, or turns the object's column permissions on or off - the COLUMN (field-level) layer (DESTRUCTIVE - changes access rights). " +
+		"entity-schema-name is the object's code; when no object has that code, the one object with that title (several are refused). column is the column CODE. grantee is a SysAdminUnit id (names are not unique); it must exist. " +
+		"access sets the grantee's row: a new row goes after the column's last row, an existing one keeps its place. position (0 first) places or, alone, moves the row in the column's stored position order and renumbers its rows 0..n-1; how Creatio ranks column rows is not measured. remove-row=true deletes the grantee's row. " +
+		"The switch changes only through its flags: a grant while column permissions are OFF is refused unless enable-column-permissions is passed; enable alone turns them on; disable-column-permissions ALONE turns them off and keeps every row. " +
+		"The service replaces every column's rows on save, so the call sends every other column back as read, then reads the object back: a difference fails the call. A column whose rows all grant edit is not stored (edit is the default); the result says so. " +
+		"The rows are written to the environment only, NOT bound to a package. preview=true writes nothing and shows the column's rows before and after. Read with get-column-rights. " +
+		"Unknown argument names are REFUSED before any read or write.")]
+	public ObjectRightsToolResponse SetColumnRights(
+		[Description("Parameters: environment-name, entity-schema-name (required); column, grantee and access (a grant); column, grantee and remove-row or position (a removal or a move); enable-column-permissions, disable-column-permissions, preview (optional).")]
+		[Required]
+		SetColumnRightsArgs args) {
+		// The serializer silently DROPS unknown keys; on a destructive tool a typo ({"remove_row":true}) would turn a
+		// removal into a different call, so it is refused before any read or write.
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArguments);
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return ObjectRightsToolResponse.FromValidationError(aliasError);
+		}
+		try {
+			return ObjectRightsToolResponse.From(InternalExecute<SetColumnRightsCommand>(BuildOptions(args)));
+		} catch (Exception ex) {
+			return ObjectRightsToolResponse.FromError(ex);
+		}
+	}
+
+	/// <summary>The command options an MCP call runs with.</summary>
+	/// <param name="args">The call's arguments.</param>
+	/// <returns>The options, with the request limits of set-object-rights: the call makes the same six requests at
+	/// most (grantee, SysSchema lookup, read, columns, save, read-back).</returns>
+	internal static SetColumnRightsOptions BuildOptions(SetColumnRightsArgs args) {
+		bool preview = args.Preview ?? false;
+		return new SetColumnRightsOptions {
+			Environment = args.EnvironmentName,
+			EntitySchemaName = args.EntitySchemaName,
+			Column = args.Column,
+			Grantee = args.Grantee,
+			Access = args.Access,
+			RemoveRow = args.RemoveRow ?? false,
+			Position = args.Position,
+			EnableColumnPermissions = args.EnableColumnPermissions ?? false,
+			DisableColumnPermissions = args.DisableColumnPermissions ?? false,
+			Preview = preview,
+			// MCP cannot prompt anyone: the host's approval of this call is the confirmation. A preview writes nothing,
+			// so it is never confirmed.
+			Confirm = !preview,
+			TimeOut = SetObjectRightsTool.McpRequestTimeoutMilliseconds,
+			MaxAttempts = 1,
+			CallBudget = SetObjectRightsTool.McpCallBudget
+		};
+	}
+}
+
+/// <summary>Arguments of the <c>set-column-rights</c> MCP tool.</summary>
+/// <param name="EnvironmentName">The registered environment.</param>
+/// <param name="EntitySchemaName">The one object whose column permissions change.</param>
+/// <param name="Column">The column code whose rows change.</param>
+/// <param name="Grantee">The SysAdminUnit id of the role or user whose row changes.</param>
+/// <param name="Access">The level the grantee's row gets: denied, read or edit.</param>
+/// <param name="RemoveRow">Remove the grantee's row from the column.</param>
+/// <param name="Position">Where the grantee's row goes in the column's stored position order, 0 first.</param>
+/// <param name="EnableColumnPermissions">Turn column permissions on: with a grant, or alone.</param>
+/// <param name="DisableColumnPermissions">Turn column permissions off, alone.</param>
+/// <param name="Preview">Write nothing; show what the call would change.</param>
+public sealed record SetColumnRightsArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("entity-schema-name")]
+	[property: Description("The one object whose column permissions change: its code, or its title when no object has that code.")]
+	[property: Required]
+	string EntitySchemaName,
+
+	[property: JsonPropertyName("column")]
+	[property: Description("Column code (for example UsrDescription) whose rows change. Required unless the call only turns column permissions on or off.")]
+	string? Column = null,
+
+	[property: JsonPropertyName("grantee")]
+	[property: Description("SysAdminUnit id (role or user) whose row changes; names are not unique. Required unless the call only turns column permissions on or off.")]
+	string? Grantee = null,
+
+	[property: JsonPropertyName("access")]
+	[property: Description("Access the grantee's row gets: denied, read or edit. Adds the row after the column's last row, or changes the existing row's level in place.")]
+	string? Access = null,
+
+	[property: JsonPropertyName("remove-row")]
+	[property: Description("Remove the grantee's row from the column (default false). A call of its own: not with access, position or a switch flag.")]
+	bool? RemoveRow = null,
+
+	[property: JsonPropertyName("position")]
+	[property: Description("Position in the column's stored position order, 0 first: with access it places the row, alone it moves the grantee's row; the column's rows are renumbered 0..n-1. A position past the end is refused.")]
+	int? Position = null,
+
+	[property: JsonPropertyName("enable-column-permissions")]
+	[property: Description("Turn the object's column permissions ON (default false, which refuses a grant while they are off): with access, or alone.")]
+	bool? EnableColumnPermissions = null,
+
+	[property: JsonPropertyName("disable-column-permissions")]
+	[property: Description("Turn the object's column permissions OFF, keeping every stored row (default false). A call of its own.")]
+	bool? DisableColumnPermissions = null,
+
+	[property: JsonPropertyName("preview")]
+	[property: Description("Dry run (default false): write nothing and show what the call would change and whether it would be refused.")]
+	bool? Preview = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any read or write.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

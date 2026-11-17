@@ -179,6 +179,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// truncated: get-object-rights -> "Reads object permissions.", set-object-rights -> "Changes object
 	// permissions."; the rest of each old first sentence is now their second. Measured 18681, 7 under; the object
 	// index above measured 50334, under its ceiling without a re-pin.
+	// set-column-rights, one more line with the purpose "Changes column permissions.": measured 18734, 46 over. Paid by
+	// its default-record-rights siblings, whose first sentences the cut truncated: set-default-record-rights ->
+	// "Changes default record rules.", apply-default-record-rights -> "Applies default record rules."; the rest of each
+	// old first sentence is now their second. Measured 18684, 4 under; the object index above measured 50238.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes

@@ -424,6 +424,7 @@ public class BindingsModule {
 		services.AddTransient<Clio.Command.ObjectRights.SetObjectRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.GetObjectRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.GetColumnRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.SetColumnRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.SetDefaultRecordRightsCommand>();
 		services.AddTransient<Clio.Command.ObjectRights.ApplyDefaultRecordRightsCommand>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRecordCounter, Clio.Common.ObjectRights.ObjectRecordCounter>();
@@ -1118,6 +1119,9 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsPlanner, Clio.Common.ObjectRights.ObjectRightsPlanner>();
 		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReadBackVerifier, Clio.Common.ObjectRights.ObjectRightsReadBackVerifier>();
 		services.AddTransient<Clio.Common.ObjectRights.IDefaultRecordRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsPlanner, Clio.Common.ObjectRights.ColumnRightsPlanner>();
+		services.AddTransient<Clio.Common.ObjectRights.IColumnRightsReadBackVerifier, Clio.Common.ObjectRights.ColumnRightsReadBackVerifier>();
 		services.AddTransient<Clio.Common.ObjectRights.IDefaultRecordRightsPlanner, Clio.Common.ObjectRights.DefaultRecordRightsPlanner>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
