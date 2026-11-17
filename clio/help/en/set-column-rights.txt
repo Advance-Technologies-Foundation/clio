@@ -58,8 +58,10 @@ DESCRIPTION
     so it stays as it is. When the call turns them ON, a column with no rows is not sent, so it gets
     the default row. While column permissions are ON, a column whose last row is removed is sent with
     none, so it ends with no rows and every user follows the object's operation permissions; the summary
-    says when that widens the removed row's access. Removing the only row of a column that has just the
-    default is refused: it changes no one's access. A disable sends no list.
+    and the result say when that widens the removed row's access. For an external (portal) role or user
+    they compare with the All external users row, not All employees (external users are not in it); when
+    clio cannot tell whether the grantee is external, the removal is refused. Removing the only row of a
+    column that has just the default is refused: it changes no one's access. A disable sends no list.
 
     Before planning, while column permissions are ON, the stored rows are checked against what the
     service lists (every restricted column with its rows, a column with no rows with none, a default
@@ -111,8 +113,9 @@ OPTIONS
 
     --remove-row
         Remove the grantee's row; no change when it has none. Removing the column's last row leaves it
-        with no rows: every user then follows the object's operation permissions; the summary says when
-        that widens access. A call of its own: not with --access, --position or a switch flag.
+        with no rows: every user then follows the object's operation permissions; the summary and the
+        result say when that widens access, comparing an external (portal) role or user with the All
+        external users row. A call of its own: not with --access, --position or a switch flag.
 
     --enable-column-permissions
         Turn column permissions ON: with --access, or alone. Rows kept on columns since a disable apply

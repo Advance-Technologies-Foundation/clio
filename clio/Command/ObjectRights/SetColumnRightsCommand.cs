@@ -47,8 +47,10 @@ public class SetColumnRightsOptions : RemoteCommandOptions {
 	[Option("remove-row", Required = false, HelpText =
 		"Remove the grantee's row from the column; no change when it has none. Removing the column's last row leaves it "
 		+ "with no rows: every user then follows the object's operation permissions (Creatio documentation); the "
-		+ "summary says when that widens the removed row's access. A call of its own: not with --access, --position or "
-		+ "a switch flag.")]
+		+ "summary and the result say when that widens the removed row's access. For an external (portal) role or user "
+		+ "they compare with the All external users row, not All employees (external users are not in it); when clio "
+		+ "cannot tell whether the grantee is external, the removal is refused. A call of its own: not with --access, "
+		+ "--position or a switch flag.")]
 	public bool RemoveRow { get; set; }
 
 	/// <summary>Put the grantee's row at this position of the column's stored position order, 0 first.</summary>
@@ -208,8 +210,9 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		ColumnRightsPlan plan = _planner.Plan(new ColumnRightsLayer(before.AdministratedByColumns, stored,
 			KnownColumns(schemaColumns, before)), request);
 		bool externalGrantee = false;
-		if (request.RemoveRow && !plan.Refused && plan.Changes
+		if (request.RemoveRow && !plan.Refused && plan.Changes && LeavesABroadRow(plan)
 			&& !TryFindExternalGrantee(input.Grantee, label, requestOptions, out externalGrantee)) {
+			WriteFacts(storageFacts);
 			return 1;
 		}
 		Change change = new(schemaName, label, column,
@@ -451,6 +454,12 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		public bool IsRead => Object.IsRead && Stored is not null;
 	}
 
+	// Whether the column keeps an All employees or All external users row after the plan: only then does it matter for
+	// the removal's summary whether the grantee is external.
+	private static bool LeavesABroadRow(ColumnRightsPlan plan) =>
+		plan.ColumnRowsAfter.Any(row => row.Level is not null
+			&& (row.GranteeId == SysAdminUnitIds.AllEmployees || row.GranteeId == SysAdminUnitIds.AllPortalUsers));
+
 	// Whether a removed row's grantee is an external (portal) role or user. External users are not in All employees, so
 	// the row that applies to them after the removal is All external users', not All employees'. A failed lookup fails
 	// the call: an external role taken for internal would hide exactly the widening the operator must see.
@@ -465,9 +474,9 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			return true;
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
-			_logger.WriteError($"Error: {label}: could not tell whether grantee {grantee} is an external (portal) role, so "
-				+ $"what applies to its members after the removal cannot be shown: {ObjectRightsSupport.DisplayFailure(ex)}. "
-				+ "Nothing was changed.");
+			_logger.WriteError($"Error: {label}: could not tell whether grantee {grantee} is an external (portal) role or "
+				+ "user, so what applies to its members after the removal cannot be shown: "
+				+ $"{ObjectRightsSupport.DisplayFailure(ex)}. Nothing was changed.");
 			return false;
 		}
 	}
@@ -476,7 +485,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	private sealed record Change(string SchemaName, string Label, ColumnTarget Column, string GranteeLabel,
 		ColumnRightsChangeRequest Request, ColumnRightsPlan Plan, IReadOnlyDictionary<Guid, string> Codes,
 		IReadOnlyList<string> StorageFacts, IReadOnlyList<Guid> ServiceColumnsWithoutRows, bool StoredRead,
-		bool ExternalGrantee = false) {
+		bool ExternalGrantee) {
 
 		public string ColumnLabel => Column is null ? null : FormatColumn(Column.Code, Column.Caption);
 
@@ -509,7 +518,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 					return "";
 				}
 				Guid everyone = ExternalGrantee ? SysAdminUnitIds.AllPortalUsers : SysAdminUnitIds.AllEmployees;
-				string everyoneName = ExternalGrantee ? "All external users" : "All employees";
+				string everyoneName = ExternalGrantee ? SysAdminUnitIds.AllPortalUsersName : SysAdminUnitIds.AllEmployeesName;
 				ColumnRightRow broad = Request.Grantee == everyone
 					? null
 					: Plan.ColumnRowsAfter.FirstOrDefault(row => row.GranteeId == everyone && row.Level is not null);
@@ -922,7 +931,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ $"{(change.Plan.DisablesColumnPermissions ? "OFF; every stored row is kept, not applied" : "ON")}.";
 		}
 		if (change.Request.RemoveRow) {
-			return $"{change.Label}: removed the row of grantee {change.GranteeLabel} from column {change.ColumnLabel}.";
+			return $"{change.Label}: removed the row of grantee {change.GranteeLabel} from column {change.ColumnLabel}."
+				+ change.RemovalEffect;
 		}
 		if (change.Request.MovesOnly) {
 			return $"{change.Label}: moved the row of grantee {change.GranteeLabel} in column {change.ColumnLabel} to "

@@ -38,9 +38,9 @@ leaves every user to the object's operation permissions. In the designer a role 
 - A column whose rows share a position is refused: its order is ambiguous.
 - `--remove-row` deletes the grantee's row; a removal of a row the grantee no longer has is no change. Removing a
   column's last row (while column permissions are ON) sends the column with no rows: every user then follows the
-  object's operation permissions; the summary says when that **widens** the removed row's access. For an external
-  (portal) role or user the summary compares with the All external users row, not All employees (external users are
-  not in it); when clio cannot tell whether the grantee is external, the removal is refused.
+  object's operation permissions; the summary and the result say when that **widens** the removed row's access. For
+  an external (portal) role or user they compare with the All external users row, not All employees (external users
+  are not in it); when clio cannot tell whether the grantee is external, the removal is refused.
 
 The switch changes only through its flags: a grant while column permissions are OFF is refused unless
 `--enable-column-permissions` is passed with it; a move or a removal while they are OFF is refused (turn them on
@@ -194,7 +194,9 @@ clio set-column-rights --entity-schema-name UsrOrder --disable-column-permission
   unknown column, an unknown grantee, several objects with the title; a read with no readable switch (never taken for
   OFF); a stored row with no readable position, level or grantee (every restricted column goes back as stored);
   storage that disagrees with the service, is cut short or cannot be read; schema columns that cannot be read; another
-  call holding the object's lease; stored rows that changed before the save; a time limit with no room for the save.
+  call holding the object's lease; stored rows that changed before the save; a time limit with no room for the save;
+  a removal whose grantee clio cannot tell is external or not, while an All employees or All external users row
+  remains in the column.
 - Exit code 0 when the storage read-back matches the plan, when the call changes nothing, for a preview, or when the
   prompt is answered no; 1 otherwise.
 - On MCP the tool is `set-column-rights` (destructive, idempotent: a repeated call finds its change in place). The host
