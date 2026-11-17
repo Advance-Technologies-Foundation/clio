@@ -2316,43 +2316,25 @@ public static class SchemaValidationService
 	#region Registry-driven chart-widget validation
 	// Walks the registry's typeDefinitions for each inserted chart and enforces ONLY the data-block
 	// nesting (data.providing.aggregation.column), never cosmetic fields (color/formatting/legend/title).
-	// Full contract on ValidateChartWidgetConfig below; the two registry-content bridges are TODO(ENG-92174).
+	// Full contract on ValidateChartWidgetConfig below. The walk is driven by registry metadata alone:
+	// generic arguments are bound through the generic's own "typeParameters" and the fields that carry
+	// "typeParameter" (ENG-92174 — no chart-specific type names or parameter orders are hard-coded).
 
 	private const string ChartWidgetType = "crt.ChartWidget";
 	private const string ChartWidgetRootType = "ChartWidgetConfig";
 
 	/// <summary>
-	/// TODO(ENG-92174, registry-bridge-1): remove once the producer emits the real key. The registry references the
-	/// chart series type as "SeriesConfig", but the typeDefinitions dictionary defines it under
-	/// "ChartSeriesConfig"; without this alias the walk dead-ends at the series and never reaches the
-	/// data/aggregation fields. <see cref="ResolveTypeAlias"/> applies it only when the wire name is
-	/// absent AND the alias target exists, so it self-deactivates once the producer emits the real name.
-	/// </summary>
-	private static readonly IReadOnlyDictionary<string, string> ChartTypeNameAliases =
-		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["SeriesConfig"] = "ChartSeriesConfig"
-		};
-
-	/// <summary>
-	/// TODO(ENG-92174, registry-bridge-2): remove once the registry records generic type-parameter order. A generic
-	/// field type is stored as the raw string "WidgetDataConfig&lt;WidgetDataProvidingConfig, ...&gt;",
-	/// but the registry never names the type's parameters, so "providing" (typed as the placeholder
-	/// "TProvidingConfig") cannot be bound to its concrete argument. This maps the parameter order for
-	/// the one generic on the chart path. <see cref="BuildGenericSubstitution"/> applies it only when a
-	/// known order exists, so it self-deactivates once the registry carries the metadata itself.
-	/// </summary>
-	private static readonly IReadOnlyDictionary<string, string[]> ChartGenericParameterOrder =
-		new Dictionary<string, string[]>(StringComparer.Ordinal) {
-			["WidgetDataConfig"] = new[] { "TProvidingConfig", "TFormat" }
-		};
-
-	/// <summary>
-	/// The data-providing type whose subtree the validator actually checks. The walk navigates from the
-	/// chart config down to here (through the bridges), but only reports a missing required field once it
-	/// has entered this type — so it validates the data structure (aggregation / schemaName / column) and
-	/// leaves the cosmetic fields above it (color, formatting, legend, title) alone.
+	/// The data-providing contract the validator actually checks. The walk navigates from the chart config
+	/// down to the value bound to this type — or to a subtype of it, such as the runtime series'
+	/// <c>SeriesDataProvidingConfig</c> — and checks that value against THIS type's fields only, so it
+	/// validates the data structure (aggregation / schemaName / column) and leaves both the cosmetic fields
+	/// above it (color, formatting, legend, title) and a subtype's extra fields (rowCount, grouping, which
+	/// the chart contract documents as optional) alone.
 	/// </summary>
 	private const string ChartDataProvidingType = "WidgetDataProvidingConfig";
+
+	private const string TypeParametersPropertyName = "typeParameters";
+	private const string TypeParameterPropertyName = "typeParameter";
 
 	private static readonly IReadOnlyDictionary<string, string> EmptyTypeSubstitution =
 		new Dictionary<string, string>(StringComparer.Ordinal);
@@ -2456,16 +2438,50 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, string> substitution,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
 		string path, SchemaValidationResult result, bool report) {
-		string resolvedName = ResolveTypeAlias(typeName, typeDefinitions);
-		if (!typeDefinitions.TryGetValue(resolvedName, out JsonElement definition) ||
-		    !definition.TryGetProperty("fields", out JsonElement fields) ||
-		    fields.ValueKind != JsonValueKind.Object) {
+		if (!TryGetTypeFields(typeName, typeDefinitions, out JsonElement fields)) {
 			return;
 		}
 		// Begin reporting once we enter the data-providing block; before that we only navigate, so the
 		// cosmetic fields higher up (color/formatting/legend/title) are never flagged.
-		bool reportHere = report || string.Equals(resolvedName, ChartDataProvidingType, StringComparison.Ordinal);
-		ValidateFieldsMap(value, fields, substitution, typeDefinitions, path, result, reportHere);
+		if (!report && TryGetDataProvidingContract(typeName, fields, typeDefinitions, out JsonElement contractFields)) {
+			ValidateFieldsMap(value, contractFields, EmptyTypeSubstitution, typeDefinitions, path, result, report: true);
+			return;
+		}
+		ValidateFieldsMap(value, fields, substitution, typeDefinitions, path, result, report);
+	}
+
+	private static bool TryGetTypeFields(
+		string typeName, IReadOnlyDictionary<string, JsonElement> typeDefinitions, out JsonElement fields) {
+		fields = default;
+		return typeDefinitions.TryGetValue(typeName, out JsonElement definition) &&
+			definition.ValueKind == JsonValueKind.Object &&
+			definition.TryGetProperty("fields", out fields) &&
+			fields.ValueKind == JsonValueKind.Object;
+	}
+
+	/// <summary>
+	/// Returns the <see cref="ChartDataProvidingType"/> fields when <paramref name="typeName"/> is that type or
+	/// structurally a subtype of it — its fields include every field of the contract, as TypeScript's
+	/// structural typing makes <c>SeriesDataProvidingConfig extends WidgetDataProvidingConfig</c> (the registry
+	/// merges inherited fields in and records no heritage). Absent contract definition: never a match.
+	/// </summary>
+	private static bool TryGetDataProvidingContract(
+		string typeName, JsonElement fields,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions, out JsonElement contractFields) {
+		if (!TryGetTypeFields(ChartDataProvidingType, typeDefinitions, out contractFields)) {
+			return false;
+		}
+		if (string.Equals(typeName, ChartDataProvidingType, StringComparison.Ordinal)) {
+			return true;
+		}
+		bool hasContractField = false;
+		foreach (JsonProperty contractField in contractFields.EnumerateObject()) {
+			if (!fields.TryGetProperty(contractField.Name, out _)) {
+				return false;
+			}
+			hasContractField = true;
+		}
+		return hasContractField;
 	}
 
 	private static void ValidateFieldsMap(
@@ -2485,7 +2501,7 @@ public static class SchemaValidationService
 				if (report && required) {
 					result.Errors.Add(
 						$"{path}.{field.Name} is required by the component registry but is missing. " +
-						"Call get-guidance with name 'chart-widget-guidance' for the full contract.");
+						"Call get-guidance with name 'chart-widget' for the full contract.");
 				}
 				continue;
 			}
@@ -2498,6 +2514,14 @@ public static class SchemaValidationService
 		IReadOnlyDictionary<string, string> substitution,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
 		string path, SchemaValidationResult result, bool report) {
+		// A field declared as a bare type parameter shows only that parameter's DEFAULT; the instantiation's
+		// argument bound above (e.g. the runtime series' SeriesDataProvidingConfig) is what the value must fit.
+		if (fieldDefinition.TryGetProperty(TypeParameterPropertyName, out JsonElement parameterElement) &&
+		    parameterElement.ValueKind == JsonValueKind.String &&
+		    substitution.TryGetValue(parameterElement.GetString() ?? string.Empty, out string boundArgument)) {
+			ValidateValueAgainstTypeExpression(value, boundArgument, typeDefinitions, path, result, report);
+			return;
+		}
 		// Inline object shape (e.g. aggregation: { column: { required } }).
 		if (fieldDefinition.TryGetProperty("shape", out JsonElement shape) && shape.ValueKind == JsonValueKind.Object) {
 			ValidateFieldsMap(value, shape, substitution, typeDefinitions, path, result, report);
@@ -2522,10 +2546,17 @@ public static class SchemaValidationService
 		}
 		// Resolve a generic placeholder ("TProvidingConfig") to the concrete argument bound above.
 		typeExpression = ApplyTypeSubstitution(typeExpression, substitution);
+		ValidateValueAgainstTypeExpression(value, typeExpression, typeDefinitions, path, result, report);
+	}
+
+	private static void ValidateValueAgainstTypeExpression(
+		JsonElement value, string typeExpression,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
 		// Generic instantiation: WidgetDataConfig<WidgetDataProvidingConfig, ...>.
 		if (TryParseGenericType(typeExpression, out string genericName, out string[] genericArguments)) {
 			ValidateValueAgainstType(
-				value, genericName, BuildGenericSubstitution(genericName, genericArguments),
+				value, genericName, BuildGenericSubstitution(genericName, genericArguments, typeDefinitions),
 				typeDefinitions, path, result, report);
 			return;
 		}
@@ -2533,27 +2564,33 @@ public static class SchemaValidationService
 		if (typeExpression.Contains('|')) {
 			return;
 		}
-		ValidateValueAgainstType(value, typeExpression, EmptyTypeSubstitution, typeDefinitions, path, result, report);
+		ValidateValueAgainstType(value, typeExpression.Trim(), EmptyTypeSubstitution, typeDefinitions, path, result, report);
 	}
 
-	private static string ResolveTypeAlias(string typeName, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
-		// Self-deactivating bridge 1: alias only when the wire name is absent and the alias target exists.
-		if (!typeDefinitions.ContainsKey(typeName) &&
-		    ChartTypeNameAliases.TryGetValue(typeName, out string alias) &&
-		    typeDefinitions.ContainsKey(alias)) {
-			return alias;
-		}
-		return typeName;
-	}
-
-	private static IReadOnlyDictionary<string, string> BuildGenericSubstitution(string genericName, string[] arguments) {
-		// Self-deactivating bridge 2: only when we know this generic's parameter order.
-		if (!ChartGenericParameterOrder.TryGetValue(genericName, out string[] parameterNames)) {
+	/// <summary>
+	/// Binds the positional <paramref name="arguments"/> of an instantiation to the parameter names the
+	/// generic's own registry definition declares in <c>typeParameters</c>. A generic whose definition
+	/// carries no parameter list (an older registry) binds nothing, so its parameter-typed fields fall
+	/// back to their defaults and the walk fails open instead of guessing an order.
+	/// </summary>
+	private static IReadOnlyDictionary<string, string> BuildGenericSubstitution(
+		string genericName, string[] arguments, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
+		if (!typeDefinitions.TryGetValue(genericName, out JsonElement definition) ||
+		    definition.ValueKind != JsonValueKind.Object ||
+		    !definition.TryGetProperty(TypeParametersPropertyName, out JsonElement parameterNames) ||
+		    parameterNames.ValueKind != JsonValueKind.Array) {
 			return EmptyTypeSubstitution;
 		}
 		var map = new Dictionary<string, string>(StringComparer.Ordinal);
-		for (int i = 0; i < parameterNames.Length && i < arguments.Length; i++) {
-			map[parameterNames[i]] = arguments[i];
+		int index = 0;
+		foreach (JsonElement parameterName in parameterNames.EnumerateArray()) {
+			if (index >= arguments.Length) {
+				break;
+			}
+			if (parameterName.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(parameterName.GetString())) {
+				map[parameterName.GetString()!] = arguments[index];
+			}
+			index++;
 		}
 		return map;
 	}
