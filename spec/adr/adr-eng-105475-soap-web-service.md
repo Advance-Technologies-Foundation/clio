@@ -424,8 +424,8 @@ under a credential-like SOAP-header parent (`tem:AuthHeader/tem:Pin`: an array i
 or the value looks like a key (`WebServiceSchemaView.KeyLikeParts`): an authentication scheme and what follows it, a
 credential `name=value` pair (or a hosting-key one with 16+ characters), 16+ characters mixing letters and digits, 24+
 letters, 12+ digits, a password-shaped word (upper, lower, digit and one of `!@#$%^&*?~`, 8+), any user information of
-an address, or an address path segment, query or fragment value that is one (a long letters-only path segment, a WCF
-contract name, is not); text made of words, short numbers and at most one short mixed piece is plain (a media type, a
+an address, or an address path segment, query or fragment value that is one (a long path segment of capitalised words, a WCF
+contract name, is not); text made of words (at least one of 5+ letters), short numbers and at most one short mixed piece, not equal-length groups, is plain (a media type, a
 product token, a host name, `production-eu-west-1`). Known false positives: a GUID, an ISO timestamp, a build tag, a
 multipart boundary, a value whose first word is a scheme name. A constant that holds the `[masked]` text describe
 shows is refused in a header too. A cookie stays

@@ -483,6 +483,10 @@ public static partial class WebServiceSchemaView {
 	[GeneratedRegex(@"^[A-Za-z][A-Za-z0-9+.\-]*$", RegexOptions.CultureInvariant)]
 	private static partial Regex UriSchemePattern();
 
+	// A name made of capitalised words, with an optional interface prefix: ICustomerRelationshipService, GetCustomer.
+	[GeneratedRegex(@"^I?(?:[A-Z][a-z]+)+$", RegexOptions.CultureInvariant)]
+	private static partial Regex PascalNamePattern();
+
 	/// <summary>
 	/// Whether a header value looks like a key, judged without its name, because a header carrying a key is often named
 	/// neutrally (<c>X-Partner</c>, <c>X-Client</c>). It is when <see cref="KeyLikeParts"/> finds any part.
@@ -504,7 +508,7 @@ public static partial class WebServiceSchemaView {
 	/// underscores, 12+ digits, or 8+ characters with an upper and a lower case letter, a digit and one of
 	/// <c>!@#$%^&amp;*?~</c> (a chosen password). Any user information of an address (anything between <c>://</c> and an
 	/// <c>@</c>) is a key; so is a path segment, query value or fragment value of an address judged the same way (a long
-	/// letters-only path segment, a WCF contract name, is not), and the text before a scheme that is not one. Text made
+	/// path segment of capitalised words, a WCF contract name, is not), and the text before a scheme that is not one. Text made
 	/// of words, short numbers and at most one short mixed piece joined by <c>/ . + - _</c> is plain: a media type
 	/// (<c>application/vnd.github.v3+json</c>), a product token (<c>python-requests/2.31.0</c>), a host name, a
 	/// hyphenated name (<c>production-eu-west-1</c>). Not caught: a short key or password without those four kinds of
@@ -626,9 +630,10 @@ public static partial class WebServiceSchemaView {
 		string path = question < 0 ? beforeFragment : beforeFragment[..question];
 		string query = question < 0 ? string.Empty : beforeFragment[(question + 1)..];
 		// A path segment is often a long name (a WCF contract, IOrderFulfillmentService), so a letters-only run there is
-		// not a key; a mixed one (a webhook token) is.
+		// not a key when it reads as capitalised words; a random letters run or a mixed one (a webhook token) is.
 		foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries)) {
-			AddTokenPieces(parts, Uri.UnescapeDataString(segment), lettersRunIsKey: false);
+			string unescaped = Uri.UnescapeDataString(segment);
+			AddTokenPieces(parts, unescaped, lettersRunIsKey: !PascalNamePattern().IsMatch(unescaped));
 		}
 		foreach (string pair in (query + "&" + fragment).Split('&', StringSplitOptions.RemoveEmptyEntries)) {
 			AddTokenPieces(parts, Uri.UnescapeDataString(pair));
@@ -676,13 +681,17 @@ public static partial class WebServiceSchemaView {
 
 	// Text made of words and short numbers joined by '/', '.', '+', '-' or '_': a media type (application/vnd.github.v3+json),
 	// a product token (python-requests/2.31.0, CreatioIntegration/1.0), a hyphenated name (production-eu-west-1,
-	// crm-integration-v2). Each piece is a word (under 24 letters), a short number (under 12 digits) or a piece of up to 4
-	// characters, and at most one piece mixes letters and digits. A generated key has a long mixed piece, and a structured
-	// key (AB12-CD34-EF56-GH78, acct/123456789012345, a GUID) has several mixed pieces or a long number, so neither is one.
+	// crm-integration-v2). It holds at least one real word (5+ letters); each piece is a word (under 24 letters), a short
+	// number (under 12 digits) or a piece of up to 4 characters; at most one piece mixes letters and digits; and it is not
+	// three or more groups of one length (a licence key, ABCD-EFGH-1JKL-MNOP). A generated key has a long mixed piece, and
+	// a structured key (AB12-CD34-EF56-GH78, acct/123456789012345, a GUID) has several mixed pieces, equal groups or a long
+	// number, so neither is one.
 	private static bool IsWordsToken(string token) {
 		string[] pieces = token.Split(ProductTokenSeparators, StringSplitOptions.RemoveEmptyEntries);
 		static bool Mixed(string piece) => piece.Any(char.IsAsciiLetter) && piece.Any(char.IsAsciiDigit);
-		return pieces.Length > 1 && pieces.Count(Mixed) <= 1
+		bool equalGroups = pieces.Length >= 3 && pieces.All(piece => piece.Length == pieces[0].Length);
+		return pieces.Length > 1 && !equalGroups && pieces.Count(Mixed) <= 1
+			&& pieces.Any(piece => piece.Length > 4 && piece.All(char.IsAsciiLetter))
 			&& pieces.All(piece => piece.Length <= 4
 				|| (piece.All(char.IsAsciiLetter) && piece.Length < MinOpaqueLettersLength)
 				|| (piece.All(char.IsAsciiDigit) && piece.Length < MinOpaqueDigitsLength));
