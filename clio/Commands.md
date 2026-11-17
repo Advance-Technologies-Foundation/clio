@@ -702,7 +702,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`get-object-rights`](docs/commands/get-object-rights.md) - Read object operation permissions (read/create/edit/delete per role, in priority order) and record permissions (the switch and the default record rules) for an object and, optionally, its connected objects
 
 <a id="get-column-rights"></a>
-- [`get-column-rights`](docs/commands/get-column-rights.md) - Read column permissions (whether they are on for an object and, per column, every role's access level denied/read/edit in priority order)
+- [`get-column-rights`](docs/commands/get-column-rights.md) - Read column permissions (whether they are on for an object and, per column, every role's access level denied/read/edit in stored position order)
 
 <a id="set-default-record-rights"></a>
 - [`set-default-record-rights`](docs/commands/set-default-record-rights.md) - Turn record permissions on/off for one object and grant or revoke one of its default record rules (destructive)

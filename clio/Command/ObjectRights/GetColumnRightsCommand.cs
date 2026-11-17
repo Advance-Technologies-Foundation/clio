@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -10,11 +11,11 @@ namespace Clio.Command.ObjectRights;
 
 /// <summary>
 /// Options of <c>get-column-rights</c>: read the column (field-level) permissions of an object — the "Use column
-/// permissions" switch and, per column, the rows in priority order.
+/// permissions" switch and, per column, the rows in stored position order.
 /// </summary>
 [Verb("get-column-rights", HelpText =
 	"Read column permissions: whether they are on for an object and, per column, every role's access level "
-	+ "(denied/read/edit) in priority order")]
+	+ "(denied/read/edit) in stored position order")]
 public class GetColumnRightsOptions : RemoteCommandOptions {
 
 	/// <summary>The object to read: its code (entity schema name), or its title when no object has that code.</summary>
@@ -30,12 +31,13 @@ public class GetColumnRightsOptions : RemoteCommandOptions {
 	public string Column { get; set; }
 
 	/// <summary>
-	/// An optional SysAdminUnit id: per column, show its row and the rows above it — every row of a column where it has
-	/// none.
+	/// An optional SysAdminUnit id: per column, its rows first, then the column's other rows. Only a row whose grantee is
+	/// exactly that id is its row: role membership is not resolved.
 	/// </summary>
 	[Option("grantee", Required = false, HelpText =
-		"Optional SysAdminUnit id (role or user): per column, show its row and the rows above it (every row of a column "
-		+ "where it has none). When omitted, every row is listed.")]
+		"Optional SysAdminUnit id (role or user): per column, show the rows whose grantee is exactly that id first, then "
+		+ "the column's other rows. Role membership is not resolved: a user's id does not match its roles' rows. When "
+		+ "omitted, every row is listed.")]
 	public string Grantee { get; set; }
 
 	/// <summary>
@@ -48,8 +50,9 @@ public class GetColumnRightsOptions : RemoteCommandOptions {
 /// <summary>
 /// Reports the facts of an object's column permissions, read from the same <c>GetAdministratedObject</c> answer as
 /// <c>get-object-rights</c>: whether "Use column permissions" is on, and every column the service lists with its rows
-/// in priority order — the column's code (resolved from its UId through the entity schema) and caption, each row's
-/// position, grantee and access level. It draws no coverage verdict.
+/// in stored position order — the column's code (resolved from its UId through the entity schema) and caption, each
+/// row's position, grantee and access level. Which row wins for a user in several roles is not measured for columns, so
+/// the order claims nothing more. It draws no coverage verdict.
 /// </summary>
 public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 
@@ -93,9 +96,11 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		ColumnRightsState state = root.ColumnState;
 		IReadOnlyList<ColumnRights> shown = state.RestrictedColumns;
 		IReadOnlyDictionary<Guid, string> codes = new Dictionary<Guid, string>();
+		bool codesRead = false;
 		Guid? columnUId = null;
 		if (column is not null || shown.Count > 0) {
-			if (!TryReadColumnCodes(rootName, requestOptions, out codes, out string codesError)) {
+			codesRead = TryReadColumnCodes(rootName, requestOptions, out codes, out string codesError);
+			if (!codesRead) {
 				if (column is not null) {
 					_logger.WriteError($"Error: the columns of {rootName} could not be read, so --column {column} cannot "
 						+ $"be found: {codesError}");
@@ -106,22 +111,24 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 			}
 		}
 		if (column is not null) {
-			Guid[] matches = codes.Where(pair => string.Equals(pair.Value, column, StringComparison.OrdinalIgnoreCase))
-				.Select(pair => pair.Key)
+			KeyValuePair<Guid, string>[] matches = codes
+				.Where(pair => string.Equals(pair.Value, column, StringComparison.OrdinalIgnoreCase))
 				.ToArray();
 			if (matches.Length == 0) {
 				_logger.WriteError($"Error: {ObjectRightsSupport.FormatObject(rootName, root.Caption)} has no column "
 					+ $"'{column}'.");
 				return 1;
 			}
-			columnUId = matches[0];
+			columnUId = matches[0].Key;
+			// The schema's spelling from here on, not the caller's casing.
+			column = matches[0].Value;
 		}
 		ReportHeader(rootName, root.Caption, column, granteeFilter);
 		if (byTitle) {
 			_logger.WriteInfo($"  {ObjectRightsCommandInput.NotACode(named, new[] { new ObjectTitleMatch(rootName, root.Caption) })}, "
 				+ "which is read.");
 		}
-		ReportColumns(state, columnUId, column, codes, granteeFilter);
+		ReportColumns(state, columnUId, column, codes, codesRead, granteeFilter);
 		return 0;
 	}
 
@@ -129,40 +136,55 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		_logger.WriteInfo($"Column permissions for {ObjectRightsSupport.FormatObject(rootName, caption)}"
 			+ (column is null ? "" : $" (column {column})")
 			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})") + ":");
-		_logger.WriteInfo($"  {PriorityRule}");
+		_logger.WriteInfo($"  {OrderRule}");
 	}
 
 	private void ReportColumns(ColumnRightsState state, Guid? columnUId, string column,
-		IReadOnlyDictionary<Guid, string> codes, Guid? granteeFilter) {
+		IReadOnlyDictionary<Guid, string> codes, bool codesRead, Guid? granteeFilter) {
+		// Columns with a code first, by code; then the others, by caption.
 		List<ColumnRights> shown = state.RestrictedColumns
 			.Where(entry => columnUId is null || entry.ColumnUId == columnUId)
-			.OrderBy(entry => codes.TryGetValue(entry.ColumnUId, out string code) ? 0 : 1)
-			.ThenBy(entry => codes.TryGetValue(entry.ColumnUId, out string code) ? code : entry.ColumnCaption,
-				StringComparer.OrdinalIgnoreCase)
+			.OrderBy(entry => CodeOf(entry, codes) is null ? 1 : 0)
+			.ThenBy(entry => CodeOf(entry, codes) ?? entry.ColumnCaption ?? "", StringComparer.OrdinalIgnoreCase)
 			.ToList();
-		if (!state.AdministratedByColumns) {
-			_logger.WriteInfo($"  {SwitchOff}");
-			if (shown.Count > 0) {
-				_logger.WriteInfo("  Rows stored while column permissions are OFF:");
-			}
-		} else if (state.RestrictedColumns.Count == 0) {
-			_logger.WriteInfo($"  {OnWithoutRows}");
-			return;
-		} else {
-			_logger.WriteInfo("  Column permissions: ON. Columns with rows:");
+		switch (state.AdministratedByColumns) {
+			case null:
+				_logger.WriteInfo($"  {SwitchMissing}");
+				if (state.RestrictedColumns.Count == 0) {
+					_logger.WriteInfo("  No column has a permission row.");
+					return;
+				}
+				if (shown.Count > 0) {
+					_logger.WriteInfo("  Stored rows:");
+				}
+				break;
+			case false:
+				_logger.WriteInfo($"  {SwitchOff}");
+				if (shown.Count > 0) {
+					_logger.WriteInfo("  Rows stored while column permissions are OFF:");
+				}
+				break;
+			default:
+				if (state.RestrictedColumns.Count == 0) {
+					_logger.WriteInfo($"  {OnWithoutRows}");
+					return;
+				}
+				_logger.WriteInfo("  Column permissions: ON. Columns with rows:");
+				break;
 		}
 		if (column is not null && shown.Count == 0) {
 			_logger.WriteInfo($"    {column}: no column permission rows.");
 			return;
 		}
 		foreach (ColumnRights entry in shown) {
-			_logger.WriteInfo($"    {FormatColumn(entry, codes)}:");
+			_logger.WriteInfo($"    {FormatColumn(entry, codes, codesRead)}:");
 			ReportRows(entry.Rows, granteeFilter);
 		}
 	}
 
-	// Every row with its position — or, with a grantee, the grantee's row and the rows above it; every row of the column
-	// when the grantee has none in it. Facts only: which roles a user is in is not read here.
+	// Every row with its position — or, with a grantee, the rows whose grantee is exactly that id first, then the
+	// column's other rows; a column where it has none says so. No row is left out: which row wins for a user in several
+	// roles is not measured for columns, and which roles a user is in is not read here.
 	private void ReportRows(IReadOnlyList<ColumnRightRow> rows, Guid? granteeFilter) {
 		if (granteeFilter is null) {
 			foreach (ColumnRightRow row in rows) {
@@ -181,28 +203,39 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 		foreach (ColumnRightRow row in granteeRows) {
 			_logger.WriteInfo($"      {FormatRow(row)}");
 		}
-		ColumnRightRow[] above = rows.Where(row => row.Position < granteeRows[0].Position).ToArray();
-		if (above.Length > 0) {
-			_logger.WriteInfo("      Rows above it:");
-			foreach (ColumnRightRow row in above) {
+		ColumnRightRow[] others = rows.Where(row => row.GranteeId != granteeFilter.Value).ToArray();
+		if (others.Length > 0) {
+			_logger.WriteInfo("      Other rows of this column:");
+			foreach (ColumnRightRow row in others) {
 				_logger.WriteInfo($"        {FormatRow(row)}");
 			}
 		}
 	}
 
-	// A column is named by its code with the service's caption next to it; by its UId when its code is not known.
-	private static string FormatColumn(ColumnRights entry, IReadOnlyDictionary<Guid, string> codes) {
+	private static string CodeOf(ColumnRights entry, IReadOnlyDictionary<Guid, string> codes) =>
+		entry.ColumnUId is { } uId && codes.TryGetValue(uId, out string code) ? code : null;
+
+	// A column is named by its code with the service's caption next to it. Without a code it is named by its UId, and
+	// the reason is the measured one: the schema's columns were not read, or they were and none has this UId. A UId the
+	// service returned that is not a GUID is shown as returned.
+	private static string FormatColumn(ColumnRights entry, IReadOnlyDictionary<Guid, string> codes, bool codesRead) {
 		string caption = string.IsNullOrWhiteSpace(entry.ColumnCaption)
 			? ""
 			: $" '{ObjectRightsSupport.Display(entry.ColumnCaption)}'";
-		return codes.TryGetValue(entry.ColumnUId, out string code)
-			? $"{code}{caption}"
-			: $"column {entry.ColumnUId}{caption} (code not resolved)";
+		if (entry.ColumnUId is not { } uId) {
+			return entry.UnreadableUId is null
+				? $"column{caption} (no column UId)"
+				: $"column{caption} (column UId '{ObjectRightsSupport.Display(entry.UnreadableUId)}' is not a GUID)";
+		}
+		if (codes.TryGetValue(uId, out string code)) {
+			return $"{code}{caption}";
+		}
+		return $"column {uId}{caption} ({(codesRead ? "not a column of the schema" : "code not resolved")})";
 	}
 
 	private static string FormatRow(ColumnRightRow row) =>
-		$"[{row.Position}] {ObjectRightsSupport.Display(row.GranteeName)} ({row.GranteeId}): "
-		+ ColumnRightLevelNames.Of(row.Level);
+		$"[{(row.Position is { } position ? position.ToString(CultureInfo.InvariantCulture) : "?")}] "
+		+ $"{ObjectRightsSupport.Display(row.GranteeName)} ({row.GranteeId}): {ColumnRightLevelNames.Of(row)}";
 
 	// The column codes by UId, from the merged entity schema (every package layer, inherited columns included). The read
 	// gets what is left of the call's budget; once it is spent the codes are not read. Returns false with why.
@@ -257,11 +290,15 @@ public class GetColumnRightsCommand : Command<GetColumnRightsOptions> {
 			? $"its column permissions could not be read: {info.ReadError}"
 			: "the schema was not found";
 
-	internal const string PriorityRule =
-		"Rows are listed per column in priority order ([position], 0 is the highest); access: denied, read or edit.";
+	internal const string OrderRule =
+		"Rows are listed per column in stored position order ([position], 0 first; [?] when the service returned none); "
+		+ "access: denied, read or edit.";
 
 	internal const string SwitchOff =
 		"Column permissions: OFF — every column is governed only by object and record permissions.";
+
+	internal const string SwitchMissing =
+		"Column permissions: unknown — the service did not return the column switch (administratedByColumns).";
 
 	internal const string OnWithoutRows = "Column permissions: ON, and no column has a permission row.";
 }

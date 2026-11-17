@@ -12,7 +12,8 @@ get-column-rights - read column permissions (per column, every role's access lev
 
 Read-only companion of `get-object-rights` for the **column** (field-level) layer, from the same
 `RightManagementService.svc/GetAdministratedObject` read. Reports whether "Use column permissions" is ON for the
-object and, per column that has rows, every row in **priority order**.
+object and, per column that has rows, every row in **stored position order**. Which row wins for a user in several
+roles is not measured for columns, so the order claims nothing more.
 
 The object is named by its **code** (entity schema name), and the code always wins. When no object has that code,
 the object whose **title** it is is read, and the output says so; when several objects have that title, the call is
@@ -21,9 +22,12 @@ code when its title differs from the code.
 
 Each column is shown by its **code**, resolved from the column's UId through the entity schema (every package layer,
 inherited columns included), with the caption the service returns. When the columns cannot be read, a warning says
-so and each column is shown by its UId and caption. Each row is shown as
-`[position] grantee name (grantee id): denied | read | edit`; position 0 is the highest. A level the service returns
-that is none of these is shown as `unknown (N)`.
+so and each column is shown by its UId and caption with `(code not resolved)`; a stored column the schema does not
+have is shown by its UId and caption with `(not a column of the schema)`. Entries the service returns for the same
+column are shown as one column. Each row is shown as `[position] grantee name (grantee id): denied | read | edit`;
+positions are listed from 0, and a row without a position is shown as `[?]` after the others. A level the service
+returns that is none of these is shown as `unknown (N)`, a value that is not a number as `unknown (value)`, and a row
+without a level as `unknown (no level)`.
 
 Per object the output is one of:
 
@@ -31,12 +35,16 @@ Per object the output is one of:
   switch is OFF are listed after it.
 - `Column permissions: ON, and no column has a permission row.`
 - `Column permissions: ON. Columns with rows:` followed by each column and its rows.
+- `Column permissions: unknown — the service did not return the column switch (administratedByColumns).` Stored rows,
+  if any, are listed after it. It is never reported as OFF.
 
 The service does not store a column whose rows all grant edit, so such a column never appears.
 
-With `--column` only that column is shown; a column with no rows is reported as such. With `--grantee`, per column,
-the grantee's row is shown followed by the rows above it; in a column where the grantee has no row, every row of the
-column is listed. The command draws no coverage verdict.
+With `--column` only that column is shown, named by its code as the schema spells it; a column with no rows is
+reported as such. When `--column` is omitted, every column with rows is listed. With `--grantee`, per column, the rows
+whose grantee is exactly that id are shown first, followed by the column's other rows; in a column where the grantee
+has no row, that is said and every row of the column is listed. Role membership is not resolved: a user's id does not
+match the rows of its roles. The command draws no coverage verdict.
 
 ## Synopsis
 
@@ -48,22 +56,32 @@ clio get-column-rights --entity-schema-name <EntitySchemaName> [--column <Column
 
 ```bash
 --entity-schema-name NAME
-The object to read: its code (entity schema name), or its title when no object has that code. Required.
+The object to read: its code (entity schema name, for example UsrOrder), or its title when no object has that code.
+Required.
 
 --column CODE
-Optional column code (for example UsrDescription): show only that column's rows.
+Optional column code (for example UsrDescription): show only that column's rows. When omitted, every column with rows
+is listed.
 
 --grantee GUID
-Optional SysAdminUnit id (role or user): per column, show its row and the rows above it (every row of a column where
-it has none). Omit to list every row.
+Optional SysAdminUnit id (role or user): per column, show the rows whose grantee is exactly that id first, then the
+column's other rows. Role membership is not resolved: a user's id does not match its roles' rows. When omitted, every
+row is listed.
 
 -e, --environment NAME
-Registered environment to read.
+Name of the registered environment to read.
 ```
+
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0    | The read ran; the facts are printed. |
+| 1    | The entity schema name was missing or names no object by its code or its title, several objects have it as their title, the title lookup failed, `--column` was not a column code or names no column of the object, the columns could not be read for `--column`, `--grantee` was not a GUID, or the object's permissions could not be read. A failed read is never reported as OFF. |
 
 ## Examples
 
-List every column with rows, in priority order:
+List every column with rows, in stored position order:
 
 ```bash
 clio get-column-rights --entity-schema-name UsrOrder -e production
@@ -82,9 +100,5 @@ clio get-column-rights --entity-schema-name UsrOrder --column UsrAmount --grante
   (`rightLevel` 0 Access denied, 1 Reading, 2 Editing). Read-only.
 - The column codes come from the merged entity schema (the same read as `get-entity-schema-properties` without a
   package).
-- Exit code 1 when no object has the name as its code or its title, when several objects have it as their title,
-  when the title lookup fails, when `--column` is not a column code or names no column of the object (or the columns
-  cannot be read to find it), when `--grantee` is not a GUID, or when the object's permissions cannot be read. A
-  failed read is never reported as OFF.
 - On MCP the call is a read bounded by the read-response deadline, with the request limits of `get-object-rights`:
   one attempt of at most 30 s per request, and a 90 s limit shared by all requests.

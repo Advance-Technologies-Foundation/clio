@@ -24,6 +24,9 @@ operation and record layers: `administratedByColumns` (the "Use column permissio
 - row fields that are not these (`subjectColumnUId`, `column{...}`, `canRead`) are ignored, and the save still
   answers `success: true` while storing nothing.
 
+Which column row wins for a user in several roles (the precedence of `position`) is not measured, so
+`get-column-rights` lists rows in stored position order (0 first) and claims nothing more about them.
+
 **Why it is this way** — it is the platform's own payload for the System Designer "Column permissions" tab; nothing
 in it names the column by code, and the save has no per-column endpoint.
 

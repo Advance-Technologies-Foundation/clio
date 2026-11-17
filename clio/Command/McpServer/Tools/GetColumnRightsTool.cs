@@ -12,7 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// MCP surface of <c>get-column-rights</c>: reads the column (field-level) permissions of an object — the switch and,
-/// per column, every role's access level in priority order.
+/// per column, every role's access level in stored position order.
 /// </summary>
 [McpServerToolType]
 public sealed class GetColumnRightsTool(
@@ -35,8 +35,8 @@ public sealed class GetColumnRightsTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Reads column permissions. COLUMN (field-level) layer of an object, read-only companion of get-object-rights from the same service read. " +
 		"entity-schema-name is the object's code; when no object has that code, the object with that title is read (several are refused, listing them). " +
-		"Reports whether column permissions are ON and, per column with rows (its code and caption), every row in priority order: [position] (0 is the highest), grantee name and id, access denied/read/edit. " +
-		"OFF: every column is governed only by object and record permissions. A column whose rows all grant edit is not stored, so it never appears. column limits it to one column code; grantee shows that role's row and the rows above it per column. " +
+		"Reports whether column permissions are ON and, per column with rows (its code and caption), every row in stored position order: [position] (0 first; which row wins for a user in several roles is not measured), grantee name and id, access denied/read/edit. " +
+		"OFF: every column is governed only by object and record permissions. A column whose rows all grant edit is not stored, so it never appears. column limits it to one column code; grantee lists, per column, the rows whose grantee is exactly that id first, then the other rows (role membership is not resolved). " +
 		"Facts only, no coverage verdict. Fails (success=false) when the object cannot be read. Unknown argument names are refused.")]
 	public ObjectRightsToolResponse GetColumnRights(
 		[Description("Parameters: environment-name, entity-schema-name (required); column, grantee (optional).")]
@@ -87,7 +87,7 @@ public sealed record GetColumnRightsArgs(
 	string Column = null,
 
 	[property: JsonPropertyName("grantee")]
-	[property: Description("Optional SysAdminUnit id (role or user): per column, show its row and the rows above it (every row of a column where it has none). Omit to list every row.")]
+	[property: Description("Optional SysAdminUnit id (role or user): per column, show the rows whose grantee is exactly that id first, then the column's other rows. Role membership is not resolved: a user's id does not match its roles' rows. Omit to list every row.")]
 	string Grantee = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call.</summary>
