@@ -151,7 +151,9 @@ internal sealed class DataBindingSnapshotReader(
 	/// </summary>
 	/// <remarks>
 	/// Over OData, not DataService: a DataService select returns a date in the connected user's time zone without
-	/// an offset, while OData returns it in UTC.
+	/// an offset, while OData returns it in UTC. The value is cut to whole seconds, as the platform's descriptor
+	/// does (<c>Descriptor.ModifiedOnUtc</c> stores <c>DateTimeUtilities.GetDateTimeTillSeconds</c>): a binding saved
+	/// on PostgreSQL keeps milliseconds in <c>ModifiedOn</c>, which the export does not write.
 	/// </remarks>
 	private string ReadModifiedOnUtc(Guid registrationId) {
 		string url = serviceUrlBuilder.Build($"odata/{RegistrationSchemaName}({registrationId})?$select=ModifiedOn");
@@ -163,7 +165,7 @@ internal sealed class DataBindingSnapshotReader(
 				$"The environment returned no readable ModifiedOn for binding registration '{registrationId}'.");
 		}
 
-		return $"/Date({modifiedOnUtc.ToUnixTimeMilliseconds()})/";
+		return $"/Date({modifiedOnUtc.ToUnixTimeSeconds() * 1000})/";
 	}
 
 	/// <summary>

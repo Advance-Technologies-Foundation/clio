@@ -114,6 +114,22 @@ internal sealed class CreateDataBindingFromEnvironmentTests : BaseClioModuleTest
 	}
 
 	[Test]
+	[Description("Writes ModifiedOnUtc cut to whole seconds, as the platform's descriptor does, when the stored ModifiedOn carries milliseconds (seen on PostgreSQL) (ENG-106290).")]
+	public void Execute_ShouldWriteModifiedOnInWholeSeconds_WhenStoredModifiedOnHasMilliseconds() {
+		// Arrange
+		_modifiedOnResponseJson = """{"@odata.context":"x","ModifiedOn":"2026-11-17T14:51:42.5227391Z"}""";
+
+		// Act
+		int result = _command.Execute(FromEnvironmentOptions());
+
+		// Assert
+		result.Should().Be(0, because: "the binding exists on the environment");
+		JsonNode.Parse(ReadBindingFile("descriptor.json"))!["Descriptor"]!["ModifiedOnUtc"]!.GetValue<string>()
+			.Should().Be("/Date(1794927102000)/",
+				because: "the export writes the registration's ModifiedOn without its milliseconds");
+	}
+
+	[Test]
 	[Description("Writes the stored registration as descriptor.json: the DB UId, name, ModifiedOn in UTC, install type, schema and columns with their IsForceUpdate and IsKey flags.")]
 	public void Execute_ShouldWriteDescriptorFromStoredRegistration_WhenFromEnvironment() {
 		// Arrange
