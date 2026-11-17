@@ -549,29 +549,39 @@ public class RunProcessCommand(
 	private static System.Text.Json.Nodes.JsonNode MaskNode(System.Text.Json.Nodes.JsonNode node) {
 		switch (node) {
 			case System.Text.Json.Nodes.JsonObject json:
-				foreach (string key in json.Select(pair => pair.Key).ToList()) {
-					if (json[key] is not { } child) {
-						continue;
-					}
-					// A string under a secret name (a Password or ApiKey column) goes whole: the leaf alone does not
-					// say what it is.
-					json[key] = child is System.Text.Json.Nodes.JsonValue leaf && leaf.TryGetValue(out string _)
-						&& CredentialShapeMasker.IsSecretName(key)
-						? System.Text.Json.Nodes.JsonValue.Create("[redacted]")
-						: MaskNode(child.DeepClone());
-				}
-				return json;
+				return MaskObject(json);
 			case System.Text.Json.Nodes.JsonArray array:
-				for (int i = 0; i < array.Count; i++) {
-					array[i] = array[i] is { } child ? MaskNode(child.DeepClone()) : null;
-				}
-				return array;
+				return MaskArray(array);
 			case System.Text.Json.Nodes.JsonValue leaf when leaf.TryGetValue(out string text):
 				string masked = CredentialShapeMasker.Mask(text);
 				return masked == text ? leaf : System.Text.Json.Nodes.JsonValue.Create(masked);
 			default:
 				return node;
 		}
+	}
+
+	private static System.Text.Json.Nodes.JsonObject MaskObject(System.Text.Json.Nodes.JsonObject json) {
+		foreach (string key in json.Select(pair => pair.Key).ToList()) {
+			if (json[key] is { } child) {
+				json[key] = MaskProperty(key, child);
+			}
+		}
+		return json;
+	}
+
+	// A string under a secret name (a Password or ApiKey column) goes whole: the leaf alone does not say what it is.
+	private static System.Text.Json.Nodes.JsonNode MaskProperty(string key, System.Text.Json.Nodes.JsonNode child) =>
+		child is System.Text.Json.Nodes.JsonValue leaf && leaf.TryGetValue(out string _) && CredentialShapeMasker.IsSecretName(key)
+			? System.Text.Json.Nodes.JsonValue.Create("[redacted]")
+			: MaskNode(child.DeepClone());
+
+	private static System.Text.Json.Nodes.JsonArray MaskArray(System.Text.Json.Nodes.JsonArray array) {
+		for (int i = 0; i < array.Count; i++) {
+			if (array[i] is { } child) {
+				array[i] = MaskNode(child.DeepClone());
+			}
+		}
+		return array;
 	}
 
 	// Rejected before anything is read or launched.
