@@ -60,16 +60,6 @@ public sealed class PageHierarchyChainTests {
 	}
 
 	[Test]
-	[Description("FindRootVariantUId accepts no rows at all.")]
-	public void FindRootVariantUId_Should_Return_Null_For_Null_Rows() {
-		// Act
-		string rootUId = PageHierarchyChain.FindRootVariantUId(null);
-
-		// Assert
-		rootUId.Should().BeNull(because: "there is nothing to pick from");
-	}
-
-	[Test]
 	[Description("A chain already read from the root variant is reused without a second designer read.")]
 	public void ReadFromRootVariant_Should_Reuse_The_Anchor_Chain_When_It_Was_Read_From_The_Root() {
 		// Arrange

@@ -580,6 +580,9 @@ namespace Clio.Command {
 			return new JObject { [ItemsKey] = items };
 		}
 
+		/// <summary>The <c>rowCount</c> of <see cref="QuerySysSchemaRows"/> that returns every row.</summary>
+		internal const int AllRows = -1;
+
 		internal static (JToken row, string error) QuerySysSchemaRow(
 			IApplicationClient applicationClient,
 			IServiceUrlBuilder serviceUrlBuilder,
@@ -595,7 +598,7 @@ namespace Clio.Command {
 		/// <param name="applicationClient">Client of the target environment.</param>
 		/// <param name="serviceUrlBuilder">URL builder of the target environment.</param>
 		/// <param name="schemaName">The page schema name.</param>
-		/// <param name="rowCount">The most rows to return; <c>-1</c> returns them all.</param>
+		/// <param name="rowCount">The most rows to return; <see cref="AllRows"/> returns them all.</param>
 		/// <param name="columns">The columns to select, as (alias, column path).</param>
 		/// <returns>At least one row, or <c>null</c> and the error: a transport failure, a failed query, or no row.</returns>
 		internal static (JArray rows, string error) QuerySysSchemaRows(

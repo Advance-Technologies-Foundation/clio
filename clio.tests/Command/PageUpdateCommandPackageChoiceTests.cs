@@ -20,6 +20,9 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	private const string DesignPackage = "design-pkg-uid";
 	private const string CustomPackage = "custom-pkg-uid";
 	private const string CustomSchemaUId = "33333333-3333-3333-3333-333333333333";
+	private const string LeafAndBaseRows =
+		$$"""[{"UId": "{{LeafUId}}", "ExtendParent": true}, {"UId": "{{BaseUId}}", "ExtendParent": false}]""";
+	private const string BaseOnlyRows = $$"""[{"UId": "{{BaseUId}}", "ExtendParent": false}]""";
 
 	private const string ValidBody =
 		"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
@@ -60,7 +63,7 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	/// </summary>
 	private void StubNameLookup(string rowsJson) =>
 		_applicationClient.ExecutePostRequest(SelectQueryUrl,
-				Arg.Is<string>(query => query.Contains(PageHierarchyChain.ExtendParentColumn)),
+				Arg.Is<string>(query => query.Contains(ClassicEntitySchemaQuery.ExtendParentColumn)),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns($$"""{"success": true, "rows": {{rowsJson}}}""");
 
@@ -221,11 +224,12 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 		_inspector.Received(1).Inspect(SchemaName, Arg.Any<IReadOnlyList<PageDesignerHierarchySchema>>(), DesignPackage);
 	}
 
-	[Test]
-	[Description("When the name lookup lands on a replacing variant and marks the root one, an enforced write reads the chain once, from the root, and checks that same chain.")]
-	public void TryUpdatePage_Should_Read_The_Chain_Once_From_The_Root_When_The_Lookup_Marks_It() {
+	[TestCase(LeafAndBaseRows, TestName = "lookup lands on a replacing variant")]
+	[TestCase(BaseOnlyRows, TestName = "lookup lands on the root")]
+	[Description("When the name lookup marks the root variant, an enforced write reads the chain once, from the root, checks that same chain and resolves the design package from the lookup row.")]
+	public void TryUpdatePage_Should_Read_The_Chain_Once_From_The_Root_When_The_Lookup_Marks_It(string rowsJson) {
 		// Arrange
-		StubNameLookup($$"""[{"UId": "{{LeafUId}}", "ExtendParent": true}, {"UId": "{{BaseUId}}", "ExtendParent": false}]""");
+		StubNameLookup(rowsJson);
 		PageUpdateCommand sut = BuildCommand(_inspector);
 
 		// Act
@@ -236,22 +240,20 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 		_hierarchyClient.Received(1).GetParentSchemas(BaseUId, DesignPackage);
 		_inspector.Received(1).Inspect(SchemaName,
 			Arg.Is<IReadOnlyList<PageDesignerHierarchySchema>>(chain => ReferenceEquals(chain, _chain)), DesignPackage);
-		_hierarchyClient.Received(1).GetDesignPackageUId(LeafUId);
 	}
 
 	[Test]
-	[Description("When the name lookup lands on the root variant itself, an enforced write reads the chain once.")]
-	public void TryUpdatePage_Should_Read_The_Chain_Once_When_The_Lookup_Lands_On_The_Root() {
+	[Description("The design package is still resolved from the row the name lookup returned, not from the root variant.")]
+	public void TryUpdatePage_Should_Resolve_The_Design_Package_From_The_Lookup_Row() {
 		// Arrange
-		StubNameLookup($$"""[{"UId": "{{BaseUId}}", "ExtendParent": false}]""");
+		StubNameLookup(LeafAndBaseRows);
 		PageUpdateCommand sut = BuildCommand(_inspector);
 
 		// Act
 		sut.TryUpdatePage(Options(enforce: true), out _);
 
 		// Assert
-		_hierarchyClient.ReceivedWithAnyArgs(1).GetParentSchemas(default, default);
-		_hierarchyClient.Received(1).GetParentSchemas(BaseUId, DesignPackage);
+		_hierarchyClient.Received(1).GetDesignPackageUId(LeafUId);
 	}
 
 	[Test]
@@ -275,7 +277,7 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	public void TryUpdatePage_Should_Resolve_The_Target_From_The_Root_Read_Chain() {
 		// Arrange
 		const string TopUId = "44444444-4444-4444-4444-444444444444";
-		StubNameLookup($$"""[{"UId": "{{LeafUId}}", "ExtendParent": true}, {"UId": "{{BaseUId}}", "ExtendParent": false}]""");
+		StubNameLookup(LeafAndBaseRows);
 		_hierarchyClient.GetParentSchemas(BaseUId, DesignPackage).Returns([
 			new PageDesignerHierarchySchema { UId = TopUId, Name = SchemaName, PackageUId = DesignPackage },
 			new PageDesignerHierarchySchema { UId = BaseUId, Name = SchemaName, PackageUId = "app-pkg-uid" }

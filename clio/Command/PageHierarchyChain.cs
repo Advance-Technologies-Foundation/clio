@@ -2,7 +2,6 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
@@ -16,20 +15,15 @@ using Newtonsoft.Json.Linq;
 /// <c>package-choice-required</c> refusal disagree about the same page.
 /// </remarks>
 internal static class PageHierarchyChain {
-	/// <summary>The <c>SysSchema</c> column that is <c>false</c> on a page's root (base) variant row.</summary>
-	internal const string ExtendParentColumn = "ExtendParent";
-
 	/// <summary>
-	/// Returns the UId of the page's root (base) variant from the page name's <c>SysSchema</c> rows: the row whose
-	/// <see cref="ExtendParentColumn"/> is <c>false</c>. Knowing it before the first chain read lets a caller read
-	/// the chain once, from the root, instead of from whichever variant the name lookup returned and then again.
+	/// Returns the UId of the page's root (base) variant from the page name's <c>SysSchema</c> rows: the base row
+	/// of <see cref="ClassicEntitySchemaQuery.FindBaseRow"/>. Knowing it before the first chain read lets a caller
+	/// read the chain once, from the root, instead of from whichever variant the name lookup returned and then again.
 	/// </summary>
-	/// <param name="sysSchemaRows">The rows, each with <c>UId</c> and <see cref="ExtendParentColumn"/>.</param>
+	/// <param name="sysSchemaRows">The rows, each with <c>UId</c> and <c>ExtendParent</c>.</param>
 	/// <returns>The root variant's UId, or <c>null</c> when no row is marked as the root.</returns>
-	internal static string FindRootVariantUId(IEnumerable<JToken> sysSchemaRows) {
-		JToken rootRow = sysSchemaRows?.FirstOrDefault(row =>
-			row?[ExtendParentColumn] is { Type: JTokenType.Boolean } extendParent && !extendParent.Value<bool>());
-		string rootUId = rootRow?["UId"]?.ToString();
+	internal static string FindRootVariantUId(JArray sysSchemaRows) {
+		string rootUId = ClassicEntitySchemaQuery.FindBaseRow(sysSchemaRows)?["UId"]?.ToString();
 		return string.IsNullOrWhiteSpace(rootUId) ? null : rootUId;
 	}
 

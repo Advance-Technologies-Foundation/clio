@@ -1354,8 +1354,8 @@
 			// All variants in one query: the name alone can resolve to any replacing variant, and the root one
 			// (ExtendParent = false) is where the chain is read from, so it is read once per write.
 			(JArray variants, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRows(_applicationClient,
-				_serviceUrlBuilder, schemaName, -1, ("UId", "UId"),
-				(PageHierarchyChain.ExtendParentColumn, PageHierarchyChain.ExtendParentColumn));
+				_serviceUrlBuilder, schemaName, PageSchemaMetadataHelper.AllRows, ("UId", "UId"),
+				(ClassicEntitySchemaQuery.ExtendParentColumn, ClassicEntitySchemaQuery.ExtendParentColumn));
 			if (variants == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
 			string rawSchemaUId = variants[0]["UId"]?.ToString();
 			if (string.IsNullOrWhiteSpace(rawSchemaUId)) { response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" }; return false; }
@@ -1371,8 +1371,9 @@
 				return true;
 			}
 			if (!TryGetDesignPackageUId(rawSchemaUId, schemaName, out string designPackageUId, out response)) return false;
-			// No row marked as the root: read from the row the lookup returned, and the package-choice check
-			// re-reads from the root it finds in that chain, as before.
+			// The design package above stays resolved from the lookup row, as before this change; only the chain
+			// read moves to the root. No row marked as the root: read from the lookup row, and the package-choice
+			// check re-reads from the root it finds in that chain, as before.
 			string hierarchyAnchorUId = PageHierarchyChain.FindRootVariantUId(variants) ?? rawSchemaUId;
 			if (!TryGetHierarchy(hierarchyAnchorUId, designPackageUId, schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out response)) return false;
 			PageDesignerHierarchySchema head = hierarchy[0];
