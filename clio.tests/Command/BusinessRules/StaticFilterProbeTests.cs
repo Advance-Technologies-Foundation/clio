@@ -26,27 +26,27 @@ public sealed class StaticFilterProbeTests {
 	}
 
 	[Test]
-	[Description("The built envelope runs unchanged as the filter of a one-row COUNT on the lookup's reference schema.")]
-	public void Probe_Should_Run_The_Built_Envelope_On_The_Reference_Schema() {
+	[Description("The built envelope runs unchanged as the filter of a one-row COUNT on the lookup's reference schema, and the count comes back.")]
+	public void Probe_Should_Run_The_Built_Envelope_And_Return_The_Match_Count() {
 		// Arrange
 		StaticFilterProbe probe = CreateProbe("""{"success":true,"rows":[{"ProbeCount":4}]}""");
 
 		// Act
-		probe.Probe(Envelope, "Account", "Account");
+		StaticFilterProbeResult result = probe.Probe(Envelope, "Account", "Account");
 
 		// Assert
+		result.MatchCount.Should().Be(4, because: "the agent judges the filter's meaning by how many records it keeps");
+		result.Warning.Should().BeNull(because: "the filter ran");
 		using JsonDocument sent = JsonDocument.Parse(_sentBody!);
 		sent.RootElement.GetProperty("rootSchemaName").GetString().Should().Be("Account",
 			because: "the static filter narrows the lookup, so it is run on the lookup's reference schema");
-		sent.RootElement.GetProperty("rowCount").GetInt32().Should().Be(1,
-			because: "only the server's verdict on the filter matters, not the rows");
 		sent.RootElement.GetProperty("filters").GetRawText().Should().Be(JsonDocument.Parse(Envelope).RootElement.GetRawText(),
 			because: "the probe must test exactly the envelope that will be saved, not a re-typed copy");
 	}
 
 	[Test]
-	[Description("A server rejection becomes an actionable error that names the target, the server message, and that nothing was saved.")]
-	public void Probe_Should_Fail_With_The_Server_Message_When_The_Environment_Rejects_The_Filter() {
+	[Description("A server rejection of the filter becomes an error that names the target and the server message and says nothing was saved.")]
+	public void Probe_Should_Throw_When_The_Environment_Rejects_The_Filter() {
 		// Arrange
 		StaticFilterProbe probe = CreateProbe(
 			"""{"success":false,"errorInfo":{"message":"Column by path Nmae not found in schema Account."}}""");
@@ -59,6 +59,23 @@ public sealed class StaticFilterProbeTests {
 			.Which.Message.Should().Contain("apply-static-filter on 'Account'")
 			.And.Contain("Nmae not found", because: "the server says which part of the filter is wrong")
 			.And.Contain("Nothing was saved", because: "the agent must know the rule was not written");
+	}
+
+	[TestCase("""{"success":false,"errorInfo":{"message":"User does not have permission to read Account."}}""", "permission")]
+	[TestCase("""{"success":false,"errorInfo":{"message":"Transaction was deadlocked on lock resources; deadlock victim."}}""", "deadlock")]
+	[TestCase("<html>login</html>", "SelectQuery")]
+	[Description("A failure that says nothing about the filter (rights, a transient condition, a non-JSON answer) does not block the rule; it becomes a warning.")]
+	public void Probe_Should_Warn_When_The_Filter_Could_Not_Be_Run(string response, string expectedReason) {
+		// Arrange
+		StaticFilterProbe probe = CreateProbe(response);
+
+		// Act
+		StaticFilterProbeResult result = probe.Probe(Envelope, "Account", "Account");
+
+		// Assert
+		result.MatchCount.Should().BeNull(because: "nothing was counted");
+		result.Warning.Should().Contain("saved without running its filter", because: "the agent must know the filter went unverified")
+			.And.Contain(expectedReason, because: "the warning keeps the reason");
 	}
 
 	private StaticFilterProbe CreateProbe(string response) {

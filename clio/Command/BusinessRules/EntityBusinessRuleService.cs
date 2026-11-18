@@ -78,12 +78,13 @@ internal sealed class EntityBusinessRuleService(
 			attributeContext.EntitySchema.Name,
 			staticFilterContext?.SchemaProvider,
 			staticFilterContext?.LookupResolver,
-			sysSettingMap: sysSettingMap,
-			staticFilterProbe: staticFilterContext?.Probe);
-		return AddonService.AppendRule(
+			sysSettingMap: sysSettingMap);
+		StaticFilterProbeResult? probe = ProbeStaticFilter(rule, attributeContext.Attributes, createdRules, staticFilterContext);
+		BusinessRuleCreateResult created = AddonService.AppendRule(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			rule,
 			createdRules);
+		return probe is null ? created : created with { FilterMatchCount = probe.MatchCount, Warning = probe.Warning };
 	}
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Create(BusinessRulesBatchRequest request) {
@@ -99,8 +100,9 @@ internal sealed class EntityBusinessRuleService(
 		// One static-filter context is shared across the whole batch: its schema/lookup caches then
 		// accumulate across rules instead of being rebuilt (and re-fetched) for every static-filter rule.
 		StaticFilterContext? batchStaticFilterContext = null;
+		var probes = new Dictionary<BusinessRule, StaticFilterProbeResult>(ReferenceEqualityComparer.Instance);
 
-		return CreateBatch(
+		IReadOnlyList<BusinessRuleBatchItemResult> results = CreateBatch(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rules,
 			rule => {
@@ -112,15 +114,19 @@ internal sealed class EntityBusinessRuleService(
 				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider, sysSettingMap);
 				ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
 
-				return SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+				IReadOnlyList<BusinessRuleMetadataDto> createdRules = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
 					attributeContext.Attributes,
 					rule,
 					attributeContext.EntitySchema.Name,
 					staticFilterContext?.SchemaProvider,
 					staticFilterContext?.LookupResolver,
-					sysSettingMap: sysSettingMap,
-					staticFilterProbe: staticFilterContext?.Probe);
+					sysSettingMap: sysSettingMap);
+				if (ProbeStaticFilter(rule, attributeContext.Attributes, createdRules, staticFilterContext) is { } probe) {
+					probes[rule] = probe;
+				}
+				return createdRules;
 			});
+		return WithProbeResults(request.Rules, results, probes);
 	}
 
 	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
@@ -144,8 +150,9 @@ internal sealed class EntityBusinessRuleService(
 			request.SchemaName,
 			packageUId);
 		StaticFilterContext? batchStaticFilterContext = null;
+		var probes = new Dictionary<BusinessRule, StaticFilterProbeResult>(ReferenceEqualityComparer.Instance);
 
-		return UpdateBatch(
+		IReadOnlyList<BusinessRuleBatchItemResult> results = UpdateBatch(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.Rules,
 			(rule, existing) => {
@@ -157,16 +164,20 @@ internal sealed class EntityBusinessRuleService(
 				businessRuleValidator.ValidateEntity(rule, attributeContext.Attributes, staticFilterContext?.SchemaProvider, sysSettingMap);
 				ValidateFormulas(attributeContext.EntitySchema.Name, attributeContext.Attributes, rule);
 
-				return SimpleToFullBusinessRuleConverter.ToEntityMetadata(
+				IReadOnlyList<BusinessRuleMetadataDto> updatedRules = SimpleToFullBusinessRuleConverter.ToEntityMetadata(
 					attributeContext.Attributes,
 					rule,
 					attributeContext.EntitySchema.Name,
 					staticFilterContext?.SchemaProvider,
 					staticFilterContext?.LookupResolver,
 					existing,
-					sysSettingMap,
-					staticFilterContext?.Probe);
+					sysSettingMap);
+				if (ProbeStaticFilter(rule, attributeContext.Attributes, updatedRules, staticFilterContext) is { } probe) {
+					probes[rule] = probe;
+				}
+				return updatedRules;
 			});
+		return WithProbeResults(request.Rules, results, probes);
 	}
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {
@@ -180,6 +191,45 @@ internal sealed class EntityBusinessRuleService(
 		return DeleteCore(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
 			request.RuleNames);
+	}
+
+	/// <summary>
+	/// Runs the envelope just built for an apply-static-filter rule on the environment (ENG-95270), so the
+	/// agent learns before anything is saved whether the server can run it, and how many lookup records it
+	/// keeps. A rejection throws and fails only that rule; an unverifiable run comes back as a warning.
+	/// </summary>
+	private static StaticFilterProbeResult? ProbeStaticFilter(
+		BusinessRule rule,
+		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributes,
+		IReadOnlyList<BusinessRuleMetadataDto> builtRules,
+		StaticFilterContext? context) {
+		if (context?.Probe is null
+			|| rule.Actions?.OfType<ApplyStaticFilterBusinessRuleAction>().FirstOrDefault() is not { } action
+			|| !attributes.TryGetValue(action.TargetAttribute, out BusinessRuleAttributeDescriptor? target)
+			|| string.IsNullOrEmpty(target.ReferenceSchemaName)) {
+			return null;
+		}
+		string? envelope = builtRules
+			.SelectMany(built => built.Cases)
+			.SelectMany(@case => @case.Actions)
+			.OfType<BusinessRuleSetFilterActionMetadataDto>()
+			.Select(setFilter => setFilter.Value?.Value as string)
+			.FirstOrDefault(value => !string.IsNullOrEmpty(value));
+		return envelope is null ? null : context.Probe.Probe(envelope, target.ReferenceSchemaName, action.TargetAttribute);
+	}
+
+	private static IReadOnlyList<BusinessRuleBatchItemResult> WithProbeResults(
+		IReadOnlyList<BusinessRule> rules,
+		IReadOnlyList<BusinessRuleBatchItemResult> results,
+		IReadOnlyDictionary<BusinessRule, StaticFilterProbeResult> probes) {
+		if (probes.Count == 0) {
+			return results;
+		}
+		return results
+			.Select((result, index) => index < rules.Count && rules[index] is { } rule && probes.TryGetValue(rule, out StaticFilterProbeResult? probe)
+				? result with { FilterMatchCount = result.Success ? probe.MatchCount : null, Warning = probe.Warning }
+				: result)
+			.ToList();
 	}
 
 	private static bool RequiresStaticFilterScope(BusinessRule rule) =>

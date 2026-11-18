@@ -3,7 +3,11 @@ namespace Clio.Command.BusinessRules;
 /// <summary>
 /// Returns the generated internal rule name created in add-on metadata.
 /// </summary>
-public sealed record BusinessRuleCreateResult(string RuleName);
+/// <param name="RuleName">The generated internal rule name.</param>
+/// <param name="FilterMatchCount">For an apply-static-filter rule, how many records of the target lookup its filter
+/// matched on the environment when it was saved; lets the caller judge the filter's meaning without re-running it.</param>
+/// <param name="Warning">Set when the rule was saved but something about it could not be checked.</param>
+public sealed record BusinessRuleCreateResult(string RuleName, int? FilterMatchCount = null, string? Warning = null);
 
 /// <summary>
 /// Per-rule outcome of a batch business-rule creation call. A failed item never aborts the
@@ -14,8 +18,13 @@ public sealed record BusinessRuleCreateResult(string RuleName);
 /// <param name="Success">Whether the rule was created.</param>
 /// <param name="RuleName">The generated internal rule name when created; otherwise <c>null</c>.</param>
 /// <param name="Error">The failure reason when not created; otherwise <c>null</c>.</param>
+/// <param name="FilterMatchCount">For an apply-static-filter rule, how many records of the target lookup its filter
+/// matched on the environment when it was checked.</param>
+/// <param name="Warning">Set when something about the rule could not be checked.</param>
 public sealed record BusinessRuleBatchItemResult(
 	string Name,
 	bool Success,
 	string? RuleName,
-	string? Error);
+	string? Error,
+	int? FilterMatchCount = null,
+	string? Warning = null);

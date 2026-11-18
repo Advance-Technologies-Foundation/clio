@@ -36,8 +36,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 		IFilterSchemaProvider? filterSchemaProvider,
 		ILookupValueResolver? lookupValueResolver,
 		JsonObject? existingRule = null,
-		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null,
-		IStaticFilterProbe? staticFilterProbe = null) {
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettings = sysSettingMap ?? EmptySysSettingOperandMap;
 		ExistingRuleIdentity? identity = existingRule is null ? null : new ExistingRuleIdentity(existingRule);
 		if (TryGetApplyFilterAction(rule, out ApplyFilterBusinessRuleAction? applyFilterAction)) {
@@ -46,8 +45,7 @@ internal static class SimpleToFullBusinessRuleConverter {
 
 		if (TryGetApplyStaticFilterAction(rule, out ApplyStaticFilterBusinessRuleAction? applyStaticFilterAction)) {
 			return [BuildApplyStaticFilterRule(
-				attributeMap, sysSettings, rule, applyStaticFilterAction!, filterSchemaProvider, lookupValueResolver, identity,
-				staticFilterProbe)];
+				attributeMap, sysSettings, rule, applyStaticFilterAction!, filterSchemaProvider, lookupValueResolver, identity)];
 		}
 
 		return [ToMetadata(attributeMap, sysSettings, rule, includeAttributeReferenceSchemaName: true, entitySchemaName: entitySchemaName, identity)];
@@ -819,14 +817,12 @@ internal static class SimpleToFullBusinessRuleConverter {
 		ApplyStaticFilterBusinessRuleAction action,
 		IFilterSchemaProvider? filterSchemaProvider,
 		ILookupValueResolver? lookupValueResolver,
-		ExistingRuleIdentity? identity = null,
-		IStaticFilterProbe? staticFilterProbe = null) {
+		ExistingRuleIdentity? identity = null) {
 		BusinessRuleAttributeDescriptor targetDescriptor = attributeMap[action.TargetAttribute];
 		string rootSchemaName = targetDescriptor.ReferenceSchemaName!;
 		StaticFilterGroup filterGroup = StaticFilterDeserializer.Deserialize(action.Filter);
 
 		string esqEnvelope = BuildEsqEnvelope(filterGroup, rootSchemaName, filterSchemaProvider, lookupValueResolver);
-		staticFilterProbe?.Probe(esqEnvelope, rootSchemaName, action.TargetAttribute);
 
 		BusinessRuleSetFilterActionMetadataDto setFilterAction = new() {
 			TypeName = BusinessRuleSetFilterElementTypeName,

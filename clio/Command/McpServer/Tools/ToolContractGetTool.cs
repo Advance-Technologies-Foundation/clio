@@ -3350,7 +3350,7 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. EntityBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(),
+			BusinessRuleBatchOutput(StaticFilterBatchResultsDescription),
 			CommonErrorContract,
 			[
 			],
@@ -3590,7 +3590,7 @@ internal static class ToolContractCatalog {
 			[
 				"Call get-guidance with name business-rules before calling create-entity-business-rules.",
 				"For an apply-static-filter action, also call get-guidance with name business-rule-filters to load the full filter contract.",
-				"clio runs the filter it builds for an apply-static-filter action on the environment before saving (a one-row count on the target lookup's reference schema); when the server rejects it, that rule fails with the server's message and nothing is saved, so no separate execute-esq dry run of the filter is needed.",
+				"clio runs the filter it builds for an apply-static-filter action on the environment before saving (a one-row count on the target lookup's reference schema). When the server rejects the filter, that rule fails with the server's message and nothing is saved. Otherwise the result's filterMatchCount says how many lookup records the filter keeps, so check it against what the user asked for instead of re-typing the filter for execute-esq; when the filter could not be run (rights, timeout), the rule is saved and the result carries a warning.",
 				"Call get-tool-contract for create-entity-business-rules before building the final payload.",
 				"When any lookup condition or lookup set-values constant is needed, resolve it with odata-read or execute-esq first and use an existing record Id."
 			]);
@@ -3900,7 +3900,8 @@ internal static class ToolContractCatalog {
 					.. EntityBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(
-				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error. " +
+				StaticFilterResultFields),
 			CommonErrorContract,
 			[],
 			[],
@@ -7472,6 +7473,13 @@ internal static class ToolContractCatalog {
 				Field("log-file-path", StringType, "Optional operation log path.")
 			]);
 	}
+
+	private const string StaticFilterResultFields =
+		"An apply-static-filter rule also carries filterMatchCount (how many records of the target lookup its filter " +
+		"matched on the environment) and, when the filter could not be run, warning.";
+
+	private const string StaticFilterBatchResultsDescription =
+		"Per-rule outcomes in input order; each item has name, success, ruleName, and error. " + StaticFilterResultFields;
 
 	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
 		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {
