@@ -16,6 +16,7 @@ using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
+using Timers = Clio.Mcp.E2E.Support.Mcp.TimerStartE2ESupport;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -4209,6 +4210,119 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		return await context.Session.CallToolAsync(
 			toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
 	}
+
+	#region Timer start (ENG-91849)
+
+	[Test]
+	[Description("TC-I-04: addElement adds a timerStart NEXT TO an existing Simple start (addElement + addFlow to the end), and describe reads both starts back - the Simple start untouched and the timer scheduled in 2090. The process is deleted in finally.")]
+	[AllureTag(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
+	[AllureName("modify-business-process adds a timer start beside the Simple start")]
+	public async Task ModifyBusinessProcess_Should_AddATimerStartBesideTheSimpleStart() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await Timers.StartAsync();
+		List<string> created = [];
+		try {
+			string processName = Timers.NewProcessName("AddBeside");
+			await Timers.ArrangeProcessAsync(context, created, processName,
+				Timers.Descriptor(processName, [], withSimpleStart: true), "the Simple start process");
+
+			// Act
+			CallToolResult modified = await Timers.ModifyAsync(context, processName, $$"""
+				[ { "op": "addElement", "element": {{Timers.TimerElementJson("Nightly", Timers.DailyTimerJson())}} },
+				  { "op": "addFlow", "source": "Nightly", "target": "End1" } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(modified, "adding a timer start beside the Simple start is an ordinary edit");
+			JsonObject graph = await Timers.DescribeGraphAsync(context, processName);
+			Timers.SimpleStarts(graph).Should().ContainSingle(because: "the Simple start stays");
+			Timers.TimerStarts(graph).Should().ContainSingle(because: "the timer start was added")
+				.Which["name"]!.GetValue<string>().Should().Be("Nightly", because: "it keeps the name it was added with");
+			Timers.ShouldBeScheduledInTheFarFuture(Timers.TimerBlock(Timers.Element(graph, "Nightly")),
+				"the added timer");
+		} finally {
+			await Timers.DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-05: the replace recipe - removeElement the Simple start, addElement a timerStart, addFlow to the end - leaves a process with ONE start, the timer, scheduled in 2090. The process is deleted in finally.")]
+	[AllureTag(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
+	[AllureName("modify-business-process replaces the Simple start with a timer start")]
+	public async Task ModifyBusinessProcess_Should_ReplaceTheSimpleStartWithATimerStart() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await Timers.StartAsync();
+		List<string> created = [];
+		try {
+			string processName = Timers.NewProcessName("Replace");
+			await Timers.ArrangeProcessAsync(context, created, processName,
+				Timers.Descriptor(processName, [], withSimpleStart: true), "the Simple start process");
+
+			// Act
+			CallToolResult modified = await Timers.ModifyAsync(context, processName, $$"""
+				[ { "op": "removeElement", "elementName": "Start1" },
+				  { "op": "addElement", "element": {{Timers.TimerElementJson("Nightly", Timers.DailyTimerJson())}} },
+				  { "op": "addFlow", "source": "Nightly", "target": "End1" } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(modified, "replacing the Simple start with a timer start is an ordinary edit");
+			JsonObject graph = await Timers.DescribeGraphAsync(context, processName);
+			Timers.SimpleStarts(graph).Should().BeEmpty(because: "the Simple start was removed");
+			Timers.TimerStarts(graph).Should().ContainSingle(because: "the timer start is the process's only start");
+			Timers.ShouldBeScheduledInTheFarFuture(Timers.TimerBlock(Timers.Element(graph, "Nightly")),
+				"the replacing timer");
+		} finally {
+			await Timers.DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-06: setTimer changes a timer start's schedule IN PLACE - the element keeps its UId and name (and with them its scheduler job key), the stored cron moves from the day schedule to the week one and the timer stays scheduled in 2090 - while setElement carrying a timer is refused before anything is sent, pointing to setTimer. The process is deleted in finally.")]
+	[AllureTag(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
+	[AllureName("modify-business-process changes a timer schedule in place with setTimer")]
+	public async Task ModifyBusinessProcess_Should_ChangeATimerScheduleInPlace_WithSetTimer() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await Timers.StartAsync();
+		List<string> created = [];
+		try {
+			string processName = Timers.NewProcessName("SetTimer");
+			await Timers.ArrangeProcessAsync(context, created, processName, Timers.Descriptor(processName,
+				[("Nightly", Timers.TimerElementJson("Nightly", Timers.DailyTimerJson()))]), "the day timer process");
+			JsonObject before = Timers.Element(await Timers.DescribeGraphAsync(context, processName), "Nightly");
+
+			// Act
+			CallToolResult changed = await Timers.ModifyAsync(context, processName, $$"""
+				[ { "op": "setTimer", "elementName": "Nightly",
+				    "timer": { "schedule": "week", "daysOfWeek": [ "tue" ], "at": "04:45", "start": "{{Timers.FarFutureStart}}" } } ]
+				""");
+			CallToolResult refused = await Timers.ModifyAsync(context, processName, """
+				[ { "op": "setElement", "elementName": "Nightly", "elementUpdate": { "timer": { "schedule": "day" } } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(changed, "setTimer on an existing timer start is an ordinary edit");
+			JsonObject after = Timers.Element(await Timers.DescribeGraphAsync(context, processName), "Nightly");
+			Text(after, "uid").Should().Be(Text(before, "uid"),
+				because: "setTimer keeps the element, so its scheduler job key does not change");
+			JsonObject timer = Timers.TimerBlock(after);
+			Text(timer, "schedule").Should().Be("week", because: "the schedule group was replaced as a whole");
+			Text(timer, "storedCron").Should().NotBe(Text(Timers.TimerBlock(before), "storedCron"),
+				because: "the stored cron follows the new schedule");
+			Text(timer, "timeZone").Should().Be(Timers.Zone, because: "a zone not sent is kept as stored");
+			(Text(timer, "start") ?? string.Empty).Should().StartWith("2090-01-01T00:00",
+				because: "a kind change clears the window unless it is sent, so the case sends the far-future start again");
+			Timers.ShouldBeScheduledInTheFarFuture(timer, "the changed timer");
+			ToolText(refused).Should().Contain("Nothing was sent",
+				because: "clio refuses a setElement timer before sending it");
+			ToolText(refused).Should().Contain("setTimer",
+				because: "the refusal points to the operation that changes a timer start's schedule");
+		} finally {
+			await Timers.DeleteProcessesAsync(context, created);
+		}
+	}
+
+	#endregion
 
 	private static async Task<ArrangeContext> ArrangeAsync(bool requireReachableEnvironment) {
 		McpE2ESettings settings = TestConfiguration.Load();

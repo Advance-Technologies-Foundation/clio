@@ -208,6 +208,42 @@ public sealed class ValidateProcessGraphToolE2ETests {
 	}
 
 	[Test]
+	[Description("TC-I-08 (ENG-91849): over the real MCP path, a timerStart node - the Timer start's build token - classifies as a start rather than an unknown type, so a graph with a timer start beside a Simple start validates with no UNKNOWN finding and no R3 error: R3 caps only SIMPLE starts. Purely client-side classification; it needs the package only for the environment check.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-process-graph classifies a timerStart node as a start")]
+	public async Task ValidateProcessGraph_Should_ClassifyTimerStart_AsAStart() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync();
+		string environmentName = await ResolveEnvironmentOrIgnoreAsync();
+		Dictionary<string, object?> graph = new() {
+			["environment-name"] = environmentName,
+			["nodes"] = new[] {
+				Node("s", "startEvent"), Node("t", "timerStart"), Node("r", "readDataUserTask"), Node("e", "endEvent")
+			},
+			["edges"] = new[] {
+				Edge("s", "r", "sequence"), Edge("t", "r", "sequence"), Edge("r", "e", "sequence")
+			}
+		};
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(arrangeContext, graph);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "validating a graph with a timerStart node returns a structured payload");
+		response.Success.Should().BeTrue(because: "the package is present, so the graph is validated");
+		(response.Findings ?? new List<ValidateProcessGraphFinding>())
+			.Where(finding => finding.RuleId == "UNKNOWN")
+			.Should().BeEmpty(
+				because: "'timerStart' is the build token create-business-process accepts, so it must not be reported as "
+					+ "an unrecognized element type");
+		response.Findings.Should().NotContain(f => f.RuleId == "R3",
+			because: "a timer start is not a second Simple start; several triggered starts beside one Simple start are allowed");
+		response.HasErrors.Should().BeFalse(
+			because: "both starts reach the read and the end, so no connection rule is broken");
+	}
+
+	[Test]
 
 	[Description("Over the real MCP path, SEVERAL SIGNAL starts validate clean while a SECOND SIMPLE start is an R3 error (ENG-98559). The cap is per KIND: a process may react to as many triggers as it has signals - the shape PublishDraftToArticle ships with - but only one simple start, which is the manual launch. Both halves travel in one case because the rule is the pair, and a build that relaxed the count for every kind would pass a test that only checked the signal half.")]
 	[AllureTag(ToolName)]
