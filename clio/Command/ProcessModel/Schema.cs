@@ -333,6 +333,21 @@ public class FlowElement{
 
 	[JsonPropertyName("schemaUId")]
 	public Guid? SchemaUId { get; set; }
+
+	/// <summary>
+	/// A Formula element's formula, stored on the element itself rather than in a parameter (measured on a Formula
+	/// element built by create-business-process). Kept as raw JSON so an element whose <c>body</c> is not a string
+	/// cannot fail the whole schema read.
+	/// </summary>
+	[JsonPropertyName("body")]
+	public JsonElement? Body { get; set; }
+
+	/// <summary>
+	/// The elements nested in this one: an event sub-process (and an embedded sub-process) keeps its own flow
+	/// elements, and the schema serializes them here rather than in the top-level list.
+	/// </summary>
+	[JsonPropertyName("flowElements")]
+	public List<FlowElement>? FlowElements { get; set; }
 }
 
 public class FlowElementParameter{
@@ -1145,9 +1160,11 @@ public static class ManagerMap{
 			// CrtProcessBuilder 1.6.6.103 builds both and describe emits the token, never the alias. A
 			// descriptor carries a token, not a data-id; the three data-ids (Object/Process/ReportFileProcessingUserTask) end
 			// in the suffix and need no entry.
+			// "sendchatmessage" is the Send chat message element's build token (ENG-96034); its data-id
+			// SendChatMessageUserTask ends in the suffix and needs no entry.
 			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" or "readdata"
 					or "changedata" or "adddata" or "changeaccessrights" or "preconfiguredpage"
-					or "fileprocessing" or "processfile" => EventType.UserTask,
+					or "fileprocessing" or "processfile" or "sendchatmessage" => EventType.UserTask,
 			var i when i.StartsWith("intermediatecatchevent", StringComparison.Ordinal) => EventType.IntermediateCatchSignalEvent,
 			var i when i.StartsWith("intermediatethrowevent", StringComparison.Ordinal) => EventType.IntermediateThrowSignalEvent,
 			// every system/user action element ends with the "usertask" suffix and is an activity.

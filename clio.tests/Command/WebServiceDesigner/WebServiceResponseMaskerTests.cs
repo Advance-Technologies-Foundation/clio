@@ -49,11 +49,12 @@ public sealed class WebServiceResponseMaskerTests {
 		// Arrange
 		ServiceMethodDto method = Method(
 			new WebServiceParameterArg("XPartner", "header", Path: "X-Partner"),
+			new WebServiceParameterArg("XLang", "header", Path: "X-Lang"),
 			new WebServiceParameterArg("apiKey", "query"),
 			new WebServiceParameterArg("lang", "query"));
 		foreach (ServiceParameterDto parameter in method.Request.Parameters.Items.Values) {
 			parameter.DefValue = new ServiceParameterValueDto {
-				Value = parameter.Name switch { "XPartner" => "partner-secret-1", "apiKey" => "query-key-2", _ => "en-GB" },
+				Value = parameter.Name switch { "XPartner" => "Lk7Hd93Qz20mWr4TbN8e", "XLang" => "en-US", "apiKey" => "query-key-2", _ => "en-GB" },
 				Source = ServiceSchemaCodes.ValueSourceConst
 			};
 		}
@@ -62,8 +63,35 @@ public sealed class WebServiceResponseMaskerTests {
 		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, "GET https://x/ HTTP/1.1", null);
 
 		// Assert
-		secrets.Should().BeEquivalentTo(["partner-secret-1", "query-key-2"],
-			because: "a constant on a header or under a credential-like name is hidden by describe, so an echo must hide it too, while 'lang' is shown by describe anyway");
+		secrets.Should().BeEquivalentTo(["Lk7Hd93Qz20mWr4TbN8e", "query-key-2"],
+			because: "a key-like header constant or one under a credential-like name is hidden by describe, so an echo must hide it too, while the plain X-Lang and lang constants are shown by describe anyway");
+	}
+
+	[Test]
+	[Description("A hidden header constant is masked by each part that made it a key too, and a Basic value by its decoded user and password, so an API that echoes only the key or the password does not hand it back.")]
+	public void SentSecrets_Should_Collect_The_Key_Parts_Of_A_Hidden_Header_Constant() {
+		// Arrange
+		ServiceMethodDto method = Method(
+			new WebServiceParameterArg("XPartner", "header", Path: "X-Partner"),
+			new WebServiceParameterArg("XUpstream", "header", Path: "X-Upstream"));
+		foreach (ServiceParameterDto parameter in method.Request.Parameters.Items.Values) {
+			parameter.DefValue = new ServiceParameterValueDto {
+				Value = parameter.Name == "XPartner" ? "Token Lk7Hd93Qz20mWr4TbN8e" : "Basic c3ZjLXVzZXI6V2ludGVyMjAyNA==",
+				Source = ServiceSchemaCodes.ValueSourceConst
+			};
+		}
+
+		// Act
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, "GET https://x/ HTTP/1.1", null);
+		string echoed = WebServiceResponseMasker.Apply("""{"error":"unknown key Lk7Hd93Qz20mWr4TbN8e for svc-user/Winter2024"}""",
+			secrets, out bool masked);
+
+		// Assert
+		secrets.Should().Contain(["Token Lk7Hd93Qz20mWr4TbN8e", "Lk7Hd93Qz20mWr4TbN8e", "svc-user", "Winter2024"],
+			because: "the whole value, the key after the scheme and the decoded Basic user and password are each a secret");
+		masked.Should().BeTrue(because: "the echo carries the key and the password alone");
+		echoed.Should().NotContain("Lk7Hd93Qz20mWr4TbN8e", because: "the key part is masked on its own")
+			.And.NotContain("Winter2024", because: "the decoded password is masked on its own");
 	}
 
 	[Test]

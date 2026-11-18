@@ -15,4 +15,10 @@ internal static class SysAdminUnitIds {
 	/// <c>SysAdminUnitAllPortalUsersId</c>.
 	/// </summary>
 	internal static readonly Guid AllPortalUsers = new("720b771c-e7a7-4f31-9cfb-52cd21c3739f");
+
+	/// <summary>The name the output gives <see cref="AllEmployees"/>.</summary>
+	internal const string AllEmployeesName = "All employees";
+
+	/// <summary>The name the output gives <see cref="AllPortalUsers"/>.</summary>
+	internal const string AllPortalUsersName = "All external users";
 }

@@ -150,10 +150,12 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 		return dot >= 0 ? type[(dot + 1)..] : type;
 	}
 
+	// The logged exception can quote what a web service element sent or received (ENG-105475), so a credential
+	// recognisable by its shape is hidden before the line reaches run-process or trigger-smoke.
 	internal static string FirstLine(string text) =>
 		string.IsNullOrWhiteSpace(text)
 			? null
-			: text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+			: CredentialShapeMasker.Mask(text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
 				.Select(line => line.Trim())
-				.FirstOrDefault(line => line.Length > 0);
+				.FirstOrDefault(line => line.Length > 0));
 }

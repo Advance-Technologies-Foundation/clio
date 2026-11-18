@@ -25,6 +25,7 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 
 	private static readonly Guid Employees = Guid.Parse("a29a3ba5-4b0d-de11-9a51-005056c00008");
 	private static readonly Guid Role = Guid.Parse("11111111-2222-3333-4444-555555555555");
+	private static readonly Guid AllExternalUsers = Guid.Parse("720b771c-e7a7-4f31-9cfb-52cd21c3739f");
 	private static readonly Guid SchemaUId = Guid.Parse("35a9057f-800d-414b-acfb-c919c215857a");
 	private static readonly Guid AmountUId = Guid.Parse("9e53fd7c-2222-4c5b-9c3a-2a7b0e7e0002");
 	private static readonly Guid DescriptionUId = Guid.Parse("9e53fd7c-1111-4c5b-9c3a-2a7b0e7e0001");
@@ -83,6 +84,8 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		_lease.Acquire(default).ReturnsForAnyArgs(_ => Substitute.For<IDisposable>());
 		_granteeLookup.ResolveGranteeName(Role, Arg.Any<CreatioRequestOptions>()).Returns("Role");
 		_granteeLookup.ResolveGranteeName(Employees, Arg.Any<CreatioRequestOptions>()).Returns("All employees");
+		_granteeLookup.ResolveGranteeName(AllExternalUsers, Arg.Any<CreatioRequestOptions>()).Returns("All external users");
+		_granteeLookup.FindExternalUnits(default, default).ReturnsForAnyArgs(new HashSet<Guid>());
 		_columnManager.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
 			new EntitySchemaPropertiesInfo("UsrHoliday", "Holiday", null, "(merged: all packages)", null, false, "Id",
 				"Name", 3, 0, null, false, false, null, false, null, false, false, true, false, null, null,
@@ -403,6 +406,27 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 		exitCode.Should().Be(1, because: "a save nothing proves is not reported as done");
 		_errors.Should().Contain(line => line.Contains("saved, but NOT verified") && line.Contains("timeout"),
 			because: "the failure names the read-back that failed");
+	}
+
+	[Test]
+	[Description("A removal whose read-back fails says what it planned, the effect on the removed row's members included: an MCP removal can end here.")]
+	public void Execute_ShouldCarryTheRemovalEffect_WhenTheReadBackFails() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		IReadOnlyList<ColumnRights> stored =
+			[Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))];
+		Reads(true, stored);
+		_storage.ReadStoredColumns(SchemaUId, Arg.Any<CreatioRequestOptions>(), Arg.Any<bool>()).Returns(
+			_ => stored, _ => stored, _ => throw new InvalidOperationException("SelectQuery failed: timeout"));
+
+		// Act
+		int exitCode = _command.Execute(Remove(Role));
+
+		// Assert
+		exitCode.Should().Be(1, because: "a save nothing proves is not reported as done");
+		_errors.Should().Contain(line => line.Contains("saved, but NOT verified") && line.Contains("not All employees")
+			&& line.Contains("WIDENS"), because: "the error carries the plan, the removal's effect included");
 	}
 
 	[Test]
@@ -925,6 +949,207 @@ public class SetColumnRightsCommandTests : BaseCommandTests<SetColumnRightsOptio
 			because: "the summary says what applies afterwards");
 		_infos.Should().NotContain(line => line.StartsWith("PREVIEW") && line.Contains("WIDENS"),
 			because: "edit was not narrower than what then applies");
+	}
+
+	[Test]
+	[Description("Removing an external role's deny row, with only All employees: read left, does not say its members follow All employees (external users are not in it) and says the removal WIDENS their access.")]
+	public void Execute_ShouldNotNameAllEmployees_WhenAnExternalRolesRowIsRemoved() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the preview ran");
+		_infos.Should().NotContain(line => line.StartsWith("PREVIEW") && line.Contains("follow the All employees row"),
+			because: "the All employees row does not apply to external users");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("not All employees")
+			&& line.Contains("operation permissions") && line.Contains("WIDENS"),
+			because: "with no All external users row the removed role's members follow the object's operation permissions");
+	}
+
+	[Test]
+	[Description("Removing an external role's deny row, with All external users: read left, says its members then follow the All external users row and that this WIDENS their access.")]
+	public void Execute_ShouldNameAllExternalUsers_WhenAnExternalRolesRowIsRemoved() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(AllExternalUsers, 1, ColumnRightLevel.Read),
+			Row(Employees, 2, ColumnRightLevel.Edit))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("follow the All external users row (read)")
+			&& line.Contains("WIDENS"), because: "All external users' row is the one that applies to external users");
+	}
+
+	[Test]
+	[Description("When clio cannot tell whether the removed row's grantee is external, the removal is refused and nothing is written: an external role taken for internal would hide its widening.")]
+	public void Execute_ShouldRefuseTheRemoval_WhenTheExternalLookupFails() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new TimeoutException("no answer"));
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = Remove(Role);
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the effect of the removal cannot be shown");
+		_errors.Should().Contain(line => line.Contains("external (portal) role") && line.Contains("Nothing was changed"),
+			because: "the error says why the call stopped");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("A confirmed removal of an external role's row says in its result what then applies and that it WIDENS access, not only in the preview: an MCP write confirms without a prompt.")]
+	public void Execute_ShouldSayTheEffectInTheResult_WhenAConfirmedRemovalWidensExternalAccess() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))],
+			storedAfter: [Stored(AmountUId, Row(Employees, 0, ColumnRightLevel.Read))]);
+
+		// Act
+		int exitCode = _command.Execute(Remove(Role));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the removal read back as planned");
+		_sent.Should().BeTrue(because: "the removal was confirmed");
+		_infos.Should().Contain(line => line.Contains("removed the row of grantee") && line.Contains("not All employees")
+			&& line.Contains("WIDENS"), because: "the result carries the same effect the preview showed");
+	}
+
+	[Test]
+	[Description("Removing All external users' own row needs no lookup: its members are external, they are not in All employees, and with no other row they follow the object's operation permissions, which WIDENS a deny.")]
+	public void Execute_ShouldTreatAllExternalUsersAsExternal_WhenItsOwnRowIsRemoved() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(AllExternalUsers, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = Remove(AllExternalUsers);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("not All employees")
+			&& line.Contains("WIDENS"), because: "All employees' read does not apply to external users");
+	}
+
+	[Test]
+	[Description("Removing an external role's edit row with All external users: read left narrows access: the summary names All external users' read and does not say WIDENS.")]
+	public void Execute_ShouldNotSayWidens_WhenAnExternalRolesWiderRowIsRemoved() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { Role });
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Edit), Row(AllExternalUsers, 1, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("follow the All external users row (read)"),
+			because: "All external users' row is the one that applies");
+		_infos.Should().NotContain(line => line.StartsWith("PREVIEW") && line.Contains("WIDENS"),
+			because: "edit was not narrower than read");
+	}
+
+	[Test]
+	[Description("Removing a column's last row makes no external lookup: every user then follows the object's operation permissions, whoever the grantee was.")]
+	public void Execute_ShouldNotLookUpTheGrantee_WhenTheLastRowIsRemoved() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied))]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the preview ran to its end");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW") && line.Contains("left with no rows"),
+			because: "the summary was written without the lookup");
+		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
+	}
+
+	[TestCase("employees", TestName = "Execute_ShouldNotLookUpTheGrantee_WhenAllEmployeesRowIsRemoved")]
+	[TestCase("grant", TestName = "Execute_ShouldNotLookUpTheGrantee_WhenARowIsGranted")]
+	[Description("Only a removal of a role other than the two broad roles asks whether the grantee is external: All employees is known to be internal even while an All external users row remains, and a grant has no removal effect.")]
+	public void Execute_ShouldNotLookUpTheGrantee_WhenTheAnswerCannotMatter(string call) {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(AllExternalUsers, 1, ColumnRightLevel.Read),
+			Row(Employees, 2, ColumnRightLevel.Read))]);
+		SetColumnRightsOptions options = call == "grant" ? Grant("read", preview: true) : Remove(Employees);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the preview ran to its end");
+		_infos.Should().Contain(line => line.StartsWith("PREVIEW"), because: "the plan was shown");
+		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
+	}
+
+	[Test]
+	[Description("A lookup that leaves the grantee out of its answer (InvalidOperationException) refuses the removal, as a lookup that times out does; the stored-row facts are still written.")]
+	public void Execute_ShouldRefuseTheRemoval_WhenTheLookupLeavesTheGranteeOut() {
+		// Arrange
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("SysAdminUnit did not return 1 of the units asked for"));
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+
+		// Act
+		int exitCode = _command.Execute(Remove(Role));
+
+		// Assert
+		exitCode.Should().Be(1, because: "the effect of the removal cannot be shown");
+		_errors.Should().Contain(line => line.Contains("external (portal) role or user"),
+			because: "the error names what could not be told");
+		_infos.Should().Contain(line => line.Contains("Stored rows read"),
+			because: "a refusal after the stored rows were read says how many were read");
+		_sent.Should().BeFalse(because: "nothing is written");
+	}
+
+	[Test]
+	[Description("The external lookup is made with the call's request options, so the MCP call's time limit applies to it.")]
+	public void Execute_ShouldPassTheCallsRequestOptions_ToTheExternalLookup() {
+		// Arrange
+		Reads(true, [Stored(AmountUId, Row(Role, 0, ColumnRightLevel.Denied), Row(Employees, 1, ColumnRightLevel.Read))]);
+		CreatioRequestOptions readOptions = null;
+		_reader.When(reader => reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>()))
+			.Do(call => readOptions ??= (CreatioRequestOptions)call[1]);
+		SetColumnRightsOptions options = Remove(Role);
+		options.Confirm = false;
+		options.Preview = true;
+
+		// Act
+		_command.Execute(options);
+
+		// Assert
+		readOptions.Should().NotBeNull(because: "the object was read with the call's options");
+		_granteeLookup.Received(1).FindExternalUnits(
+			Arg.Is<IReadOnlyCollection<Guid>>(units => units.Count == 1 && units.Contains(Role)),
+			Arg.Is<CreatioRequestOptions>(requestOptions => ReferenceEquals(requestOptions, readOptions)));
 	}
 
 	[Test]
