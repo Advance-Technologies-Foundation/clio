@@ -4312,11 +4312,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			Text(timer, "timeZone").Should().Be(Timers.Zone, because: "a zone not sent is kept as stored");
 			(Text(timer, "start") ?? string.Empty).Should().StartWith("2090-01-01T00:00",
 				because: "a kind change clears the window unless it is sent, so the case sends the far-future start again");
-			Timers.ShouldBeScheduledInTheFarFuture(timer, "the changed timer");
 			ToolText(refused).Should().Contain("Nothing was sent",
 				because: "clio refuses a setElement timer before sending it");
 			ToolText(refused).Should().Contain("setTimer",
 				because: "the refusal points to the operation that changes a timer start's schedule");
+			// Last: an unavailable scheduler read Ignores the case, and every other check has run by then.
+			Timers.ShouldBeScheduledInTheFarFuture(timer, "the changed timer");
 		} finally {
 			await Timers.DeleteProcessesAsync(context, created);
 		}

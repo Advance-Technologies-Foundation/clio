@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
+using NUnit.Framework;
 using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 
 namespace Clio.Mcp.E2E.Support.Mcp;
@@ -59,6 +59,21 @@ internal static class TimerStartE2ESupport {
 
 	/// <summary>The scheduler state of a timer the platform will run as saved.</summary>
 	internal const string ScheduledState = "scheduled";
+
+	/// <summary>
+	/// The scheduler state of a stand whose scheduler read failed: whether the job exists is unknown there, so a case
+	/// asserting the job is Ignored rather than failed.
+	/// </summary>
+	internal const string SchedulerUnavailableState = "schedulerUnavailable";
+
+	/// <summary>
+	/// What run-process answers when the platform refuses a manual start (<c>ProcessCannotBeManuallyStartedException</c>):
+	/// the sentence only that refusal carries, so any other launch failure does not satisfy it.
+	/// </summary>
+	internal const string ManualStartRefusal = "has no manual entry point";
+
+	/// <summary>The run-process status of a launch the platform refused before anything ran.</summary>
+	internal const string NotStartedStatus = "not-started";
 
 	/// <summary>Opens a session, or ignores the test when the stand is missing, unreachable or behind the cut.</summary>
 	internal static Task<ProcessDesignerArrangeContext> StartAsync() =>
@@ -183,9 +198,17 @@ internal static class TimerStartE2ESupport {
 		return copy;
 	}
 
-	/// <summary>Asserts a described timer is scheduled by the platform, with a next fire time in the far-future window.</summary>
+	/// <summary>
+	/// Asserts a described timer is scheduled by the platform, with a next fire time in the far-future window. Ignores the
+	/// test on a stand whose scheduler read reports <see cref="SchedulerUnavailableState"/>: the job cannot be checked
+	/// there, which is the stand's state and not the feature's.
+	/// </summary>
 	internal static void ShouldBeScheduledInTheFarFuture(JsonObject timer, string what) {
 		JsonObject scheduled = Scheduled(timer);
+		if (Text(scheduled, "state") == SchedulerUnavailableState) {
+			Assert.Ignore($"{what}: the stand's scheduler read reports {SchedulerUnavailableState} "
+				+ $"({Text(scheduled, "detail") ?? "no detail"}), so whether the platform holds the job cannot be checked here.");
+		}
 		Text(scheduled, "state").Should().Be(ScheduledState,
 			because: $"{what}: a new process is enabled and its own active version, so the save registers the job; "
 				+ "scheduled reads: {0}", scheduled.ToJsonString());
@@ -202,8 +225,5 @@ internal static class TimerStartE2ESupport {
 
 	/// <summary>The raw JSON text of a value, for an assertion message.</summary>
 	internal static string Json(JsonNode? node) => node?.ToJsonString() ?? "null";
-
-	/// <summary>Serializes a value as a JSON string literal.</summary>
-	internal static string Quoted(string value) => JsonSerializer.Serialize(value);
 
 }

@@ -2351,6 +2351,9 @@ public sealed class CreateBusinessProcessToolE2ETests {
 
 	#region Timer start (ENG-91849)
 
+	// SysAdminUnit "All employees": the row the platform stores a setting's All-Users value under.
+	private const string AllEmployeesRoleId = "a29a3ba5-4b0d-de11-9a51-005056c00008";
+
 	[Test]
 	[Description("TC-I-01: a create builds a day timer start (02:30 UTC, window from 2090) and describe reads it back in its write shape - buildType timerstart, schedule day, at, start, timeZone, the stored cron - and the platform scheduler holds the job with a next fire time in 2090; the post-save notice says the timer is scheduled. The process is deleted in finally.")]
 	[AllureTag(ToolName)]
@@ -2369,8 +2372,6 @@ public sealed class CreateBusinessProcessToolE2ETests {
 
 			// Assert
 			ShouldHaveBuilt(callResult, "a day timer with a future window and a named zone is an ordinary create");
-			LogText(callResult).Should().Contain("Timer 'Nightly' is scheduled: next run 2090-",
-				because: "the post-save notice reads the scheduler and names the first run");
 			JsonObject element = Timers.Element(await Timers.DescribeGraphAsync(context, processName), "Nightly");
 			Text(element, "buildType").Should().Be(Timers.TimerBuildType, because: "describe reports the timer's build token");
 			JsonObject timer = Timers.TimerBlock(element);
@@ -2382,13 +2383,15 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			Text(timer, "storedCron").Should().NotBeNullOrEmpty(because: "a recurring timer reports the cron it stores");
 			timer.ContainsKey("cron").Should().BeFalse(because: "cron is emitted only for schedule: cron");
 			Timers.ShouldBeScheduledInTheFarFuture(timer, "the day timer");
+			LogText(callResult).Should().Contain("Timer 'Nightly' is scheduled: next run 2090-",
+				because: "the post-save notice reads the scheduler and names the first run");
 		} finally {
 			await Timers.DeleteProcessesAsync(context, created);
 		}
 	}
 
 	[Test]
-	[Description("TC-I-02 and TC-I-03: one create builds four timer starts - week (Monday and Friday), month (third Wednesday), cron and once - each with the 2090 window, and describe reads each back in its write shape (storedCron for every recurring kind, cron only for schedule: cron, no storedCron for once). Each described block, copied into a second process with its read-back members, rebuilds the same write shape (the read-backs are ignored with a warning). Both processes are deleted in finally.")]
+	[Description("TC-I-02 and TC-I-03: one create builds five timer starts - week (Monday and Friday), month (third Wednesday), month on day 15 sent as a NUMBER, cron and once - each with the 2090 window, and describe reads each back in its write shape (storedCron for every recurring kind, cron only for schedule: cron, no storedCron for once, dayOfMonth as the string 15). Each described block, copied into a second process with its read-back members, rebuilds the same write shape, and the server's warning names the ignored read-backs. On a stand whose scheduler read is unavailable the case is Ignored after the shape checks. Both processes are deleted in finally.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process builds every timer kind and a describe -> rebuild round trip keeps it")]
 	public async Task CreateBusinessProcess_Should_BuildEveryTimerKind_AndRoundTripThroughDescribe() {
@@ -2401,6 +2404,9 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				""")),
 			("Monthly", Timers.TimerElementJson("Monthly", $$"""
 				{ "schedule": "month", "weekday": { "position": "third", "day": "wed" }, "at": "09:15", "start": "{{Timers.FarFutureStart}}", "timeZone": "{{Timers.Zone}}" }
+				""")),
+			("MonthDay", Timers.TimerElementJson("MonthDay", $$"""
+				{ "schedule": "month", "dayOfMonth": 15, "at": "07:45", "start": "{{Timers.FarFutureStart}}", "timeZone": "{{Timers.Zone}}" }
 				""")),
 			("OtherFrequency", Timers.TimerElementJson("OtherFrequency", $$"""
 				{ "schedule": "cron", "cron": "0 15 10 ? * MON-FRI", "start": "{{Timers.FarFutureStart}}", "timeZone": "{{Timers.Zone}}" }
@@ -2432,6 +2438,13 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			Text(monthly, "schedule").Should().Be("month", because: "the month kind reads back");
 			Text(monthly["weekday"]!.AsObject(), "position").Should().Be("third", because: "the Nth weekday reads back");
 			Text(monthly["weekday"]!.AsObject(), "day").Should().Be("wed", because: "and its day");
+			JsonObject monthDay = Timers.TimerBlock(Timers.Element(graph, "MonthDay"));
+			monthDay["dayOfMonth"].Should().BeAssignableTo<JsonValue>(because: "the day of the month reads back; read: {0}",
+				Timers.Json(monthDay));
+			monthDay["dayOfMonth"]!.GetValueKind().Should().Be(JsonValueKind.String,
+				because: "dayOfMonth is a string member on the wire, so a number sent in reads back as a string");
+			monthDay["dayOfMonth"]!.GetValue<string>().Should().Be("15",
+				because: "the host's serializer read the number 15 into the string member");
 			JsonObject cron = Timers.TimerBlock(Timers.Element(graph, "OtherFrequency"));
 			Text(cron, "schedule").Should().Be("cron", because: "a cron timer reads back as schedule cron");
 			Text(cron, "cron").Should().NotBeNullOrEmpty(because: "cron is emitted for schedule: cron");
@@ -2439,27 +2452,34 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			Text(once, "schedule").Should().Be("once", because: "the once kind reads back");
 			(Text(once, "start") ?? string.Empty).Should().StartWith("2090-06-15T09:30", because: "the once instant reads back");
 			once.ContainsKey("storedCron").Should().BeFalse(because: "a once timer stores no cron");
-			foreach (JsonObject recurring in new[] { weekly, monthly, cron }) {
+			foreach (JsonObject recurring in new[] { weekly, monthly, monthDay, cron }) {
 				Text(recurring, "storedCron").Should().NotBeNullOrEmpty(because: "every recurring kind reports its stored cron");
-				Timers.ShouldBeScheduledInTheFarFuture(recurring, Text(recurring, "schedule")!);
 			}
-			Timers.ShouldBeScheduledInTheFarFuture(once, "the once timer");
 			ShouldHaveBuilt(copyResult, "a described timer block is a valid build block, read-backs included");
 			LogText(copyResult).Should().NotContainEquivalentOf("is not a key",
 				because: "storedCron, designerKind and scheduled are tolerated read-backs, never refused");
+			LogText(copyResult).Should().Contain("Read-only fields copied from describe were ignored",
+				because: "the server ignores the describe-only members with a warning instead of saving them");
+			LogText(copyResult).Should().Contain("timer.storedCron",
+				because: "the warning names the ignored read-back by its path");
 			foreach ((string name, _) in timers) {
 				JsonObject before = Timers.WriteShape(Timers.TimerBlock(Timers.Element(graph, name)));
 				JsonObject after = Timers.WriteShape(Timers.TimerBlock(Timers.Element(copyGraph, name)));
 				JsonNode.DeepEquals(after, before).Should().BeTrue(
 					because: $"the rebuilt {name} must read back the same write shape; before {Timers.Json(before)}, after {Timers.Json(after)}");
 			}
+			// Last: an unavailable scheduler read Ignores the case, and every shape check above has run by then.
+			foreach (JsonObject recurring in new[] { weekly, monthly, monthDay, cron }) {
+				Timers.ShouldBeScheduledInTheFarFuture(recurring, Text(recurring, "schedule")!);
+			}
+			Timers.ShouldBeScheduledInTheFarFuture(once, "the once timer");
 		} finally {
 			await Timers.DeleteProcessesAsync(context, created);
 		}
 	}
 
 	[Test]
-	[Description("TC-I-07: a timer created WITHOUT timeZone takes the e2e user's profile zone, else the All-Users DefaultTimeZone, and the post-save notice names the zone and where it came from; describe reports that zone. On a stand where neither names one the create is refused with the Q2 reason and nothing is built. The process is deleted in finally.")]
+	[Description("TC-I-07: a timer created WITHOUT timeZone takes the e2e user's profile zone, else the All-Users DefaultTimeZone, and the post-save notice names the zone and where it came from; describe reports that zone, and it is the e2e login's own SysAdminUnit.TimeZoneId (Code compared case-insensitively, as the server matches it), or the Code of the TimeZone the All-Users DefaultTimeZone value points at - not the caller's effective setting value. On a stand where neither names one the create is refused with the Q2 reason and nothing is built. The process is deleted in finally.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process defaults an omitted timer zone to the profile, else DefaultTimeZone")]
 	public async Task CreateBusinessProcess_Should_DefaultAnOmittedTimerZone_AndNameItsSource() {
@@ -2492,32 +2512,42 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				because: "the notice names where the zone came from, because the clio login may be a technical user; it said: {0}", log);
 			log.Should().Contain(zone, because: "the notice names the zone it chose");
 			if (fromProfile) {
+				// The e2e login's OWN row: the server reads the profile of the calling user, and any other user that
+				// happens to carry the same zone proves nothing.
+				string login = RegisteredClioEnvironmentSettingsResolver.Resolve(context.EnvironmentName).Login ?? string.Empty;
 				JsonElement users = await ProcessDesignerStoredReads.SelectInlineAsync(context,
 					Clio.Package.SelectQueryHelper.BuildSelectQuery("SysAdminUnit",
-						[new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
-						[new Clio.Package.SelectQueryHelper.SelectQueryFilterDefinition("TimeZoneId", zone,
+						[new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+							new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("TimeZoneId", "TimeZoneId")],
+						[new Clio.Package.SelectQueryHelper.SelectQueryFilterDefinition("Name", login,
 							Clio.Package.SelectQueryHelper.TextDataValueType)], rowCount: 1),
-					"the users whose profile zone is the defaulted one");
-				users.GetArrayLength().Should().BeGreaterThan(0,
-					because: "a zone taken from a profile is some user's SysAdminUnit.TimeZoneId");
+					"the e2e user's own SysAdminUnit row");
+				users.GetArrayLength().Should().Be(1, because: $"the e2e login '{login}' names one SysAdminUnit");
+				ProcessDesignerStoredReads.TextOf(users[0], "TimeZoneId").Trim().Should().BeEquivalentTo(zone,
+					because: "a zone taken from your profile is the e2e user's own SysAdminUnit.TimeZoneId, matched "
+						+ "case-insensitively as the server matches the Code");
 			} else {
-				CallToolResult setting = await ProcessDesignerE2EArrange.CallToolAsync(context,
-					SysSettingGetTool.GetSysSettingToolName,
-					new Dictionary<string, object?> { ["environment-name"] = context.EnvironmentName, ["code"] = "DefaultTimeZone" });
-				string value = EntitySchemaStructuredResultParser.Extract<Clio.Command.SysSettingGetResult>(setting).Value ?? string.Empty;
+				// The All-Users value (SysSettings.GetDefValue on the server), not the caller's effective one: a personal
+				// DefaultTimeZone on the e2e user would otherwise make this branch compare against the wrong value.
+				JsonElement values = await ProcessDesignerStoredReads.SelectInlineAsync(context,
+					Clio.Package.SelectQueryHelper.BuildSelectQuery("SysSettingsValue",
+						[new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("GuidValue", "GuidValue")],
+						[new Clio.Package.SelectQueryHelper.SelectQueryFilterDefinition("SysSettings.Code", "DefaultTimeZone",
+								Clio.Package.SelectQueryHelper.TextDataValueType),
+							new Clio.Package.SelectQueryHelper.SelectQueryFilterDefinition("SysAdminUnit", AllEmployeesRoleId,
+								Clio.Package.SelectQueryHelper.GuidDataValueType)], rowCount: 1),
+					"the All-Users value of DefaultTimeZone");
+				values.GetArrayLength().Should().Be(1, because: "the zone came from DefaultTimeZone, so it has an All-Users value");
+				string zoneId = ProcessDesignerStoredReads.TextOf(values[0], "GuidValue");
 				JsonElement zones = await ProcessDesignerStoredReads.SelectInlineAsync(context,
 					Clio.Package.SelectQueryHelper.BuildSelectQuery("TimeZone",
-						[new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
-							new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
-							new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
-						[new Clio.Package.SelectQueryHelper.SelectQueryFilterDefinition("Code", zone,
-							Clio.Package.SelectQueryHelper.TextDataValueType)], rowCount: 1),
-					"the TimeZone row of the defaulted zone");
-				zones.GetArrayLength().Should().Be(1, because: "the defaulted zone is a TimeZone lookup Code");
-				JsonElement row = zones[0];
-				new[] { "Id", "Code", "Name" }.Select(column => ProcessDesignerStoredReads.TextOf(row, column))
-					.Should().Contain(candidate => string.Equals(candidate, value, StringComparison.OrdinalIgnoreCase),
-						because: $"the zone came from DefaultTimeZone, whose All-Users value is '{value}'");
+						[new Clio.Package.SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code")],
+						[new Clio.Package.SelectQueryHelper.SelectQueryFilterDefinition("Id", zoneId,
+							Clio.Package.SelectQueryHelper.GuidDataValueType)], rowCount: 1),
+					"the TimeZone the All-Users DefaultTimeZone points at");
+				zones.GetArrayLength().Should().Be(1, because: $"the All-Users DefaultTimeZone '{zoneId}' is a TimeZone record");
+				ProcessDesignerStoredReads.TextOf(zones[0], "Code").Should().BeEquivalentTo(zone,
+					because: "the defaulted zone is the Code of the TimeZone the All-Users DefaultTimeZone points at");
 			}
 		} finally {
 			await Timers.DeleteProcessesAsync(context, created);
@@ -2525,7 +2555,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-09: run-process on a process whose ONLY start is a timer is refused - a timer-only process has no entry point for a manual run - and nothing runs. The process is deleted in finally.")]
+	[Description("TC-I-09: run-process on a process whose ONLY start is a timer is refused by the platform's manual-start check (ProcessCannotBeManuallyStartedException, which run-process reports as not-started with its no-manual-entry-point explanation) and no run is recorded (no processId). Any other launch failure fails the case. The process is deleted in finally.")]
 	[AllureTag(RunProcessTool.ToolName)]
 	[AllureName("run-process refuses a timer-only process")]
 	public async Task RunProcess_Should_RefuseATimerOnlyProcess() {
@@ -2546,10 +2576,13 @@ public sealed class CreateBusinessProcessToolE2ETests {
 
 			// Assert
 			JsonObject reply = JsonNode.Parse(ToolText(ran))!.AsObject();
-			Text(reply, "status").Should().NotBe("completed",
-				because: "a process with no Simple start cannot be started by hand; the reply was: {0}", ToolText(ran));
-			Text(reply, "error").Should().NotBeNullOrEmpty(
-				because: "the refusal says why the process did not run; the reply was: {0}", ToolText(ran));
+			Text(reply, "status").Should().Be(Timers.NotStartedStatus,
+				because: "the platform refuses the launch before anything runs; the reply was: {0}", ToolText(ran));
+			(Text(reply, "error") ?? string.Empty).Should().Contain(Timers.ManualStartRefusal,
+				because: "only the ProcessCannotBeManuallyStartedException refusal carries this explanation, so a "
+					+ "deadline, a credential fault or an uncompiled process cannot pass for it; the reply was: {0}", ToolText(ran));
+			Text(reply, "processId").Should().BeNullOrEmpty(
+				because: "a refused launch records no run, so no process id comes back; the reply was: {0}", ToolText(ran));
 		} finally {
 			await Timers.DeleteProcessesAsync(context, created);
 		}
