@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.Project.NuGet;
 using FluentAssertions;
@@ -1807,7 +1809,7 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("clio checks the timer block's keys and walks setTimer before sending them, TYPES the describe block with its scheduler state, and its create, modify and modify-as-new-version floors are a version number only: a later cut from a package tree that lacks the Timer start sources would satisfy that number while refusing the block. This probes the archive for every timer wire name clio sends or reads, each on its NAMED type.")]
+	[Description("clio checks the timer block's keys and walks setTimer before sending them, TYPES the describe block with its scheduler state, and its create, modify and modify-as-new-version floors are a version number only: a later cut from a package tree that lacks the Timer start sources would satisfy that number while refusing the block. This probes the archive for every timer wire name clio sends, each on its NAMED type, and holds the describe DTOs' own JSON names equal to the server's DataMember names (TC-U-20).")]
 	public void BundledArchive_ShouldDeclareTheTimerStartWireNamesClioReads() {
 		// Arrange
 		string archive = ReadBundledArchiveAsText();
@@ -1833,20 +1835,31 @@ public class BundledProcessBuilderPackageTests {
 			DeclaresMemberOn(archive, "ProcessTimerDescriptor", member).Should().BeTrue(
 				because: $"the timer key set sends '{member}'");
 		}
-		foreach (string member in writeMembers.Concat(["storedCron", "designerKind", "scheduled"])) {
-			DeclaresMemberOn(archive, "DescribeTimerInfo", member).Should().BeTrue(
-				because: $"DescribedTimer reads '{member}'");
-		}
 		foreach (string member in new[] { "position", "day" }) {
 			DeclaresMemberOn(archive, "ProcessTimerWeekdayDescriptor", member).Should().BeTrue(
 				because: $"the timer weekday key set sends '{member}'");
 		}
-		foreach (string member in new[] {
-				"state", "nextFireTimeUtc", "previousFireTimeUtc", "activeVersionNextFireTimeUtc", "detail" }) {
-			DeclaresMemberOn(archive, "DescribeTimerScheduleState", member).Should().BeTrue(
-				because: $"DescribedTimerSchedule reads '{member}'");
-		}
+		// The describe DTOs are read off their own [JsonPropertyName]s, not a hand copy: a misspelt name would push the
+		// value into the overflow bag, where it still round-trips to the caller while the typed property - which
+		// ProcessDigest reads - stays null, and nothing else would notice.
+		JsonWireNames<DescribedTimer>().Should().BeEquivalentTo(
+			BundledProcessBuilderSource.DataMemberNames(archive, "DescribeTimerInfo"),
+			because: "DescribedTimer declares exactly the members the server's DescribeTimerInfo emits");
+		JsonWireNames<DescribedTimerWeekday>().Should().BeEquivalentTo(
+			BundledProcessBuilderSource.DataMemberNames(archive, "ProcessTimerWeekdayDescriptor"),
+			because: "DescribedTimerWeekday declares exactly the members of the weekday describe emits");
+		JsonWireNames<DescribedTimerSchedule>().Should().BeEquivalentTo(
+			BundledProcessBuilderSource.DataMemberNames(archive, "DescribeTimerScheduleState"),
+			because: "DescribedTimerSchedule declares exactly the members the server's scheduler state emits");
+		JsonWireNames<DescribedTimer>().Should().Contain(writeMembers,
+			because: "every write member reads back in its write shape");
 	}
+
+	// The [JsonPropertyName] of every property of a describe DTO; the [JsonExtensionData] bag has none.
+	private static IReadOnlyList<string> JsonWireNames<T>() =>
+		[.. typeof(T).GetProperties()
+			.Select(property => property.GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>()?.Name)
+			.Where(name => name is not null)];
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector

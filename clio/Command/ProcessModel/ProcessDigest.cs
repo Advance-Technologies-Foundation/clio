@@ -379,7 +379,10 @@ internal static class ProcessDigest {
 		if (signals.Count > 0) {
 			summary["startSignals"] = signals;
 		}
-		JsonArray timers = new(elements.Where(element => element.Timer is not null)
+		// Over EVERY element, not the kept share: addElement appends, so a timer just added sits last - the part the
+		// share cut drops first - and a write's summary would then hide the timer and whether the scheduler holds it.
+		// The list is a few short lines per timer start, so it does not threaten the budget the share protects.
+		JsonArray timers = new((result.Elements ?? []).Where(element => element?.Timer is not null)
 			.Select(element => (JsonNode)TimerEntry(element)).ToArray());
 		if (timers.Count > 0) {
 			summary["startTimers"] = timers;
@@ -415,14 +418,16 @@ internal static class ProcessDigest {
 	}
 
 	// A timer start as one line of the summary: what it runs on and whether the scheduler will run it. The schedule's
-	// own fields stay one call away (element=<name>); the stored cron says the same in one member.
+	// own fields stay one call away (element=<name>); the stored cron says the same in one member. It is named
+	// storedCron, as in describe: 'cron' is a write member of schedule: cron only, so a day entry carrying 'cron'
+	// would teach the wrong write shape.
 	private static JsonObject TimerEntry(DescribedElement element) {
 		DescribedTimer timer = element.Timer;
 		JsonObject entry = new() {
 			["element"] = element.Name,
 			["schedule"] = timer.Schedule
 		};
-		AddIfPresent(entry, "cron", timer.Cron ?? timer.StoredCron);
+		AddIfPresent(entry, "storedCron", timer.StoredCron);
 		AddIfPresent(entry, "start", timer.Start);
 		AddIfPresent(entry, "timeZone", timer.TimeZone);
 		AddIfPresent(entry, "state", timer.Scheduled?.State);

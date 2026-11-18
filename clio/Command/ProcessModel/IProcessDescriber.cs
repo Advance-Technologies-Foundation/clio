@@ -609,6 +609,9 @@ public sealed class DescribedElement {
 	/// for this element (for example <c>usertask</c>, <c>endevent</c>, <c>signalstart</c>, <c>startevent</c>) — the
 	/// round-trippable counterpart of <see cref="Type"/> (which is the non-consumable .NET class name). For a user
 	/// task this is the generic <c>usertask</c> token; the specific task is in <see cref="UserTaskName"/>.
+	/// <para>Absent (<c>null</c>) for an element the server reports read-only, because no build token produces it - from
+	/// CrtProcessBuilder 1.6.6.187 a message start among them. A caller that decides what an element is from this token
+	/// falls back to <see cref="Type"/> then (<c>ManagerMap.ResolveRuntimeType</c>).</para>
 	/// </summary>
 	[JsonPropertyName("buildType")]
 	public string BuildType { get; set; }
@@ -1853,7 +1856,9 @@ public sealed class DescribedSignal {
 /// <remarks>
 /// When the stored cron does not have the shape the designer stores for the stored kind, <see cref="Schedule"/> is
 /// <c>cron</c>, <see cref="Cron"/> carries the stored string and <see cref="DesignerKind"/> names the kind the element
-/// claims. Dates are wall clock in <see cref="TimeZone"/>, <c>yyyy-MM-ddTHH:mm:ss</c>.
+/// claims. A designer element never configured is <c>schedule: cron</c> with <see cref="DesignerKind"/> <c>empty</c> and
+/// no <see cref="Cron"/>; a once timer that also stores a stray cron is still <c>once</c>. Dates are wall clock in
+/// <see cref="TimeZone"/>, <c>yyyy-MM-ddTHH:mm:ss</c>.
 /// </remarks>
 public sealed class DescribedTimer {
 
@@ -1897,7 +1902,10 @@ public sealed class DescribedTimer {
 	[JsonPropertyName("month")]
 	public int? Month { get; set; }
 
-	/// <summary>The Quartz cron of a <c>cron</c> schedule; the other kinds report <see cref="StoredCron"/> only.</summary>
+	/// <summary>
+	/// The Quartz cron of a <c>cron</c> schedule; the other kinds report <see cref="StoredCron"/> only. Absent for a
+	/// never-configured designer element (<see cref="DesignerKind"/> <c>empty</c>), although it reads as <c>cron</c>.
+	/// </summary>
 	[JsonPropertyName("cron")]
 	public string Cron { get; set; }
 
@@ -1913,7 +1921,7 @@ public sealed class DescribedTimer {
 	[JsonPropertyName("timeZone")]
 	public string TimeZone { get; set; }
 
-	/// <summary>The designer's "Repeat on misfire".</summary>
+	/// <summary>The designer's "Repeat on misfire"; stored and read back, it changes nothing at run time.</summary>
 	[JsonPropertyName("repeatOnMisfire")]
 	public bool? RepeatOnMisfire { get; set; }
 
@@ -1963,8 +1971,9 @@ public sealed class DescribedTimerWeekday {
 public sealed class DescribedTimerSchedule {
 
 	/// <summary>
-	/// <c>scheduled</c>, or why not: <c>processDisabled</c>, <c>notActiveVersion</c>, <c>staleTrigger</c> (a re-save
-	/// fixes it), <c>noJob</c> or <c>schedulerUnavailable</c>.
+	/// <c>scheduled</c>, or why not: <c>processDisabled</c>, <c>notActiveVersion</c>, <c>staleTrigger</c> (a job of
+	/// another version, a trigger that differs from the stored timer, or one the scheduler does not run - not in the
+	/// <c>Normal</c> state or with no next fire ahead; a re-save fixes it), <c>noJob</c> or <c>schedulerUnavailable</c>.
 	/// </summary>
 	[JsonPropertyName("state")]
 	public string State { get; set; }
@@ -1981,7 +1990,11 @@ public sealed class DescribedTimerSchedule {
 	[JsonPropertyName("activeVersionNextFireTimeUtc")]
 	public string ActiveVersionNextFireTimeUtc { get; set; }
 
-	/// <summary>One sentence on what differs or failed; wording, not a value to parse.</summary>
+	/// <summary>
+	/// One sentence on what differs or failed (<c>staleTrigger</c>, <c>noJob</c>, <c>schedulerUnavailable</c>), or, for
+	/// <c>processDisabled</c> on a version that is not the active one, that it must be activated as well; wording, not a
+	/// value to parse.
+	/// </summary>
 	[JsonPropertyName("detail")]
 	public string Detail { get; set; }
 

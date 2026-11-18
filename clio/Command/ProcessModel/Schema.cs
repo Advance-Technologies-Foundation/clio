@@ -1126,8 +1126,8 @@ public static class ManagerMap{
 		return id switch {
 			"startevent" => EventType.StartEvent,
 			"starteventsignal" or "signalstart" => EventType.StartSignalEvent,
-			// "timerstart" is the Timer start's build/describe token (ENG-91849, CrtProcessBuilder 1.6.6.187); it does not
-			// share the "startevent" prefix of the designer data-id, so it needs its own entry.
+			// "timerstart" is the Timer start's build/describe token (ENG-91849, CrtProcessBuilder 1.6.6.187). Every start
+			// token is an exact match here (no prefix arm covers starts), so it needs its own entry, as "signalstart" does.
 			"starteventtimer" or "timerstart" => EventType.StartTimer,
 			"starteventmessage" => EventType.StartMessageEvent,
 			"endevent" => EventType.EndEvent,

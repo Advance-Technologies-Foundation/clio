@@ -21,8 +21,7 @@ sources); the designer never shows it. The family-shared group is why a version 
 with it, which the package re-syncs for the active version.
 
 **What breaks if you ignore it** — reading a successful save as "the timer runs" reports a schedule that never fires.
-Treating `scheduled` as content makes the checksum change on every fire (`ProcessDigest` leaves it out for that reason).
+Treating `scheduled` as content makes the checksum change on every fire, although the schema did not change.
 A `removeElement` + `addElement` replace gives the timer a NEW UId and therefore a new job, while `setTimer` keeps the UId
-and the job key. And an e2e timer that loses its cleanup is a real job on the stand: that is why every timer in
-`TimerStartE2ESupport` starts in 2090, inside the package's never-fires horizon, so the job exists and its next fire time
-can be asserted while nothing can run.
+and the job key. And a test timer that loses its cleanup is a real job on a shared stand, run as the System operations
+user whenever its schedule comes due.

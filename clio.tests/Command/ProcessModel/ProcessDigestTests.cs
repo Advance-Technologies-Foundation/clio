@@ -260,12 +260,58 @@ public sealed class ProcessDigestTests {
 			because: "the process has one timer start").Which!.AsObject();
 		timer["element"]!.GetValue<string>().Should().Be("Nightly", because: "the entry names the element");
 		timer["schedule"]!.GetValue<string>().Should().Be("day", because: "the entry names the schedule kind");
-		timer["cron"]!.GetValue<string>().Should().Be("0 30 2 1/1 * ? *", because: "the stored cron stands in for the fields");
+		timer["storedCron"]!.GetValue<string>().Should().Be("0 30 2 1/1 * ? *",
+			because: "the stored cron stands in for the fields, under describe's own read-back name");
+		timer.ContainsKey("cron").Should().BeFalse(
+			because: "'cron' is a write member of schedule: cron only, so a day entry must not carry it");
 		timer["start"]!.GetValue<string>().Should().Be("2090-01-01T00:00:00", because: "the window start is kept");
 		timer["timeZone"]!.GetValue<string>().Should().Be("FLE Standard Time", because: "the zone is kept");
 		timer["state"]!.GetValue<string>().Should().Be("scheduled", because: "the scheduler state is the point of the entry");
 		timer["nextFireTimeUtc"]!.GetValue<string>().Should().Be("2090-01-01T00:30:00Z", because: "the next run is kept");
 		summary["startSignals"].Should().BeNull(because: "a process without signal starts carries no startSignals list");
+	}
+
+	[Test]
+	[Description("A process with no timer start carries no startTimers list in its summary (TC-U-10, negative case).")]
+	public void BuildSummary_ShouldOmitStartTimers_WhenTheProcessHasNoTimerStart() {
+		// Arrange
+		DescribeProcessResult process = TimerProcess("scheduled", "2090-01-01T00:30:00Z");
+		process.Elements.RemoveAll(element => element.Timer is not null);
+
+		// Act
+		JsonObject summary = ProcessDigest.BuildSummary(process, "abc123");
+
+		// Assert
+		summary.ContainsKey("startTimers").Should().BeFalse(
+			because: "the list is written only when the process has a timer start");
+	}
+
+	[Test]
+	[Description("A timer start the budget cut drops from elements[] - addElement appends, so a timer just added sits last - is still listed in startTimers with its scheduler state.")]
+	public void BuildSummary_ShouldListEveryTimerStart_WhenTheBudgetCutDropsItsElement() {
+		// Arrange
+		DescribeProcessResult process = TimerProcess("noJob", null);
+		DescribedElement timer = process.Elements.Single(element => element.Timer is not null);
+		process.Elements.Remove(timer);
+		process.Elements.AddRange(Enumerable.Range(0, 120).Select(index => new DescribedElement {
+			Name = $"FormulaStepNumber{index}", Caption = $"Compute the value of step {index}", BuildType = "formulatask"
+		}));
+		process.Elements.Add(timer);
+		process.Parameters = [.. Enumerable.Range(0, 150).Select(index =>
+			new DescribedParameter { Name = $"ProcessParameterNumber{index}", Type = "Text", Direction = "Variable" })];
+
+		// Act
+		JsonObject summary = ProcessDigest.BuildSummary(process, "abc123");
+
+		// Assert
+		summary["elements"]!.AsArray().OfType<JsonObject>().Should().NotContain(
+			element => element["name"]!.GetValue<string>() == "Nightly",
+			because: "the precondition: the share cut dropped the last element, the timer");
+		JsonObject entry = summary["startTimers"]!.AsArray().Should().ContainSingle(
+			because: "startTimers is built over every element, not the kept share").Which!.AsObject();
+		entry["element"]!.GetValue<string>().Should().Be("Nightly", because: "the dropped timer is still named");
+		entry["state"]!.GetValue<string>().Should().Be("noJob",
+			because: "a timer saved but not scheduled must stay visible in a write's summary");
 	}
 
 	[Test]
