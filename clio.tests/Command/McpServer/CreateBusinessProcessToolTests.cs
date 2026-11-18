@@ -536,7 +536,7 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.187 (for chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, isTracing,",
+		toolDescription.Should().Contain("this clio requires 1.6.6.187 (for timer, chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, isTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block, then by mergeFrom, then by filter-condition values, then by the chatMessage block)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
@@ -646,6 +646,29 @@ public class CreateBusinessProcessToolTests {
 			because: "registering a service is outside the builder, so the agent stops and tells the user");
 		prompt.Should().Contain("Read `get-guidance name=process-web-service` before writing it",
 			because: "the guide owns the block's members, notices and refusals");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract names the timerStart type and its timer block, and the prompt names both for a scheduled process (TC-U-13) - the contract carries only the type and the block (Q10); the schedule vocabulary lives in the timer-start guide, whose pointer waits for its release.")]
+	public void CreateBusinessProcessTool_ShouldOfferTheTimerStartElement() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		toolDescription.Should().Contain("type:startEvent|signalStart|timerStart|endEvent|",
+			because: "the element type list is where an agent learns which type tokens a build accepts");
+		toolDescription.Should().Contain("signal?, timer?, ",
+			because: "the element fields name the timer block beside the signal block of the other triggered start");
+		toolDescription.Should().NotContain("cronExpression",
+			because: "the contract carries no schedule vocabulary; that is the guide's (Q10)");
+		prompt.Should().Contain("use a `timerStart` element with its `timer` block",
+			because: "the prompt routes a scheduled process to the timer start instead of a workaround");
 	}
 
 	[Test]

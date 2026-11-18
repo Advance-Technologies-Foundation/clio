@@ -444,6 +444,18 @@ public sealed class ToolContractPayloadBudgetTests {
 	// literal a cleared condition is stored as) and of the setFlow field list (source, target, kind, condition,
 	// label), and create's clause its 'Send chat message; ' gloss. Re-measured by lowering the ceiling: create 35056,
 	// describe 35061, modify 35041 - 16, 11 and 31 bytes of headroom.
+	//
+	// ENG-91849 (2026-11-18, the Timer start element) named, per owner decision Q10, only the type, the block and
+	// setTimer - the guide pointer waits for the clio-knowledge release that publishes process-timer-start: create's
+	// type list ('|timerStart'), 'timer?' among its element fields and 'timer, ' in its floor clause; modify's 'timer?'
+	// on addElement, the setTimer clause with the setElement refusal and 'timer, setTimer, ' in its floor clause;
+	// describe's read-back clause (storedCron, designerKind, scheduled). Measured before paying: create 35082, modify
+	// 35169, describe 35168 - 10, 97 and 96 bytes over. Paid by SWAP, no ceiling raise: five em dashes in create, nine in
+	// modify and five in describe became '-' (five bytes each); the ellipses of modify (six) and describe (three) became
+	// '...' (three bytes each); modify lost the quotes of 'op', 'element', 'filter', 'signal' and 'elementUpdate' (twelve
+	// bytes a pair), and describe those of 'modified', 'unversioned', 'Sequential', 'Parallel', 'X;Y', 'W;H' and
+	// 'expression'. A backtick is no cheaper than a quote: the default encoder escapes it too. Re-measured by lowering
+	// the ceiling: create 35057, describe 35050, modify 35046 - 15, 22 and 26 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -486,6 +498,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// shape's block list, which is never cut, brings the bundle to 18881 bytes - 119 under this guard. Its description
 	// text carries no safety marker, so no short form keeps it. Merged with the ENG-105557 follow-up above
 	// (2026-11-17) and re-measured the same way: 18942 bytes - 58 under this guard.
+	//
+	// ENG-91849 (2026-11-18) re-measured by lowering this guard: "timer (timerStart)" in the create call shape's block
+	// list and "setTimer {elementName, timer}" in the modify operation list, both never cut and both required by the
+	// short-form drift test, brought the bundle to 18994 bytes; the description swaps above that fall in kept short-form
+	// text took it to 18990 - 10 under this guard. The next call-shape entry has to pay for itself here.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

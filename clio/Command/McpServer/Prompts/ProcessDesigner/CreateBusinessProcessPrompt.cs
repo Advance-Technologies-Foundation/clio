@@ -50,6 +50,10 @@ public static class CreateBusinessProcessPrompt {
 		 (`get-guidance name=process-multi-start`). Branches `mergeFrom` cannot merge - signal starts on different
 		 objects, a timer or message start, gateway branches after one start - each set the shared parameter with a
 		 `formulaTask` whose `formula.resultProcessParameter` names it (`get-guidance name=process-parameters`).
+		 To run the process on a schedule (once, or every so many minutes, hours, days or months, on weekdays, yearly,
+		 or by a Quartz cron), use a `timerStart` element with its `timer` block; the server builds the cron the
+		 designer stores, refuses a schedule that never fires, and says after the save whether the platform
+		 scheduled it. Several `timerStart`s, or one beside a Simple start, are allowed.
 		 To send an email, add a `sendEmail`
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
 		 message as EITHER an HTML custom-message `body` (`bodyFormat` `html` only) OR an existing email `template`

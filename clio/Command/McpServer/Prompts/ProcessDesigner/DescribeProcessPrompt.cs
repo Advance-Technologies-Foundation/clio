@@ -30,14 +30,15 @@ public static class DescribeProcessPrompt {
 
 		1. Call `describe-business-process` with `environment-name` and exactly one of `process-name` /
 		   `process-uid` / `process-caption`. It returns a STRUCTURED graph: `elements`
-		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, and a
+		   (name, uid, caption, type, buildType, userTaskName, parameters; `signal` for a signal start, `timer` for a
+		   timer start, and a
 		   configuration block for a configured element - `email`, `readData`, `changeData`, `addData`,
 		   `deleteData`, `openEditPage`),
 		   `flows` (name, source, target, kind, `label`, `geometry`, and on a branch its `condition` plus
 		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` (a merged one
 		   reports `mergeFrom` instead of its formula, and replays as is) — not raw
 		   metadata. A graph whose reply would exceed 18000 bytes comes back as `mode: summary` (elements, flows as
-		   `from -> to`, start signals, parameters - a merged one with its `mergeFrom` - version, checksum) unless you
+		   `from -> to`, start signals, start timers, parameters - a merged one with its `mergeFrom` - version, checksum) unless you
 		   pass `mode: full`; ask
 		   `element: <name>` for one element in full, which is usually what a narration step needs.
 		   Each element also carries its diagram placement as `position` (the shape's TOP-LEFT corner) and
@@ -88,6 +89,12 @@ public static class DescribeProcessPrompt {
 		   ignored with a warning.
 		   Ignore the `MessageType` and `Contact` entries `connections` may list for it and never replay them:
 		   `setConnections` refuses this task. `get-guidance name=process-send-chat-message` owns the block.
+		   A `timerStart` element (the designer's "Start timer") carries its `timer` block in the write shape plus the
+		   describe-only `storedCron` (the cron as stored), `designerKind` (the stored kind, only when the cron does
+		   not match it) and `scheduled`: `state` is `scheduled` with `nextFireTimeUtc`, or why the platform will not
+		   run it - `processDisabled`, `notActiveVersion` (with the active version's next run), `staleTrigger` (a
+		   re-save fixes it), `noJob` or `schedulerUnavailable`. Report a timer that is saved but not scheduled; it
+		   never fires and nothing else says so. A message start has no `buildType`: it is read-only here.
 		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
 		   `email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each
 		   row attaches, and read its `issues`, which name a row that fails or surprises at run time.

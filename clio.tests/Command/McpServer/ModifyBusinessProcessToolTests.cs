@@ -39,6 +39,28 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The modify contract names the timer block on addElement, the setTimer operation and that setElement refuses timer, and the prompt routes a timer like a filter or a signal to its own operation (TC-U-14).")]
+	public void ModifyBusinessProcess_Description_ShouldOfferSetTimerAndTheTimerBlock() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess");
+
+		// Assert
+		description.Should().Contain("changedColumns?:[<ColumnName>,...]}, timer?, ",
+			because: "addElement takes the timer block of a timerStart beside the signal block");
+		description.Should().Contain("setTimer (elementName + timer: changes a timerStart schedule in place; setElement refuses timer)",
+			because: "the operation that changes a timer start is named with its arguments and the setElement pointer");
+		prompt.Should().Contain("(setFilter, setSignal, setTimer, setConnections)",
+			because: "the prompt lists the timer among the members that have their own operation");
+		prompt.Should().Contain("`setTimer` changes a `timerStart`'s schedule in place",
+			because: "the prompt says what setTimer keeps and how the schedule group is replaced");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The addElement field list names the openEditPage and preconfiguredPage blocks, each on its own element type, and says a generic userTask naming PreconfiguredPageUserTask is refused; the prompt says the same. Without it the modify contract offered no way to add either page element, and the server's refusal pointed at a block the contract never mentioned.")]
 	public void ModifyBusinessProcess_Description_ShouldOfferBothPageBlocksOnAddElement() {
 		// Arrange
@@ -826,7 +848,7 @@ public class ModifyBusinessProcessToolTests {
 			because: "the operation, its argument and its family-wide scope are what a caller decides at call time");
 		description.Should().Contain("get-guidance name=process-tracing",
 			because: "the data and volume costs live in the guide, and the contract must route there");
-		description.Should().Contain("this clio requires 1.6.6.187, for chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, setTracing,",
+		description.Should().Contain("this clio requires 1.6.6.187, for timer, setTimer, chatMessage, values, mergeFrom, webService, email.attachments, itemProperties, setTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block, then by mergeFrom)");
 		prompt.Should().Contain("`clearConnections`, or `setTracing`",
 			because: "the prompt's operation list must match its tool's contract");
