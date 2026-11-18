@@ -54,6 +54,7 @@ internal static class ProcessBlockKeyCheck {
 	private const int MaxReportedKeys = 8;
 	private const string Filter = "filter";
 	private const string Signal = "signal";
+	private const string Timer = "timer";
 	private const string Source = "source";
 	private const string ElementKey = "element";
 	private const string ElementUpdateKey = "elementUpdate";
@@ -169,6 +170,20 @@ internal static class ProcessBlockKeyCheck {
 
 	private static readonly KeySet SignalBlock = new("ProcessSignalDescriptor", Signal, "DescribeSignalInfo",
 		"entity on changedColumns", "entitySchemaUId");
+
+	// The Timer start's schedule (ENG-91849). Element-level like 'signal', not a configuration block: it is set on
+	// create and addElement and changed by its own setTimer operation, never through setElement. Describe reports the
+	// write members in their write shape plus three describe-only members - the cron as stored, the stored kind when
+	// the cron does not match it, and the live scheduler state - so a described block replays unchanged. clio checks
+	// keys only: the schedule rules (which fields each kind takes, the cron, the zone) are the server's.
+	private static readonly KeySet TimerBlock = new KeySet("ProcessTimerDescriptor", Timer, "DescribeTimerInfo",
+			"schedule every at fromHour toHour daysOfWeek dayOfMonth weekday workday month cron start end timeZone "
+				+ "repeatOnMisfire",
+			"storedCron designerKind scheduled",
+			PointerMap(
+				("cronExpression", "a Quartz cron is 'cron', with \"schedule\": \"cron\""),
+				("interval", "a repeat step is 'every', a calendar-aligned cron step rather than an interval")))
+		.With(new KeySet("ProcessTimerWeekdayDescriptor", "weekday", null, "position day"));
 
 	private static readonly KeySet ReadDataSort = new("ReadDataSortDescriptor", "sort", null, "column direction");
 
@@ -355,7 +370,8 @@ internal static class ProcessBlockKeyCheck {
 
 	/// <summary>An element of a create descriptor's <c>elements[]</c>, or of an <c>addElement</c> operation.</summary>
 	internal static readonly KeySet Element = WithBlocks(new KeySet("ProcessElementDescriptor", ElementKey,
-			"DescribeProcessElement", $"name type userTaskName caption {Signal} lane useBackgroundMode {Filter} {BlockKeys}",
+			"DescribeProcessElement",
+			$"name type userTaskName caption {Signal} {Timer} lane useBackgroundMode {Filter} {BlockKeys}",
 			"uid buildType managerItemUId position size filterDecodedCompletely deprecated writesConnectionsAtRuntime",
 			PointerMap(
 				("parameters", "an element's inputs are bound through the descriptor's top-level 'mappings' "
@@ -364,6 +380,7 @@ internal static class ProcessBlockKeyCheck {
 					+ "setConnections operation"),
 				("filters", "the element's record filter is the single element-level 'filter' block")))
 		.With(SignalBlock)
+		.With(TimerBlock)
 		.With(RecordFilter));
 
 	/// <summary>The <c>elementUpdate</c> of a <c>setElement</c> operation.</summary>
@@ -373,7 +390,9 @@ internal static class ProcessBlockKeyCheck {
 			(Filter, "a record filter is changed by its own operation: {\"op\":\"setFilter\",\"elementName\":...,"
 				+ "\"filter\":{...}}"),
 			(Signal, "a start signal is changed by its own operation: {\"op\":\"setSignal\",\"elementName\":...,"
-				+ "\"signal\":{...}}"))));
+				+ "\"signal\":{...}}"),
+			(Timer, "a timer start's schedule is changed by its own operation: {\"op\":\"setTimer\",\"elementName\":...,"
+				+ "\"timer\":{...}}"))));
 
 	private static KeySet WithBlocks(KeySet element) {
 		foreach (KeySet block in Blocks) {
@@ -406,7 +425,8 @@ internal static class ProcessBlockKeyCheck {
 
 	/// <summary>
 	/// Checks every element of a create descriptor (<c>elements[]</c>), or every element-configuring operation of a
-	/// modify operations array (<c>addElement</c>, <c>setElement</c>, <c>setFilter</c>, <c>setSignal</c>).
+	/// modify operations array (<c>addElement</c>, <c>setElement</c>, <c>setFilter</c>, <c>setSignal</c>,
+	/// <c>setTimer</c>).
 	/// </summary>
 	/// <param name="payload">A create descriptor object or a modify operations array.</param>
 	internal static ProcessBlockKeyCheckResult Check(JsonNode payload) {
@@ -481,6 +501,9 @@ internal static class ProcessBlockKeyCheck {
 		} else if (string.Equals(op, "setSignal", StringComparison.OrdinalIgnoreCase)
 			&& operation[Signal] is JsonObject signal) {
 			walk.Visit(signal, SignalBlock, where, Signal + ".", Placement.Nested);
+		} else if (string.Equals(op, "setTimer", StringComparison.OrdinalIgnoreCase)
+			&& operation[Timer] is JsonObject timer) {
+			walk.Visit(timer, TimerBlock, where, Timer + ".", Placement.Nested);
 		}
 	}
 
@@ -501,10 +524,10 @@ internal static class ProcessBlockKeyCheck {
 		/// <summary>A create element or an addElement element: element-level keys go on the element itself.</summary>
 		Element,
 
-		/// <summary>A setElement update: filter and signal have their own operations.</summary>
+		/// <summary>A setElement update: filter, signal and timer have their own operations.</summary>
 		Update,
 
-		/// <summary>A setFilter / setSignal payload: no element level to point at.</summary>
+		/// <summary>A setFilter / setSignal / setTimer payload: no element level to point at.</summary>
 		Nested
 
 	}
@@ -748,7 +771,7 @@ internal static class ProcessBlockKeyCheck {
 				return $" - '{key}' is set when the element is added; setElement does not change it (elementUpdate "
 					+ "carries useBackgroundMode and the configuration blocks only)";
 			}
-			// Only a configuration block's own level: the element's filter and signal are not "a block" a key can
+			// Only a configuration block's own level: the element's filter, signal and timer are not "a block" a key can
 			// be misplaced into (filter.filter must not be told to use the element-level filter it is already in).
 			if (depth != 1 || !Element.Declares(key) || !Blocks.Contains(set)) {
 				return string.Empty;
