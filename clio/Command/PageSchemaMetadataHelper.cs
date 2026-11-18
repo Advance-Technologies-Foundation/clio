@@ -585,6 +585,25 @@ namespace Clio.Command {
 			IServiceUrlBuilder serviceUrlBuilder,
 			string schemaName,
 			params (string alias, string path)[] columns) {
+			(JArray rows, string error) = QuerySysSchemaRows(applicationClient, serviceUrlBuilder, schemaName, 1, columns);
+			return (rows?[0], error);
+		}
+
+		/// <summary>
+		/// Reads the client-unit <c>SysSchema</c> rows of a page name, one per package variant, in no set order.
+		/// </summary>
+		/// <param name="applicationClient">Client of the target environment.</param>
+		/// <param name="serviceUrlBuilder">URL builder of the target environment.</param>
+		/// <param name="schemaName">The page schema name.</param>
+		/// <param name="rowCount">The most rows to return; <c>-1</c> returns them all.</param>
+		/// <param name="columns">The columns to select, as (alias, column path).</param>
+		/// <returns>At least one row, or <c>null</c> and the error: a transport failure, a failed query, or no row.</returns>
+		internal static (JArray rows, string error) QuerySysSchemaRows(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string schemaName,
+			int rowCount,
+			params (string alias, string path)[] columns) {
 			var columnsItems = new JObject();
 			foreach ((string alias, string path) in columns) {
 				columnsItems[alias] = new JObject {
@@ -614,7 +633,7 @@ namespace Clio.Command {
 					}
 				},
 				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
-				[RowCountKey] = 1
+				[RowCountKey] = rowCount
 			};
 			// Route through the shared, guarded ExecuteSelectQuery (like QuerySysSchemaRowByUId and every other
 			// lookup in this helper) instead of a raw ExecutePostRequest + JObject.Parse: an expired session that
@@ -628,7 +647,7 @@ namespace Clio.Command {
 				return (null, "Failed to query schema metadata");
 			if (rows.Count == 0)
 				return (null, $"Schema '{schemaName}' not found");
-			return (rows[0], null);
+			return (rows, null);
 		}
 	}
 }

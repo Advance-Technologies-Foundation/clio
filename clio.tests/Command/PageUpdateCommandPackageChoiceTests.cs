@@ -52,6 +52,17 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 	private IApplicationClient _applicationClient;
 	private IPageDesignerHierarchyClient _hierarchyClient;
 	private IPageLayerInspector _inspector;
+	private List<PageDesignerHierarchySchema> _chain;
+
+	/// <summary>
+	/// The page name lookup (it asks for <c>ExtendParent</c>) returns these variant rows; every other
+	/// <c>SelectQuery</c> keeps the default stub.
+	/// </summary>
+	private void StubNameLookup(string rowsJson) =>
+		_applicationClient.ExecutePostRequest(SelectQueryUrl,
+				Arg.Is<string>(query => query.Contains(PageHierarchyChain.ExtendParentColumn)),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success": true, "rows": {{rowsJson}}}""");
 
 	[SetUp]
 	public void SetUp() {
@@ -69,11 +80,11 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 			.Returns("""{"success": true}""");
 		_hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		_hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns(DesignPackage);
-		List<PageDesignerHierarchySchema> chain = [
+		_chain = [
 			new PageDesignerHierarchySchema { UId = LeafUId, Name = SchemaName, PackageUId = DesignPackage },
 			new PageDesignerHierarchySchema { UId = BaseUId, Name = SchemaName, PackageUId = "app-pkg-uid" }
 		];
-		_hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>()).Returns(chain);
+		_hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>()).Returns(_chain);
 		_inspector = Substitute.For<IPageLayerInspector>();
 		_inspector.Inspect(Arg.Any<string>(), Arg.Any<IReadOnlyList<PageDesignerHierarchySchema>>(), Arg.Any<string>())
 			.Returns(RequiredChoice);
@@ -208,6 +219,79 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 		// Assert
 		_hierarchyClient.Received().GetParentSchemas(BaseUId, DesignPackage);
 		_inspector.Received(1).Inspect(SchemaName, Arg.Any<IReadOnlyList<PageDesignerHierarchySchema>>(), DesignPackage);
+	}
+
+	[Test]
+	[Description("When the name lookup lands on a replacing variant and marks the root one, an enforced write reads the chain once, from the root, and checks that same chain.")]
+	public void TryUpdatePage_Should_Read_The_Chain_Once_From_The_Root_When_The_Lookup_Marks_It() {
+		// Arrange
+		StubNameLookup($$"""[{"UId": "{{LeafUId}}", "ExtendParent": true}, {"UId": "{{BaseUId}}", "ExtendParent": false}]""");
+		PageUpdateCommand sut = BuildCommand(_inspector);
+
+		// Act
+		sut.TryUpdatePage(Options(enforce: true), out _);
+
+		// Assert
+		_hierarchyClient.ReceivedWithAnyArgs(1).GetParentSchemas(default, default);
+		_hierarchyClient.Received(1).GetParentSchemas(BaseUId, DesignPackage);
+		_inspector.Received(1).Inspect(SchemaName,
+			Arg.Is<IReadOnlyList<PageDesignerHierarchySchema>>(chain => ReferenceEquals(chain, _chain)), DesignPackage);
+		_hierarchyClient.Received(1).GetDesignPackageUId(LeafUId);
+	}
+
+	[Test]
+	[Description("When the name lookup lands on the root variant itself, an enforced write reads the chain once.")]
+	public void TryUpdatePage_Should_Read_The_Chain_Once_When_The_Lookup_Lands_On_The_Root() {
+		// Arrange
+		StubNameLookup($$"""[{"UId": "{{BaseUId}}", "ExtendParent": false}]""");
+		PageUpdateCommand sut = BuildCommand(_inspector);
+
+		// Act
+		sut.TryUpdatePage(Options(enforce: true), out _);
+
+		// Assert
+		_hierarchyClient.ReceivedWithAnyArgs(1).GetParentSchemas(default, default);
+		_hierarchyClient.Received(1).GetParentSchemas(BaseUId, DesignPackage);
+	}
+
+	[Test]
+	[Description("When no lookup row is marked as the root variant, the write reads from the row it got and the check re-reads from the root it finds in that chain, as before.")]
+	public void TryUpdatePage_Should_Fall_Back_To_Two_Reads_When_No_Row_Is_Marked_As_The_Root() {
+		// Arrange
+		StubNameLookup($$"""[{"UId": "{{LeafUId}}", "ExtendParent": true}]""");
+		PageUpdateCommand sut = BuildCommand(_inspector);
+
+		// Act
+		sut.TryUpdatePage(Options(enforce: true), out _);
+
+		// Assert
+		_hierarchyClient.ReceivedWithAnyArgs(2).GetParentSchemas(default, default);
+		_hierarchyClient.Received(1).GetParentSchemas(LeafUId, DesignPackage);
+		_hierarchyClient.Received(1).GetParentSchemas(BaseUId, DesignPackage);
+	}
+
+	[Test]
+	[Description("The write target is resolved from the chain read from the root variant, not from the variant the name lookup returned.")]
+	public void TryUpdatePage_Should_Resolve_The_Target_From_The_Root_Read_Chain() {
+		// Arrange
+		const string TopUId = "44444444-4444-4444-4444-444444444444";
+		StubNameLookup($$"""[{"UId": "{{LeafUId}}", "ExtendParent": true}, {"UId": "{{BaseUId}}", "ExtendParent": false}]""");
+		_hierarchyClient.GetParentSchemas(BaseUId, DesignPackage).Returns([
+			new PageDesignerHierarchySchema { UId = TopUId, Name = SchemaName, PackageUId = DesignPackage },
+			new PageDesignerHierarchySchema { UId = BaseUId, Name = SchemaName, PackageUId = "app-pkg-uid" }
+		]);
+		PageUpdateCommand sut = BuildCommand(_inspector);
+
+		// Act
+		bool ok = sut.TryUpdatePage(Options(enforce: false), out PageUpdateResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: $"the write is not enforced and the target exists: {response.Error}");
+		_hierarchyClient.DidNotReceive().GetParentSchemas(LeafUId, Arg.Any<string>());
+		_applicationClient.Received(1).ExecutePostRequest(GetSchemaUrl,
+			Arg.Is<string>(request => request.Contains(TopUId)), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.Received(1).ExecutePostRequest(
+			SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
