@@ -741,6 +741,196 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("An OAuth call that fails before anything is sent is still withheld, but the message points at the OAuth application instead of system settings.")]
+	public void TestMethod_Should_Explain_An_OAuth_Call_That_Sent_Nothing() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "Access token cannot be retrieved: client_secret=s3cr3t"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().Contain("OAuth application", because: "the call failed while getting the token, not on a setting")
+			.And.Contain("Send client credentials", because: "the measured cause is the client-credentials placement")
+			.And.NotContain("system setting could not be located", because: "no system setting is involved")
+			.And.NotContain("s3cr3t", because: "the token endpoint's error can quote the client secret, which clio cannot mask");
+		result.ResponseBody.Should().BeNull(because: "nothing of the platform's answer is returned");
+	}
+
+	[TestCase(true, "Typical causes")]
+	[TestCase(false, "system setting could not be located")]
+	[Description("A withheld call names the right cause: nothing sent without OAuth lists typical causes; something sent keeps the system-setting wording.")]
+	public void TestMethod_Should_Word_The_Withheld_Answer_By_What_Was_Sent(bool nothingSent, string expected) {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "POST", "search", RequestParameters: [
+			new WebServiceParameterArg("UsrToken", Path: "token", DefaultSysSetting: "UsrBingToken")])));
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "timeout", nothingSent ? null : "POST https://x/search HTTPS/1.1",
+				nothingSent ? null : "token=plain text, neither JSON nor XML"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null, userConfirmed: true);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "the answer stays withheld in both cases");
+		result.Error.Should().Contain(expected, because: "the message matches what the platform reported as sent");
+	}
+
+	[Test]
+	[Description("A successful OAuth call with nothing reported as sent is withheld without claiming a failure or a token problem.")]
+	public void TestMethod_Should_Not_Call_A_Successful_Withheld_Call_A_Failure() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "{\"token\":\"echo\"}", null));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().BeNull(because: "the credentials it carried could not be located to mask");
+		result.Error.Should().Contain("the call succeeded", because: "the message stays true to what happened")
+			.And.NotContain("access token could not be retrieved", because: "the token was retrieved for a call that worked");
+	}
+
+	[Test]
+	[Description("An OAuth service's method that does not use the authentication gets no OAuth hint when it sent nothing.")]
+	public void TestMethod_Should_Not_Blame_OAuth_For_A_Method_Without_Authentication() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: false,
+			RequestParameters: [new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")]));
+		schema.AuthInfo = new ServiceAuthInfoDto { AuthType = ServiceSchemaCodes.AuthOAuth20 };
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(false, 0, null, "host unreachable"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.Error.Should().NotContain("OAuth application", because: "the method requests no token")
+			.And.Contain("Typical causes", because: "the generic causes still apply");
+	}
+
+	[Test]
+	[Description("setAuth none clears use-auth on every method after the usage guard, so Studio does not show a ticked, disabled flag.")]
+	public void Modify_SetAuth_None_Should_Clear_Use_Auth() {
+		// Arrange
+		ServiceSchemaDto schema = SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true));
+		schema.AuthInfo = WebServiceDefinitionBuilder.BuildAuth(
+			new WebServiceAuthArg("basic", UsernameSysSetting: "UsrUser", PasswordSysSetting: "UsrPassword"), null,
+			new WebServiceDefinitionBuilder.Errors());
+		GivenRegisteredService(schema);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("setAuth", Auth: new WebServiceAuthArg("none"))], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "no process calls the service in this test");
+		saved.Methods.Items.Values.Should().OnlyContain(m => !m.UseAuthInfo,
+			because: "a service without authentication sends none, and the flag would show ticked and disabled in Studio");
+		result.Notices.Should().Contain(n => n.Contains("use-auth was cleared on Search"),
+			because: "the user learns which methods must be set again if authentication comes back");
+	}
+
+	[Test]
+	[Description("Registering a method with use-auth but no authentication saves it without use-auth and names it in a notice.")]
+	public void Register_Should_Clear_Use_Auth_Without_Authentication() {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), Arg.Any<Guid>()).Returns(_ => saved);
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrErp", null,
+			"https://erp.example/", null, null, [new WebServiceMethodArg("UsrGetOrders", "GET", "orders", UseAuth: true)]));
+
+		// Assert
+		saved.Methods.Items.Values.Single().UseAuthInfo.Should().BeFalse(
+			because: "a service without authentication sends none, so the flag would only show ticked and disabled in Studio");
+		result.Notices.Should().Contain(n => n.Contains("use-auth was cleared on UsrGetOrders"),
+			because: "the caller asked for use-auth and learns why it was not kept");
+	}
+
+	[Test]
+	[Description("setDescription writes the new text into every culture the service already has, so no culture keeps the old one.")]
+	public void Modify_SetDescription_Should_Replace_Every_Culture() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Description = new Dictionary<string, string> { ["uk-UA"] = "Old text" };
+		GivenRegisteredService(schema);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "New text")], null);
+
+		// Assert
+		saved.Description.Should().BeEquivalentTo(new Dictionary<string, string> { ["uk-UA"] = "New text", ["en-US"] = "New text" },
+			because: "the platform keeps a culture the contract does not send, which would show the old text in that culture");
+	}
+
+	[Test]
+	[Description("A change that does not remove the authentication leaves use-auth as it was.")]
+	public void Modify_Should_Not_Clear_Use_Auth_Without_Removing_Authentication() {
+		// Arrange
+		GivenRegisteredService(SchemaWithMethod(new WebServiceMethodArg("Search", "GET", "search", UseAuth: true)));
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setRetryCount", RetryCount: 1)], null);
+
+		// Assert
+		saved.Methods.Items.Values.Single().UseAuthInfo.Should().BeTrue(
+			because: "only the call that removes the authentication clears the flags");
+	}
+
+	[Test]
+	[Description("setDescription without a description is refused instead of clearing it by accident.")]
+	public void Modify_SetDescription_Should_Refuse_A_Missing_Description() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+
+		// Act
+		Action act = () => _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription")], null);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "an omitted description is not a request to clear it")
+			.WithMessage("*setDescription*", because: "the refusal names the operation");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("setDescription sets the service description and an empty one clears it.")]
+	public void Modify_SetDescription_Should_Set_And_Clear_The_Description() {
+		// Arrange
+		GivenRegisteredService(BingSchema());
+		var saved = new List<string>();
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>()))
+			.Do(call => saved.Add(string.Join("|", call.Arg<ServiceSchemaDto>().Description.Values)));
+
+		// Act
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "Orders API of the ERP")], null);
+		_sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("setDescription", Description: "")], null);
+
+		// Assert
+		saved[0].Should().Be("Orders API of the ERP", because: "the description is stored like Studio's");
+		saved[1].Should().BeEmpty(because: "an empty description clears it, sent as an empty value per culture");
+	}
+
+	[Test]
 	[Description("A method that keeps use-auth after the service authentication was removed sends no Authorization, so nothing is withheld for it.")]
 	public void TestMethod_Should_Not_Withhold_When_The_Service_Has_No_Authentication() {
 		// Arrange

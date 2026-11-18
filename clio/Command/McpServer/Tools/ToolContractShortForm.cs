@@ -75,8 +75,18 @@ internal static class ToolContractShortForm {
 	/// The fields any process element may carry. Together with <see cref="CreateElementBlockShape"/>, every
 	/// member of the bundled CrtProcessBuilder's element descriptor, under the same drift test.
 	/// </summary>
-	internal static readonly IReadOnlyList<string> CreateElementShape =
-		["name", "type", "caption", "userTaskName?", "lane?", "useBackgroundMode?", "filter?"];
+	/// <remarks>
+	/// The gloss on <c>filter?</c> is the sentence the process-data-source-filters guide quotes as its gate for
+	/// <c>values</c>, so an agent that reads the default short form can use <c>values</c> without a
+	/// <c>detail=full</c> read. Before the gloss the short form was silent, and an agent in ENG-105557 dev
+	/// testing (November 2026) built several lookup records of one column as an <c>or</c> group of <c>equal</c>
+	/// conditions. It is worded exactly as in the full description: <c>ToolContractShortFormTests</c> pins both
+	/// forms, and an e2e test in <c>ToolContractGetToolE2ETests</c> pins the short one over the wire.
+	/// </remarks>
+	internal static readonly IReadOnlyList<string> CreateElementShape = [
+		"name", "type", "caption", "userTaskName?", "lane?", "useBackgroundMode?",
+		"filter? (any of several lookup records is ONE condition with values)"
+	];
 
 	/// <summary>
 	/// The type-specific element blocks. Where a block's name differs from its element type the type is named
@@ -85,7 +95,8 @@ internal static class ToolContractShortForm {
 	internal static readonly IReadOnlyList<string> CreateElementBlockShape = [
 		"signal (signalStart)", "readData", "changeData", "addData", "deleteData", "accessRights (changeAccessRights)",
 		"email (sendEmail)", "performer (performTask)", "approval", "openEditPage", "preconfiguredPage",
-		"formula (formulaTask)", "subProcess", "scriptTask", "fileProcessing", "webService"
+		"formula (formulaTask)", "subProcess", "scriptTask", "fileProcessing", "webService",
+		"chatMessage (sendChatMessage)"
 	];
 
 	/// <summary>The flow fields: every member of the bundled server's flow descriptor, under the drift test.</summary>
@@ -146,11 +157,13 @@ internal static class ToolContractShortForm {
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// Names and nesting only, about 1 KB each, because agents read these two contracts in the seven-contract
+	/// Mostly names and nesting, about 1 KB each, because agents read these two contracts in the seven-contract
 	/// bundle and that reply must still arrive inline (19 000 bytes on the wire, see
-	/// <c>ToolContractPayloadBudgetTests</c>). Glosses and per-field rules stay with <c>detail=full</c> and the
-	/// process guides. The two facts kept as prose are the two failure modes the A/B saw: descriptor keys sent
-	/// flat as arguments, and a reach for a <c>removeMapping</c> that does not exist.
+	/// <c>ToolContractPayloadBudgetTests</c>). Per-field explanations and rules stay with <c>detail=full</c> and the
+	/// process guides. The few facts kept as prose are failure modes seen in agent runs: descriptor keys sent flat as
+	/// arguments and a reach for a <c>removeMapping</c> that does not exist (both in the A/B), and several lookup
+	/// records of one column built as separate conditions (the <c>filter?</c> gloss, see
+	/// <see cref="CreateElementShape"/>).
 	/// </para>
 	/// <para>
 	/// The trade this makes, accepted on purpose: with both shapes the seven-contract bundle no longer fits

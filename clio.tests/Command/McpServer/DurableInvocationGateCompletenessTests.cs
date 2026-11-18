@@ -73,6 +73,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"dataforge-get-table-columns",
 		"dataforge-status",
 		"describe-business-process",
+		// Reads the case through ProcessDesignService.DescribeCase, which changes nothing.
+		"describe-dynamic-case",
 		"describe-environment",
 		// Reads one web service through the designer read; every credential value is masked before it is returned.
 		"describe-web-service",
@@ -102,6 +104,7 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-process-page-facts",
 		"get-process-signature",
 		"get-object-rights",
+		"get-column-rights",
 		"get-record-rights",
 		"get-related-page-addon",
 		"get-page-modal-size",
@@ -211,7 +214,6 @@ public sealed class DurableInvocationGateCompletenessTests {
 			"create-client-unit-schema",
 			"create-schema",
 			"create-sql-schema",
-			"create-theme",
 			"upload-image",
 			"upload-file"
 		];

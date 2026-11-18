@@ -687,9 +687,43 @@ public static partial class WebServiceDefinitionBuilder {
 
 	public static Dictionary<string, string> Caption(string text) => new() { ["en-US"] = text };
 
+	/// <summary>
+	/// The caption a parameter gets when none is sent: the name the API sees, as Studio's quick setup names it, and
+	/// the code only when there is none. Only a path that is itself a path is split: a REST body path (dotted, or a
+	/// response JSONPath) gives its last field, a SOAP element path its last element without the namespace prefix;
+	/// a query, header, cookie or path name is the name as given. The code carries the schema prefix and reads
+	/// poorly on the Call web service element.
+	/// </summary>
+	/// <param name="path">The parameter path.</param>
+	/// <param name="code">The parameter code.</param>
+	/// <param name="body">Whether the parameter is in the body.</param>
+	/// <param name="soap">Whether the service is SOAP.</param>
+	/// <returns>The caption text.</returns>
+	public static string DefaultParameterCaption(string path, string code, bool body = true, bool soap = false) {
+		string text = (path ?? string.Empty).Trim();
+		if (soap) {
+			// A dot belongs to a SOAP element name; the separator is '/'.
+			string element = text.Split('/').LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
+			int colon = element.IndexOf(':');
+			text = colon >= 0 ? element[(colon + 1)..] : element;
+		} else if (body) {
+			string field = text.StartsWith('$') ? text[1..] : text;
+			int quoted = field.LastIndexOf("['", StringComparison.Ordinal);
+			if (quoted >= 0 && field.EndsWith("']", StringComparison.Ordinal)) {
+				text = field[(quoted + 2)..^2];
+			} else {
+				text = field.Split('.').LastOrDefault(segment => segment.Length > 0) ?? string.Empty;
+				int bracket = text.IndexOf('[');
+				text = bracket >= 0 ? text[..bracket] : text;
+			}
+		}
+		return text.Length > 0 ? text : code;
+	}
+
 	/// <summary>Where a parameter list is built: request or response, its owner for messages, nesting and the SOAP rules.</summary>
 	private sealed record ParameterScope(bool IsRequest, string Owner, Errors Errors, string Prefix,
-		bool Nested = false, SoapContext Soap = null, bool InSoapHeader = false, bool PreviousInSoapHeader = false);
+		bool Nested = false, SoapContext Soap = null, bool InSoapHeader = false, bool PreviousInSoapHeader = false,
+		bool UnderSecretSoapParent = false, bool PreviousUnderSecretSoapParent = false);
 
 	private static ServiceItemCollection<ServiceParameterDto> BuildParameters(
 		IReadOnlyList<WebServiceParameterArg> args, ServiceItemCollection<ServiceParameterDto> existing,
@@ -789,10 +823,14 @@ public static partial class WebServiceDefinitionBuilder {
 						+ "'$.customer.name' for a response value."));
 		}
 		string path = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path ?? arg.Code : arg.Path;
-		bool inHeader = ValidateSoapMembers(arg, placement, path, scope) || scope.InSoapHeader;
+		// REST: the platform's stored SOAP-header flag is carried as read, and describe and the masker read it, so the
+		// constant is judged where they judge it.
+		bool inHeader = ValidateSoapMembers(arg, placement, path, scope) || scope.InSoapHeader
+			|| (scope.Soap is null && previous?.IsSoapHeader == true);
 		bool previousInHeader = scope.PreviousInSoapHeader || previous?.IsSoapHeader == true;
-		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors, inHeader,
-			scope.PreviousInSoapHeader);
+		var place = new SoapHeaderPlace(inHeader, scope.UnderSecretSoapParent, previousInHeader,
+			scope.PreviousUnderSecretSoapParent);
+		ServiceParameterValueDto defValue = BuildDefault(arg, previous, placement, owner, errors, place);
 		return new ServiceParameterDto {
 			UId = previous?.UId ?? Guid.NewGuid(),
 			Name = arg.Code,
@@ -802,7 +840,8 @@ public static partial class WebServiceDefinitionBuilder {
 			IsArray = arg.Array ?? false,
 			IsRequired = arg.Required ?? placement == ServiceSchemaCodes.Placements["path"],
 			DefValue = defValue,
-			Caption = Caption(arg.Caption ?? arg.Code),
+			Caption = Caption(arg.Caption ?? DefaultParameterCaption(path, arg.Code,
+				placement == ServiceSchemaCodes.Placements["body"], scope.Soap is not null)),
 			// SOAP: the parameter is rebuilt as given, with the defaults Studio writes (not a SOAP header, item
 			// elements named "item"); a SOAP-header parameter passes the flag to its items, as Studio does. REST: the
 			// typed members the platform sent are carried like the extension bag, so a save keeps them as read.
@@ -810,7 +849,13 @@ public static partial class WebServiceDefinitionBuilder {
 			SequenceElementName = scope.Soap is not null ? SoapSequenceElement(arg, scope.IsRequest) : previous?.SequenceElementName,
 			Extra = previous?.Extra,
 			ItemProperties = BuildParameters(arg.Items, previous?.ItemProperties,
-				scope with { Nested = true, InSoapHeader = inHeader, PreviousInSoapHeader = previousInHeader })
+				scope with {
+					Nested = true, InSoapHeader = inHeader, PreviousInSoapHeader = previousInHeader,
+					UnderSecretSoapParent = WebServiceSchemaView.IsSecretSoapParent(inHeader, scope.UnderSecretSoapParent,
+						arg.Code, path),
+					PreviousUnderSecretSoapParent = previous is not null && WebServiceSchemaView.IsSecretSoapParent(
+						previousInHeader, scope.PreviousUnderSecretSoapParent, previous.Name, previous.Path)
+				})
 		};
 	}
 
@@ -940,34 +985,56 @@ public static partial class WebServiceDefinitionBuilder {
 	}
 
 	/// <summary>
-	/// Whether describe hid the previous constant: it is secret-like itself, or it travelled in a SOAP Header (its own
-	/// flag or its parent's). The NEW placement never decides it: a visible constant moved into the Header is not
-	/// carried, or a body constant could be turned into a stored Header constant in two calls.
+	/// Whether describe hid the previous constant, by the rule describe hides it with
+	/// (<see cref="WebServiceSchemaView.IsSecretConstant"/>), judged where it was: a SOAP-header one (its own flag or its
+	/// parent's) as a header constant, an item under a credential-like SOAP-header parent as a secret. The NEW placement
+	/// never decides it: a visible constant moved to where it would be hidden is not carried, or a constant describe
+	/// showed could be turned into a hidden stored one in two calls.
 	/// </summary>
-	private static bool IsHiddenSecretConstant(ServiceParameterDto previous, bool previousInSoapHeader) =>
-		previous?.DefValue is { Source: ServiceSchemaCodes.ValueSourceConst } value && !string.IsNullOrEmpty(value.Value)
-		&& (previousInSoapHeader || previous.IsSoapHeader == true || WebServiceSchemaView.IsSecretLike(previous));
+	private static bool IsHiddenSecretConstant(ServiceParameterDto previous, SoapHeaderPlace place) =>
+		WebServiceSchemaView.IsSecretConstant(previous, place.PreviousInHeader, place.PreviousUnderSecretParent);
 
-	/// <param name="soapHeader">
-	/// Whether the parameter travels in a SOAP Header (WS-Security and licence values): its constant default is treated
-	/// like a header constant and refused.
+	/// <summary>
+	/// Where a parameter sits in a SOAP Header, now and as stored: in it (its own flag or a parent's), and under a
+	/// credential-like parent there (<see cref="WebServiceSchemaView.IsSecretSoapParent"/>).
+	/// </summary>
+	private readonly record struct SoapHeaderPlace(bool InHeader, bool UnderSecretParent, bool PreviousInHeader,
+		bool PreviousUnderSecretParent);
+
+	// Whether a constant in the new place is a secret, by the rule describe hides it with.
+	private static bool IsSecretInNewPlace(WebServiceParameterArg arg, string wireName, int placement, string value,
+		SoapHeaderPlace place) =>
+		WebServiceSchemaView.IsSecretConstantAt(arg.Code, wireName, placement, value, place.InHeader,
+			place.UnderSecretParent);
+
+	/// <param name="place">
+	/// Where the parameter sits in a SOAP Header (WS-Security and licence values): there its constant default is judged
+	/// like a header constant, and under a credential-like parent as a secret.
 	/// </param>
-	/// <param name="previousInSoapHeader">Whether the previous parameter's parent travelled in a SOAP Header.</param>
 	private static ServiceParameterValueDto BuildDefault(WebServiceParameterArg arg, ServiceParameterDto previous,
-		int placement, string owner, Errors errors, bool soapHeader = false, bool previousInSoapHeader = false) {
-		if (soapHeader) {
-			placement = ServiceSchemaCodes.Placements["header"];
-		}
+		int placement, string owner, Errors errors, SoapHeaderPlace place) {
 		bool hasConstant = !string.IsNullOrEmpty(arg.DefaultValue);
+		// describe shows [masked] where a URI kept a key (a base URI copied into wsa:To, say); written back as a header
+		// constant it would be sent as that text, so it is refused like the mask in a URI.
+		if (hasConstant && (place.InHeader || placement == ServiceSchemaCodes.Placements["header"])
+				&& arg.DefaultValue.Contains(WebServiceResponseMasker.Mask, StringComparison.OrdinalIgnoreCase)) {
+			errors.Add($"{owner}: the constant default holds {WebServiceResponseMasker.Mask}, which describe-web-service "
+				+ "shows in place of a hidden key; the tools cannot write that key back: reference a system setting with "
+				+ "default-sys-setting the user fills.");
+			return Empty();
+		}
 		bool hasSetting = !string.IsNullOrWhiteSpace(arg.DefaultSysSetting);
 		if (hasConstant && hasSetting) {
 			errors.Add($"{owner}: give default-value or default-sys-setting, not both.");
 			return Empty();
 		}
 		string wireName = string.IsNullOrWhiteSpace(arg.Path) ? previous?.Path : arg.Path;
-		if (hasConstant && (WebServiceSchemaView.IsSecretLike(arg.Code, placement, arg.DefaultValue)
-				|| WebServiceSchemaView.IsSecretLike(wireName, placement, arg.DefaultValue))) {
-			errors.Add($"{owner}: a constant default is refused on a header, cookie or credential-like parameter; "
+		if (hasConstant && IsSecretInNewPlace(arg, wireName, placement, arg.DefaultValue, place)) {
+			errors.Add($"{owner}: a constant default is refused on a cookie, under a credential-like code or wire name "
+				+ "(key, token, secret, password, auth, session...) or SOAP-header parent, and where the value looks like a "
+				+ "key (in a header or soap-header value: an authentication scheme and its credentials, a credential "
+				+ "pair such as password=..., a generated key, a long letters-only or digits-only run, a password-like word, or an "
+				+ "address with credentials or a key in it; in a query, a 16+ character sig, sas, code, appid, sign or hmac); "
 				+ "reference a system setting with default-sys-setting and let the user fill its value.");
 			return Empty();
 		}
@@ -976,13 +1043,12 @@ public static partial class WebServiceDefinitionBuilder {
 		}
 		// describe-web-service hides a secret constant default (default-masked), so a setMethod rebuilt from describe
 		// cannot send it back; without this the save would erase the key or token the service sends. An explicit
-		// default-value "" clears it. It is kept only where it stays hidden: moved to a visible place (a query
-		// parameter, a path that is not credential-like) the next reply would print it, and it would travel in the
-		// URL, so that move is refused instead.
+		// default-value "" clears it. It is kept only where it stays hidden: moved to a visible place (a query or body
+		// parameter, a path that is not credential-like) the next reply would print it, and a query would carry it in
+		// the URL, so that move is refused instead.
 		bool clears = arg.DefaultValue is { Length: 0 };
-		if (previous is not null && !hasConstant && !clears && IsHiddenSecretConstant(previous, previousInSoapHeader)) {
-			if (!WebServiceSchemaView.IsSecretLike(arg.Code, placement, previous.DefValue.Value)
-					&& !WebServiceSchemaView.IsSecretLike(wireName, placement, previous.DefValue.Value)) {
+		if (previous is not null && !hasConstant && !clears && IsHiddenSecretConstant(previous, place)) {
+			if (!IsSecretInNewPlace(arg, wireName, placement, previous.DefValue.Value, place)) {
 				errors.Add($"{owner}: it carries a secret constant default that describe hides, and the new placement "
 					+ "or path would show it; reference a system setting with default-sys-setting, or send "
 					+ "default-value \"\" to clear it.");
@@ -1069,18 +1135,22 @@ public static partial class WebServiceDefinitionBuilder {
 		ServiceItemCollection<ServiceParameterDto> parameters, Errors errors) {
 		// Ordinal: the platform substitutes "{" + Path + "}" with a case-sensitive Replace, so {Id} is never
 		// filled from a parameter whose path is "id". It fills placeholders in the base URI too.
-		var placeholders = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value)
-			.Concat(PathPlaceholderPattern().Matches(baseUri ?? string.Empty).Select(m => m.Groups[1].Value))
+		var inUri = PathPlaceholderPattern().Matches(uri).Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+		var inBase = PathPlaceholderPattern().Matches(baseUri ?? string.Empty).Select(m => m.Groups[1].Value)
 			.ToHashSet(StringComparer.Ordinal);
 		var pathParameters = parameters.Items.Values
 			.Where(p => p.Type == ServiceSchemaCodes.Placements["path"])
 			.Select(p => p.Path)
 			.ToHashSet(StringComparer.Ordinal);
-		foreach (string missing in placeholders.Except(pathParameters)) {
+		foreach (string missing in inUri.Except(pathParameters)) {
 			errors.Add($"method '{code}': uri placeholder {{{missing}}} has no path parameter.");
 		}
-		foreach (string unused in pathParameters.Except(placeholders)) {
-			errors.Add($"method '{code}': path parameter '{unused}' has no {{{unused}}} placeholder in the uri.");
+		// A placeholder in the base URI is the service's, so the message names where it is.
+		foreach (string missing in inBase.Except(inUri).Except(pathParameters)) {
+			errors.Add($"method '{code}': base-uri placeholder {{{missing}}} has no path parameter.");
+		}
+		foreach (string unused in pathParameters.Except(inUri).Except(inBase)) {
+			errors.Add($"method '{code}': path parameter '{unused}' has no {{{unused}}} placeholder in the uri or the base-uri.");
 		}
 	}
 

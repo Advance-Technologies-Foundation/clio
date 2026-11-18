@@ -136,6 +136,10 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 	private const string UnlockedPackagesFilter = "{\"isCustomer\": true}";
 
+	private const string PlainNameRule =
+		"A plain name has no path separator, no '..', no drive or root, no character that is invalid in a file " +
+		"name, no leading or trailing space and no trailing dot.";
+
 	private readonly ILogger _logger;
 	private readonly IIisScanner _iisScanner;
 	private readonly ISettingsRepository _settingsRepository;
@@ -223,6 +227,69 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 		resolvedPath = fileSystem.GetFullPath(value);
 		return true;
+	}
+
+	/// <summary>
+	/// Splits the <c>--packages</c> value into the package names it lists. Empty for <c>*</c> and for no value.
+	/// </summary>
+	private static List<string> SplitPackageNames(string packages) {
+		return string.IsNullOrWhiteSpace(packages) || packages.Trim() == "*"
+			? []
+			: packages.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
+	}
+
+	/// <summary>
+	/// Refuses a <c>--packages</c> value that lists a name which is not a plain folder name. Every listed name is
+	/// joined into a path under the repository and under the environment package folder, so the check runs before
+	/// the first file probe and before any call to Creatio.
+	/// </summary>
+	/// <returns><see langword="true"/> when a name was refused and the error was logged.</returns>
+	private bool RefuseNonPlainRequestedPackageNames(string packages) {
+		string badName = SplitPackageNames(packages).FirstOrDefault(name => !DataBindingPathGuard.IsPlainName(name));
+		if (badName is null) {
+			return false;
+		}
+
+		_logger.WriteError(
+			$"--packages: '{badName}' is not a plain package name. {PlainNameRule} " +
+			"Nothing was read, changed, deleted or linked.");
+		return true;
+	}
+
+	/// <summary>
+	/// Refuses the whole list of packages the environment returned when one of them has a name that is not a plain
+	/// folder name, or, for a versioned repository, a version that is not one. Both become path segments: the name
+	/// under the environment package folder, where an existing folder is deleted, and both under the repository.
+	/// The check covers every package before the first one is touched, so a bad entry never leaves the packages
+	/// before it relinked.
+	/// </summary>
+	/// <param name="environmentPackages">Packages returned by the environment.</param>
+	/// <param name="versionsArePathSegments"><see langword="true"/> for a versioned repository, where the package
+	/// version names a folder. A package with no version is not refused: it has no version folder to find, and
+	/// <see cref="FindPackageVersionPath"/> answers "not found" for it, so it is skipped with a warning.</param>
+	/// <returns><see langword="true"/> when the list was refused and the error was logged.</returns>
+	private bool RefuseNonPlainEnvironmentPackages(IEnumerable<PackageInfo> environmentPackages,
+		bool versionsArePathSegments) {
+		foreach (PackageInfo pkg in environmentPackages) {
+			string name = pkg.Descriptor.Name;
+			if (!DataBindingPathGuard.IsPlainName(name)) {
+				_logger.WriteError(
+					$"The environment returned a package name that is not a plain name: '{name}'. {PlainNameRule} " +
+					"Nothing was deleted or linked.");
+				return true;
+			}
+
+			string version = pkg.Descriptor.PackageVersion;
+			if (versionsArePathSegments && !string.IsNullOrEmpty(version)
+				&& !DataBindingPathGuard.IsPlainName(version)) {
+				_logger.WriteError(
+					$"The environment returned a package version that is not a plain name: '{version}' for package " +
+					$"'{name}'. {PlainNameRule} Nothing was deleted or linked.");
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/// <summary>
@@ -381,7 +448,16 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 	/// Structure: repoPath/{PackageName}/{branch}/{version}/
 	/// Returns the first matching version found in any branch.
 	/// </summary>
+	/// <returns>The version folder, or <see langword="null"/> when the package has no such version in the repository
+	/// or <paramref name="packageVersion"/> is empty.</returns>
 	private string FindPackageVersionPath(string repoPath, string packageName, string packageVersion) {
+		// A package without a version has no version folder. Joining an empty version would answer the branch
+		// folder itself, and the caller would delete the environment package folder and link it to a folder of
+		// version folders.
+		if (string.IsNullOrWhiteSpace(packageVersion)) {
+			return null;
+		}
+
 		string packageDir = _fileSystem.Combine(repoPath, packageName);
 		if (!_fileSystem.ExistsDirectory(packageDir)) {
 			return null;
@@ -420,6 +496,9 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		}
 
 		bool isVersioned = IsVersionedRepo(repoPath);
+		if (RefuseNonPlainEnvironmentPackages(unlockedList, isVersioned)) {
+			return 1;
+		}
 		_logger.WriteInfo($"[dry-run] Repository structure: {(isVersioned ? "versioned (PackageName/branch/version)" : "flat (PackageName/descriptor.json)")}");
 
 		if (isVersioned) {
@@ -477,6 +556,9 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 		}
 
 		bool isVersioned = IsVersionedRepo(repoPath);
+		if (RefuseNonPlainEnvironmentPackages(unlockedList, isVersioned)) {
+			return 1;
+		}
 		if (isVersioned) {
 			return HandleUnlockedVersionedRepo(envPkgPath, repoPath, unlockedList);
 		}
@@ -665,6 +747,10 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 			return PrintErrorsAndExit(validationResult.Errors);
 		}
 
+		if (!options.Unlocked && RefuseNonPlainRequestedPackageNames(options.Packages)) {
+			return 1;
+		}
+
 		try {
 			if (options.Unlocked) {
 				string envPkgPath = ResolveEnvPkgPath(options);
@@ -743,7 +829,7 @@ public class Link4RepoCommand : Command<Link4RepoOptions> {
 
 		IReadOnlyList<string> packageNames = options.Packages == "*"
 			? []
-			: options.Packages.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
+			: SplitPackageNames(options.Packages);
 
 		if (packageNames.Count == 0) {
 			return 0;

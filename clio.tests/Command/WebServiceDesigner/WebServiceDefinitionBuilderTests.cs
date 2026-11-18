@@ -16,8 +16,8 @@ public sealed class WebServiceDefinitionBuilderTests {
 		new("GetOrders", "GET", "/orders/{id}", RequestParameters: request);
 
 	[Test]
-	[Description("A constant default on a header parameter is refused and the refusal never repeats the value.")]
-	public void BuildMethod_Should_Refuse_Constant_Header_Default() {
+	[Description("A constant default on a header parameter named like a credential is refused whatever the value, and the refusal never repeats the value.")]
+	public void BuildMethod_Should_Refuse_Constant_Default_On_A_Credential_Named_Header() {
 		// Arrange
 		var errors = new WebServiceDefinitionBuilder.Errors();
 		WebServiceMethodArg method = Orders(new WebServiceParameterArg("id", "path"),
@@ -30,6 +30,142 @@ public sealed class WebServiceDefinitionBuilderTests {
 		errors.Should().ContainSingle(because: "only the header default breaks a rule")
 			.Which.Should().Contain("default-sys-setting", because: "the refusal names the allowed route");
 		errors.Single().Should().NotContain("sk-live-123", because: "a refused credential is never echoed back");
+	}
+
+	[TestCase("AcceptLanguage", "Accept-Language", "en-US", Description = "a language tag")]
+	[TestCase("XApiVersion", "X-Api-Version", "2", Description = "a version")]
+	[TestCase("ContentType", "Content-Type", "application/xml", Description = "a media type")]
+	[TestCase("Accept", "Accept", "application/vnd.api+json; charset=utf-8", Description = "a long media type with a parameter")]
+	[TestCase("CacheControl", "Cache-Control", "max-age=31536000", Description = "a name=value part judged by its value")]
+	[TestCase("XCallback", "X-Callback", "https://hooks.example.com/v2/orders?mode=full", Description = "an address with a plain query")]
+	[Description("A constant default on a header with a neutral name and a plain value is written as given, as Studio allows it.")]
+	public void BuildMethod_Should_Take_A_Plain_Header_Constant(string code, string wireName, string value) {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = Orders(new WebServiceParameterArg("id", "path"),
+			new WebServiceParameterArg(code, "header", Path: wireName, DefaultValue: value));
+
+		// Act
+		ServiceMethodDto built = WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors);
+
+		// Assert
+		errors.Should().BeEmpty(because: "a neutral name with a value that is not a key is not a credential");
+		ServiceParameterValueDto stored = built.Request.Parameters.Items.Values.Single(p => p.Name == code).DefValue;
+		(stored.Value, stored.Source).Should().Be((value, ServiceSchemaCodes.ValueSourceConst),
+			because: "the constant is stored as the agent sent it");
+	}
+
+	[TestCase("XPartner", "X-Partner", "Lk7Hd93Qz20mWr4TbN8e", Description = "a generated key under a neutral name")]
+	[TestCase("XClient", "X-Client", "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.Sfl", Description = "a scheme and a token")]
+	[TestCase("XTenant", "X-Tenant", "3fa85f64-5717-4562-b3fc-2c963f66afa6", Description = "a GUID, hidden like a key")]
+	[TestCase("XCallback", "X-Callback", "https://bot:hunter2@hooks.example.com/in", Description = "an address with user information")]
+	[TestCase("XCallback", "X-Callback", "https://hooks.example.com/in?sig=QmFzZTY0U2lnbmF0dXJlVmFsdWU", Description = "an address with a key in its query")]
+	[TestCase("Authorization", "Authorization", "Basic", Description = "Authorization is a credential name whatever the value")]
+	[TestCase("XSession", "X-Session", "Zq7", Description = "a credential-like name whatever the value")]
+	[Description("A constant default on a header is refused when the name looks like a credential or the value looks like a key, and the refusal never repeats the value.")]
+	public void BuildMethod_Should_Refuse_A_Secret_Header_Constant(string code, string wireName, string value) {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = Orders(new WebServiceParameterArg("id", "path"),
+			new WebServiceParameterArg(code, "header", Path: wireName, DefaultValue: value));
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors);
+
+		// Assert
+		errors.Should().ContainSingle(because: "the header constant is a credential by its name or its value")
+			.Which.Should().Contain("default-sys-setting", because: "the refusal names the allowed route");
+		errors.Single().Should().NotContain(value, because: "a refused credential is never echoed back");
+	}
+
+	[Test]
+	[Description("A header constant that holds the [masked] text describe shows for a hidden key (a base URI copied into a header) is refused, since it would be sent as that text.")]
+	public void BuildMethod_Should_Refuse_The_Mask_In_A_Header_Constant() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = Orders(new WebServiceParameterArg("id", "path"),
+			new WebServiceParameterArg("XTo", "header", Path: "X-To", DefaultValue: "https://fn.example/svc?code=[masked]"));
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors);
+
+		// Assert
+		errors.Should().ContainSingle(because: "the tools never write the mask back")
+			.Which.Should().Contain("default-sys-setting", because: "the refusal names the allowed route");
+	}
+
+	[TestCase("theme", "dark", Description = "a plain cookie value")]
+	[TestCase("lang", "en", Description = "a short cookie value")]
+	[Description("A constant default on a cookie is refused on its placement alone, whatever the name and the value: a cookie carries sessions.")]
+	public void BuildMethod_Should_Refuse_Any_Cookie_Constant(string name, string value) {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		WebServiceMethodArg method = Orders(new WebServiceParameterArg("id", "path"),
+			new WebServiceParameterArg(name, "cookie", DefaultValue: value));
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(method, null, false, errors);
+
+		// Assert
+		errors.Should().ContainSingle(because: "a cookie constant is refused on its placement")
+			.Which.Should().Contain("cookie", because: "the refusal names the rule that refused it");
+	}
+
+	[Test]
+	[Description("A key-like constant Studio stored under a neutral header name is kept when describe's output is sent back without it, and refused rather than erased when the rebuild moves it to the body, where describe would show it.")]
+	public void BuildMethod_Should_Keep_A_Key_Like_Neutral_Header_Constant_And_Refuse_A_Body_Move() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Send", "POST", "send",
+				RequestParameters: [new WebServiceParameterArg("XPartner", "header", Path: "X-Partner")]), null, false, errors);
+		existing.Request.Parameters.Items.Values.Single().DefValue =
+			new ServiceParameterValueDto { Value = "Lk7Hd93Qz20mWr4TbN8e", Source = ServiceSchemaCodes.ValueSourceConst };
+		var bodyErrors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		ServiceMethodDto kept = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Send", "POST", "send",
+			RequestParameters: [new WebServiceParameterArg("XPartner", "header", Path: "X-Partner", DefaultMasked: true)]),
+			existing, false, errors);
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Send", "POST", "send",
+			RequestParameters: [new WebServiceParameterArg("XPartner", "body", Path: "partner")]), existing, false, bodyErrors);
+
+		// Assert
+		errors.Should().BeEmpty(because: "describe's output sent back is valid input");
+		kept.Request.Parameters.Items.Values.Single().DefValue.Value.Should().Be("Lk7Hd93Qz20mWr4TbN8e",
+			because: "describe hid the key, so leaving it out must not erase it");
+		bodyErrors.Should().ContainSingle(because: "a body parameter is judged by name only, so describe would print the key")
+			.Which.Should().Contain("would show it", because: "the refusal says why the hidden constant cannot move")
+			.And.NotContain("Lk7Hd93Qz20mWr4TbN8e", because: "the refusal never repeats the hidden value");
+	}
+
+	[Test]
+	[Description("A plain constant Studio stored on a header is shown by describe, so a rebuild that leaves it out drops it instead of keeping it hidden.")]
+	public void BuildMethod_Should_Drop_A_Visible_Header_Constant_The_Rebuild_Omits() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto existing = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search",
+				RequestParameters: [new WebServiceParameterArg("XApiVersion", "header", Path: "X-Api-Version")]), null, false, errors);
+		existing.Request.Parameters.Items.Values.Single().DefValue =
+			new ServiceParameterValueDto { Value = "2", Source = ServiceSchemaCodes.ValueSourceConst };
+		WebServiceParameterView described = WebServiceSchemaView.From(new ServiceSchemaDto {
+			Name = "UsrSearch", Type = ServiceSchemaCodes.ServiceTypeRest,
+			Methods = { Items = { [existing.UId.ToString()] = existing } }
+		}, "Custom").Methods.Single().RequestParameters.Single();
+
+		// Act
+		ServiceMethodDto rebuilt = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search",
+				RequestParameters: [new WebServiceParameterArg("XApiVersion", "header", Path: "X-Api-Version")]),
+			existing, false, errors);
+
+		// Assert
+		(described.DefaultValue, described.DefaultMasked).Should().Be(("2", false),
+			because: "a version under a neutral header name is not a credential, so describe shows it");
+		errors.Should().BeEmpty(because: "leaving a visible default out is a valid rebuild");
+		rebuilt.Request.Parameters.Items.Values.Single().DefValue.Value.Should().BeNullOrEmpty(
+			because: "a constant describe showed is the caller's to resend, so it is not kept behind their back");
 	}
 
 	[Test]
@@ -580,7 +716,7 @@ public sealed class WebServiceDefinitionBuilderTests {
 	}
 
 	[Test]
-	[Description("A hidden secret constant is not carried into a visible place; an explicit empty default clears it; a system setting replaces it.")]
+	[Description("A key-like constant Studio stored under a neutral header name stays hidden: it is not carried into a visible place; an explicit empty default clears it; a system setting replaces it.")]
 	public void BuildMethod_Should_Not_Expose_Or_Pin_A_Hidden_Secret_Constant() {
 		// Arrange
 		var errors = new WebServiceDefinitionBuilder.Errors();
@@ -588,7 +724,7 @@ public sealed class WebServiceDefinitionBuilderTests {
 			new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [new WebServiceParameterArg("XPartner", "header", Path: "X-Partner")]),
 			null, false, errors);
 		existing.Request.Parameters.Items.Values.Single().DefValue =
-			new ServiceParameterValueDto { Value = "s3cr3t-partner", Source = ServiceSchemaCodes.ValueSourceConst };
+			new ServiceParameterValueDto { Value = "s3cr3tPartnerK3y99", Source = ServiceSchemaCodes.ValueSourceConst };
 		WebServiceMethodArg Moved(WebServiceParameterArg p) => new("Search", "GET", "search", RequestParameters: [p]);
 		var movedErrors = new WebServiceDefinitionBuilder.Errors();
 		var clearedErrors = new WebServiceDefinitionBuilder.Errors();
@@ -605,7 +741,7 @@ public sealed class WebServiceDefinitionBuilderTests {
 
 		// Assert
 		movedErrors.Should().ContainSingle(because: "a query parameter would print the secret in the next reply and send it in the URL")
-			.Which.Should().NotContain("s3cr3t-partner", because: "the refusal never repeats the hidden value");
+			.Which.Should().NotContain("s3cr3tPartnerK3y99", because: "the refusal never repeats the hidden value");
 		clearedErrors.Should().BeEmpty(because: "an explicit empty default is how a hidden constant is removed");
 		cleared.Request.Parameters.Items.Values.Single().DefValue.Value.Should().BeEmpty(
 			because: "the cleared parameter sends no constant any more");
@@ -743,5 +879,40 @@ public sealed class WebServiceDefinitionBuilderTests {
 		// Assert
 		collection!.Items.Remove("ab12cd34-0000-0000-0000-000000000001").Should().BeTrue(
 			because: "the platform's key case must not decide whether setMethod replaces or duplicates a method");
+	}
+
+	[TestCase("customer.name", "UsrCustomerName", true, false, "name")]
+	[TestCase("$.items[*].number", "UsrNumber", true, false, "number")]
+	[TestCase("$.items[0]", "UsrItems", true, false, "items")]
+	[TestCase("$['first name']", "UsrFirstName", true, false, "first name")]
+	[TestCase("tem:total/ns0:amount", "UsrTotalAmount", true, true, "amount")]
+	[TestCase("tem:Order.Id", "UsrOrderId", true, true, "Order.Id")]
+	[TestCase("X-Api-Key", "UsrApiKey", false, false, "X-Api-Key")]
+	[TestCase("$filter", "UsrFilter", false, false, "$filter")]
+	[TestCase("page[size]", "UsrPageSize", false, false, "page[size]")]
+	[TestCase("api.version", "UsrApiVersion", false, false, "api.version")]
+	[TestCase(null, "UsrPage", false, false, "UsrPage")]
+	[Description("A parameter sent without a caption is captioned with the name the API sees: only a body or SOAP element path is split, a query, header, cookie or path name is kept as given, and the code is used only without a path.")]
+	public void DefaultParameterCaption_Should_Use_The_Wire_Name(string path, string code, bool body, bool soap, string expected) {
+		// Act
+		string caption = WebServiceDefinitionBuilder.DefaultParameterCaption(path, code, body, soap);
+
+		// Assert
+		caption.Should().Be(expected, because: "the prefixed code reads poorly on the Call web service element");
+	}
+
+	[Test]
+	[Description("A base-URI placeholder no path parameter fills is reported as a base-uri placeholder, not as one of the method uri.")]
+	public void BuildMethod_Should_Name_A_Missing_Base_Uri_Placeholder_As_Such() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("Orders", "GET", "orders"),
+			null, false, errors, null, "https://api.example.com/{version}/");
+
+		// Assert
+		errors.Should().ContainSingle(because: "{version} has no path parameter")
+			.Which.Should().Contain("base-uri placeholder {version}", because: "the message names where the placeholder is");
 	}
 }

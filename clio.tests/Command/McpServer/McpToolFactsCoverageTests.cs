@@ -75,6 +75,10 @@ public sealed class McpToolFactsCoverageTests {
 		    "not-host-paths": [{"argument": "both", "why": "declared both ways"}, {"argument": "zipFile"}, {"argument": "absent", "why": "not an argument"}]},
 		  "zz-facts-host-path-partial-tool": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none",
 		    "host-paths": [{"argument": "outputFile", "kind": "file"}, {"argument": "source", "kind": "archive", "access": "read"}]},
+		  "zz-facts-hint-careless-read-tool": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
+		  "zz-facts-hint-read-only-writer-tool": {"effect": "read", "rebuilds-environment": false, "scope": "environment", "connections": "none",
+		    "host-paths": [{"argument": "outputFile", "kind": "file", "access": "write"}]},
+		  "zz-facts-hint-unset-tool": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"},
 		  "zz-facts-stale-entry": {"effect": "read", "rebuilds-environment": false, "scope": "local", "connections": "none"}
 		}
 		""";
@@ -125,11 +129,45 @@ public sealed class McpToolFactsCoverageTests {
 		return failures;
 	}
 
+	/// <summary>
+	/// Tools whose readOnlyHint is false although their facts say they only read and write no host path, each with why
+	/// the hint stays the more careful one. Each hands out or drops a credential, which the facts do not count as an
+	/// effect (clio's own caches are not one), so a host that trusts the hint asks first.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<string, string> CarefulReadOnlyHints = new Dictionary<string, string>(StringComparer.Ordinal) {
+		["get-identity-assertion"] = "it issues a signed identity assertion for the signed-in user: a credential, though nothing is changed",
+		["get-browser-session"] = "it signs in to the environment and keeps the session's cookies in clio's own cache: a credential",
+		["clear-browser-session"] = "it deletes the cached browser session from clio's own cache: the next call signs in again"
+	};
+
 	private static IEnumerable<string> FindHintFailures(string name, McpServerTool tool, McpToolFacts facts) {
-		bool? readOnlyHint = tool.ProtocolTool.Annotations?.ReadOnlyHint;
-		bool? destructiveHint = tool.ProtocolTool.Annotations?.DestructiveHint;
+		ModelContextProtocol.Protocol.ToolAnnotations annotations = tool.ProtocolTool.Annotations;
+		bool? readOnlyHint = annotations?.ReadOnlyHint;
+		bool? destructiveHint = annotations?.DestructiveHint;
+		// An absent hint means MCP's default (read-only false, destructive true, idempotent false, open world true),
+		// which is clio's statement only by accident: every tool states all four.
+		string[] unset = [.. new (string Hint, bool? Value)[] {
+				("readOnlyHint", readOnlyHint), ("destructiveHint", destructiveHint),
+				("idempotentHint", annotations?.IdempotentHint), ("openWorldHint", annotations?.OpenWorldHint)
+			}.Where(hint => hint.Value is null).Select(hint => hint.Hint)];
+		if (unset.Length > 0) {
+			yield return $"Tool '{name}' leaves {string.Join(", ", unset)} unset: an absent hint is MCP's default, not clio's statement.";
+		}
+		// MCP's readOnlyHint is "does not modify its environment": no change on the site and no file written on this
+		// machine. The facts say both, so the hint must agree with them in either direction.
+		string writtenHostPath = facts.HostPaths
+			.Where(path => path.Access != McpHostPathAccess.Read)
+			.Select(path => path.Argument)
+			.FirstOrDefault();
+		bool onlyReads = facts.Effect == McpToolEffect.Read && writtenHostPath is null;
 		if (readOnlyHint == true && facts.Effect != McpToolEffect.Read) {
 			yield return $"Tool '{name}' is readOnlyHint=true but its effect is {McpToolFacts.Name(facts.Effect)}.";
+		}
+		if (readOnlyHint == true && writtenHostPath is not null) {
+			yield return $"Tool '{name}' is readOnlyHint=true but may write host path '{writtenHostPath}'.";
+		}
+		if (readOnlyHint == false && onlyReads && !CarefulReadOnlyHints.ContainsKey(name)) {
+			yield return $"Tool '{name}' is readOnlyHint=false but its facts say it only reads and writes no host path: the facts miss what it changes, or the hint is wrong.";
 		}
 		// An absent destructiveHint means true in MCP, so only an explicit false contradicts a destroy.
 		if (facts.Effect == McpToolEffect.Destroy && destructiveHint == false) {
@@ -301,6 +339,37 @@ public sealed class McpToolFactsCoverageTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The MCP hint check has teeth: over synthetic tools it reports a readOnlyHint=false on a tool whose facts " +
+		"say it only reads, a readOnlyHint=true on a tool that writes a file on this machine, and hints left unset, and stays " +
+		"silent about a tool whose hints agree with its facts.")]
+	public void FactsRoutine_ShouldReportHintsThatDisagreeWithFacts_WhenRunOverSyntheticTools() {
+		// Arrange
+		IReadOnlyList<(string Name, McpServerTool Tool, McpToolFacts Facts)> synthetic = ReadSynthetic(
+			typeof(CarelessReadFixtureTool),
+			typeof(ReadOnlyWriterFixtureTool),
+			typeof(UnsetHintsFixtureTool),
+			typeof(HostPathDeclaredFixtureTool));
+
+		// Act
+		IReadOnlyList<string> failures = FindFactsFailures(synthetic);
+
+		// Assert
+		synthetic.Should().HaveCount(4, because: "every synthetic tool must be discovered, or this proof is itself vacuous");
+		failures.Should().ContainSingle(failure => failure.Contains(CarelessReadFixtureTool.ToolName, StringComparison.Ordinal))
+			.Which.Should().Contain("readOnlyHint=false but its facts say it only reads",
+				because: "a host that trusts the hint would ask before a call that changes nothing, or the facts hide a change");
+		failures.Should().ContainSingle(failure => failure.Contains(ReadOnlyWriterFixtureTool.ToolName, StringComparison.Ordinal))
+			.Which.Should().Contain("readOnlyHint=true but may write host path 'outputFile'",
+				because: "a file written on this machine modifies its environment, which MCP's read-only hint denies");
+		failures.Should().ContainSingle(failure => failure.Contains(UnsetHintsFixtureTool.ToolName, StringComparison.Ordinal))
+			.Which.Should().Contain("destructiveHint, idempotentHint, openWorldHint unset",
+				because: "an absent hint is MCP's default, which clio never chose");
+		failures.Should().NotContain(failure => failure.Contains(HostPathDeclaredFixtureTool.ToolName, StringComparison.Ordinal),
+			because: "a tool that writes a host path and is not read-only agrees with its facts");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The host-path check has teeth: over synthetic tools it reports an argument whose name reads like a " +
 		"path and is declared neither way, a declaration on an argument the tool does not take, one made twice or both " +
 		"ways, an unknown alternative to a path, a not-host-path without its reason, and a host path that leaves out or misspells its kind or access; " +
@@ -349,7 +418,8 @@ public sealed class McpToolFactsCoverageTests {
 		// Act
 		IReadOnlyList<string> failures = FindStaleEntries(catalog.Keys, [DeclaredFixtureTool.ToolName, PartialFixtureTool.ToolName,
 			HintContradictionFixtureTool.ToolName, WideArgumentFixtureTool.ToolName, HostPathDeclaredFixtureTool.ToolName,
-			HostPathDefectFixtureTool.ToolName, HostPathPartialFixtureTool.ToolName]);
+			HostPathDefectFixtureTool.ToolName, HostPathPartialFixtureTool.ToolName, CarelessReadFixtureTool.ToolName,
+			ReadOnlyWriterFixtureTool.ToolName, UnsetHintsFixtureTool.ToolName]);
 
 		// Assert
 		failures.Should().ContainSingle(because: "only the stale entry names a tool that is not served")
@@ -376,7 +446,7 @@ public sealed class McpToolFactsCoverageTests {
 	private static class HostPathDeclaredFixtureTool {
 		internal const string ToolName = "zz-facts-host-path-declared-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Synthetic tool that declares its host paths, one under a name that does not read like a path, and its look-alike.")]
 		public static string Run(string outputFile, string source, string filePath) => outputFile + source + filePath;
 	}
@@ -385,7 +455,7 @@ public sealed class McpToolFactsCoverageTests {
 	private static class HostPathDefectFixtureTool {
 		internal const string ToolName = "zz-facts-host-path-defect-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Synthetic tool with an undeclared path-like argument and host-path declarations that are unknown, doubled, contradictory or unexplained.")]
 		public static string Run(string outputFile, string both, string twice, string zipFile) => outputFile + both + twice + zipFile;
 	}
@@ -394,7 +464,7 @@ public sealed class McpToolFactsCoverageTests {
 	private static class HostPathPartialFixtureTool {
 		internal const string ToolName = "zz-facts-host-path-partial-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Synthetic tool whose host paths leave out an access and misspell a kind.")]
 		public static string Run(string outputFile, string source) => outputFile + source;
 	}
@@ -403,7 +473,7 @@ public sealed class McpToolFactsCoverageTests {
 	private static class DeclaredFixtureTool {
 		internal const string ToolName = "zz-facts-declared-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true)]
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Correctly declared synthetic tool.")]
 		public static string Run(string action) => action;
 	}
@@ -412,7 +482,7 @@ public sealed class McpToolFactsCoverageTests {
 	private static class UndeclaredFixtureTool {
 		internal const string ToolName = "zz-facts-undeclared-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false)]
+		[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Synthetic tool with no catalog entry.")]
 		public static string Run() => "undeclared";
 	}
@@ -421,7 +491,7 @@ public sealed class McpToolFactsCoverageTests {
 	private static class PartialFixtureTool {
 		internal const string ToolName = "zz-facts-partial-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false)]
+		[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Synthetic tool that leaves Connections out.")]
 		public static string Run() => "partial";
 	}
@@ -430,7 +500,7 @@ public sealed class McpToolFactsCoverageTests {
 	private static class HintContradictionFixtureTool {
 		internal const string ToolName = "zz-facts-hint-contradiction-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Synthetic destroy whose hint says it is not destructive.")]
 		public static string Run() => "contradiction";
 	}
@@ -439,8 +509,35 @@ public sealed class McpToolFactsCoverageTests {
 	private static class WideArgumentFixtureTool {
 		internal const string ToolName = "zz-facts-wide-argument-tool";
 
-		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false)]
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 		[System.ComponentModel.Description("Synthetic tool whose argument entries are unknown or wider than the tool.")]
 		public static string Run(string mode) => mode;
+	}
+
+	[McpServerToolType]
+	private static class CarelessReadFixtureTool {
+		internal const string ToolName = "zz-facts-hint-careless-read-tool";
+
+		[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+		[System.ComponentModel.Description("Synthetic tool whose facts say it only reads, while its hint says it changes something.")]
+		public static string Run() => "careless";
+	}
+
+	[McpServerToolType]
+	private static class ReadOnlyWriterFixtureTool {
+		internal const string ToolName = "zz-facts-hint-read-only-writer-tool";
+
+		[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+		[System.ComponentModel.Description("Synthetic read-only tool that writes a file on this machine.")]
+		public static string Run(string outputFile) => outputFile;
+	}
+
+	[McpServerToolType]
+	private static class UnsetHintsFixtureTool {
+		internal const string ToolName = "zz-facts-hint-unset-tool";
+
+		[McpServerTool(Name = ToolName, ReadOnly = true)]
+		[System.ComponentModel.Description("Synthetic tool that states only its read-only hint.")]
+		public static string Run() => "unset";
 	}
 }

@@ -15,6 +15,7 @@ using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using ModelContextProtocol.Protocol;
 using NUnit.Framework;
 
@@ -31,7 +32,10 @@ namespace Clio.Mcp.E2E;
 public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = PageSyncTool.ToolName;
-	private const string SavePage = "ClioMcp_BlankPageToSave";
+	private const string SavePage = SeededBlankPage.SchemaName;
+	// Set by every test that writes the shared page; ended by the [TearDown] below. The fixture is
+	// [NonParallelizable] and NUnit runs its tests on one instance, one at a time.
+	private SeededBlankPage.Lease? _seededPageLease;
 	// PageSyncTool_Should_Make_Completed_Write_Immediately_Observable failed twice in 60 CI runs with a
 	// stale read-back body: a completed sync-pages write is not always visible to the very next get-page
 	// call. Poll instead of reading once, bounded to a few seconds total (small budget on purpose — this
@@ -57,6 +61,25 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	/// <summary>
+	/// Ends the lease of a test that wrote the shared page. When the test failed, the lease first writes what
+	/// the stand holds for the page, and what the test's saves reported, to the test output. It then always
+	/// resets the page to its blank body and fails the test when the reset is refused or when the FIRST read
+	/// after it does not show it (an editable schema with the checksum the reset save reported, blank body).
+	/// In <c>[TearDown]</c>, not in a <c>finally</c> block of the test:
+	/// NUnit reports a teardown failure next to the assertion that failed in the test, while an exception
+	/// thrown in <c>finally</c> replaces it (the cleanup assertion of the visibility test hid the result of the
+	/// visibility assertion in TeamCity build 16330482).
+	/// </summary>
+	[TearDown]
+	public async Task ResetSeededPageAsync() {
+		SeededBlankPage.Lease? lease = _seededPageLease;
+		_seededPageLease = null;
+		if (lease is not null) {
+			await lease.EndAsync();
+		}
+	}
 
 	[Test]
 	[Description("Exposes sync-pages via the get-tool-contract compact index so callers can discover and invoke it on the lazy tool surface.")]
@@ -455,6 +478,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
 
 		// Act 1: capture the body the stand currently holds.
 		CallToolResult baselineResult = await context.Session.CallToolAsync(
@@ -470,66 +494,40 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		baseline.Success.Should().BeTrue(
 			because: $"get-page must succeed for the seeded page '{SavePage}' before the gate can be proven. Error: {baseline.Error}");
 		string originalBody = await File.ReadAllTextAsync(baseline.Files.BodyFile);
-		bool restoreNeeded = false;
-		try {
-			// Act 2: the real save path — no dry-run — with a body only the AST lint pass rejects.
-			CallToolResult syncResult = await SyncBodyAsync(context, environmentName,
-				(designerDiscarded ? PageLintProbeBodies.DesignerDiscardedHelper(SavePage) : PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage)));
-			PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
 
-			// Act 3: read the page back.
-			CallToolResult readbackResult = await context.Session.CallToolAsync(
-				PageGetTool.ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["schema-name"] = SavePage,
-						["environment-name"] = environmentName
-					}
-				},
-				context.CancellationTokenSource.Token);
-			PageGetResponse readback = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readbackResult);
-			string bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
-			//A readback that did not come back cannot show the page is intact, and the write it was
-			//supposed to check may well have landed - so that case restores too.
-			restoreNeeded = bodyAfter is null || bodyAfter != originalBody;
+		// Act 2: the real save path — no dry-run — with a body only the AST lint pass rejects.
+		CallToolResult syncResult = await SyncBodyAsync(context, environmentName,
+			(designerDiscarded ? PageLintProbeBodies.DesignerDiscardedHelper(SavePage) : PageLintProbeBodies.ConditionallyDeclaredHelper(SavePage)));
+		PageSyncResponse response = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
 
-			// Assert
-			response.Success.Should().BeFalse(
-				because: "the helper is either uninitialized now or removed by the next Designer save");
-			response.Pages.Should().ContainSingle(
-				because: "one page was submitted");
-			response.Pages[0].Error.Should().Contain("Page body lint failed",
-				because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
-			response.Pages[0].Error.Should().Contain(designerDiscarded ? "designer-unsafe-section-call" : "undefined-section-call",
-				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
-			readback.Success.Should().BeTrue(
-				because: $"the page must still be readable after the refused write. Error: {readback.Error}");
-			bodyAfter.Should().Be(originalBody,
-				because: "a refused write must leave the stand untouched — this is the assertion the dry-run scenario cannot make");
-		} finally {
-			if (restoreNeeded) {
-				//Only reached when the gate let the probe body through, which is the failure this test
-				//exists to catch. The page is shared by the rest of the suite, so it is put back rather
-				//than left holding a body that throws on open.
-				try {
-					CallToolResult restoreResult =
-						await SyncBodyAsync(context, environmentName, originalBody);
-					PageSyncResponse restored =
-						EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
-					if (!restored.Success) {
-						//A refused save comes back in the envelope rather than as an exception, so
-						//without this the shared fixture page would be left holding a body that throws
-						//on open, silently.
-						TestContext.Progress.WriteLine(
-							$"Failed to restore the body of '{SavePage}': "
-							+ string.Join("; ", restored.Pages.Select(page => page.Error)));
-					}
-				} catch (Exception restoreFailure) {
-					TestContext.Progress.WriteLine(
-						$"Failed to restore the body of '{SavePage}': {restoreFailure.Message}");
+		// Act 3: read the page back.
+		CallToolResult readbackResult = await context.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = environmentName
 				}
-			}
-		}
+			},
+			context.CancellationTokenSource.Token);
+		PageGetResponse readback = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(readbackResult);
+		string? bodyAfter = readback.Success ? await File.ReadAllTextAsync(readback.Files.BodyFile) : null;
+
+		// Assert
+		// When the gate lets the probe body through - the failure this test exists to catch - the shared
+		// page is put back by the fixture's [TearDown], which also fails the test when that reset is refused.
+		response.Success.Should().BeFalse(
+			because: "the helper is either uninitialized now or removed by the next Designer save");
+		response.Pages.Should().ContainSingle(
+			because: "one page was submitted");
+		response.Pages[0].Error.Should().Contain("Page body lint failed",
+			because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
+		response.Pages[0].Error.Should().Contain(designerDiscarded ? "designer-unsafe-section-call" : "undefined-section-call",
+			because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
+		readback.Success.Should().BeTrue(
+			because: $"the page must still be readable after the refused write. Error: {readback.Error}");
+		bodyAfter.Should().Be(originalBody,
+			because: "a refused write must leave the stand untouched — this is the assertion the dry-run scenario cannot make");
 	}
 
 	/// <summary>Saves one body to <c>SavePage</c> through the real (non-dry-run) sync-pages path.</summary>
@@ -784,6 +782,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
+		// What each call resolved, kept for the failure message: on a stale read-back it shows whether the
+		// read came from the schema the save wrote (same editable schema, checksum moved, old body) or from
+		// another one (another schema UId or design package, or the checksum the page had before the save).
+		List<string> observations = [];
 
 		// Act 1: get-page reads the seeded page's body to disk
 		CallToolResult getResult = await context.Session.CallToolAsync(
@@ -808,90 +811,99 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
 		body.Should().NotBeNullOrWhiteSpace(
 			because: "the reversible visibility check requires a non-empty original body");
+		observations.Add($"before the save: {DescribeRead(getResponse, body, marker: null)}");
 		string marker = $"// clio-sync-visibility-{Guid.NewGuid():N}";
 		string changedBody = $"{body.TrimEnd()}{Environment.NewLine}{marker}{Environment.NewLine}";
 
-		try {
-			// Act 2: sync-pages saves a uniquely identifiable body with validation.
-			CallToolResult syncResult = await context.Session.CallToolAsync(
-				ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["environment-name"] = environmentName,
-						["pages"] = new[] {
-							new Dictionary<string, object?> {
+		// Act 2: sync-pages saves a uniquely identifiable body with validation.
+		CallToolResult syncResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = SavePage,
+							["body"] = changedBody
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse syncResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+
+		// Assert sync-pages save succeeded.
+		syncResult.IsError.Should().NotBeTrue(
+			because: "the reversible save should produce a structured sync-pages response instead of a transport-level error");
+		syncResponse.Success.Should().BeTrue(
+			because: $"sync-pages must persist the uniquely marked body for '{SavePage}'. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
+		syncResponse.Pages.Should().ContainSingle(
+			because: "one page was submitted for sync");
+		syncResponse.Pages[0].Success.Should().BeTrue(
+			because: $"per-page sync-pages result must succeed for '{SavePage}'. Error: {syncResponse.Pages[0].Error}");
+		observations.Add(
+			$"the save: checksumAfterSave={syncResponse.Pages[0].Digest?.Checksum ?? "none"} "
+			+ $"conflictCheck={syncResponse.Pages[0].ConflictCheck ?? "none"} bodyLength={syncResponse.Pages[0].BodyLength} "
+			+ $"warnings=[{string.Join(" | ", syncResponse.Pages[0].Validation?.Warnings ?? [])}]");
+
+		// Act 3: read after sync-pages returns, polling briefly instead of reading exactly once. This
+		// guards the removed fixed post-save delay: successful completion must itself be a sufficient
+		// sequencing boundary for the next MCP operation, but the tool call returning is not always the
+		// same instant as the write becoming visible to a subsequent read (observed twice in 60 CI
+		// runs as a stale read-back body). The poll is bounded to a few seconds total
+		// (MarkerReadbackAttempts x MarkerReadbackPollInterval) and stops as soon as the marker is
+		// observed, so a genuinely immediate write still passes on the first attempt. A probe that
+		// lands mid-write can get back an envelope EntitySchemaStructuredResultParser.Extract cannot
+		// parse yet; treat that InvalidOperationException as "not yet" instead of letting it abort the
+		// whole poll, the same way ApplicationToolE2ETests.WaitForCanonicalMainEntityAsync treats its
+		// own transiently-unparsable probe.
+		(CallToolResult readBackResult, PageGetResponse readBackResponse, string readBackBody) =
+			await BoundedPollGate.PollUntilAsync(
+				async pollToken => {
+					CallToolResult pollResult = await context.Session.CallToolAsync(
+						PageGetTool.ToolName,
+						new Dictionary<string, object?> {
+							["args"] = new Dictionary<string, object?> {
 								["schema-name"] = SavePage,
-								["body"] = changedBody
+								["environment-name"] = environmentName
 							}
 						},
-						["validate"] = true
-					}
+						pollToken);
+					PageGetResponse pollResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(pollResult);
+					string pollBody = pollResponse.Success && !string.IsNullOrWhiteSpace(pollResponse.Files?.BodyFile)
+						? await File.ReadAllTextAsync(pollResponse.Files!.BodyFile!, pollToken)
+						: string.Empty;
+					observations.Add($"read {observations.Count - 1} after the save: {DescribeRead(pollResponse, pollBody, marker)}");
+					return (pollResult, pollResponse, pollBody);
 				},
-				context.CancellationTokenSource.Token);
-			PageSyncResponse syncResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+				probe => probe.pollBody.Contains(marker, StringComparison.Ordinal),
+				MarkerReadbackAttempts,
+				MarkerReadbackPollInterval,
+				context.CancellationTokenSource.Token,
+				isTransientProbeFailure: probeException => probeException is InvalidOperationException);
+		// The visibility verdict is recorded BEFORE the restore, and so is what the stand holds when the write
+		// was not seen: the restore overwrites that state. Nothing here retries a read or changes what the
+		// assertions below require.
+		bool writeObserved = readBackBody.Contains(marker, StringComparison.Ordinal);
+		string visibilityDiagnostics = writeObserved
+			? string.Empty
+			: string.Join(Environment.NewLine, observations) + await DescribeSeededPageAsync(context.Session, environmentName);
 
-			// Assert sync-pages save succeeded.
-			syncResult.IsError.Should().NotBeTrue(
-				because: "the reversible save should produce a structured sync-pages response instead of a transport-level error");
-			syncResponse.Success.Should().BeTrue(
-				because: $"sync-pages must persist the uniquely marked body for '{SavePage}'. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
-			syncResponse.Pages.Should().ContainSingle(
-				because: "one page was submitted for sync");
-			syncResponse.Pages[0].Success.Should().BeTrue(
-				because: $"per-page sync-pages result must succeed for '{SavePage}'. Error: {syncResponse.Pages[0].Error}");
-
-			// Act 3: read after sync-pages returns, polling briefly instead of reading exactly once. This
-			// guards the removed fixed post-save delay: successful completion must itself be a sufficient
-			// sequencing boundary for the next MCP operation, but the tool call returning is not always the
-			// same instant as the write becoming visible to a subsequent read (observed twice in 60 CI
-			// runs as a stale read-back body). The poll is bounded to a few seconds total
-			// (MarkerReadbackAttempts x MarkerReadbackPollInterval) and stops as soon as the marker is
-			// observed, so a genuinely immediate write still passes on the first attempt. A probe that
-			// lands mid-write can get back an envelope EntitySchemaStructuredResultParser.Extract cannot
-			// parse yet; treat that InvalidOperationException as "not yet" instead of letting it abort the
-			// whole poll, the same way ApplicationToolE2ETests.WaitForCanonicalMainEntityAsync treats its
-			// own transiently-unparsable probe.
-			(CallToolResult readBackResult, PageGetResponse readBackResponse, string readBackBody) =
-				await BoundedPollGate.PollUntilAsync(
-					async pollToken => {
-						CallToolResult pollResult = await context.Session.CallToolAsync(
-							PageGetTool.ToolName,
-							new Dictionary<string, object?> {
-								["args"] = new Dictionary<string, object?> {
-									["schema-name"] = SavePage,
-									["environment-name"] = environmentName
-								}
-							},
-							pollToken);
-						PageGetResponse pollResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(pollResult);
-						string pollBody = pollResponse.Success && !string.IsNullOrWhiteSpace(pollResponse.Files?.BodyFile)
-							? await File.ReadAllTextAsync(pollResponse.Files!.BodyFile!, pollToken)
-							: string.Empty;
-						return (pollResult, pollResponse, pollBody);
-					},
-					probe => probe.pollBody.Contains(marker, StringComparison.Ordinal),
-					MarkerReadbackAttempts,
-					MarkerReadbackPollInterval,
-					context.CancellationTokenSource.Token,
-					isTransientProbeFailure: probeException => probeException is InvalidOperationException);
-
-			// Assert the read-back proves the new write, not merely the pre-existing body.
-			readBackResult.IsError.Should().NotBeTrue(
-				because: "reading back after sync-pages returns must be safe within the short observability polling budget");
-			readBackResponse.Success.Should().BeTrue(
-				because: $"get-page must observe '{SavePage}' within {MarkerReadbackAttempts} attempt(s) of the completed write");
-			readBackResponse.Files.Should().NotBeNull(
-				because: "a successful read-back must materialize the saved page files");
-			readBackBody.Should().Contain(marker,
-				because: "observing the unique marker proves the completed write became visible; polled up to "
-					+ $"{MarkerReadbackAttempts} time(s) over ~{MarkerReadbackAttempts * MarkerReadbackPollInterval.TotalSeconds:0}s "
-					+ "and the write was still not observable within that budget, so this is not a fixed-delay flake");
-		}
-		finally {
-			// Cleanup: always restore the shared seed page, even when the visibility assertion fails.
-			// Do not reuse the operation token: it may already be cancelled by the failure being tested.
-			using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
-			CallToolResult restoreResult = await context.Session.CallToolAsync(
+		// Act 4: the test's own restore of the body it read, checked on ONE read. This is the assertion that
+		// failed TeamCity build 16330482 (the read after the completed restore showed the body of an OLDER
+		// save). It runs here and not in a finally block. An exception in it (a transport error, an
+		// unparsable answer, its own timeout) is caught and reported NEXT TO the visibility verdict above,
+		// never instead of it. Its own token: the operation token may be what the test is failing on.
+		CallToolResult? restoreResult = null;
+		PageSyncResponse? restoreResponse = null;
+		CallToolResult? restoredReadResult = null;
+		PageGetResponse? restoredReadResponse = null;
+		string restoredBody = string.Empty;
+		Exception? restoreFailure = null;
+		try {
+			using CancellationTokenSource restoreCts = new(TimeSpan.FromMinutes(2));
+			restoreResult = await context.Session.CallToolAsync(
 				ToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
@@ -906,14 +918,13 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 						["validate"] = true
 					}
 				},
-				cleanupCts.Token);
-			PageSyncResponse restoreResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
-			restoreResult.IsError.Should().NotBeTrue(
-				because: "cleanup must restore the shared seed page through a structured sync-pages response");
-			restoreResponse.Success.Should().BeTrue(
-				because: $"cleanup must restore the original body for '{SavePage}'. Per-page error: {restoreResponse.Pages.FirstOrDefault()?.Error}");
-
-			CallToolResult restoredReadResult = await context.Session.CallToolAsync(
+				restoreCts.Token);
+			restoreResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(restoreResult);
+			observations.Add(
+				$"the restore: success={restoreResponse.Success} "
+				+ $"checksumAfterSave={restoreResponse.Pages.FirstOrDefault()?.Digest?.Checksum ?? "none"} "
+				+ $"conflictCheck={restoreResponse.Pages.FirstOrDefault()?.ConflictCheck ?? "none"}");
+			restoredReadResult = await context.Session.CallToolAsync(
 				PageGetTool.ToolName,
 				new Dictionary<string, object?> {
 					["args"] = new Dictionary<string, object?> {
@@ -921,19 +932,83 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 						["environment-name"] = environmentName
 					}
 				},
-				cleanupCts.Token);
-			PageGetResponse restoredReadResponse =
-				EntitySchemaStructuredResultParser.Extract<PageGetResponse>(restoredReadResult);
-			restoredReadResult.IsError.Should().NotBeTrue(
-				because: "cleanup verification must read the restored shared seed page");
-			restoredReadResponse.Success.Should().BeTrue(
-				because: $"cleanup verification must find the restored page '{SavePage}'");
-			string restoredBody = await File.ReadAllTextAsync(restoredReadResponse.Files!.BodyFile!, cleanupCts.Token);
-			restoredBody.Should().Be(body,
-				because: "cleanup must leave the shared seed page exactly as it was before the visibility test");
-			restoredBody.Should().NotContain(marker,
-				because: "the unique visibility marker must not contaminate later E2E tests");
+				restoreCts.Token);
+			restoredReadResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(restoredReadResult);
+			restoredBody = restoredReadResponse.Success && !string.IsNullOrWhiteSpace(restoredReadResponse.Files?.BodyFile)
+				? await File.ReadAllTextAsync(restoredReadResponse.Files!.BodyFile!, restoreCts.Token)
+				: string.Empty;
+			observations.Add($"the single read after the restore: {DescribeRead(restoredReadResponse, restoredBody, marker)}");
+		} catch (Exception failure) {
+			// Not swallowed: restoreFailure fails the test in the scope below, next to the visibility verdict.
+			restoreFailure = failure;
+			observations.Add($"the restore threw {failure.GetType().Name}: {failure.Message}");
 		}
+		string restoreDiagnostics = restoreFailure is null && string.Equals(restoredBody, body, StringComparison.Ordinal)
+			? string.Empty
+			: string.Join(Environment.NewLine, observations) + await DescribeSeededPageAsync(context.Session, environmentName);
+
+		// Assert the read-back proves the new write, not merely the pre-existing body, and that the single
+		// read after the restore shows the restore. One scope: every failed assertion is reported.
+		// The fixture's [TearDown] then resets the shared page and applies the same single-read rule to its
+		// own reset, next to these assertions and not in their place.
+		using AssertionScope assertions = new();
+		readBackResult.IsError.Should().NotBeTrue(
+			because: "reading back after sync-pages returns must be safe within the short observability polling budget");
+		readBackResponse.Success.Should().BeTrue(
+			because: $"get-page must observe '{SavePage}' within {MarkerReadbackAttempts} attempt(s) of the completed write");
+		readBackResponse.Files.Should().NotBeNull(
+			because: "a successful read-back must materialize the saved page files");
+		readBackBody.Should().Contain(marker,
+			because: "observing the unique marker proves the completed write became visible; polled up to "
+				+ $"{MarkerReadbackAttempts} time(s) over ~{MarkerReadbackAttempts * MarkerReadbackPollInterval.TotalSeconds:0}s "
+				+ "and the write was still not observable within that budget, so this is not a fixed-delay flake. "
+				+ "What each call resolved, and the state before the restore: {0}",
+			visibilityDiagnostics);
+		restoreFailure.Should().BeNull(
+			because: "the test's own restore of '{0}' must complete; it ran after the visibility verdict above, which is "
+				+ "reported next to this failure. What each call resolved: {1}",
+			SavePage, restoreDiagnostics);
+		if (restoreFailure is not null) {
+			return;
+		}
+		restoreResult!.IsError.Should().NotBeTrue(
+			because: "the restore must return a structured sync-pages response");
+		restoreResponse!.Success.Should().BeTrue(
+			because: "sync-pages must restore the original body of '{0}'. Per-page error: {1}",
+			SavePage, restoreResponse.Pages.FirstOrDefault()?.Error);
+		restoredReadResult!.IsError.Should().NotBeTrue(
+			because: "the read after the restore must return a structured get-page response");
+		restoredReadResponse!.Success.Should().BeTrue(
+			because: "get-page must read '{0}' after the restore. Error: {1}", SavePage, restoredReadResponse.Error);
+		restoredBody.Should().Be(body,
+			because: "the restore completed, so the very next read must return the body it wrote - the body the "
+				+ "page had before the visibility test. One read, no poll: a read that still shows the marker or "
+				+ "an older save is the defect. What each call resolved: {0}",
+			restoreDiagnostics);
+		restoredBody.Should().NotContain(marker,
+			because: "the restore removed the unique visibility marker, and the next read must show that");
+	}
+
+	/// <summary>
+	/// The facts of one <c>get-page</c> read that tell which stored schema it resolved and whether it shows
+	/// the body the test saved.
+	/// </summary>
+	private static string DescribeRead(PageGetResponse response, string body, string? marker) =>
+		response.Success
+			? $"editableSchema={response.Editable?.EditableSchemaUId ?? "none"} "
+				+ $"checksum={response.Editable?.Checksum ?? "none"} modifiedOn={response.Editable?.ModifiedOn ?? "none"} "
+				+ $"designPackage={response.Page?.DesignPackageName} ({response.Page?.DesignPackageUId}) "
+				+ $"willCreateReplacing={response.Page?.WillCreateReplacingInDesignPackage} bodyLength={body.Length}"
+				+ (marker is null ? string.Empty : $" marker={body.Contains(marker, StringComparison.Ordinal)}")
+			: $"failed: {response.Error}";
+
+	/// <summary>
+	/// Describes the shared page's stored layers for a failure message. Uses its own token: the test's token
+	/// may be the reason the test is failing.
+	/// </summary>
+	private static async Task<string> DescribeSeededPageAsync(McpServerSession session, string environmentName) {
+		using CancellationTokenSource diagnosticsCts = new(TimeSpan.FromMinutes(2));
+		return await SeededBlankPage.DescribeAsync(session, environmentName, diagnosticsCts.Token);
 	}
 
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) =>
@@ -957,6 +1032,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-conflict-").FullName;
 		string outOfBandDir = Directory.CreateTempSubdirectory("clio-e2e-sync-oob-").FullName;
 		try {
@@ -977,9 +1053,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			string originalBody = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
 
 			// Act 2: out-of-band modification via update-page anchored elsewhere (no baseline there).
-			string outOfBandBody = originalBody.Replace(
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-				"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrE2ESyncOobContainer\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+			string outOfBandBody = BodyWithSyncContainer(originalBody, "UsrE2ESyncOobContainer");
 			CallToolResult outOfBandResult = await context.Session.CallToolAsync(
 				PageUpdateTool.ToolName,
 				new Dictionary<string, object?> {
@@ -1071,6 +1145,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-nobaseline-session-").FullName;
 		string emptyAnchorDir = Directory.CreateTempSubdirectory("clio-e2e-sync-nobaseline-empty-").FullName;
 		try {
@@ -1764,17 +1839,17 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
 		// A DEDICATED anchor with no .clio-pages baseline in it: the pin must be the only thing arming the
 		// check, otherwise an on-disk baseline could carry the assertions and the argument under test would
 		// not be exercised at all.
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-checksum-").FullName;
-		string originalBody = null;
 		try {
 			PageGetResponse firstGet = await ReadSeededPageAsync(context, environmentName, sessionDir);
 			string firstChecksum = firstGet.Editable.Checksum;
 			firstChecksum.Should().NotBeNullOrWhiteSpace(
 				because: "an empty baseline would make every pinned assertion below vacuous");
-			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+			string originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
 
 			// Act 1: pin the checksum get-page just returned, verbatim.
 			PageSyncResponse pinnedSave = await SyncSeededPageAsync(
@@ -1821,11 +1896,8 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			forcedSave.Pages[0].Conflict.Should().BeFalse(
 				because: "a forced overwrite reports no conflict");
 		} finally {
-			// In the finally block, not on the happy path: an assertion failure above must not leave the
-			// SHARED seeded page carrying this test's probe containers for every later run.
-			if (!string.IsNullOrWhiteSpace(originalBody)) {
-				await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
-			}
+			// The probe containers are removed by the fixture's [TearDown], which resets the SHARED seeded
+			// page after a failed assertion too and fails the test when that reset is refused.
 			TryDeleteDirectory(sessionDir);
 		}
 	}
@@ -1844,11 +1916,11 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-resources-").FullName;
-		string originalBody = null;
 		try {
 			PageGetResponse firstGet = await ReadSeededPageAsync(context, environmentName, sessionDir);
-			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+			string originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
 			string resourceKey = "UsrE2ESyncPersistedField_" + Guid.NewGuid().ToString("N");
 			string labelledBody = BodyWithLabelledField(originalBody, resourceKey);
 
@@ -1886,9 +1958,9 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				"is neither auto-provided by a DS-bound attribute nor registered",
 				because: "the unresolved-label rejection is exactly the one a persisted key must clear");
 		} finally {
-			if (!string.IsNullOrWhiteSpace(originalBody)) {
-				await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
-			}
+			// The labelled field is removed by the fixture's [TearDown]. The restore that used to run here did
+			// not check its own result: in TeamCity build 16330482 this test passed and the next tests still
+			// read its field from the shared page.
 			TryDeleteDirectory(sessionDir);
 		}
 	}
@@ -1907,15 +1979,15 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-caption-key-").FullName;
 		// NOT Usr-prefixed: a Usr key is auto-derived and would never warn. The registered key is fixed so
 		// repeated runs reuse one stored entry instead of growing the shared seeded page.
 		const string registeredKey = PersistedCaptionProbeKey;
 		string neverRegisteredKey = $"E2EMissingCaption{Guid.NewGuid().ToString("N")[..8]}_caption";
-		string? originalBody = null;
 		try {
 			PageGetResponse firstGet = await ReadSeededPageAsync(context, environmentName, sessionDir);
-			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+			string originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
 			PageSyncResponse registeringSave = await SyncSeededPageAsync(
 				context, environmentName, sessionDir, BodyWithSyncCaptionButton(originalBody, registeredKey),
 				checksum: null, force: true, resources: "{\"" + registeredKey + "\": \"E2E caption\"}");
@@ -1944,10 +2016,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				message => message.Contains(neverRegisteredKey),
 				because: "a key registered nowhere still renders raw, so sync-pages must keep reporting it");
 		} finally {
-			if (!string.IsNullOrWhiteSpace(originalBody)) {
-				PageSyncResponse restore = await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
-				restore.Success.Should().BeTrue(because: "the E2E test must restore the shared seeded page body that later tests rely on");
-			}
+			// The probe button is removed by the fixture's [TearDown].
 			TryDeleteDirectory(sessionDir);
 		}
 	}
@@ -2019,11 +2088,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		return EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
 	}
 
-	private static string BodyWithSyncContainer(string body, string containerName) =>
-		body.Replace(
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
-			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"" + containerName +
-			"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+	// Through ReplaceEmptyMarker, not string.Replace: on a body whose section is not exactly "[]" a plain
+	// replace returns the body unchanged, and the caller then asserts against a save that changed nothing.
+	private static string BodyWithSyncContainer(string body, string containerName) => ReplaceEmptyMarker(
+		body, "SCHEMA_VIEW_CONFIG_DIFF",
+		"[{\"operation\":\"insert\",\"name\":\"" + containerName +
+		"\",\"values\":{\"type\":\"crt.FlexContainer\",\"direction\":\"row\",\"items\":[]},\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]");
 
 	/// <summary>
 	/// Returns <paramref name="body"/> with an INSERTED FIELD whose label points at

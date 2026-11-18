@@ -219,6 +219,16 @@ EXAMPLES
         clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissions --confirm -e production
 
 NOTES
+    Right after the confirmation (never across the prompt) a write takes the object's write lease
+    (keyed by the environment's resolved URL and the object's code), shared with set-default-record-rights and set-column-rights;
+    a second write of the same object while one runs is refused, and nothing is changed. A preview
+    takes none. If no lock folder can be used (the user's data folder, then the temp folder), the write
+    goes on without the lease and warns: the read under it below still guards. Under the lease the object is read again: if any of its three switches (column,
+    operation, record permissions), its schema UId or an operation row changed since the plan read it, nothing
+    is saved; otherwise the save goes out from that fresh read, so it sends the switches as they are.
+    A switch the call does not change that differs on the read-back was changed by another client after
+    the save: that is a warning after the call's own result.
+
     The grantee must exist in SysAdminUnit; an unknown id fails before anything is written.
 
     When the grantee is All employees and the object has no row for it, the new row gets exactly the

@@ -217,26 +217,50 @@ public sealed class WebServiceSoapWriteTests {
 	}
 
 	[Test]
-	[Description("A SOAP-header parameter passes the flag to its items, and a constant default on it is refused like a header constant.")]
-	public void Register_Should_Copy_The_Soap_Header_Flag_And_Refuse_A_Header_Constant() {
+	[Description("A SOAP-header parameter passes the flag to its items, and a constant default on it is judged like a header constant: a key-like value or a credential-like name is refused.")]
+	public void Register_Should_Copy_The_Soap_Header_Flag_And_Refuse_A_Key_Like_Header_Constant() {
 		// Arrange
 		var security = new WebServiceParameterArg("UsrSecurity", Type: "Object", Array: true, Path: "wsse:Security",
 			SoapHeader: true, Items: [new WebServiceParameterArg("UsrPassword", Path: "wsse:Password", DefaultSysSetting: "UsrPass")]);
-		var constant = new WebServiceParameterArg("UsrMode", Path: "tem:Mode", SoapHeader: true, DefaultValue: "mode-1");
+		var keyLike = new WebServiceParameterArg("UsrMode", Path: "tem:Mode", SoapHeader: true, DefaultValue: "Lk7Hd93Qz20mWr4TbN8e");
+		var secretName = new WebServiceParameterArg("UsrLicence", Path: "tem:Licence", SoapHeader: true, DefaultValue: "basic");
 		WebServiceNamespaceArg[] namespaces = [new("tem", "http://tempuri.org/"), new("wsse", "http://wsse/")];
 
 		// Act
 		WebServiceToolResult registered = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null,
 			[AddMethod(security)], "soap11", namespaces));
 		ServiceParameterDto saved = _saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single();
-		Action refused = Register(AddMethod(constant), namespaces);
+		Action keyRefused = Register(AddMethod(keyLike), namespaces);
+		Action nameRefused = Register(AddMethod(secretName), namespaces);
 
 		// Assert
 		registered.Success.Should().BeTrue(because: "a SOAP-header object array with a setting-bound field registers");
 		saved.IsSoapHeader.Should().BeTrue(because: "the parameter goes in the envelope's Header");
 		saved.ItemProperties.Items.Values.Single().IsSoapHeader.Should().BeTrue(because: "Studio copies the flag to items");
-		refused.Should().Throw<ArgumentException>(because: "a SOAP-header constant would be a stored credential")
-			.WithMessage("*constant default is refused*", because: "the refusal points at default-sys-setting");
+		keyRefused.Should().Throw<ArgumentException>(because: "a key-like SOAP-header constant would be a stored credential")
+			.Which.Message.Should().Contain("default-sys-setting", because: "the refusal points at default-sys-setting")
+			.And.NotContain("Lk7Hd93Qz20mWr4TbN8e", because: "a refused key is never echoed back");
+		nameRefused.Should().Throw<ArgumentException>(because: "a licence header is a credential whatever its value")
+			.WithMessage("*constant default is refused*", because: "the refusal names the rule");
+	}
+
+	[Test]
+	[Description("A plain constant on a SOAP-header element (a mode, a version, a language) registers, and describe shows it, as Studio does.")]
+	public void Register_Should_Take_A_Plain_Soap_Header_Constant_And_Describe_Should_Show_It() {
+		// Arrange
+		var mode = new WebServiceParameterArg("UsrMode", Path: "tem:Mode", SoapHeader: true, DefaultValue: "en-US");
+		WebServiceNamespaceArg[] namespaces = [new("tem", "http://tempuri.org/")];
+
+		// Act
+		WebServiceToolResult registered = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null,
+			[AddMethod(mode)], "soap11", namespaces));
+		WebServiceParameterView shown = WebServiceSchemaView.From(_saved, "Custom").Methods.Single().RequestParameters.Single();
+
+		// Assert
+		registered.Success.Should().BeTrue(because: $"a plain value is not a credential; error: {registered.Error}");
+		shown.DefaultValue.Should().Be("en-US", because: "describe shows the constant the same rule let register write");
+		shown.DefaultMasked.Should().BeFalse(because: "nothing is hidden");
+		shown.SoapHeader.Should().BeTrue(because: "the parameter still travels in the Header");
 	}
 
 	[Test]
@@ -267,7 +291,7 @@ public sealed class WebServiceSoapWriteTests {
 		_saved.Namespaces.Items.Keys.Should().BeEquivalentTo(original.Namespaces.Items.Keys,
 			because: "a namespace keeps its UId by prefix");
 		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrUser").DefValue.Value
-			.Should().Be("bob", because: "a SOAP-header constant describe hid is kept when no default is sent");
+			.Should().Be("bob", because: "a constant describe hid under a credential-like element path (wsse:UsernameToken) is kept when no default is sent");
 	}
 
 	[Test]
@@ -594,12 +618,12 @@ public sealed class WebServiceSoapWriteTests {
 			JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom").Methods.Single(m => m.Code == "UsrOp")));
 
 	[Test]
-	[Description("A visible body constant is not carried into the SOAP Header when setMethod turns the parameter into a soap-header parameter without a default: a Header constant cannot be made in two calls.")]
+	[Description("A visible key-like body constant is not carried into the SOAP Header when setMethod turns the parameter into a soap-header parameter without a default: a constant describe showed cannot be turned into a hidden Header constant in two calls.")]
 	public void Modify_Should_Not_Carry_A_Visible_Constant_Into_The_Soap_Header() {
 		// Arrange
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
 		ServiceParameterDto plain = schema.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrA");
-		plain.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "LK-123" };
+		plain.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "Lk7Hd93Qz20mWr4TbN8e" };
 		GivenRegistered(schema);
 		WebServiceMethodArg methodArg = DescribedOp(schema);
 		methodArg = methodArg with {
@@ -613,11 +637,11 @@ public sealed class WebServiceSoapWriteTests {
 		// Assert
 		result.Success.Should().BeTrue(because: "moving a parameter into the Header without a default is a valid change");
 		_saved.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrA").DefValue.Value
-			.Should().NotBe("LK-123", because: "describe showed the constant, so it was never hidden and is not carried into the Header");
+			.Should().NotBe("Lk7Hd93Qz20mWr4TbN8e", because: "describe showed the body constant, so it was never hidden, and it is not carried into the Header where it would be hidden");
 	}
 
 	[Test]
-	[Description("A constant hidden because its parent travelled in the SOAP Header is refused, not erased, when setMethod takes the parent out of the Header.")]
+	[Description("A key-like constant hidden because its parent travelled in the SOAP Header is refused, not erased, when setMethod takes the parent out of the Header.")]
 	public void Modify_Should_Refuse_Showing_A_Constant_Hidden_By_A_Soap_Header_Parent() {
 		// Arrange
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
@@ -626,7 +650,7 @@ public sealed class WebServiceSoapWriteTests {
 		ServiceParameterDto item = lines.ItemProperties.Items.Values.Single();
 		item.Name = "UsrLineMode";
 		item.Path = "tem:Mode";
-		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "item-mode-1" };
+		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "Lk7Hd93Qz20mWr4TbN8e" };
 		GivenRegistered(schema);
 		WebServiceMethodArg methodArg = DescribedOp(schema);
 		methodArg = methodArg with {
@@ -852,24 +876,62 @@ public sealed class WebServiceSoapWriteTests {
 			.And.NotContain("customer.name", because: "a dotted path would be one element named customer.name");
 	}
 
-	[Test]
-	[Description("A constant on an item of a SOAP-header parameter is hidden by describe even when the item itself lacks the flag, as the platform renders it in the Header.")]
-	public void Describe_Should_Hide_A_Constant_Under_A_Soap_Header_Parent() {
+	[TestCase("Lk7Hd93Qz20mWr4TbN8e", true, Description = "a key-like value is hidden")]
+	[TestCase("item-mode-1", false, Description = "a plain value is shown")]
+	[Description("A constant on an item of a SOAP-header parameter is judged as a header constant by describe and by a test call's masking even when the item itself lacks the flag, as the platform renders it in the Header.")]
+	public void Describe_Should_Judge_A_Constant_Under_A_Soap_Header_Parent_As_A_Header_Constant(string value, bool hidden) {
 		// Arrange
 		ServiceSchemaDto schema = SoapServiceFixture.Schema();
-		ServiceParameterDto lines = schema.Methods.Items.Values.Single().Request.Parameters.Items.Values.Single(p => p.Name == "UsrLines");
+		ServiceMethodDto method = schema.Methods.Items.Values.Single();
+		ServiceParameterDto lines = method.Request.Parameters.Items.Values.Single(p => p.Name == "UsrLines");
 		lines.IsSoapHeader = true;
 		ServiceParameterDto item = lines.ItemProperties.Items.Values.Single();
 		item.IsSoapHeader = false;
 		item.Name = "UsrLineMode";
 		item.Path = "tem:Mode";
-		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "item-mode-1" };
+		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = value };
 
 		// Act
 		string view = JsonSerializer.Serialize(WebServiceSchemaView.From(schema, "Custom"));
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, null, null);
 
 		// Assert
-		view.Should().NotContain("item-mode-1", because: "the item travels in the Header with its parent, whatever its name");
+		view.Contains(value, StringComparison.Ordinal).Should().Be(!hidden,
+			because: "the item travels in the Header with its parent and follows the header rule, not its own placement");
+		secrets.Contains(value).Should().Be(hidden,
+			because: "a test call masks exactly the constants describe hides, so none is shown in one place and masked in the other");
+	}
+
+	[Test]
+	[Description("An item under a credential-like SOAP-header parent (tem:AuthHeader) is a secret whatever its own name and value, although its item path does not name the parent: describe hides it, a test call masks it, and register refuses one.")]
+	public void From_SentSecrets_And_Register_Should_Treat_An_Item_Under_A_Credential_Like_Soap_Header_Parent_As_A_Secret() {
+		// Arrange
+		ServiceSchemaDto schema = SoapServiceFixture.Schema();
+		ServiceMethodDto method = schema.Methods.Items.Values.Single();
+		ServiceParameterDto lines = method.Request.Parameters.Items.Values.Single(p => p.Name == "UsrLines");
+		lines.IsSoapHeader = true;
+		lines.Name = "UsrAuthHeader";
+		lines.Path = "tem:AuthHeader";
+		ServiceParameterDto item = lines.ItemProperties.Items.Values.Single();
+		item.Name = "UsrPin";
+		item.Path = "tem:Pin";
+		item.DefValue = new ServiceParameterValueDto { Source = ServiceSchemaCodes.ValueSourceConst, Value = "4821" };
+		var header = new WebServiceParameterArg("UsrAuthHeader", Type: "Object", Array: true, Path: "tem:AuthHeader",
+			SoapHeader: true, Items: [new WebServiceParameterArg("UsrPin", Path: "tem:Pin", DefaultValue: "4821")]);
+
+		// Act
+		WebServiceParameterView shown = WebServiceSchemaView.From(schema, "Custom").Methods.Single().RequestParameters
+			.Single(p => p.Code == "UsrAuthHeader").Items.Single();
+		IReadOnlyList<string> secrets = WebServiceResponseMasker.SentSecrets(method, null, null);
+		Action refused = Register(AddMethod(header), [new("tem", "http://tempuri.org/")]);
+
+		// Assert
+		(shown.DefaultValue, shown.DefaultMasked).Should().Be(((string)null, true),
+			because: "a PIN under an auth header is a credential although '4821' and 'Pin' look plain");
+		secrets.Should().Contain("4821", because: "a test call masks what describe hides");
+		refused.Should().Throw<ArgumentException>(because: "the same rule refuses writing it")
+			.WithMessage("*constant default is refused*", because: "it is the constant rule that refuses it")
+			.Which.Message.Should().NotContain("4821", because: "a refused credential is never echoed back");
 	}
 
 	[Test]

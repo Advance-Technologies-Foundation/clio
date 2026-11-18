@@ -196,8 +196,8 @@ public interface IObjectRightsPlanner {
 /// <inheritdoc />
 public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 
-	private const string AllEmployeesName = "All employees";
-	private const string AllExternalUsersName = "All external users";
+	private const string AllEmployeesName = SysAdminUnitIds.AllEmployeesName;
+	private const string AllExternalUsersName = SysAdminUnitIds.AllPortalUsersName;
 
 	// The transitions that change who can reach the object. The policy table says which request allows each; leaving no
 	// granting row is allowed to none.

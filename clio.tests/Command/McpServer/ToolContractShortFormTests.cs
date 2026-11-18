@@ -766,7 +766,7 @@ public sealed class ToolContractShortFormTests {
 	}
 
 	[TestCase("BuildProcessRequest", "isTracing")]
-	[TestCase("ProcessElementDescriptor", "scriptTask")]
+	[TestCase("ProcessElementDescriptor", "chatMessage")]
 	[TestCase("ProcessFlowDescriptor", "results")]
 	[TestCase("ProcessParameterDescriptor", "mergeFrom")]
 	[TestCase("ProcessMappingDescriptor", "sourceColumn")]
@@ -840,6 +840,35 @@ public sealed class ToolContractShortFormTests {
 			.Should().Be(contract.Description.LastIndexOf(shape, StringComparison.Ordinal),
 				because: "the shape is appended once, however the contract reached its short form");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Over the real catalog, create-business-process says the sentence the process-data-source-filters guide quotes as its gate for values in both of its forms: the full description, and the default short lookup through the filter gloss of its call shape. An agent that never asks for detail=full otherwise builds several lookup records of one column as separate conditions (ENG-105557).")]
+	public void Lookup_Should_SayTheValuesGateSentence_InBothFormsOfCreateBusinessProcess() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		const string toolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
+
+		// Act
+		ToolContractDefinition defaultContract =
+			tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+		ToolContractDefinition fullContract = tool.GetToolContracts(
+			new ToolContractGetArgs([toolName], ToolContractShortForm.FullDetail)).Tools!.Single();
+
+		// Assert
+		defaultContract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+			because: "anti-vacuity: the default lookup is the short form agents read, so it must have been shortened");
+		defaultContract.Description.Should().Contain(ValuesGateSentence,
+			because: "the guide's gate quotes this sentence word for word, and the default lookup is what agents read");
+		fullContract.Description.Should().Contain(ValuesGateSentence,
+			because: "the gate accepts either form of the contract, so the full form must say the same words");
+	}
+
+	// The process-data-source-filters guide (clio-knowledge) uses `values` only when the create-business-process
+	// contract says this sentence, quoted word for word. Reworded in the call shape, it costs every agent a
+	// detail=full read before a multi-value filter; reworded in the full description too, it sends them to the
+	// or-group fallback. Nothing fails but this test and its e2e twin in ToolContractGetToolE2ETests.
+	private const string ValuesGateSentence = "any of several lookup records is ONE condition with values";
 
 	[TestCase(7)]
 	[TestCase(12)]

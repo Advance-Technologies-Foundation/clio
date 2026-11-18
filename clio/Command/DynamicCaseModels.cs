@@ -51,6 +51,12 @@ public static class DynamicCaseErrorCodes {
 	public const string ProcessBuilderWithoutBuildCase = "process-builder-without-build-case";
 
 	/// <summary>
+	/// The environment answered <c>DescribeCase</c> or <c>ModifyCase</c> with a 404: the installed package does not
+	/// carry the operations that read and change an existing case.
+	/// </summary>
+	public const string ProcessBuilderWithoutCaseChange = "process-builder-without-case-change";
+
+	/// <summary>
 	/// A <c>BuildCase</c> pass could not be sent or its answer could not be read: on the validate pass nothing was
 	/// written; on the build pass the outcome is <c>unknown</c>.
 	/// </summary>
@@ -86,9 +92,80 @@ public static class DynamicCaseErrorCodes {
 
 #region Wire shape (ProcessDesignService.BuildCase)
 
+/// <summary>
+/// One stage item as a tool call named it, normalized: the members a call left out are <see langword="null"/>, and
+/// <see cref="GroupSent"/> keeps an explicit <c>"group": null</c> apart from an absent key.
+/// </summary>
+/// <param name="Value">The lookup value: its Id or exact display value.</param>
+public sealed record DynamicCaseStageItem(string Value) {
+	/// <summary>The stage caption in the case; <see langword="null"/> when not named.</summary>
+	public string Caption { get; init; }
+
+	/// <summary>The stage colour, <c>#RRGGBB</c>; <see langword="null"/> when not named.</summary>
+	public string Color { get; init; }
+
+	/// <summary>
+	/// Whether the call carried a <c>group</c> key at all, <c>null</c> included: on a change an explicit null takes
+	/// the stage out of its group, while a left-out key keeps the stored group.
+	/// </summary>
+	public bool GroupSent { get; init; }
+
+	/// <summary>The parent stage's lookup value (Id or exact display value); <see langword="null"/> for none.</summary>
+	public string Group { get; init; }
+
+	/// <summary>False for a final stage that ends the case unsuccessfully; <see langword="null"/> when not named.</summary>
+	public bool? Successful { get; init; }
+}
+
+/// <summary>
+/// A case filter as a tool call named it, normalized: a lookup column of the object and the values whose records start
+/// the case, or its empty value.
+/// </summary>
+/// <param name="Column">The filter column.</param>
+/// <param name="Values">The values by Id or exact display value; empty when <paramref name="Empty"/>.</param>
+/// <param name="Empty">True for the case of records whose filter column is empty.</param>
+public sealed record DynamicCaseFilterArgument(string Column, IReadOnlyList<string> Values, bool Empty);
+
+/// <summary>A case filter on the wire; the server refuses an undeclared key, so an unset member is not written.</summary>
+public sealed record BuildCaseFilterRequest {
+	/// <summary>The filter column.</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; init; }
+
+	/// <summary>The values whose records start the case; <see langword="null"/> for an empty-value case.</summary>
+	[JsonPropertyName("values")]
+	public IReadOnlyList<string> Values { get; init; }
+
+	/// <summary>True for the case of records whose filter column is empty; <see langword="null"/> otherwise.</summary>
+	[JsonPropertyName("empty")]
+	public bool? Empty { get; init; }
+
+	/// <summary>The wire shape of a normalized filter argument.</summary>
+	/// <param name="filter">The argument; <see langword="null"/> for none.</param>
+	public static BuildCaseFilterRequest From(DynamicCaseFilterArgument filter) =>
+		filter is null
+			? null
+			: new BuildCaseFilterRequest {
+				Column = filter.Column,
+				Values = filter.Empty ? null : filter.Values,
+				Empty = filter.Empty ? true : null
+			};
+}
+
 /// <summary>One stage of an explicit order on the wire: the lookup value's Id or exact display value.</summary>
 /// <param name="Value">The lookup value.</param>
-public sealed record BuildCaseStageRequest([property: JsonPropertyName("value")] string Value);
+public sealed record BuildCaseStageRequest([property: JsonPropertyName("value")] string Value) {
+	/// <summary>
+	/// The parent stage's lookup value, for a stage that joins a stage group; omitted when <see langword="null"/>,
+	/// which a build reads as no group.
+	/// </summary>
+	[JsonPropertyName("group")]
+	public string Group { get; init; }
+
+	/// <summary>False for a final stage that ends the case unsuccessfully; omitted when not named.</summary>
+	[JsonPropertyName("successful")]
+	public bool? Successful { get; init; }
+}
 
 /// <summary>
 /// The body of a <c>BuildCase</c> pass, sent wrapped under <c>request</c>. The server refuses an undeclared key, so
@@ -119,9 +196,20 @@ public sealed record BuildCaseRequest {
 	[JsonPropertyName("orderColumn")]
 	public string OrderColumn { get; init; }
 
-	/// <summary>The explicit stage order, or <see langword="null"/> for the default order.</summary>
+	/// <summary>The case's stages in order (any 2 to 20 lookup values), or <see langword="null"/> for every value.</summary>
 	[JsonPropertyName("stages")]
 	public IReadOnlyList<BuildCaseStageRequest> Stages { get; init; }
+
+	/// <summary>The case filter, or <see langword="null"/> for a case without one.</summary>
+	[JsonPropertyName("filter")]
+	public BuildCaseFilterRequest Filter { get; init; }
+
+	/// <summary>
+	/// True to disable the object's enabled cases without a filter; <see langword="null"/> otherwise, so a call without
+	/// it reads the same to every package that carries <c>BuildCase</c>.
+	/// </summary>
+	[JsonPropertyName("deactivateUnfiltered")]
+	public bool? DeactivateUnfiltered { get; init; }
 
 	/// <summary>True to answer the missing package dependencies instead of refusing on them.</summary>
 	[JsonPropertyName("allowMissingDependencies")]
@@ -153,11 +241,81 @@ public sealed class DynamicCaseStage {
 	/// <summary>The stage colour.</summary>
 	[JsonPropertyName("color")]
 	public string Color { get; init; }
+
+	/// <summary>The lookup value Id of the parent of this stage's group; absent for a stage in no group.</summary>
+	[JsonPropertyName("group")]
+	public string Group { get; init; }
+
+	/// <summary>False only for a final stage that ends the case unsuccessfully; absent from an older package.</summary>
+	[JsonPropertyName("successful")]
+	public bool? Successful { get; init; }
+
+	/// <summary>A stage of the final group: a record that reaches it completes the case.</summary>
+	[JsonPropertyName("isFinal")]
+	public bool? IsFinal { get; init; }
+
+	/// <summary>The stage holds steps (process elements), so removing it is refused.</summary>
+	[JsonPropertyName("hasSteps")]
+	public bool? HasSteps { get; init; }
+
+	/// <summary>A step condition moves the case to this stage, so removing it is refused.</summary>
+	[JsonPropertyName("isConditionTarget")]
+	public bool? IsConditionTarget { get; init; }
+
+	/// <summary>Running cases that sit in this stage now; absent where it was not read.</summary>
+	[JsonPropertyName("runningInstances")]
+	public int? RunningInstances { get; init; }
+
+	/// <summary>
+	/// The records whose stage column holds this stage's value, finished cases included (a record in a final stage
+	/// has one); for a filtered case only the records it is for. Absent where it was not read.
+	/// </summary>
+	[JsonPropertyName("records")]
+	public int? Records { get; init; }
 }
 
-/// <summary>The <c>case</c> block of the server's answer.</summary>
+/// <summary>One value of a case filter: the lookup value's Id and the display value the filter stores with it.</summary>
+public sealed class DynamicCaseFilterValue {
+	/// <summary>The lookup value's Id.</summary>
+	[JsonPropertyName("value")]
+	public string Value { get; init; }
+
+	/// <summary>The display value.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; init; }
+}
+
+/// <summary>
+/// A case's filter as stored: which new records start the case and which case the record page's bar shows. The same
+/// shape in the server's answers and the tools' results.
+/// </summary>
+public sealed class DynamicCaseFilter {
+	/// <summary>The filter column; absent when the stored filter cannot be read.</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; init; }
+
+	/// <summary>The values whose records start the case.</summary>
+	[JsonPropertyName("values")]
+	public List<DynamicCaseFilterValue> Values { get; init; }
+
+	/// <summary>True for the case of records whose filter column is empty.</summary>
+	[JsonPropertyName("empty")]
+	public bool? Empty { get; init; }
+
+	/// <summary>True for a filter in a shape clio's tools cannot change (built in the case designer).</summary>
+	[JsonPropertyName("unreadable")]
+	public bool? Unreadable { get; init; }
+}
+
+/// <summary>
+/// The case block of the server's answers: <c>case</c> of <c>BuildCase</c> and <c>ModifyCase</c>, and each item of
+/// <c>cases</c> of <c>DescribeCase</c>.
+/// </summary>
 public sealed class BuildCaseCaseInfo {
-	/// <summary><c>created</c>, <c>already-present</c> or <c>planned</c>.</summary>
+	/// <summary>
+	/// <c>created</c>, <c>already-present</c> or <c>planned</c> for a build; <c>existing</c> for a describe;
+	/// <c>modified</c>, <c>unchanged</c> or <c>planned</c> for a change.
+	/// </summary>
 	[JsonPropertyName("status")]
 	public string Status { get; init; }
 
@@ -208,6 +366,22 @@ public sealed class BuildCaseCaseInfo {
 	/// <summary>Directed stage connections.</summary>
 	[JsonPropertyName("connectionCount")]
 	public int ConnectionCount { get; init; }
+
+	/// <summary>The captions of the final group, the stages that complete the case.</summary>
+	[JsonPropertyName("finalStages")]
+	public List<string> FinalStages { get; init; }
+
+	/// <summary>Running cases of this case schema; absent where it was not read.</summary>
+	[JsonPropertyName("runningInstances")]
+	public int? RunningInstances { get; init; }
+
+	/// <summary>The case's package does not accept changes: it can be described, not modified in place.</summary>
+	[JsonPropertyName("packageReadOnly")]
+	public bool? PackageReadOnly { get; init; }
+
+	/// <summary>Which new records start the case; absent for a case without a filter, which starts for every record.</summary>
+	[JsonPropertyName("filter")]
+	public DynamicCaseFilter Filter { get; init; }
 }
 
 /// <summary>The settings row and the link row a case needs; the same shape in the server answer and the result.</summary>
@@ -227,6 +401,14 @@ public sealed class DynamicCaseSettings {
 	/// <summary>The package-data bindings the call wrote, by name.</summary>
 	[JsonPropertyName("bindings")]
 	public List<string> Bindings { get; init; }
+
+	/// <summary>The settings row's filter column after the call; absent when it names none.</summary>
+	[JsonPropertyName("filterColumnName")]
+	public string FilterColumnName { get; init; }
+
+	/// <summary>True when the call sets the filter column on a row that had none (planned, on a dry run).</summary>
+	[JsonPropertyName("filterColumnSet")]
+	public bool? FilterColumnSet { get; init; }
 }
 
 /// <summary>What one written artifact needs before it takes effect.</summary>
@@ -301,6 +483,10 @@ public sealed class BuildCaseResponse {
 	[JsonPropertyName("obligations")]
 	public DynamicCaseObligations Obligations { get; init; }
 
+	/// <summary>The cases without a filter that <c>deactivateUnfiltered</c> disabled (or would, on a dry run).</summary>
+	[JsonPropertyName("deactivatedCases")]
+	public List<string> DeactivatedCases { get; init; }
+
 	/// <summary>What a failure could not undo, in the order to remove it.</summary>
 	[JsonPropertyName("leftovers")]
 	public List<string> Leftovers { get; init; }
@@ -320,18 +506,28 @@ public sealed class BuildCaseResponse {
 
 /// <summary>The stage connections of a case.</summary>
 public sealed class DynamicCaseConnections {
-	/// <summary>Always <c>all-to-all</c>: every ordered pair of stages, so every stage is clickable on the bar.</summary>
+	/// <summary>
+	/// <c>all-to-all</c> when every ordered pair of stages is connected, so every stage is clickable on the bar (every
+	/// case create builds); <c>restricted</c> when a described or changed case, made in the designer, has fewer; absent
+	/// when the answer lists no stages to judge by.
+	/// </summary>
 	[JsonPropertyName("kind")]
 	public string Kind { get; init; }
 
 	/// <summary>How many directed connections the case has.</summary>
 	[JsonPropertyName("count")]
 	public int Count { get; init; }
+
+	/// <summary>The kind of <paramref name="count"/> directed connections between <paramref name="stages"/> stages.</summary>
+	internal static string KindOf(int stages, int count) => count == stages * (stages - 1) ? "all-to-all" : "restricted";
 }
 
-/// <summary>The <c>case</c> block of the tool's result: the server's block plus the designer link.</summary>
+/// <summary>The case block of a dynamic-case tool's result: the server's block plus the designer link.</summary>
 public sealed class DynamicCaseInfo {
-	/// <summary><c>created</c>, <c>already-present</c> or <c>planned</c>.</summary>
+	/// <summary>
+	/// <c>created</c>, <c>already-present</c> or <c>planned</c> for a build; <c>existing</c> for a describe;
+	/// <c>modified</c>, <c>unchanged</c> or <c>planned</c> for a change.
+	/// </summary>
 	[JsonPropertyName("status")]
 	public string Status { get; init; }
 
@@ -382,6 +578,22 @@ public sealed class DynamicCaseInfo {
 	/// <summary>The stage connections.</summary>
 	[JsonPropertyName("connections")]
 	public DynamicCaseConnections Connections { get; init; }
+
+	/// <summary>The captions of the final group, the stages that complete the case; absent from an older package.</summary>
+	[JsonPropertyName("finalStages")]
+	public List<string> FinalStages { get; init; }
+
+	/// <summary>Running cases of this case schema; absent where it was not read.</summary>
+	[JsonPropertyName("runningInstances")]
+	public int? RunningInstances { get; init; }
+
+	/// <summary>The case's package does not accept changes: it can be described, not modified in place.</summary>
+	[JsonPropertyName("packageReadOnly")]
+	public bool? PackageReadOnly { get; init; }
+
+	/// <summary>Which new records start the case; absent for a case without a filter.</summary>
+	[JsonPropertyName("filter")]
+	public DynamicCaseFilter Filter { get; init; }
 
 	/// <summary>The case designer link; only for a case that exists.</summary>
 	[JsonPropertyName("designerUrl")]
@@ -526,6 +738,10 @@ public sealed class DynamicCaseResult {
 	/// <summary>What the caller owes after the call, per artifact.</summary>
 	[JsonPropertyName("obligations")]
 	public DynamicCaseObligations Obligations { get; init; }
+
+	/// <summary>The cases without a filter that <c>deactivate-unfiltered</c> disabled (or would, on a dry run).</summary>
+	[JsonPropertyName("deactivatedCases")]
+	public List<string> DeactivatedCases { get; init; }
 
 	/// <summary>What a failure could not undo.</summary>
 	[JsonPropertyName("leftovers")]

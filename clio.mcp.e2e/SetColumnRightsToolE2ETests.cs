@@ -1,0 +1,100 @@
+using System.Collections.Generic;
+using Allure.NUnit;
+using Allure.NUnit.Attributes;
+using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Results;
+using FluentAssertions;
+using ModelContextProtocol.Protocol;
+
+namespace Clio.Mcp.E2E;
+
+/// <summary>End-to-end tests for the destructive set-column-rights MCP tool (see the shared base).</summary>
+[TestFixture]
+[Category("McpE2E.NoEnvironment")]
+[AllureNUnit]
+[AllureFeature(SetColumnRightsTool.ToolName)]
+[NonParallelizable]
+public sealed class SetColumnRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
+
+	protected override string ToolName => SetColumnRightsTool.ToolName;
+
+	protected override bool ExpectedDestructive => true;
+
+	protected override string UnknownArgumentName => "package";
+
+	protected override Dictionary<string, object?> InvalidEnvironmentArgs(string environmentName) => new() {
+		["environment-name"] = environmentName,
+		["entity-schema-name"] = "Contact",
+		["column"] = "Name",
+		["grantee"] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+		["access"] = "read"
+	};
+
+	private async Task<(CallToolResult Result, ObjectRightsToolResponse Response)> CallAsync(
+		Dictionary<string, object?> args) {
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> { ["args"] = args },
+			arrangeContext.CancellationTokenSource.Token);
+		return (callResult, EntitySchemaStructuredResultParser.Extract<ObjectRightsToolResponse>(callResult));
+	}
+
+	[Test]
+	[AllureTag(SetColumnRightsTool.ToolName)]
+	[AllureName("set-column-rights binds the switch and preview flags")]
+	[AllureDescription("enable-column-permissions with a grant and preview, and disable-column-permissions alone (no column, grantee or access), bind through the real MCP server; each call fails on the missing environment, not on an unknown or missing argument.")]
+	[Description("Binds the switch flags and the dry-run flag through the real MCP server: enable on a grant with preview, and a disable alone, whose call names no column, grantee or access.")]
+	public async Task Tool_Should_Bind_Switch_And_Preview_Flags() {
+		// Arrange
+		string grantEnvironment = $"missing-{ToolName}-enable-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> grant = InvalidEnvironmentArgs(grantEnvironment);
+		grant["enable-column-permissions"] = true;
+		grant["preview"] = true;
+		string disableEnvironment = $"missing-{ToolName}-disable-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> disable = new() {
+			["environment-name"] = disableEnvironment,
+			["entity-schema-name"] = "Contact",
+			["disable-column-permissions"] = true
+		};
+
+		// Act
+		(CallToolResult grantResult, ObjectRightsToolResponse grantResponse) = await CallAsync(grant);
+		(CallToolResult disableResult, ObjectRightsToolResponse disableResponse) = await CallAsync(disable);
+
+		// Assert
+		grantResult.IsError.Should().NotBeTrue(because: "the flags are part of the tool contract and bind like any argument");
+		grantResponse.Error.Should().Contain(grantEnvironment,
+			because: "the call must fail on the missing environment rather than on an unknown argument");
+		disableResult.IsError.Should().NotBeTrue(
+			because: "a disable alone is part of the contract: column, grantee and access are not required for it");
+		disableResponse.Error.Should().Contain(disableEnvironment,
+			because: "the call must fail on the missing environment rather than on a missing argument");
+	}
+
+	[TestCase("position", 0)]
+	[TestCase("remove-row", true)]
+	[AllureTag(SetColumnRightsTool.ToolName)]
+	[AllureName("set-column-rights binds the move and remove arguments")]
+	[AllureDescription("position and remove-row bind through the real MCP server with a column and a grantee and no access, and the call fails on the missing environment, not on an unknown or missing argument.")]
+	[Description("Binds each move or remove argument through the real MCP server: a call with a column, a grantee and one of them, and no access, reaches the environment check.")]
+	public async Task SetColumnRights_ShouldBindLayoutArgument_WhenPassedThroughTheTool(string argument, object value) {
+		// Arrange
+		string invalidEnvironmentName = $"missing-{ToolName}-layout-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = invalidEnvironmentName,
+			["entity-schema-name"] = "Contact",
+			["column"] = "Name",
+			["grantee"] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+			[argument] = value
+		};
+
+		// Act
+		(CallToolResult callResult, ObjectRightsToolResponse response) = await CallAsync(args);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "the argument is part of the tool contract and binds like any other");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the call must fail on the missing environment rather than on an unknown argument or a missing access");
+	}
+}

@@ -207,6 +207,29 @@ public class ListUserTasksToolTests {
 			because: "the prompt has to match its tool's contract");
 	}
 
+	[Test]
+	[Description("list-user-tasks names SendChatMessageUserTask as refused on the generic userTask route and routes it to type sendChatMessage with its chatMessage block (Q1), in the tool description and its prompt alike, outside the EmailTemplateUserTask / ApprovalUserTask older-package fallback: the generic route builds an element that runs in template mode with no template.")]
+	[Category("Unit")]
+	public void ListUserTasks_Description_ShouldRefuseTheSendChatMessageTaskOnTheGenericRoute() {
+		// Arrange
+		string description = typeof(ListUserTasksTool).GetMethod(nameof(ListUserTasksTool.ListUserTasks))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = Clio.Command.McpServer.Prompts.ListUserTasksPrompt.PromptByEnvironmentName("sandbox");
+		int refused = description.IndexOf("SendChatMessageUserTask (Send chat message) is REFUSED", System.StringComparison.Ordinal);
+		int fallback = description.IndexOf("for EmailTemplateUserTask and ApprovalUserTask only", System.StringComparison.Ordinal);
+
+		// Assert
+		description.Should().Contain("SendChatMessageUserTask (Send chat message) is REFUSED on the generic route - build it as type "
+				+ "sendChatMessage with its chatMessage block",
+			because: "the description sends task names down the generic route by default, and the server refuses it for this task");
+		fallback.Should().BeGreaterThan(refused,
+			because: "the older-package fallback to a generic userTask covers only the Send email and Approval tasks");
+		prompt.Should().Contain("`SendChatMessageUserTask` (Send chat message), which is refused on a `userTask` - build a `sendChatMessage`",
+			because: "the prompt has to match its tool's contract");
+	}
+
 	private sealed class FakeListUserTasksCommand : ListUserTasksCommand {
 		public ListUserTasksOptions? CapturedOptions { get; private set; }
 

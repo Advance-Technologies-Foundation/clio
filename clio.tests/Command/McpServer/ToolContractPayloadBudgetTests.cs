@@ -155,9 +155,34 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "Each line:" and "it may delete" became "may delete". The resident sentence is unchanged.
 	// read-wsdl's line made findable ("Reads a WSDL." -> "Reads a SOAP WSDL.", +5 bytes; an agent on a stand never
 	// reached the tool): paid by the legend's "[aka deprecated names]" -> "[aka old names]".
+	// ENG-106378 (describe-dynamic-case and modify-dynamic-case, two more lines) measured 18826 (138 over). Other
+	// long-tail tools' purpose lines paid for them, not the ceiling: first sentences that the 48-character cut
+	// truncated were shortened to fit it, their qualifier ("on a registered environment", the designer service)
+	// left to the environment-name argument or moved to the next sentence - list-themes, clear-themes-cache,
+	// delete-theme, create-workspace, create-package, generate-process-model, create-schema,
+	// create-client-unit-schema, update-schema, update-sql-schema, remove-package-dependency, unlock-for-hotfix,
+	// install-sql-schema, delete-app and enable-knowledge-source. Measured 18686, 2 bytes under this ceiling; the
+	// same cut kept the object index above at 50172, under its 50432 without a re-pin. Merged with ENG-105475's
+	// read-wsdl line it measured 18695, 7 over: describe-dynamic-case's own first sentence paid, shortened under the
+	// 48-character cut ("Reads a dynamic case (DCM), read-only.").
 	// mcp-tool-facts: create-user-task gained (D), a destroy whose hint said otherwise (it loads every file-system
 	// package into the database). Paid ahead by the legend: "A tool without (R) is called through clio-run" ->
 	// "Without (R), call it via clio-run", 12 bytes for the marker's 3.
+	// delete-data-binding-db, one more long-tail tool and so one more line: measured 18743 with the purpose
+	// "Deletes a binding, keeps its records." (the shortest that still tells it from remove-data-binding-row-db,
+	// which deletes the record), 55 over. Paid by the legend, as the 73-step note above requires: "cut to 48 chars"
+	// -> "max 48 chars"; "it is in tools/list, call it directly, never through clio-run" -> "call it directly"
+	// (the next sentence names clio-run for the other lines); "Without (R), call it via clio-run" -> "No (R): call
+	// via clio-run". The resident sentence the toolkit mirrors and the (D) sentence are unchanged.
+	// get-column-rights, one more long-tail tool and line: measured 18733 with the purpose "Reads column
+	// permissions.", 45 over. Paid by its object-rights siblings, whose first sentences the 48-character cut
+	// truncated: get-object-rights -> "Reads object permissions.", set-object-rights -> "Changes object
+	// permissions."; the rest of each old first sentence is now their second. Measured 18681, 7 under; the object
+	// index above measured 50334, under its ceiling without a re-pin.
+	// set-column-rights, one more line with the purpose "Changes column permissions.": measured 18734, 46 over. Paid by
+	// its default-record-rights siblings, whose first sentences the cut truncated: set-default-record-rights ->
+	// "Changes default record rules.", apply-default-record-rights -> "Applies default record rules."; the rest of each
+	// old first sentence is now their second. Measured 18684, 4 under; the object index above measured 50238.
 	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
@@ -408,6 +433,17 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-106247's approval outcome codes, whose wording added 5 bytes to create and 18 to modify: modify measured 35080,
 	// 8 bytes over. Paid by SWAP again: four em dashes in modify's formula and page clauses became ' - '. Re-measured by
 	// lowering the ceiling: create 35070, describe 35066, modify 35060 - 2, 6 and 12 bytes of headroom.
+	//
+	// ENG-96034 (2026-11-13, the Send chat message element) named, per owner decision Q10, only the type, the block and
+	// the guide pointer: create's type list ('|sendChatMessage'), its chatMessage? clause with the
+	// process-send-chat-message pointer and 'chatMessage, ' in its floor clause; modify's addElement and setElement
+	// lists, SendChatMessageUserTask among the generic-route refusals, the floor clause and the setElement pointer;
+	// describe's read-back clause with its pointer. Measured before paying: create 35225, describe 35211, modify 35197
+	// - 153, 139 and 125 bytes over. Paid by SWAP, no ceiling raise: thirty em dashes each in create and describe and
+	// twelve in modify became ' - ' (five bytes each); modify also lost the quotes of 'true' (three times, the
+	// literal a cleared condition is stored as) and of the setFlow field list (source, target, kind, condition,
+	// label), and create's clause its 'Send chat message; ' gloss. Re-measured by lowering the ceiling: create 35056,
+	// describe 35061, modify 35041 - 16, 11 and 31 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -440,6 +476,16 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-103990 (2026-11-10, rebased onto ENG-92710) re-measured by lowering this guard: "mergeFrom?" in the create
 	// call shape's parameter shape, which is never cut, brings the bundle to 18855 bytes - 145 under this guard. Its
 	// description text carries no safety marker, so no short form keeps it. Unchanged on the 1.6.6.152 base (2026-11-11).
+	//
+	// ENG-105557 follow-up (2026-11-16) re-measured by lowering this guard: the gloss on "filter?" in the create call
+	// shape's element shape, which is never cut, is the sentence the process-data-source-filters guide's gate quotes
+	// ("any of several lookup records is ONE condition with values"). It adds 61 bytes and brings the bundle to 18914
+	// bytes - 86 under this guard.
+	//
+	// ENG-96034 (2026-11-13) re-measured by lowering this guard: "chatMessage (sendChatMessage)" in the create call
+	// shape's block list, which is never cut, brings the bundle to 18881 bytes - 119 under this guard. Its description
+	// text carries no safety marker, so no short form keeps it. Merged with the ENG-105557 follow-up above
+	// (2026-11-17) and re-measured the same way: 18942 bytes - 58 under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

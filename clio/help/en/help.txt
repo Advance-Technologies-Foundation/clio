@@ -56,6 +56,7 @@ Commands:
   dataservice                                 Send a Creatio DataService request, ds
   deactivate-pkg                              Deactivate a package in Creatio, deactivate-package, disable-package, dpkg
   delete-app-section                          Delete a section from an existing installed application
+  delete-data-binding-db                      Delete a remote DB-first data binding from its package; the bound records stay in the table
   delete-infrastructure                       Delete Kubernetes infrastructure for Creatio (removes namespace and all resources), di-delete, remove-infrastructure
   delete-knowledge                            Delete installed knowledge for one source or all enabled sources
   delete-pkg-remote                           Delete package from a web application, delete

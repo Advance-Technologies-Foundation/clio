@@ -203,6 +203,10 @@ public sealed class ObjectRightsSnapshot {
 /// <param name="AdministratedByRecords">Whether "Use record permissions" is on.</param>
 /// <param name="RecordRules">The object's default record rules; <see langword="null"/> when the read failed.</param>
 /// <param name="SchemaUId">The UId of the schema the service answered for (the base schema).</param>
+/// <param name="AdministratedByColumns">Whether "Use column permissions" is on; <see langword="null"/> when the read
+/// failed or the answer carried no readable switch.</param>
+/// <param name="Columns">The object's column permission rows per column; <see langword="null"/> when the read
+/// failed.</param>
 public sealed record ObjectRightsInfo(
 	bool Found,
 	string Name,
@@ -214,7 +218,9 @@ public sealed record ObjectRightsInfo(
 	bool TimedOut = false,
 	bool AdministratedByRecords = false,
 	IReadOnlyList<DefaultRecordRule> RecordRules = null,
-	Guid SchemaUId = default) {
+	Guid SchemaUId = default,
+	bool? AdministratedByColumns = null,
+	IReadOnlyList<ColumnRights> Columns = null) {
 
 	/// <summary>The state the planner works on.</summary>
 	public ObjectRightsState State => new(AdministratedByOperations, Roles);
@@ -222,6 +228,9 @@ public sealed record ObjectRightsInfo(
 	/// <summary>The record layer: the "Use record permissions" switch and the default record rules.</summary>
 	public DefaultRecordRightsState RecordState =>
 		new(AdministratedByRecords, RecordRules ?? Array.Empty<DefaultRecordRule>());
+
+	/// <summary>The column layer: the "Use column permissions" switch and the rows of each column.</summary>
+	public ColumnRightsState ColumnState => new(AdministratedByColumns, Columns ?? Array.Empty<ColumnRights>());
 
 	/// <summary>Whether the object was found and its operation permissions were read.</summary>
 	public bool IsRead => ReadError is null && Found;

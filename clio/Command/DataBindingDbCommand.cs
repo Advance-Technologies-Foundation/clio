@@ -60,6 +60,18 @@ public class RemoveDataBindingRowDbOptions : EnvironmentOptions {
 }
 
 /// <summary>
+/// Options for the <c>delete-data-binding-db</c> command.
+/// </summary>
+[Verb("delete-data-binding-db", HelpText = "Delete a remote DB-first data binding from its package; the bound records stay in the table")]
+public class DeleteDataBindingDbOptions : EnvironmentOptions {
+	[Option("package", Required = true, HelpText = "Target package name")]
+	public string PackageName { get; set; } = string.Empty;
+
+	[Option("binding-name", Required = true, HelpText = "Binding folder name")]
+	public string BindingName { get; set; } = string.Empty;
+}
+
+/// <summary>
 ///     Options for <see cref="ReadDataBindingDbCommand" />.
 /// </summary>
 [Verb("read-data-binding-db", Aliases = ["get-data-binding-db"],
@@ -165,6 +177,28 @@ public class RemoveDataBindingRowDbCommand(IDataBindingDbService dataBindingDbSe
 }
 
 /// <summary>
+/// Deletes a remote DB-first data binding from its package and leaves the bound records in the table.
+/// </summary>
+public class DeleteDataBindingDbCommand(IDataBindingDbService dataBindingDbService, ILogger logger)
+	: Command<DeleteDataBindingDbOptions> {
+	/// <inheritdoc />
+	public override int Execute(DeleteDataBindingDbOptions options) {
+		try {
+			int boundRowCount = dataBindingDbService.DeleteBinding(options);
+			logger.WriteInfo(
+				$"Deleted binding '{options.BindingName}' from package '{options.PackageName}' "
+				+ $"({boundRowCount} bound {(boundRowCount == 1 ? "row" : "rows")}). The records stay in the table.");
+			logger.WriteInfo("Done");
+			return 0;
+		}
+		catch (Exception exception) {
+			logger.WriteError(exception.Message);
+			return 1;
+		}
+	}
+}
+
+/// <summary>
 ///     Reports which columns a remote DB-first data binding ships, so the transfer contract can be checked without
 ///     exporting and unpacking the whole package.
 /// </summary>
@@ -215,6 +249,16 @@ public interface IDataBindingDbService {
 	/// Removes a row from a remote DB-first binding and deletes the package schema data record when empty.
 	/// </summary>
 	void RemoveRow(RemoveDataBindingRowDbOptions options);
+
+	/// <summary>
+	/// Deletes a remote DB-first binding (the package schema data record) from its package without touching
+	/// the records it bound: they stay in the table. Works for a binding that holds rows and for an empty one.
+	/// </summary>
+	/// <param name="options">Environment, package name and binding name.</param>
+	/// <returns>The number of rows the binding held when it was deleted.</returns>
+	/// <exception cref="InvalidOperationException">The package does not exist on the environment, or the
+	/// binding does not exist in that package; nothing is deleted in either case.</exception>
+	int DeleteBinding(DeleteDataBindingDbOptions options);
 
 	/// <summary>
 	/// Reads what a remote DB-first binding actually ships: its entity schema and, per row, the exact set of
@@ -845,6 +889,20 @@ internal sealed class DataBindingDbService(
 		}
 	}
 
+	/// <inheritdoc />
+	public int DeleteBinding(DeleteDataBindingDbOptions options) {
+		ArgumentNullException.ThrowIfNull(options);
+		ValidateEnvironment(options);
+
+		PackageRef packageRef = bindingWriter.ResolvePackage(options.PackageName);
+		(_, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName,
+			$"Binding '{options.BindingName}' was not found in package '{options.PackageName}'. "
+			+ "Nothing was deleted.");
+		int boundRowCount = bindingWriter.FetchBoundRows(bindingUId).Count;
+		bindingWriter.DeleteBinding(packageRef, options.BindingName);
+		return boundRowCount;
+	}
+
 	private static void ValidateEnvironment(EnvironmentOptions options) {
 		if (string.IsNullOrWhiteSpace(options.Environment) && string.IsNullOrWhiteSpace(options.Uri)) {
 			throw new InvalidOperationException("--environment or --uri is required.");
@@ -894,11 +952,12 @@ internal sealed class DataBindingDbService(
 			""";
 	}
 
-	private (string EntitySchemaName, Guid BindingUId) LookupBindingInfo(Guid packageUId, string bindingName) {
+	private (string EntitySchemaName, Guid BindingUId) LookupBindingInfo(Guid packageUId, string bindingName,
+		string? notFoundMessage = null) {
 		PackageDataBindingRef? binding = bindingWriter.FindBinding(packageUId, bindingName);
 		if (binding is null) {
 			throw new InvalidOperationException(
-				$"Binding '{bindingName}' was not found in the remote environment.");
+				notFoundMessage ?? $"Binding '{bindingName}' was not found in the remote environment.");
 		}
 
 		return (string.IsNullOrWhiteSpace(binding.EntitySchemaName) ? bindingName : binding.EntitySchemaName,
@@ -1316,16 +1375,22 @@ internal sealed class DataBindingDbService(
 
 		List<DataBindingDbRowInput> result = [];
 		foreach (JsonNode? item in array) {
-			if (item is JsonObject rowObj &&
-				rowObj.TryGetPropertyValue("values", out JsonNode? valuesNode) &&
-				valuesNode is JsonObject valuesObj) {
-				Dictionary<string, JsonNode?> values = valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value);
-				string rowLabel = DescribeRow(values, result.Count);
-				rowObj.TryGetPropertyValue("localizations", out JsonNode? localizationsNode);
-				result.Add(new DataBindingDbRowInput(
-					values,
-					new DataBindingRowLocalization(rowLabel, ParseRowLocalizations(localizationsNode, rowLabel))));
+			if (item is not JsonObject rowObj ||
+				!rowObj.TryGetPropertyValue("values", out JsonNode? valuesNode) ||
+				valuesNode is not JsonObject valuesObj) {
+				//Refused rather than skipped: a skipped row leaves an empty binding behind and reports success, so a
+				//caller who passed the columns directly never learns that nothing was bound.
+				throw new InvalidOperationException(
+					$"--rows item #{result.Count + 1} must be an object with a 'values' object that holds the column values, "
+					+ "for example [{\"values\":{\"Name\":\"Row\"}}]. Nothing was written.");
 			}
+
+			Dictionary<string, JsonNode?> values = valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value);
+			string rowLabel = DescribeRow(values, result.Count);
+			rowObj.TryGetPropertyValue("localizations", out JsonNode? localizationsNode);
+			result.Add(new DataBindingDbRowInput(
+				values,
+				new DataBindingRowLocalization(rowLabel, ParseRowLocalizations(localizationsNode, rowLabel))));
 		}
 
 		return result;

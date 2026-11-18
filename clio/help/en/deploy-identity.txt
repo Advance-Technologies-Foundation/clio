@@ -46,11 +46,15 @@ OPTIONS
     --identity-archive-path-in-bundle PATH
         Nested IdentityService archive path when --zip-file is a Creatio distribution bundle.
         Also used as the preferred relative path under EnvironmentPath when --zip-file is
-        omitted.
+        omitted; it must then stay inside EnvironmentPath and name one file: a rooted
+        path, a '..' segment, an empty file name (a trailing separator) or a '*' or '?'
+        in the file name is refused.
         Default: IdentityService.zip
 
     --identity-site-name NAME
-        IIS site and application pool name.
+        IIS site and application pool name. Letters, digits, dot, underscore and hyphen;
+        not '.' or '..' and no trailing dot, because the name is also the default
+        target folder name.
         Default: <environment>-identity
 
     --identity-path PATH

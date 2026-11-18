@@ -9,7 +9,7 @@ applies-to:
   - clio.mcp.e2e/ToolContractGetToolE2ETests.cs
   - clio.tests/Common/BundledProcessBuilderSource.cs
 ticket: ENG-100154
-date: 2026-11-11
+date: 2026-11-17
 ---
 
 **What is true** — since ENG-100154 `get-tool-contract` with `tool-names` and no `detail` returns every
@@ -54,11 +54,11 @@ MEASURED against the budget:
   gain an example, 378 characters as appended (more in Fit's measure, whose default encoder escapes every
   quote), none of them in the seven-contract bundle; a single-tool lookup of those six still fits whole, but
   in a multi-contract reply Fit may now shorten one contract more than before. The `CallShapes` tools are skipped by name,
-  because their shape block already lists every nested field and their bundle has about 145 bytes of
+  because their shape block already lists every nested field and their bundle has about 58 bytes of
   headroom; a new short example on another of the seven would spend that headroom, which the budget tests
   below report.
 - The short `create-business-process` and `modify-business-process` contracts also carry a `SHAPE:` block
-  (`ToolContractShortForm.CallShapes`, ENG-102797), about 0.9 KB each and names-and-nesting only: the
+  (`ToolContractShortForm.CallShapes`, ENG-102797), about 0.9 KB each and mostly names and nesting: the
   descriptor fields and element blocks, and every modify operation with its fields. It is appended after
   the kept lead and safety sentences, so fitting never cuts it. With both shapes the seven-contract bundle
   stays over 18 432 bytes as Fit measures it (default encoder) even all short, so Fit returns all seven
@@ -105,11 +105,13 @@ a change that keeps one of the seven whole, or brings their floor back under Fit
 `GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget`,
 so the trade is re-decided rather than drifting.
 
-Both budgets are nearly spent. Measured after ENG-103990 joined ENG-92710 (2026-11-11): the largest full
-contract, `describe-business-process`, is 35 069 bytes, 3 under the 35 072-byte per-contract ceiling in
-`ToolContractPayloadBudgetTests` (create 35 065), and the seven-contract reply 18 855 bytes, 145 under 19 000 on the wire;
-that test's comment carries the current figures for each contract.
-The next sentence on that tool pays by a swap, as the ceiling's comment
+Both budgets are nearly spent. The largest full contracts sit a few bytes under the 35 072-byte per-contract
+ceiling in `ToolContractPayloadBudgetTests`: describe 35 061, create 35 056 and modify 35 041, measured on
+2026-11-17 after ENG-96034 (the Send chat message element) paid for its text by turning em dashes into ' - ' -
+fewer of those are left each time. The seven-contract reply, re-measured with ENG-96034 merged onto the `filter?`
+gloss (2026-11-17), is 18 942 bytes, 58 under 19 000 on the wire. That test's comments carry the current figures
+for each contract.
+The next sentence on one of those tools pays by a swap, as the ceiling's comment
 records for earlier tickets, and the order to cut in is: provenance first (version floors, history, which
 archive a rule arrived in), then text a process guide already owns (per-element reference, the detail of a
 refusal message). Never cut a sentence carrying a `SafetyDuty` marker, a refusal the caller has to act on, or

@@ -83,11 +83,11 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		if (!ObjectRightsCommandInput.TryReadObjectName(options.EntitySchemaName, _logger, out string named)) {
 			return 1;
 		}
-		if (!TryParseUnitFilter(options.Grantee, out Guid? granteeFilter)) {
+		if (!ObjectRightsCommandInput.TryParseUnitFilter(options.Grantee, out Guid? granteeFilter)) {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
 		}
-		if (!TryParseUnitFilter(options.Author, out Guid? authorFilter)) {
+		if (!ObjectRightsCommandInput.TryParseUnitFilter(options.Author, out Guid? authorFilter)) {
 			_logger.WriteError("Error: --author must be a SysAdminUnit id (GUID).");
 			return 1;
 		}
@@ -193,47 +193,12 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 	}
 
-	// The read's own policy for a title (ObjectRightsCommandInput.TryResolveObjectName owns the code-first rule): when
-	// no object has the code, the one object with that title is read, and several are refused with the candidates, so
-	// the read never guesses between them. An object with the code that is not found is reported like any object that is
-	// not found. Returns false after writing the error.
+	// The read's own policy for a title is ObjectRightsCommandInput.TryReadNamedObject's, shared with get-column-rights.
+	// Returns false after writing the error.
 	private bool TryReadRoot(string named, CreatioRequestOptions requestOptions, out string rootName,
-		out ObjectRightsInfo root, out bool byTitle) {
-		rootName = null;
-		root = null;
-		byTitle = false;
-		if (!ObjectRightsCommandInput.TryResolveObjectName(named, code => ReadRights(code, requestOptions), _rightsReader,
-				requestOptions, _logger, out ObjectNameResolution resolution)) {
-			return false;
-		}
-		if (resolution.TitleMatches.Count == 0) {
-			rootName = resolution.Code;
-			root = resolution.ByCode;
-			return true;
-		}
-		if (resolution.TitleMatches.Count > 1) {
-			_logger.WriteError($"Error: {ObjectRightsCommandInput.NotACode(named, resolution.TitleMatches)}. Re-run with "
-				+ "the exact code.");
-			return false;
-		}
-		rootName = resolution.TitleMatches[0].Name;
-		root = ReadRights(rootName, requestOptions);
-		byTitle = true;
-		return true;
-	}
-
-	// An omitted grantee means "every role"; a given one must be a non-empty GUID.
-	private static bool TryParseUnitFilter(string raw, out Guid? filter) {
-		filter = null;
-		if (string.IsNullOrWhiteSpace(raw)) {
-			return true;
-		}
-		if (!Guid.TryParse(raw, out Guid parsed) || parsed == Guid.Empty) {
-			return false;
-		}
-		filter = parsed;
-		return true;
-	}
+		out ObjectRightsInfo root, out bool byTitle) =>
+		ObjectRightsCommandInput.TryReadNamedObject(named, code => ReadRights(code, requestOptions), _rightsReader,
+			requestOptions, _logger, out rootName, out root, out byTitle);
 
 	private void ReportHeader(GetObjectRightsOptions options, Guid? granteeFilter, Guid? authorFilter,
 		ConnectedObjectsResolution resolution, ObjectRightsInfo root) {

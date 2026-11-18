@@ -76,10 +76,10 @@ public sealed class McpPayloadDumpCleanupPolicyTests {
 	/// </remarks>
 	private static readonly IReadOnlyDictionary<string, string> EvidenceKeepingSites =
 		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["clio.mcp.e2e/PageSyncToolE2ETests.cs::PageSyncTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsUnsafe"] =
-				"the restore runs only when restoreNeeded, i.e. when the probe body reached the stand, and the bodyAfter assertion has then already failed the test",
-			["clio.mcp.e2e/PageUpdateToolE2ETests.cs::TryRestorePageBodyAsync"] =
-				"called only from a finally block under restoreNeeded, which is set exactly when the test's own assertion on the unchanged body fails"
+			// The page fixtures restore the shared seed page through the SeededBlankPage lease in TearDown: their
+			// two earlier restore-on-failure catch sites are gone.
+			["clio.mcp.e2e/PageSyncToolE2ETests.cs::PageSyncTool_Should_Make_Completed_Write_Immediately_Observable"] =
+				"the catch keeps the exception of the test's own restore in restoreFailure, which fails the test in the assertion scope next to the visibility verdict, so the dump is the record of what the restore received"
 		};
 
 	/// <summary>

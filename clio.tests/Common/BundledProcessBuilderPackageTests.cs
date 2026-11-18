@@ -70,15 +70,19 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>640acdf8</c>,
-	/// tagged <c>crtprocessbuilder-1.6.6.172</c>): branch <c>feature/ENG-105558-internal-helper-parameter</c> with
-	/// <c>main</c> merged in at 1.6.6.171 (<c>4d89bc98</c>, the merge of <c>e3e7f838</c>), so the cut carries everything
-	/// 1.6.6.171 shipped.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>58abfb5b</c>,
+	/// tagged <c>crtprocessbuilder-1.6.6.186</c>; the stamp is its child <c>fc736c90</c>): branch
+	/// <c>feature/ENG-96034-send-chat-message</c> with <c>main</c> merged in at 1.6.6.185 (<c>4f8fc389</c>), so the cut
+	/// carries everything 1.6.6.185 carries - the cut master bundles before this one, from producing commit
+	/// <c>34e0204b</c>, whose package sources differ from main's <c>31cf9f09</c> only by <c>descriptor.json</c> - and the
+	/// Send chat message element.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.172 and packed that commit with it overlaid (386
-	/// entries), and the stamp was committed after it as the child commit <c>88cc8187</c>.
-	/// 1.6.6.172 is the first number above every cut in both histories (1.6.6.171 was the highest); whichever package
-	/// branch lands after this one restamps above it.
+	/// marker, the script stamped the package descriptor to 1.6.6.186 and packed that commit with it overlaid (407
+	/// entries), and the stamp was committed after it as the child commit <c>fc736c90</c>.
+	/// 1.6.6.186 is the first number above every cut in both histories (1.6.6.174 to 1.6.6.177 and 1.6.6.180 were earlier
+	/// cuts of the chat work, superseded before release; 1.6.6.178, 1.6.6.179 and 1.6.6.181 to 1.6.6.185 were cut on the
+	/// dynamic-case branches), and whichever
+	/// package branch lands after this one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -91,20 +95,25 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.171 (ENG-105558): a top-level process parameter that the same build or
-	/// modify creates with no direction, that an element of the process fills and that is not a collection, is saved
-	/// <c>Internal</c> instead of <c>Variable</c>, with a notice; a stated direction is never switched, a FileCollection
-	/// keeps <c>Variable</c> with no advice, a <c>Variable</c> stated for a parameter the request creates and an element
-	/// fills is advised once, and a pre-existing <c>Variable</c> parameter the request makes an element fill keeps
-	/// <c>Variable</c> and gets advice worded as a report that asks for its callers first. The service surface is
-	/// unchanged from 1.6.6.171 (9 operations, 6 design-gate call sites and the one case-gate call site, counted in the
-	/// producing sources). No <c>[RequiresPackage]</c> floor moves (create, modify and modify-as-new-version stay at
-	/// 1.6.6.162, <c>create-dynamic-case</c> at 1.6.6.165): no request key is added, and an older package simply keeps
-	/// <c>Variable</c>. What earlier cuts carried is in this file's git history rather than here: it described archives
-	/// that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.185, the cut master bundles (ENG-96034): the Send chat message element -
+	/// the <c>sendChatMessage</c> element type and its <c>chatMessage</c> block (<c>SendChatMessageDescriptor</c>, read
+	/// back as <c>DescribeSendChatMessageInfo</c>) on build, addElement and setElement, the refusal of the generic userTask
+	/// route naming <c>SendChatMessageUserTask</c>, and the raw-mapping guard on the block-owned chat parameters. It also
+	/// changes stored values beyond the chat element: a <c>[#Lookup…#]</c> macro accepted in column values is stored
+	/// canonical (the name or replacing-schema segment becomes the object's root schema UId, lower case, with a "stored
+	/// as" notice) on <c>changeData.values</c>, <c>addData.values</c>, <c>openEditPage.defaultValues</c> and
+	/// <c>chatMessage.columnValues</c>, and describe reads that canonical text back. The service surface is unchanged from
+	/// 1.6.6.185 - 11 operations, 6 design-gate call sites and three case-gate call sites, counted in the shipped archive
+	/// by the guards below (the entries were not re-audited against the producing commit for this cut). The create,
+	/// modify and modify-as-new-version floors move to 1.6.6.186, because an older server refuses the new type and block
+	/// as undeclared keys; the dynamic-case floors stay as master set them (<c>create-dynamic-case</c> 1.6.6.179, the case
+	/// describe and modify tools 1.6.6.185). What 1.6.6.185 itself carried (records per stage, the stage value rename,
+	/// every confirmation asked once) and what earlier cuts carried is in this file's git history.
+	/// </para>
 	/// <para>
-	/// The package suite ran on the producing sources for this cut, not carried over from a previous one: 6322 passed,
-	/// 0 failed, on <c>dev-nf</c>. <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
+	/// The package suite ran on the sources of this cut, not carried over from a previous one: 6761 passed, 0 failed, on
+	/// the merge commit <c>4f8fc389</c>, which differs from the producing commit only by the compile-marker stamp.
+	/// <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
@@ -186,7 +195,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"48D00E48CA4F50C93EE08080312286202548B86577076BBCF44F2679EE615752";
+		"DC6403C0C0679E42DD71A9D73474E2AC2EC68D6E1C00D3DA18A56A9D6E421056";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -214,7 +223,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.172";
+	private const string ExpectedArchiveVersion = "1.6.6.186";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -225,7 +234,8 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.152, 1.6.6.153 and 1.6.6.159 hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
-	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172 a script cut.
+	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
+	/// 1.6.6.185 and 1.6.6.186 are script cuts.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -233,7 +243,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "640acdf80cd6691a2cbbdd0b832e70147d965fdd";
+	private const string ExpectedProducingCommit = "58abfb5bbf0eb776c3de12733f4e6d1340a90384";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -259,7 +269,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794574773000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794936864000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -274,7 +284,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794574650000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794936769000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -283,9 +293,10 @@ public class BundledProcessBuilderPackageTests {
 	private const string AuthorizationGateMethodName = "EnsureCanManageProcessDesign";
 
 	/// <summary>
-	/// The gate <c>BuildCase</c> applies instead of <see cref="AuthorizationGateMethodName"/>: the platform's own rights
-	/// for cases (<c>CanManageDcm</c>, <c>CanManageSolution</c>, append on both case settings tables, a General user).
-	/// One call site, in the case handler, before anything is read.
+	/// The gate the three case operations (<c>BuildCase</c>, <c>DescribeCase</c>, <c>ModifyCase</c>) apply instead of
+	/// <see cref="AuthorizationGateMethodName"/>: the platform's own rights for cases (<c>CanManageDcm</c>,
+	/// <c>CanManageSolution</c>, append on both case settings tables, a General user). Three call sites, one in each
+	/// case handler, before anything is read.
 	/// </summary>
 	private const string CaseGateMethodName = "EnsureCanManageDcm";
 
@@ -297,7 +308,7 @@ public class BundledProcessBuilderPackageTests {
 	/// Six, NOT seven, and the difference is worth writing down because it is the first thing anyone
 	/// recomputing this number gets wrong: it is not one gate per gated operation. Of the
 	/// <see cref="ExpectedOperationContractCount"/> operations, one is ungated
-	/// (<see cref="UngatedOperations"/>), <c>BuildCase</c> is gated by the case gate
+	/// (<see cref="UngatedOperations"/>), the three case operations are gated by the case gate
 	/// (<see cref="CaseGateMethodName"/>, pinned separately), and the remaining seven are gated at six places, because
 	/// <c>ProcessDesigner.Execute</c> is a SHARED boundary for the two read operations — it applies the guard
 	/// once and both <c>ListUserTasks</c> and <c>DescribeProcess</c> pass through it. The four write
@@ -369,7 +380,7 @@ public class BundledProcessBuilderPackageTests {
 	/// argued exception, so a second one must not be able to arrive unnoticed. Raise this together with the
 	/// allowlist, in the same commit, or not at all.
 	/// </remarks>
-	private const int ExpectedOperationContractCount = 9;
+	private const int ExpectedOperationContractCount = 11;
 
 	/// <summary>
 	/// The operations allowed to ship WITHOUT the authorization gate.
@@ -402,7 +413,9 @@ public class BundledProcessBuilderPackageTests {
 		typeof(Clio.Command.DescribeProcessOptions),
 		typeof(Clio.Command.ListUserTasksOptions),
 		typeof(Clio.Command.McpServer.Tools.ProcessDesigner.ValidateProcessGraphArgs),
-		typeof(Clio.Command.CreateDynamicCaseOptions)
+		typeof(Clio.Command.CreateDynamicCaseOptions),
+		typeof(Clio.Command.DescribeDynamicCaseOptions),
+		typeof(Clio.Command.ModifyDynamicCaseOptions)
 	];
 
 	/// <summary>
@@ -715,10 +728,11 @@ public class BundledProcessBuilderPackageTests {
 				+ "required too, and that half is exactly what makes this gate stricter than CanManageSolution. "
 				+ "A rebundle that lost the connection-type check would install, pass every other pin here, and "
 				+ "let a portal user holding CanManageProcessDesign write a process carrying a script task");
-		CountUncommentedOccurrences(archive, $"_guard.{CaseGateMethodName}()").Should().Be(1,
-			because: "BuildCase writes a case schema and two settings rows, and it is gated by the case gate rather "
-				+ "than the design gate, so the design-gate count below cannot see it; without this pin an archive "
-				+ "whose case handler lost its gate would pass every other check here");
+		CountUncommentedOccurrences(archive, $"_guard.{CaseGateMethodName}()").Should().Be(3,
+			because: "BuildCase, DescribeCase and ModifyCase read and write cases and settings rows, each gated by the "
+				+ "case gate in its own handler rather than by the design gate, so the design-gate count below cannot "
+				+ "see them; without this pin an archive whose case handler lost its gate would pass every other "
+				+ "check here");
 		archive.Should().Contain("\"CanManageDcm\"",
 			because: "the case gate's operation is the platform's own right for cases");
 		CountUncommentedOccurrences(archive, "_guard.EnsureCanCompileConfiguration()").Should().Be(1,
@@ -897,6 +911,74 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
+	[Description("An archive that meets the create-dynamic-case floor must accept the case filter: the floor moved to the first cut with filters, and a cut with BuildCase but without them would refuse filter and deactivate-unfiltered as unknown keys.")]
+	public void BundledArchive_ShouldAcceptTheCaseFilter_WhenItMeetsTheCaseFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.CreateDynamicCaseOptions.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool carriesDeactivateUnfiltered = archive.Contains("[DataMember(Name = \"deactivateUnfiltered\")]",
+			StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			carriesDeactivateUnfiltered.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the create-dynamic-case floor {floor}, which is the first "
+					+ "cut whose BuildCase request takes the filter and deactivateUnfiltered");
+		}
+	}
+
+	[Test]
+	[Description("An archive that meets the describe-dynamic-case / modify-dynamic-case floor must carry the DescribeCase and ModifyCase operations, and one below it must not: a version number alone lets a cut from another branch pass every gate without the operations, and the install remedy would then reinstall the same package.")]
+	public void BundledArchive_ShouldCarryTheCaseChangeOperations_WhenItMeetsTheirFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.DynamicCaseChangeRequirement.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool carriesDescribeCase = archive.Contains("DescribeCaseResponse DescribeCase(", StringComparison.Ordinal);
+		bool carriesModifyCase = archive.Contains("ModifyCaseResponse ModifyCase(", StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			carriesDescribeCase.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the case-change floor {floor}, so it must expose the "
+					+ "operation describe-dynamic-case calls");
+			carriesModifyCase.Should().BeTrue(
+				because: $"the bundled {bundledVersion} meets the case-change floor {floor}, so it must expose the "
+					+ "operation modify-dynamic-case calls");
+		} else {
+			(carriesDescribeCase || carriesModifyCase).Should().BeFalse(
+				because: $"the bundled {bundledVersion} is below the floor {floor}; an archive below it that already "
+					+ "carries the operations means the floor is higher than it needs to be");
+		}
+	}
+
+	[Test]
+	[Description("An archive that meets the case-change floor must read the two confirmations and report records: a cut at or above the floor from a base without them (another branch's re-cut) would pass every pin while describe lost records and modify refused the confirmations as unknown keys.")]
+	public void BundledArchive_ShouldAcceptTheCaseChangeConfirmations_WhenItMeetsTheirFloor() {
+		// Arrange
+		PackageVersion bundledVersion = ReadBundledVersionThroughTheCatalog();
+		PackageVersion floor = PackageVersion.ParseVersion(Clio.Command.DynamicCaseChangeRequirement.MinimumProcessBuilderVersion);
+		string archive = ReadBundledArchiveAsText();
+
+		// Act
+		bool readsStageRecords = archive.Contains("[DataMember(Name = \"confirmStageRecords\")]", StringComparison.Ordinal);
+		bool readsValueRename = archive.Contains("[DataMember(Name = \"confirmValueRename\")]", StringComparison.Ordinal);
+		bool reportsRecords = archive.Contains("[DataMember(Name = \"records\"", StringComparison.Ordinal);
+
+		// Assert
+		if (bundledVersion >= floor) {
+			readsStageRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+			readsValueRename.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+			reportsRecords.Should().BeTrue(because: $"the bundled {bundledVersion} meets the floor {floor}");
+		}
+	}
+
+	[Test]
 	[Description("Every literal version declared in a [RequiresPackage] against the bundled package must be satisfiable by the archive clio itself ships, or clio demands of an environment something it cannot supply and its own remediation cannot help.")]
 	public void BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement() {
 		// Arrange
@@ -937,7 +1019,8 @@ public class BundledProcessBuilderPackageTests {
 			because: $"every gate must be visible to this scan and no other type may carry one. Add or remove "
 				+ $"a gate and {nameof(ProcessBuilderGatedTypes)} moves in the same commit, so a lost "
 				+ "declaration cannot pass as slack and a new one cannot arrive unreviewed");
-		// The loop EXECUTES today: six of the nine carry a version literal, and they do NOT all agree with
+		// The loop EXECUTES today: eight of the eleven carry a version literal (the two dynamic-case change tools
+		// share one floor, DynamicCaseChangeRequirement), and they do NOT all agree with
 		// each other — create, modify and modify-as-new-version at 1.6.6.30 since ENG-92711 (create and modify had
 		// diverged before, when modify's page-change reconciliation promise needed a newer archive than create's;
 		// the new-version route followed because it shares the operations vocabulary and runs no read-back),
@@ -948,7 +1031,7 @@ public class BundledProcessBuilderPackageTests {
 		// commit that adds one is exactly when it must already work. It replaces the old pin (descriptor
 		// version == a constant), which needed hand-synchronising on every rebundle and asserted a
 		// coincidence, not a rule.
-		versioned.Should().HaveCount(6,
+		versioned.Should().HaveCount(8,
 			because: "the version loop is the only automated coupling stopping an archive below the floor the "
 				+ "two version tools demand from shipping, so a literal silently becoming presence-only must "
 				+ "redden here rather than leave the loop iterating over fewer gates than exist");
@@ -1693,6 +1776,32 @@ public class BundledProcessBuilderPackageTests {
 		}
 	}
 
+
+	[Test]
+	[Description("clio checks the chatMessage block's keys before sending it and TYPES its describe block, and its create, modify and modify-as-new-version floors are a version number only: a later cut from a package tree that lacks the Send chat message sources would satisfy that number while dropping the block. This probes the archive for every chatMessage wire name clio sends or reads, each on its NAMED type.")]
+	public void BundledArchive_ShouldDeclareTheSendChatMessageWireNamesClioReads() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "ProcessElementDescriptor", "chatMessage").Should().BeTrue(
+			because: "create-business-process and addElement send the block on this member");
+		DeclaresMemberOn(archive, "ProcessElementUpdateDescriptor", "chatMessage").Should().BeTrue(
+			because: "setElement sends the block on this member; without it the server refuses or drops the update");
+		DeclaresMemberOn(archive, "DescribeProcessElement", "chatMessage").Should().BeTrue(
+			because: "DescribedElement.ChatMessage reads the block off this member");
+		foreach (string member in new[] {
+				"from", "to", "messageSource", "template", "message", "ignoreErrors", "columnValues" }) {
+			DeclaresMemberOn(archive, "SendChatMessageDescriptor", member).Should().BeTrue(
+				because: $"the chatMessage key set sends '{member}'");
+		}
+		foreach (string member in new[] {
+				"from", "to", "messageSource", "template", "templateName", "message", "ignoreErrors", "columnValues",
+				"outputs", "issues" }) {
+			DeclaresMemberOn(archive, "DescribeSendChatMessageInfo", member).Should().BeTrue(
+				because: $"DescribedChatMessage reads '{member}'");
+		}
+	}
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector

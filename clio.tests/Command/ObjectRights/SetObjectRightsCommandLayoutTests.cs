@@ -70,6 +70,7 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 		containerBuilder.AddTransient(_ => _writer);
 		containerBuilder.AddTransient(_ => _granteeLookup);
 		containerBuilder.AddTransient(_ => ObjectRightsBinderStub.Binding());
+		containerBuilder.AddTransient(_ => ObjectRightsBinderStub.Lease());
 		containerBuilder.AddTransient(_ => Substitute.For<IInteractiveConsole>());
 		containerBuilder.AddTransient(_ => _logger);
 	}
@@ -88,7 +89,7 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 
 	private void ObjectIs(ObjectRightsInfo before, ObjectRightsInfo readBack = null) =>
 		_reader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
-			.Returns(_ => before,
+			.Returns(_ => before, _ => before,
 				_ => readBack ?? (_saved is null ? before : Info(_saved.AdministratedByOperations, _saved.Roles.ToArray())));
 
 	private static SetObjectRightsOptions Options(Action<SetObjectRightsOptions> layout) {
