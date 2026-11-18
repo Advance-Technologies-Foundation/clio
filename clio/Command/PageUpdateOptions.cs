@@ -1436,9 +1436,9 @@
 			return false;
 		}
 
-		private bool TryGetHierarchy(string rawSchemaUId, string designPackageUId, string schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out PageUpdateResponse response) {
+		private bool TryGetHierarchy(string anchorSchemaUId, string designPackageUId, string schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out PageUpdateResponse response) {
 			try {
-				hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
+				hierarchy = _hierarchyClient.GetParentSchemas(anchorSchemaUId, designPackageUId);
 			} catch (Exception ex) {
 				hierarchy = null;
 				response = new PageUpdateResponse { Success = false, Error = PageHierarchyRecoveryHint.Append($"Failed to load hierarchy for '{schemaName}': {ex.Message}") };

@@ -240,6 +240,11 @@ public sealed class PageUpdateCommandPackageChoiceTests {
 		_hierarchyClient.Received(1).GetParentSchemas(BaseUId, DesignPackage);
 		_inspector.Received(1).Inspect(SchemaName,
 			Arg.Is<IReadOnlyList<PageDesignerHierarchySchema>>(chain => ReferenceEquals(chain, _chain)), DesignPackage);
+		// A capped lookup would return one unordered variant and lose the root row on a real stand.
+		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl,
+			Arg.Is<string>(query => query.Contains(ClassicEntitySchemaQuery.ExtendParentColumn)
+				&& (int)Newtonsoft.Json.Linq.JObject.Parse(query)["rowCount"] == PageSchemaMetadataHelper.AllRows),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
 	[Test]
