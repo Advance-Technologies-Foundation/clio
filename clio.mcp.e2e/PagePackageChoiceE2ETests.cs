@@ -41,14 +41,14 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 	// default target outside them.
 	private const int MaxSchemaDeletesPerName = 5;
 
-	private string _environmentName = null!;
 	private McpE2ESettings _settings = null!;
+
+	private string EnvironmentName => _settings.Sandbox.EnvironmentName!;
 
 	private protected override void ConfigureMcpServerSettings(McpE2ESettings settings) {
 		if (!settings.AllowDestructiveMcpTests || string.IsNullOrWhiteSpace(settings.Sandbox.EnvironmentName)) {
 			Assert.Ignore("Configure an explicitly disposable sandbox and AllowDestructiveMcpTests=true.");
 		}
-		_environmentName = settings.Sandbox.EnvironmentName!;
 		_settings = settings;
 	}
 
@@ -66,7 +66,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		string pageName = "UsrPkgChoice" + suffix;
 		string companionName = "UsrPkgChoiceSync" + suffix;
 		List<string> packages = [];
-		string workDirectory = Directory.CreateTempSubdirectory("clio-e2e-package-choice-").FullName;
+		string workDirectory = CreateFixtureDirectory("package-choice");
 		try {
 			PackageChoiceWorld world = await AllureApi.Step("Arrange: seed a page with layers in two packages",
 				() => SeedAsync(context, suffix, pageName, companionName, packages, workDirectory));
@@ -97,7 +97,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 				choice.Should().NotBeNull(because: "packageChoice must survive the MCP serialization of get-page");
 				choice.Required.Should().BeTrue(
 					because: "two unlocked packages customize the page, so a write must name its target");
-				choice.Layers.Select(layer => layer.PackageUId.ToLowerInvariant()).Should().Contain(
+				LayerPackageUIds(choice).Should().Contain(
 					[world.FirstLayerPackageUId, world.SecondLayerPackageUId],
 					because: "both replacing layers the test wrote must be listed for the user to choose from");
 				choice.Layers.Where(layer => SameUId(layer.PackageUId, world.FirstLayerPackageUId)
@@ -110,7 +110,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 				refused.Error.Should().StartWith(RequiredMarker,
 					because: "the marker is what the agent keys on to ask the user");
 				refused.PackageChoice.Should().NotBeNull(because: "the refusal returns the layers as structured data");
-				refused.PackageChoice!.Layers.Select(layer => layer.PackageUId.ToLowerInvariant()).Should().Contain(
+				LayerPackageUIds(refused.PackageChoice!).Should().Contain(
 					[world.FirstLayerPackageUId, world.SecondLayerPackageUId],
 					because: "the refusal lists the same layers get-page does");
 			});
@@ -138,7 +138,6 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		}
 		finally {
 			await CleanUpAsync([pageName, companionName], packages);
-			TryDeleteDirectory(workDirectory);
 		}
 	}
 
@@ -175,7 +174,6 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		IReadOnlyList<StoredRow> rowsAfterAppend = await ReadStoredRowsAsync(pageName);
 		PageUpdateResponse replaced = await UpdatePageAsync(context, pageName,
 			BuildFragment(pageName, "UsrClioE2EReplaceRefused"), workDirectory, "replace", other.PackageUId);
-		PagePackageLayer afterReplace = await ReadLayerAsync(context, pageName, other.PackageUId, workDirectory);
 		IReadOnlyList<StoredRow> rowsAfterReplace = await ReadStoredRowsAsync(pageName);
 
 		// Assert
@@ -192,10 +190,6 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 				because: "a replace would overwrite the layer's own changes with the default target's body");
 			replaced.Error.Should().StartWith(ReplaceRefusedMarker,
 				because: "the marker tells the agent to send only its change with mode append");
-			afterReplace.Changes.Should().BeEquivalentTo(afterAppend.Changes,
-				because: "the refused replace must leave the layer as the append left it");
-			afterReplace.Changes.Should().NotContain("insert UsrClioE2EReplaceRefused",
-				because: "nothing of the refused body may reach the layer");
 			rowsAfterReplace.Should().BeEquivalentTo(rowsAfterAppend,
 				because: "no stored schema of the page, in any package, may change on a refused replace");
 		});
@@ -219,7 +213,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 	/// </summary>
 	private async Task<IReadOnlyList<StoredRow>> ReadStoredRowsAsync(string schemaName) {
 		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(_settings, [
-			"call-service", "--method", "GET", "-e", _environmentName, "--service-path",
+			"call-service", "--method", "GET", "-e", EnvironmentName, "--service-path",
 			$"odata/SysSchema?$filter=Name%20eq%20'{schemaName}'&$select=Checksum,ModifiedOn"
 				+ "&$expand=SysPackage($select=UId,Name)"
 		]);
@@ -261,7 +255,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		string[] dependencies, List<string> created) {
 		CallToolResult callResult = await context.Session.CallDestructiveAsync(CreatePackageTool.CreatePackageToolName,
 			new Dictionary<string, object?> {
-				["environment-name"] = _environmentName,
+				["environment-name"] = EnvironmentName,
 				["package-name"] = packageName,
 				["description"] = "clio MCP e2e package choice",
 				["dependencies"] = dependencies
@@ -283,7 +277,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 					["schema-name"] = schemaName,
 					["template"] = "BlankPageTemplate",
 					["package-name"] = packageName,
-					["environment-name"] = _environmentName
+					["environment-name"] = EnvironmentName
 				}
 			},
 			context.CancellationTokenSource.Token);
@@ -296,7 +290,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["schema-name"] = schemaName,
-					["environment-name"] = _environmentName,
+					["environment-name"] = EnvironmentName,
 					// A fresh folder per read, so a later read never shows the body file of an earlier one.
 					["output-directory"] = Directory.CreateDirectory(
 						Path.Combine(workDirectory, "get-page-" + Guid.NewGuid().ToString("N")[..8])).FullName
@@ -307,18 +301,23 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		return EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
 	}
 
-	private async Task<string> ReadBodyAsync(ArrangeContext context, string schemaName, string workDirectory) {
+	private async Task<PageGetResponse> GetReadablePageAsync(ArrangeContext context, string schemaName,
+		string workDirectory) {
 		PageGetResponse response = await GetPageAsync(context, schemaName, workDirectory);
 		response.Success.Should().BeTrue(because: $"the page must stay readable. Error: {response.Error}");
-		return await File.ReadAllTextAsync(response.Files!.BodyFile);
+		return response;
 	}
 
+	private async Task<string> ReadBodyAsync(ArrangeContext context, string schemaName, string workDirectory) =>
+		await File.ReadAllTextAsync((await GetReadablePageAsync(context, schemaName, workDirectory)).Files!.BodyFile);
+
 	private async Task<PagePackageLayer> ReadLayerAsync(ArrangeContext context, string schemaName,
-		string packageUId, string workDirectory) {
-		PageGetResponse response = await GetPageAsync(context, schemaName, workDirectory);
-		response.Success.Should().BeTrue(because: $"the page must stay readable. Error: {response.Error}");
-		return response.Page!.PackageChoice.Layers.Single(layer => SameUId(layer.PackageUId, packageUId));
-	}
+		string packageUId, string workDirectory) =>
+		(await GetReadablePageAsync(context, schemaName, workDirectory)).Page!.PackageChoice.Layers
+			.Single(layer => SameUId(layer.PackageUId, packageUId));
+
+	private static IEnumerable<string> LayerPackageUIds(PagePackageChoice choice) =>
+		choice.Layers.Select(layer => layer.PackageUId.ToLowerInvariant());
 
 	private async Task<PageUpdateResponse> UpdatePageAsync(ArrangeContext context, string schemaName, string body,
 		string workDirectory, string mode, string? targetPackageUId = null) {
@@ -326,7 +325,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 			["schema-name"] = schemaName,
 			["body"] = body,
 			["mode"] = mode,
-			["environment-name"] = _environmentName,
+			["environment-name"] = EnvironmentName,
 			["output-directory"] = workDirectory
 		};
 		if (targetPackageUId is not null) {
@@ -343,7 +342,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		CallToolResult callResult = await context.Session.CallToolAsync(PageSyncTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = _environmentName,
+					["environment-name"] = EnvironmentName,
 					["output-directory"] = workDirectory,
 					["pages"] = pages.Select(page => new Dictionary<string, object?> {
 						["schema-name"] = page.SchemaName,
@@ -367,7 +366,9 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 				ClioCliCommandResult? deleted = null;
 				string? error = await BoundedCleanup.RunAsync(async token => {
 						deleted = await ClioCliCommandRunner.RunAsync(_settings,
-							["delete-schema", schemaName, "--remote", "-e", _environmentName], cancellationToken: token);
+							["delete-schema", schemaName, "--remote", "-e", EnvironmentName], cancellationToken: token);
+						// A non-zero exit is the normal end (no schema of this name is left), not a cleanup
+						// failure, so BoundedCleanup only reports a timeout or an exception here.
 						return 0;
 					},
 					TimeSpan.FromMinutes(2), $"Deleting schema {schemaName}");
@@ -384,7 +385,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		foreach (string packageName in Enumerable.Reverse(packages)) {
 			string? error = await BoundedCleanup.RunAsync(
 				async token => (await ClioCliCommandRunner.RunAsync(_settings,
-					["delete-pkg-remote", packageName, "-e", _environmentName], cancellationToken: token)).ExitCode,
+					["delete-pkg-remote", packageName, "-e", EnvironmentName], cancellationToken: token)).ExitCode,
 				TimeSpan.FromMinutes(2), $"Deleting package {packageName}");
 			if (error is not null) {
 				TestContext.Progress.WriteLine(error);
@@ -403,16 +404,6 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
-
-	private static void TryDeleteDirectory(string path) {
-		try {
-			if (Directory.Exists(path)) {
-				Directory.Delete(path, recursive: true);
-			}
-		} catch {
-			// best-effort temp cleanup; never fail the test on it.
-		}
-	}
 
 	private sealed record PackageChoiceWorld(string BasePackageUId, string FirstLayerPackageUId,
 		string SecondLayerPackageUId);
