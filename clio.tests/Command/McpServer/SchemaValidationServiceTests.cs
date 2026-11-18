@@ -11508,6 +11508,7 @@ public sealed class SchemaValidationServiceTests
 		  }},
 		  "ɵCompareFilter": { "fields": {
 		    "filterType": { "type": "number", "values": [1], "required": true },
+		    "isAggregative": { "type": "boolean", "values": [false] },
 		    "comparisonType": { "type": "number", "values": [3, 4, 7], "required": true },
 		    "leftExpression": { "type": "ɵColumnExpression | ɵParameterExpression", "required": true },
 		    "rightExpression": { "type": "ɵColumnExpression | ɵParameterExpression", "required": true }
@@ -11530,12 +11531,16 @@ public sealed class SchemaValidationServiceTests
 		}
 		""";
 
-	private static IReadOnlyDictionary<string, JsonElement> ChartTypeDefsWithEsqFilters(string groupType = "IFilterGroup") =>
+	private static IReadOnlyDictionary<string, JsonElement> ChartTypeDefsWithEsqFilters(
+		string groupType = "IFilterGroup", string? esqFilterUnion = null) =>
 		ChartTypeDefs(typeDefinitions => {
 			var filters = (System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(EsqFilterTypeDefinitionsJson)!;
 			foreach (KeyValuePair<string, System.Text.Json.Nodes.JsonNode?> definition in filters.ToList()) {
 				filters.Remove(definition.Key);
 				typeDefinitions[definition.Key] = definition.Value;
+			}
+			if (esqFilterUnion is not null) {
+				typeDefinitions["IESQFilter"] = new System.Text.Json.Nodes.JsonObject { ["type"] = esqFilterUnion };
 			}
 			string filtersField = """{ "type": "object", "shape": { "filter": { "type": "__G__", "required": true } } }""".Replace("__G__", groupType);
 			foreach (string providingType in new[] { "WidgetDataProvidingConfig", "SeriesDataProvidingConfig" }) {
@@ -11603,6 +11608,33 @@ public sealed class SchemaValidationServiceTests
 			because: "42 is not a published comparison code");
 		result.Errors.Should().Contain(e => e.Contains("items.owner does not match any of") && e.Contains("filterType"),
 			because: "filterType 9 names no published filter variant");
+	}
+
+	[Test]
+	[Description("ENG-95270: an unknown variant is not an error while the union also holds an opaque branch that might accept it.")]
+	public void ValidateChartWidgetConfig_UnknownVariantNextToOpaqueBranch_StaysFailOpen() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup.Replace("{\"filterType\":2,", "{\"filterType\":9,"));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body,
+			ChartTypeDefsWithEsqFilters(esqFilterUnion: "ɵCompareFilter | ɵIsNullFilter | IFilterGroup | ɵSegmentFilter"));
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "ɵSegmentFilter has no published definition, so filterType 9 may be one of its kind");
+	}
+
+	[Test]
+	[Description("ENG-95270: a number stored as its string matches a numeric values list, and an optional single-valued field does not act as a discriminator.")]
+	public void ValidateChartWidgetConfig_NumericStringAndOptionalPinnedField_ReturnsValid() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup.Replace("\"comparisonType\":3,", "\"comparisonType\":\"3\","));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.Errors.Should().BeEmpty(because: "the runtime coerces \"3\" to 3, and the stored leaf may omit the optional isAggregative");
 	}
 
 	[Test]
