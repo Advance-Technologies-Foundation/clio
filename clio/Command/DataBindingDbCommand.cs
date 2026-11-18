@@ -542,6 +542,15 @@ internal sealed class DataBindingDbService(
 	private const int DateRuntimeDataValueType = 8;
 	private const int TimeRuntimeDataValueType = 9;
 
+	/// <summary>
+	/// Creatio runtime <c>dataValueType</c>s of text columns, as the platform's <c>DataValueType</c> enum numbers them:
+	/// Text (1), HashText (23), SecureText (24), the sized text types 26-30 (ShortText, MediumText, MaxSizeText,
+	/// LongText; normalized to Text for a query parameter), PhoneText (42), RichText (43), WebText (44) and EmailText
+	/// (45). 31-33 are Float1-3, numbers.
+	/// </summary>
+	internal static readonly IReadOnlyCollection<int> TextRuntimeDataValueTypes =
+		new HashSet<int> { 1, 23, 24, 26, 27, 28, 29, 30, 42, 43, 44, 45 };
+
 	public DataBindingResult CreateBinding(CreateDataBindingDbOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		ValidateEnvironment(options);
@@ -1027,8 +1036,8 @@ internal sealed class DataBindingDbService(
 	}
 
 	/// <summary>
-	/// Shapes a row value for an Insert/Update query parameter, applying the Color and the date and time rules at the
-	/// DataService boundary.
+	/// Shapes a row value for an Insert/Update query parameter, applying the Color, the date and time and the null
+	/// rules at the DataService boundary.
 	/// </summary>
 	/// <remarks>
 	/// <para>
@@ -1036,17 +1045,22 @@ internal sealed class DataBindingDbService(
 	/// string. Bare text is refused there: <c>2026-01-01</c> as "Input string '2026-01-01' is not a valid number" and
 	/// <c>2026-01-01T00:00:00</c> as "Value cannot be null".
 	/// </para>
-	/// Every other column is written the way it always was - the JSON node stringified, null collapsed to an
-	/// empty string. Color cannot use that rule: the parameter keeps <c>dataValueType</c> 18, so a number
-	/// would be POSTed as "123", an object as its JSON text, and a null as "", none of which is a valid
-	/// "#RRGGBB" literal. The local-file converter already refuses those shapes; this is the same rule for
-	/// the DB-first create and upsert paths.
+	/// <para>
+	/// Every other value is written as its JSON node stringified. A null is written as an empty string only for a
+	/// text column (<see cref="TextRuntimeDataValueTypes"/>), which stores "" for no value; every other type keeps
+	/// null, because DataService reads "" for a lookup as the empty Guid and the insert fails on the foreign key.
+	/// Color keeps its own rules: the parameter keeps <c>dataValueType</c> 18, so a number would be POSTed as "123"
+	/// and an object as its JSON text, neither of which is a valid "#RRGGBB" literal. The local-file converter
+	/// already refuses those shapes; this is the same rule for the DB-first create and upsert paths.
+	/// </para>
 	/// </remarks>
-	private static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
+	internal static string? BuildRowParameterValue(string columnName, JsonNode? value, int dataValueType) =>
 		dataValueType switch {
 			ColorRuntimeDataValueType => ConvertColorValue(columnName, value),
 			_ when IsDateOrTimeDataValueType(dataValueType) => ConvertDateOrTimeValue(columnName, value, dataValueType),
-			_ => value?.ToString() ?? ""
+			_ when value is not null => value.ToString(),
+			_ when TextRuntimeDataValueTypes.Contains(dataValueType) => "",
+			_ => null
 		};
 
 	private static bool IsDateOrTimeDataValueType(int dataValueType) =>
