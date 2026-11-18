@@ -86,7 +86,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 
 			// Assert
 			PagePackageChoice choice = seeded.Page!.PackageChoice;
-			TestContext.Progress.WriteLine($"Default target {choice?.DefaultTargetPackageUId}; stored rows: "
+			TestContext.Progress.WriteLine($"Default target {seeded.Page!.PackageChoice?.DefaultTargetPackageUId}; stored rows: "
 				+ string.Join("; ", rowsBeforeRefusals));
 			AllureApi.Step("Assert the stand holds the base page and one layer in each layer package", () =>
 				rowsBeforeRefusals.Select(row => row.PackageUId).Should().BeEquivalentTo(
