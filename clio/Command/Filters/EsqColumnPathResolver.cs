@@ -21,16 +21,23 @@ internal sealed record EsqColumnResolution(
 }
 
 /// <summary>
-/// Resolves ESQ column paths, including backward references (<c>[Child:Link]</c> or
+/// Resolves ESQ column paths as stored on pages, including backward references (<c>[Child:Link]</c> or
 /// <c>[Child:Link:SourceColumn]</c>) and mixed forward/backward chains such as
 /// <c>Contact.[Lead:QualifiedContact].Id</c>, against live entity-schema metadata.
 /// </summary>
+/// <remarks>
+/// Kept apart from <c>SchemaAwareFilterValidator.ResolveColumnPath</c>, which serves the business-rule friendly
+/// dialect: that one throws on the first problem and accepts only exact column names, as the friendly contract
+/// requires; stored filters need the lenient spellings ESQ itself accepts and a verdict instead of an exception.
+/// </remarks>
 internal sealed class EsqColumnPathResolver {
 
 	private const string LookupTypeName = "Lookup";
 	private const string IdSuffix = "Id";
 
 	private readonly IFilterSchemaProvider _schemaProvider;
+	// A schema the environment refused once is refused again; asking per leaf only multiplies the timeouts.
+	private readonly HashSet<string> _unreadableSchemas = new(StringComparer.OrdinalIgnoreCase);
 
 	internal EsqColumnPathResolver(IFilterSchemaProvider schemaProvider) {
 		_schemaProvider = schemaProvider ?? throw new ArgumentNullException(nameof(schemaProvider));
@@ -107,13 +114,20 @@ internal sealed class EsqColumnPathResolver {
 	}
 
 	private bool TryGetColumns(string schemaName, out IReadOnlyDictionary<string, FilterSchemaColumn>? columns) {
-		try {
-			columns = _schemaProvider.GetColumns(schemaName);
-			return columns is not null;
-		} catch (Exception) {
-			columns = null;
+		columns = null;
+		if (_unreadableSchemas.Contains(schemaName)) {
 			return false;
 		}
+		try {
+			columns = _schemaProvider.GetColumns(schemaName);
+		} catch (Exception) {
+			columns = null;
+		}
+		if (columns is null) {
+			_unreadableSchemas.Add(schemaName);
+			return false;
+		}
+		return true;
 	}
 
 	private static EsqColumnResolution Failed(string error) => new(null, null, null, error, false);

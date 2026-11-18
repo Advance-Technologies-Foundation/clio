@@ -90,8 +90,8 @@ public sealed class EsqFilterSemanticValidatorTests {
 		// Arrange
 		EsqFilterGroupNode group = Read("""
 			{ "filterType": 6, "logicalOperation": 0, "items": {
-				"relational": { "filterType": 1, "comparisonType": 7, "leftExpression": { "expressionType": 0, "columnPath": "Name" },
-					"rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 1, "value": "A" } } },
+				"relational": { "filterType": 1, "comparisonType": 7, "leftExpression": { "expressionType": 0, "columnPath": "Industry" },
+					"rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 10, "value": "a470b005-e8bb-df11-b00f-001d60e938c6" } } },
 				"text": { "filterType": 1, "comparisonType": 11, "leftExpression": { "expressionType": 0, "columnPath": "AnnualRevenue" },
 					"rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 6, "value": 5 } } },
 				"macro": { "filterType": 1, "comparisonType": 3, "leftExpression": { "expressionType": 0, "columnPath": "Name" },
@@ -108,8 +108,8 @@ public sealed class EsqFilterSemanticValidatorTests {
 
 		// Assert
 		findings.Errors.Should().HaveCount(5, because: "each leaf compares its column with something its type cannot hold");
-		findings.Errors.Should().ContainSingle(error => error.Contains("needs a numeric or date/time column"),
-			because: "greater-than on a text column is meaningless");
+		findings.Errors.Should().ContainSingle(error => error.Contains("(less/greater) has no meaning"),
+			because: "a lookup has no order, so greater-than cannot run");
 		findings.Errors.Should().ContainSingle(error => error.Contains("needs a text column"),
 			because: "contains on a money column is meaningless");
 		findings.Errors.Should().ContainSingle(error => error.Contains("(Today) applies only to Date/DateTime/Time"),
@@ -187,8 +187,75 @@ public sealed class EsqFilterSemanticValidatorTests {
 
 		// Assert
 		findings.Errors.Should().BeEmpty(because: "an unreadable schema proves nothing about the filter, and the disabled leaf is ignored at runtime");
-		findings.Warnings.Should().ContainSingle(because: "the caller is told the leaf could not be verified")
-			.Which.Should().Contain("could not be verified");
+		findings.Warnings.Should().ContainSingle(because: "the caller is told the filters on that schema went unverified")
+			.Which.Should().Contain("were not verified");
+	}
+
+	[Test]
+	[Description("What ESQ runs is not flagged: less/greater on text, an unset lookup value, an id-keyed lookup object, case and Id spellings of a column; contains on a lookup only warns.")]
+	public void Validate_Should_Accept_What_The_Runtime_Accepts() {
+		// Arrange
+		EsqFilterGroupNode group = Read("""
+			{ "filterType": 6, "logicalOperation": 0, "items": {
+				"textOrder": { "filterType": 1, "comparisonType": 7, "leftExpression": { "expressionType": 0, "columnPath": "Name" },
+					"rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 1, "value": "M" } } },
+				"unset": { "filterType": 1, "comparisonType": 3, "leftExpression": { "expressionType": 0, "columnPath": "Industry" },
+					"rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 10, "value": { "value": "", "displayValue": "" } } } },
+				"idKeyed": { "filterType": 4, "comparisonType": 3, "leftExpression": { "expressionType": 0, "columnPath": "IndustryId" },
+					"rightExpressions": [ { "expressionType": 2, "parameter": { "dataValueType": 10, "value": { "id": "a470b005-e8bb-df11-b00f-001d60e938c6" } } } ] },
+				"lookupText": { "filterType": 1, "comparisonType": 11, "leftExpression": { "expressionType": 0, "columnPath": "industry" },
+					"rightExpression": { "expressionType": 2, "parameter": { "dataValueType": 1, "value": "Ret" } } }
+			} }
+			""");
+
+		// Act
+		EsqFilterFindings findings = CreateValidator().Validate(group, "Account");
+
+		// Assert
+		findings.Errors.Should().BeEmpty(because: "text orders, an unset lookup value and an id-keyed lookup object all run; names match case-insensitively and by their Id spelling");
+		findings.Warnings.Should().ContainSingle(because: "contains on a lookup is only questionable")
+			.Which.Should().Contain("compare its display column", because: "the agent is told the safe alternative");
+	}
+
+	[Test]
+	[Description("Column-path resolution: three-part backward reference, mixed forward/backward chain, a bare trailing backward reference and a path through a non-lookup.")]
+	public void Resolver_Should_Resolve_Stored_Path_Forms() {
+		// Arrange
+		EsqColumnPathResolver resolver = new(CreateProvider());
+
+		// Act
+		EsqColumnResolution threePart = resolver.Resolve("[Contact:Account:Id].Age", "Account");
+		EsqColumnResolution mixed = resolver.Resolve("Owner.[Lead:QualifiedContact].Budget", "Account");
+		EsqColumnResolution bare = resolver.Resolve("[Contact:Account]", "Account");
+		EsqColumnResolution throughText = resolver.Resolve("Name.Id", "Account");
+
+		// Assert
+		threePart.Column!.Name.Should().Be("Age", because: "the third part names the source column and does not change the join target");
+		mixed.Column!.Name.Should().Be("Budget", because: "a forward lookup can lead into a backward reference");
+		mixed.LastJoinedSchema.Should().Be("Lead", because: "sub-filters are checked on the schema the last backward reference joins");
+		bare.Error.Should().Contain("must be followed by a column", because: "a stored exists filter always names a child column such as Id");
+		throughText.Error.Should().Contain("not a lookup", because: "only lookups lead to another schema");
+	}
+
+	[Test]
+	[Description("A schema the environment refuses is asked for once and reported once, however many leaves use it.")]
+	public void Validate_Should_Read_An_Unreadable_Schema_Once() {
+		// Arrange
+		IFilterSchemaProvider provider = CreateProvider();
+		provider.GetColumns("Lead").Returns(_ => throw new InvalidOperationException("forbidden"));
+		EsqFilterGroupNode group = Read("""
+			{ "filterType": 6, "logicalOperation": 0, "items": {
+				"a": { "filterType": 5, "comparisonType": 15, "leftExpression": { "expressionType": 0, "columnPath": "[Lead:QualifiedContact].Id" } },
+				"b": { "filterType": 5, "comparisonType": 16, "leftExpression": { "expressionType": 0, "columnPath": "[Lead:QualifiedContact].Id" } }
+			} }
+			""");
+
+		// Act
+		EsqFilterFindings findings = new EsqFilterSemanticValidator(provider).Validate(group, "Contact");
+
+		// Assert
+		provider.Received(1).GetColumns("Lead");
+		findings.Warnings.Distinct().Should().ContainSingle(because: "both leaves hit the same unreadable schema");
 	}
 
 	[Test]

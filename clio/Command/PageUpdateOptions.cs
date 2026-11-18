@@ -432,7 +432,8 @@
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 			PageConfigMergeReport configMergeReport = DetectUnresolvedConfigMerges(bodyToWrite, context);
-			PageWidgetFilterReport widgetFilterReport = ValidateWidgetFilters(options, context, bodyToWrite);
+			PageWidgetFilterReport widgetFilterReport = ValidateWidgetFilters(
+				options, context, bodyToWrite, schemaToSave["body"]?.ToString());
 			(List<string> registeredKeys, List<string> updatedKeys) = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
@@ -447,13 +448,13 @@
 		// save path rather than in validate-page. Anything that only failed to be READ is a warning: a schema
 		// read must never be the reason a save is refused.
 		private PageWidgetFilterReport ValidateWidgetFilters(
-			PageUpdateOptions options, EditableSchemaContext context, string bodyToWrite) {
+			PageUpdateOptions options, EditableSchemaContext context, string bodyToWrite, string? persistedBody = null) {
 			if (!options.Validate || _widgetFilterValidator is null || context.SchemaType == PageSchemaType.Mobile
 				|| !Guid.TryParse(context.DesignPackageUId, out Guid packageUId)) {
 				return PageWidgetFilterReport.Empty;
 			}
 			try {
-				return _widgetFilterValidator.Validate(bodyToWrite, packageUId);
+				return _widgetFilterValidator.Validate(bodyToWrite, packageUId, persistedBody);
 			} catch (Exception ex) {
 				return new PageWidgetFilterReport([], [$"Widget filters were not checked against the entity schemas: {ex.Message}"]);
 			}

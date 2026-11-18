@@ -56,7 +56,7 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 			new PageDesignerHierarchySchema { UId = Uid, Name = "UsrPage", PackageUId = PackageUId, SchemaType = 9 }
 		]);
 		_filterValidator = Substitute.For<IWidgetFilterValidator>();
-		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>()).Returns(PageWidgetFilterReport.Empty);
+		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>()).Returns(PageWidgetFilterReport.Empty);
 		ServiceCollection services = new();
 		services.AddSingleton(_client).AddSingleton(urls).AddSingleton(hierarchy)
 			.AddSingleton(Substitute.For<ILogger>()).AddSingleton(Substitute.For<IPageBaselineGuard>())
@@ -75,7 +75,7 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 	[Description("A widget filter error blocks the save, names the filter location, and nothing is written.")]
 	public void TryUpdatePage_ShouldRejectSave_WhenWidgetFilterDoesNotFitTheSchema() {
 		// Arrange
-		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>())
+		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>())
 			.Returns(new PageWidgetFilterReport([FilterError], ["another leaf could not be verified"]));
 		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = "replace", Body = Body };
 
@@ -87,7 +87,7 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 		response.Error.Should().Contain(FilterError, because: "the caller must learn which filter leaf is wrong");
 		response.Warnings.Should().Contain("another leaf could not be verified",
 			because: "the advisory findings for the same body are kept beside the error");
-		_filterValidator.Received(1).Validate(Arg.Any<string>(), Guid.Parse(PackageUId));
+		_filterValidator.Received(1).Validate(Arg.Any<string>(), Guid.Parse(PackageUId), Arg.Any<string?>());
 		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
@@ -96,7 +96,7 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 	[Description("On a dry run the same filter error is a warning: a dry run says what would happen instead of refusing.")]
 	public void TryUpdatePage_ShouldWarnOnDryRun_WhenWidgetFilterDoesNotFitTheSchema() {
 		// Arrange
-		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>()).Returns(new PageWidgetFilterReport([FilterError], []));
+		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>()).Returns(new PageWidgetFilterReport([FilterError], []));
 		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = "replace", DryRun = true, Body = Body };
 
 		// Act
@@ -112,7 +112,7 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 	[Description("A validator that throws (environment unavailable) only adds a warning; the save goes through.")]
 	public void TryUpdatePage_ShouldSave_WhenWidgetFilterCheckCannotRun() {
 		// Arrange
-		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>()).Returns(_ => throw new InvalidOperationException("timeout"));
+		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>()).Returns(_ => throw new InvalidOperationException("timeout"));
 		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = "replace", Body = Body };
 
 		// Act
@@ -135,6 +135,6 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 
 		// Assert
 		result.Should().BeTrue(because: "the save itself is fine: " + response.Error);
-		_filterValidator.DidNotReceive().Validate(Arg.Any<string>(), Arg.Any<Guid>());
+		_filterValidator.DidNotReceive().Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>());
 	}
 }

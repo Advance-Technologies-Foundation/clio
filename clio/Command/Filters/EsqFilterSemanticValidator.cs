@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Command.BusinessRules.Filters;
 using Clio.Command.BusinessRules.Filters.Schema;
@@ -70,8 +71,9 @@ internal sealed class EsqFilterSemanticValidator {
 			return;
 		}
 		ValidateComparison(leaf, column, findings);
+		bool isTextComparison = leaf.ComparisonType is >= FirstTextComparison and <= LastTextComparison;
 		foreach (EsqExpressionNode right in leaf.Right) {
-			ValidateRight(right, column, leaf.Left.ColumnPath ?? string.Empty, findings);
+			ValidateRight(right, column, leaf.Left.ColumnPath ?? string.Empty, isTextComparison, findings);
 		}
 	}
 
@@ -85,7 +87,7 @@ internal sealed class EsqFilterSemanticValidator {
 					$"{left.FunctionArgument.Path}.columnPath", findings)?.Column;
 				if (argument is not null && !CreatioDataValueType.IsDateTime(argument.DataValueTypeName)) {
 					findings.Errors.Add(
-						$"{left.Path}: a date-part function applies only to Date/DateTime/Time columns; '{left.FunctionArgument.ColumnPath}' is {argument.DataValueTypeName}.");
+						$"{left.Path}: a date-part function applies only to Date/DateTime/Time columns; '{left.FunctionArgument.ColumnPath}' is {argument.DataValueTypeName}");
 				}
 				return null;
 			case EsqFilterCodes.SubQueryExpression when left.ColumnPath is not null:
@@ -106,7 +108,7 @@ internal sealed class EsqFilterSemanticValidator {
 		}
 		if (!columnPath.Contains('[')) {
 			findings.Errors.Add(
-				$"{leaf.Left.Path}.columnPath: an exists filter needs a backward reference such as '[ChildSchema:LinkColumn].Id'; '{columnPath}' has none.");
+				$"{leaf.Left.Path}.columnPath: an exists filter needs a backward reference such as '[ChildSchema:LinkColumn].Id'; '{columnPath}' has none");
 			return;
 		}
 		EsqColumnResolution? resolution = ResolveColumn(columnPath, rootSchemaName, $"{leaf.Left.Path}.columnPath", findings);
@@ -120,20 +122,28 @@ internal sealed class EsqFilterSemanticValidator {
 			return;
 		}
 		string columnPath = leaf.Left.ColumnPath ?? string.Empty;
-		if (comparison is >= FirstRelationalComparison and <= LastRelationalComparison
-			&& !CreatioDataValueType.IsNumeric(column.DataValueTypeName)
-			&& !CreatioDataValueType.IsDateTime(column.DataValueTypeName)) {
+		bool isLookup = CreatioDataValueType.IsLookupOrGuid(column.DataValueTypeName);
+		bool isBoolean = string.Equals(column.DataValueTypeName, "Boolean", StringComparison.OrdinalIgnoreCase);
+		// ESQ orders text, numbers and dates, so less/greater fails only where no order exists.
+		if (comparison is >= FirstRelationalComparison and <= LastRelationalComparison && (isLookup || isBoolean)) {
 			findings.Errors.Add(
-				$"{leaf.Path}.comparisonType: {comparison} (less/greater) needs a numeric or date/time column; '{columnPath}' is {column.DataValueTypeName}.");
+				$"{leaf.Path}.comparisonType: {comparison} (less/greater) has no meaning on '{columnPath}', which is {column.DataValueTypeName}");
 		}
 		if (comparison is >= FirstTextComparison and <= LastTextComparison
 			&& !CreatioDataValueType.IsText(column.DataValueTypeName)) {
-			findings.Errors.Add(
-				$"{leaf.Path}.comparisonType: {comparison} (starts with/contains/ends with) needs a text column; '{columnPath}' is {column.DataValueTypeName}.");
+			// Whether the server matches a text operator on a lookup against its display value is not established, so only warn.
+			if (isLookup) {
+				findings.Warnings.Add(
+					$"{leaf.Path}.comparisonType: {comparison} (starts with/contains/ends with) on lookup '{columnPath}'; compare its display column ('{columnPath}.Name') instead");
+			} else {
+				findings.Errors.Add(
+					$"{leaf.Path}.comparisonType: {comparison} (starts with/contains/ends with) needs a text column; '{columnPath}' is {column.DataValueTypeName}");
+			}
 		}
 	}
 
-	private static void ValidateRight(EsqExpressionNode right, FilterSchemaColumn column, string columnPath, EsqFilterFindings findings) {
+	private static void ValidateRight(EsqExpressionNode right, FilterSchemaColumn column, string columnPath,
+		bool isTextComparison, EsqFilterFindings findings) {
 		if (right.ExpressionType == EsqFilterCodes.FunctionExpression
 			&& right.FunctionType == EsqFilterCodes.MacrosFunction
 			&& right.MacrosType is int macrosCode) {
@@ -144,14 +154,15 @@ internal sealed class EsqFilterSemanticValidator {
 			|| value.ValueKind == JsonValueKind.Null) {
 			return;
 		}
-		if (CreatioDataValueType.IsLookupOrGuid(column.DataValueTypeName) && !CarriesRecordId(value)) {
+		if (CreatioDataValueType.IsLookupOrGuid(column.DataValueTypeName) && !isTextComparison
+			&& !IsEmptyLookupValue(value) && !CarriesRecordId(value)) {
 			findings.Errors.Add(
-				$"{right.Path}.parameter.value: '{columnPath}' is {column.DataValueTypeName}, so the value must be the record Id or an object with 'value' (the Id) and 'displayValue'.");
+				$"{right.Path}.parameter.value: '{columnPath}' is {column.DataValueTypeName}, so the value must be the record Id or an object with 'value' (the Id) and 'displayValue'");
 		}
 		if (string.Equals(column.DataValueTypeName, "Boolean", StringComparison.OrdinalIgnoreCase)
 			&& value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) {
 			findings.Errors.Add(
-				$"{right.Path}.parameter.value: '{columnPath}' is Boolean, so the value must be true or false.");
+				$"{right.Path}.parameter.value: '{columnPath}' is Boolean, so the value must be true or false");
 		}
 	}
 
@@ -163,11 +174,11 @@ internal sealed class EsqFilterSemanticValidator {
 		}
 		if (kind == MacrosCatalog.MacrosColumnKind.DateTime && !CreatioDataValueType.IsDateTime(column.DataValueTypeName)) {
 			findings.Errors.Add(
-				$"{right.Path}.macrosType: {macrosCode} ({name}) applies only to Date/DateTime/Time columns; '{columnPath}' is {column.DataValueTypeName}.");
+				$"{right.Path}.macrosType: {macrosCode} ({name}) applies only to Date/DateTime/Time columns; '{columnPath}' is {column.DataValueTypeName}");
 		}
 		if (kind == MacrosCatalog.MacrosColumnKind.Lookup && !CreatioDataValueType.IsLookupOrGuid(column.DataValueTypeName)) {
 			findings.Errors.Add(
-				$"{right.Path}.macrosType: {macrosCode} ({name}) applies only to lookup columns; '{columnPath}' is {column.DataValueTypeName}.");
+				$"{right.Path}.macrosType: {macrosCode} ({name}) applies only to lookup columns; '{columnPath}' is {column.DataValueTypeName}");
 		}
 	}
 
@@ -175,17 +186,18 @@ internal sealed class EsqFilterSemanticValidator {
 		if (value.ValueKind == JsonValueKind.String) {
 			return Guid.TryParse(value.GetString(), out _);
 		}
-		if (value.ValueKind != JsonValueKind.Object) {
-			return false;
-		}
-		foreach (string idProperty in new[] { "value", "Id" }) {
-			if (value.TryGetProperty(idProperty, out JsonElement id) && id.ValueKind == JsonValueKind.String
-				&& Guid.TryParse(id.GetString(), out _)) {
-				return true;
-			}
-		}
-		return false;
+		return value.ValueKind == JsonValueKind.Object && value.EnumerateObject().Any(property =>
+			(property.NameEquals("value") || string.Equals(property.Name, "id", StringComparison.OrdinalIgnoreCase))
+			&& property.Value.ValueKind == JsonValueKind.String
+			&& Guid.TryParse(property.Value.GetString(), out _));
 	}
+
+	/// <summary>The designer stores an unset lookup filter value as <c>""</c> or an object with an empty value.</summary>
+	private static bool IsEmptyLookupValue(JsonElement value) =>
+		value.ValueKind == JsonValueKind.String && string.IsNullOrEmpty(value.GetString())
+		|| value.ValueKind == JsonValueKind.Object && value.EnumerateObject().All(property =>
+			property.Value.ValueKind is JsonValueKind.Null
+			|| property.Value.ValueKind == JsonValueKind.String && string.IsNullOrEmpty(property.Value.GetString()));
 
 	private EsqColumnResolution? ResolveColumn(string columnPath, string schemaName, string path, EsqFilterFindings findings) {
 		EsqColumnResolution resolution = _resolver.Resolve(columnPath, schemaName);
@@ -193,9 +205,9 @@ internal sealed class EsqFilterSemanticValidator {
 			return resolution;
 		}
 		if (resolution.Unverifiable) {
-			findings.Warnings.Add($"{path}: '{columnPath}' could not be verified: {resolution.Error}.");
+			findings.Warnings.Add($"Widget filters on this schema were not verified: {resolution.Error}");
 		} else {
-			findings.Errors.Add($"{path}: '{columnPath}' does not resolve on '{schemaName}': {resolution.Error}.");
+			findings.Errors.Add($"{path}: '{columnPath}' does not resolve on '{schemaName}': {resolution.Error}");
 		}
 		return null;
 	}

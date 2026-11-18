@@ -33,10 +33,10 @@ public sealed class WidgetFilterLocatorTests {
 			""";
 
 		// Act
-		IReadOnlyList<PageWidgetFilter> filters = WidgetFilterValidator.WidgetFilterLocator.Locate(body);
+		IReadOnlyList<PageWidgetFilter>? filters = WidgetFilterLocator.Locate(body);
 
 		// Assert
-		filters.Select(filter => (filter.Path, filter.RootSchemaName)).Should().Equal(
+		filters!.Select(filter => (filter.Path, filter.RootSchemaName)).Should().Equal(
 			[
 				("Chart.values.config.series[0].data.providing.filters.filter", "Account"),
 				("Indicator.values.config.data.providing.filters.filter", "Contact"),
@@ -46,15 +46,15 @@ public sealed class WidgetFilterLocatorTests {
 	}
 
 	[Test]
-	[Description("A body without a view-config diff, or with one that is not JSON, yields no filters instead of failing.")]
+	[Description("A view-config diff that is not JSON is reported as unreadable (null), not as a page without filters.")]
 	public void Locate_Should_Return_Nothing_For_A_Body_It_Cannot_Read() {
 		// Arrange
 		const string body = "define(\"UsrPage\", [], function() { return { viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[ { broken /**SCHEMA_VIEW_CONFIG_DIFF*/ }; });";
 
 		// Act
-		IReadOnlyList<PageWidgetFilter> filters = WidgetFilterValidator.WidgetFilterLocator.Locate(body);
+		IReadOnlyList<PageWidgetFilter>? filters = WidgetFilterLocator.Locate(body);
 
 		// Assert
-		filters.Should().BeEmpty(because: "the syntax gates report a broken body; this check only adds filter findings");
+		filters.Should().BeNull(because: "the caller turns an unreadable diff into a warning instead of silently checking nothing");
 	}
 }
