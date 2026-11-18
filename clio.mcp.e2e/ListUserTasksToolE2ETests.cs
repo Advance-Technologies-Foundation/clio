@@ -100,6 +100,40 @@ public sealed class ListUserTasksToolE2ETests {
 			because: "the contract points to the element type that builds a Call web service element");
 	}
 
+	[Test]
+	[Description("TC-I-10: over the real MCP path the list-user-tasks contract that get-tool-contract publishes names SendChatMessageUserTask as REFUSED on the generic userTask route and points to type sendChatMessage with its chatMessage block, so an agent picking the chat task from the palette is told before the build refuses it (hermetic).")]
+	[AllureTag(ToolName)]
+	[AllureName("list-user-tasks publishes the generic-route refusal of SendChatMessageUserTask")]
+	public async Task ListUserTasks_Should_PublishTheGenericRouteRefusalOfSendChatMessageUserTask() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName },
+					["detail"] = "full"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-tool-contract should return a normal MCP tool result envelope for a known tool name");
+		ToolContractGetResponse response =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+		string description = (response.Tools ?? [])
+			.Should().ContainSingle(definition => definition.Name == ToolName,
+				because: $"the contract request named only {ToolName}")
+			.Which.Description;
+		description.Should().Contain("SendChatMessageUserTask (Send chat message) is REFUSED",
+			because: "the palette lists SendChatMessageUserTask, and the contract must say the generic route refuses it");
+		description.Should().Contain("build it as type sendChatMessage with its chatMessage block",
+			because: "the contract points to the element type that builds a Send chat message element");
+	}
+
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
 		IReadOnlyCollection<string> toolNames =
 			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
