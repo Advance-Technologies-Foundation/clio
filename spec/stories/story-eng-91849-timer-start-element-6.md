@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-91849-timer-start-element.md](../prd/spec-eng-91849-timer-start-element.md) - R10
 **ADR**: [adr-eng-91849-timer-start-element.md](../adr/adr-eng-91849-timer-start-element.md) - D7
 **Test plan**: [tp-eng-91849-timer-start-element.md](../test-plans/tp-eng-91849-timer-start-element.md)
-**Status**: ready-for-dev
+**Status**: in-progress
 **Repo**: clio (same PR as story 1)
 **Depends on**: the clio-knowledge PR (the `process-timer-start` guide with the confirm-before-save gate, its routing
 entry, the read-only sweep) merged and released
@@ -43,7 +43,8 @@ the tool pointers name a guide that exists, and the reviewer can audit the docs,
 
 ## Definition of Done
 
-- [ ] Knowledge PR merged and released; re-pin committed.
+- [ ] MERGE GATE: knowledge PR merged and released; re-pin committed. The clio PR does not leave draft or merge
+  before it (story 4's guide pointer depends on it).
 - [ ] Guidance-name oracle and `WorkspaceTemplateGuidanceDriftTests` green.
 - [ ] `docs/McpCapabilityMap.md` updated.
 - [ ] `make check-knowledge` report reviewed; records updated in the same PR.

@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-91849-timer-start-element.md](../prd/spec-eng-91849-timer-start-element.md) - R12
 **ADR**: [adr-eng-91849-timer-start-element.md](../adr/adr-eng-91849-timer-start-element.md) - D8
 **Test plan**: [tp-eng-91849-timer-start-element.md](../test-plans/tp-eng-91849-timer-start-element.md)
-**Status**: ready-for-dev
+**Status**: in-progress
 **Repo**: clio (one PR titled `ENG-91849 Timer start element`, branch `feature/ENG-91849-timer-start-element`).
 Stories 2-6 ship in the same PR.
 **Depends on**: the crt-process-builder PR (the `timerStart` element, `setTimer`, the scheduler read, the message-start
@@ -45,7 +45,9 @@ the drift tests read the real timer contract, and an agent on an old stand gets 
 
 ## Definition of Done
 
-- [ ] Package PR merged and cut; clio rebundled from it with a raised version.
+- [ ] Package PR merged and cut; clio rebundled from it. A raised version on every cut that left the cutting machine;
+  while the number is unreleased and installed nowhere, a same-number re-cut is allowed (1.6.6.187 was re-cut from the
+  package's gate-1 restamp `b282c77d`).
 - [ ] TC-U-18, TC-U-19 and TC-U-20 green on the rebundled archive.
 - [ ] The drift tests of stories 2 and 4 (TC-U-07, TC-U-08) green on the rebundled archive.
 - [ ] TeamCity process-designer lane green on the clio PR.
