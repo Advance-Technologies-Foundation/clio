@@ -446,7 +446,8 @@ public sealed class ToolContractPayloadBudgetTests {
 	// describe 35061, modify 35041 - 16, 11 and 31 bytes of headroom.
 	//
 	// ENG-91849 (2026-11-18, the Timer start element) named, per owner decision Q10, only the type, the block and
-	// setTimer - the guide pointer waits for the clio-knowledge release that publishes process-timer-start: create's
+	// setTimer - the guide pointer waits for the clio-knowledge release that publishes process-timer-start (a merge
+	// gate of the PR, not a follow-up): create's
 	// type list ('|timerStart'), 'timer?' among its element fields and 'timer, ' in its floor clause; modify's 'timer?'
 	// on addElement, the setTimer clause with the setElement refusal and 'timer, setTimer, ' in its floor clause;
 	// describe's read-back clause (storedCron, designerKind, scheduled). Measured before paying: create 35082, modify
@@ -456,6 +457,19 @@ public sealed class ToolContractPayloadBudgetTests {
 	// bytes a pair), and describe those of 'modified', 'unversioned', 'Sequential', 'Parallel', 'X;Y', 'W;H' and
 	// 'expression'. A backtick is no cheaper than a quote: the default encoder escapes it too. Re-measured by lowering
 	// the ceiling: create 35057, describe 35050, modify 35046 - 15, 22 and 26 bytes of headroom.
+	// Gate 1 (same day) added to create and modify one confirm-before-save sentence, "A timerStart runs unattended: ask
+	// the user to confirm its schedule first." (74 bytes each, a safety marker so the short form keeps it), and to
+	// modify-business-process-as-new-version the failed-save timer clause. Paid by SWAP, no ceiling raise: create's
+	// last sixteen em dashes became '-' and its five ellipses '...', and it lost the quotes of 'object' (twice),
+	// 'expression' (twice), 'value' (twice), 'target', 'elementName', 'elementParameter' and 'targetProcessParameter';
+	// modify lost the quotes of every op-level key in its operation list (elementName, source, target, kind, condition,
+	// label, results, parameter, mapping, parameterName, parameterUpdate, connections, column, ...) - which also makes
+	// the list's notation consistent - and spells addElement and setTimer as shapes (element:{...}, timer:{...}).
+	// Re-measured by lowering the ceiling: describe 35050, create 34916, modify 34704 - 22, 156 and 368 bytes of
+	// headroom. RESERVED for the process-timer-start pointer: create's 'timer?' becomes 'timer? (timerStart elements
+	// only - get-guidance name=process-timer-start owns the block)', +82 bytes, leaving 74; modify's the same, leaving
+	// 286. Describe's pointer (about 35 bytes, 'name=process-timer-start owns it' in its read-back clause) does NOT fit
+	// its 22 bytes: it needs a swap of its own when it lands.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -503,6 +517,16 @@ public sealed class ToolContractPayloadBudgetTests {
 	// list and "setTimer {elementName, timer}" in the modify operation list, both never cut and both required by the
 	// short-form drift test, brought the bundle to 18994 bytes; the description swaps above that fall in kept short-form
 	// text took it to 18990 - 10 under this guard. The next call-shape entry has to pay for itself here.
+	// Gate 1 (same day): the confirm-before-save sentence carries a safety marker, so create's and modify's short forms
+	// keep it - 19137 bytes as first worded, 137 over. Paid by SWAP: the sentence was shortened to "A timerStart runs
+	// unattended: ask the user to confirm its schedule first."; modify's "Name the OUTCOME ..., never repeat the
+	// condition" became "..., not the condition" (a naming hint the 'never' marker kept by accident, not a duty);
+	// modify's "Identify the process by name (schema code) or uid." was joined to the next sentence, so it no longer
+	// fills the lead (the call shape already names process-name | process-uid); and the em dashes of
+	// modify-business-process-as-new-version and set-active-business-process-version became '-' (two bytes each on the
+	// wire) - except the one in set-active's FIRST sentence, the compact-index purpose ClioRing reads. Re-measured by
+	// lowering this guard: 18996 bytes - 4 under it. The later process-timer-start pointer sits in
+	// field text no short form keeps, so it does not move this figure.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

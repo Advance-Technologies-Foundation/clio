@@ -53,7 +53,8 @@ public static class CreateBusinessProcessPrompt {
 		 To run the process on a schedule (once, or every so many minutes, hours, days or months, on weekdays, yearly,
 		 or by a Quartz cron), use a `timerStart` element with its `timer` block; the server builds the cron the
 		 designer stores, refuses a schedule that never fires, and says after the save whether the platform
-		 scheduled it. Several `timerStart`s, or one beside a Simple start, are allowed.
+		 scheduled it. Several `timerStart`s, or one beside a Simple start, are allowed. A timer runs the process
+		 unattended on its schedule: save one only after the user confirms that schedule.
 		 To send an email, add a `sendEmail`
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
 		 message as EITHER an HTML custom-message `body` (`bodyFormat` `html` only) OR an existing email `template`

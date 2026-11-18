@@ -49,24 +49,28 @@ public class ModifyProcessAsNewVersionTool(
 	// when it returns — so a caller gated on destructive consent must not be stopped by it. The one live effect is
 	// a setTracing beside real edits (ENG-102111): it switches tracing for the whole family at once, the running
 	// version included, so the description tells the caller to put that to the user first - it changes what each
-	// run records, not which version runs.
+	// run records, not which version runs. The other is a save that FAILS on a family with timer starts (ENG-91849):
+	// the platform drops the family's timer jobs and the package re-registers the ACTIVE version's, so its schedule
+	// is restored rather than changed, but a timer whose start lies in the past may fire one catch-up run. The
+	// annotation stays false: that run belongs to a schedule already approved and running, and flipping it would put
+	// every version write - a plain snapshot included - behind destructive consent. The description says it instead.
 	[McpServerTool(Name = ModifyProcessAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Edit an existing Creatio business process and save the result as a NEW VERSION of it, leaving "
 		 + "the current one untouched and still running. This is what the product's designer calls "
-		 + "\"Save new version\" (Ctrl+Alt+N), as opposed to \"Save current version\" — which is what "
+		 + "\"Save new version\" (Ctrl+Alt+N), as opposed to \"Save current version\" - which is what "
 		 + "modify-business-process does. Identify the SOURCE process by name (schema code) or uid; the "
 		 + "'operations' array is exactly the one modify-business-process takes, with the same op vocabulary and "
 		 + "the same descriptors, so read that tool's description for the operation reference. An EMPTY or "
 		 + "omitted operations array is legal and takes a plain snapshot of the source as a new version. "
 		 + "Optionally name the target package with 'package-name'; omitted, the version goes to the SOURCE's "
-		 + "package, always — there is no fallback to a design package, so if the source's package does not "
+		 + "package, always - there is no fallback to a design package, so if the source's package does not "
 		 + "accept edits the call is refused and you must name an editable one. A version does NOT inherit the "
 		 + "root's package, and cross-package version families are normal. "
 		 + "THIS IS THE ANSWER to modify-business-process refusing an edit that would re-draw someone's "
 		 + "diagram: send it the same operations here once the user has agreed, and their process keeps the "
 		 + "diagram it has while the edit lands somewhere they can look at. Unlike that tool, this one never "
-		 + "refuses over layout — it reports how the new version's diagram differs and creates it anyway; when the "
+		 + "refuses over layout - it reports how the new version's diagram differs and creates it anyway; when the "
 		 + "batch has addElement, removeElement, addFlow, removeFlow or setFlow that diagram is re-drawn as "
 		 + "well, so the arrangement survives on the SOURCE only. From CrtProcessBuilder 1.6.6.125 any other "
 		 + "batch re-draws nothing either way, so the layout is never a reason to make it a version; whether an "
@@ -75,24 +79,26 @@ public class ModifyProcessAsNewVersionTool(
 		 + "executes, and the source keeps running until something activates the new one. Activating is the "
 		 + "SECOND question and a SEPARATE call: ASK the user to open this version, look at it, and say "
 		 + "whether to make it actual; only then call set-active-business-process-version. Never chain the "
-		 + "two — a version is created inactive precisely so they get to look first. The response reports the created version's schema UId, the name the PLATFORM composed "
-		 + "(root name + package + number — you cannot predict or choose it), the version NUMBER the platform "
-		 + "allocated, isActiveVersion (false), the family ROOT UId (the family is FLAT — a version of a version "
+		 + "two - a version is created inactive precisely so they get to look first. The response reports the created version's schema UId, the name the PLATFORM composed "
+		 + "(root name + package + number - you cannot predict or choose it), the version NUMBER the platform "
+		 + "allocated, isActiveVersion (false), the family ROOT UId (the family is FLAT - a version of a version "
 		 + "still points at the root) and the applied-operation count. The number and the flag are reported only "
 		 + "when the environment reported them: an omitted number is stated as ABSENT rather than as 0 (0 means "
 		 + "family ROOT in this surface's vocabulary, which is the opposite of a new version), and an omitted "
 		 + "flag yields 'the environment did not report which version is actual' instead of the reassuring "
-		 + "'the source still runs' — do not read that as a claim about what executes. Operations apply in order and any failure "
+		 + "'the source still runs' - do not read that as a claim about what executes. Operations apply in order and any failure "
 		 + "aborts the whole call; a failure BEFORE the save leaves nothing behind at all, so there is no "
-		 + "half-created version to clean up. A version can never be DELETED — the platform has no such "
-		 + "operation — so every version you create is permanent; take that into account before creating one "
+		 + "half-created version to clean up. A save that FAILS on a family with timer starts drops the family's timer jobs; "
+		 + "the active version's are re-registered, so its timer with a past start may run once right away (the error "
+		 + "says so). A version can never be DELETED - the platform has no such "
+		 + "operation - so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.6.187 or newer — an older package is refused up front, naming the "
+		 + "environment at CrtProcessBuilder 1.6.6.187 or newer - an older package is refused up front, naming the "
 		 + "version this operation needs; install or update it with install-process-builder after user approval. (The operation itself "
 		 + "first exists in 1.6.1.0; the floor has risen with the operations vocabulary (mergeFrom, subProcess.multiInstanceOptions, sourceColumn, the File types, itemProperties, ...), because an older "
 		 + "server silently discards or mis-applies a newer input while answering success, or refuses it as unknown, and "
 		 + "this route runs NO read-back check that could tell you.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). Beside real edits setTracing switches tracing for the WHOLE family at once, the running version included: tell the user first. After a successful save the version normally stays INTERPRETED and "
-		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
+		 + "runs as-is once activated, so compile-creatio is not needed - UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "
 		 + "is a new process name, whose generated code does not exist until compiled). Heed the warning over this "

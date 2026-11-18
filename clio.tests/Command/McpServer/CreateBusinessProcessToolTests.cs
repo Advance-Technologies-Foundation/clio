@@ -555,7 +555,7 @@ public class CreateBusinessProcessToolTests {
 		// (nothing to act on - the contract is the attribute itself)
 
 		// Assert
-		toolDescription.Should().Contain("type (a supported scalar, Lookup, Collection, File or FileCollection — other types rejected;",
+		toolDescription.Should().Contain("type (a supported scalar, Lookup, Collection, File or FileCollection - other types rejected;",
 			because: "the parameters[] type list is where an agent learns which types a build accepts");
 		toolDescription.Should().Contain("not a formula; refused on a Collection or File)",
 			because: "a File has no constant form, and the contract must say so before the server refuses it");
@@ -650,7 +650,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The create contract names the timerStart type and its timer block, and the prompt names both for a scheduled process (TC-U-13) - the contract carries only the type and the block (Q10); the schedule vocabulary lives in the timer-start guide, whose pointer waits for its release.")]
+	[Description("The create contract names the timerStart type and its timer block and says to confirm the schedule with the user before saving, and the prompt names all three for a scheduled process (TC-U-13) - the contract carries only the type and the block (Q10); the schedule vocabulary lives in the timer-start guide, whose pointer is a merge gate behind its release.")]
 	public void CreateBusinessProcessTool_ShouldOfferTheTimerStartElement() {
 		// Arrange
 		string toolDescription = typeof(CreateBusinessProcessTool)
@@ -665,10 +665,16 @@ public class CreateBusinessProcessToolTests {
 			because: "the element type list is where an agent learns which type tokens a build accepts");
 		toolDescription.Should().Contain("signal?, timer?, ",
 			because: "the element fields name the timer block beside the signal block of the other triggered start");
-		toolDescription.Should().NotContain("cronExpression",
-			because: "the contract carries no schedule vocabulary; that is the guide's (Q10)");
+		toolDescription.Should().Contain("A timerStart runs unattended: ask the user to confirm its schedule first.",
+			because: "a timer start schedules runs nobody watches, so the contract gates the save on the user's confirmation");
+		foreach (string member in new[] { "daysOfWeek", "repeatOnMisfire", "fromHour", "toHour", "dayOfMonth", "workday", "weekday" }) {
+			toolDescription.Should().NotContain(member,
+				because: "the contract carries no schedule vocabulary; that is the guide's (Q10)");
+		}
 		prompt.Should().Contain("use a `timerStart` element with its `timer` block",
 			because: "the prompt routes a scheduled process to the timer start instead of a workaround");
+		prompt.Should().Contain("save one only after the user confirms that schedule",
+			because: "the prompt carries the same confirm-before-save rule as the contract");
 	}
 
 	[Test]

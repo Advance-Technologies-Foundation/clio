@@ -483,7 +483,7 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The describe contract names the timer block a timer start reads back with its describe-only storedCron, designerKind and scheduled, and the prompt explains the scheduler states, the startTimers summary list and the message start that reports no buildType (TC-U-15).")]
+	[Description("The describe contract names the timer block a timer start reads back with its describe-only storedCron, designerKind and scheduled, and the prompt explains the scheduler states, the startTimers summary list and the message start that reports no buildType (TC-U-15); the contract carries no schedule vocabulary (Q10).")]
 	public void DescribeProcess_ShouldDocumentTheTimerBlock_WhenToolContractIsRead() {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();
@@ -502,6 +502,10 @@ public sealed class DescribeProcessToolTests {
 			because: "the summary mode lists timer starts");
 		prompt.Should().Contain("A message start has no `buildType`: it is read-only here.",
 			because: "the message-start describe changed with this package (Q7)");
+		foreach (string member in new[] { "daysOfWeek", "repeatOnMisfire", "fromHour", "toHour", "dayOfMonth", "workday", "weekday" }) {
+			toolText.Should().NotContain(member,
+				because: "the contract names the block and its read-backs only; the schedule vocabulary is the guide's (Q10)");
+		}
 	}
 
 	[Test]

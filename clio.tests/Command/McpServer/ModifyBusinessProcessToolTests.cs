@@ -39,7 +39,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify contract names the timer block on addElement, the setTimer operation and that setElement refuses timer, and the prompt routes a timer like a filter or a signal to its own operation (TC-U-14).")]
+	[Description("The modify contract names the timer block on addElement, the setTimer operation and that setElement refuses timer, and says to confirm a schedule with the user before saving; the prompt routes a timer like a filter or a signal to its own operation, says a kind change clears an unsent window, and carries the same confirmation (TC-U-14). No schedule vocabulary is in the contract (Q10).")]
 	public void ModifyBusinessProcess_Description_ShouldOfferSetTimerAndTheTimerBlock() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
@@ -51,12 +51,22 @@ public class ModifyBusinessProcessToolTests {
 		// Assert
 		description.Should().Contain("changedColumns?:[<ColumnName>,...]}, timer?, ",
 			because: "addElement takes the timer block of a timerStart beside the signal block");
-		description.Should().Contain("setTimer (elementName + timer: changes a timerStart schedule in place; setElement refuses timer)",
+		description.Should().Contain("setTimer (elementName + timer:{...} - changes a timerStart schedule in place; setElement refuses timer)",
 			because: "the operation that changes a timer start is named with its arguments and the setElement pointer");
+		description.Should().Contain("A timerStart runs unattended: ask the user to confirm its schedule first.",
+			because: "addElement and setTimer schedule runs nobody watches, so the contract gates the save on the user's confirmation");
+		foreach (string member in new[] { "daysOfWeek", "repeatOnMisfire", "fromHour", "toHour", "dayOfMonth", "workday", "weekday" }) {
+			description.Should().NotContain(member,
+				because: "the contract carries no schedule vocabulary; that is the guide's (Q10)");
+		}
 		prompt.Should().Contain("(setFilter, setSignal, setTimer, setConnections)",
 			because: "the prompt lists the timer among the members that have their own operation");
 		prompt.Should().Contain("`setTimer` changes a `timerStart`'s schedule in place",
 			because: "the prompt says what setTimer keeps and how the schedule group is replaced");
+		prompt.Should().Contain("a change of kind clears a `start`/`end` you",
+			because: "the server clears an unsent window when the kind changes, which a field-by-field reading would miss");
+		prompt.Should().Contain("save one only after the user confirms its",
+			because: "the prompt carries the same confirm-before-save rule as the contract");
 	}
 
 	[Test]

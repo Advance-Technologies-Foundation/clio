@@ -267,6 +267,26 @@ public class ModifyProcessAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The description says the one live effect a FAILED save can have on a family with timer starts (ENG-91849): the family's timer jobs are dropped and the active version's re-registered, so a timer with a past start may run once right away - while the tool stays Destructive = false, because that run belongs to an already-approved schedule.")]
+	public void ModifyProcessAsNewVersion_Description_ShouldStateTheFailedSaveTimerEffect() {
+		// Arrange
+		MethodInfo method = typeof(ModifyProcessAsNewVersionTool)
+			.GetMethod(nameof(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersion))!;
+
+		// Act
+		string description = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("A save that FAILS on a family with timer starts drops the family's timer jobs",
+			because: "a failed save is the one path on which this non-destructive tool touches what the environment runs");
+		description.Should().Contain("may run once right away",
+			because: "a catch-up run of the running version is the consequence a caller has to be able to foresee");
+		method.GetCustomAttribute<McpServerToolAttribute>()!.Destructive.Should().BeFalse(
+			because: "the re-registration restores an approved schedule rather than adding one, so consent gating stays as it is");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool routes through the ProcessDesignService entry the package actually exposes, with the leading slash its five siblings carry — a route that resolves to the wrong path fails at run time on a stand, which is the slowest possible place to find it.")]
 	public void ModifyProcessAsNewVersion_ShouldResolve_TheProcessDesignServiceRoute() {
 		// Arrange

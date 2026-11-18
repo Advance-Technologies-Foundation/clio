@@ -113,7 +113,9 @@ public static class ModifyBusinessProcessPrompt {
 		 unless every listed start moves with it; `removeElement` refuses it until `setParameter` takes it out of
 		 the list), `setTimer` changes a `timerStart`'s schedule in place (same element, same flows, same
 		 scheduler job: send the whole schedule - `schedule` and the fields of its kind - to change it; `start`,
-		 `end`, `timeZone` and `repeatOnMisfire` change one by one), and `setElement` changes element-level fields in place —
+		 `end`, `timeZone` and `repeatOnMisfire` change one by one, but a change of kind clears a `start`/`end` you
+		 do not resend; a timer runs the process unattended, so save one only after the user confirms its
+		 schedule), and `setElement` changes element-level fields in place —
 		 `useBackgroundMode` on an element kind that offers it (it takes effect only on a start event and an
 		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
