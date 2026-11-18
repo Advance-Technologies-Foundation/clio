@@ -2460,8 +2460,10 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				because: "storedCron, designerKind and scheduled are tolerated read-backs, never refused");
 			LogText(copyResult).Should().Contain("Read-only fields copied from describe were ignored",
 				because: "the server ignores the describe-only members with a warning instead of saving them");
-			LogText(copyResult).Should().Contain("timer.storedCron",
-				because: "the warning names the ignored read-back by its path");
+			// The package groups the ignored members once per place ("elements[].timer: scheduled, storedCron"), so the
+			// path and the member name are never joined as "timer.storedCron".
+			LogText(copyResult).Should().MatchRegex(@"elements\[\]\.timer: [^;\r\n]*\bstoredCron\b",
+				because: "the warning names the ignored read-backs once per place, the timer block's storedCron among them");
 			foreach ((string name, _) in timers) {
 				JsonObject before = Timers.WriteShape(Timers.TimerBlock(Timers.Element(graph, name)));
 				JsonObject after = Timers.WriteShape(Timers.TimerBlock(Timers.Element(copyGraph, name)));
