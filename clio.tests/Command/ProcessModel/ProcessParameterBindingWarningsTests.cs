@@ -254,6 +254,8 @@ public class ProcessParameterBindingWarningsTests {
 		TestName = "ForDescriptor_ShouldRecommendOnlyAFormula_WhenTheSignalStartsAreOnDifferentObjects")]
 	[TestCase("""{"name":"SigA","type":"signalStart","signal":{"entity":"Contact","on":"added"}},{"name":"SigB","type":"startEventTimer"}""",
 		TestName = "ForDescriptor_ShouldRecommendOnlyAFormula_WhenOneStartIsATimer")]
+	[TestCase("""{"name":"SigA","type":"signalStart","signal":{"entity":"Contact","on":"added"}},{"name":"SigB","type":"timerStart","timer":{"schedule":"day"}}""",
+		TestName = "ForDescriptor_ShouldRecommendOnlyAFormula_WhenOneStartIsATimerStartBuildToken")]
 	[Description("Two starts mergeFrom cannot merge - signal starts on different objects, or a signal start beside a timer start - earn the unreached warning with the Formula remedy only: naming mergeFrom there would send the caller to a merge the server refuses.")]
 	public void ForDescriptor_ShouldRecommendOnlyAFormula_WhenTheStartsCannotBeMerged(string starts) {
 		// Arrange
@@ -488,6 +490,53 @@ public class ProcessParameterBindingWarningsTests {
 
 		// Assert
 		warnings.Should().BeEmpty(because: "a lone binding read after its element ran is the supported pattern");
+	}
+
+	[TestCase("timerstart", "ProcessSchemaStartTimerEvent", TestName = "ForOperations_ShouldCountADescribedTimerStartAsAStart")]
+	[TestCase(null, "ProcessSchemaStartMessageEvent", TestName = "ForOperations_ShouldCountAMessageStartWithNoBuildTypeAsAStart")]
+	[Description("Start detection on the saved graph (TC-U-12): a described timer start (buildType timerstart) counts as a start, and so does an element the server reports with NO buildType whose runtime type is a start class - a message start from CrtProcessBuilder 1.6.6.187, which no longer describes it as startevent (ENG-91849, Q7) - so a binding the second start does not reach still warns.")]
+	public void ForOperations_ShouldCountTheSecondStart(string buildType, string runtimeType) {
+		// Arrange
+		DescribeProcessResult after = TwoStartProcess();
+		after.Elements[1] = new DescribedElement {
+			Name = "SigB", Uid = "a0000000-0000-0000-0000-000000000002", Type = runtimeType, BuildType = buildType
+		};
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForOperations($"[{AddMapping(ReadAName)}]",
+			null, after);
+
+		// Assert
+		warnings.Should().ContainSingle(w => w.Contains("started by 'SigB' does not reach"),
+			because: "SigB is a start event whatever token describe reports for it, and its runs never execute ReadA");
+		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
+			because: "mergeFrom merges signal starts only, so a timer or message start leaves the Formula remedy");
+	}
+
+	[Test]
+	[Description("An element with no buildType whose runtime type is NOT a start class does not count as a start (TC-U-12): the runtime-type fallback is for start events only, so a single-start process with a read-only element of another kind stays silent.")]
+	public void ForOperations_ShouldNotCountANonStartWithNoBuildTypeAsAStart() {
+		// Arrange
+		DescribeProcessResult process = new() {
+			Elements = [
+				new DescribedElement { Name = "Start1", Type = "ProcessSchemaStartEvent", BuildType = "startevent" },
+				new DescribedElement { Name = "Catch1", Type = "ProcessSchemaIntermediateCatchMessageEvent" },
+				new DescribedElement { Name = "ReadA", Type = "ProcessSchemaUserTask", BuildType = "readdata" }
+			],
+			Flows = [
+				new DescribedFlow { Source = "Start1", Target = "Catch1" },
+				new DescribedFlow { Source = "Catch1", Target = "ReadA" }
+			],
+			Parameters = [new DescribedParameter { Name = "PName", Source = "None" }]
+		};
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForOperations(
+			$"[{AddMapping(ReadAName)}]", process, process);
+
+		// Assert
+		warnings.Should().BeEmpty(
+			because: "an intermediate event with no buildType is not a start, so the process keeps a single start");
 	}
 
 	#endregion

@@ -222,6 +222,79 @@ public sealed class ProcessDigestTests {
 			because: "two reads of the same content differ in nothing, even when a saved copy carries fresh element UIds");
 	}
 
+	// A two-start process whose second start is a timer (ENG-91849), with the scheduler state describe reports.
+	private static DescribeProcessResult TimerProcess(string state, string nextFire, string at = "02:30") =>
+		new() {
+			Name = "UsrNightly",
+			Elements = [
+				new DescribedElement { Name = "Start1", Type = "ProcessSchemaStartEvent", BuildType = "startevent" },
+				new DescribedElement {
+					Name = "Nightly", Uid = Guid.NewGuid().ToString(), Type = "ProcessSchemaStartTimerEvent",
+					BuildType = "timerstart",
+					Timer = new DescribedTimer {
+						Schedule = "day", At = at, TimeZone = "FLE Standard Time", RepeatOnMisfire = false,
+						Start = "2090-01-01T00:00:00", StoredCron = $"0 {at[3..]} {int.Parse(at[..2])} 1/1 * ? *",
+						Scheduled = new DescribedTimerSchedule { State = state, NextFireTimeUtc = nextFire }
+					}
+				},
+				new DescribedElement { Name = "End1", Type = "ProcessSchemaTerminateEvent", BuildType = "endevent" }
+			],
+			Flows = [
+				new DescribedFlow { Source = "Start1", Target = "End1" },
+				new DescribedFlow { Source = "Nightly", Target = "End1" }
+			],
+			Parameters = []
+		};
+
+	[Test]
+	[Description("The summary lists timer starts in startTimers[] (TC-U-10): the element, its schedule kind, the cron as stored, the window start, the zone and whether the scheduler runs it with its next fire time - so a 'saved but never fires' timer shows without reading the element in full.")]
+	public void BuildSummary_ShouldListTimerStarts() {
+		// Arrange
+		DescribeProcessResult process = TimerProcess("scheduled", "2090-01-01T00:30:00Z");
+
+		// Act
+		JsonObject summary = ProcessDigest.BuildSummary(process, "abc123");
+
+		// Assert
+		JsonObject timer = summary["startTimers"]!.AsArray().Should().ContainSingle(
+			because: "the process has one timer start").Which!.AsObject();
+		timer["element"]!.GetValue<string>().Should().Be("Nightly", because: "the entry names the element");
+		timer["schedule"]!.GetValue<string>().Should().Be("day", because: "the entry names the schedule kind");
+		timer["cron"]!.GetValue<string>().Should().Be("0 30 2 1/1 * ? *", because: "the stored cron stands in for the fields");
+		timer["start"]!.GetValue<string>().Should().Be("2090-01-01T00:00:00", because: "the window start is kept");
+		timer["timeZone"]!.GetValue<string>().Should().Be("FLE Standard Time", because: "the zone is kept");
+		timer["state"]!.GetValue<string>().Should().Be("scheduled", because: "the scheduler state is the point of the entry");
+		timer["nextFireTimeUtc"]!.GetValue<string>().Should().Be("2090-01-01T00:30:00Z", because: "the next run is kept");
+		summary["startSignals"].Should().BeNull(because: "a process without signal starts carries no startSignals list");
+	}
+
+	[Test]
+	[Description("The checksum and the write digest's change list ignore a timer start's live scheduler state (TC-U-11): a timer that fired, or whose process was disabled, leaves both unchanged - as tracing does for the family - while a schedule change moves both.")]
+	public void ChecksumAndChanges_ShouldIgnoreTheTimerScheduleState_AndTrackTheSchedule() {
+		// Arrange
+		DescribeProcessResult before = TimerProcess("scheduled", "2090-01-01T00:30:00Z");
+		DescribeProcessResult fired = TimerProcess("scheduled", "2090-01-02T00:30:00Z");
+		DescribeProcessResult disabled = TimerProcess("processDisabled", null);
+		DescribeProcessResult rescheduled = TimerProcess("scheduled", "2090-01-01T01:45:00Z", at: "03:45");
+
+		// Act
+		string checksum = ProcessDigest.Checksum(before);
+		JsonObject firedChanges = ProcessDigest.BuildChanges(before, fired);
+		JsonObject disabledChanges = ProcessDigest.BuildChanges(before, disabled);
+		JsonObject rescheduledChanges = ProcessDigest.BuildChanges(before, rescheduled);
+
+		// Assert
+		ProcessDigest.Checksum(fired).Should().Be(checksum,
+			because: "a fire moves the next fire time, which is scheduler state, not content");
+		ProcessDigest.Checksum(disabled).Should().Be(checksum,
+			because: "disabling the process changes the state, not the schema");
+		firedChanges.Should().BeEmpty(because: "a write must not report a phantom change when only the state moved");
+		disabledChanges.Should().BeEmpty(because: "the change list ignores scheduled the way the checksum does");
+		ProcessDigest.Checksum(rescheduled).Should().NotBe(checksum, because: "a schedule change is content");
+		Names(rescheduledChanges, "elementsChanged").Should().Equal(["Nightly"],
+			because: "the element whose schedule changed is reported");
+	}
+
 	[Test]
 	[Description("Removing the first of two parallel conditional flows between the same elements reports that flow as removed, and does not report the surviving flow as changed.")]
 	public void BuildChanges_ShouldPairParallelFlowsByContent() {

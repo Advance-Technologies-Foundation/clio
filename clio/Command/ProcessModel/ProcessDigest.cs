@@ -94,6 +94,13 @@ internal static class ProcessDigest {
 	// off by itself: family state, like the version facts, that changes while this schema's content does not.
 	private static readonly string[] FamilyStateMembers = ["tracing"];
 
+	// The element counterpart of FamilyStateMembers (ENG-91849): a timer start's 'scheduled' is read from the platform
+	// scheduler, not from the schema. It moves when the timer fires and when the process is enabled or another version
+	// is activated, while the element's content does not, so hashing it would change the checksum of an unchanged
+	// process on every run and report a phantom change after a write.
+	private const string TimerMember = "timer";
+	private const string TimerScheduleMember = "scheduled";
+
 	// The server re-derives the whole layout on every structural edit, so the diagram members would mark every element
 	// of a process as changed by an edit that touched one of them.
 	private static readonly string[] ElementLayoutMembers = ["position", "size"];
@@ -101,7 +108,8 @@ internal static class ProcessDigest {
 
 	/// <summary>
 	/// A short content checksum of the graph: 12 hex characters of SHA-256 over the compact JSON of everything
-	/// except the version-family facts and tracing state, the schema's own name and UId, every member named <c>uid</c> (element
+	/// except the version-family facts and tracing state, a timer start's live scheduler state (<c>timer.scheduled</c>),
+	/// the schema's own name and UId, every member named <c>uid</c> (element
 	/// and parameter identities), the diagram layout, and the culture-resolved text clio reports as its own members
 	/// (captions, descriptions, flow labels, display values, result captions, page and email texts - see
 	/// <c>LocalizedMembers</c>). A constant inside an element parameter's <c>value</c> is still hashed as read.
@@ -121,6 +129,9 @@ internal static class ProcessDigest {
 			graph.Remove(member);
 		}
 		StripMembers(graph["elements"] as JsonArray, ElementLayoutMembers);
+		foreach (JsonNode element in graph["elements"] as JsonArray ?? []) {
+			StripTimerSchedule(element);
+		}
 		StripMembers(graph["flows"] as JsonArray, FlowLayoutMembers);
 		StripIdentities(graph);
 		StripLocalized(graph);
@@ -130,7 +141,7 @@ internal static class ProcessDigest {
 
 	/// <summary>
 	/// The summary: elements as name + type + caption, flows as <c>from -&gt; to</c> with their kind and
-	/// whether a condition is set, start signals, process parameters with their types (a merged one with its
+	/// whether a condition is set, start signals, start timers, process parameters with their types (a merged one with its
 	/// <c>mergeFrom</c>), the version standing and the checksum - within <see cref="SummaryBudgetBytes"/> where the
 	/// process allows.
 	/// </summary>
@@ -281,8 +292,8 @@ internal static class ProcessDigest {
 
 	/// <summary>
 	/// What differs between two reads of a process: elements, flows and process parameters added, removed and
-	/// changed. Layout is ignored, for the reason <see cref="Checksum"/> ignores it. An empty object means
-	/// nothing differs.
+	/// changed. Layout and a timer start's live scheduler state are ignored, for the reasons <see cref="Checksum"/>
+	/// ignores them. An empty object means nothing differs.
 	/// </summary>
 	/// <param name="before">The read taken before the write.</param>
 	/// <param name="after">The read taken after it.</param>
@@ -290,8 +301,8 @@ internal static class ProcessDigest {
 	internal static JsonObject BuildChanges(DescribeProcessResult before, DescribeProcessResult after) {
 		JsonObject changes = new();
 		Diff(changes, "elements",
-			Keyed(before.Elements, element => element.Name, element => Canonical(element, ElementLayoutMembers)),
-			Keyed(after.Elements, element => element.Name, element => Canonical(element, ElementLayoutMembers)));
+			Keyed(before.Elements, element => element.Name, ElementContent),
+			Keyed(after.Elements, element => element.Name, ElementContent));
 		(List<DescribedFlow> flowsBefore, List<DescribedFlow> flowsAfter) = WithoutUnchangedFlows(before.Flows, after.Flows);
 		Diff(changes, "flows", KeyedFlows(flowsBefore), KeyedFlows(flowsAfter));
 		Diff(changes, "parameters",
@@ -368,6 +379,11 @@ internal static class ProcessDigest {
 		if (signals.Count > 0) {
 			summary["startSignals"] = signals;
 		}
+		JsonArray timers = new(elements.Where(element => element.Timer is not null)
+			.Select(element => (JsonNode)TimerEntry(element)).ToArray());
+		if (timers.Count > 0) {
+			summary["startTimers"] = timers;
+		}
 		summary["parameters"] = new JsonArray(parameters.Select(parameter => (JsonNode)ParameterEntry(parameter))
 			.ToArray());
 		return summary;
@@ -395,6 +411,22 @@ internal static class ProcessDigest {
 			entry["changedColumns"] = new JsonArray(columns.Select(column => (JsonNode)JsonValue.Create(column))
 				.ToArray());
 		}
+		return entry;
+	}
+
+	// A timer start as one line of the summary: what it runs on and whether the scheduler will run it. The schedule's
+	// own fields stay one call away (element=<name>); the stored cron says the same in one member.
+	private static JsonObject TimerEntry(DescribedElement element) {
+		DescribedTimer timer = element.Timer;
+		JsonObject entry = new() {
+			["element"] = element.Name,
+			["schedule"] = timer.Schedule
+		};
+		AddIfPresent(entry, "cron", timer.Cron ?? timer.StoredCron);
+		AddIfPresent(entry, "start", timer.Start);
+		AddIfPresent(entry, "timeZone", timer.TimeZone);
+		AddIfPresent(entry, "state", timer.Scheduled?.State);
+		AddIfPresent(entry, "nextFireTimeUtc", timer.Scheduled?.NextFireTimeUtc);
 		return entry;
 	}
 
@@ -440,15 +472,25 @@ internal static class ProcessDigest {
 		}
 	}
 
-	private static string Canonical<T>(T value, string[] ignoredMembers) {
+	private static string Canonical<T>(T value, string[] ignoredMembers, Action<JsonNode> strip = null) {
 		JsonNode node = JsonSerializer.SerializeToNode(value, DescribeProcessCommand.OutputOptions);
 		if (node is JsonObject obj) {
 			foreach (string member in ignoredMembers) {
 				obj.Remove(member);
 			}
 		}
+		strip?.Invoke(node);
 		StripIdentities(node);
 		return node?.ToJsonString(DescribeProcessCommand.OutputOptions) ?? string.Empty;
+	}
+
+	private static string ElementContent(DescribedElement element) =>
+		Canonical(element, ElementLayoutMembers, StripTimerSchedule);
+
+	private static void StripTimerSchedule(JsonNode element) {
+		if (element is JsonObject obj && obj[TimerMember] is JsonObject timer) {
+			timer.Remove(TimerScheduleMember);
+		}
 	}
 
 	private static void StripLocalized(JsonNode node) {

@@ -660,6 +660,17 @@ public sealed class DescribedElement {
 	public DescribedSignal Signal { get; set; }
 
 	/// <summary>
+	/// For a top-level timer start (<c>ProcessSchemaStartTimerEvent</c>, <c>buildType</c> <c>timerstart</c>): its
+	/// <c>timer</c> block read from the element, with the live scheduler state. <c>null</c> for every other element, a
+	/// timer inside an event sub-process included, and on a server that predates the element.
+	/// <para>The write members read back in their write shape, so the block is sent back unchanged to
+	/// <c>addElement</c> or <c>setTimer</c>; <c>storedCron</c>, <c>designerKind</c> and <c>scheduled</c> are
+	/// describe-only and draw a warning there. See <see cref="DescribedTimer"/>.</para>
+	/// </summary>
+	[JsonPropertyName("timer")]
+	public DescribedTimer Timer { get; set; }
+
+	/// <summary>
 	/// The element's data source filter (a signal start's <c>EntityFilters</c> or a data-operation element's
 	/// <c>DataSourceFilters</c>), decoded server-side into the high-level shape; <c>null</c> when the element
 	/// carries no filter. Round-trips into a <c>create</c>/<c>modify</c> <c>filter</c> descriptor.
@@ -1832,6 +1843,151 @@ public sealed class DescribedSignal {
 	/// </summary>
 	[JsonPropertyName("changedColumns")]
 	public List<string> ChangedColumns { get; set; }
+}
+
+/// <summary>
+/// The schedule of a timer start read back in the <c>timer</c> block vocabulary (ENG-91849). Mirrors the server's
+/// <c>DescribeTimerInfo</c>: only the members the schedule kind uses are reported, so a described block copied into a
+/// build or an <c>addElement</c> rebuilds the same stored properties for a timer whose window is in the future.
+/// </summary>
+/// <remarks>
+/// When the stored cron does not have the shape the designer stores for the stored kind, <see cref="Schedule"/> is
+/// <c>cron</c>, <see cref="Cron"/> carries the stored string and <see cref="DesignerKind"/> names the kind the element
+/// claims. Dates are wall clock in <see cref="TimeZone"/>, <c>yyyy-MM-ddTHH:mm:ss</c>.
+/// </remarks>
+public sealed class DescribedTimer {
+
+	/// <summary><c>once</c>, <c>minute</c>, <c>hour</c>, <c>day</c>, <c>week</c>, <c>month</c>, <c>year</c> or <c>cron</c>.</summary>
+	[JsonPropertyName("schedule")]
+	public string Schedule { get; set; }
+
+	/// <summary>The calendar-aligned cron step of a <c>minute</c>, <c>hour</c>, <c>day</c> or <c>month</c> schedule.</summary>
+	[JsonPropertyName("every")]
+	public int? Every { get; set; }
+
+	/// <summary>The time of day, <c>HH:mm</c>, of a <c>day</c>, <c>week</c>, <c>month</c> or <c>year</c> schedule.</summary>
+	[JsonPropertyName("at")]
+	public string At { get; set; }
+
+	/// <summary>The first hour of a <c>minute</c> / <c>hour</c> window, inclusive.</summary>
+	[JsonPropertyName("fromHour")]
+	public int? FromHour { get; set; }
+
+	/// <summary>The last hour of a <c>minute</c> / <c>hour</c> window, inclusive.</summary>
+	[JsonPropertyName("toHour")]
+	public int? ToHour { get; set; }
+
+	/// <summary>The weekdays of a <c>week</c> schedule (<c>sun</c> ... <c>sat</c>), in week order.</summary>
+	[JsonPropertyName("daysOfWeek")]
+	public List<string> DaysOfWeek { get; set; }
+
+	/// <summary>The day of the month as a string - <c>"1"</c>..<c>"31"</c>, or <c>"last"</c> for a month schedule.</summary>
+	[JsonPropertyName("dayOfMonth")]
+	public string DayOfMonth { get; set; }
+
+	/// <summary>The Nth weekday of a <c>month</c> or <c>year</c> schedule.</summary>
+	[JsonPropertyName("weekday")]
+	public DescribedTimerWeekday Weekday { get; set; }
+
+	/// <summary>The work day of a <c>month</c> schedule: <c>first</c> or <c>last</c>.</summary>
+	[JsonPropertyName("workday")]
+	public string Workday { get; set; }
+
+	/// <summary>The month (1..12) of a <c>year</c> schedule.</summary>
+	[JsonPropertyName("month")]
+	public int? Month { get; set; }
+
+	/// <summary>The Quartz cron of a <c>cron</c> schedule; the other kinds report <see cref="StoredCron"/> only.</summary>
+	[JsonPropertyName("cron")]
+	public string Cron { get; set; }
+
+	/// <summary>The once instant, or the start of the validity window; absent when none is stored.</summary>
+	[JsonPropertyName("start")]
+	public string Start { get; set; }
+
+	/// <summary>The end of the validity window; absent when none is stored.</summary>
+	[JsonPropertyName("end")]
+	public string End { get; set; }
+
+	/// <summary>The <c>TimeZone</c> lookup Code the timer runs in; <c>UTC</c> when the element stores none.</summary>
+	[JsonPropertyName("timeZone")]
+	public string TimeZone { get; set; }
+
+	/// <summary>The designer's "Repeat on misfire".</summary>
+	[JsonPropertyName("repeatOnMisfire")]
+	public bool? RepeatOnMisfire { get; set; }
+
+	/// <summary>Describe-only: the cron exactly as stored; absent for a once timer, which stores none.</summary>
+	[JsonPropertyName("storedCron")]
+	public string StoredCron { get; set; }
+
+	/// <summary>Describe-only: the kind the element stores when its cron does not have that kind's designer shape.</summary>
+	[JsonPropertyName("designerKind")]
+	public string DesignerKind { get; set; }
+
+	/// <summary>
+	/// Describe-only: whether the platform scheduler holds this version's job, and when it fires. Live state, not
+	/// content: it is left out of the content checksum and of a write's change list (<c>ProcessDigest</c>).
+	/// </summary>
+	[JsonPropertyName("scheduled")]
+	public DescribedTimerSchedule Scheduled { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare, so a field a later
+	/// CrtProcessBuilder adds reaches the caller instead of being dropped on re-serialization.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The Nth weekday of a timer's <c>month</c> or <c>year</c> schedule.</summary>
+public sealed class DescribedTimerWeekday {
+
+	/// <summary><c>first</c> ... <c>fifth</c> (year only), or <c>last</c> (month only).</summary>
+	[JsonPropertyName("position")]
+	public string Position { get; set; }
+
+	/// <summary><c>sun</c> ... <c>sat</c>.</summary>
+	[JsonPropertyName("day")]
+	public string Day { get; set; }
+
+	/// <summary>Members a later CrtProcessBuilder adds, kept verbatim.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// What the platform scheduler holds for a described timer start (the server's <c>DescribeTimerScheduleState</c>).
+/// Fire times are UTC, <c>yyyy-MM-ddTHH:mm:ssZ</c>.
+/// </summary>
+public sealed class DescribedTimerSchedule {
+
+	/// <summary>
+	/// <c>scheduled</c>, or why not: <c>processDisabled</c>, <c>notActiveVersion</c>, <c>staleTrigger</c> (a re-save
+	/// fixes it), <c>noJob</c> or <c>schedulerUnavailable</c>.
+	/// </summary>
+	[JsonPropertyName("state")]
+	public string State { get; set; }
+
+	/// <summary>The next fire time of the trigger the scheduler holds; absent when none.</summary>
+	[JsonPropertyName("nextFireTimeUtc")]
+	public string NextFireTimeUtc { get; set; }
+
+	/// <summary>The previous fire time; absent when the trigger never fired.</summary>
+	[JsonPropertyName("previousFireTimeUtc")]
+	public string PreviousFireTimeUtc { get; set; }
+
+	/// <summary>For <c>notActiveVersion</c>: the next run of the same timer in the active version.</summary>
+	[JsonPropertyName("activeVersionNextFireTimeUtc")]
+	public string ActiveVersionNextFireTimeUtc { get; set; }
+
+	/// <summary>One sentence on what differs or failed; wording, not a value to parse.</summary>
+	[JsonPropertyName("detail")]
+	public string Detail { get; set; }
+
+	/// <summary>Members a later CrtProcessBuilder adds, kept verbatim.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
 
 /// <summary>A data source filter group read back from an element — a recursive AND/OR tree of conditions.</summary>

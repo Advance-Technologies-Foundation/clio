@@ -1126,7 +1126,9 @@ public static class ManagerMap{
 		return id switch {
 			"startevent" => EventType.StartEvent,
 			"starteventsignal" or "signalstart" => EventType.StartSignalEvent,
-			"starteventtimer" => EventType.StartTimer,
+			// "timerstart" is the Timer start's build/describe token (ENG-91849, CrtProcessBuilder 1.6.6.187); it does not
+			// share the "startevent" prefix of the designer data-id, so it needs its own entry.
+			"starteventtimer" or "timerstart" => EventType.StartTimer,
 			"starteventmessage" => EventType.StartMessageEvent,
 			"endevent" => EventType.EndEvent,
 			"exclusivegateway" => EventType.ExclusiveGateway,
@@ -1172,6 +1174,28 @@ public static class ManagerMap{
 			_ => EventType.Unknown
 		};
 	}
+
+	/// <summary>
+	/// Maps a described element's runtime class name (<c>describe-business-process</c>'s <c>type</c>, for example
+	/// <c>ProcessSchemaStartMessageEvent</c>) to its start <see cref="EventType"/>, for an element the server reports
+	/// with no <c>buildType</c>.
+	/// </summary>
+	/// <remarks>
+	/// Only the start-event classes are mapped; anything else is <see cref="EventType.Unknown"/>. From CrtProcessBuilder
+	/// 1.6.6.187 the plain-start handler claims only the exact plain start, so a message start - which the package does
+	/// not build - is described with no <c>buildType</c> at all (ENG-91849, Q7). Without this fallback a caller that
+	/// decides "is a start" from the build token would stop counting a message start as one.
+	/// </remarks>
+	/// <param name="runtimeType">The element's runtime class name. <see langword="null"/>/empty is allowed.</param>
+	/// <returns>The matching start <see cref="EventType"/>, or <see cref="EventType.Unknown"/>.</returns>
+	public static EventType ResolveRuntimeType(string runtimeType) =>
+		runtimeType?.Trim() switch {
+			"ProcessSchemaStartEvent" => EventType.StartEvent,
+			"ProcessSchemaStartSignalEvent" => EventType.StartSignalEvent,
+			"ProcessSchemaStartTimerEvent" => EventType.StartTimer,
+			"ProcessSchemaStartMessageEvent" => EventType.StartMessageEvent,
+			_ => EventType.Unknown
+		};
 
 	/// <summary>
 	/// Collapses an <see cref="EventType"/> into the coarse <see cref="ProcessElementRole"/> the
