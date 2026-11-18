@@ -40,6 +40,8 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 	// A replacing schema keeps a deleted name's other copies: at most one per package, three packages plus the
 	// default target outside them.
 	private const int MaxSchemaDeletesPerName = 5;
+	// What delete-schema --remote reports when no schema of the name is left (DeleteSchemaCommand.TryDeleteRemote).
+	private const string SchemaNotFoundMessage = "not found in the target environment";
 
 	private McpE2ESettings _settings = null!;
 
@@ -72,7 +74,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 				() => SeedAsync(context, suffix, pageName, companionName, packages, workDirectory));
 
 			// Act
-			PageGetResponse seeded = await GetPageAsync(context, pageName, workDirectory);
+			PageGetResponse seeded = await GetReadablePageAsync(context, pageName, workDirectory);
 			string bodyBeforeRefusal = await File.ReadAllTextAsync(seeded.Files!.BodyFile);
 			IReadOnlyList<StoredRow> rowsBeforeRefusals = await ReadStoredRowsAsync(pageName);
 			PageUpdateResponse refused = await UpdatePageAsync(context, pageName,
@@ -86,15 +88,14 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 
 			// Assert
 			PagePackageChoice choice = seeded.Page!.PackageChoice;
-			TestContext.Progress.WriteLine($"Default target {seeded.Page!.PackageChoice?.DefaultTargetPackageUId}; stored rows: "
+			choice.Should().NotBeNull(because: "packageChoice must survive the MCP serialization of get-page");
+			TestContext.Progress.WriteLine($"Default target {choice.DefaultTargetPackageUId}; stored rows: "
 				+ string.Join("; ", rowsBeforeRefusals));
 			AllureApi.Step("Assert the stand holds the base page and one layer in each layer package", () =>
 				rowsBeforeRefusals.Select(row => row.PackageUId).Should().BeEquivalentTo(
 					new[] { world.BasePackageUId, world.FirstLayerPackageUId, world.SecondLayerPackageUId },
 					because: "the seed wrote the base page and exactly one replacing layer into each layer package"));
 			AllureApi.Step("Assert get-page asks for a package choice and lists both layers", () => {
-				seeded.Success.Should().BeTrue(because: $"get-page must read the seeded page. Error: {seeded.Error}");
-				choice.Should().NotBeNull(because: "packageChoice must survive the MCP serialization of get-page");
 				choice.Required.Should().BeTrue(
 					because: "two unlocked packages customize the page, so a write must name its target");
 				LayerPackageUIds(choice).Should().Contain(
@@ -134,7 +135,7 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 
 			IReadOnlyList<StoredRow> rowsAfterDefault =
 				await AssertDefaultTargetRetrySavesAsync(context, pageName, choice, rowsAfterRefusals, workDirectory);
-			await AssertOtherLayerRetriesAsync(context, pageName, choice, rowsAfterDefault, workDirectory);
+			await AssertOtherLayerRetriesAsync(context, pageName, choice, world, rowsAfterDefault, workDirectory);
 		}
 		finally {
 			await CleanUpAsync([pageName, companionName], packages);
@@ -163,9 +164,15 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 	}
 
 	private async Task AssertOtherLayerRetriesAsync(ArrangeContext context, string pageName,
-		PagePackageChoice choice, IReadOnlyList<StoredRow> rowsBefore, string workDirectory) {
+		PagePackageChoice choice, PackageChoiceWorld world, IReadOnlyList<StoredRow> rowsBefore, string workDirectory) {
 		// Arrange
-		PagePackageLayer other = choice.Layers.First(layer => !layer.IsDefaultTarget && layer.PackageLocked == false);
+		// One of the two seeded replacing layers, never the base page's package: AC-5 and AC-6 are about a layer.
+		PagePackageLayer? other = choice.Layers.FirstOrDefault(layer =>
+			(SameUId(layer.PackageUId, world.FirstLayerPackageUId) || SameUId(layer.PackageUId, world.SecondLayerPackageUId))
+			&& !SameUId(layer.PackageUId, choice.DefaultTargetPackageUId));
+		other.Should().NotBeNull(because: "one seeded layer package is not the default target, so it is the other layer");
+		other!.PackageLocked.Should().BeFalse(because: "the seeded layer packages are editable");
+		TestContext.Progress.WriteLine($"Other layer {other.PackageName} ({other.PackageUId})");
 
 		// Act
 		PageUpdateResponse appended = await UpdatePageAsync(context, pageName,
@@ -356,40 +363,72 @@ public sealed class PagePackageChoiceE2ETests : McpContractFixtureBase {
 	}
 
 	/// <summary>
-	/// Deletes every schema with the run's unique names, wherever the writes put them, then the packages in
-	/// reverse creation order (a layer package before the base it depends on). Never throws: a failed cleanup is
-	/// written to the progress log, as <see cref="BoundedCleanup"/> does for the other sandbox fixtures.
+	/// Deletes the packages in reverse creation order (a layer package before the base it depends on), which
+	/// removes the schemas they hold; then every schema of the run's unique names still on the stand (a layer the
+	/// platform put outside the disposable packages); then retries a package that could not go first. The
+	/// platform refuses <c>delete-schema</c> for the base page while layers depend on it, which is why the
+	/// packages go first. Never throws: every failure and every leftover is written to the progress log.
 	/// </summary>
-	private async Task CleanUpAsync(IEnumerable<string> schemaNames, List<string> packages) {
+	private async Task CleanUpAsync(IReadOnlyList<string> schemaNames, List<string> packages) {
+		List<string> failedPackages = await DeletePackagesAsync(Enumerable.Reverse(packages));
 		foreach (string schemaName in schemaNames) {
-			for (int attempt = 0; attempt < MaxSchemaDeletesPerName; attempt++) {
-				ClioCliCommandResult? deleted = null;
-				string? error = await BoundedCleanup.RunAsync(async token => {
-						deleted = await ClioCliCommandRunner.RunAsync(_settings,
-							["delete-schema", schemaName, "--remote", "-e", EnvironmentName], cancellationToken: token);
-						// A non-zero exit is the normal end (no schema of this name is left), not a cleanup
-						// failure, so BoundedCleanup only reports a timeout or an exception here.
-						return 0;
-					},
-					TimeSpan.FromMinutes(2), $"Deleting schema {schemaName}");
-				if (error is not null) {
-					TestContext.Progress.WriteLine(error);
-					break;
+			await DeleteSchemaEverywhereAsync(schemaName);
+		}
+		if (failedPackages.Count > 0) {
+			await DeletePackagesAsync(failedPackages);
+		}
+		foreach (string schemaName in schemaNames) {
+			try {
+				IReadOnlyList<StoredRow> left = await ReadStoredRowsAsync(schemaName);
+				if (left.Count > 0) {
+					TestContext.Progress.WriteLine($"LEFTOVER on {EnvironmentName}: {schemaName} stays in "
+						+ string.Join(", ", left.Select(row => row.PackageName)));
 				}
-				if (deleted is null || deleted.ExitCode != 0) {
-					// No schema of this name is left.
-					break;
-				}
+			} catch (Exception exception) {
+				TestContext.Progress.WriteLine($"Could not check {schemaName} for leftovers: {exception.Message}");
 			}
 		}
-		foreach (string packageName in Enumerable.Reverse(packages)) {
+	}
+
+	private async Task<List<string>> DeletePackagesAsync(IEnumerable<string> packageNames) {
+		List<string> failed = [];
+		foreach (string packageName in packageNames) {
 			string? error = await BoundedCleanup.RunAsync(
 				async token => (await ClioCliCommandRunner.RunAsync(_settings,
 					["delete-pkg-remote", packageName, "-e", EnvironmentName], cancellationToken: token)).ExitCode,
 				TimeSpan.FromMinutes(2), $"Deleting package {packageName}");
 			if (error is not null) {
 				TestContext.Progress.WriteLine(error);
+				failed.Add(packageName);
 			}
+		}
+		return failed;
+	}
+
+	private async Task DeleteSchemaEverywhereAsync(string schemaName) {
+		for (int attempt = 0; attempt < MaxSchemaDeletesPerName; attempt++) {
+			ClioCliCommandResult? deleted = null;
+			string? error = await BoundedCleanup.RunAsync(async token => {
+					deleted = await ClioCliCommandRunner.RunAsync(_settings,
+						["delete-schema", schemaName, "--remote", "-e", EnvironmentName], cancellationToken: token);
+					// The exit code is judged below: a "not found" exit is the normal end, not a failure, so
+					// BoundedCleanup only reports a timeout or an exception here.
+					return 0;
+				},
+				TimeSpan.FromMinutes(2), $"Deleting schema {schemaName}");
+			if (error is not null) {
+				TestContext.Progress.WriteLine(error);
+				break;
+			}
+			if (deleted!.ExitCode == 0) {
+				continue;
+			}
+			if ((deleted.StandardOutput + deleted.StandardError).Contains(SchemaNotFoundMessage, StringComparison.Ordinal)) {
+				break;
+			}
+			// A refused or failed delete: report it and try again, so a leftover is never silent.
+			TestContext.Progress.WriteLine($"Deleting schema {schemaName} failed with exit code {deleted.ExitCode}: "
+				+ $"{deleted.StandardError} {deleted.StandardOutput}".Trim());
 		}
 	}
 
