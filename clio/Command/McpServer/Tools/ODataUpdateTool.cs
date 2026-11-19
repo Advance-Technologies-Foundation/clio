@@ -135,7 +135,7 @@ public sealed class ODataUpdateTool(
 		// The PATCH is the call's sole write: before it only GET reads ($metadata), it is sent with one attempt,
 		// and its refusal ends the call. A site response is set only from its answer, so a refusal without
 		// processing proves nothing was written.
-		if (result.SiteResponse is { } refusal && SiteHttpResponse.RefusesWithoutProcessing(refusal.Status)) {
+		if (result.SiteResponse is { RefusedWithoutProcessing: true }) {
 			diagnostic = diagnostic.AsRefusedWithoutProcessing();
 		}
 		return result with { Warnings = payloadAlias.WarningFor(!result.Success && !attempted) is { } warning ? [warning] : null,

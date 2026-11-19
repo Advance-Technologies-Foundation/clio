@@ -188,8 +188,8 @@ public sealed class PageCreateCommandTests
 			because: "the failed create reports what the site answered to its save");
 	}
 
-	[TestCase(403, """{"success": false, "errorInfo": {"message": "No rights"}}""", true, true,
-		TestName = "TryCreatePage_ShouldProveNothingSaved_WhenTheDeclaredSaveIsRefusedWithAJson403")]
+	[TestCase(403, """{"success": false, "errorInfo": {"message": "No rights"}}""", true, false,
+		TestName = "TryCreatePage_ShouldNotProve_WhenA403CarriesTheDesignersEnvelope")]
 	[TestCase(403, "<html>Forbidden</html>", true, true,
 		TestName = "TryCreatePage_ShouldProveNothingSaved_WhenTheDeclaredSaveIsRefusedWithAPage")]
 	[TestCase(500, "", true, false, TestName = "TryCreatePage_ShouldNotProve_WhenTheSaveIsAnswered500")]

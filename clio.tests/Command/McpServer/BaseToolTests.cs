@@ -849,14 +849,14 @@ public sealed class BaseToolTests {
 	[TestCase(409, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA409Refused")]
 	[TestCase(302, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenARedirectReachesTheCaller")]
 	[TestCase(500, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA500Answered")]
-	[TestCase(200, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA200RefusedInItsBody")]
+	[TestCase(200, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA200Answered")]
 	[Category("Unit")]
 	[Description("Without all three - the tool's declaration, one attempt, a status that refuses without processing - the side effect is unknown")]
 	public void InternalExecute_ShouldReportSideEffectUnknown_WhenTheRefusalProvesNothing(int status, int attempts,
 		bool declared) {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
-		SoleWriteToolHarness tool = SoleWriteTool(new SiteHttpResponse(status, "{\"success\":false}"), attempts);
+		SoleWriteToolHarness tool = SoleWriteTool(new SiteHttpResponse(status, ""), attempts);
 
 		// Act
 		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions(), declared);

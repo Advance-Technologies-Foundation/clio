@@ -224,7 +224,7 @@ public sealed class ODataCreateTool(
 		if (row.RecordCreated != false) {
 			return diagnostic;
 		}
-		return SiteHttpResponse.RefusesWithoutProcessing(row.SiteResponse?.Status)
+		return row.SiteResponse is { RefusedWithoutProcessing: true }
 			? diagnostic.AsRefusedWithoutProcessing()
 			: diagnostic.AsKnownNotApplied();
 	}

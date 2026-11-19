@@ -92,13 +92,33 @@ public sealed record SiteResponse(
 		string body = response.Body;
 		string kind = ClassifyBody(body, out JsonDocument document);
 		using (document) {
-			if (document is null) {
-				return new SiteResponse(status, null, null, kind);
-			}
-			JsonElement root = document.RootElement;
-			return new SiteResponse(status, Carry(FindMessage(root), MaxMessageLength),
-				Carry(FindCode(root), MaxCodeLength), kind);
+			SiteResponse read = document is null
+				? new SiteResponse(status, null, null, kind)
+				: new SiteResponse(status, Carry(FindMessage(document.RootElement), MaxMessageLength),
+					Carry(FindCode(document.RootElement), MaxCodeLength), kind);
+			return read with { RefusedWithoutProcessing = response.IsRefusedWithoutProcessing };
 		}
+	}
+
+	/// <summary>
+	/// Whether the answer this was read from shows the site refused the request without processing it; see
+	/// <see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>. Never serialized.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore]
+	[Newtonsoft.Json.JsonIgnore]
+	internal bool RefusedWithoutProcessing { get; init; }
+
+	/// <summary>
+	/// Whether <paramref name="body"/> carries no answer of the service: empty, a page, or plain text that does not
+	/// even start like JSON. A body that starts like JSON, parseable or not, may be the application's own.
+	/// </summary>
+	/// <param name="body">The response body.</param>
+	internal static bool CarriesNoServiceAnswer(string body) {
+		if (string.IsNullOrWhiteSpace(body)) {
+			return true;
+		}
+		char first = body.AsSpan().TrimStart()[0];
+		return first is not ('{' or '[');
 	}
 
 	#endregion
@@ -245,22 +265,41 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	public bool IsKnownFailureStatus => StatusCode is int status && status is < 200 or > 299;
 
 	/// <summary>
-	/// Whether the status is one with which HTTP defines the server as refusing to process the request at all:
-	/// 401 (RFC 9110 15.5.2: "the request has not been applied"), 403 ("refuses to fulfill it"), 405, 413, 414 and
-	/// 415 ("refusing to process" or "to service" the request) and 431 (RFC 6585: "unwilling to process the
-	/// request").
+	/// Whether clio sent the request a second time because it read the first answer's body as an expired session.
+	/// That reading is a guess from the body (GitHub #1313): the first send may have been applied, so an answer
+	/// that comes after such a re-send proves nothing about it.
+	/// </summary>
+	public bool Resent { get; init; }
+
+	/// <summary>
+	/// Whether this answer shows the site refused the request without processing it. All of these must hold:
+	/// <list type="bullet">
+	/// <item>the status is one with which HTTP defines the server as refusing to process the request
+	/// (<see cref="HasRefusalStatus"/>);</item>
+	/// <item>the body carries no answer of the service: it is empty, a page or plain text, never JSON. A JSON
+	/// error body is written by the application, which may have done part of its work before it refused;</item>
+	/// <item>clio did not send the request again (<see cref="Resent"/>).</item>
+	/// </list>
+	/// </summary>
+	/// <remarks>
+	/// Whether such a refusal proves the CALL wrote nothing also depends on what the call sent before it; see
+	/// <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>.
+	/// </remarks>
+	public bool IsRefusedWithoutProcessing =>
+		!Resent && HasRefusalStatus(StatusCode) && SiteResponse.CarriesNoServiceAnswer(Body);
+
+	/// <summary>
+	/// Whether <paramref name="status"/> is one with which HTTP defines the server as refusing to process the
+	/// request at all: 401 (RFC 9110 15.5.2: "the request has not been applied"), 403 ("refuses to fulfill it"),
+	/// 405, 413, 414 and 415 ("refusing to process" or "to service" the request) and 431 (RFC 6585: "unwilling to
+	/// process the request").
 	/// </summary>
 	/// <remarks>
 	/// Nothing else qualifies. 400, 404, 409 and 422 can come from the handler after it started; a 3xx can follow
-	/// a request the server did process (a 303 or 302 after a POST); a 5xx can come from a gateway after the
-	/// write landed. Whether a refusal with one of these statuses proves nothing was written also depends on
-	/// what the call sent before it; see <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>.
+	/// a request the server did process (a 303 or 302 after a POST); a 5xx can come from a gateway after the write
+	/// landed.
 	/// </remarks>
-	public bool IsRefusedWithoutProcessing => RefusesWithoutProcessing(StatusCode);
-
-	/// <summary>Whether <paramref name="status"/> is one of the statuses <see cref="IsRefusedWithoutProcessing"/>
-	/// accepts.</summary>
 	/// <param name="status">An HTTP status, or <see langword="null"/>.</param>
-	public static bool RefusesWithoutProcessing(int? status) => status is 401 or 403 or 405 or 413 or 414 or 415 or 431;
+	public static bool HasRefusalStatus(int? status) => status is 401 or 403 or 405 or 413 or 414 or 415 or 431;
 
 }

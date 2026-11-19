@@ -90,6 +90,8 @@ public sealed class ODataCreateToolTests {
 	[TestCase(401, "<html>Sign in</html>", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenA401PageRefuses")]
 	[TestCase(413, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenTheRowIsTooLarge")]
 	[TestCase(404, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAnEmpty404Answers")]
+	[TestCase(403, "{\"error\":{\"code\":\"\",\"message\":\"No rights to insert\"}}", null, "unknown",
+		TestName = "Create_ShouldKeepTheRowUnknown_WhenA403CarriesTheApplicationsODataError")]
 	[TestCase(502, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAGatewayAnswers")]
 	[Category("Unit")]
 	[Description("A row's POST is that row's one write, sent once and never replayed: a refusal without processing proves the row was not created")]

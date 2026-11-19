@@ -93,7 +93,7 @@ public sealed class ODataDeleteTool(
 		// processing proves nothing was deleted. With ids a refused id is sent again in a later pass, and with
 		// cascade owned rows go first, so neither is proven.
 		if (diagnostic is not null && !args.Cascade && !string.IsNullOrWhiteSpace(args.Id)
-			&& result.SiteResponse is { } refusal && SiteHttpResponse.RefusesWithoutProcessing(refusal.Status)) {
+			&& result.SiteResponse is { RefusedWithoutProcessing: true }) {
 			diagnostic = diagnostic.AsRefusedWithoutProcessing();
 		}
 		return result with { CorrelationId = correlationId, Diagnostic = diagnostic };

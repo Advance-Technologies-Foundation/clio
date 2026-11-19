@@ -85,6 +85,26 @@ public sealed class StatusPreservingClientTests {
 		transport.Received(1).Login();
 		transport.ReceivedWithAnyArgs(2).ExecutePostRequestAsync(default, default, default, default, default, default);
 		answer.Body.Should().Be("{}", because: "the session recovery of the string POST is kept");
+		answer.Resent.Should().BeTrue(because: "the first send was judged by its body, so it may have been applied");
+	}
+
+	[Test]
+	[Description("A 403 page that follows clio's own re-send proves nothing about the first send")]
+	public void SendKeepingStatus_ShouldNotProveARefusal_WhenItFollowsAReSend() {
+		// Arrange
+		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
+		transport.ExecutePostRequestAsync(default, default, default, default, default, default)
+			.ReturnsForAnyArgs(_ => Answer(HttpStatusCode.OK, LoginPageBody),
+				_ => Answer(HttpStatusCode.Forbidden, "<html>Forbidden</html>"));
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		SiteHttpResponse answer = adapter.SendKeepingStatus(SiteRequestVerb.Post, "/x", "body");
+
+		// Assert
+		answer.StatusCode.Should().Be(403);
+		answer.IsRefusedWithoutProcessing.Should().BeFalse(
+			because: "GitHub #1313: a committed write can answer with a body that looks like the sign-in page");
 	}
 
 	[Test]
@@ -103,6 +123,7 @@ public sealed class StatusPreservingClientTests {
 		transport.ReceivedWithAnyArgs(1).ExecutePatchRequestAsync(default, default, default, default, default,
 			default);
 		answer.Body.Should().Be(LoginPageBody, because: "a write is never committed twice by a replay");
+		answer.Resent.Should().BeFalse();
 	}
 
 	[Test]

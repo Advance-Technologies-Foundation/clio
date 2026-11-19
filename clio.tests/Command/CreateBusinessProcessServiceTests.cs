@@ -138,6 +138,27 @@ public sealed class CreateBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A 403 that carries BuildProcess's own envelope is read as that envelope, never as proof of no write")]
+	public void BuildProcess_ShouldReadTheEnvelope_WhenA403CarriesIt() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(403,
+				"{\"BuildProcessResult\":{\"success\":false,\"errorMessage\":\"No rights to the package\"}}"));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("No rights to the package*");
+		capture.LastProvesNothingApplied.Should().BeFalse(
+			because: "the application wrote that envelope, so it may have saved part of the process first");
+	}
+
+	[Test]
 	[Description("A successful build records nothing")]
 	public void BuildProcess_ShouldRecordNothing_WhenTheBuildSucceeds() {
 		// Arrange

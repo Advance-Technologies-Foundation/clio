@@ -164,6 +164,7 @@ public sealed class SiteResponseWritePathTests {
 	}
 
 	[TestCase(404, "", TestName = "DataService_ShouldNotClaimNotApplied_WhenAnEmpty404Refused")]
+	[TestCase(403, "{\"rowsAffected\":0}", TestName = "DataService_ShouldNotClaimNotApplied_WhenA403CarriesAnEnvelope")]
 	[TestCase(302, "", TestName = "DataService_ShouldNotClaimNotApplied_WhenARedirectReachesTheCaller")]
 	[TestCase(409, ErrorPage, TestName = "DataService_ShouldNotClaimNotApplied_WhenA409PageRefused")]
 	[Description("Any other 3xx or 4xx says the refusal does not prove the write was not applied")]

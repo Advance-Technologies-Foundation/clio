@@ -361,9 +361,10 @@ body alone would pass them: an empty or unrecognized body on `odata-update` / `o
 `odata-create`, and an empty body or an error page on the data-binding writes and on `install-application` /
 `push-workspace` / `install-process-builder`. How such a failure reads depends on the status:
 
-- **401, 403, 405, 413, 414, 415 or 431: refused without processing.** HTTP defines these as the server refusing
-  to process the request (RFC 9110, RFC 6585), so the result says that request was not applied (an
-  `odata-create` row reads `record-created: false`).
+- **401, 403, 405, 413, 414, 415 or 431 with no JSON body: refused without processing.** HTTP defines these as
+  the server refusing to process the request (RFC 9110, RFC 6585), so the result says that request was not
+  applied (an `odata-create` row reads `record-created: false`). With a JSON error body the application spoke,
+  so it reads like any other refusal below.
 - **5xx: not confirmed.** A gateway can answer 502/504 after Creatio applied the write or while a long
   installation still runs, so the result says the write "was not confirmed" / "may or may not have been
   applied" / "may still be running" and asks to read back before retrying. An installation log line is not
@@ -391,10 +392,14 @@ and `message` are null: the result's own fields name what failed and why.
 1. **One write.** The tool sends exactly one write per call (or per batch item), with only reads before it, and
    the tool says so in code. A command that some other tool runs inside a longer sequence proves nothing there,
    because that other tool may have written first.
-2. **Sent once.** The write went out with a single attempt. With more attempts, the client sends it again after
-   a timeout, and the attempt that timed out may have been applied. A replay after a session renewal still
-   counts as one send: it follows only a sign-in refusal, which applied nothing.
-3. **Refused without processing.** The site answered 401, 403, 405, 413, 414, 415 or 431.
+2. **Sent once.** The write went out with a single attempt, and clio did not send it again. With more attempts,
+   the client re-sends after a timeout, and the attempt that timed out may have been applied. clio's own re-send
+   after a body that looks like an expired session proves nothing either: that reading comes from the body
+   (GitHub #1313). The client's re-send after a 401 or a redirect to the sign-in page still counts as one send:
+   the first answer was itself a refusal by the sign-in layer.
+3. **Refused without processing.** The site answered 401, 403, 405, 413, 414, 415 or 431, and the body carries no
+   answer of the application: it is empty, a page or plain text. A JSON error body is written by the application,
+   which may have done part of its work before refusing, so it proves nothing.
 
 | Tool | Its writes, in order | `side-effect` on a refusal |
 |---|---|---|
@@ -406,7 +411,7 @@ and `message` are null: the result's own fields name what failed and why.
 | `create-business-process` | one BuildProcess | `none` when BuildProcess is refused without processing |
 | `delete-data-binding-db` | one binding delete | `none` when the delete is refused without processing |
 | `compile-creatio` | one build request | `none` when the build request is refused without processing |
-| `restart-by-environment-name`, `restart-by-credentials` | one restart request, sent with the call's attempt count (3 unless set) | `none` only with a single attempt; with the default 3, `unknown` |
+| `restart-by-environment-name`, `restart-by-credentials` | one restart request, sent with up to 3 attempts | always `unknown` over MCP: a first attempt that timed out may have restarted the instance |
 | `create-entity-schema`, `update-entity-schema`, `modify-entity-schema-column`, `create-lookup` | designer state, save, DB structure, publish, OData build, then (create-lookup) the lookup registration; the designer requests go with 3 attempts | always `unknown` |
 | `create-data-binding-db`, `upsert-data-binding-row-db`, `remove-data-binding-row-db` | row writes, then the binding save or delete | always `unknown` |
 | `install-application`, `push-workspace`, `install-process-builder` | package upload and backup, then the install request | always `unknown`, even when the install request was refused without processing: the text then says the package was not installed, but the upload had already written |

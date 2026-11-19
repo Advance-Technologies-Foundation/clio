@@ -437,12 +437,20 @@ public class CreatioClientAdapter : IOwnedApplicationClient, IStatusPreservingAp
 	/// </para>
 	/// </remarks>
 	public SiteHttpResponse SendKeepingStatus(SiteRequestVerb verb, string url, string requestData,
-		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1, bool replayAllowed = true) =>
-		_reauthExecutor.Execute(
-			() => _loginDiagnostics.TrackRequest(() =>
-				ReadKeepingStatus(StartKeepingStatus(verb, url, requestData, requestTimeout, maxAttempts, delaySec))),
+		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1, bool replayAllowed = true) {
+		// Counted so the answer says when clio re-sent the request after reading the first answer as an expired
+		// session: that reading comes from the body, so the first send may have been applied.
+		int sends = 0;
+		SiteHttpResponse answer = _reauthExecutor.Execute(
+			() => {
+				sends++;
+				return _loginDiagnostics.TrackRequest(() =>
+					ReadKeepingStatus(StartKeepingStatus(verb, url, requestData, requestTimeout, maxAttempts, delaySec)));
+			},
 			response => ReauthExecutor.IsSessionExpiredResponse(response.Body),
 			replayAllowed);
+		return sends > 1 ? answer with { Resent = true } : answer;
+	}
 
 	private Task<HttpResponseMessage> StartKeepingStatus(SiteRequestVerb verb, string url, string requestData,
 		int requestTimeout, int maxAttempts, int delaySec) =>

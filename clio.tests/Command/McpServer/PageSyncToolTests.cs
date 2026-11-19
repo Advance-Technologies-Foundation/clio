@@ -94,13 +94,14 @@ public sealed class PageSyncToolTests {
 			SiteResponse.JsonBody));
 		response.Pages[1].Success.Should().BeTrue();
 		response.Pages[1].SiteResponse.Should().BeNull(because: "the first page's refusal must not reach the second");
-		response.Pages[0].Diagnostic!.SideEffect.Should().Be("none",
-			because: "a page's save is its one write, and a 403 refused it without processing it");
+		response.Pages[0].Diagnostic!.SideEffect.Should().Be("unknown",
+			because: "the 403 carries the designer's own envelope, so the application answered and may have worked");
 		response.Pages[1].Diagnostic.Should().BeNull(because: "the diagnostic goes only beside a site response");
 	}
 
-	[TestCase(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", "none",
-		TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWith403")]
+	[TestCase(403, "", "none", TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWithAnEmpty403")]
+	[TestCase(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", "unknown",
+		TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenA403CarriesTheDesignersEnvelope")]
 	[TestCase(413, "<html>Request Entity Too Large</html>", "none",
 		TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsTooLarge")]
 	[TestCase(200, "{\"success\":false,\"errorInfo\":{\"message\":\"Schema is locked\"}}", "unknown",

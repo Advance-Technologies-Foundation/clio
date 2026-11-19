@@ -172,8 +172,8 @@ public sealed class ODataUpdateToolTests {
 
 	[TestCase(403, "", "none", TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAn403")]
 	[TestCase(401, "<html>Sign in</html>", "none", TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAn401Page")]
-	[TestCase(403, "{\"error\":{\"code\":\"\",\"message\":\"No rights to edit\"}}", "none",
-		TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAnODataError403")]
+	[TestCase(403, "{\"error\":{\"code\":\"\",\"message\":\"No rights to edit\"}}", "unknown",
+		TestName = "Update_ShouldReportSideEffectUnknown_WhenA403CarriesTheApplicationsODataError")]
 	[TestCase(404, "", "unknown", TestName = "Update_ShouldReportSideEffectUnknown_WhenThePatchIsAnswered404")]
 	[TestCase(400, "{\"error\":{\"code\":\"\",\"message\":\"Bad value\"}}", "unknown",
 		TestName = "Update_ShouldReportSideEffectUnknown_WhenThePatchIsAnswered400")]

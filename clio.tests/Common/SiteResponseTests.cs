@@ -243,7 +243,37 @@ public sealed class SiteResponseTests {
 	[Description("The statuses with which HTTP defines the server as refusing to process the request")]
 	public void IsRefusedWithoutProcessing_ShouldBeTrue_ForAStatusThatRefusesToProcess(int status) {
 		new SiteHttpResponse(status, "").IsRefusedWithoutProcessing.Should().BeTrue();
-		SiteHttpResponse.RefusesWithoutProcessing(status).Should().BeTrue();
+		new SiteHttpResponse(status, "<html>refused</html>").IsRefusedWithoutProcessing.Should().BeTrue();
+		new SiteHttpResponse(status, "Request body too large").IsRefusedWithoutProcessing.Should().BeTrue();
+		SiteHttpResponse.HasRefusalStatus(status).Should().BeTrue();
+	}
+
+	[TestCase("{\"error\":{\"code\":\"\",\"message\":\"No rights\"}}", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA403CarriesAnODataError")]
+	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA403CarriesAServiceEnvelope")]
+	[TestCase("{\"success\":false,", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA403CarriesBrokenJson")]
+	[TestCase("  [1]", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA403CarriesAJsonArray")]
+	[Description("A body that starts like JSON may be the application's own answer, written after part of its work")]
+	public void IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheBodyMayBeTheApplications(string body) {
+		new SiteHttpResponse(403, body).IsRefusedWithoutProcessing.Should().BeFalse();
+		SiteResponse.FromRefusal(new SiteHttpResponse(403, body)).RefusedWithoutProcessing.Should().BeFalse();
+	}
+
+	[Test]
+	[Description("An answer that followed clio's own re-send never proves a refusal without processing")]
+	public void IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheRequestWasResent() {
+		new SiteHttpResponse(403, "") { Resent = true }.IsRefusedWithoutProcessing.Should().BeFalse();
+	}
+
+	[Test]
+	[Description("The site response remembers the proof without serializing it")]
+	public void FromRefusal_ShouldCarryTheProof_WithoutSerializingIt() {
+		// Act
+		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(403, "<html>Forbidden</html>"));
+
+		// Assert
+		response.RefusedWithoutProcessing.Should().BeTrue();
+		JsonSerializer.Serialize(response).Should().Be("{\"status\":403,\"body\":\"html\"}");
+		Newtonsoft.Json.JsonConvert.SerializeObject(response).Should().Be("{\"status\":403,\"body\":\"html\"}");
 	}
 
 	[TestCase(400, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For400_WhichAHandlerCanSend")]
