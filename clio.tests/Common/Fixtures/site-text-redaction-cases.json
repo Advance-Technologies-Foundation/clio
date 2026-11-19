@@ -1,0 +1,7190 @@
+{
+  "header": {
+    "notice": "EVERY VALUE IN THIS FILE IS INVENTED. The hosts, users, passwords, keys, tokens, paths, SQL and e-mail addresses are made-up shapes that look like Creatio, SQL Server and PostgreSQL answers; none was copied from a real site. No real host, login, password, key or token may ever be added here. SiteTextRedactionFixtureSafetyTests fails on anything shaped like a real secret or a real place.",
+    "provenance": "The Accelerator host lane's redaction cases (electron test/kitSiteResponse.test.ts at b9786609, PR #389, safeSiteMessage), expanded to their 350 distinct inputs and classified A/B/C/D by the clio lane's gap analysis of 2026-11-19.",
+    "classes": {
+      "A": "clio already removed what the host removes; the marker wording may differ.",
+      "B": "the host removes it and clio did not; closed by the site-text redaction plan, rule per kind.",
+      "C": "the host keeps it on purpose (the site's reason, prose, a code); clio must keep it too.",
+      "D": "the host removes it as a documented trade of its own; clio keeps the site's words."
+    },
+    "entries": {
+      "redact": "SensitiveErrorTextRedactor.Redact must satisfy the row, and so must RedactSiteText.",
+      "site": "RedactSiteText must satisfy the row; Redact must still keep every mustStay fragment."
+    },
+    "fields": "mustGo: fragments that must not appear in the output. mustStay: fragments that must appear. hostOutput: the host lane's own result, for reference only. pending: asserted in a later PR."
+  },
+  "rows": [
+    {
+      "id": "case-001",
+      "cases": [
+        1
+      ],
+      "testLine": 446,
+      "class": "A",
+      "entry": "redact",
+      "input": "See https://brightwater.creatio.example/0/odata/Contact?$filter=Name eq 1 for more",
+      "hostOutput": "See [redacted-uri] eq 1 for more",
+      "mustGo": [
+        "https://brightwater.creatio.example/0/odata/Contact?$filter=Name"
+      ],
+      "mustStay": [
+        "See",
+        "eq",
+        "for",
+        "more"
+      ],
+      "note": "Host name moved under the reserved .example suffix: the host lane's input used a real public suffix, which this file never holds. The redaction it tests is the same."
+    },
+    {
+      "id": "case-002",
+      "cases": [
+        2
+      ],
+      "testLine": 447,
+      "class": "A",
+      "entry": "redact",
+      "input": "Cannot load file:///C:/inetpub/x.dll or sftp://files.example.com/a",
+      "hostOutput": "Cannot load [redacted-uri] or [redacted-uri]",
+      "mustGo": [
+        "file:///C:/inetpub/x.dll",
+        "sftp://files.example.com/a"
+      ],
+      "mustStay": [
+        "Cannot",
+        "load",
+        "or"
+      ]
+    },
+    {
+      "id": "case-003",
+      "cases": [
+        3
+      ],
+      "testLine": 451,
+      "class": "A",
+      "entry": "redact",
+      "input": "Could not write C:\\inetpub\\wwwroot\\Creatio\\Terrasoft.WebApp\\conf\\x.config.",
+      "hostOutput": "Could not write [redacted-path]",
+      "mustGo": [
+        "C:\\inetpub\\wwwroot\\Creatio\\Terrasoft.WebApp\\conf\\x.config"
+      ],
+      "mustStay": [
+        "Could",
+        "not",
+        "write"
+      ]
+    },
+    {
+      "id": "case-004",
+      "cases": [
+        4
+      ],
+      "testLine": 452,
+      "class": "B",
+      "kind": "path",
+      "entry": "site",
+      "input": "Missing C:\\Program Files\\Creatio\\app.dll now",
+      "hostOutput": "Missing [redacted-path] [redacted-path] now",
+      "mustGo": [
+        "C:\\Program",
+        "Files\\Creatio\\app.dll"
+      ],
+      "mustStay": [
+        "Missing",
+        "now"
+      ]
+    },
+    {
+      "id": "case-005",
+      "cases": [
+        5
+      ],
+      "testLine": 453,
+      "class": "A",
+      "entry": "redact",
+      "input": "Share \\\\fs01\\creatio$\\pkg is down, D:/data/x.mdf too",
+      "hostOutput": "Share [redacted-path] is down, [redacted-path] too",
+      "mustGo": [
+        "\\\\fs01\\creatio$\\pkg",
+        "D:/data/x.mdf"
+      ],
+      "mustStay": [
+        "Share",
+        "is",
+        "down",
+        "too"
+      ]
+    },
+    {
+      "id": "case-006",
+      "cases": [
+        6
+      ],
+      "testLine": 458,
+      "class": "A",
+      "entry": "redact",
+      "input": "Cannot open /opt/creatio/Terrasoft.WebHost.dll (/var/log/x)",
+      "hostOutput": "Cannot open [redacted-path] ([redacted-path])",
+      "mustGo": [
+        "/opt/creatio/Terrasoft.WebHost.dll",
+        "/var/log/x"
+      ],
+      "mustStay": [
+        "Cannot",
+        "open"
+      ]
+    },
+    {
+      "id": "case-007",
+      "cases": [
+        7
+      ],
+      "testLine": 459,
+      "class": "C",
+      "entry": "redact",
+      "input": "Use one and/or the other, 50 / 60 done",
+      "hostOutput": "Use one and/or the other, 50 / 60 done",
+      "mustGo": [],
+      "mustStay": [
+        "Use",
+        "one",
+        "and",
+        "or",
+        "the",
+        "other",
+        "50",
+        "60",
+        "done"
+      ]
+    },
+    {
+      "id": "case-008",
+      "cases": [
+        8
+      ],
+      "testLine": 463,
+      "class": "A",
+      "entry": "redact",
+      "input": "User jane.doe+crm@brightwater.example.com already exists, admin@localhost too",
+      "hostOutput": "User [redacted-email] already exists, [redacted-email] too",
+      "mustGo": [
+        "jane.doe+crm@brightwater.example.com",
+        "admin@localhost"
+      ],
+      "mustStay": [
+        "User",
+        "already",
+        "exists",
+        "too"
+      ]
+    },
+    {
+      "id": "case-009",
+      "cases": [
+        9
+      ],
+      "testLine": 464,
+      "class": "C",
+      "entry": "redact",
+      "input": "Mention @Supervisor stays",
+      "hostOutput": "Mention @Supervisor stays",
+      "mustGo": [],
+      "mustStay": [
+        "Mention",
+        "Supervisor",
+        "stays"
+      ]
+    },
+    {
+      "id": "case-010",
+      "cases": [
+        10
+      ],
+      "testLine": 470,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Login failed: Password=hunter2; pwd='p w'; Server=db01,1433; User Id=sa; uid=sa",
+      "hostOutput": "Login failed: Password=[redacted]; pwd=[redacted]; Server=[redacted]; User Id=[redacted]; uid=[redacted]",
+      "mustGo": [
+        "hunter2",
+        "'p w",
+        "db01,1433",
+        "Id=sa",
+        "id=sa"
+      ],
+      "mustStay": [
+        "Login",
+        "failed",
+        "Password",
+        "pwd",
+        "Server",
+        "User",
+        "Id",
+        "uid"
+      ]
+    },
+    {
+      "id": "case-011",
+      "cases": [
+        11
+      ],
+      "testLine": 471,
+      "class": "A",
+      "entry": "redact",
+      "input": "Data Source=tcp:db.local;Initial Catalog=Creatio_Prod;Database = \"Bw Prod\"",
+      "hostOutput": "Data Source=[redacted];Initial Catalog=[redacted];Database = [redacted]",
+      "mustGo": [
+        "tcp:db.local",
+        "Creatio_Prod",
+        "Bw Prod"
+      ],
+      "mustStay": [
+        "Data",
+        "Source",
+        "Initial",
+        "Catalog",
+        "Database"
+      ]
+    },
+    {
+      "id": "case-012",
+      "cases": [
+        12
+      ],
+      "testLine": 472,
+      "class": "A",
+      "entry": "redact",
+      "input": "client_secret=s3cr3t&api_key=abc&ApiKey=k&token=xyz&secret=s&key=v",
+      "hostOutput": "client_secret=[redacted]&api_key=[redacted]&ApiKey=[redacted]&token=[redacted]&secret=[redacted]&key=[redacted]",
+      "mustGo": [
+        "s3cr3t",
+        "=abc",
+        "ey=k",
+        "=xyz",
+        "&secret=s",
+        "ey=v"
+      ],
+      "mustStay": [
+        "client_secret",
+        "api_key",
+        "ApiKey",
+        "token",
+        "secret",
+        "key"
+      ]
+    },
+    {
+      "id": "case-013",
+      "cases": [
+        13
+      ],
+      "testLine": 474,
+      "class": "C",
+      "entry": "redact",
+      "input": "Name=Brightwater; Keyboard=US",
+      "hostOutput": "Name=Brightwater; Keyboard=US",
+      "mustGo": [],
+      "mustStay": [
+        "Name",
+        "Brightwater",
+        "Keyboard",
+        "US"
+      ]
+    },
+    {
+      "id": "case-014",
+      "cases": [
+        14
+      ],
+      "testLine": 475,
+      "class": "A",
+      "entry": "redact",
+      "input": "filter=Password=hunter2 and token=a=b",
+      "hostOutput": "filter=Password=[redacted] and token=[redacted]",
+      "mustGo": [
+        "hunter2",
+        "=a=b"
+      ],
+      "mustStay": [
+        "filter",
+        "Password",
+        "and",
+        "token"
+      ]
+    },
+    {
+      "id": "case-015",
+      "cases": [
+        15
+      ],
+      "testLine": 479,
+      "class": "A",
+      "entry": "redact",
+      "input": "Authorization: Bearer abcdefgh.ijklmnop-qrstuv rejected",
+      "hostOutput": "Authorization: Bearer [redacted] rejected",
+      "mustGo": [
+        "abcdefgh.ijklmnop-qrstuv"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Bearer",
+        "rejected"
+      ]
+    },
+    {
+      "id": "case-016",
+      "cases": [
+        16,
+        239
+      ],
+      "testLine": 480,
+      "class": "C",
+      "kind": "over-redaction",
+      "entry": "redact",
+      "input": "The bearer token expired",
+      "hostOutput": "The bearer token expired",
+      "mustGo": [],
+      "mustStay": [
+        "The",
+        "bearer",
+        "token",
+        "expired"
+      ]
+    },
+    {
+      "id": "case-017",
+      "cases": [
+        17
+      ],
+      "testLine": 484,
+      "class": "A",
+      "entry": "redact",
+      "input": "Token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk was refused",
+      "hostOutput": "Token [redacted-token] was refused",
+      "mustGo": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+      ],
+      "mustStay": [
+        "Token",
+        "was",
+        "refused"
+      ]
+    },
+    {
+      "id": "case-018",
+      "cases": [
+        18
+      ],
+      "testLine": 488,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Cannot reach db01.internal:1433, 10.0.0.5:5432 or localhost:5000",
+      "hostOutput": "Cannot reach [redacted-host], [redacted-host] or [redacted-host]",
+      "mustGo": [
+        "db01.internal:1433",
+        "10.0.0.5:5432",
+        "localhost:5000"
+      ],
+      "mustStay": [
+        "Cannot",
+        "reach",
+        "or"
+      ]
+    },
+    {
+      "id": "case-019",
+      "cases": [
+        19
+      ],
+      "testLine": 489,
+      "class": "C",
+      "entry": "redact",
+      "input": "Locked at 10:45 by Supervisor",
+      "hostOutput": "Locked at 10:45 by Supervisor",
+      "mustGo": [],
+      "mustStay": [
+        "Locked",
+        "at",
+        "10",
+        "45",
+        "by",
+        "Supervisor"
+      ]
+    },
+    {
+      "id": "case-020",
+      "cases": [
+        20
+      ],
+      "testLine": 493,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Invalid column name 'UsrX'. SELECT [Id] FROM [Contact] WHERE [Name] = 'Jane'",
+      "hostOutput": "Invalid column name 'UsrX'. [redacted-sql]",
+      "mustGo": [
+        "SELECT [Id] FROM [Contact] WHERE [Name] = 'Jane"
+      ],
+      "mustStay": [
+        "Invalid",
+        "column",
+        "name",
+        "UsrX"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-021",
+      "cases": [
+        21
+      ],
+      "testLine": 494,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Failed: INSERT INTO UsrOrder (Id) VALUES (1)",
+      "hostOutput": "Failed: [redacted-sql]",
+      "mustGo": [
+        "INSERT INTO UsrOrder (Id) VALUES (1"
+      ],
+      "mustStay": [
+        "Failed"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-022",
+      "cases": [
+        22
+      ],
+      "testLine": 495,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "UPDATE Contact SET Name = 1",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "UPDATE Contact SET Name = 1"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-023",
+      "cases": [
+        23,
+        111
+      ],
+      "testLine": 497,
+      "class": "C",
+      "entry": "redact",
+      "input": "Please select a value from the list",
+      "hostOutput": "Please select a value from the list",
+      "mustGo": [],
+      "mustStay": [
+        "Please",
+        "select",
+        "value",
+        "from",
+        "the",
+        "list"
+      ]
+    },
+    {
+      "id": "case-024",
+      "cases": [
+        24,
+        117,
+        192
+      ],
+      "testLine": 498,
+      "class": "C",
+      "entry": "redact",
+      "input": "UPDATE failed for the record",
+      "hostOutput": "UPDATE failed for the record",
+      "mustGo": [],
+      "mustStay": [
+        "UPDATE",
+        "failed",
+        "for",
+        "the",
+        "record"
+      ]
+    },
+    {
+      "id": "case-025",
+      "cases": [
+        25
+      ],
+      "testLine": 502,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The DELETE statement conflicted. The conflict occurred in database \"Creatio_Prod\", table \"dbo.Contact\".",
+      "hostOutput": "The DELETE statement conflicted. The conflict occurred in database \"[redacted]\", table \"dbo.Contact\".",
+      "mustGo": [
+        "Creatio_Prod"
+      ],
+      "mustStay": [
+        "The",
+        "DELETE",
+        "statement",
+        "conflicted",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "Contact"
+      ]
+    },
+    {
+      "id": "case-026",
+      "cases": [
+        26
+      ],
+      "testLine": 503,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "Cannot open database 'bw_crm' requested by the login",
+      "hostOutput": "Cannot open database '[redacted]' requested by the login",
+      "mustGo": [
+        "bw_crm"
+      ],
+      "mustStay": [
+        "Cannot",
+        "open",
+        "database",
+        "requested",
+        "by",
+        "the",
+        "login"
+      ]
+    },
+    {
+      "id": "case-027",
+      "cases": [
+        27
+      ],
+      "testLine": 504,
+      "class": "A",
+      "entry": "redact",
+      "input": "Database=bw_crm is offline",
+      "hostOutput": "Database=[redacted] is offline",
+      "mustGo": [
+        "bw_crm"
+      ],
+      "mustStay": [
+        "Database",
+        "is",
+        "offline"
+      ]
+    },
+    {
+      "id": "case-028",
+      "cases": [
+        28
+      ],
+      "testLine": 509,
+      "class": "B",
+      "kind": "key-run",
+      "entry": "site",
+      "input": "Key 3f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a is invalid",
+      "hostOutput": "Key [redacted-key] is invalid",
+      "mustGo": [
+        "3f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a"
+      ],
+      "mustStay": [
+        "Key",
+        "is",
+        "invalid"
+      ]
+    },
+    {
+      "id": "case-029",
+      "cases": [
+        29
+      ],
+      "testLine": 510,
+      "class": "B",
+      "kind": "key-run",
+      "entry": "site",
+      "input": "Hash QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo0MjQy+/== stays out",
+      "hostOutput": "Hash [redacted-key] stays out",
+      "mustGo": [
+        "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo0MjQy+/=="
+      ],
+      "mustStay": [
+        "Hash",
+        "stays",
+        "out"
+      ]
+    },
+    {
+      "id": "case-030",
+      "cases": [
+        30
+      ],
+      "testLine": 512,
+      "class": "C",
+      "entry": "redact",
+      "input": "Record 3f2a9c1b-7d4e-4a5b-9c8d-0e1f2a3b4c5d is locked",
+      "hostOutput": "Record 3f2a9c1b-7d4e-4a5b-9c8d-0e1f2a3b4c5d is locked",
+      "mustGo": [],
+      "mustStay": [
+        "Record",
+        "3f2a9c1b",
+        "7d4e",
+        "4a5b",
+        "9c8d",
+        "0e1f2a3b4c5d",
+        "is",
+        "locked"
+      ]
+    },
+    {
+      "id": "case-031",
+      "cases": [
+        31
+      ],
+      "testLine": 513,
+      "class": "B",
+      "kind": "key-run",
+      "entry": "site",
+      "input": "Record 3f2a9c1b7d4e4a5b9c8d0e1f2a3b4c5d is locked",
+      "hostOutput": "Record [redacted-key] is locked",
+      "mustGo": [],
+      "mustStay": [
+        "Record",
+        "is",
+        "locked"
+      ],
+      "note": "Left by choice (plan rule 7): a run with no secret noun before it is a record id or a value, not a key."
+    },
+    {
+      "id": "case-032",
+      "cases": [
+        32
+      ],
+      "testLine": 515,
+      "class": "C",
+      "entry": "redact",
+      "input": "Value a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a here",
+      "hostOutput": "Value a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a here",
+      "mustGo": [],
+      "mustStay": [
+        "Value",
+        "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+        "here"
+      ]
+    },
+    {
+      "id": "case-033",
+      "cases": [
+        33
+      ],
+      "testLine": 515,
+      "class": "C",
+      "entry": "redact",
+      "input": "Value AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA here",
+      "hostOutput": "Value AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA here",
+      "mustGo": [],
+      "mustStay": [
+        "Value",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "here"
+      ]
+    },
+    {
+      "id": "case-034",
+      "cases": [
+        34
+      ],
+      "testLine": 515,
+      "class": "C",
+      "entry": "redact",
+      "input": "Value 1111111111111111111111111111111111111111 here",
+      "hostOutput": "Value 1111111111111111111111111111111111111111 here",
+      "mustGo": [],
+      "mustStay": [
+        "Value",
+        "1111111111111111111111111111111111111111",
+        "here"
+      ]
+    },
+    {
+      "id": "case-035",
+      "cases": [
+        35
+      ],
+      "testLine": 520,
+      "class": "B",
+      "kind": "key-run",
+      "entry": "site",
+      "input": "Invalid client secret Xk3_9fJ2-pQ_aB7cD_eF1gH2iJ3kL4mN5oP6qR7sT8",
+      "hostOutput": "Invalid client secret [redacted-key]",
+      "mustGo": [
+        "Xk3_9fJ2-pQ_aB7cD_eF1gH2iJ3kL4mN5oP6qR7sT8"
+      ],
+      "mustStay": [
+        "Invalid",
+        "client",
+        "secret"
+      ]
+    },
+    {
+      "id": "case-036",
+      "cases": [
+        36
+      ],
+      "testLine": 521,
+      "class": "B",
+      "kind": "key-run",
+      "entry": "site",
+      "input": "Invalid refresh token q8Zr_3kLmN0pQ7sT_vW2xY4zA6bC8dE0fG1hI3jK5lM",
+      "hostOutput": "Invalid refresh token [redacted-key]",
+      "mustGo": [
+        "q8Zr_3kLmN0pQ7sT_vW2xY4zA6bC8dE0fG1hI3jK5lM"
+      ],
+      "mustStay": [
+        "Invalid",
+        "refresh",
+        "token"
+      ]
+    },
+    {
+      "id": "case-037",
+      "cases": [
+        37,
+        290
+      ],
+      "testLine": 524,
+      "class": "C",
+      "entry": "redact",
+      "input": "Schema is locked: UsrPropertyManagement_v2kq9xt_ListPage",
+      "hostOutput": "Schema is locked: UsrPropertyManagement_v2kq9xt_ListPage",
+      "mustGo": [],
+      "mustStay": [
+        "Schema",
+        "is",
+        "locked",
+        "UsrPropertyManagement_v2kq9xt_ListPage"
+      ]
+    },
+    {
+      "id": "case-038",
+      "cases": [
+        38
+      ],
+      "testLine": 524,
+      "class": "C",
+      "entry": "redact",
+      "input": "Schema is locked: UsrCrtLeadOppMgmtApp_ap1nu1n_FormPage",
+      "hostOutput": "Schema is locked: UsrCrtLeadOppMgmtApp_ap1nu1n_FormPage",
+      "mustGo": [],
+      "mustStay": [
+        "Schema",
+        "is",
+        "locked",
+        "UsrCrtLeadOppMgmtApp_ap1nu1n_FormPage"
+      ]
+    },
+    {
+      "id": "case-039",
+      "cases": [
+        39
+      ],
+      "testLine": 527,
+      "class": "B",
+      "kind": "key-run",
+      "entry": "site",
+      "input": "Value usrPropertyManagement_v2kq9xt_ListPage1 here",
+      "hostOutput": "Value [redacted-key] here",
+      "mustGo": [],
+      "mustStay": [
+        "Value",
+        "here"
+      ],
+      "note": "Left by choice (plan rule 7): a run with no secret noun before it."
+    },
+    {
+      "id": "case-040",
+      "cases": [
+        40
+      ],
+      "testLine": 528,
+      "class": "B",
+      "kind": "key-run",
+      "entry": "site",
+      "input": "Value UsrApp_a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1 here",
+      "hostOutput": "Value [redacted-key] here",
+      "mustGo": [],
+      "mustStay": [
+        "Value",
+        "here"
+      ],
+      "note": "Left by choice (plan rule 7): a run with no secret noun before it."
+    },
+    {
+      "id": "case-041",
+      "cases": [
+        41
+      ],
+      "testLine": 533,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Access denied\\r\\n   at Terrasoft.Core.Entities.Entity.Save()\\r\\n   at Terrasoft.Web.Services.DataService.Insert()",
+      "hostOutput": "Access denied",
+      "mustGo": [
+        "\\r\\n   at Terrasoft.Core.Entities.Entity.Save()\\r\\n   at Terrasoft.Web.Services.DataService.Insert"
+      ],
+      "mustStay": [
+        "Access",
+        "denied"
+      ]
+    },
+    {
+      "id": "case-042",
+      "cases": [
+        42
+      ],
+      "testLine": 534,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Access denied\\n   at Terrasoft.Core.Entities.Entity.Save()",
+      "hostOutput": "Access denied",
+      "mustGo": [
+        "\\n   at Terrasoft.Core.Entities.Entity.Save"
+      ],
+      "mustStay": [
+        "Access",
+        "denied"
+      ]
+    },
+    {
+      "id": "case-043",
+      "cases": [
+        43
+      ],
+      "testLine": 536,
+      "class": "A",
+      "entry": "redact",
+      "input": "Could not write C:\\inetpub\\x.config",
+      "hostOutput": "Could not write [redacted-path]",
+      "mustGo": [
+        "C:\\inetpub\\x.config"
+      ],
+      "mustStay": [
+        "Could",
+        "not",
+        "write"
+      ]
+    },
+    {
+      "id": "case-044",
+      "cases": [
+        44
+      ],
+      "testLine": 539,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "Login failed for user 'CORP\\nadmin'.",
+      "hostOutput": "Login failed for user '[redacted]'.",
+      "mustGo": [
+        "CORP\\nadmin"
+      ],
+      "mustStay": [
+        "Login",
+        "failed",
+        "for",
+        "user"
+      ]
+    },
+    {
+      "id": "case-045",
+      "cases": [
+        45
+      ],
+      "testLine": 540,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "Cannot open server 'SQL01\\nsqlexpress' requested by the login.",
+      "hostOutput": "Cannot open server [redacted-path] requested by the login.",
+      "mustGo": [
+        "SQL01\\nsqlexpress"
+      ],
+      "mustStay": [
+        "Cannot",
+        "open",
+        "server",
+        "requested",
+        "by",
+        "the",
+        "login"
+      ]
+    },
+    {
+      "id": "case-046",
+      "cases": [
+        46
+      ],
+      "testLine": 541,
+      "class": "A",
+      "entry": "redact",
+      "input": "Access to the path 'C:\\inetpub\\wwwroot\\creatio\\Terrasoft.WebApp\\net\\x.dll' is denied.",
+      "hostOutput": "Access to the path [redacted-path] is denied.",
+      "mustGo": [
+        "C:\\inetpub\\wwwroot\\creatio\\Terrasoft.WebApp\\net\\x.dll"
+      ],
+      "mustStay": [
+        "Access",
+        "to",
+        "the",
+        "path",
+        "is",
+        "denied"
+      ]
+    },
+    {
+      "id": "case-047",
+      "cases": [
+        47
+      ],
+      "testLine": 543,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Access denied\\n\\n   at Terrasoft.Core",
+      "hostOutput": "Access denied",
+      "mustGo": [
+        "\\n\\n   at Terrasoft.Core"
+      ],
+      "mustStay": [
+        "Access",
+        "denied"
+      ]
+    },
+    {
+      "id": "case-048",
+      "cases": [
+        48
+      ],
+      "testLine": 544,
+      "class": "A",
+      "entry": "redact",
+      "input": "Access denied\\n",
+      "hostOutput": "Access denied",
+      "mustGo": [],
+      "mustStay": [
+        "Access",
+        "denied"
+      ],
+      "note": "The trailing \"\\n\" written as text is formatting, not text of the site; no rule cuts a break that nothing follows."
+    },
+    {
+      "id": "case-049",
+      "cases": [
+        49
+      ],
+      "testLine": 549,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "Host=pg-prod-01.corp.local;Port=5432;Database=creatio;Username=creatio_app;Password=Secr3t!",
+      "hostOutput": "Host=[redacted];Port=5432;Database=[redacted];Username=[redacted];Password=[redacted]",
+      "mustGo": [
+        "pg-prod-01.corp.local",
+        "se=creatio",
+        "creatio_app",
+        "Secr3t!"
+      ],
+      "mustStay": [
+        "Host",
+        "Port",
+        "5432",
+        "Database",
+        "Username",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-050",
+      "cases": [
+        50
+      ],
+      "testLine": 550,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "Connection failed: Address=10.20.30.40;Network Address=sql01;User=sa;Pass=hunter2",
+      "hostOutput": "Connection failed: Address=[redacted];Network Address=[redacted];User=[redacted];Pass=[redacted]",
+      "mustGo": [
+        "10.20.30.40",
+        "sql01",
+        "r=sa",
+        "hunter2"
+      ],
+      "mustStay": [
+        "Connection",
+        "failed",
+        "Address",
+        "Network",
+        "User",
+        "Pass"
+      ]
+    },
+    {
+      "id": "case-051",
+      "cases": [
+        51
+      ],
+      "testLine": 551,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "Invalid credentials. passphrase=correct-horse; pw=hunter2; credential=abc123",
+      "hostOutput": "Invalid credentials. passphrase=[redacted]; pw=[redacted]; credential=[redacted]",
+      "mustGo": [
+        "correct-horse",
+        "hunter2",
+        "abc123"
+      ],
+      "mustStay": [
+        "Invalid",
+        "credentials",
+        "passphrase",
+        "pw",
+        "credential"
+      ]
+    },
+    {
+      "id": "case-052",
+      "cases": [
+        52
+      ],
+      "testLine": 552,
+      "class": "A",
+      "entry": "redact",
+      "input": "password: hunter2",
+      "hostOutput": "password: [redacted]",
+      "mustGo": [
+        "hunter2"
+      ],
+      "mustStay": [
+        "password"
+      ]
+    },
+    {
+      "id": "case-053",
+      "cases": [
+        53
+      ],
+      "testLine": 553,
+      "class": "A",
+      "entry": "redact",
+      "input": "{\"Password\":\"hunter2\"}",
+      "hostOutput": "{\"Password\":[redacted]}",
+      "mustGo": [
+        "hunter2"
+      ],
+      "mustStay": [
+        "Password"
+      ]
+    },
+    {
+      "id": "case-054",
+      "cases": [
+        54
+      ],
+      "testLine": 554,
+      "class": "A",
+      "entry": "redact",
+      "input": "Client secret: s3cr3tValue! expired",
+      "hostOutput": "Client secret: [redacted] expired",
+      "mustGo": [
+        "s3cr3tValue!"
+      ],
+      "mustStay": [
+        "Client",
+        "secret",
+        "expired"
+      ]
+    },
+    {
+      "id": "case-055",
+      "cases": [
+        55
+      ],
+      "testLine": 556,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "DbLogin=bpm; Credentials: abc; smtp-host=mail.local; db_user=sa; my-passcode=1234",
+      "hostOutput": "DbLogin=[redacted]; Credentials: [redacted]; smtp-host=[redacted]; db_user=[redacted]; my-passcode=[redacted]",
+      "mustGo": [
+        "=bpm",
+        " abc",
+        "mail.local",
+        "r=sa",
+        "1234"
+      ],
+      "mustStay": [
+        "DbLogin",
+        "Credentials",
+        "smtp",
+        "host",
+        "db_user",
+        "my",
+        "passcode"
+      ]
+    },
+    {
+      "id": "case-056",
+      "cases": [
+        56
+      ],
+      "testLine": 559,
+      "class": "C",
+      "entry": "redact",
+      "input": "Name: Brightwater; \"Status\":\"Locked\"; password-reset=on; Column:UsrStatus",
+      "hostOutput": "Name: Brightwater; \"Status\":\"Locked\"; password-reset=on; Column:UsrStatus",
+      "mustGo": [],
+      "mustStay": [
+        "Name",
+        "Brightwater",
+        "Status",
+        "Locked",
+        "password",
+        "reset",
+        "on",
+        "Column",
+        "UsrStatus"
+      ]
+    },
+    {
+      "id": "case-057",
+      "cases": [
+        57
+      ],
+      "testLine": 564,
+      "class": "A",
+      "entry": "redact",
+      "input": "password:hunter2, Pwd:hunter2",
+      "hostOutput": "password:[redacted], Pwd:[redacted]",
+      "mustGo": [
+        "rd:hunter2",
+        "wd:hunter2"
+      ],
+      "mustStay": [
+        "password",
+        "Pwd"
+      ]
+    },
+    {
+      "id": "case-058",
+      "cases": [
+        58
+      ],
+      "testLine": 565,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "{'Password': 'hunter2'}",
+      "hostOutput": "{'Password': [redacted]}",
+      "mustGo": [
+        "hunter2"
+      ],
+      "mustStay": [
+        "Password"
+      ]
+    },
+    {
+      "id": "case-059",
+      "cases": [
+        59
+      ],
+      "testLine": 566,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "User Name=creatio;Password=x",
+      "hostOutput": "User Name=[redacted];Password=[redacted]",
+      "mustGo": [
+        "creatio",
+        "rd=x"
+      ],
+      "mustStay": [
+        "User",
+        "Name",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-060",
+      "cases": [
+        60
+      ],
+      "testLine": 567,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "Addr=sql01;Initial Catalog=bpm",
+      "hostOutput": "Addr=[redacted];Initial Catalog=[redacted]",
+      "mustGo": [
+        "sql01",
+        "=bpm"
+      ],
+      "mustStay": [
+        "Addr",
+        "Initial",
+        "Catalog"
+      ]
+    },
+    {
+      "id": "case-061",
+      "cases": [
+        61
+      ],
+      "testLine": 568,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "Server=db01;Password=p@ss w0rd;",
+      "hostOutput": "Server=[redacted];Password=[redacted];",
+      "mustGo": [
+        "db01",
+        "p@ss w0rd"
+      ],
+      "mustStay": [
+        "Server",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-062",
+      "cases": [
+        62
+      ],
+      "testLine": 570,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "Data Source=my server;User Id=my user;Password=x y",
+      "hostOutput": "Data Source=[redacted];User Id=[redacted];Password=[redacted]",
+      "mustGo": [
+        "my server",
+        "my user",
+        "=x y"
+      ],
+      "mustStay": [
+        "Data",
+        "Source",
+        "User",
+        "Id",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-063",
+      "cases": [
+        63
+      ],
+      "testLine": 572,
+      "class": "A",
+      "entry": "redact",
+      "input": "access_token: Bearer abcdefgh12345 rejected",
+      "hostOutput": "access_token: [redacted] rejected",
+      "mustGo": [
+        "Bearer abcdefgh12345"
+      ],
+      "mustStay": [
+        "access_token",
+        "rejected"
+      ]
+    },
+    {
+      "id": "case-064",
+      "cases": [
+        64
+      ],
+      "testLine": 573,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "password=Basic dXNlcjpw rejected",
+      "hostOutput": "password=[redacted] rejected",
+      "mustGo": [
+        "Basic dXNlcjpw"
+      ],
+      "mustStay": [
+        "password",
+        "rejected"
+      ]
+    },
+    {
+      "id": "case-065",
+      "cases": [
+        65
+      ],
+      "testLine": 574,
+      "class": "A",
+      "entry": "redact",
+      "input": "token: Bearer abcdefgh12345",
+      "hostOutput": "token: Bearer [redacted]",
+      "mustGo": [
+        "abcdefgh12345"
+      ],
+      "mustStay": [
+        "token",
+        "Bearer"
+      ]
+    },
+    {
+      "id": "case-066",
+      "cases": [
+        66
+      ],
+      "testLine": 576,
+      "class": "A",
+      "entry": "redact",
+      "input": "{\"password\":\"a\\\"b c\"}",
+      "hostOutput": "{\"password\":[redacted]}",
+      "mustGo": [
+        "a\\\"b c"
+      ],
+      "mustStay": [
+        "password"
+      ]
+    },
+    {
+      "id": "case-067",
+      "cases": [
+        67
+      ],
+      "testLine": 578,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Cannot reach localhost:5000 or smtp-host:25 as DbUser:sa",
+      "hostOutput": "Cannot reach [redacted-host] or [redacted-host] as DbUser:sa",
+      "mustGo": [
+        "localhost:5000",
+        "smtp-host:25"
+      ],
+      "mustStay": [
+        "Cannot",
+        "reach",
+        "or",
+        "as",
+        "DbUser",
+        "sa"
+      ]
+    },
+    {
+      "id": "case-068",
+      "cases": [
+        68
+      ],
+      "testLine": 583,
+      "class": "C",
+      "entry": "redact",
+      "input": "An item with the same key has already been added. Key: UsrStatus",
+      "hostOutput": "An item with the same key has already been added. Key: UsrStatus",
+      "mustGo": [],
+      "mustStay": [
+        "An",
+        "item",
+        "with",
+        "the",
+        "same",
+        "key",
+        "has",
+        "already",
+        "been",
+        "added",
+        "Key",
+        "UsrStatus"
+      ]
+    },
+    {
+      "id": "case-069",
+      "cases": [
+        69
+      ],
+      "testLine": 584,
+      "class": "C",
+      "entry": "redact",
+      "input": "Item with key: UsrOrder_FormPage already exists",
+      "hostOutput": "Item with key: UsrOrder_FormPage already exists",
+      "mustGo": [],
+      "mustStay": [
+        "Item",
+        "with",
+        "key",
+        "UsrOrder_FormPage",
+        "already",
+        "exists"
+      ]
+    },
+    {
+      "id": "case-070",
+      "cases": [
+        70
+      ],
+      "testLine": 585,
+      "class": "C",
+      "entry": "redact",
+      "input": "The specified user: is not valid",
+      "hostOutput": "The specified user: is not valid",
+      "mustGo": [],
+      "mustStay": [
+        "The",
+        "specified",
+        "user",
+        "is",
+        "not",
+        "valid"
+      ]
+    },
+    {
+      "id": "case-071",
+      "cases": [
+        71
+      ],
+      "testLine": 586,
+      "class": "C",
+      "entry": "redact",
+      "input": "Access denied for role \"Sales managers\"",
+      "hostOutput": "Access denied for role \"Sales managers\"",
+      "mustGo": [],
+      "mustStay": [
+        "Access",
+        "denied",
+        "for",
+        "role",
+        "Sales",
+        "managers"
+      ]
+    },
+    {
+      "id": "case-072",
+      "cases": [
+        72
+      ],
+      "testLine": 587,
+      "class": "C",
+      "entry": "redact",
+      "input": "Record is locked by user \"Supervisor\"",
+      "hostOutput": "Record is locked by user \"Supervisor\"",
+      "mustGo": [],
+      "mustStay": [
+        "Record",
+        "is",
+        "locked",
+        "by",
+        "user",
+        "Supervisor"
+      ]
+    },
+    {
+      "id": "case-073",
+      "cases": [
+        73
+      ],
+      "testLine": 588,
+      "class": "A",
+      "entry": "redact",
+      "input": "{\"ConnectionStrings\":{\"db\":\"Server=db01;Password=hunter2\"}}",
+      "hostOutput": "{\"ConnectionStrings\":{\"db\":\"Server=[redacted];Password=[redacted]\"}}",
+      "mustGo": [
+        "db01",
+        "hunter2"
+      ],
+      "mustStay": [
+        "ConnectionStrings",
+        "db",
+        "Server",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-074",
+      "cases": [
+        74
+      ],
+      "testLine": 589,
+      "class": "C",
+      "entry": "redact",
+      "input": "password_reset=on; PasswordExpired=true",
+      "hostOutput": "password_reset=on; PasswordExpired=true",
+      "mustGo": [],
+      "mustStay": [
+        "password_reset",
+        "on",
+        "PasswordExpired",
+        "true"
+      ]
+    },
+    {
+      "id": "case-075",
+      "cases": [
+        75
+      ],
+      "testLine": 590,
+      "class": "C",
+      "entry": "redact",
+      "input": "Error at 10:45:30:123",
+      "hostOutput": "Error at 10:45:30:123",
+      "mustGo": [],
+      "mustStay": [
+        "Error",
+        "at",
+        "10",
+        "45",
+        "30",
+        "123"
+      ]
+    },
+    {
+      "id": "case-076",
+      "cases": [
+        76
+      ],
+      "testLine": 591,
+      "class": "C",
+      "entry": "redact",
+      "input": "Error at 2026-11-19T10:45:30Z",
+      "hostOutput": "Error at 2026-11-19T10:45:30Z",
+      "mustGo": [],
+      "mustStay": [
+        "Error",
+        "at",
+        "2026",
+        "11",
+        "19T10",
+        "45",
+        "30Z"
+      ]
+    },
+    {
+      "id": "case-077",
+      "cases": [
+        77,
+        244
+      ],
+      "testLine": 592,
+      "class": "C",
+      "entry": "redact",
+      "input": "Basic auth-enabled endpoint",
+      "hostOutput": "Basic auth-enabled endpoint",
+      "mustGo": [],
+      "mustStay": [
+        "Basic",
+        "auth",
+        "enabled",
+        "endpoint"
+      ]
+    },
+    {
+      "id": "case-078",
+      "cases": [
+        78,
+        243
+      ],
+      "testLine": 593,
+      "class": "C",
+      "kind": "over-redaction",
+      "entry": "redact",
+      "input": "Bearer token-based access denied",
+      "hostOutput": "Bearer token-based access denied",
+      "mustGo": [],
+      "mustStay": [
+        "Bearer",
+        "token",
+        "based",
+        "access",
+        "denied"
+      ]
+    },
+    {
+      "id": "case-079",
+      "cases": [
+        79
+      ],
+      "testLine": 596,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "api_key: abc; DbUser: sa; client_secret: s3; Password: x",
+      "hostOutput": "api_key: [redacted]; DbUser: [redacted]; client_secret: [redacted]; Password: [redacted]",
+      "mustGo": [
+        " abc",
+        ": sa",
+        ": s3",
+        "d: x"
+      ],
+      "mustStay": [
+        "api_key",
+        "DbUser",
+        "client_secret",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-080",
+      "cases": [
+        80
+      ],
+      "testLine": 597,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "UserPassword=x; db_pass=y; PassPhrase=z",
+      "hostOutput": "UserPassword=[redacted]; db_pass=[redacted]; PassPhrase=[redacted]",
+      "mustGo": [
+        "rd=x",
+        "ss=y",
+        "se=z"
+      ],
+      "mustStay": [
+        "UserPassword",
+        "db_pass",
+        "PassPhrase"
+      ]
+    },
+    {
+      "id": "case-081",
+      "cases": [
+        81
+      ],
+      "testLine": 598,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "no pg_hba.conf entry for host \"10.0.0.5\", user \"creatio\", database \"creatio\", SSL off",
+      "hostOutput": "no pg_hba.conf entry for host \"[redacted-host]\", user \"[redacted]\", database \"[redacted]\", SSL off",
+      "mustGo": [
+        "10.0.0.5",
+        "r \"creatio",
+        "e \"creatio"
+      ],
+      "mustStay": [
+        "no",
+        "pg_hba",
+        "conf",
+        "entry",
+        "for",
+        "host",
+        "user",
+        "database",
+        "SSL",
+        "off"
+      ]
+    },
+    {
+      "id": "case-082",
+      "cases": [
+        82
+      ],
+      "testLine": 599,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "permission denied for role \"creatio_admin\"",
+      "hostOutput": "permission denied for role \"[redacted]\"",
+      "mustGo": [
+        "creatio_admin"
+      ],
+      "mustStay": [
+        "permission",
+        "denied",
+        "for",
+        "role"
+      ]
+    },
+    {
+      "id": "case-083",
+      "cases": [
+        83
+      ],
+      "testLine": 600,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Connect 2001:0db8:85a3:0000:0000:8a2e:0370:7334 failed",
+      "hostOutput": "Connect [redacted-host] failed",
+      "mustGo": [
+        "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+      ],
+      "mustStay": [
+        "Connect",
+        "failed"
+      ]
+    },
+    {
+      "id": "case-084",
+      "cases": [
+        84
+      ],
+      "testLine": 604,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "Login failed for user 'bpm_app'.",
+      "hostOutput": "Login failed for user '[redacted]'.",
+      "mustGo": [
+        "bpm_app"
+      ],
+      "mustStay": [
+        "Login",
+        "failed",
+        "for",
+        "user"
+      ]
+    },
+    {
+      "id": "case-085",
+      "cases": [
+        85
+      ],
+      "testLine": 605,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "password authentication failed for user \"creatio\"",
+      "hostOutput": "password authentication failed for user \"[redacted]\"",
+      "mustGo": [
+        "creatio"
+      ],
+      "mustStay": [
+        "password",
+        "authentication",
+        "failed",
+        "for",
+        "user"
+      ]
+    },
+    {
+      "id": "case-086",
+      "cases": [
+        86
+      ],
+      "testLine": 606,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "The server principal \"sa\" is not able to access the database \"Creatio\" under the current security context.",
+      "hostOutput": "The server principal \"[redacted]\" is not able to access the database \"[redacted]\" under the current security context.",
+      "mustGo": [
+        " \"sa",
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "server",
+        "principal",
+        "is",
+        "not",
+        "able",
+        "to",
+        "access",
+        "the",
+        "database",
+        "under",
+        "current",
+        "security",
+        "context"
+      ]
+    },
+    {
+      "id": "case-087",
+      "cases": [
+        87
+      ],
+      "testLine": 607,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "role \"creatio_ro\" does not exist",
+      "hostOutput": "role \"[redacted]\" does not exist",
+      "mustGo": [
+        "creatio_ro"
+      ],
+      "mustStay": [
+        "role",
+        "does",
+        "not",
+        "exist"
+      ]
+    },
+    {
+      "id": "case-088",
+      "cases": [
+        88
+      ],
+      "testLine": 609,
+      "class": "C",
+      "entry": "redact",
+      "input": "Schema is locked by user 'Supervisor'",
+      "hostOutput": "Schema is locked by user 'Supervisor'",
+      "mustGo": [],
+      "mustStay": [
+        "Schema",
+        "is",
+        "locked",
+        "by",
+        "user",
+        "Supervisor"
+      ]
+    },
+    {
+      "id": "case-089",
+      "cases": [
+        89
+      ],
+      "testLine": 610,
+      "class": "C",
+      "entry": "redact",
+      "input": "Schema is locked by user \"Supervisor\"",
+      "hostOutput": "Schema is locked by user \"Supervisor\"",
+      "mustGo": [],
+      "mustStay": [
+        "Schema",
+        "is",
+        "locked",
+        "by",
+        "user",
+        "Supervisor"
+      ]
+    },
+    {
+      "id": "case-090",
+      "cases": [
+        90
+      ],
+      "testLine": 615,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Basic U3VwZXJ2aXNvcjpTdXBlcnZpc29y was rejected",
+      "hostOutput": "Authorization: Basic [redacted] was rejected",
+      "mustGo": [
+        "U3VwZXJ2aXNvcjpTdXBlcnZpc29y"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Basic",
+        "was",
+        "rejected"
+      ]
+    },
+    {
+      "id": "case-091",
+      "cases": [
+        91
+      ],
+      "testLine": 616,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "WWW-Authenticate: NTLM TlRMTVNTUAABAAAAB4IIogAAAAAAAAAAAAAAAAAAAAAGAbEdAAAADw== refused",
+      "hostOutput": "WWW-Authenticate: NTLM [redacted] refused",
+      "mustGo": [
+        "TlRMTVNTUAABAAAAB4IIogAAAAAAAAAAAAAAAAAAAAAGAbEdAAAADw=="
+      ],
+      "mustStay": [
+        "WWW",
+        "Authenticate",
+        "NTLM",
+        "refused"
+      ]
+    },
+    {
+      "id": "case-092",
+      "cases": [
+        92
+      ],
+      "testLine": 617,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Digest username=\"Supervisor\", realm=\"creatio\", nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\", uri=\"/0/rest\", response=\"6629fae49393a05397450978507c4ef1\" was rejected",
+      "hostOutput": "Authorization: Digest [redacted] was rejected",
+      "mustGo": [
+        "username=\"Supervisor\", realm=\"creatio\", nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\", uri=\"/0/rest\", response=\"6629fae49393a05397450978507c4ef1"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Digest",
+        "was",
+        "rejected"
+      ]
+    },
+    {
+      "id": "case-093",
+      "cases": [
+        93
+      ],
+      "testLine": 619,
+      "class": "C",
+      "entry": "redact",
+      "input": "Basic authentication is disabled; NTLM negotiation failed; Digest authentication is off",
+      "hostOutput": "Basic authentication is disabled; NTLM negotiation failed; Digest authentication is off",
+      "mustGo": [],
+      "mustStay": [
+        "Basic",
+        "authentication",
+        "is",
+        "disabled",
+        "NTLM",
+        "negotiation",
+        "failed",
+        "Digest",
+        "off"
+      ]
+    },
+    {
+      "id": "case-094",
+      "cases": [
+        94
+      ],
+      "testLine": 623,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Failed to connect to 10.0.3.17",
+      "hostOutput": "Failed to connect to [redacted-host]",
+      "mustGo": [
+        "10.0.3.17"
+      ],
+      "mustStay": [
+        "Failed",
+        "to",
+        "connect"
+      ]
+    },
+    {
+      "id": "case-095",
+      "cases": [
+        95
+      ],
+      "testLine": 625,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Failed to connect to 2001:db8:85a3::8a2e:370:7334 port 5432",
+      "hostOutput": "Failed to connect to [redacted-host] port 5432",
+      "mustGo": [
+        "2001:db8:85a3::8a2e:370:7334"
+      ],
+      "mustStay": [
+        "Failed",
+        "to",
+        "connect",
+        "port",
+        "5432"
+      ]
+    },
+    {
+      "id": "case-096",
+      "cases": [
+        96
+      ],
+      "testLine": 626,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Connect [2001:db8::1]:5432, [::1], fe80::1%eth0 or ::ffff:10.0.0.1.",
+      "hostOutput": "Connect [redacted-host], [redacted-host], [redacted-host] or [redacted-host].",
+      "mustGo": [
+        "2001:db8::1]:5432",
+        "[::1",
+        "fe80::1%eth0",
+        "ffff:10.0.0.1"
+      ],
+      "mustStay": [
+        "Connect",
+        "or"
+      ]
+    },
+    {
+      "id": "case-097",
+      "cases": [
+        97
+      ],
+      "testLine": 627,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Bound to [2001:db8::1]:54321 and 2001:db8:: too",
+      "hostOutput": "Bound to [redacted-host] and [redacted-host] too",
+      "mustGo": [
+        "2001:db8::1]:54321",
+        " 2001:db8"
+      ],
+      "mustStay": [
+        "Bound",
+        "to",
+        "and",
+        "too"
+      ]
+    },
+    {
+      "id": "case-098",
+      "cases": [
+        98
+      ],
+      "testLine": 629,
+      "class": "C",
+      "entry": "redact",
+      "input": "Locked at 10:45:30 :: version 1.2.3.4.5, build 8.1.5.2176",
+      "hostOutput": "Locked at 10:45:30 :: version 1.2.3.4.5, build 8.1.5.2176",
+      "mustGo": [],
+      "mustStay": [
+        "Locked",
+        "at",
+        "10",
+        "45",
+        "30",
+        "version",
+        "build",
+        "2176"
+      ]
+    },
+    {
+      "id": "case-099",
+      "cases": [
+        99
+      ],
+      "testLine": 630,
+      "class": "C",
+      "entry": "redact",
+      "input": "At 12:30:45: done; [1:2], abcde:1:2:3",
+      "hostOutput": "At 12:30:45: done; [1:2], abcde:1:2:3",
+      "mustGo": [],
+      "mustStay": [
+        "At",
+        "12",
+        "30",
+        "45",
+        "done",
+        "abcde"
+      ]
+    },
+    {
+      "id": "case-100",
+      "cases": [
+        100
+      ],
+      "testLine": 634,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Failed: INSERT [dbo].[Contact] ([Name], [Email]) VALUES (N'Jane Doe', N'jane@x.example')",
+      "hostOutput": "Failed: [redacted-sql]",
+      "mustGo": [
+        "INSERT [dbo].[Contact] ([Name], [Email]) VALUES (N'Jane Doe', N'jane@x.example"
+      ],
+      "mustStay": [
+        "Failed"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now.",
+      "note": "Host name moved under the reserved .example suffix: the host lane's input used a real public suffix, which this file never holds. The redaction it tests is the same."
+    },
+    {
+      "id": "case-101",
+      "cases": [
+        101
+      ],
+      "testLine": 635,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "EXEC [dbo].[tsp_UpdateContact] @Name = N'Jane Doe', @Phone = N'+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "EXEC [dbo].[tsp_UpdateContact] @Name = N'Jane Doe', @Phone = N'+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-102",
+      "cases": [
+        102
+      ],
+      "testLine": 636,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DELETE [dbo].[Contact] OUTPUT deleted.[Id]",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DELETE [dbo].[Contact] OUTPUT deleted.[Id"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-103",
+      "cases": [
+        103
+      ],
+      "testLine": 638,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "EXECUTE tsp_UpdateContact @Name = N'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "EXECUTE tsp_UpdateContact @Name = N'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-104",
+      "cases": [
+        104
+      ],
+      "testLine": 640,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "select * from \"Contact\" where \"Name\" = 'jane@x.example'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "select * from \"Contact\" where \"Name\" = 'jane@x.example"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now.",
+      "note": "Host name moved under the reserved .example suffix: the host lane's input used a real public suffix, which this file never holds. The redaction it tests is the same."
+    },
+    {
+      "id": "case-105",
+      "cases": [
+        105
+      ],
+      "testLine": 645,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT * from Contact",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT * from Contact"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-106",
+      "cases": [
+        106
+      ],
+      "testLine": 646,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "select Id, Name from Contact where Id = 1",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "select Id, Name from Contact where Id = 1"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-107",
+      "cases": [
+        107
+      ],
+      "testLine": 647,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Insert into UsrOrder values (1, 'x')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "Insert into UsrOrder values (1, 'x"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-108",
+      "cases": [
+        108
+      ],
+      "testLine": 648,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "update Contact set Name = 'x'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "update Contact set Name = 'x"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-109",
+      "cases": [
+        109
+      ],
+      "testLine": 649,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Failed: delete from [dbo].[Contact] where Id = 1",
+      "hostOutput": "Failed: [redacted-sql]",
+      "mustGo": [
+        "delete from [dbo].[Contact] where Id = 1"
+      ],
+      "mustStay": [
+        "Failed"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-110",
+      "cases": [
+        110
+      ],
+      "testLine": 650,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Query failed: Select count(*), \"Name\" from \"Account\"",
+      "hostOutput": "Query failed: [redacted-sql]",
+      "mustGo": [
+        "Select count(*), \"Name\" from \"Account"
+      ],
+      "mustStay": [
+        "Query",
+        "failed"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-112",
+      "cases": [
+        112
+      ],
+      "testLine": 660,
+      "class": "C",
+      "entry": "redact",
+      "input": "Update the page and try again",
+      "hostOutput": "Update the page and try again",
+      "mustGo": [],
+      "mustStay": [
+        "Update",
+        "the",
+        "page",
+        "and",
+        "try",
+        "again"
+      ]
+    },
+    {
+      "id": "case-113",
+      "cases": [
+        113
+      ],
+      "testLine": 660,
+      "class": "C",
+      "entry": "redact",
+      "input": "Please select one from the list",
+      "hostOutput": "Please select one from the list",
+      "mustGo": [],
+      "mustStay": [
+        "Please",
+        "select",
+        "one",
+        "from",
+        "the",
+        "list"
+      ]
+    },
+    {
+      "id": "case-114",
+      "cases": [
+        114
+      ],
+      "testLine": 660,
+      "class": "C",
+      "entry": "redact",
+      "input": "Update the set of filters",
+      "hostOutput": "Update the set of filters",
+      "mustGo": [],
+      "mustStay": [
+        "Update",
+        "the",
+        "set",
+        "of",
+        "filters"
+      ]
+    },
+    {
+      "id": "case-115",
+      "cases": [
+        115
+      ],
+      "testLine": 660,
+      "class": "C",
+      "entry": "redact",
+      "input": "Cannot insert into a read-only collection",
+      "hostOutput": "Cannot insert into a read-only collection",
+      "mustGo": [],
+      "mustStay": [
+        "Cannot",
+        "insert",
+        "into",
+        "read",
+        "only",
+        "collection"
+      ]
+    },
+    {
+      "id": "case-116",
+      "cases": [
+        116
+      ],
+      "testLine": 660,
+      "class": "C",
+      "entry": "redact",
+      "input": "Delete from this list first",
+      "hostOutput": "Delete from this list first",
+      "mustGo": [],
+      "mustStay": [
+        "Delete",
+        "from",
+        "this",
+        "list",
+        "first"
+      ]
+    },
+    {
+      "id": "case-118",
+      "cases": [
+        118
+      ],
+      "testLine": 662,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The INSERT statement conflicted with the FOREIGN KEY constraint \"FK_Contact_Account\". The conflict occurred in database \"Creatio\", table \"dbo.Account\", column 'Id'.",
+      "hostOutput": "The INSERT statement conflicted with the FOREIGN KEY constraint \"FK_Contact_Account\". The conflict occurred in database \"[redacted]\", table \"dbo.Account\", column 'Id'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "INSERT",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "FOREIGN",
+        "KEY",
+        "constraint",
+        "FK_Contact_Account",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "Account",
+        "column",
+        "Id"
+      ]
+    },
+    {
+      "id": "case-119",
+      "cases": [
+        119
+      ],
+      "testLine": 668,
+      "class": "C",
+      "entry": "redact",
+      "input": "update or delete on table \"UsrOrder\" violates foreign key constraint \"fk_usrinvoice_usrorder\" on table \"UsrInvoice\"",
+      "hostOutput": "update or delete on table \"UsrOrder\" violates foreign key constraint \"fk_usrinvoice_usrorder\" on table \"UsrInvoice\"",
+      "mustGo": [],
+      "mustStay": [
+        "update",
+        "or",
+        "delete",
+        "on",
+        "table",
+        "UsrOrder",
+        "violates",
+        "foreign",
+        "key",
+        "constraint",
+        "fk_usrinvoice_usrorder",
+        "UsrInvoice"
+      ]
+    },
+    {
+      "id": "case-120",
+      "cases": [
+        120
+      ],
+      "testLine": 668,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot delete from view \"VwContact\"",
+      "hostOutput": "ERROR: cannot delete from view \"VwContact\"",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "delete",
+        "from",
+        "view",
+        "VwContact"
+      ]
+    },
+    {
+      "id": "case-121",
+      "cases": [
+        121
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot insert into view \"VwContact\"",
+      "hostOutput": "ERROR: cannot insert into view \"VwContact\"",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "insert",
+        "into",
+        "view",
+        "VwContact"
+      ]
+    },
+    {
+      "id": "case-122",
+      "cases": [
+        122
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot delete from view \"VwContact\" DETAIL: Views that do not select from a single table or view are not automatically updatable.",
+      "hostOutput": "ERROR: cannot delete from view \"VwContact\" DETAIL: Views that do not select from a single table or view are not automatically updatable.",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "delete",
+        "from",
+        "view",
+        "VwContact",
+        "DETAIL",
+        "Views",
+        "that",
+        "do",
+        "not",
+        "select",
+        "single",
+        "table",
+        "or",
+        "are",
+        "automatically",
+        "updatable"
+      ]
+    },
+    {
+      "id": "case-123",
+      "cases": [
+        123
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot insert into column \"Id\" of view \"VwContact\"",
+      "hostOutput": "ERROR: cannot insert into column \"Id\" of view \"VwContact\"",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "insert",
+        "into",
+        "column",
+        "Id",
+        "of",
+        "view",
+        "VwContact"
+      ]
+    },
+    {
+      "id": "case-124",
+      "cases": [
+        124
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot delete from table \"UsrOrder\" because it does not have a replica identity and publishes deletes",
+      "hostOutput": "ERROR: cannot delete from table \"UsrOrder\" because it does not have a replica identity and publishes deletes",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "delete",
+        "from",
+        "table",
+        "UsrOrder",
+        "because",
+        "it",
+        "does",
+        "not",
+        "have",
+        "replica",
+        "identity",
+        "and",
+        "publishes",
+        "deletes"
+      ]
+    },
+    {
+      "id": "case-125",
+      "cases": [
+        125
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot insert into foreign table \"x\"",
+      "hostOutput": "ERROR: cannot insert into foreign table \"x\"",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "insert",
+        "into",
+        "foreign",
+        "table"
+      ]
+    },
+    {
+      "id": "case-126",
+      "cases": [
+        126
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "Import failed: could not insert into Accounts, the record is a duplicate",
+      "hostOutput": "Import failed: could not insert into Accounts, the record is a duplicate",
+      "mustGo": [],
+      "mustStay": [
+        "Import",
+        "failed",
+        "could",
+        "not",
+        "insert",
+        "into",
+        "Accounts",
+        "the",
+        "record",
+        "is",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "case-127",
+      "cases": [
+        127
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "Cannot delete from Contacts section: the record is in use",
+      "hostOutput": "Cannot delete from Contacts section: the record is in use",
+      "mustGo": [],
+      "mustStay": [
+        "Cannot",
+        "delete",
+        "from",
+        "Contacts",
+        "section",
+        "the",
+        "record",
+        "is",
+        "in",
+        "use"
+      ]
+    },
+    {
+      "id": "case-128",
+      "cases": [
+        128
+      ],
+      "testLine": 683,
+      "class": "C",
+      "entry": "redact",
+      "input": "Delete from history is not allowed",
+      "hostOutput": "Delete from history is not allowed",
+      "mustGo": [],
+      "mustStay": [
+        "Delete",
+        "from",
+        "history",
+        "is",
+        "not",
+        "allowed"
+      ]
+    },
+    {
+      "id": "case-129",
+      "cases": [
+        129
+      ],
+      "testLine": 693,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "insert into UsrOrder values (1, 'x')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "insert into UsrOrder values (1, 'x"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-130",
+      "cases": [
+        130
+      ],
+      "testLine": 693,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "insert into \"Contact\" (\"Name\") values ('Jane Doe')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "insert into \"Contact\" (\"Name\") values ('Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-131",
+      "cases": [
+        131
+      ],
+      "testLine": 693,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "delete from Contact where Id = 1",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "delete from Contact where Id = 1"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-132",
+      "cases": [
+        132
+      ],
+      "testLine": 693,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "delete from Contact c where c.Id = 1",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "delete from Contact c where c.Id = 1"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-133",
+      "cases": [
+        133
+      ],
+      "testLine": 693,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "insert into Contact select * from Lead",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "insert into Contact select * from Lead"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-134",
+      "cases": [
+        134
+      ],
+      "testLine": 693,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "insert into Contact default values",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "insert into Contact default values"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-135",
+      "cases": [
+        135
+      ],
+      "testLine": 693,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "delete from dbo.Contact;",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "delete from dbo.Contact"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-136",
+      "cases": [
+        136
+      ],
+      "testLine": 698,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The DELETE statement conflicted with the SAME TABLE REFERENCE constraint \"FK_Contact_Parent\". The conflict occurred in database \"Creatio\", table \"dbo.Contact\", column 'ParentId'.",
+      "hostOutput": "The DELETE statement conflicted with the SAME TABLE REFERENCE constraint \"FK_Contact_Parent\". The conflict occurred in database \"[redacted]\", table \"dbo.Contact\", column 'ParentId'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "DELETE",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "SAME",
+        "TABLE",
+        "REFERENCE",
+        "constraint",
+        "FK_Contact_Parent",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "Contact",
+        "column",
+        "ParentId"
+      ]
+    },
+    {
+      "id": "case-137",
+      "cases": [
+        137
+      ],
+      "testLine": 700,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The ALTER TABLE statement conflicted with the CHECK constraint \"CK_UsrOrder_Amount\". The conflict occurred in database \"Creatio\", table \"dbo.UsrOrder\", column 'Amount'.",
+      "hostOutput": "The ALTER TABLE statement conflicted with the CHECK constraint \"CK_UsrOrder_Amount\". The conflict occurred in database \"[redacted]\", table \"dbo.UsrOrder\", column 'Amount'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "ALTER",
+        "TABLE",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "CHECK",
+        "constraint",
+        "CK_UsrOrder_Amount",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "UsrOrder",
+        "column",
+        "Amount"
+      ]
+    },
+    {
+      "id": "case-138",
+      "cases": [
+        138
+      ],
+      "testLine": 702,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "CREATE TABLE permission denied in database 'Creatio'.",
+      "hostOutput": "CREATE TABLE permission denied in database '[redacted]'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "CREATE",
+        "TABLE",
+        "permission",
+        "denied",
+        "in",
+        "database"
+      ]
+    },
+    {
+      "id": "case-139",
+      "cases": [
+        139
+      ],
+      "testLine": 710,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The INSERT statement conflicted with the FOREIGN KEY constraint \"FK_x\". The conflict occurred in database \"Creatio\", table \"dbo.Activity\", column 'From'.",
+      "hostOutput": "The INSERT statement conflicted with the FOREIGN KEY constraint \"FK_x\". The conflict occurred in database \"[redacted]\", table \"dbo.Activity\", column 'From'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "INSERT",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "FOREIGN",
+        "KEY",
+        "constraint",
+        "FK_x",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "Activity",
+        "column",
+        "From"
+      ]
+    },
+    {
+      "id": "case-140",
+      "cases": [
+        140
+      ],
+      "testLine": 710,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The INSERT statement conflicted with the FOREIGN KEY SAME TABLE constraint \"FK_x\". The conflict occurred in database \"Creatio\", table \"dbo.Activity\", column 'From'.",
+      "hostOutput": "The INSERT statement conflicted with the FOREIGN KEY SAME TABLE constraint \"FK_x\". The conflict occurred in database \"[redacted]\", table \"dbo.Activity\", column 'From'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "INSERT",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "FOREIGN",
+        "KEY",
+        "SAME",
+        "TABLE",
+        "constraint",
+        "FK_x",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "Activity",
+        "column",
+        "From"
+      ]
+    },
+    {
+      "id": "case-141",
+      "cases": [
+        141
+      ],
+      "testLine": 710,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The UPDATE statement conflicted with the CHECK constraint \"FK_x\". The conflict occurred in database \"Creatio\", table \"dbo.Activity\", column 'From'.",
+      "hostOutput": "The UPDATE statement conflicted with the CHECK constraint \"FK_x\". The conflict occurred in database \"[redacted]\", table \"dbo.Activity\", column 'From'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "UPDATE",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "CHECK",
+        "constraint",
+        "FK_x",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "Activity",
+        "column",
+        "From"
+      ]
+    },
+    {
+      "id": "case-142",
+      "cases": [
+        142
+      ],
+      "testLine": 710,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "The DELETE statement conflicted with the REFERENCE constraint \"FK_x\". The conflict occurred in database \"Creatio\", table \"dbo.Activity\", column 'From'.",
+      "hostOutput": "The DELETE statement conflicted with the REFERENCE constraint \"FK_x\". The conflict occurred in database \"[redacted]\", table \"dbo.Activity\", column 'From'.",
+      "mustGo": [
+        "Creatio"
+      ],
+      "mustStay": [
+        "The",
+        "DELETE",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "REFERENCE",
+        "constraint",
+        "FK_x",
+        "conflict",
+        "occurred",
+        "in",
+        "database",
+        "table",
+        "dbo",
+        "Activity",
+        "column",
+        "From"
+      ]
+    },
+    {
+      "id": "case-143",
+      "cases": [
+        143
+      ],
+      "testLine": 713,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "ALTER TABLE Contact ADD UsrSsn nvarchar(20)",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "ALTER TABLE Contact ADD UsrSsn nvarchar(20"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-144",
+      "cases": [
+        144
+      ],
+      "testLine": 714,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "The INSERT statement failed: INSERT INTO Contact VALUES ('Jane Doe')",
+      "hostOutput": "The INSERT statement failed: [redacted-sql]",
+      "mustGo": [
+        "INSERT INTO Contact VALUES ('Jane Doe"
+      ],
+      "mustStay": [
+        "The",
+        "INSERT",
+        "statement",
+        "failed"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-145",
+      "cases": [
+        145
+      ],
+      "testLine": 720,
+      "class": "C",
+      "entry": "redact",
+      "input": "The update statement conflicted with the CHECK constraint \"CK_UsrOrder_Amount\" for @Amount = 5",
+      "hostOutput": "The update statement conflicted with the CHECK constraint \"CK_UsrOrder_Amount\" for @Amount = 5",
+      "mustGo": [],
+      "mustStay": [
+        "The",
+        "update",
+        "statement",
+        "conflicted",
+        "with",
+        "the",
+        "CHECK",
+        "constraint",
+        "CK_UsrOrder_Amount",
+        "for",
+        "Amount"
+      ]
+    },
+    {
+      "id": "case-146",
+      "cases": [
+        146
+      ],
+      "testLine": 720,
+      "class": "C",
+      "entry": "redact",
+      "input": "The exec permission was denied on the object 'tsp_UpdateContact' (@Name = N'x')",
+      "hostOutput": "The exec permission was denied on the object 'tsp_UpdateContact' (@Name = N'x')",
+      "mustGo": [],
+      "mustStay": [
+        "The",
+        "exec",
+        "permission",
+        "was",
+        "denied",
+        "on",
+        "the",
+        "object",
+        "tsp_UpdateContact",
+        "Name"
+      ]
+    },
+    {
+      "id": "case-147",
+      "cases": [
+        147
+      ],
+      "testLine": 729,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DELETE statement FROM UsrLog WHERE Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DELETE statement FROM UsrLog WHERE Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-148",
+      "cases": [
+        148
+      ],
+      "testLine": 729,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "INSERT statement VALUES ('+380501234567')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "INSERT statement VALUES ('+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-149",
+      "cases": [
+        149
+      ],
+      "testLine": 729,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "EXEC permission @Phone = N'+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "EXEC permission @Phone = N'+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-150",
+      "cases": [
+        150
+      ],
+      "testLine": 729,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DELETE statement WHERE Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DELETE statement WHERE Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-151",
+      "cases": [
+        151
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot execute CREATE TABLE in a read-only transaction",
+      "hostOutput": "ERROR: cannot execute CREATE TABLE in a read-only transaction",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "execute",
+        "CREATE",
+        "TABLE",
+        "in",
+        "read",
+        "only",
+        "transaction"
+      ]
+    },
+    {
+      "id": "case-152",
+      "cases": [
+        152
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot execute SELECT INTO in a read-only transaction",
+      "hostOutput": "ERROR: cannot execute SELECT INTO in a read-only transaction",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "execute",
+        "SELECT",
+        "INTO",
+        "in",
+        "read",
+        "only",
+        "transaction"
+      ]
+    },
+    {
+      "id": "case-153",
+      "cases": [
+        153
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot execute DROP TABLE during recovery",
+      "hostOutput": "ERROR: cannot execute DROP TABLE during recovery",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "execute",
+        "DROP",
+        "TABLE",
+        "during",
+        "recovery"
+      ]
+    },
+    {
+      "id": "case-154",
+      "cases": [
+        154
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "INSERT failed because the following SET options have incorrect settings: 'QUOTED_IDENTIFIER'.",
+      "hostOutput": "INSERT failed because the following SET options have incorrect settings: 'QUOTED_IDENTIFIER'.",
+      "mustGo": [],
+      "mustStay": [
+        "INSERT",
+        "failed",
+        "because",
+        "the",
+        "following",
+        "SET",
+        "options",
+        "have",
+        "incorrect",
+        "settings",
+        "QUOTED_IDENTIFIER"
+      ]
+    },
+    {
+      "id": "case-155",
+      "cases": [
+        155
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "CREATE INDEX failed because the following SET options have incorrect settings: 'ARITHABORT'.",
+      "hostOutput": "CREATE INDEX failed because the following SET options have incorrect settings: 'ARITHABORT'.",
+      "mustGo": [],
+      "mustStay": [
+        "CREATE",
+        "INDEX",
+        "failed",
+        "because",
+        "the",
+        "following",
+        "SET",
+        "options",
+        "have",
+        "incorrect",
+        "settings",
+        "ARITHABORT"
+      ]
+    },
+    {
+      "id": "case-156",
+      "cases": [
+        156
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "ALTER TABLE ALTER COLUMN Name failed because one or more objects access this column.",
+      "hostOutput": "ALTER TABLE ALTER COLUMN Name failed because one or more objects access this column.",
+      "mustGo": [],
+      "mustStay": [
+        "ALTER",
+        "TABLE",
+        "COLUMN",
+        "Name",
+        "failed",
+        "because",
+        "one",
+        "or",
+        "more",
+        "objects",
+        "access",
+        "this",
+        "column"
+      ]
+    },
+    {
+      "id": "case-157",
+      "cases": [
+        157
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "The object 'DF_Contact_Name' is dependent on column 'Name'. ALTER TABLE DROP COLUMN Name failed because one or more objects access this column.",
+      "hostOutput": "The object 'DF_Contact_Name' is dependent on column 'Name'. ALTER TABLE DROP COLUMN Name failed because one or more objects access this column.",
+      "mustGo": [],
+      "mustStay": [
+        "The",
+        "object",
+        "DF_Contact_Name",
+        "is",
+        "dependent",
+        "on",
+        "column",
+        "Name",
+        "ALTER",
+        "TABLE",
+        "DROP",
+        "COLUMN",
+        "failed",
+        "because",
+        "one",
+        "or",
+        "more",
+        "objects",
+        "access",
+        "this"
+      ]
+    },
+    {
+      "id": "case-158",
+      "cases": [
+        158
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "ALTER TABLE ALTER COLUMN failed because column 'UsrX' does not exist in table 'Contact'.",
+      "hostOutput": "ALTER TABLE ALTER COLUMN failed because column 'UsrX' does not exist in table 'Contact'.",
+      "mustGo": [],
+      "mustStay": [
+        "ALTER",
+        "TABLE",
+        "COLUMN",
+        "failed",
+        "because",
+        "column",
+        "UsrX",
+        "does",
+        "not",
+        "exist",
+        "in",
+        "table",
+        "Contact"
+      ]
+    },
+    {
+      "id": "case-159",
+      "cases": [
+        159
+      ],
+      "testLine": 745,
+      "class": "C",
+      "entry": "redact",
+      "input": "ALTER TABLE DROP COLUMN failed because column 'UsrX' does not exist in table 'Contact'.",
+      "hostOutput": "ALTER TABLE DROP COLUMN failed because column 'UsrX' does not exist in table 'Contact'.",
+      "mustGo": [],
+      "mustStay": [
+        "ALTER",
+        "TABLE",
+        "DROP",
+        "COLUMN",
+        "failed",
+        "because",
+        "column",
+        "UsrX",
+        "does",
+        "not",
+        "exist",
+        "in",
+        "table",
+        "Contact"
+      ]
+    },
+    {
+      "id": "case-160",
+      "cases": [
+        160
+      ],
+      "testLine": 747,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "cannot execute INSERT Contact (Name) VALUES ('Jane Doe')",
+      "hostOutput": "cannot execute [redacted-sql]",
+      "mustGo": [
+        "INSERT Contact (Name) VALUES ('Jane Doe"
+      ],
+      "mustStay": [
+        "cannot",
+        "execute"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-161",
+      "cases": [
+        161
+      ],
+      "testLine": 748,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Failed to execute INSERT Contact (Name) VALUES ('Jane Doe')",
+      "hostOutput": "Failed to execute [redacted-sql]",
+      "mustGo": [
+        "INSERT Contact (Name) VALUES ('Jane Doe"
+      ],
+      "mustStay": [
+        "Failed",
+        "to",
+        "execute"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-162",
+      "cases": [
+        162
+      ],
+      "testLine": 749,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "ALTER TABLE Contact ALTER COLUMN UsrSsn nvarchar(20)",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "ALTER TABLE Contact ALTER COLUMN UsrSsn nvarchar(20"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-163",
+      "cases": [
+        163
+      ],
+      "testLine": 760,
+      "class": "C",
+      "entry": "redact",
+      "input": "ALTER TABLE only allows columns to be added that can contain nulls, or have a DEFAULT definition specified. Column 'UsrX' cannot be added to non-empty table 'Contact' because it does not satisfy these conditions.",
+      "hostOutput": "ALTER TABLE only allows columns to be added that can contain nulls, or have a DEFAULT definition specified. Column 'UsrX' cannot be added to non-empty table 'Contact' because it does not satisfy these conditions.",
+      "mustGo": [],
+      "mustStay": [
+        "ALTER",
+        "TABLE",
+        "only",
+        "allows",
+        "columns",
+        "to",
+        "be",
+        "added",
+        "that",
+        "can",
+        "contain",
+        "nulls",
+        "or",
+        "have",
+        "DEFAULT",
+        "definition",
+        "specified",
+        "Column",
+        "UsrX",
+        "cannot",
+        "non",
+        "empty",
+        "table",
+        "Contact",
+        "because",
+        "it",
+        "does",
+        "not",
+        "satisfy",
+        "these",
+        "conditions"
+      ]
+    },
+    {
+      "id": "case-164",
+      "cases": [
+        164
+      ],
+      "testLine": 760,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot ALTER TABLE \"Contact\" because it is being used by active queries in this session",
+      "hostOutput": "ERROR: cannot ALTER TABLE \"Contact\" because it is being used by active queries in this session",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "ALTER",
+        "TABLE",
+        "Contact",
+        "because",
+        "it",
+        "is",
+        "being",
+        "used",
+        "by",
+        "active",
+        "queries",
+        "in",
+        "this",
+        "session"
+      ]
+    },
+    {
+      "id": "case-165",
+      "cases": [
+        165
+      ],
+      "testLine": 760,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot DROP TABLE \"Contact\" because it has pending trigger events",
+      "hostOutput": "ERROR: cannot DROP TABLE \"Contact\" because it has pending trigger events",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "DROP",
+        "TABLE",
+        "Contact",
+        "because",
+        "it",
+        "has",
+        "pending",
+        "trigger",
+        "events"
+      ]
+    },
+    {
+      "id": "case-166",
+      "cases": [
+        166
+      ],
+      "testLine": 760,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: Cannot execute CREATE TABLE in a read-only transaction",
+      "hostOutput": "ERROR: Cannot execute CREATE TABLE in a read-only transaction",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "Cannot",
+        "execute",
+        "CREATE",
+        "TABLE",
+        "in",
+        "read",
+        "only",
+        "transaction"
+      ]
+    },
+    {
+      "id": "case-167",
+      "cases": [
+        167
+      ],
+      "testLine": 760,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot execute CREATE TABLE AS in a read-only transaction",
+      "hostOutput": "ERROR: cannot execute CREATE TABLE AS in a read-only transaction",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "execute",
+        "CREATE",
+        "TABLE",
+        "AS",
+        "in",
+        "read",
+        "only",
+        "transaction"
+      ]
+    },
+    {
+      "id": "case-168",
+      "cases": [
+        168
+      ],
+      "testLine": 760,
+      "class": "C",
+      "entry": "redact",
+      "input": "ERROR: cannot execute CREATE TABLE within security-restricted operation",
+      "hostOutput": "ERROR: cannot execute CREATE TABLE within security-restricted operation",
+      "mustGo": [],
+      "mustStay": [
+        "ERROR",
+        "cannot",
+        "execute",
+        "CREATE",
+        "TABLE",
+        "within",
+        "security",
+        "restricted",
+        "operation"
+      ]
+    },
+    {
+      "id": "case-169",
+      "cases": [
+        169
+      ],
+      "testLine": 767,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "ALTER TABLE ONLY Contact ADD CONSTRAINT c CHECK (Phone <> '+380501234567')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "ALTER TABLE ONLY Contact ADD CONSTRAINT c CHECK (Phone <> '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-170",
+      "cases": [
+        170
+      ],
+      "testLine": 767,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "ALTER TABLE only Contact SET (fillfactor = 70)",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "ALTER TABLE only Contact SET (fillfactor = 70"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-171",
+      "cases": [
+        171
+      ],
+      "testLine": 767,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "ALTER TABLE ONLY allows ADD COLUMN Phone text DEFAULT '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "ALTER TABLE ONLY allows ADD COLUMN Phone text DEFAULT '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-172",
+      "cases": [
+        172
+      ],
+      "testLine": 768,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Cannot execute INSERT Contact (Name) VALUES ('Jane Doe')",
+      "hostOutput": "Cannot execute [redacted-sql]",
+      "mustGo": [
+        "INSERT Contact (Name) VALUES ('Jane Doe"
+      ],
+      "mustStay": [
+        "Cannot",
+        "execute"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-173",
+      "cases": [
+        173
+      ],
+      "testLine": 771,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "ALTER COLUMN UsrSsn SET DEFAULT '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "ALTER COLUMN UsrSsn SET DEFAULT '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-174",
+      "cases": [
+        174
+      ],
+      "testLine": 771,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DROP COLUMN UsrSsn FROM Contact",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DROP COLUMN UsrSsn FROM Contact"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-175",
+      "cases": [
+        175
+      ],
+      "testLine": 771,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "CREATE COLUMN x FROM y",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "CREATE COLUMN x FROM y"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-176",
+      "cases": [
+        176
+      ],
+      "testLine": 776,
+      "class": "C",
+      "entry": "redact",
+      "input": "UPDATE failed: Object reference not set to an instance of an object.",
+      "hostOutput": "UPDATE failed: Object reference not set to an instance of an object.",
+      "mustGo": [],
+      "mustStay": [
+        "UPDATE",
+        "failed",
+        "Object",
+        "reference",
+        "not",
+        "set",
+        "to",
+        "an",
+        "instance",
+        "of",
+        "object"
+      ]
+    },
+    {
+      "id": "case-177",
+      "cases": [
+        177
+      ],
+      "testLine": 777,
+      "class": "C",
+      "entry": "redact",
+      "input": "The UPDATE operation is not allowed: field \"Status\" is set to read-only",
+      "hostOutput": "The UPDATE operation is not allowed: field \"Status\" is set to read-only",
+      "mustGo": [],
+      "mustStay": [
+        "The",
+        "UPDATE",
+        "operation",
+        "is",
+        "not",
+        "allowed",
+        "field",
+        "Status",
+        "set",
+        "to",
+        "read",
+        "only"
+      ]
+    },
+    {
+      "id": "case-178",
+      "cases": [
+        178
+      ],
+      "testLine": 778,
+      "class": "C",
+      "entry": "redact",
+      "input": "Operation DELETE is not allowed where the record is locked",
+      "hostOutput": "Operation DELETE is not allowed where the record is locked",
+      "mustGo": [],
+      "mustStay": [
+        "Operation",
+        "DELETE",
+        "is",
+        "not",
+        "allowed",
+        "where",
+        "the",
+        "record",
+        "locked"
+      ]
+    },
+    {
+      "id": "case-179",
+      "cases": [
+        179
+      ],
+      "testLine": 779,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "DELETE request from 10.0.0.5 was refused",
+      "hostOutput": "DELETE request from [redacted-host] was refused",
+      "mustGo": [
+        "10.0.0.5"
+      ],
+      "mustStay": [
+        "DELETE",
+        "request",
+        "from",
+        "was",
+        "refused"
+      ]
+    },
+    {
+      "id": "case-180",
+      "cases": [
+        180
+      ],
+      "testLine": 781,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "UPDATE Contact set Name = 'x'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "UPDATE Contact set Name = 'x"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-181",
+      "cases": [
+        181
+      ],
+      "testLine": 782,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT TOP 10 * from Contact where Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT TOP 10 * from Contact where Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-182",
+      "cases": [
+        182
+      ],
+      "testLine": 783,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT DISTINCT Name from Contact",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT DISTINCT Name from Contact"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-183",
+      "cases": [
+        183
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT Name n from Contact where Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT Name n from Contact where Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-184",
+      "cases": [
+        184
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT c.Name n from Contact c where c.Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT c.Name n from Contact c where c.Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-185",
+      "cases": [
+        185
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT coalesce(Name, 'x') from Contact where Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT coalesce(Name, 'x') from Contact where Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-186",
+      "cases": [
+        186
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "INSERT Contact (Name) values ('Jane Doe')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "INSERT Contact (Name) values ('Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-187",
+      "cases": [
+        187
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DELETE Contact where Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DELETE Contact where Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-188",
+      "cases": [
+        188
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "MERGE into Contact using Lead l on l.Id = Contact.Id when matched then update set Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "MERGE into Contact using Lead l on l.Id = Contact.Id when matched then update set Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-189",
+      "cases": [
+        189
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "UPDATE Contact c set c.Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "UPDATE Contact c set c.Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-190",
+      "cases": [
+        190
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "UPDATE Contact set",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "UPDATE Contact set"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-191",
+      "cases": [
+        191
+      ],
+      "testLine": 799,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "CREATE table UsrSecret (Ssn nvarchar(20))",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "CREATE table UsrSecret (Ssn nvarchar(20"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-193",
+      "cases": [
+        193
+      ],
+      "testLine": 801,
+      "class": "C",
+      "entry": "redact",
+      "input": "DELETE request from this page was refused",
+      "hostOutput": "DELETE request from this page was refused",
+      "mustGo": [],
+      "mustStay": [
+        "DELETE",
+        "request",
+        "from",
+        "this",
+        "page",
+        "was",
+        "refused"
+      ]
+    },
+    {
+      "id": "case-194",
+      "cases": [
+        194,
+        358
+      ],
+      "testLine": 801,
+      "class": "C",
+      "entry": "redact",
+      "input": "DELETE is not allowed from this page",
+      "hostOutput": "DELETE is not allowed from this page",
+      "mustGo": [],
+      "mustStay": [
+        "DELETE",
+        "is",
+        "not",
+        "allowed",
+        "from",
+        "this",
+        "page"
+      ]
+    },
+    {
+      "id": "case-195",
+      "cases": [
+        195
+      ],
+      "testLine": 809,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DELETE [dbo].[Contact] where Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DELETE [dbo].[Contact] where Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-196",
+      "cases": [
+        196
+      ],
+      "testLine": 809,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DELETE \"Contact\" where \"Name\" = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DELETE \"Contact\" where \"Name\" = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-197",
+      "cases": [
+        197
+      ],
+      "testLine": 809,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "INSERT #tmp values ('Jane Doe')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "INSERT #tmp values ('Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-198",
+      "cases": [
+        198
+      ],
+      "testLine": 809,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "INSERT (Name) values ('Jane Doe')",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "INSERT (Name) values ('Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-199",
+      "cases": [
+        199
+      ],
+      "testLine": 809,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "DELETE Contact output deleted.Phone",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "DELETE Contact output deleted.Phone"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-200",
+      "cases": [
+        200
+      ],
+      "testLine": 823,
+      "class": "C",
+      "entry": "redact",
+      "input": "DROP table is not allowed",
+      "hostOutput": "DROP table is not allowed",
+      "mustGo": [],
+      "mustStay": [
+        "DROP",
+        "table",
+        "is",
+        "not",
+        "allowed"
+      ]
+    },
+    {
+      "id": "case-201",
+      "cases": [
+        201
+      ],
+      "testLine": 823,
+      "class": "C",
+      "entry": "redact",
+      "input": "CREATE table from the template failed",
+      "hostOutput": "CREATE table from the template failed",
+      "mustGo": [],
+      "mustStay": [
+        "CREATE",
+        "table",
+        "from",
+        "the",
+        "template",
+        "failed"
+      ]
+    },
+    {
+      "id": "case-202",
+      "cases": [
+        202
+      ],
+      "testLine": 823,
+      "class": "C",
+      "entry": "redact",
+      "input": "ALTER table settings from the System designer",
+      "hostOutput": "ALTER table settings from the System designer",
+      "mustGo": [],
+      "mustStay": [
+        "ALTER",
+        "table",
+        "settings",
+        "from",
+        "the",
+        "System",
+        "designer"
+      ]
+    },
+    {
+      "id": "case-203",
+      "cases": [
+        203
+      ],
+      "testLine": 823,
+      "class": "C",
+      "entry": "redact",
+      "input": "MERGE into account failed",
+      "hostOutput": "MERGE into account failed",
+      "mustGo": [],
+      "mustStay": [
+        "MERGE",
+        "into",
+        "account",
+        "failed"
+      ]
+    },
+    {
+      "id": "case-204",
+      "cases": [
+        204
+      ],
+      "testLine": 823,
+      "class": "C",
+      "entry": "redact",
+      "input": "UPDATE Contact failed: Object reference not set to an instance of an object.",
+      "hostOutput": "UPDATE Contact failed: Object reference not set to an instance of an object.",
+      "mustGo": [],
+      "mustStay": [
+        "UPDATE",
+        "Contact",
+        "failed",
+        "Object",
+        "reference",
+        "not",
+        "set",
+        "to",
+        "an",
+        "instance",
+        "of",
+        "object"
+      ]
+    },
+    {
+      "id": "case-205",
+      "cases": [
+        205
+      ],
+      "testLine": 823,
+      "class": "C",
+      "entry": "redact",
+      "input": "SELECT Contact failed. Please select a value from the list",
+      "hostOutput": "SELECT Contact failed. Please select a value from the list",
+      "mustGo": [],
+      "mustStay": [
+        "SELECT",
+        "Contact",
+        "failed",
+        "Please",
+        "select",
+        "value",
+        "from",
+        "the",
+        "list"
+      ]
+    },
+    {
+      "id": "case-206",
+      "cases": [
+        206
+      ],
+      "testLine": 823,
+      "class": "C",
+      "entry": "redact",
+      "input": "INSERT Activity failed: the value from the field \"Owner\" is not set",
+      "hostOutput": "INSERT Activity failed: the value from the field \"Owner\" is not set",
+      "mustGo": [],
+      "mustStay": [
+        "INSERT",
+        "Activity",
+        "failed",
+        "the",
+        "value",
+        "from",
+        "field",
+        "Owner",
+        "is",
+        "not",
+        "set"
+      ]
+    },
+    {
+      "id": "case-207",
+      "cases": [
+        207
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "MERGE into dbo.contact using lead l on l.id = contact.id when matched then update set phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "MERGE into dbo.contact using lead l on l.id = contact.id when matched then update set phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-208",
+      "cases": [
+        208
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "MERGE into [dbo].[Contact] t using Lead l on 1 = 1 when matched then update set Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "MERGE into [dbo].[Contact] t using Lead l on 1 = 1 when matched then update set Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-209",
+      "cases": [
+        209
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "CREATE table #tmp (Phone nvarchar(20))",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "CREATE table #tmp (Phone nvarchar(20"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-210",
+      "cases": [
+        210
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "CREATE table \"UsrSecret\" (Ssn nvarchar(20))",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "CREATE table \"UsrSecret\" (Ssn nvarchar(20"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-211",
+      "cases": [
+        211
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "CREATE table [dbo].[UsrSecret] (Ssn nvarchar(20))",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "CREATE table [dbo].[UsrSecret] (Ssn nvarchar(20"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-212",
+      "cases": [
+        212
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "UPDATE Contact failed set Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "UPDATE Contact failed set Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-213",
+      "cases": [
+        213
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "UPDATE Contact failed SET Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "UPDATE Contact failed SET Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-214",
+      "cases": [
+        214
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT Name failed, Phone FROM Contact WHERE Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT Name failed, Phone FROM Contact WHERE Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-215",
+      "cases": [
+        215
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "UPDATE Contact failed: UPDATE Contact SET Phone = '+380501234567' WHERE Id = 1",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "UPDATE Contact failed: UPDATE Contact SET Phone = '+380501234567' WHERE Id = 1"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-216",
+      "cases": [
+        216
+      ],
+      "testLine": 838,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "SELECT ID failed, Phone from Contact where Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "SELECT ID failed, Phone from Contact where Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-217",
+      "cases": [
+        217
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Please select one from these.",
+      "hostOutput": "Please select one from these.",
+      "mustGo": [],
+      "mustStay": [
+        "Please",
+        "select",
+        "one",
+        "from",
+        "these"
+      ]
+    },
+    {
+      "id": "case-218",
+      "cases": [
+        218
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Delete from this.",
+      "hostOutput": "Delete from this.",
+      "mustGo": [],
+      "mustStay": [
+        "Delete",
+        "from",
+        "this"
+      ]
+    },
+    {
+      "id": "case-219",
+      "cases": [
+        219
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Cannot insert into a.",
+      "hostOutput": "Cannot insert into a.",
+      "mustGo": [],
+      "mustStay": [
+        "Cannot",
+        "insert",
+        "into"
+      ]
+    },
+    {
+      "id": "case-220",
+      "cases": [
+        220
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Select one from [the list]",
+      "hostOutput": "Select one from [the list]",
+      "mustGo": [],
+      "mustStay": [
+        "Select",
+        "one",
+        "from",
+        "the",
+        "list"
+      ]
+    },
+    {
+      "id": "case-221",
+      "cases": [
+        221
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Select one from them",
+      "hostOutput": "Select one from them",
+      "mustGo": [],
+      "mustStay": [
+        "Select",
+        "one",
+        "from",
+        "them"
+      ]
+    },
+    {
+      "id": "case-222",
+      "cases": [
+        222
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Select all from here",
+      "hostOutput": "Select all from here",
+      "mustGo": [],
+      "mustStay": [
+        "Select",
+        "all",
+        "from",
+        "here"
+      ]
+    },
+    {
+      "id": "case-223",
+      "cases": [
+        223
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Unable to update data set",
+      "hostOutput": "Unable to update data set",
+      "mustGo": [],
+      "mustStay": [
+        "Unable",
+        "to",
+        "update",
+        "data",
+        "set"
+      ]
+    },
+    {
+      "id": "case-224",
+      "cases": [
+        224
+      ],
+      "testLine": 852,
+      "class": "C",
+      "entry": "redact",
+      "input": "Can't update record set because it is locked",
+      "hostOutput": "Can't update record set because it is locked",
+      "mustGo": [],
+      "mustStay": [
+        "Can",
+        "update",
+        "record",
+        "set",
+        "because",
+        "it",
+        "is",
+        "locked"
+      ]
+    },
+    {
+      "id": "case-225",
+      "cases": [
+        225
+      ],
+      "testLine": 854,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Unable to update Contact set Name = 1",
+      "hostOutput": "Unable to [redacted-sql]",
+      "mustGo": [
+        "update Contact set Name = 1"
+      ],
+      "mustStay": [
+        "Unable",
+        "to"
+      ],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-226",
+      "cases": [
+        226
+      ],
+      "testLine": 866,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "select top 10 * from Contact where Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "select top 10 * from Contact where Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-227",
+      "cases": [
+        227
+      ],
+      "testLine": 866,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "Select Top 1 Id From Contact Where Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "Select Top 1 Id From Contact Where Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-228",
+      "cases": [
+        228
+      ],
+      "testLine": 866,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "select distinct Name from Contact where Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "select distinct Name from Contact where Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-229",
+      "cases": [
+        229
+      ],
+      "testLine": 866,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "select c.Name as n from Contact c where c.Phone = '+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "select c.Name as n from Contact c where c.Phone = '+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-230",
+      "cases": [
+        230
+      ],
+      "testLine": 866,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "select count(*) as total from Contact where Name = 'Jane Doe'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "select count(*) as total from Contact where Name = 'Jane Doe"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-231",
+      "cases": [
+        231
+      ],
+      "testLine": 866,
+      "class": "B",
+      "kind": "sql",
+      "entry": "site",
+      "input": "exec tsp_UpdateContact @Name = N'Jane Doe', @Phone = N'+380501234567'",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [
+        "exec tsp_UpdateContact @Name = N'Jane Doe', @Phone = N'+380501234567"
+      ],
+      "mustStay": [],
+      "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
+    },
+    {
+      "id": "case-232",
+      "cases": [
+        232
+      ],
+      "testLine": 868,
+      "class": "B",
+      "kind": "email",
+      "entry": "redact",
+      "input": "Update jane@x = y",
+      "hostOutput": "Update [redacted-email] = y",
+      "mustGo": [],
+      "mustStay": [
+        "Update"
+      ],
+      "note": "No change proposed (analysis kind 10): accepting a one-letter host would also take short text that is no address."
+    },
+    {
+      "id": "case-233",
+      "cases": [
+        233
+      ],
+      "testLine": 869,
+      "class": "C",
+      "entry": "redact",
+      "input": "Please select distinct values from the list",
+      "hostOutput": "Please select distinct values from the list",
+      "mustGo": [],
+      "mustStay": [
+        "Please",
+        "select",
+        "distinct",
+        "values",
+        "from",
+        "the",
+        "list"
+      ]
+    },
+    {
+      "id": "case-234",
+      "cases": [
+        234
+      ],
+      "testLine": 874,
+      "class": "A",
+      "entry": "redact",
+      "input": "Authorization: Bearer X7q2",
+      "hostOutput": "Authorization: Bearer [redacted]",
+      "mustGo": [
+        "X7q2"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Bearer"
+      ]
+    },
+    {
+      "id": "case-235",
+      "cases": [
+        235
+      ],
+      "testLine": 875,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Basic dXM=",
+      "hostOutput": "Basic [redacted]",
+      "mustGo": [
+        "dXM="
+      ],
+      "mustStay": [
+        "Basic"
+      ]
+    },
+    {
+      "id": "case-236",
+      "cases": [
+        236
+      ],
+      "testLine": 876,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "WWW-Authenticate: Negotiate YIIGhg== refused",
+      "hostOutput": "WWW-Authenticate: Negotiate [redacted] refused",
+      "mustGo": [
+        "YIIGhg=="
+      ],
+      "mustStay": [
+        "WWW",
+        "Authenticate",
+        "Negotiate",
+        "refused"
+      ]
+    },
+    {
+      "id": "case-237",
+      "cases": [
+        237
+      ],
+      "testLine": 877,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Rejected NTLM TlRM.",
+      "hostOutput": "Rejected NTLM [redacted].",
+      "mustGo": [
+        "TlRM"
+      ],
+      "mustStay": [
+        "Rejected",
+        "NTLM"
+      ]
+    },
+    {
+      "id": "case-238",
+      "cases": [
+        238
+      ],
+      "testLine": 878,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "password=Negotiate YII rejected",
+      "hostOutput": "password=[redacted] rejected",
+      "mustGo": [
+        "Negotiate YII"
+      ],
+      "mustStay": [
+        "password",
+        "rejected"
+      ]
+    },
+    {
+      "id": "case-240",
+      "cases": [
+        240
+      ],
+      "testLine": 887,
+      "class": "C",
+      "kind": "over-redaction",
+      "entry": "redact",
+      "input": "Invalid Bearer token.",
+      "hostOutput": "Invalid Bearer token.",
+      "mustGo": [],
+      "mustStay": [
+        "Invalid",
+        "Bearer",
+        "token"
+      ]
+    },
+    {
+      "id": "case-241",
+      "cases": [
+        241
+      ],
+      "testLine": 887,
+      "class": "C",
+      "entry": "redact",
+      "input": "Basic authentication is disabled; NTLM negotiation failed",
+      "hostOutput": "Basic authentication is disabled; NTLM negotiation failed",
+      "mustGo": [],
+      "mustStay": [
+        "Basic",
+        "authentication",
+        "is",
+        "disabled",
+        "NTLM",
+        "negotiation",
+        "failed"
+      ]
+    },
+    {
+      "id": "case-242",
+      "cases": [
+        242
+      ],
+      "testLine": 887,
+      "class": "C",
+      "entry": "redact",
+      "input": "Negotiate failed",
+      "hostOutput": "Negotiate failed",
+      "mustGo": [],
+      "mustStay": [
+        "Negotiate",
+        "failed"
+      ]
+    },
+    {
+      "id": "case-245",
+      "cases": [
+        245
+      ],
+      "testLine": 898,
+      "class": "C",
+      "entry": "redact",
+      "input": "Could not negotiate TLS 1.2 with the server",
+      "hostOutput": "Could not negotiate TLS 1.2 with the server",
+      "mustGo": [],
+      "mustStay": [
+        "Could",
+        "not",
+        "negotiate",
+        "TLS",
+        "with",
+        "the",
+        "server"
+      ]
+    },
+    {
+      "id": "case-246",
+      "cases": [
+        246
+      ],
+      "testLine": 898,
+      "class": "C",
+      "entry": "redact",
+      "input": "Failed to negotiate SSL",
+      "hostOutput": "Failed to negotiate SSL",
+      "mustGo": [],
+      "mustStay": [
+        "Failed",
+        "to",
+        "negotiate",
+        "SSL"
+      ]
+    },
+    {
+      "id": "case-247",
+      "cases": [
+        247
+      ],
+      "testLine": 898,
+      "class": "C",
+      "entry": "redact",
+      "input": "The client could not negotiate HTTP/2",
+      "hostOutput": "The client could not negotiate HTTP/2",
+      "mustGo": [],
+      "mustStay": [
+        "The",
+        "client",
+        "could",
+        "not",
+        "negotiate",
+        "HTTP"
+      ]
+    },
+    {
+      "id": "case-248",
+      "cases": [
+        248
+      ],
+      "testLine": 898,
+      "class": "C",
+      "entry": "redact",
+      "input": "This is a basic CRM license",
+      "hostOutput": "This is a basic CRM license",
+      "mustGo": [],
+      "mustStay": [
+        "This",
+        "is",
+        "basic",
+        "CRM",
+        "license"
+      ]
+    },
+    {
+      "id": "case-249",
+      "cases": [
+        249
+      ],
+      "testLine": 898,
+      "class": "C",
+      "entry": "redact",
+      "input": "basic HTTP auth is off",
+      "hostOutput": "basic HTTP auth is off",
+      "mustGo": [],
+      "mustStay": [
+        "basic",
+        "HTTP",
+        "auth",
+        "is",
+        "off"
+      ]
+    },
+    {
+      "id": "case-250",
+      "cases": [
+        250
+      ],
+      "testLine": 899,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "BEARER X7q2; NEGOTIATE YIIGhg==",
+      "hostOutput": "BEARER [redacted]; NEGOTIATE [redacted]",
+      "mustGo": [
+        "X7q2",
+        "YIIGhg=="
+      ],
+      "mustStay": [
+        "BEARER",
+        "NEGOTIATE"
+      ]
+    },
+    {
+      "id": "case-251",
+      "cases": [
+        251
+      ],
+      "testLine": 901,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Bearer \"X7q2\"",
+      "hostOutput": "Authorization: Bearer \"[redacted]\"",
+      "mustGo": [
+        "X7q2"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Bearer"
+      ]
+    },
+    {
+      "id": "case-252",
+      "cases": [
+        252
+      ],
+      "testLine": 902,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Bearer 'X7q2'",
+      "hostOutput": "Authorization: Bearer '[redacted]'",
+      "mustGo": [
+        "X7q2"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Bearer"
+      ]
+    },
+    {
+      "id": "case-253",
+      "cases": [
+        253
+      ],
+      "testLine": 903,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Basic 'dXM='",
+      "hostOutput": "Basic '[redacted]'",
+      "mustGo": [
+        "dXM="
+      ],
+      "mustStay": [
+        "Basic"
+      ]
+    },
+    {
+      "id": "case-254",
+      "cases": [
+        254
+      ],
+      "testLine": 910,
+      "class": "C",
+      "entry": "redact",
+      "input": "WWW-Authenticate: Basic realm=\"Creatio\"",
+      "hostOutput": "WWW-Authenticate: Basic realm=\"Creatio\"",
+      "mustGo": [],
+      "mustStay": [
+        "WWW",
+        "Authenticate",
+        "Basic",
+        "realm",
+        "Creatio"
+      ]
+    },
+    {
+      "id": "case-255",
+      "cases": [
+        255
+      ],
+      "testLine": 910,
+      "class": "C",
+      "kind": "over-redaction",
+      "entry": "redact",
+      "input": "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\", error_description=\"The access token expired\"",
+      "hostOutput": "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\", error_description=\"The access token expired\"",
+      "mustGo": [],
+      "mustStay": [
+        "WWW",
+        "Authenticate",
+        "Bearer",
+        "realm",
+        "api",
+        "error",
+        "invalid_token",
+        "error_description",
+        "The",
+        "access",
+        "token",
+        "expired"
+      ]
+    },
+    {
+      "id": "case-256",
+      "cases": [
+        256
+      ],
+      "testLine": 910,
+      "class": "C",
+      "entry": "redact",
+      "input": "WWW-Authenticate: Digest realm=\"creatio\", qop=\"auth\", nonce=\"x7Kq2m\", opaque=\"9fQ2\"",
+      "hostOutput": "WWW-Authenticate: Digest realm=\"creatio\", qop=\"auth\", nonce=\"x7Kq2m\", opaque=\"9fQ2\"",
+      "mustGo": [],
+      "mustStay": [
+        "WWW",
+        "Authenticate",
+        "Digest",
+        "realm",
+        "creatio",
+        "qop",
+        "auth",
+        "nonce",
+        "x7Kq2m",
+        "opaque",
+        "9fQ2"
+      ]
+    },
+    {
+      "id": "case-257",
+      "cases": [
+        257
+      ],
+      "testLine": 911,
+      "class": "A",
+      "entry": "redact",
+      "input": "{\"Authorization\":\"Basic dXNlcjpwYXNz=\"}",
+      "hostOutput": "{\"Authorization\":\"Basic [redacted]\"}",
+      "mustGo": [
+        "dXNlcjpwYXNz="
+      ],
+      "mustStay": [
+        "Authorization"
+      ],
+      "note": "The JSON property rule replaces the whole credential-keyed value, scheme word included: stricter than the host."
+    },
+    {
+      "id": "case-258",
+      "cases": [
+        258
+      ],
+      "testLine": 912,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Digest username=\"Supervisor\", realm=\"creatio\", nonce=\"x7Kq2m\", uri=\"/0/rest\", response=\"9fQ2\" failed",
+      "hostOutput": "Authorization: Digest [redacted] failed",
+      "mustGo": [
+        "username=\"Supervisor\", realm=\"creatio\", nonce=\"x7Kq2m\", uri=\"/0/rest\", response=\"9fQ2"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Digest",
+        "failed"
+      ]
+    },
+    {
+      "id": "case-259",
+      "cases": [
+        259
+      ],
+      "testLine": 914,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Digest nonce=\"x7Kq2m\", cnonce=\"0a4f113b\"",
+      "hostOutput": "Authorization: Digest [redacted]",
+      "mustGo": [
+        "nonce=\"x7Kq2m\", cnonce=\"0a4f113b"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Digest"
+      ]
+    },
+    {
+      "id": "case-260",
+      "cases": [
+        260
+      ],
+      "testLine": 917,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Digest realm=\"creatio\" , username=\"jdoe\", response=\"9fQ2x7Kq\" failed",
+      "hostOutput": "Authorization: Digest [redacted] failed",
+      "mustGo": [
+        "realm=\"creatio\" , username=\"jdoe\", response=\"9fQ2x7Kq"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Digest",
+        "failed"
+      ]
+    },
+    {
+      "id": "case-261",
+      "cases": [
+        261
+      ],
+      "testLine": 918,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Digest username=\"jdoe\" , realm=\"creatio\" ,response=\"9fQ2x7Kq\"",
+      "hostOutput": "Authorization: Digest [redacted]",
+      "mustGo": [
+        "username=\"jdoe\" , realm=\"creatio\" ,response=\"9fQ2x7Kq"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Digest"
+      ]
+    },
+    {
+      "id": "case-262",
+      "cases": [
+        262
+      ],
+      "testLine": 919,
+      "class": "C",
+      "entry": "redact",
+      "input": "WWW-Authenticate: Digest realm=\"creatio\" , qop=\"auth\" , nonce=\"x7Kq2m\"",
+      "hostOutput": "WWW-Authenticate: Digest realm=\"creatio\" , qop=\"auth\" , nonce=\"x7Kq2m\"",
+      "mustGo": [],
+      "mustStay": [
+        "WWW",
+        "Authenticate",
+        "Digest",
+        "realm",
+        "creatio",
+        "qop",
+        "auth",
+        "nonce",
+        "x7Kq2m"
+      ]
+    },
+    {
+      "id": "case-263",
+      "cases": [
+        263
+      ],
+      "testLine": 925,
+      "class": "A",
+      "entry": "redact",
+      "input": "{\"headers\":{\"authorization\":\"basic amRvZTpwNHNz\"}}",
+      "hostOutput": "{\"headers\":{\"authorization\":\"basic [redacted]\"}}",
+      "mustGo": [
+        "amRvZTpwNHNz"
+      ],
+      "mustStay": [
+        "headers",
+        "authorization"
+      ],
+      "note": "The JSON property rule replaces the whole credential-keyed value, scheme word included: stricter than the host."
+    },
+    {
+      "id": "case-264",
+      "cases": [
+        264
+      ],
+      "testLine": 926,
+      "class": "A",
+      "entry": "redact",
+      "input": "Authorization: bearer abc123",
+      "hostOutput": "Authorization: bearer [redacted]",
+      "mustGo": [
+        "abc123"
+      ],
+      "mustStay": [
+        "Authorization",
+        "bearer"
+      ]
+    },
+    {
+      "id": "case-265",
+      "cases": [
+        265
+      ],
+      "testLine": 927,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: ntlm TlRMTVNTUAAB",
+      "hostOutput": "Authorization: ntlm [redacted]",
+      "mustGo": [
+        "TlRMTVNTUAAB"
+      ],
+      "mustStay": [
+        "Authorization",
+        "ntlm"
+      ]
+    },
+    {
+      "id": "case-266",
+      "cases": [
+        266
+      ],
+      "testLine": 928,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: negotiate YIIGhgYGKwYBBQUCoIIGejCCBnag",
+      "hostOutput": "Authorization: negotiate [redacted]",
+      "mustGo": [
+        "YIIGhgYGKwYBBQUCoIIGejCCBnag"
+      ],
+      "mustStay": [
+        "Authorization",
+        "negotiate"
+      ]
+    },
+    {
+      "id": "case-267",
+      "cases": [
+        267
+      ],
+      "testLine": 929,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Negotiate YIIGhgYGKwYBBQUCoIIGejCCBnag",
+      "hostOutput": "Authorization: Negotiate [redacted]",
+      "mustGo": [
+        "YIIGhgYGKwYBBQUCoIIGejCCBnag"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Negotiate"
+      ]
+    },
+    {
+      "id": "case-268",
+      "cases": [
+        268
+      ],
+      "testLine": 930,
+      "class": "B",
+      "kind": "scheme",
+      "entry": "redact",
+      "input": "Authorization: Ntlm TlRMTVNTUAABAAAAB4IIog==; bEARER x7q2Abc9dEf0",
+      "hostOutput": "Authorization: Ntlm [redacted]; bEARER [redacted]",
+      "mustGo": [
+        "TlRMTVNTUAABAAAAB4IIog==",
+        "x7q2Abc9dEf0"
+      ],
+      "mustStay": [
+        "Authorization",
+        "Ntlm",
+        "bEARER"
+      ]
+    },
+    {
+      "id": "case-269",
+      "cases": [
+        269
+      ],
+      "testLine": 931,
+      "class": "A",
+      "entry": "redact",
+      "input": "bearer X7q2",
+      "hostOutput": "bearer [redacted]",
+      "mustGo": [
+        "X7q2"
+      ],
+      "mustStay": [
+        "bearer"
+      ]
+    },
+    {
+      "id": "case-270",
+      "cases": [
+        270
+      ],
+      "testLine": 934,
+      "class": "C",
+      "entry": "redact",
+      "input": "Could not negotiate TLS 1.2",
+      "hostOutput": "Could not negotiate TLS 1.2",
+      "mustGo": [],
+      "mustStay": [
+        "Could",
+        "not",
+        "negotiate",
+        "TLS"
+      ]
+    },
+    {
+      "id": "case-271",
+      "cases": [
+        271
+      ],
+      "testLine": 934,
+      "class": "C",
+      "entry": "redact",
+      "input": "basic HTTP authentication is disabled",
+      "hostOutput": "basic HTTP authentication is disabled",
+      "mustGo": [],
+      "mustStay": [
+        "basic",
+        "HTTP",
+        "authentication",
+        "is",
+        "disabled"
+      ]
+    },
+    {
+      "id": "case-272",
+      "cases": [
+        272
+      ],
+      "testLine": 934,
+      "class": "C",
+      "entry": "redact",
+      "input": "basic SSO",
+      "hostOutput": "basic SSO",
+      "mustGo": [],
+      "mustStay": [
+        "basic",
+        "SSO"
+      ]
+    },
+    {
+      "id": "case-273",
+      "cases": [
+        273
+      ],
+      "testLine": 934,
+      "class": "C",
+      "entry": "redact",
+      "input": "Could not negotiate HTTP/1.1",
+      "hostOutput": "Could not negotiate HTTP/1.1",
+      "mustGo": [],
+      "mustStay": [
+        "Could",
+        "not",
+        "negotiate",
+        "HTTP"
+      ]
+    },
+    {
+      "id": "case-274",
+      "cases": [
+        274
+      ],
+      "testLine": 935,
+      "class": "A",
+      "entry": "redact",
+      "input": "Authorization: bearer ABCDEFGH",
+      "hostOutput": "Authorization: bearer [redacted]",
+      "mustGo": [
+        "ABCDEFGH"
+      ],
+      "mustStay": [
+        "Authorization",
+        "bearer"
+      ]
+    },
+    {
+      "id": "case-275",
+      "cases": [
+        275
+      ],
+      "testLine": 936,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "BASIC HTTP authentication is disabled",
+      "hostOutput": "BASIC [redacted] authentication is disabled",
+      "mustGo": [],
+      "mustStay": [
+        "BASIC",
+        "HTTP",
+        "authentication",
+        "is",
+        "disabled"
+      ]
+    },
+    {
+      "id": "case-276",
+      "cases": [
+        276
+      ],
+      "testLine": 938,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "a basic OAuth flow",
+      "hostOutput": "a basic [redacted] flow",
+      "mustGo": [],
+      "mustStay": [
+        "basic",
+        "OAuth",
+        "flow"
+      ]
+    },
+    {
+      "id": "case-277",
+      "cases": [
+        277
+      ],
+      "testLine": 944,
+      "class": "A",
+      "entry": "redact",
+      "input": "Path=C:\\Secrets\\db.config",
+      "hostOutput": "Path=[redacted-path]",
+      "mustGo": [
+        "C:\\Secrets\\db.config"
+      ],
+      "mustStay": [
+        "Path"
+      ]
+    },
+    {
+      "id": "case-278",
+      "cases": [
+        278
+      ],
+      "testLine": 947,
+      "class": "A",
+      "entry": "redact",
+      "input": "Cannot read path=\"C:\\x\\y\"",
+      "hostOutput": "Cannot read path=[redacted-path]",
+      "mustGo": [
+        "C:\\x\\y"
+      ],
+      "mustStay": [
+        "Cannot",
+        "read",
+        "path"
+      ]
+    },
+    {
+      "id": "case-279",
+      "cases": [
+        279
+      ],
+      "testLine": 948,
+      "class": "B",
+      "kind": "path",
+      "entry": "redact",
+      "input": "Cannot read \"D:/x/y\"",
+      "hostOutput": "Cannot read [redacted-path]",
+      "mustGo": [
+        "D:/x/y"
+      ],
+      "mustStay": [
+        "Cannot",
+        "read"
+      ]
+    },
+    {
+      "id": "case-280",
+      "cases": [
+        280
+      ],
+      "testLine": 949,
+      "class": "A",
+      "entry": "redact",
+      "input": "file|D:\\data\\x.txt",
+      "hostOutput": "file|[redacted-path]",
+      "mustGo": [
+        "D:\\data\\x.txt"
+      ],
+      "mustStay": [
+        "file"
+      ]
+    },
+    {
+      "id": "case-281",
+      "cases": [
+        281
+      ],
+      "testLine": 950,
+      "class": "B",
+      "kind": "path",
+      "entry": "redact",
+      "input": "Path=C:/Secrets/db.config",
+      "hostOutput": "Path=[redacted-path]",
+      "mustGo": [
+        "C:/Secrets/db.config"
+      ],
+      "mustStay": [
+        "Path"
+      ]
+    },
+    {
+      "id": "case-282",
+      "cases": [
+        282
+      ],
+      "testLine": 951,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "Instance='SQL01\\SQLEXPRESS' is down; see (C:\\x\\y.dll) or x,E:\\q",
+      "hostOutput": "Instance=[redacted-path] is down; see ([redacted-path]) or x,[redacted-path]",
+      "mustGo": [
+        "SQL01\\SQLEXPRESS",
+        "C:\\x\\y.dll",
+        "E:\\q"
+      ],
+      "mustStay": [
+        "Instance",
+        "is",
+        "down",
+        "see",
+        "or"
+      ]
+    },
+    {
+      "id": "case-283",
+      "cases": [
+        283
+      ],
+      "testLine": 954,
+      "class": "A",
+      "entry": "redact",
+      "input": "see <C:\\Users\\jdoe\\secret.txt> or x.D:\\y",
+      "hostOutput": "see <[redacted-path]> or x.[redacted-path]",
+      "mustGo": [
+        "C:\\Users\\jdoe\\secret.txt",
+        "D:\\y"
+      ],
+      "mustStay": [
+        "see",
+        "or"
+      ]
+    },
+    {
+      "id": "case-284",
+      "cases": [
+        284
+      ],
+      "testLine": 955,
+      "class": "A",
+      "entry": "redact",
+      "input": "Cannot read </opt/creatio> or {/etc/x}",
+      "hostOutput": "Cannot read <[redacted-path]> or {[redacted-path]}",
+      "mustGo": [
+        "/opt/creatio",
+        "/etc/x"
+      ],
+      "mustStay": [
+        "Cannot",
+        "read",
+        "or"
+      ]
+    },
+    {
+      "id": "case-285",
+      "cases": [
+        285
+      ],
+      "testLine": 957,
+      "class": "B",
+      "kind": "db/server",
+      "entry": "site",
+      "input": "(SQL01\\SQLEXPRESS)",
+      "hostOutput": "([redacted-path])",
+      "mustGo": [
+        "SQL01\\SQLEXPRESS"
+      ],
+      "mustStay": []
+    },
+    {
+      "id": "case-286",
+      "cases": [
+        286
+      ],
+      "testLine": 959,
+      "class": "C",
+      "entry": "redact",
+      "input": "Status:500 at Line:42",
+      "hostOutput": "Status:500 at Line:42",
+      "mustGo": [],
+      "mustStay": [
+        "Status",
+        "500",
+        "at",
+        "Line",
+        "42"
+      ]
+    },
+    {
+      "id": "case-287",
+      "cases": [
+        287
+      ],
+      "testLine": 963,
+      "class": "A",
+      "entry": "redact",
+      "input": "Cannot read `/etc/creatio/appsettings.json`",
+      "hostOutput": "Cannot read `[redacted-path]",
+      "mustGo": [
+        "/etc/creatio/appsettings.json"
+      ],
+      "mustStay": [
+        "Cannot",
+        "read"
+      ]
+    },
+    {
+      "id": "case-288",
+      "cases": [
+        288
+      ],
+      "testLine": 964,
+      "class": "B",
+      "kind": "path",
+      "entry": "site",
+      "input": "Cannot read ~/creatio/ConnectionStrings.config or ./Terrasoft.WebApp/ConnectionStrings.config",
+      "hostOutput": "Cannot read [redacted-path] or [redacted-path]",
+      "mustGo": [
+        "~/creatio/ConnectionStrings.config",
+        "./Terrasoft.WebApp/ConnectionStrings.config"
+      ],
+      "mustStay": [
+        "Cannot",
+        "read",
+        "or"
+      ]
+    },
+    {
+      "id": "case-289",
+      "cases": [
+        289
+      ],
+      "testLine": 965,
+      "class": "B",
+      "kind": "path",
+      "entry": "site",
+      "input": "Error in |/var/lib/creatio/x and ../conf/x.config",
+      "hostOutput": "Error in |[redacted-path] and [redacted-path]",
+      "mustGo": [
+        "/var/lib/creatio/x",
+        "../conf/x.config"
+      ],
+      "mustStay": [
+        "Error",
+        "in",
+        "and"
+      ]
+    },
+    {
+      "id": "case-291",
+      "cases": [
+        291
+      ],
+      "testLine": 972,
+      "class": "C",
+      "entry": "redact",
+      "input": "Status:500 at Line:42, Column:12",
+      "hostOutput": "Status:500 at Line:42, Column:12",
+      "mustGo": [],
+      "mustStay": [
+        "Status",
+        "500",
+        "at",
+        "Line",
+        "42",
+        "Column",
+        "12"
+      ]
+    },
+    {
+      "id": "case-292",
+      "cases": [
+        292
+      ],
+      "testLine": 973,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Cannot reach SQLPROD01:1433",
+      "hostOutput": "Cannot reach [redacted-host]",
+      "mustGo": [
+        "SQLPROD01:1433"
+      ],
+      "mustStay": [
+        "Cannot",
+        "reach"
+      ]
+    },
+    {
+      "id": "case-293",
+      "cases": [
+        293
+      ],
+      "testLine": 975,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "It was not possible to connect to the redis server(s). UnableToConnect on redis:6379/Interactive",
+      "hostOutput": "It was not possible to connect to the redis server(s). UnableToConnect on [redacted-host]/Interactive",
+      "mustGo": [
+        "redis:6379"
+      ],
+      "mustStay": [
+        "It",
+        "was",
+        "not",
+        "possible",
+        "to",
+        "connect",
+        "the",
+        "redis",
+        "server",
+        "UnableToConnect",
+        "on",
+        "Interactive"
+      ]
+    },
+    {
+      "id": "case-294",
+      "cases": [
+        294
+      ],
+      "testLine": 976,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "No connection could be made: postgres:5432",
+      "hostOutput": "No connection could be made: [redacted-host]",
+      "mustGo": [
+        "postgres:5432"
+      ],
+      "mustStay": [
+        "No",
+        "connection",
+        "could",
+        "be",
+        "made"
+      ]
+    },
+    {
+      "id": "case-295",
+      "cases": [
+        295
+      ],
+      "testLine": 977,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "timeout connecting to postgres-primary:5432",
+      "hostOutput": "timeout connecting to [redacted-host]",
+      "mustGo": [
+        "postgres-primary:5432"
+      ],
+      "mustStay": [
+        "timeout",
+        "connecting",
+        "to"
+      ]
+    },
+    {
+      "id": "case-296",
+      "cases": [
+        296
+      ],
+      "testLine": 978,
+      "class": "B",
+      "kind": "host/ip",
+      "entry": "redact",
+      "input": "Cannot reach DBSERVER:1433",
+      "hostOutput": "Cannot reach [redacted-host]",
+      "mustGo": [
+        "DBSERVER:1433"
+      ],
+      "mustStay": [
+        "Cannot",
+        "reach"
+      ]
+    },
+    {
+      "id": "case-297",
+      "cases": [
+        297
+      ],
+      "testLine": 980,
+      "class": "C",
+      "kind": "over-redaction",
+      "entry": "redact",
+      "input": "Error in UsrOrderPage.js:42:13",
+      "hostOutput": "Error in UsrOrderPage.js:42:13",
+      "mustGo": [],
+      "mustStay": [
+        "Error",
+        "in",
+        "UsrOrderPage",
+        "js",
+        "42",
+        "13"
+      ]
+    },
+    {
+      "id": "case-298",
+      "cases": [
+        298
+      ],
+      "testLine": 982,
+      "class": "A",
+      "entry": "redact",
+      "input": "</b>error in </opt/creatio/x",
+      "hostOutput": "</b>error in <[redacted-path]",
+      "mustGo": [
+        "/opt/creatio/x"
+      ],
+      "mustStay": [
+        "error",
+        "in"
+      ]
+    },
+    {
+      "id": "case-299",
+      "cases": [
+        299
+      ],
+      "testLine": 984,
+      "class": "A",
+      "entry": "redact",
+      "input": "connectionString=\"Data Source=x;Initial Catalog=bpm\"",
+      "hostOutput": "connectionString=\"Data Source=[redacted];Initial Catalog=[redacted]\"",
+      "mustGo": [
+        "ce=x",
+        "=bpm"
+      ],
+      "mustStay": [
+        "connectionString"
+      ],
+      "note": "clio replaces the whole quoted connection string, keys included: stricter than the host, not a leak."
+    },
+    {
+      "id": "case-300",
+      "cases": [
+        300
+      ],
+      "testLine": 985,
+      "class": "A",
+      "entry": "redact",
+      "input": "conn='Server=db01;Password=hunter2'",
+      "hostOutput": "conn='Server=[redacted];Password=[redacted]'",
+      "mustGo": [
+        "db01",
+        "hunter2"
+      ],
+      "mustStay": [
+        "conn",
+        "Server",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-301",
+      "cases": [
+        301
+      ],
+      "testLine": 987,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "Guid=3f2a9c1b-7d4e-4a5b-9c8d-0e1f2a3b4c5d; parentGuid=7e1f2a3b-4c5d-4a5b-9c8d-0e1f2a3b4c5d; db_uid=sa; UserUid=x",
+      "hostOutput": "Guid=3f2a9c1b-7d4e-4a5b-9c8d-0e1f2a3b4c5d; parentGuid=7e1f2a3b-4c5d-4a5b-9c8d-0e1f2a3b4c5d; db_uid=[redacted]; UserUid=[redacted]",
+      "mustGo": [
+        "d=sa",
+        "id=x"
+      ],
+      "mustStay": [
+        "Guid",
+        "3f2a9c1b",
+        "7d4e",
+        "4a5b",
+        "9c8d",
+        "0e1f2a3b4c5d",
+        "parentGuid",
+        "7e1f2a3b",
+        "4c5d",
+        "db_uid",
+        "UserUid"
+      ]
+    },
+    {
+      "id": "case-302",
+      "cases": [
+        302
+      ],
+      "testLine": 992,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "Invalid API key: sk_test_Rw7Zq2LmXv9TbN",
+      "hostOutput": "Invalid API key: [redacted]",
+      "mustGo": [
+        "sk_test_Rw7Zq2LmXv9TbN"
+      ],
+      "mustStay": [
+        "Invalid",
+        "API",
+        "key"
+      ]
+    },
+    {
+      "id": "case-303",
+      "cases": [
+        303
+      ],
+      "testLine": 993,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "Invalid API key: sk_test_qZXrbLwYvH",
+      "hostOutput": "Invalid API key: [redacted]",
+      "mustGo": [
+        "sk_test_qZXrbLwYvH"
+      ],
+      "mustStay": [
+        "Invalid",
+        "API",
+        "key"
+      ]
+    },
+    {
+      "id": "case-304",
+      "cases": [
+        304
+      ],
+      "testLine": 994,
+      "class": "A",
+      "entry": "redact",
+      "input": "Invalid token: x7Kq2mVb9Lp",
+      "hostOutput": "Invalid token: [redacted]",
+      "mustGo": [
+        "x7Kq2mVb9Lp"
+      ],
+      "mustStay": [
+        "Invalid",
+        "token"
+      ]
+    },
+    {
+      "id": "case-305",
+      "cases": [
+        305
+      ],
+      "testLine": 995,
+      "class": "A",
+      "entry": "redact",
+      "input": "Access token: 4c9e1a7f0b3d8e2a",
+      "hostOutput": "Access token: [redacted]",
+      "mustGo": [
+        "4c9e1a7f0b3d8e2a"
+      ],
+      "mustStay": [
+        "Access",
+        "token"
+      ]
+    },
+    {
+      "id": "case-306",
+      "cases": [
+        306
+      ],
+      "testLine": 996,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "Secret key: m4tQz8Rv!k",
+      "hostOutput": "Secret key: [redacted]",
+      "mustGo": [
+        "m4tQz8Rv!k"
+      ],
+      "mustStay": [
+        "Secret",
+        "key"
+      ]
+    },
+    {
+      "id": "case-307",
+      "cases": [
+        307
+      ],
+      "testLine": 997,
+      "class": "A",
+      "entry": "redact",
+      "input": "Refresh token: t2NcY8wQhL5pZ0d",
+      "hostOutput": "Refresh token: [redacted]",
+      "mustGo": [
+        "t2NcY8wQhL5pZ0d"
+      ],
+      "mustStay": [
+        "Refresh",
+        "token"
+      ]
+    },
+    {
+      "id": "case-308",
+      "cases": [
+        308
+      ],
+      "testLine": 998,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "API key: abcdefghXYZ",
+      "hostOutput": "API key: [redacted]",
+      "mustGo": [
+        "abcdefghXYZ"
+      ],
+      "mustStay": [
+        "API",
+        "key"
+      ]
+    },
+    {
+      "id": "case-309",
+      "cases": [
+        309
+      ],
+      "testLine": 999,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "key:x7Kq2mVb9Lp and token:9fQ2",
+      "hostOutput": "key:[redacted] and token:[redacted]",
+      "mustGo": [
+        "x7Kq2mVb9Lp",
+        "9fQ2"
+      ],
+      "mustStay": [
+        "key",
+        "and",
+        "token"
+      ]
+    },
+    {
+      "id": "case-310",
+      "cases": [
+        310
+      ],
+      "testLine": 1001,
+      "class": "C",
+      "kind": "over-redaction",
+      "entry": "redact",
+      "input": "Key: UsrStatus; key: UsrOrder_FormPage; token: expired; key:UsrStatus",
+      "hostOutput": "Key: UsrStatus; key: UsrOrder_FormPage; token: expired; key:UsrStatus",
+      "mustGo": [],
+      "mustStay": [
+        "Key",
+        "UsrStatus",
+        "key",
+        "UsrOrder_FormPage",
+        "token",
+        "expired"
+      ]
+    },
+    {
+      "id": "case-311",
+      "cases": [
+        311
+      ],
+      "testLine": 1002,
+      "class": "A",
+      "entry": "redact",
+      "input": "token: Bearer x7Kq2mVb9Lp",
+      "hostOutput": "token: Bearer [redacted]",
+      "mustGo": [
+        "x7Kq2mVb9Lp"
+      ],
+      "mustStay": [
+        "token",
+        "Bearer"
+      ]
+    },
+    {
+      "id": "case-312",
+      "cases": [
+        312
+      ],
+      "testLine": 1007,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "passwordConfirmation=hunter2",
+      "hostOutput": "passwordConfirmation=[redacted]",
+      "mustGo": [
+        "hunter2"
+      ],
+      "mustStay": [
+        "passwordConfirmation"
+      ]
+    },
+    {
+      "id": "case-313",
+      "cases": [
+        313
+      ],
+      "testLine": 1008,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "password_confirmation=hunter2, password_repeat=hunter2",
+      "hostOutput": "password_confirmation=[redacted], password_repeat=[redacted]",
+      "mustGo": [
+        "n=hunter2",
+        "t=hunter2"
+      ],
+      "mustStay": [
+        "password_confirmation",
+        "password_repeat"
+      ]
+    },
+    {
+      "id": "case-314",
+      "cases": [
+        314
+      ],
+      "testLine": 1009,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "PasswordNew=hunter2; PasswordOld=hunter1",
+      "hostOutput": "PasswordNew=[redacted]; PasswordOld=[redacted]",
+      "mustGo": [
+        "hunter2",
+        "hunter1"
+      ],
+      "mustStay": [
+        "PasswordNew",
+        "PasswordOld"
+      ]
+    },
+    {
+      "id": "case-315",
+      "cases": [
+        315
+      ],
+      "testLine": 1010,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "{\"newPassword\":\"hunter2\",\"passwordConfirm\":\"hunter2\"}",
+      "hostOutput": "{\"newPassword\":[redacted],\"passwordConfirm\":[redacted]}",
+      "mustGo": [
+        "d\":\"hunter2",
+        "m\":\"hunter2"
+      ],
+      "mustStay": [
+        "newPassword",
+        "passwordConfirm"
+      ]
+    },
+    {
+      "id": "case-316",
+      "cases": [
+        316
+      ],
+      "testLine": 1011,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "PassPhrase_backup=x; dbpassword_old=y; passcode-retry=z",
+      "hostOutput": "PassPhrase_backup=[redacted]; dbpassword_old=[redacted]; passcode-retry=[redacted]",
+      "mustGo": [
+        "up=x",
+        "ld=y",
+        "ry=z"
+      ],
+      "mustStay": [
+        "PassPhrase_backup",
+        "dbpassword_old",
+        "passcode",
+        "retry"
+      ]
+    },
+    {
+      "id": "case-317",
+      "cases": [
+        317
+      ],
+      "testLine": 1013,
+      "class": "C",
+      "entry": "redact",
+      "input": "password_reset=on; PasswordExpired=true; PasswordHash=x1; BypassCache=true",
+      "hostOutput": "password_reset=on; PasswordExpired=true; PasswordHash=x1; BypassCache=true",
+      "mustGo": [],
+      "mustStay": [
+        "password_reset",
+        "on",
+        "PasswordExpired",
+        "true",
+        "PasswordHash",
+        "x1",
+        "BypassCache"
+      ]
+    },
+    {
+      "id": "case-318",
+      "cases": [
+        318
+      ],
+      "testLine": 1018,
+      "class": "A",
+      "entry": "redact",
+      "input": "Data Source=\"C:\\data\\\"; Password=\"hunter2\"",
+      "hostOutput": "Data Source=[redacted]; Password=[redacted]",
+      "mustGo": [
+        "C:\\data\\",
+        "hunter2"
+      ],
+      "mustStay": [
+        "Data",
+        "Source",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-319",
+      "cases": [
+        319
+      ],
+      "testLine": 1019,
+      "class": "A",
+      "entry": "redact",
+      "input": "Server=\"C:\\x\\\", Password=\"hunter2\"",
+      "hostOutput": "Server=[redacted], Password=[redacted]",
+      "mustGo": [
+        "C:\\x\\",
+        "hunter2"
+      ],
+      "mustStay": [
+        "Server",
+        "Password"
+      ]
+    },
+    {
+      "id": "case-320",
+      "cases": [
+        320
+      ],
+      "testLine": 1020,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "{\"password\":\"abc\\\", \"user\":\"sa\"}",
+      "hostOutput": "{\"password\":[redacted], \"user\":[redacted]}",
+      "mustGo": [
+        "abc\\"
+      ],
+      "mustStay": [
+        "password",
+        "user"
+      ],
+      "note": "The \"user\" value is a JSON-shape artifact of the input (analysis kind 3): only the password goes."
+    },
+    {
+      "id": "case-321",
+      "cases": [
+        321
+      ],
+      "testLine": 1021,
+      "class": "A",
+      "entry": "redact",
+      "input": "{\"Password\":\"C:\\x\\\"}",
+      "hostOutput": "{\"Password\":[redacted]}",
+      "mustGo": [
+        "C:\\x\\"
+      ],
+      "mustStay": [
+        "Password"
+      ]
+    },
+    {
+      "id": "case-322",
+      "cases": [
+        322
+      ],
+      "testLine": 1023,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "password=\"he said \\\"no\\\"\" end",
+      "hostOutput": "password=[redacted] end",
+      "mustGo": [
+        "he said \\\"no\\"
+      ],
+      "mustStay": [
+        "password",
+        "end"
+      ]
+    },
+    {
+      "id": "case-323",
+      "cases": [
+        323
+      ],
+      "testLine": 1024,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "password='it\\'s' end",
+      "hostOutput": "password=[redacted] end",
+      "mustGo": [
+        "it\\'s"
+      ],
+      "mustStay": [
+        "password",
+        "end"
+      ]
+    },
+    {
+      "id": "case-324",
+      "cases": [
+        324
+      ],
+      "testLine": 1025,
+      "class": "A",
+      "entry": "redact",
+      "input": "password=\"a\\\\\" end",
+      "hostOutput": "password=[redacted] end",
+      "mustGo": [
+        "\"a\\\\"
+      ],
+      "mustStay": [
+        "password",
+        "end"
+      ]
+    },
+    {
+      "id": "case-325",
+      "cases": [
+        325
+      ],
+      "testLine": 1030,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "FATAL: too many connections for role \"creatio\"",
+      "hostOutput": "FATAL: too many connections for role \"[redacted]\"",
+      "mustGo": [
+        "creatio"
+      ],
+      "mustStay": [
+        "FATAL",
+        "too",
+        "many",
+        "connections",
+        "for",
+        "role"
+      ]
+    },
+    {
+      "id": "case-326",
+      "cases": [
+        326
+      ],
+      "testLine": 1031,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "FATAL: role \"creatio\" is not permitted to log in",
+      "hostOutput": "FATAL: role \"[redacted]\" is not permitted to log in",
+      "mustGo": [
+        "creatio"
+      ],
+      "mustStay": [
+        "FATAL",
+        "role",
+        "is",
+        "not",
+        "permitted",
+        "to",
+        "log",
+        "in"
+      ]
+    },
+    {
+      "id": "case-327",
+      "cases": [
+        327
+      ],
+      "testLine": 1032,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "must be member of role \"creatio_owner\"",
+      "hostOutput": "must be member of role \"[redacted]\"",
+      "mustGo": [
+        "creatio_owner"
+      ],
+      "mustStay": [
+        "must",
+        "be",
+        "member",
+        "of",
+        "role"
+      ]
+    },
+    {
+      "id": "case-328",
+      "cases": [
+        328
+      ],
+      "testLine": 1033,
+      "class": "B",
+      "kind": "sign-in",
+      "entry": "site",
+      "input": "permission denied to set role \"creatio_admin\"",
+      "hostOutput": "permission denied to set role \"[redacted]\"",
+      "mustGo": [
+        "creatio_admin"
+      ],
+      "mustStay": [
+        "permission",
+        "denied",
+        "to",
+        "set",
+        "role"
+      ]
+    },
+    {
+      "id": "case-329",
+      "cases": [
+        329
+      ],
+      "testLine": 1035,
+      "class": "C",
+      "entry": "redact",
+      "input": "User is not a member of role \"Sales managers\"",
+      "hostOutput": "User is not a member of role \"Sales managers\"",
+      "mustGo": [],
+      "mustStay": [
+        "User",
+        "is",
+        "not",
+        "member",
+        "of",
+        "role",
+        "Sales",
+        "managers"
+      ]
+    },
+    {
+      "id": "case-330",
+      "cases": [
+        330
+      ],
+      "testLine": 1035,
+      "class": "C",
+      "entry": "redact",
+      "input": "Cannot set role \"Sales managers\" for this user",
+      "hostOutput": "Cannot set role \"Sales managers\" for this user",
+      "mustGo": [],
+      "mustStay": [
+        "Cannot",
+        "set",
+        "role",
+        "Sales",
+        "managers",
+        "for",
+        "this",
+        "user"
+      ]
+    },
+    {
+      "id": "case-331",
+      "cases": [
+        331
+      ],
+      "testLine": 1035,
+      "class": "C",
+      "entry": "redact",
+      "input": "role \"Sales managers\" is not permitted to read Orders",
+      "hostOutput": "role \"Sales managers\" is not permitted to read Orders",
+      "mustGo": [],
+      "mustStay": [
+        "role",
+        "Sales",
+        "managers",
+        "is",
+        "not",
+        "permitted",
+        "to",
+        "read",
+        "Orders"
+      ]
+    },
+    {
+      "id": "case-332",
+      "cases": [
+        332
+      ],
+      "testLine": 1037,
+      "class": "B",
+      "kind": "cred-key",
+      "entry": "redact",
+      "input": "Login failed: password=\"!Passw0rd",
+      "hostOutput": "Login failed: password=[redacted]",
+      "mustGo": [
+        "!Passw0rd"
+      ],
+      "mustStay": [
+        "Login",
+        "failed",
+        "password"
+      ]
+    },
+    {
+      "id": "case-333",
+      "cases": [
+        333
+      ],
+      "testLine": 1039,
+      "class": "C",
+      "entry": "redact",
+      "input": "Access denied for role \"Sales managers\"; the role \"Sales managers\" is not active",
+      "hostOutput": "Access denied for role \"Sales managers\"; the role \"Sales managers\" is not active",
+      "mustGo": [],
+      "mustStay": [
+        "Access",
+        "denied",
+        "for",
+        "role",
+        "Sales",
+        "managers",
+        "the",
+        "is",
+        "not",
+        "active"
+      ]
+    },
+    {
+      "id": "case-334",
+      "cases": [
+        334
+      ],
+      "testLine": 1044,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Value cannot be null.\\r\\nParameter name: password",
+      "hostOutput": "Value cannot be null.",
+      "mustGo": [],
+      "mustStay": [
+        "Value",
+        "cannot",
+        "be",
+        "null",
+        "Parameter name: password"
+      ],
+      "note": "The parameter name is the reason (plan: \"Not the host's first-line cut\"); it must stay."
+    },
+    {
+      "id": "case-335",
+      "cases": [
+        335
+      ],
+      "testLine": 1044,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Error\\n<x",
+      "hostOutput": "Error",
+      "mustGo": [],
+      "mustStay": [
+        "Error"
+      ],
+      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+    },
+    {
+      "id": "case-336",
+      "cases": [
+        336
+      ],
+      "testLine": 1044,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Error\\n>x",
+      "hostOutput": "Error",
+      "mustGo": [],
+      "mustStay": [
+        "Error"
+      ],
+      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+    },
+    {
+      "id": "case-337",
+      "cases": [
+        337
+      ],
+      "testLine": 1044,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Error\\n\"x",
+      "hostOutput": "Error",
+      "mustGo": [],
+      "mustStay": [
+        "Error"
+      ],
+      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+    },
+    {
+      "id": "case-338",
+      "cases": [
+        338
+      ],
+      "testLine": 1044,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Error\\n|x",
+      "hostOutput": "Error",
+      "mustGo": [],
+      "mustStay": [
+        "Error"
+      ],
+      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+    },
+    {
+      "id": "case-339",
+      "cases": [
+        339
+      ],
+      "testLine": 1044,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Error\\n?x",
+      "hostOutput": "Error",
+      "mustGo": [],
+      "mustStay": [
+        "Error"
+      ],
+      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+    },
+    {
+      "id": "case-340",
+      "cases": [
+        340
+      ],
+      "testLine": 1044,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Error\\n*x",
+      "hostOutput": "Error",
+      "mustGo": [],
+      "mustStay": [
+        "Error"
+      ],
+      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+    },
+    {
+      "id": "case-341",
+      "cases": [
+        341
+      ],
+      "testLine": 1045,
+      "class": "B",
+      "kind": "stack",
+      "entry": "site",
+      "input": "Error\\n<!DOCTYPE html><html><head><title>500</title></head>",
+      "hostOutput": "Error",
+      "mustGo": [
+        "\\n<!DOCTYPE html><html><head><title>500</title></head"
+      ],
+      "mustStay": [
+        "Error"
+      ]
+    },
+    {
+      "id": "case-342",
+      "cases": [
+        342
+      ],
+      "testLine": 1050,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "Cannot insert duplicate key row with unique index IX_UsrOrder_UsrNumber2_CreatedOn.",
+      "hostOutput": "Cannot insert duplicate key row with unique index [redacted-key].",
+      "mustGo": [],
+      "mustStay": [
+        "Cannot",
+        "insert",
+        "duplicate",
+        "key",
+        "row",
+        "with",
+        "unique",
+        "index",
+        "IX_UsrOrder_UsrNumber2_CreatedOn"
+      ]
+    },
+    {
+      "id": "case-343",
+      "cases": [
+        343
+      ],
+      "testLine": 1051,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "violates unique constraint \"usrorder_usrnumber2_createdon_key\"",
+      "hostOutput": "violates unique constraint \"[redacted-key]\"",
+      "mustGo": [],
+      "mustStay": [
+        "violates",
+        "unique",
+        "constraint",
+        "usrorder_usrnumber2_createdon_key"
+      ]
+    },
+    {
+      "id": "case-344",
+      "cases": [
+        344
+      ],
+      "testLine": 1055,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "Select Contact from Settings",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [],
+      "mustStay": [
+        "Select",
+        "Contact",
+        "from",
+        "Settings"
+      ]
+    },
+    {
+      "id": "case-345",
+      "cases": [
+        345
+      ],
+      "testLine": 1056,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "You cannot delete from Settings",
+      "hostOutput": "You cannot [redacted-sql]",
+      "mustGo": [],
+      "mustStay": [
+        "You",
+        "cannot",
+        "delete",
+        "from",
+        "Settings"
+      ]
+    },
+    {
+      "id": "case-346",
+      "cases": [
+        346
+      ],
+      "testLine": 1057,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "Cannot DELETE Contact from this page",
+      "hostOutput": "Cannot [redacted-sql]",
+      "mustGo": [],
+      "mustStay": [
+        "Cannot",
+        "DELETE",
+        "Contact",
+        "from",
+        "this",
+        "page"
+      ]
+    },
+    {
+      "id": "case-347",
+      "cases": [
+        347
+      ],
+      "testLine": 1058,
+      "class": "C",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "insert Contact (Name) values ('Jane Doe')",
+      "hostOutput": "insert Contact (Name) values ('Jane Doe')",
+      "mustGo": [],
+      "mustStay": [
+        "insert",
+        "Contact",
+        "Name",
+        "values",
+        "Jane",
+        "Doe"
+      ]
+    },
+    {
+      "id": "case-348",
+      "cases": [
+        348
+      ],
+      "testLine": 1058,
+      "class": "C",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "delete Contact where Name = 'Jane Doe'",
+      "hostOutput": "delete Contact where Name = 'Jane Doe'",
+      "mustGo": [],
+      "mustStay": [
+        "delete",
+        "Contact",
+        "where",
+        "Name",
+        "Jane",
+        "Doe"
+      ]
+    },
+    {
+      "id": "case-349",
+      "cases": [
+        349
+      ],
+      "testLine": 1058,
+      "class": "C",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "update Contact set",
+      "hostOutput": "update Contact set",
+      "mustGo": [],
+      "mustStay": [
+        "update",
+        "Contact",
+        "set"
+      ]
+    },
+    {
+      "id": "case-350",
+      "cases": [
+        350
+      ],
+      "testLine": 1065,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "Error in INSERT Activity: Object reference not set to an instance of an object.",
+      "hostOutput": "Error in [redacted-sql]",
+      "mustGo": [],
+      "mustStay": [
+        "Error",
+        "in",
+        "INSERT",
+        "Activity",
+        "Object",
+        "reference",
+        "not",
+        "set",
+        "to",
+        "an",
+        "instance",
+        "of",
+        "object"
+      ]
+    },
+    {
+      "id": "case-351",
+      "cases": [
+        351
+      ],
+      "testLine": 1065,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "CREATE TABLE AS specifies too many column names",
+      "hostOutput": "[redacted-sql]",
+      "mustGo": [],
+      "mustStay": [
+        "CREATE",
+        "TABLE",
+        "AS",
+        "specifies",
+        "too",
+        "many",
+        "column",
+        "names"
+      ]
+    },
+    {
+      "id": "case-352",
+      "cases": [
+        352
+      ],
+      "testLine": 1065,
+      "class": "C",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "SELECT Name failed, Phone from Contact",
+      "hostOutput": "SELECT Name failed, Phone from Contact",
+      "mustGo": [],
+      "mustStay": [
+        "SELECT",
+        "Name",
+        "failed",
+        "Phone",
+        "from",
+        "Contact"
+      ]
+    },
+    {
+      "id": "case-353",
+      "cases": [
+        353
+      ],
+      "testLine": 1066,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "Basic HTTP is off; NTLM v2 is required",
+      "hostOutput": "Basic [redacted] is off; NTLM [redacted] is required",
+      "mustGo": [],
+      "mustStay": [
+        "Basic",
+        "HTTP",
+        "is",
+        "off",
+        "NTLM",
+        "v2",
+        "required"
+      ]
+    },
+    {
+      "id": "case-354",
+      "cases": [
+        354
+      ],
+      "testLine": 1067,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "Basic HTTP authentication is disabled",
+      "hostOutput": "Basic [redacted] authentication is disabled",
+      "mustGo": [],
+      "mustStay": [
+        "Basic",
+        "HTTP",
+        "authentication",
+        "is",
+        "disabled"
+      ]
+    },
+    {
+      "id": "case-355",
+      "cases": [
+        355
+      ],
+      "testLine": 1072,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "Could not negotiate TLSv1.2",
+      "hostOutput": "Could not negotiate [redacted]",
+      "mustGo": [],
+      "mustStay": [
+        "Could",
+        "not",
+        "negotiate",
+        "TLSv1"
+      ]
+    },
+    {
+      "id": "case-356",
+      "cases": [
+        356
+      ],
+      "testLine": 1072,
+      "class": "D",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "a basic 2FA setup",
+      "hostOutput": "a basic [redacted] setup",
+      "mustGo": [],
+      "mustStay": [
+        "basic",
+        "2FA",
+        "setup"
+      ]
+    },
+    {
+      "id": "case-357",
+      "cases": [
+        357
+      ],
+      "testLine": 1072,
+      "class": "C",
+      "kind": "trade",
+      "entry": "redact",
+      "input": "bearer ABCD",
+      "hostOutput": "bearer ABCD",
+      "mustGo": [],
+      "mustStay": [
+        "bearer"
+      ],
+      "note": "Host trade: the host keeps \"ABCD\"; clio may keep it or be stricter."
+    }
+  ]
+}
