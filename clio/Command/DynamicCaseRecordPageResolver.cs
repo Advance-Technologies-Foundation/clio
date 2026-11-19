@@ -137,8 +137,11 @@ public sealed class DynamicCaseRecordPageResolver(
 			new ListEntityClientSchemasOptions { EntityName = entitySchemaName },
 			out ListEntityClientSchemasResponse response);
 		if (!read || response?.Success != true) {
+			// The card registrations' read quotes the SelectQuery answer (DataServiceSelectResponse, a follow-up
+			// reader): redacted here, where it is quoted, never the sentence and the remedy around it.
 			return NotFound($"'{entitySchemaName}' has no RelatedPage add-on default page, and its card registrations "
-				+ $"could not be read: {response?.Error ?? "no answer"}." + RemedyNamePage);
+				+ $"could not be read: {(response?.Error is { } error ? SensitiveErrorTextRedactor.RedactSiteText(error) : "no answer")}."
+				+ RemedyNamePage);
 		}
 		List<MigrationEditPageInfo> cards = (response.EditPages ?? [])
 			.Where(page => !string.IsNullOrWhiteSpace(page.CardSchema))
@@ -172,8 +175,10 @@ public sealed class DynamicCaseRecordPageResolver(
 				+ "registration." + RemedyNamePage);
 		}
 		if (string.Equals(card.Kind, ListEntityClientSchemasCommand.KindClassic, StringComparison.OrdinalIgnoreCase)) {
+			// The card's name is the environment's (SysSchema): quoted redacted, like every site text in a refusal.
 			return new RecordPageResolution([], ResolvedBySysModuleEdit, DynamicCaseErrorCodes.RecordPageNotFreedom,
-				$"'{entitySchemaName}' opens the Classic page '{card.CardSchema}', which cannot carry the Freedom UI "
+				$"'{entitySchemaName}' opens the Classic page '{SensitiveErrorTextRedactor.RedactSiteText(card.CardSchema)}', "
+				+ "which cannot carry the Freedom UI "
 				+ "stage bar. Create a Freedom UI record page (create-page) and register it as the object's default "
 				+ "(create-related-page-addon), or pass page-schema-name with an existing Freedom UI record page.", []);
 		}

@@ -1971,4 +1971,157 @@ public sealed class SiteTextWritePathWiringTests {
 	}
 
 	#endregion
+
+	#region Round 6: every branch of the record page resolver, and compile-package's poll give-up
+
+	private const string RemedyNamePage = "Pass page-schema-name with the Freedom UI record page to decorate.";
+
+	private static (DynamicCaseService Service, ILogger Logger) ResolverCase(IEntityClientSchemaReader cards) {
+		IRelatedPageAddonService addons = Substitute.For<IRelatedPageAddonService>();
+		addons.Get(Arg.Any<RelatedPageAddonReadRequest>())
+			.Returns(new RelatedPageAddonReadResult("UsrOrder", null, "UsrOrders", null, "RelatedPage", null, 0, []));
+		DynamicCasePageStep pageStep = new(new DynamicCaseRecordPageResolver(addons, cards),
+			Substitute.For<IProcessPageReader>(), Substitute.For<IPageBodyWriter>(),
+			Substitute.For<IPageDataSourceReferenceValidator>());
+		(ISettingsRepository settings, IServiceUrlBuilder urls) = CaseEnvironment();
+		(IDynamicCaseSession _, IBuildCaseClient client) = CaseSession(new BuildCaseResponse { Success = true });
+		return (new DynamicCaseService(client, pageStep, Substitute.For<IPackageDependencyManager>(), settings, urls),
+			Substitute.For<ILogger>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-dynamic-case END TO END on the card-registration branch: the object's RelatedPage add-on has no "
+		+ "employee default page, and the SysModuleEdit SelectQuery (list-entity-client-schemas, read by "
+		+ "DataServiceSelectResponse, a follow-up reader) answers with the site's text. The record page resolver quotes "
+		+ "it redacted, and clio's remedy after it stays, in the result and in the verdict line.")]
+	public void CreateDynamicCase_ShouldRedactTheCardRegistrationFailure_EndToEnd() {
+		// Arrange
+		IApplicationClient selectClient = Substitute.For<IApplicationClient>();
+		selectClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(Refusal(SiteMessage));
+		(ISettingsRepository _, IServiceUrlBuilder urls) = CaseEnvironment();
+		ListEntityClientSchemasCommand cards = new(selectClient, urls, Substitute.For<ILogger>(),
+			Substitute.For<Clio.Common.EntitySchema.IRuntimeEntitySchemaReader>(),
+			Substitute.For<ILookupDefaultDisplayValueResolver>());
+		(DynamicCaseService service, ILogger logger) = ResolverCase(cards);
+
+		// Act
+		int exitCode = new CreateDynamicCaseCommand(service, logger).Execute(CaseOptions());
+		DynamicCaseResult result = service.Create(CaseOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the record page could not be resolved");
+		result.ErrorMessage.Should().Contain("its card registrations could not be read: SelectQuery failed: " + RedactedReason,
+				because: "the site's reason stays, redacted where the resolver quotes it")
+			.And.EndWith(RemedyNamePage, because: "clio's remedy after the quote is not the site's text");
+		Logged(logger).Should().Contain(text => text.Contains(RemedyNamePage, StringComparison.Ordinal),
+			because: "the verdict line keeps the remedy");
+		foreach (string text in Logged(logger).Append(JsonSerializer.Serialize(result))) {
+			text.Should().NotContain(Marker, because: "no line or field carries the login");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-dynamic-case END TO END on the Classic-card branch: the card the object registers is named by the "
+		+ "environment (SysSchema), and the resolver quotes that name redacted; clio's remedy after it stays, in the "
+		+ "result and in the verdict line.")]
+	public void CreateDynamicCase_ShouldRedactTheClassicCardName_EndToEnd() {
+		// Arrange
+		IEntityClientSchemaReader cards = Substitute.For<IEntityClientSchemaReader>();
+		cards.TryResolve(Arg.Any<ListEntityClientSchemasOptions>(), out Arg.Any<ListEntityClientSchemasResponse>())
+			.Returns(call => {
+				call[1] = new ListEntityClientSchemasResponse {
+					Success = true,
+					EditPages = [new MigrationEditPageInfo {
+						CardSchema = "UsrOrderPage " + SiteMessage, Kind = ListEntityClientSchemasCommand.KindClassic
+					}]
+				};
+				return true;
+			});
+		(DynamicCaseService service, ILogger logger) = ResolverCase(cards);
+
+		// Act
+		new CreateDynamicCaseCommand(service, logger).Execute(CaseOptions());
+		DynamicCaseResult result = service.Create(CaseOptions());
+
+		// Assert
+		result.ErrorMessage.Should().Contain("opens the Classic page 'UsrOrderPage " + RedactedReason + "'",
+				because: "the card's name is quoted, redacted")
+			.And.EndWith("or pass page-schema-name with an existing Freedom UI record page.",
+				because: "clio's remedy stays");
+		foreach (string text in Logged(logger).Append(JsonSerializer.Serialize(result))) {
+			text.Should().NotContain(Marker, because: "no line or field carries the login");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("compile-package END TO END: the compilation-history poll gives up on a failure the ATF data provider "
+		+ "reports with the site's text (ClassifyingDataProvider, a follow-up reader). PackageBuilder chains it with that "
+		+ "text site-redacted, so the command's error line and the exception carry the reason without the login, and "
+		+ "clio's own sentences around it - the monitoring, the give-up and the failed read - survive.")]
+	public void CompilePackage_ShouldSiteRedactThePollGiveUp_InTheErrorLineAndTheException() {
+		// Arrange
+		EnvironmentSettings settings = new() { Uri = "https://dev.creatio.com" };
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), System.Threading.Timeout.Infinite, 1, 1,
+			Arg.Any<System.Threading.CancellationToken>()).Returns(call => NeverAnswered(call.ArgAt<System.Threading.CancellationToken>(5)));
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateClient(settings).Returns(client);
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("https://dev.creatio.com/build");
+		CompilationHistoryPoller giveUp = new(new ClassifyingDataProvider(new UnsuccessfulDataProvider(SiteMessage)),
+			Substitute.For<ILogger>(), TimeProvider.System, new CancellableDelay(),
+			new CompilationPollingOptions(TimeSpan.FromSeconds(1), TimeSpan.Zero, [TimeSpan.FromSeconds(1)]));
+		ICompilationHistoryPoller poller = Substitute.For<ICompilationHistoryPoller>();
+		poller.GetBaseline().Returns(new Clio.CreatioModel.CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
+		poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<System.Threading.CancellationToken>(),
+				Arg.Any<Action<Clio.CreatioModel.CompilationHistory>>()))
+			.Do(call => giveUp.Poll(call.ArgAt<DateTime>(0), call.ArgAt<System.Threading.CancellationToken>(1),
+				call.ArgAt<Action<Clio.CreatioModel.CompilationHistory>>(2)));
+		ILogger logger = Substitute.For<ILogger>();
+		PackageBuilder builder = new(settings, factory, urlBuilder, logger, TimeProvider.System, new CancellableDelay(), poller);
+		Exception thrown = null;
+
+		// Act
+		int exitCode = new CompilePackageCommand(builder, logger, Substitute.For<IInteractiveConsole>())
+			.Execute(new CompilePackageOptions { PackageName = "UsrPackage", IsSilent = true });
+		try {
+			builder.Rebuild(["UsrPackage"]);
+		} catch (Exception exception) {
+			thrown = exception;
+		}
+
+		// Assert
+		exitCode.Should().Be(1, because: "the compilation could not be monitored");
+		logger.Received().WriteError(Arg.Is<string>(line =>
+			line.StartsWith("Package compilation could not be monitored: Compilation polling gave up after ", StringComparison.Ordinal)
+			&& line.Contains("Failed reading records from entity schema 'CompilationHistory': ", StringComparison.Ordinal)
+			&& line.Contains(RedactedReason, StringComparison.Ordinal)));
+		Logged(logger).Should().NotContain(text => text.Contains(Marker, StringComparison.Ordinal),
+			because: "the error line is the stdio caller's result");
+		thrown.Should().NotBeNull(because: "the give-up surfaces on the main thread");
+		thrown.GetReadableMessageException().Should().Contain(RedactedReason, because: "the console rendering keeps the reason")
+			.And.NotContain(Marker, because: "and carries no login");
+		for (Exception link = thrown; link is not null; link = link.InnerException) {
+			link.Message.Should().NotContain(Marker, because: "no link of the chain carries the login");
+			if (link is IServerDetailCarrier carrier) {
+				carrier.ServerDetail.Should().NotContain(Marker, because: "the debug excerpt is redacted as well");
+			}
+		}
+	}
+
+	private static async System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage> NeverAnswered(
+		System.Threading.CancellationToken cancellationToken) {
+		try {
+			await System.Threading.Tasks.Task.Delay(System.Threading.Timeout.Infinite, cancellationToken);
+		} catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			throw new System.Net.Http.HttpRequestException("The request was cancelled.");
+		}
+		return new System.Net.Http.HttpResponseMessage();
+	}
+
+	#endregion
 }

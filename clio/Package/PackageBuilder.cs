@@ -573,8 +573,54 @@
 				return;
 			}
 			endMonitoring();
-			throw new InvalidOperationException("Package compilation could not be monitored", pollFault);
+			throw new InvalidOperationException("Package compilation could not be monitored",
+				WithSiteRedactedServerText(pollFault));
 		}
+
+		/// <summary>
+		/// The poll fault with the environment's text in it site-redacted, and clio's own sentences kept.
+		/// </summary>
+		/// <remarks>
+		/// The poller's give-up chains the ATF data provider's failure (<see cref="DataProviderFailureException"/>, from
+		/// <c>ClassifyingDataProvider</c>, a follow-up reader). Its message and its console text end with the quote of the
+		/// environment's answer through the general redaction only (<see cref="ServerReportedFailureText"/>), so a
+		/// database sign-in in that answer reached compile-package's error line. The chain is rebuilt with only that
+		/// quote site-redacted: the give-up's elapsed time and window and the failed read's operation stay as written.
+		/// A failure whose text does not end with the quote holds no server text there (a non-JSON page, a missing
+		/// response) and keeps it; its server excerpt, shown at debug, is site-redacted either way.
+		/// </remarks>
+		/// <param name="fault">The exception the poll thread ended with.</param>
+		/// <returns>The rebuilt chain, or <paramref name="fault"/> when it carries no data provider failure.</returns>
+		internal static Exception WithSiteRedactedServerText(Exception fault) {
+			List<Exception> links = [];
+			for (Exception link = fault; link is not null; link = link.InnerException) {
+				links.Add(link);
+				if (link is DataProviderFailureException) {
+					break;
+				}
+			}
+			if (links[^1] is not DataProviderFailureException { ServerDetail: { } detail } carrier) {
+				return fault;
+			}
+			string siteDetail = SensitiveErrorTextRedactor.RedactSiteText(detail);
+			Exception rebuilt = new DataProviderFailureException(
+				SiteQuoted(carrier.Message, UntrustedText.Fenced(detail), UntrustedText.FencedSiteText(detail)),
+				carrier.InnerException, siteDetail) {
+				ConsoleMessage = SiteQuoted(carrier.ConsoleMessage, UntrustedText.ForConsole(detail),
+					UntrustedText.ForConsole(siteDetail))
+			};
+			for (int index = links.Count - 2; index >= 0; index--) {
+				rebuilt = new InvalidOperationException(links[index].Message, rebuilt);
+			}
+			return rebuilt;
+		}
+
+		// The composed text ends with the quote of the server's detail: only that end is swapped for its site-redacted
+		// form, so the sentence before it is never redacted a second time.
+		private static string SiteQuoted(string composed, string quoted, string siteQuoted) =>
+			quoted is not null && composed.EndsWith(quoted, StringComparison.Ordinal)
+				? composed[..^quoted.Length] + (siteQuoted ?? "[redacted]")
+				: composed;
 
 		/// <summary>
 		/// Ends a compile that ran out of budget: as a failure when the history already showed a compile

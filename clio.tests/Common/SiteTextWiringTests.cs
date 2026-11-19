@@ -523,6 +523,10 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/DynamicCaseService.cs", "private static DynamicCaseInfo ToCaseInfo(", "SiteText(info.SchemaName)"),
 		("clio/Command/DynamicCaseRecordPageResolver.cs", "public RecordPageResolution Resolve(",
 			"SensitiveErrorTextRedactor.RedactSiteText(exception.Message)"),
+		("clio/Command/DynamicCaseRecordPageResolver.cs", "private RecordPageResolution FromSysModuleEdit(",
+			"SensitiveErrorTextRedactor.RedactSiteText(error)"),
+		("clio/Command/DynamicCaseRecordPageResolver.cs", "private RecordPageResolution FromSysModuleEdit(",
+			"SensitiveErrorTextRedactor.RedactSiteText(card.CardSchema)"),
 		("clio/Command/DynamicCasePageStep.cs", "public DynamicCasePagePlan Plan(",
 			"SensitiveErrorTextRedactor.RedactSiteText(pageError)"),
 		("clio/Command/DynamicCasePageStep.cs", "public DynamicCasePageWrite Write(",
@@ -543,6 +547,12 @@ public sealed class SiteTextWiringTests {
 			"SiteText(exception.GetReadableMessageException())"),
 		("clio/Package/PackageBuilder.cs", "private CompilationHistory TryGetBaseline(",
 			"SensitiveErrorTextRedactor.RedactSiteText(exception.GetReadableMessageException())"),
+		("clio/Package/PackageBuilder.cs", "internal static Exception WithSiteRedactedServerText(",
+			"SensitiveErrorTextRedactor.RedactSiteText(detail)"),
+		("clio/Package/PackageBuilder.cs", "internal static Exception WithSiteRedactedServerText(",
+			"UntrustedText.FencedSiteText(detail)"),
+		("clio/Package/PackageBuilder.cs", "internal static Exception WithSiteRedactedServerText(",
+			"UntrustedText.ForConsole(siteDetail)"),
 		("clio/Common/CompilationHistoryPoller.cs", "private static string Describe(", "UntrustedText.FencedSiteText("),
 		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult WithPage(", "SiteList(built.Notes)"),
 		("clio/Command/DynamicCaseService.cs", "public DescribeDynamicCaseResult Describe(", "SiteList(response.Notes)"),
@@ -727,9 +737,15 @@ public sealed class SiteTextWiringTests {
 				["clio/Package/SelectQueryHelper.cs|ExecuteSelectQuery"] = (2, "via: SelectQueryHelper.DescribeServerFailure; proven by SelectQuery_ShouldRedactTheServerFailure_AsSiteText"),
 				["clio/Package/BasePackageInstaller.cs|IsInvalidGZipArchiveFailure"] = (3, "via: BasePackageInstaller.GetInvalidGZipArchiveMessage; proven by Install_ShouldRedactTheInvalidArchiveMessage_AsSiteText"),
 				["clio/Package/InstallLogAnalyzer.cs|IsGenericInstallationFailure"] = (1, "via: InstallLogAnalyzer.DescribeFailure; proven by Install_ShouldRedactTheServiceFailure_AsSiteText_InTheErrorLine"),
-				["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
-				["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
-				["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
+				["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd, "
+					+ "CreateDynamicCase_ShouldRedactTheCardRegistrationFailure_EndToEnd, "
+					+ "CreateDynamicCase_ShouldRedactTheClassicCardName_EndToEnd"),
+				["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd, "
+					+ "CreateDynamicCase_ShouldRedactTheCardRegistrationFailure_EndToEnd, "
+					+ "CreateDynamicCase_ShouldRedactTheClassicCardName_EndToEnd"),
+				["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd, "
+					+ "CreateDynamicCase_ShouldRedactTheCardRegistrationFailure_EndToEnd, "
+					+ "CreateDynamicCase_ShouldRedactTheClassicCardName_EndToEnd"),
 		// KNOWN-UNWIRED, follow-up: the envelope readers the follow-up after A2 wires. Their text passes Redact
 		// (directly, or through UntrustedText.Fenced / ForConsole / ServerReportedFailureText) and no site-only rule.
 				["clio/Command/FeatureStateService.cs|ThrowIfSaveFailed"] = (1, "follow-up"),
@@ -1014,7 +1030,8 @@ public sealed class SiteTextWiringTests {
 	// "via: <extractor>; proven by <test>": the member's reads reach a caller only through the checked extractor, but
 	// not as arguments of a call to it in the same member (a variable, a record field, a result redacted upstream), so
 	// the guard cannot follow them; the named behaviour test drives the path end to end and must exist.
-	private static readonly Regex ViaWiring = new(@"\Avia: (?<extractor>[\w.]+); proven by (?<test>[A-Za-z_]\w*)\z");
+	// One test, or one per branch of the extractor that quotes site text: "proven by A, B".
+	private static readonly Regex ViaWiring = new(@"\Avia: (?<extractor>[\w.]+); proven by (?<tests>[A-Za-z_]\w*(?:, [A-Za-z_]\w*)*)\z");
 
 	private static readonly Lazy<string> TestSources = new(() => string.Concat(
 		Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "clio.tests"), "*.cs", SearchOption.AllDirectories)
@@ -1024,7 +1041,8 @@ public sealed class SiteTextWiringTests {
 	private static bool IsProvenVia(string wiring, HashSet<string> extractors) {
 		Match via = ViaWiring.Match(wiring);
 		return via.Success && extractors.Contains(via.Groups["extractor"].Value)
-			&& Regex.IsMatch(TestSources.Value, $@"\bvoid\s+{Regex.Escape(via.Groups["test"].Value)}\s*\(");
+			&& via.Groups["tests"].Value.Split(", ").All(test =>
+				Regex.IsMatch(TestSources.Value, $@"\bvoid\s+{Regex.Escape(test)}\s*\("));
 	}
 
 	[Test]
