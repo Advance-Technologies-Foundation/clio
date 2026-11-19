@@ -353,9 +353,11 @@ hierarchy, design-package and schema refusals and the template catalog's (update
 the site's `errorCode: message` only, never its `stackTrace`); the entity-schema designer's refusal (the
 entity-schema tools, create-lookup, sync-schemas, the data-binding-db tools); a SelectQuery failure and the
 preview of any non-JSON service body; the build verdict, diagnostics and history lines of compile-creatio and
-push-workspace; the installation failure line and the invalid-archive message; and the server's text in
-create-business-process, modify-business-process and compile-business-process (fenced there as site text). The
-raw streamed installation log is not covered. **Not every field that carries a site's words is wired yet.** The
+push-workspace (a reported file is named by its file name only, never its directories); the installation failure
+line and the invalid-archive message; the server's text in create-business-process, modify-business-process,
+modify-business-process-as-new-version, set-active-process-version and compile-business-process (fenced there as
+site text), its version and element names and each of its warnings; and the dynamic-case tools' answer messages
+and quoted bodies. The raw streamed installation log is not covered. **Not every field that carries a site's words is wired yet.** The
 remaining envelope readers (execute-esq's DataService failure, the web-service designer, sys-settings, the
 application, section and schema commands, odata-read's debug detail, and more) still pass the general redaction
 only. Each one is listed by file and member in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`,
