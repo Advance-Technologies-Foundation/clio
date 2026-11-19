@@ -1,5 +1,5 @@
 ---
-description: SensitiveErrorTextRedactor's JSON credential rule covers three quote spellings including the " one System.Text.Json emits, must run FIRST in Redact before BearerTokenRegex and CredentialPairRegex whose bare value class eats the value's closing backslash-quote escape, and must not carry the connection-string key uid because Creatio spells its identifier property UId
+description: SensitiveErrorTextRedactor's JSON credential rule covers three quote spellings including the " one System.Text.Json emits, must run FIRST in Redact before the scheme-credential rule (formerly BearerTokenRegex) and CredentialPairRegex whose bare value class ate the value's closing backslash-quote escape, and must not carry the connection-string key uid because Creatio spells its identifier property UId
 applies-to:
   - clio/Common/SensitiveErrorTextRedactor.cs
 ticket: GH-1497
@@ -23,6 +23,12 @@ moving the JSON rule after either of them turns both cases of
 `Redact_ShouldKeepEscapedJsonParseable_WhenTheValueAlsoMatchesALaterRule` red. Nothing is lost by going
 first - a secret-keyed value is replaced wholesale either way, so the URI/host/path rules have nothing
 left to find inside it.
+
+Since the site-text plan (2026-11-19) `BearerTokenRegex` is `SchemeCredentialRegex` (Basic, NTLM, Negotiate and
+Bearer in any case, scheme word kept) plus `DigestCredentialRegex`, and neither takes a backslash any more; the
+pair rule's bare value also stops before the backslash of an escaped quote. The JSON rule still runs first: it
+is the one that keeps the key's own quotes, and keeping it first costs nothing. See
+`site-text-takes-redact-site-text-and-fails-closed.md` for the two entry points.
 
 Since issue #1505 the credentials-only `RedactCredentials` runs the same rule in the same first
 position, for the same reason: the console renderer

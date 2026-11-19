@@ -17,7 +17,9 @@ The quoting is there because of a measured defect, not for looks. A refusal that
 (`AttachDispatchAudit`) or through the durable long-tail handler (`InvokeResolvedAsync`) passes
 `ClioRunExecutor.RedactFailureContent`. Its credential rule (`SensitiveErrorTextRedactor.CredentialPairRegex`)
 matches a secret-like word followed by `:` or `=` and a value: `password`, `pwd`, `secret`, the token
-family, `host`, `server`, `database`, `uid` and the rest of its key list. On 2026-11-12 the real server
+family, `host`, `server`, `database`, `uid` and the rest of its key list. Since 2026-11-19 the list also holds
+`pw`, `credentials`, the compound pass keys (`newPassword`, `db_pass`, …) and a bare `key`; a bare `key`, `token`
+or `credentials` written with `:` keeps a value shaped like an identifier, but `=` never does. On 2026-11-12 the real server
 answered `get-user-culture` with `password` sent as a number this way:
 
 ```
