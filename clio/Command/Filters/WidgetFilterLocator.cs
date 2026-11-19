@@ -42,7 +42,7 @@ internal static class WidgetFilterLocator {
 					&& operation.TryGetProperty("values", out JsonElement values)) {
 					string name = operation.TryGetProperty("name", out JsonElement nameElement)
 						&& nameElement.ValueKind == JsonValueKind.String
-							? nameElement.GetString()!
+							? nameElement.GetString()
 							: "?";
 					Walk(values, $"{name}.values", found);
 				}
@@ -55,7 +55,7 @@ internal static class WidgetFilterLocator {
 		switch (node.ValueKind) {
 			case JsonValueKind.Object:
 				if (TryGetFilter(node, path, out PageWidgetFilter? filter)) {
-					found.Add(filter!);
+					found.Add(filter);
 				}
 				foreach (JsonProperty property in node.EnumerateObject()) {
 					if (property.NameEquals("filters")) {

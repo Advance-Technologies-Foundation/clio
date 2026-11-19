@@ -43,41 +43,55 @@ internal sealed class EsqColumnPathResolver {
 		for (int index = 0; index < segments.Length; index++) {
 			string segment = segments[index];
 			bool isLast = index == segments.Length - 1;
-			if (segment.StartsWith('[') && segment.EndsWith(']')) {
-				string[] parts = segment[1..^1].Split(':');
-				if (parts.Length < 2 || parts.Any(string.IsNullOrWhiteSpace)) {
-					return Failed($"segment '{segment}' is not a backward reference of the form [Schema:LinkColumn]");
-				}
-				if (!TryGetColumns(parts[0], out IReadOnlyDictionary<string, FilterSchemaColumn>? childColumns)) {
-					return Unreadable(parts[0]);
-				}
-				if (FindColumn(childColumns!, parts[1]) is null) {
-					return Failed($"column '{parts[1]}' of backward reference '{segment}' was not found on schema '{parts[0]}'");
-				}
-				currentSchema = parts[0];
-				lastJoinedSchema = parts[0];
-				if (isLast) {
-					return Failed($"backward reference '{segment}' must be followed by a column of '{parts[0]}' (for example '{segment}.Id')");
-				}
-				continue;
+			EsqColumnResolution? failure = segment.StartsWith('[') && segment.EndsWith(']')
+				? StepIntoBackwardReference(segment, isLast, ref currentSchema, ref lastJoinedSchema)
+				: StepIntoColumn(segment, isLast, ref currentSchema, ref column);
+			if (failure is not null) {
+				return failure;
 			}
-			if (!TryGetColumns(currentSchema, out IReadOnlyDictionary<string, FilterSchemaColumn>? columns)) {
-				return Unreadable(currentSchema);
-			}
-			column = FindColumn(columns!, segment);
-			if (column is null) {
-				return Failed($"column '{segment}' was not found on schema '{currentSchema}'");
-			}
-			if (isLast) {
-				break;
-			}
-			if (!string.Equals(column.DataValueTypeName, LookupTypeName, StringComparison.OrdinalIgnoreCase)
-				|| string.IsNullOrEmpty(column.ReferenceSchemaName)) {
-				return Failed($"column '{segment}' on schema '{currentSchema}' is {column.DataValueTypeName}, not a lookup, so the path cannot continue past it");
-			}
-			currentSchema = column.ReferenceSchemaName;
 		}
 		return new EsqColumnResolution(column, lastJoinedSchema, null, false);
+	}
+
+	// [Schema:LinkColumn]: the path continues on Schema. Returns the failure, or null to go on.
+	private EsqColumnResolution? StepIntoBackwardReference(
+		string segment, bool isLast, ref string currentSchema, ref string? lastJoinedSchema) {
+		string[] parts = segment[1..^1].Split(':');
+		if (parts.Length < 2 || parts.Any(string.IsNullOrWhiteSpace)) {
+			return Failed($"segment '{segment}' is not a backward reference of the form [Schema:LinkColumn]");
+		}
+		if (!TryGetColumns(parts[0], out IReadOnlyDictionary<string, FilterSchemaColumn>? childColumns)) {
+			return Unreadable(parts[0]);
+		}
+		if (FindColumn(childColumns, parts[1]) is null) {
+			return Failed($"column '{parts[1]}' of backward reference '{segment}' was not found on schema '{parts[0]}'");
+		}
+		currentSchema = parts[0];
+		lastJoinedSchema = parts[0];
+		return isLast
+			? Failed($"backward reference '{segment}' must be followed by a column of '{parts[0]}' (for example '{segment}.Id')")
+			: null;
+	}
+
+	// A column of the current schema; any but the last must be a lookup, whose schema the path continues on.
+	private EsqColumnResolution? StepIntoColumn(
+		string segment, bool isLast, ref string currentSchema, ref FilterSchemaColumn? column) {
+		if (!TryGetColumns(currentSchema, out IReadOnlyDictionary<string, FilterSchemaColumn>? columns)) {
+			return Unreadable(currentSchema);
+		}
+		column = FindColumn(columns, segment);
+		if (column is null) {
+			return Failed($"column '{segment}' was not found on schema '{currentSchema}'");
+		}
+		if (isLast) {
+			return null;
+		}
+		if (!string.Equals(column.DataValueTypeName, LookupTypeName, StringComparison.OrdinalIgnoreCase)
+			|| string.IsNullOrEmpty(column.ReferenceSchemaName)) {
+			return Failed($"column '{segment}' on schema '{currentSchema}' is {column.DataValueTypeName}, not a lookup, so the path cannot continue past it");
+		}
+		currentSchema = column.ReferenceSchemaName;
+		return null;
 	}
 
 	// ESQ matches names case-insensitively and reaches a lookup by its value-column name (CountryId for Country);
