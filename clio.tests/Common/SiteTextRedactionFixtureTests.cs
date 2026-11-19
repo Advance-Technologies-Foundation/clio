@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Common;
 using FluentAssertions;
 using NUnit.Framework;
@@ -31,10 +32,10 @@ public sealed record SiteTextRedactionCase {
 	/// <summary>The site text.</summary>
 	[JsonPropertyName("input")] public string Input { get; init; }
 
-	/// <summary>Fragments that must not appear in the output.</summary>
+	/// <summary>The secret cores that must not appear in the output.</summary>
 	[JsonPropertyName("mustGo")] public string[] MustGo { get; init; }
 
-	/// <summary>Fragments that must appear in the output.</summary>
+	/// <summary>The phrases carrying the site's reason that must appear in the output verbatim.</summary>
 	[JsonPropertyName("mustStay")] public string[] MustStay { get; init; }
 
 	/// <summary>Why the row's mustGo is not asserted yet, or <see langword="null"/>.</summary>
@@ -79,8 +80,9 @@ public sealed class SiteTextRedactionFixtureTests {
 	[TestCaseSource(nameof(RunnableRows))]
 	[Category("Unit")]
 	[Description("RedactSiteText removes every mustGo fragment of a row and keeps every mustStay fragment: the "
-		+ "host lane's B rows close, its C rows (the site's reason) and D rows (its documented over-redaction "
-		+ "trades) stay, and the A rows clio already covered stay covered.")]
+		+ "host lane's B rows close, its C rows (the site's reason) and D rows (what the host removes - its "
+		+ "documented trades, or a shape clio declines by choice) stay, and the A rows clio already covered stay "
+		+ "covered.")]
 	public void RedactSiteText_ShouldRemoveMustGoAndKeepMustStay_ForEveryFixtureRow(SiteTextRedactionCase row) {
 		// Arrange
 		string input = row.Input;
@@ -130,8 +132,9 @@ public sealed class SiteTextRedactionFixtureTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The fixture holds the host lane's 350 distinct inputs in the classes the gap analysis counted, "
-		+ "with every rule-9 SQL row - and only those - pending for PR B.")]
+	[Description("The fixture holds the host lane's 350 distinct inputs in their classes - the gap analysis's counts, "
+		+ "with the 12 rows clio has nothing to remove from moved from A and B to D - and every rule-9 SQL row, and only "
+		+ "those, pending for PR B.")]
 	public void Fixture_ShouldHoldTheAnalysedRows_WithOnlySqlRowsPending() {
 		// Arrange
 		IReadOnlyList<SiteTextRedactionCase> rows = LoadRows();
@@ -143,12 +146,51 @@ public sealed class SiteTextRedactionFixtureTests {
 		// Assert
 		rows.Should().HaveCount(350, because: "the 42 host tests expand to 350 distinct inputs");
 		rows.Select(row => row.Input).Should().OnlyHaveUniqueItems(because: "a repeated host case is one row with several case numbers");
-		byClass.Should().BeEquivalentTo(new Dictionary<string, int> { ["A"] = 46, ["B"] = 179, ["C"] = 112, ["D"] = 13 },
-			because: "the gap analysis counted A 46, B 179, C 120 assertions (112 distinct inputs) and D 13");
+		byClass.Should().BeEquivalentTo(new Dictionary<string, int> { ["A"] = 45, ["B"] = 168, ["C"] = 112, ["D"] = 25 },
+			because: "the gap analysis counted A 46, B 179, C 120 assertions (112 distinct inputs) and D 13, and the 11 B "
+				+ "rows and 1 A row clio keeps by choice are D: the host removes something there and clio does not");
 		pendingKinds.Should().Equal(["sql"], because: "only rule 9 (SQL) is left to PR B");
 		rows.Count(row => row.Pending is not null).Should().Be(71, because: "the analysis counted 71 SQL rows");
 		rows.Should().OnlyContain(row => row.Entry == "redact" || row.Entry == "site",
 			because: "each row names the weakest entry point that must satisfy it");
+	}
+
+	// Words that carry no reason on their own; a mustStay fragment must hold more than these.
+	private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase) {
+		"a", "an", "the", "is", "are", "was", "were", "be", "been", "not", "no", "or", "and", "to", "of", "in", "on", "at",
+		"by", "for", "as", "it", "its", "with", "from", "too", "now", "here", "this", "that"
+	};
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every row asserts something real: an A or B row names the secret core that must go, a C or D row "
+		+ "names nothing that must go, every fragment is taken from the input, and no mustStay fragment of a runnable "
+		+ "row is a stop-word alone - so a row cannot pass on an assertion that holds for any output.")]
+	public void Fixture_ShouldAssertTheSecretCoreAndTheReasonPhrase_InEveryRow() {
+		// Arrange
+		IReadOnlyList<SiteTextRedactionCase> rows = LoadRows();
+
+		// Act
+		List<string> wrong = [];
+		foreach (SiteTextRedactionCase row in rows) {
+			bool removes = row.Class is "A" or "B";
+			if (removes && row.Pending is null && row.MustGo.Length == 0) {
+				wrong.Add($"{row.Id} ({row.Class}) names nothing that must go");
+			}
+			if (!removes && row.MustGo.Length > 0) {
+				wrong.Add($"{row.Id} ({row.Class}) is a keep row with a mustGo");
+			}
+			wrong.AddRange(row.MustGo.Concat(row.MustStay).Where(fragment => !row.Input.Contains(fragment, StringComparison.Ordinal))
+				.Select(fragment => $"{row.Id}: \"{fragment}\" is not in the input"));
+			if (row.Pending is null) {
+				wrong.AddRange(row.MustStay.Where(fragment => Regex.Matches(fragment, @"[A-Za-z0-9_]+")
+						.All(word => StopWords.Contains(word.Value)))
+					.Select(fragment => $"{row.Id}: mustStay \"{fragment}\" is only stop-words"));
+			}
+		}
+
+		// Assert
+		wrong.Should().BeEmpty(because: "each row must fail when its secret survives or its reason is lost");
 	}
 
 	private static List<string> Failures(string output, IEnumerable<string> mustGo, IEnumerable<string> mustStay) {
