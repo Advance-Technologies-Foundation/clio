@@ -25,9 +25,12 @@ first - a secret-keyed value is replaced wholesale either way, so the URI/host/p
 left to find inside it.
 
 Since the site-text plan (2026-11-19) `BearerTokenRegex` is `SchemeCredentialRegex` (Basic, NTLM, Negotiate and
-Bearer in any case, scheme word kept) plus `DigestCredentialRegex`, and neither takes a backslash any more; the
-pair rule's bare value also stops before the backslash of an escaped quote. The JSON rule still runs first: it
-is the one that keeps the key's own quotes, and keeping it first costs nothing. See
+Bearer in any case, scheme word kept) plus `DigestCredentialRegex`. The scheme rule takes a backslash only as a
+whole JSON escape unit (`\uXXXX` other than a quote, `\\`, `\/`), and the Digest rule takes none. The pair rule's
+bare value takes an escaped backslash pair as one unit and stops before a single backslash that escapes a quote
+or a backslash, so `password=abc\\"` keeps its closing quote (the POSIX path rule does the same). The JSON rule
+still runs first: it is the one that keeps the key's own quotes, and keeping it first costs nothing. Its key set
+takes `credentials` only as the bare key, so clio's own `"constant-credentials-masked": true` stays. See
 `site-text-takes-redact-site-text-and-fails-closed.md` for the two entry points.
 
 Since issue #1505 the credentials-only `RedactCredentials` runs the same rule in the same first
