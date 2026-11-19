@@ -349,12 +349,16 @@ the designer and DataService error envelopes that create-page, update-page, sync
 tools put into `error` through `ParseSaveErrorMessage` and `DataServiceResponse.ThrowIfUnsuccessful`; and
 compile-status's compiler diagnostics and message tail. **Not every field that carries a site's words is wired
 yet.** The other readers of a site's error text - the write tools' own designer and build paths (process
-design, compile, package build and install, the page designer hierarchy, the entity schema designer,
+design, compile, package build and install, the page designer hierarchy, the entity schema designer, dynamic case,
 SelectQuery failures) and the remaining envelope readers (execute-esq's DataService failure, the web-service
-designer, sys-settings, the application, section and schema commands, odata-read's debug detail, and more) - still
-pass the general redaction only. Each one is listed by file and member, with the change that wires it, in the
-known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`, whose source guard fails the build on a new
-unlisted reader. clio's own error text, its log lines, and the serialized envelope `clio-run` returns pass the
+designer, sys-settings, the ATF data provider, the application, section and schema commands, odata-read's debug
+detail, and more) - still pass the general redaction only. Each one is listed by file and member, with the change
+that wires it, in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`. Its source guard fails the
+build on a new unlisted reader OF THE SHAPES IT SCANS FOR: the site-error JSON names written as literals, members
+named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage` or decorated with a site-error JSON name (which makes
+`.ErrorMessage` one), those names in a property pattern, and constants that hold them. The scan is by name; it
+does not see a site's text read through a member of any other name, a property name built at run time, or a JSON
+path (`docs/knowledge/Common/site-text-takes-redact-site-text-and-fails-closed.md`). clio's own error text, its log lines, and the serialized envelope `clio-run` returns pass the
 general redaction only by design. That redaction leaves relative paths and the database's sign-in phrases alone;
 keeps a four-part version unless it falls in a private address range with no version word before it
 (`version 10.0.0.1`, `Version=10.0.0.0` and `Creatio 8.1.0.5` stay, a bare `10.0.0.1` goes); and keeps a
