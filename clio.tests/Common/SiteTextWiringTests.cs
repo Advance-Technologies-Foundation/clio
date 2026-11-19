@@ -927,11 +927,12 @@ public sealed class SiteTextWiringTests {
 		+ @"|(?:(?<![A-Za-z])[A-Za-z]:(?:\\|/(?!/))|\\\\[A-Za-z]|(?<![\w.:/])(?:~|\.{1,2})?/[A-Za-z][\w.\-]*/)[^\s""'<>|]*[()\[\]{}]",
 		RegexOptions.CultureInvariant);
 
-	// A regular expression pattern is no text clio writes, and the redactor never sees it.
-	private static readonly Regex RegexPatternLiteral = new(@"\(\?[:<=!]|\\[sdwbSDWB]|\[\^", RegexOptions.CultureInvariant);
+	// A regular expression is no text clio writes, and the redactor never sees it: a literal is skipped only when it is
+	// one (CSharpSource.RegexLiteralStarts), never because it merely contains "\s", "\d", "\w" or "\b".
 
 	// The literals of interest whose redaction is EXPECTED, keyed by a fragment of the literal, each with its reason.
 	private static readonly Dictionary<string, string> ExpectedOwnTextChanges = new(StringComparer.Ordinal) {
+		["C:\\Projects\\Workspaces\\newModule"] = "an example Windows path in a tool contract: Redact takes every Windows path, as master did",
 	};
 
 	[Test]
@@ -946,8 +947,11 @@ public sealed class SiteTextWiringTests {
 
 		// Act
 		foreach (string file in ClioSources()) {
-			foreach (string literal in CSharpSource.Read(Path.Combine(RepositoryRoot, file)).StringLiterals().Distinct()) {
-				if (!OwnTextOfInterest.IsMatch(literal) || RegexPatternLiteral.IsMatch(literal)) {
+			CSharpSource source = CSharpSource.Read(Path.Combine(RepositoryRoot, file));
+			HashSet<int> regexLiterals = source.RegexLiteralStarts();
+			foreach (string literal in source.StringLiteralsWithStarts().Where(entry => !regexLiterals.Contains(entry.Start))
+					.Select(entry => entry.Value).Distinct()) {
+				if (!OwnTextOfInterest.IsMatch(literal)) {
 					continue;
 				}
 				string expected = ExpectedOwnTextChanges.Keys.FirstOrDefault(fragment => literal.Contains(fragment, StringComparison.Ordinal));
@@ -1431,6 +1435,81 @@ internal sealed class CSharpSource {
 	/// <summary>The run-time value of every string literal in the file: escapes resolved, an interpolation hole
 	/// written as "x".</summary>
 	public IEnumerable<string> StringLiterals() => literalSpans.Select(span => LiteralValue(CodeWithLiterals, span));
+
+	/// <summary>The same literals with the index where each one's content starts.</summary>
+	public IEnumerable<(string Value, int Start)> StringLiteralsWithStarts() =>
+		literalSpans.Select(span => (LiteralValue(CodeWithLiterals, span), span.Start));
+
+	// A call whose arguments are regular expressions: new Regex(…), a static Regex method, [GeneratedRegex(…)], or a
+	// helper whose name ends in "Regex" ("GetDeclarationRegex(pattern)").
+	private static readonly Regex RegexCallHead = new(
+		@"(?:\bnew\s+Regex|\bRegex\s*\.\s*(?:IsMatch|Match|Matches|Replace|Split|EnumerateMatches|Count)|\b[A-Za-z_]\w*Regex)\s*$");
+
+	private static readonly Regex RegexFieldNew = new(@"\bRegex\??\s+[A-Za-z_]\w*\s*=\s*new\s*$");
+
+	/// <summary>
+	/// The starts of the literals that are regular expressions: an argument of <c>new Regex(…)</c>, of a static
+	/// <c>Regex</c> method, of <c>[GeneratedRegex(…)]</c>, of a helper whose name ends in <c>Regex</c> or of a
+	/// <c>Regex</c> field's <c>new(…)</c>; or the value of a constant or field that such an argument names, directly or
+	/// through another such constant.
+	/// </summary>
+	public HashSet<int> RegexLiteralStarts() {
+		List<(int Open, int Close)> regexArguments = [];
+		for (int index = 0; index < Code.Length; index++) {
+			if (Code[index] != '(') {
+				continue;
+			}
+			string before = Code[Math.Max(0, index - 80)..index];
+			if (RegexCallHead.IsMatch(before) || RegexFieldNew.IsMatch(before)) {
+				regexArguments.Add((index, ClosingBracket(Code, index)));
+			}
+		}
+		HashSet<string> names = new(StringComparer.Ordinal);
+		Queue<(int Start, int End)> spans = new(regexArguments.Select(span => (span.Open, span.Close)));
+		HashSet<string> seenMembers = new(StringComparer.Ordinal);
+		while (spans.Count > 0) {
+			(int start, int end) = spans.Dequeue();
+			foreach (Match identifier in Regex.Matches(Code[start..Math.Min(end + 1, Code.Length)], @"\b[A-Za-z_]\w*\b")) {
+				string name = identifier.Value;
+				if (!names.Add(name)) {
+					continue;
+				}
+				foreach ((string member, int memberStart, int memberEnd) in members.Where(entry => entry.Name == name)) {
+					if (seenMembers.Add($"{member}@{memberStart}")) {
+						spans.Enqueue((memberStart, memberEnd));
+					}
+				}
+			}
+		}
+		HashSet<int> starts = [];
+		foreach ((int start, int _, char _, int _) in literalSpans) {
+			bool inArgument = regexArguments.Any(span => span.Open < start && start < span.Close);
+			(string member, int _, int _) = MemberSpanAt(start);
+			if (inArgument || (names.Contains(member) && members.Any(entry => entry.Name == member && entry.Start <= start && start <= entry.End
+					&& !IsMethodLike(entry.Start, entry.End)))) {
+				starts.Add(start);
+			}
+		}
+		return starts;
+	}
+
+	// Whether a member is a method or a property with a body rather than a constant or a field initializer.
+	private bool IsMethodLike(int start, int end) {
+		int open = Code.IndexOf('(', start);
+		int assign = Code.IndexOf('=', start);
+		return open >= 0 && open < end && (assign < 0 || open < assign);
+	}
+
+	private static int ClosingBracket(string code, int open) {
+		int depth = 0;
+		for (int index = open; index < code.Length; index++) {
+			depth += code[index] switch { '(' => 1, ')' => -1, _ => 0 };
+			if (depth == 0) {
+				return index;
+			}
+		}
+		return code.Length - 1;
+	}
 
 	private static string LiteralValue(string text, (int Start, int End, char Kind, int Dollars) span) {
 		string content = text[span.Start..span.End];
