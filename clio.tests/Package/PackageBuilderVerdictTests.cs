@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -655,6 +656,57 @@ public sealed class PackageBuilderVerdictTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "a login page is not a build verdict");
+	}
+
+	// Every string the logger was handed: compile-creatio package and push-workspace return these lines, unredacted on
+	// stdio.
+	private string[] LoggedText() =>
+		_logger.ReceivedCalls().SelectMany(call => call.GetArguments()).OfType<string>().ToArray();
+
+	[Test]
+	[Description("compile-creatio package and push-workspace: a failure answer's diagnostics and errorInfo message "
+		+ "(PackageBuildResultParser.TryParseResponse, rendered by Fail) take the site-text redaction in the log lines "
+		+ "and in the exception's message.")]
+	public void Rebuild_ShouldRedactTheFailureAnswer_AsSiteText() {
+		// Arrange
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		_stand.AnswersAt(TimeSpan.Zero,
+				"{\"success\":false,\"buildResult\":1,\"errorInfo\":{\"message\":\"" + site + "\"},\"errors\":[{"
+				+ "\"errorNumber\":\"CS0246\",\"errorText\":\"" + site + "\",\"fileName\":\"UsrProbe.Custom.cs\","
+				+ "\"line\":5,\"column\":26,\"warning\":false}]}")
+			.WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "Creatio answered success:false")
+			.Which.Message.Should().Contain("Creatio reported: Login failed for user '[redacted]'.",
+				because: "the reason stays in the exception")
+			.And.NotContain(Clio.Tests.Common.SiteTextWiringTests.Marker, because: "the login goes");
+		_logger.Received(1).WriteError("(CS0246) in UsrProbe.Custom.cs at (5,26): Login failed for user '[redacted]'.");
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no log line may carry the login");
+	}
+
+	[Test]
+	[Description("A history error row whose payload is not in the expected shape is shown as it came (Fail's raw "
+		+ "history line), through the site-text redaction.")]
+	public void Rebuild_ShouldRedactTheRawHistoryPayload_AsSiteText() {
+		// Arrange
+		_stand.WritesRow(TimeSpan.Zero,
+			ErrorRow("Terrasoft.Configuration.Dev.csproj", Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "the history row reported a failure");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("Login failed for user '[redacted]'.")));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the raw history line is the environment's text");
 	}
 
 	private const string SecondProjectError =

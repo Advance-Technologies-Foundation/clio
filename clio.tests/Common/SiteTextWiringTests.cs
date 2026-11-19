@@ -287,7 +287,9 @@ public sealed class SiteTextWiringTests {
 	// it with a wiring case in this fixture (or in the fixture of the tool it belongs to) before adding it here.
 	//   "central": the extractor itself applies the site entry point (asserted by CentralExtractors below);
 	//   "call site": the caller must apply RedactSiteText to what it extracted (asserted next to the call);
-	//   "discarded": the extracted text is thrown away and reaches no caller.
+	//   "discarded": the extracted text is thrown away and reaches no caller;
+	//   "rendered": the extractor returns the site's text raw inside a record, and only the members listed in
+	//   CentralExtractors turn it into text - so a new call site must route its record through one of them.
 	private static readonly Dictionary<string, (int Count, string Wiring)> KnownCallSites = new(StringComparer.Ordinal) {
 		["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (2, "central"),
 		["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataUpdateTool.cs"] = (1, "central"),
@@ -314,6 +316,22 @@ public sealed class SiteTextWiringTests {
 		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbCommand.cs"] = (5, "central"),
 		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbLocalizer.cs"] = (2, "central"),
 		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/PackageDataBindingWriter.cs"] = (2, "central"),
+		// The write paths (PR A2): update-page, sync-pages, create-page, the entity-schema designer tools, SelectQuery,
+		// package installation and compilation, and the business-process tools.
+		["PageSchemaMetadataHelper.DescribeRefusal|clio/Command/PageDesignerHierarchyClient.cs"] = (2, "central"),
+		["PageSchemaMetadataHelper.DescribeRefusal|clio/Command/SchemaTemplateCatalog.cs"] = (1, "central"),
+		["SelectQueryHelper.DescribeServerFailure|clio/Command/ApplicationInfoService.cs"] = (1, "central"),
+		["SelectQueryHelper.DescribeServerFailure|clio/Package/SelectQueryHelper.cs"] = (1, "central"),
+		["InstallLogAnalyzer.DescribeFailure|clio/Package/BasePackageInstaller.cs"] = (1, "central"),
+		["ProcessDesignServerFault.ReadServerText|clio/Command/BuildCaseClient.cs"] = (1, "central"),
+		["ProcessDesignServerFault.ReadServerText|clio/Command/CreateBusinessProcessCommand.cs"] = (1, "central"),
+		["ProcessDesignServerFault.ReadServerText|clio/Command/ModifyBusinessProcessCommand.cs"] = (1, "central"),
+		["ProcessDesignServerFault.ReadServerText|clio/Command/ModifyProcessAsNewVersionCommand.cs"] = (1, "central"),
+		["PackageBuildResultParser.TryParseResponse|clio/Command/CompileConfigurationCommand.cs"] = (1, "rendered"),
+		["PackageBuildResultParser.TryParseResponse|clio/Package/PackageBuilder.cs"] = (2, "rendered"),
+		["PackageBuildResultParser.ParseHistoryDiagnostics|clio/Command/CompileConfigurationCommand.cs"] = (1, "rendered"),
+		["PackageBuildResultParser.ParseHistoryDiagnostics|clio/Common/CompilationHistoryReader.cs"] = (1, "rendered"),
+		["PackageBuildResultParser.ParseHistoryDiagnostics|clio/Package/PackageBuilder.cs"] = (1, "rendered"),
 	};
 
 	// The extractors and the call shape of each, as grep would find it.
@@ -324,6 +342,13 @@ public sealed class SiteTextWiringTests {
 		("RecordDeletionService.ReadInnerMessage", new Regex(@"(?<!static string )\bReadInnerMessage\(")),
 		("PageSchemaMetadataHelper.ParseSaveErrorMessage", new Regex(@"(?<!static string )\bParseSaveErrorMessage\(")),
 		("DataServiceResponse.ThrowIfUnsuccessful", new Regex(@"\bDataServiceResponse\.ThrowIfUnsuccessful\(")),
+		("PageSchemaMetadataHelper.DescribeRefusal", new Regex(@"(?<!static string )\bDescribeRefusal\(")),
+		("SelectQueryHelper.DescribeServerFailure", new Regex(@"(?<!static string )\bDescribeServerFailure\(")),
+		("InstallLogAnalyzer.DescribeFailure", new Regex(@"\bInstallLogAnalyzer\.DescribeFailure\(")),
+		("ProcessDesignServerFault.ReadServerText", new Regex(@"\bProcessDesignServerFault\.ReadServerText\(")),
+		("PackageBuildResultParser.TryParseResponse", new Regex(@"\bPackageBuildResultParser\.TryParseResponse\(")),
+		("PackageBuildResultParser.ParseHistoryDiagnostics",
+			new Regex(@"\bPackageBuildResultParser\.ParseHistoryDiagnostics\(")),
 	];
 
 	// Where each "central" extractor - and the two fenced item paths - applies the site entry point: the file, the
@@ -346,6 +371,60 @@ public sealed class SiteTextWiringTests {
 			"UntrustedText.FencedSiteText("),
 		("clio/Command/McpServer/Tools/CompileOperationRegistry.cs", "private static IReadOnlyList<string> BuildMessageTail(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
+		// The write paths (PR A2).
+		("clio/Command/PageSchemaMetadataHelper.cs", "internal static string DescribeRefusal(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/PageUpdateOptions.cs", "private bool TryGetSchema(", "SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/PageCreateOptions.cs", "private bool TryLoadTemplateLocalizableStrings(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/SchemaTemplateCatalog.cs", "private static string BuildNonJsonErrorMessage(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs", "private static TResponse EnsureSuccess<",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Package/SelectQueryHelper.cs", "internal static string DescribeServerFailure(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Package/SelectQueryHelper.cs", "internal static string DescribeServerFailure(", "UntrustedText.FencedSiteText("),
+		("clio/Package/ServiceResponseJsonGuard.cs", "private static string BuildResponsePreview(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/CompileConfigurationCommand.cs", "protected override void ProceedResponse(", "SiteText(errorInfo)"),
+		("clio/Command/CompileConfigurationCommand.cs", "protected override void ProceedResponse(",
+			"diagnostic.WithSiteTextRedacted()"),
+		("clio/Command/CompileConfigurationCommand.cs", "private void ApplyEnvironmentVerdict(",
+			"SiteText(diagnostic.errorText)"),
+		("clio/Command/CompileConfigurationCommand.cs", "internal static string FormatHistoryDiagnostics(",
+			"diagnostic.WithSiteTextRedacted()"),
+		("clio/Command/CompileConfigurationCommand.cs", "private static string SiteText(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Package/PackageBuildResult.cs", "private static string Site(", "SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Package/PackageBuilder.cs", "private void Fail(", "diagnostic.WithSiteTextRedacted()"),
+		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(rawHistoryErrors)"),
+		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(errorMessage)"),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(message)"),
+		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Package/BasePackageInstaller.cs", "private static string GetInvalidGZipArchiveMessage(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? ReadServerText(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/CreateBusinessProcessCommand.cs", "private static CreateBusinessProcessResult ReadBuildProcessAnswer(",
+			"SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage)"),
+		("clio/Command/ModifyBusinessProcessCommand.cs", "private static string BuildFailureMessage(",
+			"SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage)"),
+		("clio/Command/CompileBusinessProcessCommand.cs", "private void ReportFailure(", "UntrustedText.FencedSiteText("),
+		("clio/Command/CompileBusinessProcessCommand.cs", "private static string ServerName(", "UntrustedText.FencedSiteText("),
+	];
+
+	// Members that read only site text: the general entry points (Redact, the plain fence) must not come back into
+	// them, because a stdio log is not redacted again and only RedactSiteText takes the site-only shapes.
+	private static readonly (string File, string Member)[] SiteOnlyMembers = [
+		("clio/Command/PageSchemaMetadataHelper.cs", "internal static string DescribeRefusal("),
+		("clio/Command/SchemaTemplateCatalog.cs", "private static string BuildNonJsonErrorMessage("),
+		("clio/Package/SelectQueryHelper.cs", "internal static string DescribeServerFailure("),
+		("clio/Package/ServiceResponseJsonGuard.cs", "private static string BuildResponsePreview("),
+		("clio/Package/PackageBuilder.cs", "private void Fail("),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure("),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? ReadServerText("),
+		("clio/Command/CompileBusinessProcessCommand.cs", "private void ReportFailure("),
+		("clio/Command/CompileBusinessProcessCommand.cs", "private static string ServerName("),
 	];
 
 	[Test]
@@ -382,7 +461,7 @@ public sealed class SiteTextWiringTests {
 		List<string> unwired = [];
 
 		// Act
-		foreach ((string key, (int _, string wiring)) in KnownCallSites.Where(pair => pair.Value.Wiring != "central")) {
+		foreach ((string key, (int _, string wiring)) in KnownCallSites.Where(pair => pair.Value.Wiring is "call site" or "discarded")) {
 			string[] parts = key.Split('|');
 			Regex call = Extractors.Single(extractor => extractor.Name == parts[0]).Call;
 			string[] lines = File.ReadAllLines(Path.Combine(RepositoryRoot, parts[1]));
@@ -425,6 +504,31 @@ public sealed class SiteTextWiringTests {
 		unwired.Should().BeEmpty(because: "a central extractor is the only place its callers' site text is redacted");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A member that reads only site text never falls back to the general entry points (Redact, the plain "
+		+ "fence): only RedactSiteText takes the sign-in names, server instances and stack traces a site writes.")]
+	public void SourceGuard_ShouldFindNoGeneralRedactionInsideASiteOnlyMember() {
+		// Arrange
+		string[] general = ["SensitiveErrorTextRedactor.Redact(", "UntrustedText.Fenced(", "RedactUntrustedOrNull("];
+		List<string> regressed = [];
+
+		// Act
+		foreach ((string file, string member) in SiteOnlyMembers) {
+			string source = File.ReadAllText(Path.Combine(RepositoryRoot, file));
+			int start = source.IndexOf(member, StringComparison.Ordinal);
+			string body = start < 0 ? string.Empty : MemberBody(source, start);
+			if (start < 0) {
+				regressed.Add($"{file}: {member} not found");
+			}
+			regressed.AddRange(general.Where(call => body.Contains(call, StringComparison.Ordinal))
+				.Select(call => $"{file}: {member} calls {call}"));
+		}
+
+		// Assert
+		regressed.Should().BeEmpty(because: "the site's text takes the site-text redaction, once, where it is read");
+	}
+
 	private static IEnumerable<string> ClioSources() =>
 		Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "clio"), "*.cs", SearchOption.AllDirectories)
 			.Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
@@ -438,8 +542,12 @@ public sealed class SiteTextWiringTests {
 		int open = source.IndexOf('{', start);
 		int arrow = source.IndexOf("=>", start, StringComparison.Ordinal);
 		if (arrow >= 0 && (open < 0 || arrow < open)) {
-			int end = source.IndexOf(";\n", arrow, StringComparison.Ordinal);
-			return source[start..(end < 0 ? source.Length : end)];
+			// A checkout with Windows line ends ends the statement with ";\r\n".
+			int end = new[] {
+					source.IndexOf(";\n", arrow, StringComparison.Ordinal),
+					source.IndexOf(";\r\n", arrow, StringComparison.Ordinal)
+				}.Where(index => index >= 0).DefaultIfEmpty(source.Length).Min();
+			return source[start..end];
 		}
 		int depth = 0;
 		for (int index = open; index < source.Length; index++) {

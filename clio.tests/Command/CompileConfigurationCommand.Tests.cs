@@ -763,6 +763,79 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		_logger.DidNotReceive().WriteLine(body);
 	}
 
+	// Every string the logger was handed: compile-creatio returns these lines, unredacted on stdio.
+	private string[] LoggedText() =>
+		_logger.ReceivedCalls().SelectMany(call => call.GetArguments()).OfType<string>().ToArray();
+
+	[Test]
+	[Description("compile-creatio: the failed build response's errorInfo and every diagnostic's code, text and file "
+		+ "(ProceedResponse) take the site-text redaction before they become log lines.")]
+	public void Execute_ShouldRedactTheBuildResponse_AsSiteText_InTheLog() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		StubCompileResponse(
+			"{\"success\":false,\"buildResult\":1,"
+			+ "\"errorInfo\":{\"errorCode\":\"CompilationError\",\"message\":\"" + site + "\"},"
+			+ "\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"" + site + "\",\"fileName\":\"Foo.cs\",\"warning\":false}]}");
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the response reported the build as failed");
+		_logger.Received().WriteError("CompilationError: Login failed for user '[redacted]'.");
+		_logger.Received().WriteError("(CS0006) in Foo.cs: Login failed for user '[redacted]'.");
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no log line may carry the login the environment's text named");
+	}
+
+	[Test]
+	[Description("compile-creatio: the environment's verdict read after the build (ApplyEnvironmentVerdict) logs each "
+		+ "diagnostic's code, file and text through the site-text redaction.")]
+	public void Execute_ShouldRedactTheEnvironmentVerdict_AsSiteText_InTheLog() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse(
+			[new CreatioCompilationError(12, 3, "CS0103", site, false, "Foo.cs " + site)], 1, false));
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the environment reported the compilation as failed");
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.StartsWith("(CS0103) in Foo.cs Login failed for user '[redacted]'. at (12,3): Login failed for user",
+				StringComparison.Ordinal)));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no log line may carry the login the environment's text named");
+	}
+
+	[Test]
+	[Description("compile-creatio's history lines (FormatHistoryDiagnostics) take the site-text redaction, for a "
+		+ "readable payload and for one shown as it came.")]
+	public void FormatHistoryDiagnostics_ShouldRedactTheEnvironmentsText_AsSiteText([Values(true, false)] bool readable) {
+		// Arrange
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		string errorsWarnings = readable
+			? "[{\"ErrorNumber\":\"CS0006\",\"ErrorText\":\"" + site + "\",\"FileName\":\"Foo.cs\",\"IsWarning\":false}]"
+			: site;
+
+		// Act
+		string rendered = CompileConfigurationCommand.FormatHistoryDiagnostics(errorsWarnings);
+
+		// Assert
+		rendered.Should().Contain("Login failed for user '[redacted]'.", because: "the reason stays");
+		rendered.Should().NotContain(Clio.Tests.Common.SiteTextWiringTests.Marker,
+			because: "the rendered history is a log line");
+	}
+
 	private CompileConfigurationCommand CreateCommand() {
 		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
 		// The production grace is 90 seconds, sized for a cold stand's first compilation-history row. A
