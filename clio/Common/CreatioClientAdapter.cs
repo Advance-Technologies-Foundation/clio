@@ -446,7 +446,7 @@ public class CreatioClientAdapter : IOwnedApplicationClient, IStatusPreservingAp
 				sends++;
 				return _loginDiagnostics.TrackRequest(() =>
 					ReadKeepingStatus(StartKeepingStatus(verb, url, requestData, requestTimeout, maxAttempts, delaySec),
-					verb, url));
+					verb, url, sentWithoutBody: verb == SiteRequestVerb.Delete && string.IsNullOrEmpty(requestData)));
 			},
 			response => ReauthExecutor.IsSessionExpiredResponse(response.Body),
 			replayAllowed);
@@ -465,11 +465,13 @@ public class CreatioClientAdapter : IOwnedApplicationClient, IStatusPreservingAp
 			_ => throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unsupported request verb.")
 		};
 
+	// creatio.client sends a DELETE without data with no body at all (omitEmptyContent), and a request without a
+	// body is the one its redirect following can repeat unseen; POST and PATCH always carry content.
 	private static SiteHttpResponse ReadKeepingStatus(Task<HttpResponseMessage> pending, SiteRequestVerb verb,
-		string url) {
+		string url, bool sentWithoutBody) {
 		using HttpResponseMessage response = pending.Result;
 		string body = response.Content is null ? string.Empty : response.Content.ReadAsStringAsync().Result;
-		return SiteHttpResponse.Read(response, body, ToHttpMethod(verb), url);
+		return SiteHttpResponse.Read(response, body, ToHttpMethod(verb), url, sentWithoutBody);
 	}
 
 	private static HttpMethod ToHttpMethod(SiteRequestVerb verb) => verb switch {

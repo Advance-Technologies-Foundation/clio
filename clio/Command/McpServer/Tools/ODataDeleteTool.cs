@@ -85,17 +85,11 @@ public sealed class ODataDeleteTool(
 		//core-rules promises - refusals and validation failures included.
 		string correlationId = correlationIds.New();
 		ODataWriteResponse result = DeleteCore(args, out bool attempted, out bool received);
+		// A refused DELETE never proves nothing was deleted: it is sent without a body, so creatio.client can follow a
+		// 307 or 308 with it back to the same address unseen (SiteHttpResponse.Redirected). With ids a refused id is
+		// also sent again in a later pass, and with cascade owned rows go first.
 		DataWriteDiagnostic diagnostic = result.Plan is not null ? null : DataWriteDiagnostic.Create(DeleteVerb,
 			args.Entity, null, attempted, received, result.Success, result.Error);
-		// With one id and no cascade the DELETE is the call's sole write: before it only the existence read runs,
-		// a single id gets one pass so it is sent once with one attempt, and after its refusal only the
-		// diagnosis reads run. Its site response is copied from that DELETE alone, so a refusal without
-		// processing proves nothing was deleted. With ids a refused id is sent again in a later pass, and with
-		// cascade owned rows go first, so neither is proven.
-		if (diagnostic is not null && !args.Cascade && !string.IsNullOrWhiteSpace(args.Id)
-			&& result.SiteResponse is { RefusedWithoutProcessing: true }) {
-			diagnostic = diagnostic.AsRefusedWithoutProcessing();
-		}
 		return result with { CorrelationId = correlationId, Diagnostic = diagnostic };
 	}
 

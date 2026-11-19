@@ -364,7 +364,7 @@ body alone would pass them: an empty or unrecognized body on `odata-update` / `o
 - **Refused without processing: 405, 413, 414 or 415 with an empty, HTML page or plain-text body,** answering
   the request clio sent and not one the HTTP client sent after following a redirect. These statuses refuse the
   request for its shape: its method, body size, URI length or media type. HTTP
-  defines them as the server refusing to process the request (RFC 9110, RFC 6585). The result then says that
+  defines them as the server refusing to process the request (RFC 9110). The result then says that
   request was not applied, and an `odata-create` row reads `record-created: false`. With a JSON or XML body the
   application itself answered, so it reads like any other refusal below.
 - **401 or 403: refused, but never proof.**
@@ -408,9 +408,10 @@ and `message` are null: the result's own fields name what failed and why.
    sign-in, is not visible to clio. That is why only statuses decided by the request's shape count (point 3).
 3. **Refused without processing.** The site answered 405, 413, 414 or 415 - a refusal of the request's shape -
    with a body that carries no answer of the application: empty, an HTML page or plain text (a byte-order mark
-   and whitespace before it are skipped). The answer must be to the request clio sent: creatio.client follows a
-   same-site redirect itself and turns a POST or PATCH into a GET, so an answer to another method or address
-   proves nothing. The same method, URI and body get the same answer every time, so even a send the HTTP client
+   and whitespace before it are skipped). The answer must be to the request clio sent. creatio.client follows a
+   same-site redirect itself: on 301, 302 or 303 it turns any method other than GET into a GET, so an answer to
+   another method or address proves nothing; on 300, 307 or 308 it repeats a request that has no body, possibly
+   to the same address, so a request sent without a body (a DELETE) never proves anything. The same method, URI and body get the same answer every time, so even a send the HTTP client
    repeated out of sight was refused the same way. 431 is out: a re-send after signing in again carries other
    cookies and headers. Nothing else proves it: not a 401 or a 403 (see
    above), not JSON of any kind, parseable or not, and not markup other than an HTML page, such as an XML or SOAP
@@ -421,7 +422,6 @@ and `message` are null: the result's own fields name what failed and why.
 | `update-page`; `sync-pages`, per page | one save (reads before it; cache reset and checksum read only after it succeeds) | `none` when the save is refused without processing |
 | `create-page` | one save (template, catalog and hierarchy reads before it) | `none` when the save is refused without processing |
 | `odata-update` | one PATCH (`$metadata` reads before it) | `none` when the PATCH is refused without processing |
-| `odata-delete`, one `id`, no `cascade` | one DELETE (an existence read before it) | `none` when the DELETE is refused without processing |
 | `odata-create`, per row | one POST per row, never replayed | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
 | `create-business-process` | one BuildProcess | `none` when BuildProcess is refused without processing |
 | `delete-data-binding-db` | one binding delete | `none` when the delete is refused without processing |
@@ -430,7 +430,7 @@ and `message` are null: the result's own fields name what failed and why.
 | `create-entity-schema`, `update-entity-schema`, `modify-entity-schema-column`, `create-lookup` | designer state, save, DB structure, publish, OData build, then (create-lookup) the lookup registration; the designer requests go with 3 attempts | always `unknown` |
 | `create-data-binding-db`, `upsert-data-binding-row-db`, `remove-data-binding-row-db` | row writes, then the binding save or delete | always `unknown` |
 | `install-application`, `push-workspace`, `install-process-builder` | package upload and backup, then the install request | always `unknown`, even when the install request was refused without processing: the text then says the package was not installed, but the upload had already written |
-| `odata-delete` with `ids` or `cascade` | a DELETE per id, a refused id sent again in a later pass; with cascade, owned rows first | always `unknown`, on the call and on each item |
+| `odata-delete` | a DELETE per id, sent without a body (so the client can repeat it through a 307 or 308 unseen); with `ids`, a refused id sent again in a later pass; with cascade, owned rows first | always `unknown`, on the call and on each item |
 | `sync-schemas`, per operation | the entity-schema and data-binding writes above, with retries for transient faults | always `unknown` |
 
 **Not covered:** a compile that outlives the MCP response deadline reports its verdict through

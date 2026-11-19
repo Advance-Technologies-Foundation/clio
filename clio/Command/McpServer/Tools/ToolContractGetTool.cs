@@ -872,7 +872,7 @@ internal static class ToolContractCatalog {
 		+ "retry-guidance.";
 
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
-	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field. side-effect is none only when the write is known not applied: it was rejected before writing, or its one request (one PATCH; one DELETE for a single id without cascade; one POST per odata-create row) was refused without processing (HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, not redirected; never a 401 or 403).";
+	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field. side-effect is none only when the write is known not applied: it was rejected before writing, or its one request (one PATCH; one POST per odata-create row; never a DELETE, which goes without a body the client can redirect unseen) was refused without processing (HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, not redirected; never a 401 or 403).";
 
 	private const string ODataReadErrorCodeFieldName = "error-code";
 

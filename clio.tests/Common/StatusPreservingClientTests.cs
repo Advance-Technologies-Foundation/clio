@@ -111,6 +111,27 @@ public sealed class StatusPreservingClientTests {
 	}
 
 	[Test]
+	[Description("A DELETE without a body is always read as possibly redirected: the client can repeat it through a 307 or 308 to the same address unseen")]
+	public void SendKeepingStatus_ShouldMarkABodylessDeleteAsPossiblyRedirected() {
+		// Arrange
+		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
+		transport.ExecuteDeleteRequestAsync(default, default, default, default, default, default)
+			.ReturnsForAnyArgs(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MethodNotAllowed) {
+				Content = new StringContent(""),
+				RequestMessage = new HttpRequestMessage(HttpMethod.Delete, "http://site/0/odata/Contact(1)")
+			}));
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		SiteHttpResponse answer = adapter.SendKeepingStatus(SiteRequestVerb.Delete, "http://site/0/odata/Contact(1)",
+			string.Empty, replayAllowed: false);
+
+		// Assert
+		answer.Redirected.Should().BeTrue();
+		answer.IsRefusedWithoutProcessing.Should().BeFalse();
+	}
+
+	[Test]
 	[Description("A 405 to the write itself is a refusal without processing")]
 	public void SendKeepingStatus_ShouldNotMarkARedirect_WhenTheAnswerIsToTheWrite() {
 		// Arrange

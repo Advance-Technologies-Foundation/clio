@@ -609,6 +609,30 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
+	[Description("A 413 that answers a GET the client sent after following a redirect of the build request proves nothing")]
+	public void Execute_ShouldNotProve_WhenTheAnswerIsToARedirectedRequest() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.RequestEntityTooLarge) {
+				Content = new StringContent("<html>Too large</html>"),
+				RequestMessage = new HttpRequestMessage(HttpMethod.Get, "http://test/0/Shell/")
+			}));
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1);
+		capture.Last.Status.Should().Be(413);
+		capture.LastProvesNothingApplied.Should().BeFalse(
+			because: "the build request may have been applied before the redirect the client followed");
+	}
+
+	[Test]
 	[Description("A successful build answer records nothing")]
 	public void Execute_ShouldRecordNothing_WhenTheBuildAnswerSucceeds() {
 		// Arrange

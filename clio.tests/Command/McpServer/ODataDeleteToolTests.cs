@@ -62,14 +62,14 @@ public sealed class ODataDeleteToolTests {
 			SiteResponse.JsonBody));
 	}
 
-	[TestCase(413, "none", TestName = "Delete_ShouldReportSideEffectNone_WhenTheSingleDeleteIsRefusedWithAn413")]
+	[TestCase(413, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsRefusedWithAn413")]
+	[TestCase(405, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsRefusedWithAn405")]
 	[TestCase(401, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered401")]
 	[TestCase(403, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered403")]
-	[TestCase(405, "none", TestName = "Delete_ShouldReportSideEffectNone_WhenTheSingleDeleteIsRefusedWithAn405")]
 	[TestCase(409, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered409")]
 	[TestCase(500, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered500")]
 	[Category("Unit")]
-	[Description("With one id and no cascade the DELETE is the call's one write, sent once: a refusal without processing proves nothing was deleted")]
+	[Description("A DELETE goes without a body, so creatio.client can repeat it through a 307 or 308 back to the same address unseen: no refusal of it proves nothing was deleted")]
 	public void Delete_ShouldReportTheProvenSideEffect_ForASingleId(int status, string sideEffect) {
 		// Arrange
 		ODataDeleteTool tool = RefusingDeleteTool(new SiteHttpResponse(status, ""));

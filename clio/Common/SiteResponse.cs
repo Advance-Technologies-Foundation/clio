@@ -305,10 +305,11 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	public bool Resent { get; init; }
 
 	/// <summary>
-	/// Whether the answer is to a request the HTTP client sent itself after following a redirect - another method
-	/// (creatio.client turns a POST or PATCH answered 301, 302 or 303 into a GET) or another address - rather than
-	/// to the write clio sent. The write may have been applied before the redirect, so such an answer proves
-	/// nothing about it.
+	/// Whether the answer may be to a request the HTTP client sent itself after following a redirect, rather than
+	/// to the write clio sent. creatio.client follows same-site redirects: on 301, 302 or 303 it turns any method
+	/// other than GET or HEAD into a GET; on 300, 307 or 308 it keeps the method of a request sent without a body,
+	/// possibly back to the same address. The write may have been applied before the redirect, so such an answer
+	/// proves nothing about it.
 	/// </summary>
 	public bool Redirected { get; init; }
 
@@ -319,32 +320,29 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	/// <param name="response">The response the client returned.</param>
 	/// <param name="body">Its body, already read.</param>
 	/// <param name="sentMethod">The HTTP method clio sent.</param>
-	/// <param name="sentUrl">The URL clio sent, absolute or relative to the site.</param>
+	/// <param name="sentUrl">The absolute URL clio sent.</param>
+	/// <param name="sentWithoutBody">Whether clio sent the request without a body. creatio.client can then follow a
+	/// 300, 307 or 308 keeping the method, back to the same address, which no comparison can see, so the answer
+	/// is always read as possibly redirected.</param>
 	/// <remarks>
 	/// A response without its request (only test doubles build one) cannot show a redirect, so it is read as not
-	/// redirected.
+	/// redirected unless it was sent without a body. A URL that is not absolute never matches.
 	/// </remarks>
 	public static SiteHttpResponse Read(HttpResponseMessage response, string body, HttpMethod sentMethod,
-		string sentUrl) {
+		string sentUrl, bool sentWithoutBody = false) {
 		ArgumentNullException.ThrowIfNull(response);
 		HttpRequestMessage answered = response.RequestMessage;
-		bool redirected = answered is not null
-			&& (answered.Method != sentMethod || !IsSameTarget(answered.RequestUri, sentUrl));
+		bool redirected = sentWithoutBody
+			|| (answered is not null && (answered.Method != sentMethod || !IsSameTarget(answered.RequestUri, sentUrl)));
 		return new SiteHttpResponse((int)response.StatusCode, body) { Redirected = redirected };
 	}
 
-	private static bool IsSameTarget(Uri answered, string sentUrl) {
-		if (answered is null || string.IsNullOrEmpty(sentUrl)) {
-			return answered is null && string.IsNullOrEmpty(sentUrl);
-		}
-		if (Uri.TryCreate(sentUrl, UriKind.Absolute, out Uri sent)) {
-			return Uri.Compare(answered, sent, UriComponents.HttpRequestUrl, UriFormat.SafeUnescaped,
-				StringComparison.OrdinalIgnoreCase) == 0;
-		}
-		return answered.IsAbsoluteUri
-			? answered.PathAndQuery.EndsWith(sentUrl, StringComparison.OrdinalIgnoreCase)
-			: string.Equals(answered.OriginalString, sentUrl, StringComparison.OrdinalIgnoreCase);
-	}
+	// Whether the answered request went to exactly the URL sent. Leaning towards "different" only loses a proof.
+	private static bool IsSameTarget(Uri answered, string sentUrl) =>
+		answered is { IsAbsoluteUri: true }
+		&& Uri.TryCreate(sentUrl, UriKind.Absolute, out Uri sent)
+		&& Uri.Compare(answered, sent, UriComponents.HttpRequestUrl, UriFormat.UriEscaped,
+			StringComparison.Ordinal) == 0;
 
 	/// <summary>
 	/// Whether this answer shows the site refused the request without processing it. All of these must hold:
