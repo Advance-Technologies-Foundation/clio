@@ -296,7 +296,9 @@ public sealed class ODataDeleteTool(
 		RecordDeleteOutcome outcome, DateTimeOffset callDeadline, IReadOnlyList<RecordKey> removed) {
 		RecordDeleteDiagnosis diagnosis = service.Diagnose(entity, id, DiagnosisRequestMs, DiagnosisStop(callDeadline));
 		return new ODataDeleteItemResult(id, false, outcome.Error, DeleteRefusalText.Explain(entity, id, outcome, diagnosis),
-			diagnosis.Referencing.Count > 0 ? diagnosis.Referencing : null, removed);
+			diagnosis.Referencing.Count > 0 ? diagnosis.Referencing : null, removed) {
+			SiteResponse = outcome.SiteResponse
+		};
 	}
 
 	// The id the caller passed decides the shape, so `id` with an empty `ids: []` still answers like a single.
@@ -307,7 +309,8 @@ public sealed class ODataDeleteTool(
 				Explanation = only.Explanation,
 				Referencing = only.Referencing,
 				CascadeDeleted = only.CascadeDeleted,
-				CascadeUnconfirmed = only.CascadeUnconfirmed
+				CascadeUnconfirmed = only.CascadeUnconfirmed,
+				SiteResponse = only.SiteResponse
 			};
 		}
 		int failed = results.Count(result => !result.Success);
@@ -424,7 +427,9 @@ public sealed class ODataDeleteTool(
 			: $"{outcome.Error} The server's own reason: {outcome.ServerDetail}.";
 		return new ODataDeleteItemResult(target.Id, false,
 			$"cascade stopped: owned row {child.Entity}({child.Id}) was not deleted, so {target.Entity}({target.Id}) "
-			+ $"was left in place: {reason}", null, plan.Referencing, (cascadeDeleted.Count > 0 ? cascadeDeleted : null));
+			+ $"was left in place: {reason}", null, plan.Referencing, (cascadeDeleted.Count > 0 ? cascadeDeleted : null)) {
+			SiteResponse = outcome.SiteResponse
+		};
 	}
 
 	private static (ODataDeletePlanItem Item, CascadePlan Plan) BuildPlan(IRecordDeletionService service, string entity,
@@ -703,6 +708,11 @@ public sealed record ODataDeleteItemResult(
 	/// <summary>Owned rows whose DELETE got no answer: they may or may not be gone.</summary>
 	[JsonPropertyName("cascade-unconfirmed"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<RecordKey>? CascadeUnconfirmed { get; init; }
+
+	/// <summary>What the site itself answered to the refused DELETE; see <see cref="Clio.Common.SiteResponse"/>.</summary>
+	[JsonPropertyName("site-response"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("What the Creatio site itself answered to the refused DELETE (of this record, or of the owned row that stopped the cascade): status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
+	public SiteResponse? SiteResponse { get; init; }
 }
 
 /// <summary>What a dry run found for one id.</summary>

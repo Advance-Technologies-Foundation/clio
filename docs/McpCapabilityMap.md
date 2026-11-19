@@ -320,6 +320,52 @@ The refusal path is unit-proven; at the end-to-end level each gated tool's contr
 advertise its floor. A live e2e refusal test requires an environment below the floor, which the
 harness does not provision — that remains the one documented gap.
 
+### What the site answered (`site-response`)
+
+A failed write tool carries `site-response`: what the Creatio site itself answered to the request that made
+the call fail. Every other error text in a result is clio's sentence, sometimes with the site's words inside
+it; this field holds only what the site sent, so a caller can show the site's answer verbatim and tell it
+apart from clio's wording.
+
+```json
+"site-response": { "status": 500, "message": "Column 'UsrFoo' already exists", "code": "SchemaDesignerException", "body": "json" }
+```
+
+| Member | Meaning |
+|---|---|
+| `status` | The HTTP status of that response, always present. A Creatio service often refuses with HTTP 200 and `success:false`; the status then reads 200, because that is what the site sent. |
+| `message` | The site's own message, only from a known JSON shape: `errorInfo.message`, OData `error.message` (or `error.message.value`), `responseStatus.Message`, `errorMessage` (also inside a WCF `<Method>Result` wrapper), or an ASP.NET fault's `Message` / `ExceptionMessage`. Verbatim, capped at 2,000 characters with a trailing "…". Omitted for an HTML page, an empty body, plain text or an unknown JSON shape. |
+| `code` | The site's own error code (`errorInfo.errorCode`, OData `error.code`, `responseStatus.ErrorCode`), when present. |
+| `body` | What kind of body the site sent: `json`, `html`, `text` or `empty`. |
+
+clio copies nothing beyond what the site sent and never copies `errorInfo.stackTrace`. The text is the
+site's, so a host that shows it applies its own redaction.
+
+**Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
+failure is clio's own (validation, a refused precondition). The field is optional, so a caller that ignores it
+sees the same envelope as before.
+
+**Where it is:**
+
+- top level of the failed result: `create-entity-schema`, `update-entity-schema`,
+  `modify-entity-schema-column`, `create-lookup`, `create-page`, `update-page`, `create-data-binding-db`,
+  `upsert-data-binding-row-db`, `remove-data-binding-row-db`, `delete-data-binding-db`, `odata-update`,
+  `odata-delete` (one `id`), `install-application`, `push-workspace`, `install-process-builder`,
+  `compile-creatio`, `restart-by-environment-name`, `create-business-process`;
+- on each failed item of a batch: `odata-create` `results[i]`, `odata-delete` with `ids` `results[i]`,
+  `sync-pages` `pages[i]`, `sync-schemas` `results[i]`.
+
+**Status-aware failures.** Because the status is now kept, a failure status fails these writes even when the
+body alone would pass them: an empty or unrecognized body on `odata-update` / `odata-delete`, an empty body on
+`odata-create` (the row is then reported as not confirmed, with `record-created` unknown), an empty body on the
+data-binding writes and on `install-application`, and any non-2xx answer to `restart-by-environment-name`,
+which used to report "Done" with exit code 0 whatever the site answered.
+
+**Not covered:** a compile that outlives the MCP response deadline reports its verdict through
+`compile-status`, which carries no `site-response`; and the very first request of a process, when it is one of
+these writes and the sign-in endpoint itself answers non-2xx, reports the sign-in error without
+`site-response`.
+
 ### Workspace path rules
 
 Workspace-oriented tools validate local absolute paths and reject network paths.

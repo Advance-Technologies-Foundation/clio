@@ -550,6 +550,59 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
+	[Description("A failed build answer is recorded as the site's response with its own message and status")]
+	public void Execute_ShouldRecordTheSiteAnswer_WhenTheBuildAnswerReportsFailure() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse("{\"success\":false,\"errorInfo\":{\"errorCode\":\"BuildError\",\"message\":\"Build failed\"}}",
+			System.Net.HttpStatusCode.OK);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1);
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(200, "Build failed", "BuildError", SiteResponse.JsonBody));
+	}
+
+	[TestCase("<html><title>500 - Internal server error.</title></html>", 500, "html",
+		TestName = "Execute_ShouldRecordTheSiteAnswer_WhenTheBuildAnswerIsAnHtmlPage")]
+	[TestCase("", 502, "empty", TestName = "Execute_ShouldRecordTheSiteAnswer_WhenTheBuildAnswerIsEmpty")]
+	[Description("A build answer that carries no verdict is recorded with its status and body kind")]
+	public void Execute_ShouldRecordTheSiteAnswer_WhenTheBuildAnswerHasNoVerdict(string body, int status, string kind) {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse(body, (System.Net.HttpStatusCode)status);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1);
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, kind));
+	}
+
+	[Test]
+	[Description("A successful build answer records nothing")]
+	public void Execute_ShouldRecordNothing_WhenTheBuildAnswerSucceeds() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse("{\"success\":true}", System.Net.HttpStatusCode.OK);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		capture.Last.Should().BeNull();
+	}
+
+	[Test]
 	[Description("A JSON response without a success field is not a verdict: the command exits 1 and says the response carried no build result, instead of reading the missing field as false and then failing on a null errorInfo with a NullReferenceException text (issue #1708).")]
 	public void Execute_ShouldReportNoBuildResult_WhenTheResponseHasNoSuccessField() {
 		// Arrange
@@ -652,6 +705,13 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		command.QuietFallbackOverride = TimeSpan.FromHours(1);
 		return command;
 	}
+
+	private void StubCompileResponse(string body, System.Net.HttpStatusCode status) =>
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(_ => Task.FromResult(new HttpResponseMessage(status) {
+				Content = new StringContent(body)
+			}));
 
 	private void StubCompileResponse(string body) =>
 		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),

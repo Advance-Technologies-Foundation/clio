@@ -146,13 +146,23 @@ public abstract class BaseTool<T>(
 		// parent-flow context rather than merely being cleared on exit. Saved/restored in finally.
 		bool previousPreserveMessages = logger.PreserveMessages;
 		logger.PreserveMessages = true;
+		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin();
 		try {
-			return executor();
+			return WithSiteResponse(executor(), siteResponses.Last);
 		}
 		finally {
 			logger.ClearMessages();
 			logger.PreserveMessages = previousPreserveMessages;
 		}
+	}
+
+	// A failed typed result reports what the site answered to the call that failed it, when one was recorded;
+	// a result the tool already gave a site response (a batch item, a per-call write) keeps its own.
+	private static TResponse WithSiteResponse<TResponse>(TResponse response, SiteResponse recorded) {
+		if (recorded is not null && response is ISiteResponseCarrier { ReportsFailure: true, SiteResponse: null } carrier) {
+			carrier.SiteResponse = recorded;
+		}
+		return response;
 	}
 
 	/// <summary>
@@ -507,6 +517,7 @@ public abstract class BaseTool<T>(
 		dbOperationLogContextAccessor?.ClearLastCompletedPath();
 		bool previousPreserveMessages = logger.PreserveMessages;
 		logger.PreserveMessages = true;
+		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin();
 		try {
 			int exitCode = command.Execute(options);
 			IReadOnlyList<LogMessage> flushedMessages = McpPassthroughRedaction.SanitizeAndRedact(
@@ -515,7 +526,11 @@ public abstract class BaseTool<T>(
 				exitCode,
 				[.. flushedMessages],
 				dbOperationLogContextAccessor?.LastCompletedPath,
-				CorrelationId: correlationId);
+				CorrelationId: correlationId) {
+				// Only a failed call reports what the site answered; a refusal the command recovered from is
+				// not the outcome of a call that succeeded.
+				SiteResponse = exitCode == 0 ? null : siteResponses.Last
+			};
 			return (executionResult, flushedMessages, correlationId);
 		}
 		catch (Exception e) {
@@ -524,7 +539,8 @@ public abstract class BaseTool<T>(
 			// FR-11 (ENG-93208): scrub the exception chain ONLY on a passthrough request (same tenant-key
 			// signal RedactForPassthrough uses). The trusted stdio / -e path keeps full-fidelity -1 text.
 			CommandExecutionResult executionResult = CommandExecutionResult.FromException(
-				e, priorLogs, correlationId, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey));
+				e, priorLogs, correlationId, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey))
+				with { SiteResponse = siteResponses.Last };
 			return (executionResult, priorLogs, correlationId);
 		}
 		finally {

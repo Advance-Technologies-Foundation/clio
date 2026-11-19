@@ -761,7 +761,14 @@ public sealed class PageSyncTool(
 			validationResult = AppendPreSaveWarnings(validationResult, page, opOptions);
 			(string metaFilePath, bool refreshBaseline, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
-			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
+			PageUpdateResponse updateResponse;
+			// A capture of this page's own: the site's answer to one page must not be reported on another.
+			using (SiteResponseCapture.Scope pageSiteResponse = SiteResponseCapture.Begin()) {
+				opOptions.UpdateCommand.TryUpdatePage(updateOptions, out updateResponse);
+				if (updateResponse is { Success: false, SiteResponse: null }) {
+					updateResponse.SiteResponse = pageSiteResponse.Last;
+				}
+			}
 			string outcomeBaselineWarning = PageBaselineGuard.ForSaveOutcome(baselineWarning, updateOptions, updateResponse.Success);
 			if (outcomeBaselineWarning != null) {
 				validationResult = AppendCommandWarnings(validationResult, [outcomeBaselineWarning]);
@@ -779,6 +786,7 @@ public sealed class PageSyncTool(
 					Validation = AppendPersistedResourceKeyWarning(
 						validationResult, opOptions.EnvironmentName, page.SchemaName),
 					Error = updateResponse.Error,
+					SiteResponse = updateResponse.SiteResponse,
 					Conflict = updateResponse.Conflict,
 					ConflictDetails = updateResponse.ConflictDetails,
 					ConflictCheck = updateResponse.ConflictCheck
@@ -1422,6 +1430,11 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
+
+	/// <summary>What the site itself answered to this page's failed save; see <see cref="Clio.Common.SiteResponse"/>.</summary>
+	[JsonPropertyName("site-response")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SiteResponse SiteResponse { get; init; }
 
 	[JsonPropertyName("resources-registered")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

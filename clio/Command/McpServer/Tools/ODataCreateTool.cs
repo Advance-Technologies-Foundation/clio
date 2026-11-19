@@ -435,9 +435,25 @@ public sealed class ODataCreateTool(
 			// Declared a write: automatic re-authentication must never re-issue this POST, or a
 			// false-positive expired-session classification of the OData echo creates the record
 			// twice (GitHub #1313).
-			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), requestTimeoutMs);
+			SiteHttpResponse answer = SiteCall.NonReplayablePost(client, url, row.GetRawText(), requestTimeoutMs);
 			received = true;
-			ODataRowResult result = ParseCreated(responseJson, index) with { ResponseReceived = true };
+			ODataRowResult result = ParseCreated(answer.Body, index) with { ResponseReceived = true };
+			if (result.Success && answer.IsKnownFailureStatus) {
+				// An empty body reads as a created record; with a failure status the site said the create failed,
+				// and whether a row was written before it is not known.
+				result = new ODataRowResult {
+					Index = index,
+					Success = false,
+					ResponseReceived = true,
+					RecordCreated = null,
+					RetryGuidance = UnknownSideEffectGuidance,
+					Error = $"Creatio answered the create with HTTP {answer.StatusCode} and no recognized body, so it "
+						+ "was not confirmed. Read the records before re-sending this row."
+				};
+			}
+			if (!result.Success) {
+				result = result with { SiteResponse = SiteResponse.FromRefusal(answer) };
+			}
 			// Model binding names no column, so the type map is the only way to tell a binary column from an
 			// unknown property or a malformed value. The read is skipped when it does not fit in the batch
 			// budget: the row keeps the generic explanation instead of overshooting the deadline.

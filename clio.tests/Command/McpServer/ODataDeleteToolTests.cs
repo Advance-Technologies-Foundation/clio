@@ -37,6 +37,31 @@ public sealed class ODataDeleteToolTests {
 		result.Diagnostic.SideEffect.Should().Be("unknown", because: "transport failure does not establish rollback");
 	}
 
+	[Test, Category("Unit")]
+	[Description("A DELETE the site refuses carries the site's answer as site-response on the single-id result")]
+	public void Delete_ShouldCarryTheSiteResponse_WhenTheSiteRefusesTheDelete() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns((client, urls));
+		urls.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact");
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(403, "{\"error\":{\"code\":\"\",\"message\":\"No rights to delete\"}}"));
+		resolver.Resolve<IRecordDeletionService>(Arg.Any<EnvironmentOptions>()).Returns(new RecordDeletionService(
+			client, urls, Substitute.For<IRuntimeEntitySchemaReader>()));
+		ODataDeleteTool tool = new(resolver, new OperationCorrelationIdProvider());
+
+		// Act
+		ODataWriteResponse result = tool.Delete(new ODataDeleteArgs { EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true });
+
+		// Assert
+		result.Success.Should().BeFalse();
+		result.SiteResponse.Should().BeEquivalentTo(new SiteResponse(403, "No rights to delete", null,
+			SiteResponse.JsonBody));
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-delete.")]

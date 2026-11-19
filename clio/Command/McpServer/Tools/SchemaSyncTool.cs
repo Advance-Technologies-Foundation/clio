@@ -1179,13 +1179,22 @@ public sealed class SchemaSyncTool(
 			logger.ClearMessages();
 			int exitCode = 1;
 			Exception? caught = null;
-			try {
-				exitCode = attempt();
-			} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
-				caught = ex;
+			// A capture of this attempt's own, so the result reports what the site answered to this operation
+			// and never to an earlier one in the batch.
+			SiteResponse? siteResponse;
+			using (SiteResponseCapture.Scope attemptSiteResponse = SiteResponseCapture.Begin()) {
+				try {
+					exitCode = attempt();
+				} catch (Exception ex) when (!McpExceptionPolicy.IsUnrecoverable(ex)) {
+					caught = ex;
+				}
+				siteResponse = attemptSiteResponse.Last;
 			}
 			IReadOnlyList<LogMessage> rawMessages = logger.FlushAndSnapshotMessages(clearMessages: true);
 			bool failed = caught is not null || exitCode != 0;
+			if (!failed) {
+				siteResponse = null;
+			}
 			bool transient = retryable && failed && (caught is not null
 				? TransientNetworkFailureClassifier.IsTransient(caught)
 				: TransientNetworkFailureClassifier.IsTransientErrorMessage(TryGetLastErrorMessage(rawMessages)));
@@ -1200,7 +1209,7 @@ public sealed class SchemaSyncTool(
 						$"sync-schemas: transient network failure on attempt {attempts}/{MaxAttempts}; batch retry budget exhausted, failing fast."));
 					var exhausted = new List<LogMessage>(retryNotes);
 					exhausted.AddRange(rawMessages);
-					return new OperationExecution(exitCode, caught, exhausted, attempts);
+					return new OperationExecution(exitCode, caught, exhausted, attempts, siteResponse);
 				}
 				retryNotes.Add(new InfoMessage(
 					$"sync-schemas: transient network failure on attempt {attempts}/{MaxAttempts}; retrying in {backoff.TotalSeconds:0.#}s."));
@@ -1209,7 +1218,7 @@ public sealed class SchemaSyncTool(
 			}
 			var combined = new List<LogMessage>(retryNotes);
 			combined.AddRange(rawMessages);
-			return new OperationExecution(exitCode, caught, combined, attempts);
+			return new OperationExecution(exitCode, caught, combined, attempts, siteResponse);
 		}
 	}
 
@@ -1229,6 +1238,7 @@ public sealed class SchemaSyncTool(
 				Success = false,
 				Status = FailedStatus,
 				Error = SensitiveErrorTextRedactor.Redact(execution.CaughtException.Message),
+				SiteResponse = execution.SiteResponse,
 				Messages = messages,
 				Attempts = attempts
 			};
@@ -1242,6 +1252,7 @@ public sealed class SchemaSyncTool(
 			Outcome = success ? outcome : null,
 			Messages = messages,
 			Error = BuildOperationError(operationName, execution.ExitCode, messages),
+			SiteResponse = success ? null : execution.SiteResponse,
 			Attempts = attempts
 		};
 	}
@@ -1453,7 +1464,8 @@ public sealed class SchemaSyncTool(
 		int ExitCode,
 		Exception? CaughtException,
 		IReadOnlyList<LogMessage> Messages,
-		int Attempts) {
+		int Attempts,
+		SiteResponse? SiteResponse = null) {
 
 		/// <summary>
 		/// Combines a follow-up execution (e.g. lookup registration after a successful create) into this
@@ -1463,7 +1475,8 @@ public sealed class SchemaSyncTool(
 		public OperationExecution Append(OperationExecution next) {
 			var messages = new List<LogMessage>(Messages);
 			messages.AddRange(next.Messages);
-			return new OperationExecution(next.ExitCode, next.CaughtException, messages, Math.Max(Attempts, next.Attempts));
+			return new OperationExecution(next.ExitCode, next.CaughtException, messages, Math.Max(Attempts, next.Attempts),
+				next.SiteResponse);
 		}
 	}
 }
@@ -1686,6 +1699,11 @@ public sealed class SchemaSyncOperationResult {
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Error { get; init; }
+
+	/// <summary>What the site itself answered to this failed operation; see <see cref="Clio.Common.SiteResponse"/>.</summary>
+	[JsonPropertyName("site-response")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public SiteResponse? SiteResponse { get; init; }
 
 	[JsonPropertyName("messages")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

@@ -267,13 +267,25 @@
 
 		protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
 
-		private string InstallPackageOnServer(IApplicationClient session, string fileName,
+		private SiteHttpResponse InstallPackageOnServer(IApplicationClient session, string fileName,
 			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
 			string installUrl = packageInstallOptions == null
 				? InstallUrl
 				: InstallWithOptionsUrl;
-			return session.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
+			return SiteCall.Post(session, GetCompleteUrl(installUrl, environmentSettings),
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
+		}
+
+		// The install answer as an envelope. One that is not JSON fails the installation, so it is recorded as the
+		// site's answer before the parser's exception leaves.
+		private static BaseResponse ReadInstallResponse(SiteHttpResponse answer) {
+			try {
+				return JsonConvert.DeserializeObject<BaseResponse>(answer.Body);
+			}
+			catch (JsonException) {
+				SiteResponseCapture.RecordRefusal(answer);
+				throw;
+			}
 		}
 
 		private static bool ContainsInvalidGZipArchiveException(string value) =>
@@ -315,15 +327,15 @@
 			var task = Task.Factory.StartNew(
 				() => log = ListenForLogs(cancellationTokenSource.Token, session, environmentSettings,
 					initialInstallLog));
-			string result;
+			SiteHttpResponse answer;
 			try {
-				result = InstallPackageOnServer(session, fileName, environmentSettings, packageInstallOptions);
+				answer = InstallPackageOnServer(session, fileName, environmentSettings, packageInstallOptions);
 			}
 			finally {
 				cancellationTokenSource.Cancel();
 				task.GetAwaiter().GetResult();
 			}
-			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
+			BaseResponse response = ReadInstallResponse(answer);
 			var completeInstallLog = GetInstallLog(session, environmentSettings) ?? string.Empty;
 			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;
@@ -331,7 +343,16 @@
 				successLog = InstallLogAnalyzer.IsSuccessMessagePresent(completeInstallLog);
 			}
 			_logger.Write(GetLogDiff(log, completeInstallLog));
-			var success = (response != null && response.Success || response == null) && successLog;
+			// A non-2xx status the client kept is a failure even with an empty body, which alone reads as success:
+			// the site said the installation request failed.
+			var success = (response != null && response.Success || response == null) && successLog
+				&& !answer.IsKnownFailureStatus;
+			if (!success && (response is { Success: false } || answer.IsKnownFailureStatus)) {
+				// Only when the site's own answer failed the installation, not when the log check alone did.
+				// Recorded before the invalid-archive throw below; a failure the log then downgrades to success is
+				// never reported, because only a failed call carries site-response.
+				SiteResponseCapture.RecordRefusal(answer);
+			}
 			ReportLocallyModifiedSchemas(currentInstallLog);
 			if (ThrowInvalidGZipArchiveInstallException && !success
 				&& IsInvalidGZipArchiveFailure(response, currentInstallLog)) {

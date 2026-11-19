@@ -87,6 +87,49 @@ public sealed class CreateBusinessProcessServiceTests {
 		return new CreateBusinessProcessService(settings, factory, urlBuilder, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
 	}
 
+	[TestCase(200, "{\"BuildProcessResult\":{\"success\":false,\"errorMessage\":\"Element 'Start1' has no outgoing flow\"}}",
+		"Element 'Start1' has no outgoing flow", "json",
+		TestName = "BuildProcess_ShouldRecordTheSiteAnswer_WhenTheServerRefusesTheBuild")]
+	[TestCase(500, "<html><title>500 - Internal server error.</title></html>", null, "html",
+		TestName = "BuildProcess_ShouldRecordTheSiteAnswer_WhenTheAnswerIsAnHtmlPage")]
+	[TestCase(502, "", null, "empty", TestName = "BuildProcess_ShouldRecordTheSiteAnswer_WhenTheAnswerIsEmpty")]
+	[Description("A refused build records the site's own answer: its status and, from the wrapped envelope, its message")]
+	public void BuildProcess_ShouldRecordTheSiteAnswer(int status, string body, string message, string kind) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, body));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind));
+	}
+
+	[Test]
+	[Description("A successful build records nothing")]
+	public void BuildProcess_ShouldRecordNothing_WhenTheBuildSucceeds() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(200,
+				"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrP\",\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}"));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		capture.Last.Should().BeNull();
+	}
+
 	[Test]
 	[Description("Reads the server's warnings[] off a SUCCESSFUL build. The create side shipped this member with no test at all while the modify side had four, which is the asymmetry a review found: an undeclared or misspelled member deserializes to null with nothing red anywhere, so the channel would look plumbed and carry nothing. The classes it carries are connection notices and pre-configured-page sync notices - NOT the two formula cases the doc used to name, which went with the package's own validator.")]
 	public void BuildProcess_ShouldReadWarnings_WhenServerReportsThemOnASuccessfulBuild() {

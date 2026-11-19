@@ -57,6 +57,34 @@ public sealed class PageSyncToolTests {
 			because: "sync-pages modifies remote page schemas and should warn clients");
 	}
 
+	[TestCase(200, "{\"success\":false,\"errorInfo\":{\"message\":\"Schema is locked by another user\"}}",
+		"Schema is locked by another user", "json", TestName = "SyncPages_ShouldCarryTheSiteResponse_WhenTheSaveIsRefused")]
+	[TestCase(500, "<html><title>500 - Internal server error.</title></html>", null, "html",
+		TestName = "SyncPages_ShouldCarryTheSiteResponse_WhenTheSaveIsAnsweredWithAnHtmlPage")]
+	[TestCase(502, "", null, "empty", TestName = "SyncPages_ShouldCarryTheSiteResponse_WhenTheSaveIsAnsweredWithAnEmptyBody")]
+	[Category("Unit")]
+	[Description("A page whose save the site refuses carries the site's answer on its own result")]
+	public async Task SyncPages_ShouldCarryTheSiteResponse_OnTheFailedPage(int status, string body, string message,
+		string kind) {
+		// Arrange
+		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithSaveAnswer(new SiteHttpResponse(status, body));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new("dev", [new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
+			Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse();
+		response.Pages[0].SiteResponse.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind),
+			because: "the failed page reports what the site answered to its save");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("sync-pages validate=false propagates onto PageUpdateOptions: the command-level mobile CONTENT chain is skipped, so a mobile body carrying a 'handlers' section still saves.")]
@@ -1567,6 +1595,21 @@ public sealed class PageSyncToolTests {
 				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(new JObject { ["success"] = true }.ToString());
 		return new PageUpdateCommand(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("test-uid"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+	}
+
+	// A page update whose designer client keeps the status: GetSchema loads, SaveSchema is answered with saveAnswer.
+	private static PageUpdateCommand CreatePageUpdateCommandWithSaveAnswer(SiteHttpResponse saveAnswer) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		PageUpdateCommand command = ConfigureSuccessfulPageUpdateCommand(applicationClient, schemaType: 9);
+		((IStatusPreservingApplicationClient)applicationClient)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(callInfo => callInfo.ArgAt<string>(1).Contains("SaveSchema", StringComparison.Ordinal)
+				? saveAnswer
+				: new SiteHttpResponse(200, new JObject {
+					["success"] = true,
+					["schema"] = new JObject { ["body"] = "original" }
+				}.ToString()));
+		return command;
 	}
 
 	private static PageUpdateCommand CreatePageUpdateCommandWithFailureForSchema(string failSchemaName) {

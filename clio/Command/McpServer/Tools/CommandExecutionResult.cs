@@ -32,6 +32,16 @@ public record CommandExecutionResult(
 	string Note = null
 ) {
 
+	/// <summary>
+	/// What the Creatio site itself answered to the call that made this command fail: its HTTP status and,
+	/// when the body carries them, its own message and error code. Absent on success, when no HTTP response
+	/// exists, and when the failure is clio's own. Nothing in it is clio's wording.
+	/// </summary>
+	[JsonPropertyName("site-response")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("What the Creatio site itself answered to the call that made this command fail: status (the HTTP status), message and code (the site's own, when the body carries them) and body (json, html, text or empty). Absent on success, when no HTTP response exists (timeout, DNS, TLS, connection refused) and when the failure is clio's own.")]
+	public SiteResponse SiteResponse { get; init; }
+
 	public const string CompileNotRequiredNote = "compile-creatio not required";
 
 	/// <summary>

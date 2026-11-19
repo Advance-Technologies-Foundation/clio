@@ -357,6 +357,9 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 				string tenantKey = ResolveTenantLockKey(options);
 				bool previousPreserveMessages = _logger.PreserveMessages;
 				_logger.PreserveMessages = true;
+				// Self-captured like the log above: the site's answer to a failed create or registration is
+				// reported on this tool's own result, as RunCommandUnderHeldLock does for the other tools.
+				using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin();
 				try {
 					CreateEntitySchemaCommand resolvedCommand = ResolveCommand<CreateEntitySchemaCommand>(options);
 					exitCode = resolvedCommand.Execute(options);
@@ -370,7 +373,9 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 						exitCode,
 						[.. McpPassthroughRedaction.SanitizeAndRedact([.. _logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
 						null,
-						dataForge);
+						dataForge) {
+						SiteResponse = exitCode == 0 ? null : siteResponses.Last
+					};
 					return returnResult;
 				}
 				catch (Exception exception) {
@@ -379,7 +384,9 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 						exitCode > 0 ? exitCode : 1,
 						logMessages,
 						null,
-						dataForge);
+						dataForge) {
+						SiteResponse = siteResponses.Last
+					};
 					return returnResult;
 				}
 				finally {

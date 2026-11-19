@@ -22,6 +22,33 @@ internal static class DataServiceResponse {
 	/// Thrown when the envelope reports failure, when the body is not an envelope at all, or when its
 	/// <c>success</c> flag cannot be read as a true/false value.
 	/// </exception>
+	/// <summary>
+	/// Same check for an answer whose HTTP status is known, recording the answer as the site's response when
+	/// the check fails.
+	/// </summary>
+	/// <remarks>
+	/// One rule is added to the body check: a status the client kept that is not 2xx is a failure even when the
+	/// body would pass it - an empty body or an envelope without a <c>success</c> flag - because the site said
+	/// the call failed and accepting it would report a write that did not happen as done.
+	/// </remarks>
+	/// <param name="answer">The answer as <see cref="SiteCall"/> returned it.</param>
+	/// <param name="operationName">The operation to name in the failure message.</param>
+	/// <exception cref="InvalidOperationException">Thrown as by the body check, or for a non-2xx status.</exception>
+	internal static void ThrowIfUnsuccessful(SiteHttpResponse answer, string operationName) {
+		ArgumentNullException.ThrowIfNull(answer);
+		try {
+			ThrowIfUnsuccessful(answer.Body, operationName);
+			if (answer.IsKnownFailureStatus) {
+				throw new InvalidOperationException(
+					$"{operationName} failed: the environment answered HTTP {answer.StatusCode}.");
+			}
+		}
+		catch (InvalidOperationException) {
+			SiteResponseCapture.RecordRefusal(answer);
+			throw;
+		}
+	}
+
 	internal static void ThrowIfUnsuccessful(string response, string operationName) {
 		if (string.IsNullOrWhiteSpace(response)) {
 			return;

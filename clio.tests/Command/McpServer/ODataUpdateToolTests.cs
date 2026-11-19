@@ -124,6 +124,68 @@ public sealed class ODataUpdateToolTests {
 		"{\"@odata.context\":\"http://creatio/odata/$metadata#Contact\",\"Id\":\"" +
 		"99999999-9999-9999-9999-999999999999\",\"Name\":\"probe\"}";
 
+	private static Fixture KeepingStatusFixture(SiteHttpResponse patchAnswer) {
+		IApplicationClient client = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(CsdL());
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(patchAnswer);
+		return new Fixture(client);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A PATCH the site refuses carries the site's answer as site-response")]
+	public void Update_ShouldCarryTheSiteResponse_WhenTheSiteRefusesThePatch() {
+		// Arrange
+		Fixture f = KeepingStatusFixture(new SiteHttpResponse(400,
+			"{\"error\":{\"code\":\"\",\"message\":\"The value is not valid for Name.\"}}"));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.SiteResponse.Should().BeEquivalentTo(new SiteResponse(400, "The value is not valid for Name.", null,
+			SiteResponse.JsonBody));
+		System.Text.Json.JsonSerializer.Serialize(response).Should().Contain("\"site-response\":{\"status\":400",
+			because: "callers read the field as site-response");
+		((IStatusPreservingApplicationClient)f.Client).Received(1)
+			.SendKeepingStatus(SiteRequestVerb.Patch, KeyUrl, """{"Name":"New"}""", 30000, 1, 1, false);
+	}
+
+	[TestCase(503, "", "empty", TestName = "Update_ShouldFail_WhenThePatchIsAnswered503WithNoBody")]
+	[TestCase(502, "<html><title>502 - Bad Gateway</title></html>", "html",
+		TestName = "Update_ShouldFail_WhenThePatchIsAnsweredWithAnHtmlPage")]
+	[Description("A failure status fails the update even when the body alone would not, and carries the site's answer")]
+	public void Update_ShouldFail_WhenThePatchHasAFailureStatus(int status, string body, string kind) {
+		// Arrange
+		Fixture f = KeepingStatusFixture(new SiteHttpResponse(status, body));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an empty 503 used to read as a successful update");
+		response.SiteResponse.Should().BeEquivalentTo(new SiteResponse(status, null, null, kind));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A successful PATCH carries no site response")]
+	public void Update_ShouldCarryNoSiteResponse_WhenThePatchSucceeds() {
+		// Arrange
+		Fixture f = KeepingStatusFixture(new SiteHttpResponse(204, string.Empty));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeTrue(because: response.Error);
+		response.SiteResponse.Should().BeNull();
+		System.Text.Json.JsonSerializer.Serialize(response).Should().NotContain("site-response");
+	}
+
 	private sealed class Fixture {
 		public Fixture(string metadataBody, Func<string, string> probeBody) {
 			Client = Substitute.For<IApplicationClient>();

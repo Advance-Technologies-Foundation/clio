@@ -25,6 +25,11 @@ polling. If the application refuses the environment credentials while waiting,
 the wait stops early with an authentication error instead of burning the whole
 `--ready-timeout` on a failure that waiting cannot fix.
 
+If the application answers the restart request itself with a status outside 2xx (no rights, a server
+error, an error page), the command fails with a non-zero exit code and says so; it no longer reports
+"Done" for a restart the application refused. With `--wait-ready` it then does not wait. Over MCP, the
+failed `restart-by-environment-name` result carries the application's answer as `site-response`.
+
 The readiness round-trip does not perform an explicit login: the client establishes
 its session on demand, so OAuth and bearer-token environments (which carry a token
 instead of a login/password) are supported by the same path.

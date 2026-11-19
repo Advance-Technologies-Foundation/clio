@@ -289,7 +289,7 @@ internal sealed class PackageDataBindingWriter(
 		string requestBody = BuildSaveSchemaDataRequest(
 			package, bindingName, entitySchemaName, schema, boundRecordIds.ToList(), existingBindingUId,
 			columnPolicy);
-		string response = applicationClient.ExecutePostRequest(
+		SiteHttpResponse response = SiteCall.Post(applicationClient,
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveSchemaData), requestBody);
 		DataServiceResponse.ThrowIfUnsuccessful(response, "SaveSchema");
 		WarnIfPackageFolderIsNotUpdated(package, bindingName,
@@ -302,7 +302,7 @@ internal sealed class PackageDataBindingWriter(
 			packageUId = package.UId.ToString(),
 			packageSchemaDataName = bindingName
 		});
-		string response = applicationClient.ExecutePostRequest(
+		SiteHttpResponse response = SiteCall.Post(applicationClient,
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeletePackageSchemaData), body);
 		DataServiceResponse.ThrowIfUnsuccessful(response, "DeletePackageSchemaDataRequest");
 		WarnIfPackageFolderIsNotUpdated(package, bindingName, BindingChange.Removed);

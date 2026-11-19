@@ -394,7 +394,18 @@ public sealed class CreateBusinessProcessService(
 		string requestBody = new JsonObject { ["request"] = descriptor }.ToJsonString();
 		logger.WriteInfo($"Building process '{descriptor["name"]}' on '{environmentName}'...");
 
-		string responseBody = client.ExecutePostRequest(url, requestBody);
+		SiteHttpResponse answer = SiteCall.Post(client, url, requestBody);
+		try {
+			return ReadBuildProcessAnswer(answer.Body);
+		}
+		catch (InvalidOperationException) {
+			// Every refusal below is this answer failing the call, so it is what the tool reports as the site's.
+			SiteResponseCapture.RecordRefusal(answer);
+			throw;
+		}
+	}
+
+	private static CreateBusinessProcessResult ReadBuildProcessAnswer(string responseBody) {
 		// The response is parsed inside a try, for the reason ParseOperations just below parses the REQUEST inside
 		// one: a body that is not this envelope makes JsonSerializer throw a message built for a developer — a
 		// .NET type name and a byte offset — and this one reaches an agent, which cannot act on it. Worse, it

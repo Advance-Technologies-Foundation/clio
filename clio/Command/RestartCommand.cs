@@ -73,6 +73,29 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 		return WaitForReadiness(options) ? 0 : 1;
 	}
 
+	/// <summary>
+	/// Sends the restart request and fails when the environment answers it with a status outside 2xx.
+	/// </summary>
+	/// <remarks>
+	/// The base command reads no answer for a restart, so a refusal - no rights (403), a server error (500), an
+	/// error page - was reported as "Done" with exit code 0, and with a readiness wait a site that refused and
+	/// stayed up then read "ready". The status is now kept and a failure status fails the call, carrying the
+	/// site's answer as its site response. The body of a 2xx answer is still not read: what it holds differs
+	/// between runtimes and carries no verdict.
+	/// </remarks>
+	/// <param name="options">Restart options.</param>
+	protected override void ExecuteRemoteCommand(RestartOptions options) {
+		SiteHttpResponse answer = SiteCall.Post(ApplicationClient, ServiceUri, GetRequestData(options), RequestTimeout,
+			MaxAttempts, DelaySec);
+		if (!answer.IsKnownFailureStatus) {
+			return;
+		}
+		SiteResponseCapture.RecordRefusal(answer);
+		CommandSuccess = false;
+		Logger.WriteError($"The environment refused the restart request: it answered HTTP {answer.StatusCode}, so "
+			+ "the restart is not confirmed. Check the environment before relying on a restart.");
+	}
+
 	internal int ExecuteForEnvironment(
 		RestartOptions options,
 		EnvironmentSettings environment,

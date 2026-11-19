@@ -85,6 +85,22 @@ internal static class ODataKeyedWrite {
 	/// </summary>
 	/// <param name="response">The raw response body returned by the PATCH/DELETE request.</param>
 	/// <returns>A redacted failure message, or <c>null</c> when the response is consistent with success.</returns>
+	/// <summary>
+	/// Same check for an answer whose HTTP status is known: a status the client kept that is not 2xx is a
+	/// failure even when the body would pass the check - an empty body or a JSON shape no error recognizer
+	/// matches - because the site said the write failed.
+	/// </summary>
+	/// <param name="answer">The answer as <see cref="SiteCall"/> returned it.</param>
+	/// <returns>The error to report, or <see langword="null"/> when the write is accepted.</returns>
+	internal static string ValidateWriteResponse(SiteHttpResponse answer) {
+		string bodyError = ValidateWriteResponse(answer.Body);
+		if (bodyError is not null || !answer.IsKnownFailureStatus) {
+			return bodyError;
+		}
+		return $"Creatio answered the write with HTTP {answer.StatusCode} and no recognized error body, so it was "
+			+ "not accepted. Read the record before deciding whether to resubmit.";
+	}
+
 	internal static string ValidateWriteResponse(string response) {
 		// Whitespace counts as "no body", not as an unparsable body: a proxy that pads an otherwise
 		// empty 204 with a newline is the realistic source of a whitespace-only response, and Creatio

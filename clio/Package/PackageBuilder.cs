@@ -169,10 +169,16 @@
 					CompileWithPolling(fullBuildPackageUrl, requestData, safePackageName, waitOptions, suggestWait: force);
 				} else {
 					using IOwnedApplicationClient applicationClient = CreateClient();
-					string responseBody = applicationClient.ExecutePostRequest(fullBuildPackageUrl, requestData);
+					SiteHttpResponse answer = SiteCall.Post(applicationClient, fullBuildPackageUrl, requestData);
+					string responseBody = answer.Body;
+					PackageBuildResult verdict = PackageBuildResultParser.IsUnrecognizedBody(responseBody)
+						? null
+						: PackageBuildResultParser.TryParseResponse(responseBody);
+					if (verdict is not { Success: true }) {
+						SiteResponseCapture.RecordRefusal(answer);
+					}
 					ThrowIfUnrecognizedBody(safePackageName, responseBody);
-					ApplyVerdict(new BuildVerdictEvidence(safePackageName,
-						PackageBuildResultParser.TryParseResponse(responseBody), History: null,
+					ApplyVerdict(new BuildVerdictEvidence(safePackageName, verdict, History: null,
 						CompletionInferred: false, Waited: waitOptions is not null, SuggestWait: force));
 				}
 
@@ -243,6 +249,7 @@
 		private bool TryConcludeOnAnswer(AnsweredBuild answered, CompilationProgress progress, Action endMonitoring) {
 			if (PackageBuildResultParser.IsUnrecognizedBody(answered.Body)) {
 				endMonitoring();
+				SiteResponseCapture.RecordRefusal(answered.Answer);
 				ThrowIfUnrecognizedBody(answered.PackageName, answered.Body);
 			}
 			PackageBuildResult response = PackageBuildResultParser.TryParseResponse(answered.Body);
@@ -253,6 +260,11 @@
 				return false;
 			}
 			endMonitoring();
+			if (response is not { Success: true }) {
+				// The site's own answer is the verdict here (a refusal, or a body without one), so it is what a
+				// failed call reports as the site's; a history-only verdict below records nothing.
+				SiteResponseCapture.RecordRefusal(answered.Answer);
+			}
 			ApplyVerdict(new BuildVerdictEvidence(answered.PackageName, response, progress.Snapshot(),
 				CompletionInferred: false, Waited: answered.Waited, SuggestWait: answered.SuggestWait));
 			return true;
@@ -448,7 +460,7 @@
 			CompilationProgress progress = new(ReportHistoryRow, UtcNow);
 
 			using CancellationTokenSource cts = new();
-			Task<string> httpTask = SendCompilationRequestAsync(cts.Token);
+			Task<SiteHttpResponse> httpTask = SendCompilationRequestAsync(cts.Token);
 			// Published through a ONE-ELEMENT HOLDER with Volatile.Write/Read, not a plain captured local: the
 			// write happens on the poll thread and the read on the main thread's spin loop below, so without an
 			// explicit barrier there is no happens-before edge and the JIT may hoist the read out of the loop.
@@ -460,8 +472,9 @@
 
 				if (httpTask.Status == TaskStatus.RanToCompletion) {
 					responseAt ??= UtcNow();
-					if (TryConcludeOnAnswer(new AnsweredBuild(packageName, httpTask.Result, responseAt.Value, waited,
-							suggestWait), progress, EndMonitoring)) {
+					SiteHttpResponse answer = httpTask.Result;
+					if (TryConcludeOnAnswer(new AnsweredBuild(packageName, answer.Body, responseAt.Value, waited,
+							suggestWait, answer), progress, EndMonitoring)) {
 						return;
 					}
 					Pause();
@@ -504,13 +517,14 @@
 
 			void EndMonitoring() => EndCompileMonitoring(cts, pollThread, httpTask);
 
-			async Task<string> SendCompilationRequestAsync(CancellationToken cancellationToken) {
+			async Task<SiteHttpResponse> SendCompilationRequestAsync(CancellationToken cancellationToken) {
 				using IOwnedApplicationClient client = CreateClient();
 				using HttpResponseMessage response = await client.ExecutePostRequestAsync(
 					url, requestData, Timeout.Infinite, cancellationToken: cancellationToken).ConfigureAwait(false);
-				return response.Content is null
+				string body = response.Content is null
 					? null
 					: await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+				return new SiteHttpResponse((int)response.StatusCode, body);
 			}
 		}
 
@@ -772,7 +786,7 @@
 		/// <param name="Waited">Whether the caller asked to wait for the build to finish.</param>
 		/// <param name="SuggestWait">Whether an early success may point the user at <c>--wait</c>.</param>
 		private sealed record AnsweredBuild(string PackageName, string Body, DateTime AnsweredAt,
-			bool Waited, bool SuggestWait);
+			bool Waited, bool SuggestWait, SiteHttpResponse Answer = null);
 
 		/// <summary>
 		/// How a compile that ran out of budget was requested and how its request ended.

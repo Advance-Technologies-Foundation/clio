@@ -288,9 +288,19 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
-		string rawResponse = _applicationClient.ExecutePostRequest(url, requestBody, timeoutMs, maxAttempts, retryDelay);
-		TResponse response = DeserializeResponse<TResponse>(methodName, url, rawResponse);
-		return EnsureSuccess(response, methodName);
+		SiteHttpResponse answer = SiteCall.Post(_applicationClient, url, requestBody, timeoutMs, maxAttempts,
+			retryDelay);
+		try {
+			TResponse response = DeserializeResponse<TResponse>(methodName, url, answer.Body);
+			return EnsureSuccess(response, methodName);
+		}
+		catch (Exception) {
+			// Every throw above is this answer failing the call, so it is what the tool reports as the site's.
+			// The probing TryPostToUrl below records nothing: its callers may tolerate a failed probe, and a
+			// tolerated answer must not be reported as the reason a later step failed.
+			SiteResponseCapture.RecordRefusal(answer);
+			throw;
+		}
 	}
 
 	// maxAttempts: null keeps the command-level default; pass an explicit value for a non-idempotent or

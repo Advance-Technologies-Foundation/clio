@@ -391,14 +391,14 @@ internal sealed class LookupRegistrationService(
 		LookupRegistrationRow? existingRow) {
 		if (existingRow is null) {
 			string rowId = Guid.NewGuid().ToString();
-			string response = applicationClient.ExecutePostRequest(
+			SiteHttpResponse response = SiteCall.Post(applicationClient,
 				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert),
 				BuildLookupInsertBody(rowId, lookupTitle, lookupSchemaUId, lookupSchemaColumns));
 			DataServiceResponse.ThrowIfUnsuccessful(response, "InsertQuery");
 			return rowId;
 		}
 		if (!string.Equals(existingRow.Name, lookupTitle, StringComparison.Ordinal)) {
-			string response = applicationClient.ExecutePostRequest(
+			SiteHttpResponse response = SiteCall.Post(applicationClient,
 				serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update),
 				BuildLookupUpdateBody(existingRow.RowId.ToString(), lookupTitle, lookupSchemaColumns));
 			DataServiceResponse.ThrowIfUnsuccessful(response, "UpdateQuery");
@@ -965,7 +965,7 @@ internal sealed class DataBindingDbService(
 	}
 
 	private void DeleteEntityRow(string schemaName, string keyValue) {
-		string response = applicationClient.ExecutePostRequest(
+		SiteHttpResponse response = SiteCall.Post(applicationClient,
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Delete),
 			BuildDeleteQueryBody(schemaName, keyValue));
 		DataServiceResponse.ThrowIfUnsuccessful(response, "DeleteQuery");
@@ -1002,7 +1002,7 @@ internal sealed class DataBindingDbService(
 			filters = BuildPrimaryKeyFilter(rowId)
 		};
 
-		string response = applicationClient.ExecutePostRequest(
+		SiteHttpResponse response = SiteCall.Post(applicationClient,
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update),
 			JsonSerializer.Serialize(body));
 		DataServiceResponse.ThrowIfUnsuccessful(response, "UpdateQuery");
@@ -1029,7 +1029,7 @@ internal sealed class DataBindingDbService(
 			columnValues = new { items = columnItems }
 		};
 
-		string response = applicationClient.ExecutePostRequest(
+		SiteHttpResponse response = SiteCall.Post(applicationClient,
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert),
 			JsonSerializer.Serialize(body));
 		DataServiceResponse.ThrowIfUnsuccessful(response, "InsertQuery");
