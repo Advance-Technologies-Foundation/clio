@@ -251,6 +251,43 @@ public sealed class PackageDataBindingWriterFileDesignModeTests {
 			because: "pkg-to-db makes the database match the disk and a database-only binding does not survive it");
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Category("Unit")]
+	[Description("A created or re-saved binding is written to disk with create-data-binding --from-environment, which replaces only that binding folder, so the warning names it before the environment-wide export (ENG-106290).")]
+	public void BuildPackageFolderWarning_ShouldNameSingleBindingRoute_WhenBindingIsCreatedOrRefreshed(bool created) {
+		// Arrange
+		PackageDataBindingWriter.BindingChange change = created
+			? PackageDataBindingWriter.BindingChange.Created
+			: PackageDataBindingWriter.BindingChange.Refreshed;
+		VerbAttribute createVerb = typeof(CreateDataBindingOptions).GetCustomAttribute<VerbAttribute>()!;
+
+		// Act
+		string warning = PackageDataBindingWriter.BuildPackageFolderWarning(true, Package.Name, "UsrStatus", change);
+
+		// Assert
+		warning.Should().Contain(
+			$"clio {createVerb.Name} -e <environment> --package {Package.Name} --binding-name UsrStatus --from-environment",
+			because: "the CLI form must be runnable as written for this binding");
+		warning.Should().Contain($"MCP: {CreateDataBindingTool.CreateDataBindingToolName} with from-environment true",
+			because: "an MCP caller reaches the same route through the resident tool");
+		warning.IndexOf("--from-environment", StringComparison.Ordinal).Should().BeLessThan(
+			warning.IndexOf(PackageDataBindingWriter.FileSystemExportCommandName, StringComparison.Ordinal),
+			because: "the single-binding route comes first; the environment-wide export is the fallback");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A removed binding has nothing to read back, so its warning does not advise create-data-binding --from-environment (ENG-106290).")]
+	public void BuildPackageFolderWarning_ShouldNotNameSingleBindingRoute_WhenBindingIsRemoved() {
+		// Act
+		string warning = PackageDataBindingWriter.BuildPackageFolderWarning(
+			true, Package.Name, "UsrStatus", PackageDataBindingWriter.BindingChange.Removed);
+
+		// Assert
+		warning.Should().NotContain("--from-environment", because: "the binding no longer exists in the database");
+	}
+
 	// Reads the warnings through the recorded-calls API, so the expectation is a plain assertion on the
 	// written text and a failure names the messages that were actually logged.
 	private string[] WarningMessages() => _logger.ReceivedCalls()

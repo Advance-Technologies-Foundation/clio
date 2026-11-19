@@ -82,6 +82,11 @@ public sealed record ODataRowResult {
 	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public DataWriteDiagnostic? Diagnostic { get; init; }
 
+	/// <summary>What the site itself answered to this failed write; see <see cref="Clio.Common.SiteResponse"/>.</summary>
+	[JsonPropertyName("site-response"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("What the Creatio site itself answered to the failed write: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
+	public SiteResponse? SiteResponse { get; init; }
+
 	[JsonIgnore]
 	internal bool ResponseReceived { get; init; }
 

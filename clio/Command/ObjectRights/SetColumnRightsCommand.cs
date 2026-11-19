@@ -46,9 +46,11 @@ public class SetColumnRightsOptions : RemoteCommandOptions {
 	/// <summary>Remove the grantee's row from the column; a call of its own.</summary>
 	[Option("remove-row", Required = false, HelpText =
 		"Remove the grantee's row from the column; no change when it has none. Removing the column's last row leaves it "
-		+ "with no rows: every user then follows the object's operation permissions (Creatio documentation); the "
-		+ "summary says when that widens the removed row's access. A call of its own: not with --access, --position or "
-		+ "a switch flag.")]
+		+ "with no rows: every user then follows the object's operation permissions (Creatio documentation). The summary "
+		+ "and the result say what then applies to the removed row's members and whether that widens their access "
+		+ "(All external users' row, not All employees', for an external role or user); while an All employees or All "
+		+ "external users row remains, the removal is refused when clio cannot tell whether the grantee is external. A "
+		+ "call of its own: not with --access, --position or a switch flag.")]
 	public bool RemoveRow { get; set; }
 
 	/// <summary>Put the grantee's row at this position of the column's stored position order, 0 first.</summary>
@@ -207,9 +209,15 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			options.DisableColumnPermissions);
 		ColumnRightsPlan plan = _planner.Plan(new ColumnRightsLayer(before.AdministratedByColumns, stored,
 			KnownColumns(schemaColumns, before)), request);
+		bool externalGrantee = false;
+		if (request.RemoveRow && !plan.Refused && plan.Changes && LeavesABroadRow(plan)
+			&& !TryFindExternalGrantee(input.Grantee, label, requestOptions, out externalGrantee)) {
+			WriteFacts(storageFacts);
+			return 1;
+		}
 		Change change = new(schemaName, label, column,
 			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(granteeName)}' ({input.Grantee})", request, plan,
-			codes, storageFacts, ServiceColumnsWithoutRows(before), storedRead);
+			codes, storageFacts, ServiceColumnsWithoutRows(before), storedRead, externalGrantee);
 		if (plan.Refused) {
 			_logger.WriteError($"Error: {RefusalMessage(change)} Nothing was changed.");
 			WriteFacts(storageFacts);
@@ -446,10 +454,38 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		public bool IsRead => Object.IsRead && Stored is not null;
 	}
 
+	// Whether the column keeps an All employees or All external users row after the plan: only then does it matter for
+	// the removal's summary whether the grantee is external.
+	private static bool LeavesABroadRow(ColumnRightsPlan plan) =>
+		plan.ColumnRowsAfter.Any(row => row.Level is not null
+			&& (row.GranteeId == SysAdminUnitIds.AllEmployees || row.GranteeId == SysAdminUnitIds.AllPortalUsers));
+
+	// Whether a removed row's grantee is an external (portal) role or user. External users are not in All employees, so
+	// the row that applies to them after the removal is All external users', not All employees'. A failed lookup fails
+	// the call: an external role taken for internal would hide exactly the widening the operator must see.
+	private bool TryFindExternalGrantee(Guid grantee, string label, CreatioRequestOptions requestOptions,
+		out bool external) {
+		external = grantee == SysAdminUnitIds.AllPortalUsers;
+		if (external || grantee == SysAdminUnitIds.AllEmployees) {
+			return true;
+		}
+		try {
+			external = _granteeLookup.FindExternalUnits(new[] { grantee }, requestOptions).Contains(grantee);
+			return true;
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
+			_logger.WriteError($"Error: {label}: could not tell whether grantee {grantee} is an external (portal) role or "
+				+ "user, so what applies to its members after the removal cannot be shown: "
+				+ $"{ObjectRightsSupport.DisplayFailure(ex)}. Nothing was changed.");
+			return false;
+		}
+	}
+
 	// Everything the output of one call is rendered from.
 	private sealed record Change(string SchemaName, string Label, ColumnTarget Column, string GranteeLabel,
 		ColumnRightsChangeRequest Request, ColumnRightsPlan Plan, IReadOnlyDictionary<Guid, string> Codes,
-		IReadOnlyList<string> StorageFacts, IReadOnlyList<Guid> ServiceColumnsWithoutRows, bool StoredRead) {
+		IReadOnlyList<string> StorageFacts, IReadOnlyList<Guid> ServiceColumnsWithoutRows, bool StoredRead,
+		bool ExternalGrantee) {
 
 		public string ColumnLabel => Column is null ? null : FormatColumn(Column.Code, Column.Caption);
 
@@ -472,25 +508,31 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 		}
 
 		// What applies to the removed row's members afterwards, and whether that widens their access. Per Creatio's
-		// documentation a role with no row in a column follows the other rows it matches — All employees, for an internal
-		// user — or, with none, the object's operation permissions (taken as up to edit: they are not read here).
+		// documentation a role with no row in a column follows the other rows it matches — All employees for an internal
+		// user, All external users for an external one — or, with none, the object's operation permissions (taken as up
+		// to edit: they are not read here).
 		public string RemovalEffect {
 			get {
 				ColumnRightRow removed = Plan.ColumnRowsBefore.FirstOrDefault(row => row.GranteeId == Request.Grantee);
 				if (removed?.Level is not { } level) {
 					return "";
 				}
-				ColumnRightRow allEmployees = Plan.ColumnRowsAfter.FirstOrDefault(row =>
-					row.GranteeId == SysAdminUnitIds.AllEmployees && row.Level is not null);
+				Guid everyone = ExternalGrantee ? SysAdminUnitIds.AllPortalUsers : SysAdminUnitIds.AllEmployees;
+				string everyoneName = ExternalGrantee ? SysAdminUnitIds.AllPortalUsersName : SysAdminUnitIds.AllEmployeesName;
+				ColumnRightRow broad = Request.Grantee == everyone
+					? null
+					: Plan.ColumnRowsAfter.FirstOrDefault(row => row.GranteeId == everyone && row.Level is not null);
+				string others = ExternalGrantee
+					? "its members then follow the column's other rows they match (not All employees: external users are "
+						+ "not in it), or the object's operation permissions"
+					: "its members then follow the column's other rows they match, or the object's operation permissions";
 				string applies = Plan.ColumnRowsAfter.Count == 0
 					? "the column is left with no rows: every user then follows the object's operation permissions "
 						+ "(Creatio documentation)"
-					: allEmployees is not null && Request.Grantee != SysAdminUnitIds.AllEmployees
-						? $"its members then follow the All employees row ({ColumnRightLevelNames.Of(allEmployees.Level)})"
-						: "its members then follow the column's other rows they match, or the object's operation permissions";
-				ColumnRightLevel after = allEmployees is not null && Request.Grantee != SysAdminUnitIds.AllEmployees
-					? allEmployees.Level!.Value
-					: ColumnRightLevel.Edit;
+					: broad is not null
+						? $"its members then follow the {everyoneName} row ({ColumnRightLevelNames.Of(broad.Level)})"
+						: others;
+				ColumnRightLevel after = broad?.Level ?? ColumnRightLevel.Edit;
 				return $" The removed row granted {ColumnRightLevelNames.Of(level)}; {applies}"
 					+ ((int)level < (int)after ? ", which WIDENS their access." : ".");
 			}
@@ -785,7 +827,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 	private int ReportSaved(Change change, IReadOnlyList<string> facts, ReadBack readBack) {
 		if (!readBack.IsRead) {
 			_logger.WriteError($"Error: {change.Label}: saved, but NOT verified — on the read-back "
-				+ $"{ReadBackFailure(readBack)}. Check it with get-column-rights before retrying: the plan was:");
+				+ $"{ReadBackFailure(readBack)}. Check it with get-column-rights before retrying: the plan was: "
+				+ change.Summary);
 			WriteFacts(facts);
 			return 1;
 		}
@@ -839,7 +882,7 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 			: $"the save failed ({save.Error})";
 		if (!readBack.IsRead) {
 			_logger.WriteError($"Error: {change.Label}: {failure}, and on the read-back {ReadBackFailure(readBack)}. "
-				+ "Read the object with get-column-rights before retrying.");
+				+ $"Read the object with get-column-rights before retrying: the plan was: {change.Summary}");
 			return 1;
 		}
 		IReadOnlyList<string> critical = Critical(change, readBack);
@@ -889,7 +932,8 @@ public class SetColumnRightsCommand : Command<SetColumnRightsOptions> {
 				+ $"{(change.Plan.DisablesColumnPermissions ? "OFF; every stored row is kept, not applied" : "ON")}.";
 		}
 		if (change.Request.RemoveRow) {
-			return $"{change.Label}: removed the row of grantee {change.GranteeLabel} from column {change.ColumnLabel}.";
+			return $"{change.Label}: removed the row of grantee {change.GranteeLabel} from column {change.ColumnLabel}."
+				+ change.RemovalEffect;
 		}
 		if (change.Request.MovesOnly) {
 			return $"{change.Label}: moved the row of grantee {change.GranteeLabel} in column {change.ColumnLabel} to "

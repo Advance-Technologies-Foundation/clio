@@ -7,13 +7,19 @@ namespace Clio.Command;
 
 /// <summary>The package floor of <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c>.</summary>
 public static class DynamicCaseChangeRequirement {
-	/// <summary>The first CrtProcessBuilder archive whose <c>DescribeCase</c> and <c>ModifyCase</c> carry case filters.</summary>
+	/// <summary>
+	/// The first CrtProcessBuilder archive whose <c>DescribeCase</c> counts the records per stage and whose
+	/// <c>ModifyCase</c> reads <c>confirmStageRecords</c> and <c>confirmValueRename</c>.
+	/// </summary>
 	/// <remarks>
 	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
 	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
-	/// that answers its route with a 404. 1.6.6.179 is the first shipped cut that reads and reports a case's filter.
+	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.185 is the first
+	/// shipped cut whose stage rename renames the lookup value and whose describe reports <c>records</c>. Not 1.6.6.180:
+	/// that number is also another branch's cut without this code. An older package would ignore the two
+	/// confirmations, and a stage rename there would write a caption no one sees.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.179";
+	public const string MinimumProcessBuilderVersion = "1.6.6.185";
 }
 
 /// <summary>
@@ -207,6 +213,15 @@ public sealed record ModifyCaseRequest {
 	[JsonPropertyName("confirmRunningInstances")]
 	public bool ConfirmRunningInstances { get; init; }
 
+	/// <summary>The user's yes to removing a stage that records hold, finished cases included; null when not given,
+	/// so the key is not sent to a package whose contract lacks it.</summary>
+	[JsonPropertyName("confirmStageRecords")]
+	public bool? ConfirmStageRecords { get; init; }
+
+	/// <summary>The user's yes to renaming a stage's lookup value, which every record shares; null when not given.</summary>
+	[JsonPropertyName("confirmValueRename")]
+	public bool? ConfirmValueRename { get; init; }
+
 	/// <summary>True to run every check and answer the planned change without writing anything.</summary>
 	[JsonPropertyName("validateOnly")]
 	public bool ValidateOnly { get; init; }
@@ -288,6 +303,11 @@ public sealed class DynamicCaseDiff {
 	/// <summary>Final stages whose successful flag changed.</summary>
 	[JsonPropertyName("successChanged")]
 	public List<DynamicCaseStageChange> SuccessChanged { get; init; }
+
+	/// <summary>The lookup values a stage rename renames, from / to; a stored caption may already read the new name,
+	/// so <see cref="Recaptioned"/> alone can miss one.</summary>
+	[JsonPropertyName("valueRenamed")]
+	public List<DynamicCaseStageChange> ValueRenamed { get; init; }
 
 	/// <summary>The case caption change, when there is one.</summary>
 	[JsonPropertyName("caption")]

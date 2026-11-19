@@ -16,7 +16,8 @@ namespace Clio.Common.ObjectRights;
 public static class ColumnRightsDefaults {
 
 	/// <summary>The default row: All employees, edit, position 0.</summary>
-	public static ColumnRightRow Row { get; } = new(SysAdminUnitIds.AllEmployees, "All employees", 0, ColumnRightLevel.Edit);
+	public static ColumnRightRow Row { get; } = new(SysAdminUnitIds.AllEmployees, SysAdminUnitIds.AllEmployeesName, 0,
+		ColumnRightLevel.Edit);
 
 	/// <summary>Whether <paramref name="rows"/> is exactly the default row (its position is not compared).</summary>
 	/// <param name="rows">A column's stored rows.</param>

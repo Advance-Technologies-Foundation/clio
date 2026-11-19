@@ -365,9 +365,10 @@ namespace Clio.Command {
 				["useFullHierarchy"] = false
 			};
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
-			string responseJson = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
-			var response = JObject.Parse(responseJson);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, request.ToString(Formatting.None));
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject schema) {
+				SiteResponseCapture.RecordRefusal(answer);
 				error = response["errorInfo"]?["message"]?.ToString()
 					?? $"Failed to load template schema '{templateUId}' resources";
 				return false;
@@ -379,11 +380,13 @@ namespace Clio.Command {
 		private bool TrySaveSchema(JObject schemaToSave, out string error) {
 			error = null;
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
-			string responseJson = _applicationClient.ExecutePostRequest(url, schemaToSave.ToString(Formatting.None));
-			var response = JObject.Parse(responseJson);
+			// The save is the page's one write, and its refusal ends the create.
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, schemaToSave.ToString(Formatting.None), soleWrite: true);
 			if (response["success"]?.Value<bool>() ?? false) {
 				return true;
 			}
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, PageSchemaMetadataHelper.DesignerRequestAttempts);
 			error = BuildSaveErrorMessage(response);
 			return false;
 		}
