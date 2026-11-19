@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Clio.Command;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -29,6 +30,33 @@ public sealed class PageHierarchyChainTests {
 
 		// Assert
 		rootUId.Should().Be(BaseUId, because: "the base page sits above the template and the name match ignores case");
+	}
+
+	[Test]
+	[Description("FindRootVariantUId returns the UId of the SysSchema row whose ExtendParent is false, wherever it sits among the rows.")]
+	public void FindRootVariantUId_Should_Return_The_Row_That_Does_Not_Extend_A_Parent() {
+		// Arrange
+		JArray rows = JArray.Parse($$"""[{"UId": "{{LeafUId}}", "ExtendParent": true}, {"UId": "{{BaseUId}}", "ExtendParent": false}]""");
+
+		// Act
+		string rootUId = PageHierarchyChain.FindRootVariantUId(rows);
+
+		// Assert
+		rootUId.Should().Be(BaseUId, because: "the root variant is the one row that does not replace another");
+	}
+
+	[TestCase("""[{"UId": "leaf-uid", "ExtendParent": true}]""", TestName = "only replacing variants")]
+	[TestCase("""[{"UId": "leaf-uid"}]""", TestName = "no ExtendParent column")]
+	[TestCase("""[{"UId": "leaf-uid", "ExtendParent": null}]""", TestName = "ExtendParent is null")]
+	[TestCase("""[{"UId": "", "ExtendParent": false}]""", TestName = "root row without a UId")]
+	[TestCase("""[]""", TestName = "no rows")]
+	[Description("FindRootVariantUId returns null when no row is marked as the root with a UId, so the caller keeps the lookup row.")]
+	public void FindRootVariantUId_Should_Return_Null_When_No_Row_Is_Marked_As_The_Root(string rowsJson) {
+		// Act
+		string rootUId = PageHierarchyChain.FindRootVariantUId(JArray.Parse(rowsJson));
+
+		// Assert
+		rootUId.Should().BeNull(because: "only a row explicitly marked ExtendParent = false names the root variant");
 	}
 
 	[Test]
