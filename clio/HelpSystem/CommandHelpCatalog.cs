@@ -75,7 +75,7 @@ internal sealed class CommandHelpCatalog {
 			["resolve-oauth-system-user"] = "Resolve a Creatio system user (id or name) for OAuth app binding over REST",
 			["create-oauth-technical-user"] = "Create a Creatio technical system user for OAuth over REST",
 			["create-server-to-server-oauth-app"] = "Create a server-to-server (client_credentials) OAuth app in Creatio over REST",
-			["verify-oauth-app"] = "Verify a server-to-server OAuth app: acquire a token and run a bearer DataService smoke test",
+			["verify-oauth-app"] = "Verify a server-to-server OAuth app: acquire a token and run a DataService smoke test with the bearer token",
 			["delete-schema"] = "Delete a schema from a workspace package",
 			["delete-app-section"] = "Delete a section from an existing installed application",
 			["deactivate-pkg"] = "Deactivate a package in Creatio",

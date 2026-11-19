@@ -362,11 +362,16 @@ every field that carries a site's words is wired yet.** The remaining envelope r
 failure, the web-service designer, sys-settings, the ATF data provider, the application, section and schema
 commands, odata-read's debug detail, and more) still pass the general redaction only. Each one is listed by file
 and member in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`. Its source guard fails the
-build on a new unlisted reader OF THE SHAPES IT SCANS FOR: the site-error JSON names written as literals, members
-named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage` or decorated with a site-error JSON name (which makes
-`.ErrorMessage` one), those names in a property pattern, and constants that hold them. The scan is by name; it
-does not see a site's text read through a member of any other name, a property name built at run time, or a JSON
-path (`docs/knowledge/Common/site-text-takes-redact-site-text-and-fails-closed.md`). clio's own error text, its log lines, and the serialized envelope `clio-run` returns pass the
+build on a new unlisted reader OF THE FORMS IT SCANS FOR:
+- the site-error JSON names written as literals;
+- reads of members named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage`, or decorated with a site-error JSON
+  name through `[JsonPropertyName]`, `[JsonProperty]` or `[DataMember(Name=…)]` (which makes `.ErrorMessage` one);
+- those names in a property pattern right after `{` or `,`, nested, extended or in a switch arm;
+- constants and static or initialized properties that hold them.
+
+The scan is by name. It does not see a site's text read through a member of any other name, a property name built
+at run time, a JSON path, a name held in a local variable, reflection or `dynamic`
+(`docs/knowledge/Common/site-text-takes-redact-site-text-and-fails-closed.md`). clio's own error text, its log lines, and the serialized envelope `clio-run` returns pass the
 general redaction only by design. That redaction leaves relative paths and the database's sign-in phrases alone;
 keeps a four-part version unless it falls in a private address range with no version word before it
 (`version 10.0.0.1`, `Version=10.0.0.0` and `Creatio 8.1.0.5` stay, a bare `10.0.0.1` goes); and keeps a

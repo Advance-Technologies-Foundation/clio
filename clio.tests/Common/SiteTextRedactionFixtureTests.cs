@@ -20,7 +20,7 @@ public sealed record SiteTextRedactionCase {
 	/// <summary>The host lane's case numbers with this input.</summary>
 	[JsonPropertyName("cases")] public int[] Cases { get; init; }
 
-	/// <summary>A, B, C or D, as the fixture header defines them.</summary>
+	/// <summary>A, B, C, D or E, as the fixture header defines them.</summary>
 	[JsonPropertyName("class")] public string Class { get; init; }
 
 	/// <summary>The kind of a B row (scheme, cred-key, sign-in, …), or a C/D row's note kind.</summary>
@@ -146,10 +146,11 @@ public sealed class SiteTextRedactionFixtureTests {
 		// Assert
 		rows.Should().HaveCount(350, because: "the 42 host tests expand to 350 distinct inputs");
 		rows.Select(row => row.Input).Should().OnlyHaveUniqueItems(because: "a repeated host case is one row with several case numbers");
-		byClass.Should().BeEquivalentTo(new Dictionary<string, int> { ["A"] = 46, ["B"] = 167, ["C"] = 112, ["D"] = 25 },
+		byClass.Should().BeEquivalentTo(new Dictionary<string, int> { ["A"] = 46, ["B"] = 167, ["C"] = 111, ["D"] = 25, ["E"] = 1 },
 			because: "the gap analysis counted A 46, B 179, C 120 assertions (112 distinct inputs) and D 13; the 11 B rows "
-				+ "and 1 A row clio keeps by choice are D (the host removes something there and clio does not), and case-320, "
-				+ "whose password master's JSON rule already removes, is A");
+				+ "and 1 A row clio keeps by choice are D (the host removes something there and clio does not), case-320, "
+				+ "whose password master's JSON rule already removes, is A, and case-357, which the host keeps and the Bearer "
+				+ "floor removes, is E");
 		pendingKinds.Should().Equal(["sql"], because: "only rule 9 (SQL) is left to PR B");
 		rows.Count(row => row.Pending is not null).Should().Be(71, because: "the analysis counted 71 SQL rows");
 		rows.Should().OnlyContain(row => row.Entry == "redact" || row.Entry == "site",
@@ -164,7 +165,7 @@ public sealed class SiteTextRedactionFixtureTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every row asserts something real: an A or B row names the secret core that must go, a C or D row "
+	[Description("Every row asserts something real: an A, B or E row names the secret core that must go, a C or D row "
 		+ "names nothing that must go, every fragment is taken from the input, and no mustStay fragment of a runnable "
 		+ "row is a stop-word alone - so a row cannot pass on an assertion that holds for any output.")]
 	public void Fixture_ShouldAssertTheSecretCoreAndTheReasonPhrase_InEveryRow() {
@@ -174,7 +175,7 @@ public sealed class SiteTextRedactionFixtureTests {
 		// Act
 		List<string> wrong = [];
 		foreach (SiteTextRedactionCase row in rows) {
-			bool removes = row.Class is "A" or "B";
+			bool removes = row.Class is "A" or "B" or "E";
 			if (removes && row.Pending is null && row.MustGo.Length == 0) {
 				wrong.Add($"{row.Id} ({row.Class}) names nothing that must go");
 			}
