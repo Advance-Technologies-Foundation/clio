@@ -11187,11 +11187,12 @@ public sealed class SchemaValidationServiceTests
 
 	#region ValidateChartWidgetConfig
 
-	// Minimal merged typeDefinitions mirroring the real registry shapes the walk traverses:
-	// ChartWidgetConfig (per-component) -> series -> ChartSeriesConfig -> data
-	// (WidgetDataConfig<WidgetDataProvidingConfig, ...>) -> WidgetDataProvidingConfig -> aggregation.column.
-	// It deliberately keeps the two registry-content quirks the bridges patch: the series item type is the
-	// bare "SeriesConfig" (alias bridge) and 'data' is a raw generic string (generic bridge).
+	// Minimal merged typeDefinitions mirroring the registry shape the generator emits since ENG-92174:
+	// ChartWidgetConfig (per-component) -> series[] -> SeriesConfig (the runtime series class) -> data
+	// (WidgetDataConfig<SeriesDataProvidingConfig<...>>) -> providing, bound through WidgetDataConfig's own
+	// "typeParameters" -> SeriesDataProvidingConfig (a structural subtype of WidgetDataProvidingConfig) ->
+	// aggregation.column. 'providing' keeps its default's inline shape (generator ENG-90561) and carries
+	// "typeParameter", so only a metadata-driven binding reaches the named data-providing type.
 	private const string ChartTypeDefinitionsJson =
 		"""
 		{
@@ -11202,17 +11203,35 @@ public sealed class SchemaValidationServiceTests
 		      "color": { "type": "string" },
 		      "theme": { "type": "string" }
 		    }},
-		    "ChartSeriesConfig": { "fields": {
+		    "SeriesConfig": { "fields": {
 		      "type": { "type": "string", "required": true },
 		      "color": { "type": "string", "required": true },
 		      "label": { "type": "string", "required": true },
 		      "legend": { "type": "object", "required": true },
-		      "data": { "type": "WidgetDataConfig<WidgetDataProvidingConfig, NumberFormat | DateTimeFormat | StringFormat>", "required": true },
-		      "dataLabel": { "type": "object" }
+		      "data": { "type": "WidgetDataConfig<SeriesDataProvidingConfig<SeriesDatePartDataGroupingConfig | SeriesValueDataGroupingConfig>>", "required": true },
+		      "dataLabel": { "type": "DataLabel", "required": true }
 		    }},
-		    "WidgetDataConfig": { "fields": {
-		      "providing": { "type": "TProvidingConfig", "required": true },
-		      "formatting": { "type": "TFormat", "required": true }
+		    "ChartSeriesConfig": { "fields": {
+		      "type": { "type": "string", "required": true },
+		      "data": { "type": "WidgetDataConfig<WidgetDataProvidingConfig, NumberFormat | DateTimeFormat | StringFormat>", "required": true }
+		    }},
+		    "WidgetDataConfig": { "typeParameters": ["TProvidingConfig", "TFormat"], "fields": {
+		      "providing": { "type": "object", "required": true, "typeParameter": "TProvidingConfig", "shape": {
+		        "attribute": { "type": "string", "required": true },
+		        "schemaName": { "type": "string", "required": true }
+		      }},
+		      "formatting": { "type": "object", "required": true, "typeParameter": "TFormat", "shape": {
+		        "type": { "type": "string", "required": true }
+		      }}
+		    }},
+		    "SeriesDataProvidingConfig": { "typeParameters": ["TGroupingConfig"], "fields": {
+		      "attribute": { "type": "string", "required": true },
+		      "schemaName": { "type": "string", "required": true },
+		      "aggregation": { "type": "object", "required": true, "shape": {
+		        "column": { "type": "AggregationFunctionColumn", "required": true }
+		      }},
+		      "rowCount": { "type": "number", "required": true },
+		      "grouping": { "type": "object", "required": true, "typeParameter": "TGroupingConfig" }
 		    }},
 		    "WidgetDataProvidingConfig": { "fields": {
 		      "attribute": { "type": "string", "required": true },
@@ -11225,10 +11244,14 @@ public sealed class SchemaValidationServiceTests
 		}
 		""";
 
-	private static IReadOnlyDictionary<string, JsonElement> ChartTypeDefs() {
-		using JsonDocument document = JsonDocument.Parse(ChartTypeDefinitionsJson);
+	private static IReadOnlyDictionary<string, JsonElement> ChartTypeDefs(
+		Action<System.Text.Json.Nodes.JsonObject>? mutate = null) {
+		var root = (System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(ChartTypeDefinitionsJson)!;
+		var typeDefinitions = (System.Text.Json.Nodes.JsonObject)root["typeDefinitions"]!;
+		mutate?.Invoke(typeDefinitions);
+		using JsonDocument document = JsonDocument.Parse(typeDefinitions.ToJsonString());
 		var map = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-		foreach (JsonProperty property in document.RootElement.GetProperty("typeDefinitions").EnumerateObject()) {
+		foreach (JsonProperty property in document.RootElement.EnumerateObject()) {
 			map[property.Name] = property.Value.Clone();
 		}
 		return map;
@@ -11263,14 +11286,110 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
-	[Description("Registry-driven: a well-formed doughnut (no color, no formatting) passes — proves both bridges reach the data and the optionality suppressions hold.")]
+	[Description("Registry-driven: a well-formed doughnut (no color, no formatting, no rowCount/grouping) passes — the walk reaches the data and both the cosmetic fields and the runtime subtype's extra fields stay out of scope.")]
 	public void ValidateChartWidgetConfig_WellFormedDoughnut_ReturnsValid() {
 		string body = ChartPageBody("[" + DoughnutSeries(ValidChartProviding) + "]");
 
 		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
 
-		result.IsValid.Should().BeTrue("because the bridges reach the data and color/formatting are suppressed");
-		result.Errors.Should().BeEmpty();
+		result.IsValid.Should().BeTrue(
+			"because color/formatting sit above the data block and rowCount/grouping are not part of the WidgetDataProvidingConfig contract");
+		result.Errors.Should().BeEmpty("because nothing the data-providing contract requires is missing");
+	}
+
+	[Test]
+	[Description("ENG-92174: generic arguments are bound by the parameter order the generic's own registry definition declares, not by a hard-coded order — a registry listing the parameters in the other order still binds 'providing' to the data-providing argument.")]
+	public void ValidateChartWidgetConfig_BindsGenericArgumentsByRegistryTypeParameters_ReturnsInvalidForMissingColumn() {
+		// Arrange
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+		IReadOnlyDictionary<string, JsonElement> reordered = ChartTypeDefs(typeDefinitions => {
+			typeDefinitions["SeriesConfig"]!["fields"]!["data"]!["type"] =
+				"WidgetDataConfig<NumberFormat | DateTimeFormat, SeriesDataProvidingConfig<SeriesValueDataGroupingConfig>>";
+			typeDefinitions["WidgetDataConfig"]!["typeParameters"] = new System.Text.Json.Nodes.JsonArray("TFormat", "TProvidingConfig");
+		});
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, reordered);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because the second argument is bound to TProvidingConfig as the registry declares it");
+		result.Errors.Should().Contain(e => e.Contains("aggregation.column"),
+			"because the walk reached the data-providing block through the registry's own parameter list");
+	}
+
+	[Test]
+	[Description("ENG-92174: the series type the curated ChartSeriesConfig projection uses (data bound straight to WidgetDataProvidingConfig) is checked the same way as the runtime SeriesConfig.")]
+	public void ValidateChartWidgetConfig_SeriesTypedAsChartSeriesConfig_ReturnsInvalidForMissingColumn() {
+		// Arrange
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+		IReadOnlyDictionary<string, JsonElement> curated = ChartTypeDefs(typeDefinitions =>
+			typeDefinitions["ChartWidgetConfig"]!["fields"]!["series"]!["items"]!["type"] = "ChartSeriesConfig");
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, curated);
+
+		// Assert
+		result.IsValid.Should().BeFalse("because WidgetDataProvidingConfig requires aggregation.column");
+		result.Errors.Should().Contain(e => e.Contains("aggregation.column"),
+			"because the diagnostic should name the missing aggregation.column");
+	}
+
+	[Test]
+	[Description("ENG-92174: a registry without parameter metadata (generated before ENG-92174) cannot bind 'providing'; the walk fails open instead of guessing a parameter order.")]
+	public void ValidateChartWidgetConfig_GenericWithoutTypeParameters_FailsOpen() {
+		// Arrange
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+		IReadOnlyDictionary<string, JsonElement> legacy = ChartTypeDefs(typeDefinitions =>
+			((System.Text.Json.Nodes.JsonObject)typeDefinitions["WidgetDataConfig"]!).Remove("typeParameters"));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, legacy);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because an unbound 'providing' only shows its default's inline shape, outside the reported block");
+		result.Errors.Should().BeEmpty("because the validator never guesses which argument a parameter takes");
+	}
+
+	[Test]
+	[Description("ENG-92174: a generic's bindings stay with its own fields — a typeParameter marker inside an inline shape belongs to whatever generic was expanded there, so an equally named outer parameter is not bound into it.")]
+	public void ValidateChartWidgetConfig_TypeParameterMarkerInsideInlineShape_IsNotBoundByOuterGeneric() {
+		// Arrange
+		string providing = """{"attribute":"A","schemaName":"Account","aggregation":{"column":{"expression":{}}},"holder":{"inner":{"nested":{}}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(providing) + "]");
+		IReadOnlyDictionary<string, JsonElement> withHolder = ChartTypeDefs(typeDefinitions => {
+			typeDefinitions["WidgetDataProvidingConfig"]!["fields"]!["holder"] =
+				System.Text.Json.Nodes.JsonNode.Parse("""{ "type": "Holder<SeriesDataProvidingConfig>" }""");
+			typeDefinitions["Holder"] = System.Text.Json.Nodes.JsonNode.Parse(
+				"""{ "typeParameters": ["T"], "fields": { "inner": { "type": "object", "shape": { "nested": { "type": "object", "typeParameter": "T" } } } } }""");
+		});
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, withHolder);
+
+		// Assert
+		result.IsValid.Should().BeTrue("because 'nested' is not one of Holder's own fields, so Holder's T must not be bound into it");
+		result.Errors.Should().BeEmpty("because binding T there would check an empty object against SeriesDataProvidingConfig");
+	}
+
+	[Test]
+	[Description("ENG-92174: the runtime series' data-providing subtype is checked against the WidgetDataProvidingConfig contract — a missing contract field is reported, a missing subtype-only field (rowCount) is not.")]
+	public void ValidateChartWidgetConfig_SubtypeOnlyFieldMissing_NotFlagged_ContractFieldMissing_Flagged() {
+		// Arrange
+		string noRowCountNoAttribute = """{"schemaName":"Account","aggregation":{"column":{"expression":{}}}}""";
+		string body = ChartPageBody("[" + DoughnutSeries(noRowCountNoAttribute) + "]");
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		// Assert
+		result.IsValid.Should().BeFalse("because attribute is required by WidgetDataProvidingConfig");
+		result.Errors.Should().Contain(e => e.Contains(".providing.attribute"),
+			"because the missing contract field is named with its path");
+		result.Errors.Should().NotContain(e => e.Contains("rowCount") || e.Contains("grouping"),
+			"because rowCount and grouping belong to the subtype, which the chart contract documents as optional");
 	}
 
 	[Test]
