@@ -141,7 +141,11 @@ also stands elsewhere in the input, is not checked. The only runs exempt are thr
 
 So after Bearer nothing else stays, in any position: not a prose word, an acronym, a version or `2FA`. clio's own
 sentences say "token-based (Bearer) authentication" and "a bearer token" instead of putting another word after
-"bearer"; `OwnText_ShouldComeOutUnchanged_FromRedactAndRedactCredentials` holds them to it. The run is master's
+"bearer"; `OwnText_ShouldComeOutUnchanged_FromRedactAndRedactCredentials` holds them to it. That test checks every
+string literal in `clio/` with a scheme word, a written escape before a letter or a bracket in a path-like token. It
+skips only literals that ARE regular expressions: an argument of a `Regex` call, of `[GeneratedRegex]` or of a helper
+whose name ends in `Regex`, and the constants those name. One expected change is named: an example Windows path in a
+tool contract. The run is master's
 with three changes, and none of them lets a credential character through:
 - a backslash continues it except where it starts an escaped quote;
 - `&amp;` is part of it;
@@ -157,10 +161,18 @@ with three changes, and none of them lets a credential character through:
     the token family, `api_key`, `client_secret`, `client_id`, `private_key`, `access_key`, `connection string`,
     `authorization`, `auth`, `bearer`, the cookie and session names), written QUOTED before its `:` or `=` (a JSON
     or dict key), or bare before an `=` (a pair).
-  A key word with a colon in a sentence ("Primary key: Basic info", "auth: Basic mode is off", "The secret:
-  Negotiate later") is no header position, and the pair rule keeps the same sentence: a key word, a colon, a scheme
-  word and a word the scheme rule keeps there is prose (master removed the scheme word there, and the scheme word
-  is no credential).
+  A key word with a colon in a sentence is no header position. The PAIR rule decides what happens to it next:
+  - after `key` or `auth` and a colon, a scheme word and a word the scheme rule keeps in a sentence is prose and
+    stays ("Primary key: Basic info", "auth: Basic mode is off"). Master removed the scheme word there, which is no
+    credential;
+  - after any other credential key and a colon - the pass words, `secret`, `cookie`, the token family
+    (`token`, `access_token`, …), `client_secret`, `api_key`, … - the value is the secret whatever it looks like,
+    and it goes ("password: Basic secrettokenvalue", "token: Basic Summer", "password: Digest secret");
+  - with `=` after any key it is a pair, and the value goes.
+
+  THE TRADE, removing wins: such a key in a sentence loses the words after it ("The token: NTLM handshake failed"
+  becomes "The token=[redacted] failed"). KNOWN KEEP: `auth:` followed by Basic and a lower-case run stays ("auth:
+  Basic abcdefghijkl").
 - ELSEWHERE, in a sentence, these stay:
   - a prose word (all lower case, or one leading capital then lower case, optionally "-"-joined);
   - an acronym, alone or with `/n`, `/n.n`, `/ACRONYM`, `vn` or a dotted version of up to four short parts;
@@ -176,20 +188,28 @@ with three changes, and none of them lets a credential character through:
 - A count word (`total`, `passed`, `failed`, `skipped`, `tests`, `ok`, …) with a number is a count when another
   one is on the same line; a real or a written line break ends the line. Alone, `word:port` takes the general
   single-label rule, so `ok:6379` and `tests:5432` go and `tests:4000` stays. Master had no single-label rule and
-  removed none of these. KNOWN TRADE: a lone `Failed:22` reads as a host on port 22.
+  removed none of these. KNOWN TRADES:
+  - a lone `Failed:22` reads as a host on port 22;
+  - a host named like a count word on a line with a count summary reads as a count and stays ("Cannot reach
+    tests:5432 or ok:6379; Tests run: Failed:22, Passed:421, Total:443"). A test pins this trade.
 - After a closing bracket in a Windows path, a written `\r`, `\n` or `\t` before a lower-case letter is the next
   folder (`jdoe(old)\temp`, `data[1]\nightly`): when the two readings disagree, the one that removes the path
-  wins. Before a capital, a backslash, whitespace or the end it is a line break, and `\uXXXX` is an escaped quote.
+  wins. KNOWN TRADE: a bracket followed by a written `\n` and a lower-case word is taken as part of the path
+  ("see [C:\x\y.dll]\tnext" loses "\tnext"). Before a capital, a backslash, whitespace or the end it is a line
+  break, and `\uXXXX` is an escaped quote.
 - In `RedactSiteText`, a written `\r`, `\n` or `\t` before a lower-case letter is `SERVER\account` only after a
-  server name: capitals, digits and `-`, at least one letter (`SQL01`, `CORP`, `DB-PROD`), and not a status word
-  (`ERROR`, `FAILED`, `FAIL`, `OK`, `WARN`, `WARNING`, `INFO`, `DEBUG`, `TRUE`, `FALSE`, `NULL`, `NONE`). After a
-  number, a status word or any other word it is a line break, so "Error 404\nnot found" keeps its reason. KNOWN
-  TRADE: an all-capitals acronym that is not a status word ("HTTP\nfailed") still reads as a server.
+  server name: capitals, digits, `-`, `_`, `.` and `$`, at least one letter (`SQL01`, `CORP`, `DB-PROD`, `SQL_PROD`,
+  `CORP.LOCAL`, `SRV$`), and not a status word (`ERROR`, `FAILED`, `FAIL`, `OK`, `WARN`, `WARNING`, `INFO`,
+  `DEBUG`, `TRUE`, `FALSE`, `NULL`, `NONE`). After a number, a status word or any other word it is a line break, so
+  "Error 404\nnot found" keeps its reason. KNOWN TRADE: an all-capitals word that is not a status word eats the word
+  after the escape ("Error from HTTP\nfailed here" becomes "Error from [redacted] here"). The rule checks for the
+  backslash and the escape first and only then looks back at the name, so a long run of capitals is read in linear
+  time.
 - Every clamp before redaction (`ClampAtBoundary`) cuts back to a word boundary, drops the partial run and marks
   the cut with " …". A cut inside an open quote goes back to before the quote, so "for user 'zq invented login'"
   keeps nothing of the name.
-- The JSON rule leaves exactly one credentials key alone, clio's own `constant-credentials-masked` flag, in that
-  letter case only.
+- The JSON rule leaves exactly one credentials key alone: clio's own `constant-credentials-masked` flag, in that
+  letter case and only with the value `true` or `false`. A string, a number or `null` under that key goes.
 
 Every endpoint placeholder is `[redacted-uri]`, the one master already wrote for host:port.
 
