@@ -95,7 +95,7 @@ internal sealed class EsqFilterSemanticValidator {
 	}
 
 	private void ValidateExists(EsqFilterLeafNode leaf, string rootSchemaName, EsqFilterFindings findings) {
-		string? columnPath = leaf.Left!.ColumnPath;
+		string? columnPath = leaf.Left.ColumnPath;
 		if (columnPath is null) {
 			return;
 		}
@@ -111,7 +111,7 @@ internal sealed class EsqFilterSemanticValidator {
 	}
 
 	private static void ValidateComparison(EsqFilterLeafNode leaf, FilterSchemaColumn column, EsqFilterFindings findings) {
-		if (leaf.ComparisonType is not int comparison || leaf.Left!.ExpressionType != EsqFilterCodes.SchemaColumnExpression) {
+		if (leaf.ComparisonType is not int comparison || leaf.Left.ExpressionType != EsqFilterCodes.SchemaColumnExpression) {
 			return;
 		}
 		string columnPath = leaf.Left.ColumnPath ?? string.Empty;

@@ -43,41 +43,54 @@ internal sealed class WidgetFilterValidator(IEntityBusinessRuleSchemaProvider en
 		FilterSchemaProvider schemaProvider = new(entitySchemaProvider);
 		schemaProvider.Initialize(packageUId);
 		EsqFilterSemanticValidator validator = new(schemaProvider);
-		List<string> errors = [];
-		var warnings = new List<string>();
-		var seenWarnings = new HashSet<string>(StringComparer.Ordinal);
+		ReportBuilder report = new();
 		foreach (PageWidgetFilter filter in filters) {
-			if (filter.GroupRootSchemaName is { } groupRoot
-				&& !string.Equals(groupRoot, filter.RootSchemaName, StringComparison.OrdinalIgnoreCase)) {
-				AddWarning($"{filter.Path}: not checked, its rootSchemaName '{groupRoot}' differs from the data source's schemaName '{filter.RootSchemaName}'.");
-				continue;
-			}
-			EsqFilterGroupNode? group = EsqFilterReader.ReadGroup(filter.Group, filter.Path);
-			if (group is null) {
-				continue;
-			}
-			EsqFilterFindings findings = validator.Validate(group, filter.RootSchemaName);
-			bool isUnchanged = unchanged.Contains((filter.Path, Canonical(filter.Group)));
-			foreach (string error in findings.Errors) {
-				if (isUnchanged) {
-					AddWarning(UnchangedPrefix + error);
-				} else {
-					errors.Add(error);
-				}
-			}
-			foreach (string warning in findings.Warnings) {
-				AddWarning(warning);
+			ValidateFilter(filter, validator, unchanged, report);
+		}
+		return report.Build();
+	}
+
+	private static void ValidateFilter(PageWidgetFilter filter, EsqFilterSemanticValidator validator,
+		IReadOnlySet<(string Path, string Json)> unchanged, ReportBuilder report) {
+		if (filter.GroupRootSchemaName is { } groupRoot
+			&& !string.Equals(groupRoot, filter.RootSchemaName, StringComparison.OrdinalIgnoreCase)) {
+			report.AddWarning($"{filter.Path}: not checked, its rootSchemaName '{groupRoot}' differs from the data source's schemaName '{filter.RootSchemaName}'.");
+			return;
+		}
+		EsqFilterGroupNode? group = EsqFilterReader.ReadGroup(filter.Group, filter.Path);
+		if (group is null) {
+			return;
+		}
+		EsqFilterFindings findings = validator.Validate(group, filter.RootSchemaName);
+		bool isUnchanged = unchanged.Contains((filter.Path, Canonical(filter.Group)));
+		foreach (string error in findings.Errors) {
+			if (isUnchanged) {
+				report.AddWarning(UnchangedPrefix + error);
+			} else {
+				report.AddError(error);
 			}
 		}
-		return new PageWidgetFilterReport(errors, warnings);
+		foreach (string warning in findings.Warnings) {
+			report.AddWarning(warning);
+		}
+	}
 
-		// Compact re-serialization: the stored body and an append-merged one can differ in whitespace only.
-		static string Canonical(JsonElement group) => JsonSerializer.Serialize(group);
+	// Compact re-serialization: the stored body and an append-merged one can differ in whitespace only.
+	private static string Canonical(JsonElement group) => JsonSerializer.Serialize(group);
 
-		void AddWarning(string warning) {
-			if (seenWarnings.Add(warning)) {
-				warnings.Add(warning);
+	private sealed class ReportBuilder {
+		private readonly List<string> _errors = [];
+		private readonly List<string> _warnings = [];
+		private readonly HashSet<string> _seenWarnings = new(StringComparer.Ordinal);
+
+		internal void AddError(string error) => _errors.Add(error);
+
+		internal void AddWarning(string warning) {
+			if (_seenWarnings.Add(warning)) {
+				_warnings.Add(warning);
 			}
 		}
+
+		internal PageWidgetFilterReport Build() => new(_errors, _warnings);
 	}
 }
