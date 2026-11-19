@@ -2316,9 +2316,8 @@ public static class SchemaValidationService
 	#region Registry-driven chart-widget validation
 	// Walks the registry's typeDefinitions for each inserted chart and enforces ONLY the data-block
 	// nesting (data.providing.aggregation.column), never cosmetic fields (color/formatting/legend/title).
-	// Full contract on ValidateChartWidgetConfig below. The walk is driven by registry metadata alone:
-	// generic arguments are bound through the generic's own "typeParameters" and the fields that carry
-	// "typeParameter" (ENG-92174 — no chart-specific type names or parameter orders are hard-coded).
+	// Full contract on ValidateChartWidgetConfig below. Generic arguments are bound through the generic's own
+	// "typeParameters" and the fields that carry "typeParameter".
 
 	private const string ChartWidgetType = "crt.ChartWidget";
 	private const string ChartWidgetRootType = "ChartWidgetConfig";
@@ -2546,7 +2545,7 @@ public static class SchemaValidationService
 			}
 			return;
 		}
-		// Resolve a generic placeholder ("TProvidingConfig") to the concrete argument bound above.
+		// An array item typed as a bare parameter carries no marker, so it still binds by name.
 		typeExpression = ApplyTypeSubstitution(typeExpression, substitution);
 		ValidateValueAgainstTypeExpression(value, typeExpression, typeDefinitions, path, result, report);
 	}
