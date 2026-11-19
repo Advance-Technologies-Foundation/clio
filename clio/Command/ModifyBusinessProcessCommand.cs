@@ -378,8 +378,9 @@ public sealed class ModifyBusinessProcessService(
 		}
 
 		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
-		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
-			ProcessDesignServerFault.SiteWarningList(result.Warnings));
+		// The schema name is the site's text too, and the command's success line and the read-back use the result.
+		return new ModifyBusinessProcessResult(ProcessDesignServerFault.SiteNameOrNull(result.SchemaName), result.SchemaUId,
+			result.AppliedOperations, ProcessDesignServerFault.SiteWarningList(result.Warnings));
 	}
 
 	// Surfaced HERE or nowhere. The success record cannot carry a failure (it is only built on success), and the throw
@@ -534,7 +535,7 @@ public class ModifyBusinessProcessCommand(
 					out saved);
 			} catch (Exception verification) {
 				logger.WriteWarning(
-					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
+					$"The edit was applied, but verifying its configuration failed: {ProcessDesignServerFault.SiteText(verification.Message)}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
 			}
 			WarnOnParameterBindings(options, before, saved);
 			// The digest rides the SAME read-back as the guards (ENG-103023).
@@ -656,9 +657,9 @@ public class ModifyBusinessProcessCommand(
 		}
 		if (described.IsError) {
 			bool rights = BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
-				described.FirstError.Description);
+				ProcessDesignServerFault.SiteText(described.FirstError.Description));
 			bool labels = BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
-				described.FirstError.Description);
+				ProcessDesignServerFault.SiteText(described.FirstError.Description));
 			return rights || labels;
 		}
 

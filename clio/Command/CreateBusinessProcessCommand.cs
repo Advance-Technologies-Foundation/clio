@@ -462,7 +462,8 @@ public sealed class CreateBusinessProcessService(
 		}
 
 		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
-		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId,
+		// The schema name is the site's text too, and the command's success line and the read-back use the result.
+		return new CreateBusinessProcessResult(ProcessDesignServerFault.SiteNameOrNull(result.SchemaName), result.SchemaUId,
 			ProcessDesignServerFault.SiteWarningList(result.Warnings));
 	}
 
@@ -549,7 +550,7 @@ public class CreateBusinessProcessCommand(
 				readFailureReported = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName, out saved);
 			} catch (Exception verification) {
 				logger.WriteWarning(
-					$"The process was created, but verifying its configuration failed: {verification.Message}. Re-read it with describe-business-process mode=full before reporting a grant or revoke as applied.");
+					$"The process was created, but verifying its configuration failed: {ProcessDesignServerFault.SiteText(verification.Message)}. Re-read it with describe-business-process mode=full before reporting a grant or revoke as applied.");
 			}
 			// The digest rides the SAME read-back as the guards (ENG-103023), so a create reads the process once.
 			if (saved is { } readBack) {
@@ -644,9 +645,9 @@ public class CreateBusinessProcessCommand(
 			// grant or revoke actually landed, and reporting "verified" and "could not check" identically would
 			// let an unapplied revoke pass as applied.
 			bool rights = BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
-				described.FirstError.Description);
+				ProcessDesignServerFault.SiteText(described.FirstError.Description));
 			bool labels = BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
-				described.FirstError.Description);
+				ProcessDesignServerFault.SiteText(described.FirstError.Description));
 			return rights || labels;
 		}
 

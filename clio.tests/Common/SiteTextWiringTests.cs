@@ -450,9 +450,11 @@ public sealed class SiteTextWiringTests {
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/PackageBuildResult.cs", "private static string Site(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/PackageBuildResult.cs", "internal PackageBuildDiagnostic WithSiteTextRedacted(",
-			"Site(FileNameOnly(FileName))"),
+			"SiteFileName(FileName)"),
+		("clio/Package/PackageBuildResult.cs", "internal static string SiteFileName(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/CompileConfigurationCommand.cs", "private void ApplyEnvironmentVerdict(",
-			"SiteText(PackageBuildDiagnostic.FileNameOnly(diagnostic.fileName))"),
+			"PackageBuildDiagnostic.SiteFileName(diagnostic.fileName)"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "diagnostic.WithSiteTextRedacted()"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(rawHistoryErrors)"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(errorMessage)"),
@@ -460,7 +462,7 @@ public sealed class SiteTextWiringTests {
 			"SiteText(CompilerLineWithFileNameOnly(compilationErrorLine))"),
 		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(message)"),
 		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(errorCode)"),
-		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteTail(MeaningfulTailLines("),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteTail(ReasonTailLines("),
 		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteTail(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/BasePackageInstaller.cs", "private static string GetInvalidGZipArchiveMessage(",
@@ -510,6 +512,18 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SensitiveErrorTextRedactor.ClampAtBoundary("),
 		("clio/Command/DynamicCaseService.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/DynamicCaseService.cs", "private static List<string> SiteList(", ".Select(SiteText)"),
+		("clio/Command/DynamicCaseService.cs", "private static DynamicCaseResult PageRefusal(", "SiteText(pagePlan.ErrorMessage)"),
+		("clio/Command/DynamicCaseService.cs", "private static DynamicCasePageInfo PageInfo(", "SiteText(plan.ErrorMessage)"),
+		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult TryAddDependencies(", "SiteText(exception.Message)"),
+		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult WithPage(", "SiteText(write.Error)"),
+		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult WithPage(", "SiteList(built.Notes)"),
+		("clio/Command/DynamicCaseService.cs", "public DescribeDynamicCaseResult Describe(", "SiteList(response.Notes)"),
+		("clio/Command/DynamicCaseService.cs", "public ModifyDynamicCaseResult Modify(", "SiteList(response.Leftovers)"),
+		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult FromServer(", "SiteList(response.Leftovers)"),
+		("clio/Command/ProcessModel/ProcessWriteDigest.cs", "internal static void Report(",
+			"ProcessDesignServerFault.SiteText(after.FirstError.Description)"),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? SiteNameOrNull(", "SiteText(name)"),
 		("clio/Command/DynamicCaseService.cs", "public DescribeDynamicCaseResult Describe(", "SiteText(response.ErrorMessage)"),
 		("clio/Command/DynamicCaseService.cs", "public ModifyDynamicCaseResult Modify(", "SiteText(response.ErrorMessage)"),
 		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult FromServer(", "SiteText(response.ErrorMessage)"),
@@ -545,6 +559,8 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/ModifyBusinessProcessCommand.cs", "private static string BuildFailureMessage("),
 		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail("),
 		("clio/Command/DynamicCaseService.cs", "private static string SiteText("),
+		("clio/Command/DynamicCaseService.cs", "private static List<string> SiteList("),
+		("clio/Package/PackageBuildResult.cs", "internal static string SiteFileName("),
 		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteTail("),
 	];
 
@@ -639,41 +655,43 @@ public sealed class SiteTextWiringTests {
 		["clio/Common/Kubernetes/K8RedisAssertion.cs|ExecuteAsync"] = (1, "not text: clio's own Redis discovery result"),
 		["clio/Common/ServerReadinessWaiter.cs|IsGenuineAuthenticatedJsonAnswer"] = (1, "not text: reads the markers that tell a DataService answer apart"),
 		// Wired by A2: the write-tool and dynamic-case paths.
-		["clio/Command/CompileBusinessProcessCommand.cs|Compile"] = (1, "wired: CompileBusinessProcessCommand.ReportFailure"),
+		// "via:": the read reaches the extractor through a variable, a record or a result redacted upstream, which the
+		// read-by-read check cannot follow; the named test drives the path end to end.
+		["clio/Command/CompileBusinessProcessCommand.cs|Compile"] = (1, "via: CompileBusinessProcessCommand.ReportFailure; proven by CompileBusinessProcess_ShouldFenceTheServiceAnswer_EndToEnd"),
 		["clio/Command/CompileBusinessProcessCommand.cs|ReportFailure"] = (1, "wired: CompileBusinessProcessCommand.ReportFailure"),
 		["clio/Command/CompileConfigurationCommand.cs|ProceedResponse"] = (1, "wired: CompileConfigurationCommand.ProceedResponse"),
-		["clio/Command/CreateDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "wired: DynamicCaseService.SiteText"),
-		["clio/Command/CreateDynamicCaseCommand.cs|Verdict"] = (4, "wired: DynamicCaseService.SiteText"),
-		["clio/Command/DescribeDynamicCaseCommand.cs|Verdict"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/CreateDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "via: DynamicCaseService.SiteText; proven by CreateDynamicCase_ShouldRedactTheBuildRefusal_InTheResultAndTheLog"),
+		["clio/Command/CreateDynamicCaseCommand.cs|Verdict"] = (4, "via: DynamicCaseService.SiteText; proven by CreateDynamicCase_ShouldRedactTheBuildRefusal_InTheResultAndTheLog"),
+		["clio/Command/DescribeDynamicCaseCommand.cs|Verdict"] = (1, "via: DynamicCaseService.SiteText; proven by DescribeDynamicCase_ShouldRedactTheRefusal_InTheResultAndTheLog"),
 		["clio/Command/DynamicCaseService.cs|Describe"] = (1, "wired: DynamicCaseService.SiteText"),
 		["clio/Command/DynamicCaseService.cs|FromServer"] = (1, "wired: DynamicCaseService.SiteText"),
 		["clio/Command/DynamicCaseService.cs|Modify"] = (1, "wired: DynamicCaseService.SiteText"),
 		["clio/Command/ModifyBusinessProcessCommand.cs|BuildFailureMessage"] = (1, "wired: ProcessDesignServerFault.SiteMessageOr"),
-		["clio/Command/ModifyDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "wired: DynamicCaseService.SiteText"),
-		["clio/Command/ModifyDynamicCaseCommand.cs|Verdict"] = (4, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/ModifyDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "via: DynamicCaseService.SiteText; proven by ModifyDynamicCase_ShouldRedactTheRefusal_InTheResultAndTheLog"),
+		["clio/Command/ModifyDynamicCaseCommand.cs|Verdict"] = (4, "via: DynamicCaseService.SiteText; proven by ModifyDynamicCase_ShouldRedactTheRefusal_InTheResultAndTheLog"),
 		["clio/Package/PackageBuilder.cs|ApplyVerdict"] = (1, "wired: PackageBuilder.Fail"),
 		// ServerSaid quotes ReadServerText's redacted fault; the answer's errorMessage goes through SiteMessageOr.
-		["clio/Command/CreateBusinessProcessCommand.cs|ReadBuildProcessAnswer"] = (3, "wired: ProcessDesignServerFault.SiteMessageOr"),
+		["clio/Command/CreateBusinessProcessCommand.cs|ReadBuildProcessAnswer"] = (3, "via: ProcessDesignServerFault.ReadServerText; proven by CreateBusinessProcess_ShouldRedactTheServerText_InTheExceptionAndTheLog"),
 		["clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs|EnsureSuccess"] = (2, "wired: RemoteEntitySchemaDesignerClient.EnsureSuccess"),
-		["clio/Command/ModifyBusinessProcessCommand.cs|ModifyProcess"] = (2, "wired: ProcessDesignServerFault.ReadServerText"),
-		["clio/Command/ModifyProcessAsNewVersionCommand.cs|ModifyAsNewVersion"] = (2, "wired: ProcessDesignServerFault.ReadServerText"),
+		["clio/Command/ModifyBusinessProcessCommand.cs|ModifyProcess"] = (2, "via: ProcessDesignServerFault.ReadServerText; proven by ModifyBusinessProcess_ShouldRedactTheServerText_InTheExceptionAndTheLog"),
+		["clio/Command/ModifyProcessAsNewVersionCommand.cs|ModifyAsNewVersion"] = (2, "via: ProcessDesignServerFault.ReadServerText; proven by ModifyAsNewVersion_ShouldRedactAFaultString_InTheExceptionAndTheLog"),
 		["clio/Command/ModifyProcessAsNewVersionCommand.cs|BuildFailureMessage"] = (1, "wired: ProcessDesignServerFault.SiteMessageOr"),
 		["clio/Command/SetActiveProcessVersionCommand.cs|BuildFailureMessage"] = (1, "wired: ProcessDesignServerFault.SiteMessageOr"),
 		["clio/Command/PageCreateOptions.cs|TryLoadTemplateLocalizableStrings"] = (1, "wired: PageCreateOptions.TryLoadTemplateLocalizableStrings"),
 		["clio/Command/PageSchemaMetadataHelper.cs|DescribeRefusal"] = (1, "wired: PageSchemaMetadataHelper.DescribeRefusal"),
-		["clio/Command/PageSchemaMetadataHelper.cs|AddonErrorText"] = (2, "wired: PageSchemaMetadataHelper.AddonErrorText"),
+		["clio/Command/PageSchemaMetadataHelper.cs|AddonErrorText"] = (1, "wired: PageSchemaMetadataHelper.AddonErrorText"),
 		["clio/Command/PageUpdateOptions.cs|TryGetSchema"] = (1, "wired: PageUpdateOptions.TryGetSchema"),
 		["clio/Package/BasePackageInstaller.cs|GetInvalidGZipArchiveMessage"] = (1, "wired: BasePackageInstaller.GetInvalidGZipArchiveMessage"),
 		["clio/Package/InstallLogAnalyzer.cs|DescribeFailure"] = (2, "wired: InstallLogAnalyzer.DescribeFailure"),
-		["clio/Package/PackageBuildResult.cs|TryParseResponse"] = (1, "wired: PackageBuilder.Fail"),
-		["clio/Package/SelectQueryHelper.cs|ExecuteSelectQuery"] = (2, "wired: SelectQueryHelper.DescribeServerFailure"),
+		["clio/Package/PackageBuildResult.cs|TryParseResponse"] = (1, "via: PackageBuilder.Fail; proven by Rebuild_ShouldRedactTheFailureAnswer_AsSiteText"),
+		["clio/Package/SelectQueryHelper.cs|ExecuteSelectQuery"] = (2, "via: SelectQueryHelper.DescribeServerFailure; proven by SelectQuery_ShouldRedactTheServerFailure_AsSiteText"),
 		// Not text, write-tool files: the site's error fields only decide what the failure is, or the message is clio's
 		// own sentence; no site text of theirs is extracted.
 		["clio/Package/BasePackageInstaller.cs|IsInvalidGZipArchiveFailure"] = (3, "not text: looks for the invalid-archive type name"),
 		["clio/Package/InstallLogAnalyzer.cs|IsGenericInstallationFailure"] = (1, "not text: compares with the generic failure message"),
-		["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "not text: the record page resolver's own sentence"),
-		["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "not text: the page step's own plan, whose page reads are wired in update-page"),
-		["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "not text: the page step's own plan, whose page reads are wired in update-page"),
+		["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "via: DynamicCaseService.SiteText; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
+		["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "wired: DynamicCaseService.SiteText"),
 		// KNOWN-UNWIRED, follow-up: the envelope readers the follow-up after A2 wires. Their text passes Redact
 		// (directly, or through UntrustedText.Fenced / ForConsole / ServerReportedFailureText) and no site-only rule.
 		["clio/Command/FeatureStateService.cs|ThrowIfSaveFailed"] = (1, "follow-up"),
@@ -894,23 +912,15 @@ public sealed class SiteTextWiringTests {
 		HashSet<string> extractors = Extractors.Select(extractor => extractor.Name)
 			.Concat(CentralExtractors.Select(central => $"{Path.GetFileNameWithoutExtension(central.File)}.{MemberName(central.Member)}"))
 			.ToHashSet(StringComparer.Ordinal);
-		string[] writePathFiles = [
-			"PageDesignerHierarchyClient", "PageUpdateOptions", "PageCreateOptions", "SchemaTemplateCatalog",
-			"RemoteEntitySchemaDesignerClient", "SelectQueryHelper", "CompileConfigurationCommand", "PackageBuildResult",
-			"PackageBuilder", "InstallLogAnalyzer", "BasePackageInstaller", "CreateBusinessProcessCommand",
-			"ModifyBusinessProcessCommand", "ProcessDesignServerFault", "CompileBusinessProcessCommand",
-			// Dynamic case is a write path too; A2 wired its readers.
-			"DynamicCaseService", "CreateDynamicCaseCommand", "ModifyDynamicCaseCommand", "DescribeDynamicCaseCommand",
-			"DynamicCasePageStep", "ModifyProcessAsNewVersionCommand", "SetActiveProcessVersionCommand", "BuildCaseClient"
-		];
 
 		// Act
 		List<string> wrong = [];
 		foreach ((string key, (int _, string wiring)) in KnownSiteErrorReads) {
 			string file = Path.GetFileNameWithoutExtension(key.Split('|')[0]);
-			bool isWritePathFile = writePathFiles.Contains(file, StringComparer.Ordinal);
+			bool isWritePathFile = WritePathFiles.Contains(file, StringComparer.Ordinal);
 			bool ok = wiring switch {
 				"follow-up" => !isWritePathFile,
+				_ when wiring.StartsWith("via: ", StringComparison.Ordinal) => IsProvenVia(wiring, extractors),
 				_ when wiring.StartsWith("not text: ", StringComparison.Ordinal) => wiring.Length > "not text: ".Length,
 				_ => wiring.StartsWith("wired: ", StringComparison.Ordinal) && extractors.Contains(wiring["wired: ".Length..])
 			};
@@ -922,6 +932,72 @@ public sealed class SiteTextWiringTests {
 		// Assert
 		wrong.Should().BeEmpty(because: "each read is either wired through a checked extractor or known-unwired with "
 			+ "the change that wires it");
+	}
+
+	// The files of the write-tool and dynamic-case paths A2 wired: they may hold no follow-up entry, and each of
+	// their "wired:" reads is checked read by read.
+	private static readonly string[] WritePathFiles = [
+		"PageDesignerHierarchyClient", "PageUpdateOptions", "PageCreateOptions", "SchemaTemplateCatalog",
+		"RemoteEntitySchemaDesignerClient", "SelectQueryHelper", "CompileConfigurationCommand", "PackageBuildResult",
+		"PackageBuilder", "InstallLogAnalyzer", "BasePackageInstaller", "CreateBusinessProcessCommand",
+		"ModifyBusinessProcessCommand", "ProcessDesignServerFault", "CompileBusinessProcessCommand",
+		// Dynamic case is a write path too; A2 wired its readers.
+		"DynamicCaseService", "CreateDynamicCaseCommand", "ModifyDynamicCaseCommand", "DescribeDynamicCaseCommand",
+		"DynamicCasePageStep", "ModifyProcessAsNewVersionCommand", "SetActiveProcessVersionCommand", "BuildCaseClient"
+	];
+
+	// "via: <extractor>; proven by <test>": the member's reads reach a caller only through the checked extractor, but
+	// not as arguments of a call to it in the same member (a variable, a record field, a result redacted upstream), so
+	// the guard cannot follow them; the named behaviour test drives the path end to end and must exist.
+	private static readonly Regex ViaWiring = new(@"\Avia: (?<extractor>[\w.]+); proven by (?<test>[A-Za-z_]\w*)\z");
+
+	private static readonly Lazy<string> TestSources = new(() => string.Concat(
+		Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "clio.tests"), "*.cs", SearchOption.AllDirectories)
+			.Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+			.Select(File.ReadAllText)));
+
+	private static bool IsProvenVia(string wiring, HashSet<string> extractors) {
+		Match via = ViaWiring.Match(wiring);
+		return via.Success && extractors.Contains(via.Groups["extractor"].Value)
+			&& Regex.IsMatch(TestSources.Value, $@"\bvoid\s+{Regex.Escape(via.Groups["test"].Value)}\s*\(");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A 'wired:' entry of a write-tool file is checked read by read: each counted read in the member is an "
+		+ "argument of a call to the named extractor, or the member is that extractor. A read that reaches it another "
+		+ "way is listed 'via:' with the behaviour test that proves it.")]
+	public void SourceGuard_ShouldSeeEveryWiredWritePathReadFlowIntoItsExtractor() {
+		// Arrange
+		List<(string File, CSharpSource Source)> sources = ClioSources()
+			.Select(file => (file, CSharpSource.Read(Path.Combine(RepositoryRoot, file)))).ToList();
+		ILookup<string, int> sites = DirectSiteErrorReadSites(sources).ToLookup(site => site.Key, site => site.Index);
+		List<string> unproven = [];
+
+		// Act
+		foreach ((string key, (int _, string wiring)) in KnownSiteErrorReads
+				.Where(pair => pair.Value.Wiring.StartsWith("wired: ", StringComparison.Ordinal))) {
+			string[] parts = key.Split('|');
+			if (!WritePathFiles.Contains(Path.GetFileNameWithoutExtension(parts[0]), StringComparer.Ordinal)) {
+				continue;
+			}
+			string extractorMember = wiring["wired: ".Length..].Split('.')[^1];
+			if (parts[1] == extractorMember) {
+				continue;
+			}
+			CSharpSource source = sources.Single(entry => entry.File == parts[0]).Source;
+			List<(int Start, int End)> callArguments = Regex.Matches(source.Code, $@"\b{Regex.Escape(extractorMember)}\(")
+				.Where(call => source.MemberAt(call.Index) == parts[1])
+				.Select(call => (call.Index + call.Length, ClosingParenthesis(source.Code, call.Index + call.Length - 1)))
+				.ToList();
+			foreach (int read in sites[key].Where(read => !callArguments.Any(span => span.Start <= read && read < span.End))) {
+				unproven.Add($"{key}:{source.LineOf(read)} is not an argument of {extractorMember}(");
+			}
+		}
+
+		// Assert
+		unproven.Should().BeEmpty(because: "a 'wired:' read must visibly flow into its extractor; one that does not is "
+			+ "listed 'via:' with the end-to-end test that proves it; found:\n" + string.Join('\n', unproven));
 	}
 
 	[TestCase("\n", TestName = "SourceScan_LfLineEndings")]
@@ -969,7 +1045,14 @@ public sealed class SiteTextWiringTests {
 	//   - one of those member names in a property pattern ("is { ErrorInfo: { } }"), not a named argument;
 	//   - a reference to a constant or a read-only field that holds a site-error name ("InnerErrorMemberNames");
 	//   - ProcessDesignServerFault.ServerSaid and ServerReportedFailureText.Describe.
-	internal static Dictionary<string, int> DirectSiteErrorReads(IReadOnlyList<(string File, CSharpSource Source)> sources) {
+	internal static Dictionary<string, int> DirectSiteErrorReads(IReadOnlyList<(string File, CSharpSource Source)> sources) =>
+		DirectSiteErrorReadSites(sources).GroupBy(site => site.Key, StringComparer.Ordinal)
+			.ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+
+	// Each direct read as "file|member" and its position in that file's Code: what DirectSiteErrorReads counts, kept
+	// apart so a "wired:" entry can be checked read by read.
+	internal static List<(string Key, int Index)> DirectSiteErrorReadSites(
+		IReadOnlyList<(string File, CSharpSource Source)> sources) {
 		HashSet<string> memberNames = new(StringComparer.Ordinal) { "ErrorInfo", "ResponseStatus", "ExceptionMessage" };
 		foreach ((string _, CSharpSource source) in sources) {
 			foreach (Match decoration in SiteErrorNameDecoration.Matches(source.CodeWithLiterals)) {
@@ -984,7 +1067,7 @@ public sealed class SiteTextWiringTests {
 		// property pattern - after "is", "and", "or", "not" or "case" and its "{" - never a named argument.
 		Regex memberRead = new($@"(?<=[\w)\]?!])\.(?:{names})\b(?!\s*\()");
 		Regex propertyPattern = new($@"(?<=\b(?:is|and|or|not|case)\s+(?:[\w.?<>]+\s*)?\{{(?:[^{{}};]*,)?\s*)(?:{names})\s*:(?!:)");
-		Dictionary<string, int> found = new(StringComparer.Ordinal);
+		List<(string Key, int Index)> found = [];
 		List<(string File, string Name, int Start, int End)> constants = [];
 		foreach ((string file, CSharpSource source) in sources) {
 			List<int> literals = SiteErrorNameLiteral.Matches(source.CodeWithLiterals)
@@ -1001,8 +1084,7 @@ public sealed class SiteTextWiringTests {
 				.Concat(propertyPattern.Matches(source.Code).Select(match => match.Index))
 				.Concat(SiteTextHelperCall.Matches(source.Code).Select(match => match.Index));
 			foreach (int index in reads) {
-				string key = $"{file}|{source.MemberAt(index)}";
-				found[key] = found.GetValueOrDefault(key) + 1;
+				found.Add(($"{file}|{source.MemberAt(index)}", index));
 			}
 		}
 		foreach ((string declaringFile, string constant, int start, int end) in constants) {
@@ -1012,8 +1094,7 @@ public sealed class SiteTextWiringTests {
 					if (file == declaringFile && use.Index >= start && use.Index <= end) {
 						continue;
 					}
-					string key = $"{file}|{source.MemberAt(use.Index)}";
-					found[key] = found.GetValueOrDefault(key) + 1;
+					found.Add(($"{file}|{source.MemberAt(use.Index)}", use.Index));
 				}
 			}
 		}

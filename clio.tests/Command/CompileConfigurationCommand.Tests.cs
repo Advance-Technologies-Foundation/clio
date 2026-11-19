@@ -811,8 +811,7 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		// Assert
 		exitCode.Should().Be(1, because: "the environment reported the compilation as failed");
 		_logger.Received().WriteError(Arg.Is<string>(message =>
-			message.StartsWith("(CS0103) in Foo.cs Login failed for user '[redacted]'. at (12,3): Login failed for user",
-				StringComparison.Ordinal)));
+			message.StartsWith("(CS0103) in [redacted-path] at (12,3): Login failed for user", StringComparison.Ordinal)));
 		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
 			because: "no log line may carry the login the environment's text named");
 	}

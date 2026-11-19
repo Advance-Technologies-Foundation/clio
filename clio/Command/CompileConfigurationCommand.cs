@@ -465,7 +465,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				continue;
 			}
 			Logger.WriteError(
-				$"({SiteText(diagnostic.errorNumber)}) in {SiteText(PackageBuildDiagnostic.FileNameOnly(diagnostic.fileName))} "
+				$"({SiteText(diagnostic.errorNumber)}) in {PackageBuildDiagnostic.SiteFileName(diagnostic.fileName)} "
 				+ $"at ({diagnostic.line},"
 				+ $"{diagnostic.column}): {SiteText(diagnostic.errorText)}");
 		}
@@ -506,7 +506,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			//reader and makes an ordinary platform failure read as clio malfunctioning. The extension picks
 			//the carrier's ConsoleMessage instead (PR #1374 review).
 			_logger.WriteWarning(
-				$"Could not read the compilation history baseline: {exception.GetReadableMessageException()}");
+				$"Could not read the compilation history baseline: {SiteText(exception.GetReadableMessageException())}");
 			return null;
 		}
 	}

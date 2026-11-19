@@ -187,7 +187,10 @@ internal static class ProcessWriteDigest {
 					return;
 				}
 				logger.WriteWarning(
-					$"The write landed, but reading the process back for its summary failed: {after.FirstError.Description}. "
+					// The describe failure is the site's text (describe-business-process is a follow-up reader): redacted
+					// here, where it becomes the write command's warning line.
+					$"The write landed, but reading the process back for its summary failed: "
+					+ $"{ProcessDesignServerFault.SiteText(after.FirstError.Description)}. "
 					+ "describe-business-process mode=summary confirms the saved state.");
 				return;
 			}
@@ -208,7 +211,8 @@ internal static class ProcessWriteDigest {
 					digest["changesAgainst"] = changesAgainst;
 				}
 				if (previous.IsError) {
-					digest["changesUnavailable"] = $"the read before the write failed: {previous.FirstError.Description}";
+					digest["changesUnavailable"] =
+						$"the read before the write failed: {ProcessDesignServerFault.SiteText(previous.FirstError.Description)}";
 				} else {
 					digest["changes"] = ProcessDigest.BuildChanges(
 						DescribeProcessCommand.OmitDecodedFilterPayloads(previous.Value), saved);

@@ -487,11 +487,16 @@ namespace Clio.Command {
 
 		// An addonsErrors item's own words, redacted as the site's text: its code and message, from the item or its
 		// errorInfo - never its stack trace.
-		private static string AddonErrorText(JToken item) =>
-			item is JObject error
-				? JoinNonBlank(SiteValue(error["errorCode"] ?? error["code"] ?? error["errorInfo"]?["errorCode"]),
-					SiteValue(error["message"] ?? error["errorInfo"]?["message"]))
-				: SiteValue(item);
+		// errorInfo may be an object, a string or null: only an object has children to read, and a string is the message.
+		private static string AddonErrorText(JToken item) {
+			if (item is not JObject error) {
+				return SiteValue(item);
+			}
+			JToken info = error["errorInfo"];
+			JObject infoObject = info as JObject;
+			return JoinNonBlank(SiteValue(error["errorCode"] ?? error["code"] ?? infoObject?["errorCode"]),
+				SiteValue(error["message"] ?? infoObject?["message"] ?? (infoObject is null ? info : null)));
+		}
 
 		// A string value the site wrote, redacted as site text BEFORE it is trimmed (the cut keys on the line break before
 		// a stack frame); null when it is not a string or nothing of it survives.

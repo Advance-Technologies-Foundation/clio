@@ -122,6 +122,14 @@ internal static class ProcessDesignServerFault {
 		warnings?.Select(SiteText).Where(warning => warning.Length > 0).ToList();
 
 	/// <summary>
+	/// A schema or version name the server returned on a successful write, redacted as the site's text;
+	/// <see langword="null"/> for none, as the answer had it. A code-shaped name (<c>UsrOrderProcess</c>) is left as it
+	/// is by the redaction, so the read-back that follows still finds it.
+	/// </summary>
+	/// <param name="name">The answer's name.</param>
+	internal static string? SiteNameOrNull(string? name) => name is null ? null : SiteText(name);
+
+	/// <summary>
 	/// A name or a sentence the server wrote into its answer (a version name, an element name), redacted as the
 	/// site's text and trimmed; empty for none.
 	/// </summary>

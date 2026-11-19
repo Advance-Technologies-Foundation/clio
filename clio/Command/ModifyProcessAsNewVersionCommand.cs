@@ -248,7 +248,9 @@ public sealed class ModifyProcessAsNewVersionService(
 		}
 
 		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
-		return new ModifyProcessAsNewVersionResult(result.VersionName, result.VersionSchemaUId, result.Version,
+		// The version name is the site's text too, and the command's success line reads it from the result.
+		return new ModifyProcessAsNewVersionResult(ProcessDesignServerFault.SiteNameOrNull(result.VersionName),
+			result.VersionSchemaUId, result.Version,
 			result.IsActiveVersion, result.VersionRootSchemaUId, result.AppliedOperations,
 			ProcessDesignServerFault.SiteWarningList(result.Warnings), result.LayoutChange?.ElementsClause());
 	}

@@ -738,6 +738,30 @@ public sealed class PackageBuilderVerdictTests {
 		_logger.Received(1).WriteError("(CS0246) in UsrClass.cs at (5,26): EntitySchema not found");
 	}
 
+	[Test]
+	[Description("compile-creatio package: a compilation-history baseline that cannot be read (the ATF data provider, a "
+		+ "follow-up reader) is reported with its text redacted as site text in the warning line.")]
+	public void Rebuild_ShouldRedactTheBaselineReadFailure_AsSiteText() {
+		// Arrange
+		_poller.GetBaseline().Returns(_ => throw new InvalidOperationException(Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		try {
+			sut.Rebuild(["UsrPackage"]);
+		} catch (Exception) {
+			// Only the warning line is under test.
+		}
+
+		// Assert
+		_logger.Received().WriteWarning(Arg.Is<string>(line =>
+			line.StartsWith("Could not read the compilation history baseline: Login failed for user '[redacted]'.",
+				StringComparison.Ordinal)));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the warning line is the stdio caller's result");
+	}
+
 	private const string SecondProjectError =
 		"[{\"Line\":3,\"Column\":1,\"ErrorNumber\":\"CS1002\",\"ErrorText\":\"; expected\","
 		+ "\"IsWarning\":false,\"FileName\":\"UsrSecond.cs\"}]";

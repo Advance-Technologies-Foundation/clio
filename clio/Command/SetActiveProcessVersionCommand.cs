@@ -120,7 +120,9 @@ public sealed class SetActiveProcessVersionService(
 		}
 
 		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
-		return new SetActiveProcessVersionResult(result.ActiveVersionName, result.ActiveVersionSchemaUId,
+		// The version name is the site's text too, and the command's success line reads it from the result.
+		return new SetActiveProcessVersionResult(ProcessDesignServerFault.SiteNameOrNull(result.ActiveVersionName),
+			result.ActiveVersionSchemaUId,
 			result.DeactivationFailureCount, ProcessDesignServerFault.SiteWarningList(result.Warnings));
 	}
 

@@ -443,7 +443,8 @@
 				//terminal has no reader and makes an ordinary platform failure read as clio malfunctioning.
 				//The extension picks the carrier's ConsoleMessage instead (PR #1374 review).
 				_logger.WriteWarning(
-					$"Could not read the compilation history baseline: {exception.GetReadableMessageException()}");
+					$"Could not read the compilation history baseline: "
+					+ SensitiveErrorTextRedactor.RedactSiteText(exception.GetReadableMessageException()));
 				return null;
 			}
 		}
