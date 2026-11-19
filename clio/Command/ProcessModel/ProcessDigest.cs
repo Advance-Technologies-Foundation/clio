@@ -65,6 +65,9 @@ internal static class ProcessDigest {
 	internal const string ElementMode = "element";
 
 	private const string SchemaUIdMember = "schemaUId";
+
+	/// <summary>The graph and summary member that lists the process elements.</summary>
+	private const string ElementsMember = "elements";
 	private const string SequenceKind = "sequence";
 	private const string ConditionalKind = "conditional";
 
@@ -128,8 +131,8 @@ internal static class ProcessDigest {
 		foreach (string member in VersionFactMembers.Concat(FamilyStateMembers).Concat(["name", SchemaUIdMember])) {
 			graph.Remove(member);
 		}
-		StripMembers(graph["elements"] as JsonArray, ElementLayoutMembers);
-		foreach (JsonNode element in graph["elements"] as JsonArray ?? []) {
+		StripMembers(graph[ElementsMember] as JsonArray, ElementLayoutMembers);
+		foreach (JsonNode element in graph[ElementsMember] as JsonArray ?? []) {
 			StripTimerSchedule(element);
 		}
 		StripMembers(graph["flows"] as JsonArray, FlowLayoutMembers);
@@ -196,7 +199,7 @@ internal static class ProcessDigest {
 				flows.Take(Keep(flows.Count)).ToList(), parameters.Take(Keep(parameters.Count)).ToList(),
 				withCaptions: false, compactHeader: compact);
 			cut["omitted"] = new JsonObject {
-				["elements"] = elements.Count - Keep(elements.Count),
+				[ElementsMember] = elements.Count - Keep(elements.Count),
 				["flows"] = flows.Count - Keep(flows.Count),
 				["parameters"] = parameters.Count - Keep(parameters.Count)
 			};
@@ -300,7 +303,7 @@ internal static class ProcessDigest {
 	/// <returns>The change lists; a list with nothing in it is left out.</returns>
 	internal static JsonObject BuildChanges(DescribeProcessResult before, DescribeProcessResult after) {
 		JsonObject changes = new();
-		Diff(changes, "elements",
+		Diff(changes, ElementsMember,
 			Keyed(before.Elements, element => element.Name, ElementContent),
 			Keyed(after.Elements, element => element.Name, ElementContent));
 		(List<DescribedFlow> flowsBefore, List<DescribedFlow> flowsAfter) = WithoutUnchangedFlows(before.Flows, after.Flows);
@@ -371,7 +374,7 @@ internal static class ProcessDigest {
 		}
 		AddIfPresent(summary, "versionReadWarning", warning);
 		summary["checksum"] = checksum;
-		summary["elements"] = new JsonArray(elements.Select(element => (JsonNode)ElementEntry(element, withCaptions))
+		summary[ElementsMember] = new JsonArray(elements.Select(element => (JsonNode)ElementEntry(element, withCaptions))
 			.ToArray());
 		summary["flows"] = new JsonArray(flows.Select(flow => (JsonNode)JsonValue.Create(flow)).ToArray());
 		JsonArray signals = new(elements.Where(element => element.Signal is not null)

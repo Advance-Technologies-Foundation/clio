@@ -595,21 +595,29 @@ internal static class ProcessBlockKeyCheck {
 			}
 		}
 
+		// The block-specific shape checks that run before the generic walk: true when the block's value was refused
+		// and the walk must not descend into it.
+		private bool RefusesBlockShape(KeySet child, JsonNode value, string where, string path) {
+			if (child == EmailAttachment) {
+				return RefusesAttachmentsShape(value, where, path);
+			}
+			if (child == TimerBlock) {
+				return RefusesTimerShape(value, where, path);
+			}
+			if (child == WebServiceBlock && value is JsonObject webService) {
+				RefuseFractionalTimeout(webService, where, path);
+			} else if (child == ChatMessageBlock && value is JsonObject chatMessage) {
+				RefuseChatValueSourceShape(chatMessage, where, path);
+			}
+			return false;
+		}
+
 		private void VisitChild(string key, JsonNode value, KeySet set, string where, string prefix,
 				Placement placement, int depth) {
 			if (!set.Children.TryGetValue(key, out KeySet child)) {
 				return;
 			}
-			if (child == EmailAttachment && RefusesAttachmentsShape(value, where, prefix + key)) {
-				return;
-			}
-			if (child == WebServiceBlock && value is JsonObject webService) {
-				RefuseFractionalTimeout(webService, where, prefix + key);
-			}
-			if (child == ChatMessageBlock && value is JsonObject chatMessage) {
-				RefuseChatValueSourceShape(chatMessage, where, prefix + key);
-			}
-			if (child == TimerBlock && RefusesTimerShape(value, where, prefix + key)) {
+			if (RefusesBlockShape(child, value, where, prefix + key)) {
 				return;
 			}
 			if (value is JsonObject nested) {
