@@ -144,8 +144,20 @@ public sealed class SiteResponseWritePathTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("InsertQuery was not confirmed: the environment answered HTTP 500 with no service response, *");
+			.WithMessage("InsertQuery was not confirmed: the environment answered HTTP 500 without a service verdict, *");
 		_capture.Last.Should().BeEquivalentTo(new SiteResponse(500, null, null, SiteResponse.EmptyBody));
+	}
+
+	[Test]
+	[Description("An empty body with a 4xx is reported as a refusal, not as an unknown outcome")]
+	public void DataService_ShouldReportARefusal_WhenTheBodyIsEmptyAndTheStatusIs4xx() {
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(403, ""), "InsertQuery");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("InsertQuery failed: the environment refused it with HTTP 403 and no service verdict.");
+		_capture.Last.Status.Should().Be(403);
 	}
 
 	[Test]
@@ -209,6 +221,17 @@ public sealed class SiteResponseWritePathTests {
 	[Description("A 2xx answer, or one with an unknown status, keeps today's body-only check")]
 	public void ODataWrite_ShouldAccept(int? status, string body) {
 		ODataKeyedWrite.ValidateWriteResponse(new SiteHttpResponse(status, body)).Should().BeNull();
+	}
+
+	[TestCase(404, TestName = "ODataWrite_ShouldReportARefusal_WhenA404HasNoBody")]
+	[TestCase(302, TestName = "ODataWrite_ShouldReportARefusal_WhenA302ReachesTheCaller")]
+	[Description("A 3xx or 4xx with no error body is a refusal: the write was not applied")]
+	public void ODataWrite_ShouldReportARefusal(int status) {
+		// Act
+		string error = ODataKeyedWrite.ValidateWriteResponse(new SiteHttpResponse(status, ""));
+
+		// Assert
+		error.Should().Be($"Creatio refused the write with HTTP {status} and no recognized error body; it was not applied.");
 	}
 
 	[Test]

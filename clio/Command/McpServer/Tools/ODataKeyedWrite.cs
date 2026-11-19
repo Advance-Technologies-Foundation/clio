@@ -77,7 +77,8 @@ internal static class ODataKeyedWrite {
 	/// <summary>
 	/// Same check for an answer whose HTTP status is known: a status the client kept that is not 2xx is a
 	/// failure even when the body would pass the check - an empty body or a JSON shape no error recognizer
-	/// matches - because the site said the write failed.
+	/// matches. A 5xx is reported as not confirmed (a gateway can answer after Creatio applied the write); a 3xx
+	/// or 4xx as refused.
 	/// </summary>
 	/// <param name="answer">The answer as <see cref="SiteCall"/> returned it.</param>
 	/// <returns>The error to report, or <see langword="null"/> when the write is accepted.</returns>
@@ -86,8 +87,11 @@ internal static class ODataKeyedWrite {
 		if (bodyError is not null || !answer.IsKnownFailureStatus) {
 			return bodyError;
 		}
-		return $"Creatio answered the write with HTTP {answer.StatusCode} and no recognized error body, so it is not "
-			+ "confirmed: it may or may not have been applied. Read the record before deciding whether to resubmit.";
+		return answer.StatusCode >= 500
+			? $"Creatio answered the write with HTTP {answer.StatusCode} and no recognized error body, so it is not "
+				+ "confirmed: it may or may not have been applied. Read the record before deciding whether to resubmit."
+			: $"Creatio refused the write with HTTP {answer.StatusCode} and no recognized error body; it was not "
+				+ "applied.";
 	}
 
 	/// <summary>

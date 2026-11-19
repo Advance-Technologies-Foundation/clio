@@ -317,10 +317,11 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(502, null, null, SiteResponse.HtmlBody));
 	}
 
-	[TestCase(504, TestName = "Install_ShouldTrustTheLog_WhenAGateway504AnswersAnInstallTheLogConfirms")]
-	[TestCase(502, TestName = "Install_ShouldTrustTheLog_WhenAGateway502AnswersAnInstallTheLogConfirms")]
-	[Description("A gateway can answer a long installation that Creatio then finishes: an empty gateway answer is not a refusal when this run's log says the application was installed")]
-	public void Install_ShouldTrustTheLog_WhenAGatewayAnswersAnInstallTheLogConfirms(int status) {
+	[TestCase(504, TestName = "Install_ShouldReportNotConfirmed_WhenA504AnswersEvenIfTheLogSaysInstalled")]
+	[TestCase(502, TestName = "Install_ShouldReportNotConfirmed_WhenA502AnswersEvenIfTheLogSaysInstalled")]
+	[TestCase(503, TestName = "Install_ShouldReportNotConfirmed_WhenA503AnswersEvenIfTheLogSaysInstalled")]
+	[Description("An empty 5xx is never turned into a success by a log line: the log window is bounded by time, not by this run, so a stale or another run's line could forge it. The install is reported as not confirmed instead.")]
+	public void Install_ShouldReportNotConfirmed_WhenA5xxAnswersEvenIfTheLogSaysInstalled(int status) {
 		// Arrange
 		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: status,
 			logAfterInstall: "baseline\r\nApplication installed successfully\r\n");
@@ -330,10 +331,49 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
 
 		// Assert
-		result.Should().BeTrue(because: "the installation log of this run confirms the install the gateway lost");
-		capture.Last.Should().BeNull();
-		arrangement.Logger.Received(1).WriteWarning(Arg.Is<string>(line => line.Contains($"HTTP {status}")
-			&& line.Contains("treated as successful")));
+		result.Should().BeFalse(because: "a line in a shared log cannot prove this installation finished");
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, SiteResponse.EmptyBody));
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.StartsWith("Package installation failed: not confirmed", StringComparison.Ordinal)
+			&& line.Contains($"HTTP {status}", StringComparison.Ordinal)
+			&& line.Contains("may still be running", StringComparison.Ordinal)));
+		CallsTo(arrangement.Application, nameof(IApplication.Restart)).Should().Be(0);
+	}
+
+	[Test]
+	[Description("A gateway HTML page with a 5xx is reported as a not confirmed installation, not as a parser exception")]
+	public void Install_ShouldReportNotConfirmed_WhenA5xxAnswersWithAnHtmlPage() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller("<html><head><title>504 Gateway Time-out</title></head></html>",
+			installStatus: 504);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(504, null, null, SiteResponse.HtmlBody));
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.StartsWith("Package installation failed: not confirmed", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A 4xx with no service verdict is a refusal: the request never reached the installer")]
+	public void Install_ShouldReportARefusal_WhenA4xxAnswersWithNoVerdict() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 403);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(403, null, null, SiteResponse.EmptyBody));
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.Contains("refused the installation request with HTTP 403", StringComparison.Ordinal)
+			&& line.Contains("nothing was installed", StringComparison.Ordinal)));
 	}
 
 	[Test]

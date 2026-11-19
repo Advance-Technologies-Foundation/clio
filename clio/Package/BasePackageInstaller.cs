@@ -276,32 +276,35 @@
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
 		}
 
-		// A gateway (502/503/504) can answer an installation that takes longer than its timeout while Creatio goes on
-		// and finishes it. An empty gateway answer is therefore not a refusal when this run's installation log says
-		// the application was installed; the call reports that it trusted the log.
-		private bool IsGatewayAnswerConfirmedByLog(SiteHttpResponse answer, BaseResponse response,
-			string currentInstallLog) {
-			bool confirmed = response == null && (answer.StatusCode is 502 or 503 or 504)
-				&& InstallLogAnalyzer.IsSuccessMessagePresent(currentInstallLog);
-			if (confirmed) {
-				_logger.WriteWarning($"The environment answered the installation request with HTTP {answer.StatusCode}, "
-					+ "a gateway answer, but this run's installation log says the application was installed "
-					+ "successfully, so the installation is treated as successful.");
-			}
-			return confirmed;
-		}
-
-		// The install answer as an envelope. One that is not JSON fails the installation, so it is recorded as the
-		// site's answer before the parser's exception leaves.
+		// The install answer as an envelope, or null when the service gave no verdict of its own. A body that is not
+		// JSON fails the installation: with a failure status the client kept (a gateway or error page) it is read as
+		// no verdict and reported as such; with an unknown status the parser's exception leaves as before. Either
+		// way it is recorded as the site's answer first.
 		private static BaseResponse ReadInstallResponse(SiteHttpResponse answer) {
 			try {
 				return JsonConvert.DeserializeObject<BaseResponse>(answer.Body);
+			}
+			catch (JsonException) when (answer.IsKnownFailureStatus) {
+				SiteResponseCapture.RecordRefusal(answer);
+				return null;
 			}
 			catch (JsonException) {
 				SiteResponseCapture.RecordRefusal(answer);
 				throw;
 			}
 		}
+
+		// The failure line for a failure status that came with no verdict of the service. A 5xx is not confirmed
+		// either way: a gateway can answer an installation that runs longer than its timeout while Creatio goes on
+		// with it, so the agent must check before installing again. A 3xx or 4xx never reached the installer.
+		private static string DescribeUnconfirmedInstall(SiteHttpResponse answer) =>
+			answer.StatusCode >= 500
+				? $"Package installation failed: not confirmed - the environment answered the installation request "
+					+ $"with HTTP {answer.StatusCode} and no service response, so the installation may have failed or may "
+					+ "still be running. Check the environment (its installation log, or list-packages) before installing "
+					+ "again."
+				: $"Package installation failed: the environment refused the installation request with HTTP "
+					+ $"{answer.StatusCode} and no service response, so nothing was installed.";
 
 		private static bool ContainsInvalidGZipArchiveException(string value) =>
 			!string.IsNullOrWhiteSpace(value)
@@ -358,10 +361,11 @@
 				successLog = InstallLogAnalyzer.IsSuccessMessagePresent(completeInstallLog);
 			}
 			_logger.Write(GetLogDiff(log, completeInstallLog));
-			// A non-2xx status the client kept is a failure even with an empty body, which alone reads as success:
-			// the site said the installation request failed.
-			bool answerAccepted = (response == null || response.Success)
-				&& (!answer.IsKnownFailureStatus || IsGatewayAnswerConfirmedByLog(answer, response, currentInstallLog));
+			// A non-2xx status the client kept is a failure even with an empty body, which alone reads as success. With
+			// no verdict of the service (an empty body or a page), the log is not used to turn it into a success: the
+			// log window is bounded by time, not by this run, so it cannot prove this installation finished.
+			bool noServiceVerdict = response == null && answer.IsKnownFailureStatus;
+			bool answerAccepted = (response == null || response.Success) && !answer.IsKnownFailureStatus;
 			var success = answerAccepted && successLog;
 			if (!success && (response is { Success: false } || answer.IsKnownFailureStatus)) {
 				// Only when the site's own answer failed the installation, not when the log check alone did.
@@ -376,13 +380,15 @@
 				throw new InvalidGZipArchiveInstallException(
 					GetInvalidGZipArchiveMessage(response, currentInstallLog));
 			}
-			if (!success) {
+			if (!success && !noServiceVerdict) {
 				success = TryDowngradeReportedFailure(response, currentInstallLog,
 					IsLogWindowOfThisRun(initialInstallLog, completeInstallLog));
 			}
 			if (!success) {
-				_logger.WriteError("Package installation failed: "
-					+ InstallLogAnalyzer.DescribeFailure(response, currentInstallLog, successLog));
+				_logger.WriteError(noServiceVerdict
+					? DescribeUnconfirmedInstall(answer)
+					: "Package installation failed: "
+						+ InstallLogAnalyzer.DescribeFailure(response, currentInstallLog, successLog));
 			}
 			return (success, completeInstallLog);
 		}

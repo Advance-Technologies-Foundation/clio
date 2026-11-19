@@ -14,8 +14,9 @@ internal static class DataServiceResponse {
 	/// </summary>
 	/// <remarks>
 	/// One rule is added to the body check: a status the client kept that is not 2xx is a failure even when the
-	/// body would pass it - an empty body or an envelope without a <c>success</c> flag - because the site said
-	/// the call failed and accepting it would report a write that did not happen as done.
+	/// body would pass it - an empty body or an envelope without a <c>success</c> flag - because accepting it would
+	/// report a write that may not have happened as done. A 5xx is reported as not confirmed (a gateway can answer
+	/// after the service applied the write); a 3xx or 4xx as refused.
 	/// </remarks>
 	/// <param name="answer">The answer as <see cref="SiteCall"/> returned it.</param>
 	/// <param name="operationName">The operation to name in the failure message.</param>
@@ -25,11 +26,11 @@ internal static class DataServiceResponse {
 		try {
 			ThrowIfUnsuccessful(answer.Body, operationName);
 			if (answer.IsKnownFailureStatus) {
-				// Not "failed": a gateway can answer 502/504 after the service applied the write, so the outcome is
-				// unknown rather than refused.
-				throw new InvalidOperationException(
-					$"{operationName} was not confirmed: the environment answered HTTP {answer.StatusCode} with no "
-					+ "service response, so whether it was applied is unknown. Read the data before retrying.");
+				throw new InvalidOperationException(answer.StatusCode >= 500
+					? $"{operationName} was not confirmed: the environment answered HTTP {answer.StatusCode} without a "
+						+ "service verdict, so whether it was applied is unknown. Read the data before retrying."
+					: $"{operationName} failed: the environment refused it with HTTP {answer.StatusCode} and no service "
+						+ "verdict.");
 			}
 		}
 		catch (InvalidOperationException) {

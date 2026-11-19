@@ -358,11 +358,21 @@ sees the same envelope as before.
 
 **Status-aware failures.** Because the status is now kept, a failure status fails these writes even when the
 body alone would pass them: an empty or unrecognized body on `odata-update` / `odata-delete`, an empty body on
-`odata-create` (the row is then reported as not confirmed, with `record-created` unknown), an empty body on the
-data-binding writes and on `install-application`, and a 4xx answer to `restart-by-environment-name` /
-`restart-by-credentials`, which used to report "Done" with exit code 0 whatever the site answered. A 5xx answer
-to a restart is not a refusal - a restart in progress behind a proxy can produce one - so it is reported as a
-warning that the restart is not confirmed, and with the readiness wait, readiness decides.
+`odata-create` (the row is then reported as not confirmed, with `record-created` unknown), and an empty body or
+an error page on the data-binding writes and on `install-application` / `push-workspace` /
+`install-process-builder`. How such a failure reads depends on the status:
+
+- **5xx: not confirmed.** A gateway can answer 502/504 after Creatio applied the write or while a long
+  installation still runs, so the result says the write "was not confirmed" / "may or may not have been
+  applied" / "may still be running" and asks to read back before retrying. An installation log line is not
+  taken as proof either way: the log window is bounded by time, not by this run.
+- **3xx or 4xx: refused.** The request never reached the service (a redirect to another origin, no rights, an
+  unknown route), so the result says it was refused and not applied.
+
+A restart (`restart-by-environment-name` / `restart-by-credentials`) answered with a 4xx fails, where it used to
+report "Done" with exit code 0 whatever the site answered. A 5xx answer to a restart is not a refusal - a restart
+in progress behind a proxy can produce one - so it is reported as a warning that the restart is not confirmed,
+and with the readiness wait, readiness decides.
 
 **Not covered:** a compile that outlives the MCP response deadline reports its verdict through
 `compile-status`, which carries no `site-response`; and the very first request of a process, when it is one of
