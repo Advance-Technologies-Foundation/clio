@@ -36,14 +36,6 @@ public static class UntrustedText {
 	public static string FencedSiteText(string text) => SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
 
 	/// <summary>
-	/// Replaces known secret shapes in text a Creatio SITE wrote, with the rules only such text may take as well;
-	/// see <see cref="SensitiveErrorTextRedactor.RedactSiteText"/>. Never for clio's own text or a serialized
-	/// envelope: use <see cref="Scrub"/> there.
-	/// </summary>
-	/// <param name="text">The raw text the site sent.</param>
-	public static string ScrubSiteText(string text) => SensitiveErrorTextRedactor.RedactSiteText(text);
-
-	/// <summary>
 	/// The CONSOLE rendering: scrubbed, flattened and capped, with no fence. Use for a line whose only
 	/// reader is a person at a terminal.
 	/// </summary>
