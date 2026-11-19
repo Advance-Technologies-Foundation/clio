@@ -91,12 +91,14 @@ internal static partial class SensitiveErrorTextRedactor {
 	//   - in the tail an escaped backslash pair is one unit, and a single backslash right before a quote ends the
 	//     path - it escapes that quote - so the match can never take half of an escape and leave the JSON broken;
 	//   - a closing bracket is taken only when a backslash (one, or an escaped pair) and a segment character follow,
-	//     and that backslash starts no escape: after a bracket "\n", "\r", "\t" and "\uXXXX" are a line break, a tab or
-	//     an escaped quote ("see (C:\x\y.dll)\nNext line", an envelope's "(C:\\x.dll)\u0022"), never the next segment.
+	//     and that backslash starts no escape. After a bracket "\uXXXX" is an escaped quote (an envelope's
+	//     "(C:\\x.dll)\u0022"), and "\n", "\r" or "\t" before a capital letter, another backslash, whitespace or the end
+	//     is a line break or a tab ("see (C:\x\y.dll)\nNext line"); before a LOWER-CASE letter it is the next folder
+	//     ("jdoe(old)\temp", "data[1]\nightly"), because when the two readings disagree the one that removes wins.
 	[GeneratedRegex(
 		@"(?:[A-Za-z]:(?:\\\\|\\(?!""))|(?<!\\)(?:\\\\){1,2}(?=[A-Za-z0-9_$][\w.$\-]*\\))"
 		+ @"(?:\\\\|\\(?![""\\])|[^\s""'<>|)}\]\\]"
-		+ @"|[)}\]]+(?=(?:\\\\|\\)(?![rnt]|u[0-9A-Fa-f]{4})[^\s""'<>|)}\]\\]))*",
+		+ @"|[)}\]]+(?=(?:\\\\|\\)(?![rnt](?![a-z])|u[0-9A-Fa-f]{4})[^\s""'<>|)}\]\\]))*",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex WindowsPathRegex();
 
@@ -180,11 +182,10 @@ internal static partial class SensitiveErrorTextRedactor {
 		+ @"(?:password|passphrase|passcode|passwd|pass|pwd|pw)"
 		+ @"(?:[_-]?(?:confirmation|confirm|repeat|new|old|backup|retry))?";
 
-	// "credential(s)" is a key of its own, OUTSIDE CredentialSecretKeys, because the JSON rule must leave one spelling
-	// of it alone: clio's own read-only flag "constant-credentials-masked": true (WebServiceModels), which the
-	// compound wrapper would otherwise read as a credential and replace. The pair rule takes it in every spelling;
-	// the JSON rule takes every spelling ("credentials", "db_credentials", "smtp.credentials") except a key whose
-	// next segment is "masked".
+	// "credential(s)" is a key of its own, OUTSIDE CredentialSecretKeys, so the JSON rule can leave exactly one key
+	// alone: clio's own read-only flag "constant-credentials-masked": true (WebServiceModels, describe-web-service),
+	// which the compound wrapper would otherwise read as a credential and replace. Every other spelling goes in both
+	// rules ("credentials", "db_credentials", "smtp.credentials", "credentials.masked", "credentials-masked-value").
 	private const string CredentialWordKeys = @"credentials?";
 
 	private const string CredentialSecretKeys =
@@ -321,9 +322,10 @@ internal static partial class SensitiveErrorTextRedactor {
 	// Scheme credential (rule 1, Basic, NTLM and Negotiate), in any letter case ("ntlm", "NEGOTIATE"). Master had no
 	// rule for these, so there is no floor to keep; the line is drawn by WHERE the word stands:
 	//   - in a HEADER POSITION - right after "Authorization:", "Proxy-Authorization:", "WWW-Authenticate:",
-	//     "Proxy-Authenticate:" or a credential key ("token:", "access_token=", "password=" …; see
-	//     HeaderPositionRegex) - only a challenge parameter ("WWW-Authenticate: Basic realm=…"), a word of the closed
-	//     list HeaderProseWordRegex or a placeholder stays: "Authorization: Basic configuration" loses the word;
+	//     "Proxy-Authenticate:", a quoted credential key ("\"token\": ") or a bare one before "=" ("password=");
+	//     see HeaderPositionRegex - only a challenge parameter ("WWW-Authenticate: Basic realm=…"), a word of the
+	//     closed list HeaderProseWordRegex or a placeholder stays: "Authorization: Basic configuration" loses the word;
+	//     "auth: Basic mode is off" is a sentence, not a header;
 	//   - ELSEWHERE, in a sentence, a prose word stays - all lower case or one leading capital then lower case,
 	//     optionally "-"-joined ("Basic configuration is missing", "NTLM handshake failed", "Basic auth-enabled") -
 	//     and so do an acronym (with "/n", "/n.n", "/ACRONYM", "vn" or a dotted version of up to four short parts:
@@ -338,11 +340,19 @@ internal static partial class SensitiveErrorTextRedactor {
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex SchemeCredentialRegex();
 
-	// What a header position looks like just before the scheme word: a header name or a credential key, its ":" or
-	// "=", and an optional opening quote.
+	// What a header position looks like just before the scheme word, and nothing else:
+	//   - a header name - Authorization, Proxy-Authorization, WWW-Authenticate or Proxy-Authenticate - and its ":" or
+	//     "=", the name optionally quoted ("Authorization: Basic …", "\"Authorization\": \"Basic …");
+	//   - a credential key of the pair rule's list (CredentialSecretKeys and "credential(s)": password, pwd, secret,
+	//     the token family, auth, api_key, client_secret, cookie, …) written as a key: QUOTED before its ":" or "=" -
+	//     a JSON or dict key ("\"token\": \"Basic …") - or bare before an "=" (a pair: "password=Basic …").
+	// A key word with a colon in a sentence is not one: "Primary key: Basic info", "auth: Basic mode is off" and
+	// "The secret: Negotiate later" keep the prose word after the scheme word.
 	[GeneratedRegex(
-		@"(?:(?:proxy-)?authori[sz]ation|(?:www|proxy)-authenticate|[\w.\-]*(?:token|auth|credentials?|password|passwd|pwd|secret|key))"
-		+ @"(?:""|'|\\""|\\u0022)?[ \t]*[:=][ \t]*(?:""|'|\\""|\\u0022)?[ \t]*$",
+		$@"(?:(?<![\w\-])(?:""|'|\\""|\\u0022)?(?:(?:proxy-)?authori[sz]ation|(?:www|proxy)-authenticate)(?:""|'|\\""|\\u0022)?[ \t]*[:=]"
+		+ $@"|(?<![\w.\-])(?:""|'|\\""|\\u0022)(?:{CredentialSecretKeys}|{CredentialWordKeys})(?:""|'|\\""|\\u0022)[ \t]*[:=]"
+		+ $@"|(?<![\w.\-])(?:{CredentialSecretKeys}|{CredentialWordKeys})[ \t]*=)"
+		+ @"[ \t]*(?:""|'|\\""|\\u0022)?[ \t]*$",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex HeaderPositionRegex();
 
@@ -358,6 +368,11 @@ internal static partial class SensitiveErrorTextRedactor {
 		+ @"|v?\d{1,4}(?:\.\d{1,4}){1,3}|v\d{1,2}|\d[A-Z]{1,3}|[A-Z][a-z]*[A-Z][a-z]+)$",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex ProseAfterSchemeWordRegex();
+
+	// A pair value that is a scheme word and one more word, read by RedactCredentialPair.
+	[GeneratedRegex($@"^(?<scheme>{SchemeWords})\s+(?<word>\S+)$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
+		RegexTimeoutMilliseconds)]
+	private static partial Regex SchemeWordAndKeptWordRegex();
 
 	// Sentence punctuation that may close a credential run and is not part of it ("Invalid Bearer token.",
 	// "(Authorization: Bearer x7Kq)").
@@ -404,10 +419,15 @@ internal static partial class SensitiveErrorTextRedactor {
 	// over-redaction is accepted, because this class prefers over-redacting to leaking. camelCase and
 	// glued forms stay OUT, which is what keeps "passwordHint" and "tokenCount" untouched in JSON
 	// exactly as "passwordHint=x" is untouched in key=value form.
-	// "credentials" is taken in every spelling but the "-masked" flag - see CredentialWordKeys.
+	// "credentials" is taken in every spelling; the one exact key clio's own flag uses is excluded where the rule
+	// starts a key (JsonCredentialPropertyRegex) - see CredentialWordKeys.
 	private const string JsonCredentialKeyPattern =
-		$@"(?:[A-Za-z0-9]+[_.\-])*(?:{CredentialSecretKeys}|server|hostname|host|database"
-		+ $@"|(?:{CredentialWordKeys})(?![_.\-]masked\b))(?:[_.\-][A-Za-z0-9]+)*";
+		$@"(?:[A-Za-z0-9]+[_.\-])*(?:{CredentialSecretKeys}|server|hostname|host|database|{CredentialWordKeys})"
+		+ @"(?:[_.\-][A-Za-z0-9]+)*";
+
+	// The exact key of clio's own read-only flag, which the JSON rule leaves alone - in this letter case only, so
+	// "Constant-Credentials-Masked" is a credential key like any other.
+	private const string OwnMaskedFlagKey = "constant-credentials-masked";
 
 	// The three spellings one JSON quote can take in text this rule runs over: a literal quote, the
 	// hand-written \" escape, and the \u0022 escape that System.Text.Json's DEFAULT encoder emits for a
@@ -452,7 +472,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	// begin a match on the "u" INSIDE a \u0022 escape and swallow the backslash. This rule begins on a
 	// complete quote spelling instead, so it cannot start mid-escape.
 	[GeneratedRegex(
-		$@"(?<q>{JsonQuoteSpellings})(?<key>{JsonCredentialKeyPattern})\k<q>\s*:\s*(?:\k<q>{JsonStringContent}\k<q>|{JsonLiteralValue})",
+		$@"(?<q>{JsonQuoteSpellings})(?!(?-i:{OwnMaskedFlagKey})\k<q>)(?<key>{JsonCredentialKeyPattern})\k<q>\s*:\s*(?:\k<q>{JsonStringContent}\k<q>|{JsonLiteralValue})",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex JsonCredentialPropertyRegex();
 
@@ -682,12 +702,15 @@ internal static partial class SensitiveErrorTextRedactor {
 	// leaves of a path with a space). Never next to another backslash, and never across a "\r", "\n" or "\t"
 	// written as text that is a line break of a body escaped twice ("null.\r\nParameter name: …"). Such an escape
 	// before a LOWER-CASE letter is ambiguous: "SQL01\reporting", "CORP\nick" and "DOMAIN\tanya" are an instance and
-	// two accounts, while "line one\nanother line" and "Error\nancestor failed" are line breaks. It is read as an
-	// account only when the segment before it is a server or domain name - capitals, digits, "_", "$", "." and "-"
-	// ("SQL01", "CORP"); after any other word it is a line break and the text stays.
+	// two accounts, while "line one\nanother line", "Error 404\nnot found" and "Status: FAILED\nreason" are line
+	// breaks. It is read as an account only when the segment before it is a SERVER NAME: shaped like a host label -
+	// capitals, digits and "-", at least one letter ("SQL01", "CORP", "DB-PROD") - and not a status word (ERROR,
+	// FAILED, FAIL, OK, WARN, WARNING, INFO, DEBUG, TRUE, FALSE, NULL, NONE). After a number, a status word or any
+	// other word it is a line break and the text stays.
 	[GeneratedRegex(
 		@"(?<![\w\\.$\-])[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?"
-		+ @"(?:(?:\\(?![rnt])|(?<=(?<![\w.$\-])[A-Z0-9_$](?:[A-Z0-9_$.\-]*[A-Z0-9_$])?)\\(?=[rnt][a-z]))"
+		+ @"(?:(?:\\(?![rnt])|(?<=(?<![\w.$\-])(?!(?:ERROR|FAILED|FAIL|OK|WARN|WARNING|INFO|DEBUG|TRUE|FALSE|NULL|NONE)\\)"
+		+ @"(?=[A-Z0-9\-]*[A-Z])[A-Z0-9](?:[A-Z0-9\-]*[A-Z0-9])?)\\(?=[rnt][a-z]))"
 		+ @"[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?)+(?!\w)",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex WindowsInstanceRegex();
@@ -853,8 +876,10 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// <remarks>
 	/// A clamp before redaction exists to bound the regex work, and a cut inside a token or a quoted name left its
 	/// first half - "…for user 'zq_inv", the first segments of a JWT - which no rule matches, so it reached the
-	/// caller. Cutting at a boundary keeps every run whole or drops it, and " …" marks the cut. A text with no
-	/// boundary at all within the bound is one run, and becomes the placeholder.
+	/// caller. Cutting at a boundary keeps every run whole or drops it, and " …" marks the cut. A cut that falls
+	/// inside an open quote goes back to before that quote, because a quoted name may hold spaces
+	/// ("…for user 'zq invented login'" must not keep "'zq"). A text with no boundary at all within the bound is one
+	/// run, and becomes the placeholder.
 	/// </remarks>
 	/// <param name="text">The text to clamp.</param>
 	/// <param name="maxLength">The bound; the marker may add two characters.</param>
@@ -864,7 +889,39 @@ internal static partial class SensitiveErrorTextRedactor {
 			return text;
 		}
 		int cut = text.AsSpan(0, maxLength + 1).LastIndexOfAny(ClampBoundaries);
-		return (cut < 0 ? RedactedValue : text[..cut].TrimEnd()) + " \u2026";
+		if (cut < 0) {
+			return RedactedValue + " \u2026";
+		}
+		string kept = text[..cut];
+		int openQuote = OpenQuoteAt(kept);
+		return (openQuote < 0 ? kept : kept[..openQuote]).TrimEnd() + " \u2026";
+	}
+
+	// How far back a quoted value may begin: a sign-in or database name is at most 256 characters.
+	private const int OpenQuoteWindow = 512;
+
+	// The index of the earliest quote in the last OpenQuoteWindow characters that opens a value (a ' or " after a
+	// non-letter) and is not closed after it (by the same quote before a non-letter), or -1. An apostrophe inside a
+	// word ("can't") opens nothing.
+	private static int OpenQuoteAt(string text) {
+		int open = -1;
+		char quote = '\0';
+		for (int index = Math.Max(0, text.Length - OpenQuoteWindow); index < text.Length; index++) {
+			char character = text[index];
+			if (character is not ('\'' or '"')) {
+				continue;
+			}
+			bool afterLetter = index > 0 && char.IsLetterOrDigit(text[index - 1]);
+			bool beforeLetter = index + 1 < text.Length && char.IsLetterOrDigit(text[index + 1]);
+			if (open < 0 && !afterLetter) {
+				open = index;
+				quote = character;
+			}
+			else if (open >= 0 && character == quote && !beforeLetter) {
+				open = -1;
+			}
+		}
+		return open;
 	}
 
 	/// <summary>
@@ -1064,7 +1121,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		result = EmailRegex().Replace(result, RedactedValue);
 		result = HostPortRegex().Replace(result, RedactedUri);
 		result = Ipv6Regex().Replace(result, RedactIpv6Address);
-		result = SingleLabelHostPortRegex().Replace(result, RedactSingleLabelHostPort);
+		string labelled = result;
+		result = SingleLabelHostPortRegex().Replace(result, match => RedactSingleLabelHostPort(labelled, match));
 		string beforeIpv4 = result;
 		result = PrivateIpv4Regex().Replace(result, match => IsVersionContext(beforeIpv4, match)
 			? match.Value
@@ -1142,20 +1200,44 @@ internal static partial class SensitiveErrorTextRedactor {
 	};
 
 	// The words of a count or a test-run summary ("Failed:22", "Total:443", "Passed:421"): 22 and 443 are service
-	// ports, so without them a summary line read as hosts. A count word keeps its number unless that number is a
-	// database, cache or broker port of 1024 or more ("tests:5432", "ok:6379", "pending:1433"), which is how a site
-	// names a host whatever the host is called.
-	private static readonly HashSet<string> CountLabels = new(StringComparer.OrdinalIgnoreCase) {
-		"total", "passed", "failed", "skipped", "succeeded", "success", "successes", "failure", "failures", "errors",
-		"warning", "warnings", "tests", "ignored", "inconclusive", "executed", "notexecuted", "pending", "completed",
-		"done", "ok"
-	};
+	// ports, so without them a summary line read as hosts. A count word is a COUNT when another count word with a
+	// number is on the same line - a real or a written line break ends it ("Passed:5432, Total:5432",
+	// "Total:3306 Passed:8080 Skipped:1433"). Alone, "word:port" takes the general single-label rule like any label,
+	// so "ok:6379" and "tests:5432" are hosts and "tests:4000" is not. Master had no single-label rule at all: it
+	// removed none of these, so this rule keeps nothing master removed.
+	private const string CountWords =
+		"total|passed|failed|skipped|succeeded|success|successes|failure|failures|errors|warning|warnings|tests|ignored"
+		+ "|inconclusive|executed|notexecuted|pending|completed|done|ok";
+
+	private static readonly HashSet<string> CountLabels = new(CountWords.Split('|'), StringComparer.OrdinalIgnoreCase);
+
+	[GeneratedRegex($@"\b(?:{CountWords}):\d", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
+	private static partial Regex CountWordRegex();
+
+	[GeneratedRegex(@"\r\n|\n|\r|\\r\\n|\\n|\\r", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex LineBreakRegex();
+
+	// Whether the line around the match holds another count word with a number.
+	private static bool IsCountLine(string text, Match match) {
+		int start = 0;
+		int end = text.Length;
+		foreach (Match lineBreak in LineBreakRegex().Matches(text)) {
+			if (lineBreak.Index + lineBreak.Length <= match.Index) {
+				start = lineBreak.Index + lineBreak.Length;
+			}
+			else if (lineBreak.Index >= match.Index + match.Length) {
+				end = lineBreak.Index;
+				break;
+			}
+		}
+		return CountWordRegex().Matches(text[start..end]).Count >= 2;
+	}
 
 	// Whether "label:port" is a host and its port. localhost always is. A label that names a number in prose
 	// ("Status:500", "line:42", "timeout:5000") never is. Otherwise a well-known service port makes it one
 	// ("redis:6379"), and any other port of 1024 or more does when the label looks like a machine name - a digit,
 	// a hyphen, or three or more capitals ("db01:2000", "SQLPROD01:1433", "DBSERVER:4000").
-	private static string RedactSingleLabelHostPort(Match match) {
+	private static string RedactSingleLabelHostPort(string text, Match match) {
 		string label = match.Groups["label"].Value;
 		if (!int.TryParse(match.Groups["port"].Value, out int port) || port is < 1 or > 65_535) {
 			return match.Value;
@@ -1166,8 +1248,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (NotHostLabels.Contains(label)) {
 			return match.Value;
 		}
-		if (CountLabels.Contains(label)) {
-			return port >= 1024 && WellKnownServicePorts.Contains(port) ? RedactedUri : match.Value;
+		if (CountLabels.Contains(label) && IsCountLine(text, match)) {
+			return match.Value;
 		}
 		bool machineShaped = label.Any(char.IsAsciiDigit) || label.Contains('-')
 			|| (label.Length >= 3 && label.All(character => char.IsAsciiLetterUpper(character) || char.IsAsciiDigit(character)));
@@ -1200,8 +1282,18 @@ internal static partial class SensitiveErrorTextRedactor {
 			return match.Value;
 		}
 		string key = match.Groups["key"].Value;
-		if (match.Groups["sep"].Value.Contains(':') && IdentifierValuedKeyRegex().IsMatch(key)
+		bool colon = match.Groups["sep"].Value.Contains(':');
+		if (colon && IdentifierValuedKeyRegex().IsMatch(key)
 			&& IdentifierPairValueRegex().IsMatch(match.Groups["value"].Value)) {
+			return match.Value;
+		}
+		// A key word with a colon in a sentence, followed by a scheme word and a word the scheme rules keep there
+		// ("auth: Basic mode is off", "The token: NTLM handshake failed"), is prose: the scheme rules already ruled
+		// that word is no credential. With "=" it is a pair, and the value goes.
+		if (colon && !match.Groups["kq"].Success && SchemeWordAndKeptWordRegex().Match(match.Groups["value"].Value) is { Success: true } schemed
+			&& (schemed.Groups["scheme"].Value.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
+				? BearerTradeRegex().IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential)
+				: ProseAfterSchemeWordRegex().IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential))) {
 			return match.Value;
 		}
 		// A single-quoted key keeps its quotes and its colon, so a dict-shaped text still reads as one.
