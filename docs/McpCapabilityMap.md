@@ -320,6 +320,124 @@ The refusal path is unit-proven; at the end-to-end level each gated tool's contr
 advertise its floor. A live e2e refusal test requires an environment below the floor, which the
 harness does not provision — that remains the one documented gap.
 
+### What the site answered (`site-response`)
+
+A failed write tool carries `site-response`: what the Creatio site itself answered to the request that made
+the call fail. Every other error text in a result is clio's sentence, sometimes with the site's words inside
+it; this field holds only what the site sent, so a caller can show the site's answer verbatim and tell it
+apart from clio's wording.
+
+```json
+"site-response": { "status": 500, "message": "Column 'UsrFoo' already exists", "code": "SchemaDesignerException", "body": "json" }
+```
+
+| Member | Meaning |
+|---|---|
+| `status` | The HTTP status of that response, always present. A Creatio service often refuses with HTTP 200 and `success:false`; the status then reads 200, because that is what the site sent. |
+| `message` | The site's own message, only from a known JSON shape: `errorInfo.message`, OData `error.message` (or `error.message.value`), `responseStatus.Message`, `errorMessage`, or an ASP.NET fault's `Message` / `message` / `ExceptionMessage`; each also inside a WCF `<Method>Result` wrapper. It passes the same sensitive-text redaction as the `error` text beside it (URIs, paths, host:port, emails, credential and connection-string pairs become placeholders) and is capped at 2,000 characters with a trailing "…". Omitted for an HTML page, an empty body, plain text or an unknown JSON shape. |
+| `code` | The site's own error code (`errorInfo.errorCode`, OData `error.code`, `responseStatus.ErrorCode`), when present; redacted like `message`. |
+| `body` | What KIND of body the site sent: one of the four words `json`, `html`, `text` or `empty`. It never holds the body itself, so no HTML page, stack trace or other unredacted text reaches the result through it. |
+
+Nothing in `site-response` is unredacted site text: `message` and `code` are redacted and capped, `status` is a
+number and `body` one of four fixed words. clio never copies `errorInfo.stackTrace`. A host that shows the
+text may apply its own redaction on top.
+
+**Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
+failure is clio's own (validation, a refused precondition). The field is optional, so a caller that ignores it
+sees the same envelope as before.
+
+**Where it is:**
+
+- top level of the failed result: `create-entity-schema`, `update-entity-schema`,
+  `modify-entity-schema-column`, `create-lookup`, `create-page`, `update-page`, `create-data-binding-db`,
+  `upsert-data-binding-row-db`, `remove-data-binding-row-db`, `delete-data-binding-db`, `odata-update`,
+  `odata-delete` (one `id`), `install-application`, `push-workspace`, `install-process-builder`,
+  `compile-creatio`, `restart-by-environment-name`, `restart-by-credentials`, `create-business-process`;
+- on each failed item of a batch: `odata-create` `results[i]`, `odata-delete` with `ids` `results[i]`,
+  `sync-pages` `pages[i]`, `sync-schemas` `results[i]`.
+
+**Status-aware failures.** Because the status is now kept, a failure status fails these writes even when the
+body alone would pass them: an empty or unrecognized body on `odata-update` / `odata-delete`, an empty body on
+`odata-create`, and an empty body or an error page on the data-binding writes and on `install-application` /
+`push-workspace` / `install-process-builder`. How such a failure reads depends on the status:
+
+- **Refused without processing: 405, 413, 414 or 415 with an empty, HTML page or plain-text body,** answering
+  the request clio sent and not one the HTTP client sent after following a redirect. These statuses refuse the
+  request for its shape: its method, body size, URI length or media type. HTTP
+  defines them as the server refusing to process the request (RFC 9110). The result then says that
+  request was not applied, and an `odata-create` row reads `record-created: false`. With a JSON or XML body the
+  application itself answered, so it reads like any other refusal below.
+- **401 or 403: refused, but never proof.**
+  - creatio.client signs in again and re-sends after any 401, and after a 403 when the sign-in changed meanwhile.
+    It does not show the first answer, so the 401 clio sees answers the second send.
+  - ASP.NET writes its 401 `{"Message":"Authentication failed."}` envelope for any redirect during a REST call,
+    including one after the handler ran (ScriptModule).
+  - A gateway that inspects responses answers 403 after the backend ran. `CompileBusinessProcessCommand` gives
+    the same reason.
+- **5xx: not confirmed.** A gateway can answer 502/504 after Creatio applied the write or while a long
+  installation still runs, so the result says the write "was not confirmed" / "may or may not have been
+  applied" / "may still be running" and asks to read back before retrying. An installation log line is not
+  taken as proof either way: the log window is bounded by time, not by this run.
+- **Any other 3xx or 4xx: refused, but not proof.** A 400, 404, 409 or 422 can come from the service's own
+  handler after it started, and a 302 or 303 can follow a POST the server did process, so the result says the
+  refusal does not prove the write was not applied, and asks to read back before retrying.
+
+A restart (`restart-by-environment-name` / `restart-by-credentials`) answered with a 4xx fails, where it used to
+report "Done" with exit code 0 whatever the site answered. It says the application was not restarted only when
+that is proven (see below); otherwise it asks to check the application before restarting again. A 5xx answer
+to a restart is not a refusal - a restart in progress behind a proxy can produce one - so it is reported as a
+warning that the restart is not confirmed, and with the readiness wait, readiness decides.
+
+### Whether anything was applied (`diagnostic.side-effect`)
+
+Beside every `site-response` - on the result, or on the batch item that carries it - is a `diagnostic`, the
+same object the odata tools already return: `operation`, `entity`, `item-index`, `write-attempted`,
+`transport-outcome`, `side-effect`, `retry-advice`, `message`. Outside the odata tools `operation`, `entity`
+and `message` are null: the result's own fields name what failed and why.
+
+`side-effect` is `none` only when clio can prove the call applied nothing on the site. Everything else is
+`unknown`; clio never guesses `none`. The proof needs all three of these:
+
+1. **One write.** The tool sends exactly one write per call (or per batch item), with only reads before it, and
+   the tool says so in code. A command that some other tool runs inside a longer sequence proves nothing there,
+   because that other tool may have written first.
+2. **Sent once.** The write went out with a single attempt, and clio did not send it again. With more attempts,
+   the client re-sends after a timeout, and the attempt that timed out may have been applied. clio's own re-send
+   after a body that looks like an expired session proves nothing either: that reading comes from the body
+   (GitHub #1313). The client's own re-send, after a 401, a redirect to the sign-in page or a 403 with a changed
+   sign-in, is not visible to clio. That is why only statuses decided by the request's shape count (point 3).
+3. **Refused without processing.** The site answered 405, 413, 414 or 415 - a refusal of the request's shape -
+   with a body that carries no answer of the application: empty, an HTML page or plain text (a byte-order mark
+   and whitespace before it are skipped). The answer must be to the request clio sent. creatio.client follows a
+   same-site redirect itself: on 301, 302 or 303 it turns any method other than GET or HEAD into a GET, so an answer to
+   another method or address proves nothing; on 300, 307 or 308 it repeats a request that has no body, possibly
+   to the same address, so a request sent without a body (a DELETE) never proves anything. The same method, URI and body get the same answer every time, so even a send the HTTP client
+   repeated out of sight was refused the same way. 431 is out: a re-send after signing in again carries other
+   cookies and headers. Nothing else proves it: not a 401 or a 403 (see
+   above), not JSON of any kind, parseable or not, and not markup other than an HTML page, such as an XML or SOAP
+   fault.
+
+| Tool | Its writes, in order | `side-effect` on a refusal |
+|---|---|---|
+| `update-page`; `sync-pages`, per page | one save (reads before it; cache reset and checksum read only after it succeeds) | `none` when the save is refused without processing |
+| `create-page` | one save (template, catalog and hierarchy reads before it) | `none` when the save is refused without processing |
+| `odata-update` | one PATCH (`$metadata` reads before it) | `none` when the PATCH is refused without processing |
+| `odata-create`, per row | one POST per row, never replayed | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
+| `create-business-process` | one BuildProcess | `none` when BuildProcess is refused without processing |
+| `delete-data-binding-db` | one binding delete | `none` when the delete is refused without processing |
+| `compile-creatio` | one build request | `none` when the build request is refused without processing |
+| `restart-by-environment-name`, `restart-by-credentials` | one restart request, sent with up to 3 attempts | always `unknown` over MCP: a first attempt that timed out may have restarted the instance |
+| `create-entity-schema`, `update-entity-schema`, `modify-entity-schema-column`, `create-lookup` | designer state, save, DB structure, publish, OData build, then (create-lookup) the lookup registration; the designer requests go with 3 attempts | always `unknown` |
+| `create-data-binding-db`, `upsert-data-binding-row-db`, `remove-data-binding-row-db` | row writes, then the binding save or delete | always `unknown` |
+| `install-application`, `push-workspace`, `install-process-builder` | package upload and backup, then the install request | always `unknown`, even when the install request was refused without processing: the text then says the package was not installed, but the upload had already written |
+| `odata-delete` | a DELETE per id, sent without a body (so the client can repeat it through a 307 or 308 unseen); with `ids`, a refused id sent again in a later pass; with cascade, owned rows first | always `unknown`, on the call and on each item |
+| `sync-schemas`, per operation | the entity-schema and data-binding writes above, with retries for transient faults | always `unknown` |
+
+**Not covered:** a compile that outlives the MCP response deadline reports its verdict through
+`compile-status`, which carries no `site-response`; and the very first request of a process, when it is one of
+these writes and the sign-in endpoint itself answers non-2xx, reports the sign-in error without
+`site-response`.
+
 ### Workspace path rules
 
 Workspace-oriented tools validate local absolute paths and reject network paths.

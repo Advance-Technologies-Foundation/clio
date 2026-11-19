@@ -420,7 +420,9 @@ public class CreateBusinessProcessTool(
 		// so - the one reply the caller cannot skip (ENG-95706). A script task is the exception: the server
 		// then warns that the process cannot run "until the configuration is compiled", and the gate drops the
 		// note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
-		CommandExecutionResult result = InternalExecute<CreateBusinessProcessCommand>(options);
+		// One create-business-process call sends one write, BuildProcess: the package and page reads come before
+		// it, and the describe reads after it run only when it succeeded.
+		CommandExecutionResult result = InternalExecute<CreateBusinessProcessCommand>(options, soleWriteCall: true);
 		return ProcessToolArgumentAliases.WithWarnings(
 			result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote(), aliases.Warnings);
 	}

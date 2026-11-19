@@ -267,13 +267,51 @@
 
 		protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
 
-		private string InstallPackageOnServer(IApplicationClient session, string fileName,
+		private SiteHttpResponse InstallPackageOnServer(IApplicationClient session, string fileName,
 			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
 			string installUrl = packageInstallOptions == null
 				? InstallUrl
 				: InstallWithOptionsUrl;
-			return session.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
+			return SiteCall.Post(session, GetCompleteUrl(installUrl, environmentSettings),
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
+		}
+
+		// The install answer as an envelope, or null when the service gave no verdict of its own. A body that is not
+		// JSON fails the installation: with a failure status the client kept (a gateway or error page) it is read as
+		// no verdict and reported as such; with an unknown status the parser's exception leaves as before. Either
+		// way it is recorded as the site's answer first.
+		private static BaseResponse ReadInstallResponse(SiteHttpResponse answer) {
+			try {
+				return JsonConvert.DeserializeObject<BaseResponse>(answer.Body);
+			}
+			catch (JsonException) when (answer.IsKnownFailureStatus) {
+				SiteResponseCapture.RecordRefusal(answer);
+				return null;
+			}
+			catch (JsonException) {
+				SiteResponseCapture.RecordRefusal(answer);
+				throw;
+			}
+		}
+
+		// The failure line for a failure status that came with no verdict of the service. Only a refusal without
+		// processing (the request is sent once) proves the package was not installed. A 5xx is not confirmed
+		// either way: a gateway can answer an installation that runs longer than its timeout while Creatio goes on
+		// with it. Any other 3xx or 4xx can come from the service itself, so it is not proof either. Even a proven
+		// refusal leaves the upload and backup that ran before it, so the call's side effect stays unknown.
+		private static string DescribeUnconfirmedInstall(SiteHttpResponse answer) {
+			if (answer.IsRefusedWithoutProcessing) {
+				return $"Package installation failed: the environment refused the installation request without "
+					+ $"processing it (HTTP {answer.StatusCode}), so the package was not installed.";
+			}
+			return answer.StatusCode >= 500
+				? $"Package installation failed: not confirmed - the environment answered the installation request "
+					+ $"with HTTP {answer.StatusCode} and no service response, so the installation may have failed or may "
+					+ "still be running. Check the environment (its installation log, or list-packages) before installing "
+					+ "again."
+				: $"Package installation failed: the environment refused the installation request with HTTP "
+					+ $"{answer.StatusCode} and no service response, which does not prove nothing was installed. Check "
+					+ "the environment (its installation log, or list-packages) before installing again.";
 		}
 
 		private static bool ContainsInvalidGZipArchiveException(string value) =>
@@ -315,15 +353,15 @@
 			var task = Task.Factory.StartNew(
 				() => log = ListenForLogs(cancellationTokenSource.Token, session, environmentSettings,
 					initialInstallLog));
-			string result;
+			SiteHttpResponse answer;
 			try {
-				result = InstallPackageOnServer(session, fileName, environmentSettings, packageInstallOptions);
+				answer = InstallPackageOnServer(session, fileName, environmentSettings, packageInstallOptions);
 			}
 			finally {
 				cancellationTokenSource.Cancel();
 				task.GetAwaiter().GetResult();
 			}
-			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
+			BaseResponse response = ReadInstallResponse(answer);
 			var completeInstallLog = GetInstallLog(session, environmentSettings) ?? string.Empty;
 			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;
@@ -331,7 +369,18 @@
 				successLog = InstallLogAnalyzer.IsSuccessMessagePresent(completeInstallLog);
 			}
 			_logger.Write(GetLogDiff(log, completeInstallLog));
-			var success = (response != null && response.Success || response == null) && successLog;
+			// A non-2xx status the client kept is a failure even with an empty body, which alone reads as success. With
+			// no verdict of the service (an empty body or a page), the log is not used to turn it into a success: the
+			// log window is bounded by time, not by this run, so it cannot prove this installation finished.
+			bool noServiceVerdict = response == null && answer.IsKnownFailureStatus;
+			bool answerAccepted = (response == null || response.Success) && !answer.IsKnownFailureStatus;
+			var success = answerAccepted && successLog;
+			if (!success && (response is { Success: false } || answer.IsKnownFailureStatus)) {
+				// Only when the site's own answer failed the installation, not when the log check alone did.
+				// Recorded before the invalid-archive throw below; a failure the log then downgrades to success is
+				// never reported, because only a failed call carries site-response.
+				SiteResponseCapture.RecordRefusal(answer);
+			}
 			ReportLocallyModifiedSchemas(currentInstallLog);
 			if (ThrowInvalidGZipArchiveInstallException && !success
 				&& IsInvalidGZipArchiveFailure(response, currentInstallLog)) {
@@ -339,13 +388,15 @@
 				throw new InvalidGZipArchiveInstallException(
 					GetInvalidGZipArchiveMessage(response, currentInstallLog));
 			}
-			if (!success) {
+			if (!success && !noServiceVerdict) {
 				success = TryDowngradeReportedFailure(response, currentInstallLog,
 					IsLogWindowOfThisRun(initialInstallLog, completeInstallLog));
 			}
 			if (!success) {
-				_logger.WriteError("Package installation failed: "
-					+ InstallLogAnalyzer.DescribeFailure(response, currentInstallLog, successLog));
+				_logger.WriteError(noServiceVerdict
+					? DescribeUnconfirmedInstall(answer)
+					: "Package installation failed: "
+						+ InstallLogAnalyzer.DescribeFailure(response, currentInstallLog, successLog));
 			}
 			return (success, completeInstallLog);
 		}

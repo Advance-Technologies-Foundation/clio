@@ -680,7 +680,10 @@
 				// denied, a redirected target UId), TryGetSchema returns false with the server's own message,
 				// and discarding it through `out _` handed the caller back the misleading "resource 'X' is
 				// neither auto-provided ... nor registered" that issue #1320 opened with.
-				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
+				// recordRefusal: false - this read is advisory, and its refusal must not be reported as the
+				// site's answer to a later step that fails for another reason.
+				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError,
+						recordRefusal: false)) {
 					return LogPersistedResourceKeyFailure(schemaError);
 				}
 				return PersistedResourceKeyRead.FromKeys(
@@ -1084,7 +1087,7 @@
 			IReadOnlyList<PageDesignerHierarchySchema> chain;
 			try {
 				chain = PageHierarchyChain.ReadFromRootVariant(_hierarchyClient, options.SchemaName,
-					context.RawSchemaUId, context.DesignPackageUId, context.ResolutionHierarchy);
+					context.ResolutionHierarchyAnchorUId, context.DesignPackageUId, context.ResolutionHierarchy);
 			} catch (Exception ex) {
 				// Fail closed: a chain read from a replacing variant can miss the very layer the check exists for.
 				response = new PageUpdateResponse {
@@ -1351,9 +1354,13 @@
 		private bool TryResolveEditableSchemaContext(string schemaName, string targetPackageUIdOverride, out EditableSchemaContext context, out PageUpdateResponse response) {
 			TargetPackageUIdOverride = targetPackageUIdOverride;
 			context = null;
-			(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
-			if (metadata == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
-			string rawSchemaUId = metadata["UId"]?.ToString();
+			// All variants in one query: the name alone can resolve to any replacing variant, and the root one
+			// (ExtendParent = false) is where the chain is read from, so it is read once per write.
+			(JArray variants, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRows(_applicationClient,
+				_serviceUrlBuilder, schemaName, PageSchemaMetadataHelper.AllRows, ("UId", "UId"),
+				(ClassicEntitySchemaQuery.ExtendParentColumn, ClassicEntitySchemaQuery.ExtendParentColumn));
+			if (variants == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
+			string rawSchemaUId = variants[0]["UId"]?.ToString();
 			if (string.IsNullOrWhiteSpace(rawSchemaUId)) { response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" }; return false; }
 			if (_hierarchyClient == null) {
 				context = new EditableSchemaContext {
@@ -1367,7 +1374,11 @@
 				return true;
 			}
 			if (!TryGetDesignPackageUId(rawSchemaUId, schemaName, out string designPackageUId, out response)) return false;
-			if (!TryGetHierarchy(rawSchemaUId, designPackageUId, schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out response)) return false;
+			// The design package above stays resolved from the lookup row, as before this change; only the chain
+			// read moves to the root. No row marked as the root: read from the lookup row, and the package-choice
+			// check re-reads from the root it finds in that chain, as before.
+			string hierarchyAnchorUId = PageHierarchyChain.FindRootVariantUId(variants) ?? rawSchemaUId;
+			if (!TryGetHierarchy(hierarchyAnchorUId, designPackageUId, schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out response)) return false;
 			PageDesignerHierarchySchema head = hierarchy[0];
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(head.SchemaType);
 			string rootUId = PageHierarchyChain.FindRootSchemaUId(hierarchy, schemaName);
@@ -1403,6 +1414,7 @@
 				SchemaType = pageSchemaType,
                 ResolvedHierarchy = isCreateReplacing ? null : hierarchy,
 				ResolutionHierarchy = hierarchy,
+				ResolutionHierarchyAnchorUId = hierarchyAnchorUId,
 				RawSchemaUId = rawSchemaUId
 			};
 			response = null;
@@ -1427,9 +1439,9 @@
 			return false;
 		}
 
-		private bool TryGetHierarchy(string rawSchemaUId, string designPackageUId, string schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out PageUpdateResponse response) {
+		private bool TryGetHierarchy(string anchorSchemaUId, string designPackageUId, string schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out PageUpdateResponse response) {
 			try {
-				hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
+				hierarchy = _hierarchyClient.GetParentSchemas(anchorSchemaUId, designPackageUId);
 			} catch (Exception ex) {
 				hierarchy = null;
 				response = new PageUpdateResponse { Success = false, Error = PageHierarchyRecoveryHint.Append($"Failed to load hierarchy for '{schemaName}': {ex.Message}") };
@@ -1459,8 +1471,16 @@
 			/// </summary>
 			public IReadOnlyList<PageDesignerHierarchySchema> ResolutionHierarchy { get; set; }
 
-			/// <summary>The UId the page name resolved to, the anchor the chain was read from.</summary>
+			/// <summary>
+			/// The UId the page name resolved to (any variant); the design package is resolved from it.
+			/// </summary>
 			public string RawSchemaUId { get; set; }
+
+			/// <summary>
+			/// The UId <see cref="ResolutionHierarchy"/> was read from: the root variant when the name lookup marked
+			/// one, else <see cref="RawSchemaUId"/>.
+			/// </summary>
+			public string ResolutionHierarchyAnchorUId { get; set; }
 			public string SchemaName { get; set; }
 			public string EditableSchemaUId { get; set; }
 			public string DesignPackageUId { get; set; }
@@ -1566,15 +1586,18 @@
 			return true;
 		}
 
-		private bool TryGetSchema(string schemaUId, out JObject schema, out string error) {
+		private bool TryGetSchema(string schemaUId, out JObject schema, out string error, bool recordRefusal = true) {
 			var request = new JObject {
 				["schemaUId"] = schemaUId,
 				["useFullHierarchy"] = false
 			};
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
-			string json = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
-			var response = JObject.Parse(json);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, request.ToString(Formatting.None), recordRefusal);
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject loaded) {
+				if (recordRefusal) {
+					SiteResponseCapture.RecordRefusal(answer);
+				}
 				schema = null;
 				error = response["errorInfo"]?["message"]?.ToString() ?? $"Failed to load schema '{schemaUId}'";
 				return false;
@@ -1629,14 +1652,18 @@
 		private bool TrySaveSchema(JObject schemaToSave, PageUpdateOptions options, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			options.SaveOutcomeUnknown = true;
-			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
-			var saveResponse = JObject.Parse(saveJson);
+			// The save is the only write an update-page call sends: everything before it reads, the cache reset
+			// and the checksum read run only after it succeeded, and a refused save ends the call. So its refusal
+			// is recorded as the refusal of the call's sole write.
+			(JObject saveResponse, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(
+				_applicationClient, saveUrl, schemaToSave.ToString(Formatting.None), soleWrite: true);
 			options.SaveOutcomeUnknown = false;
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
 				TryResetScriptCache();
 				response = null;
 				return true;
 			}
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, PageSchemaMetadataHelper.DesignerRequestAttempts);
 			response = new PageUpdateResponse {
 				Success = false,
 				Error = BuildSaveErrorMessage(saveResponse)

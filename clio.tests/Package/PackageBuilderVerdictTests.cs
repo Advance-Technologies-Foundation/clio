@@ -168,6 +168,86 @@ public sealed class PackageBuilderVerdictTests {
 	}
 
 	[Test]
+	[Description("A build answer that reports failure is recorded as the site's response, with the status the request kept")]
+	public void Rebuild_ShouldRecordTheSiteAnswer_WhenTheAnswerReportsFailure() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, FailedResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>();
+		capture.Last.Should().NotBeNull(because: "the site's own answer is the verdict of this failed build");
+		capture.Last.Status.Should().Be(200, because: "the build service refuses with HTTP 200 and success:false");
+		capture.Last.Body.Should().Be(SiteResponse.JsonBody);
+	}
+
+	[TestCase(413, true, true, TestName = "Rebuild_ShouldProveNothingCompiled_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
+	[TestCase(413, false, false, TestName = "Rebuild_ShouldNotProve_WhenTheBuildRunsInAnUndeclaredCapture")]
+	[TestCase(401, true, false, TestName = "Rebuild_ShouldNotProve_WhenTheBuildIsAnswered401")]
+	[TestCase(403, true, false, TestName = "Rebuild_ShouldNotProve_WhenTheBuildIsAnswered403")]
+	[TestCase(502, true, false, TestName = "Rebuild_ShouldNotProve_WhenAGatewayAnswers")]
+	[Description("Without a history poller: the package build request is compile-creatio's one write, so in its declared capture a refusal without processing proves nothing was compiled")]
+	public void Rebuild_ShouldProveNothingCompiled_OnlyWhenProven(int status, bool declared, bool proves) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, "<html>refused</html>"));
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateClient(_settings).Returns(client);
+		PackageBuilder sut = new(_settings, factory, _urlBuilder, _logger, _stand, _stand);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<Exception>();
+		capture.Last.Status.Should().Be(status);
+		capture.LastProvesNothingApplied.Should().Be(proves);
+	}
+
+	[Test]
+	[Description("A successful build answer records nothing")]
+	public void Rebuild_ShouldRecordNothing_WhenTheAnswerReportsSuccess() {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		capture.Last.Should().BeNull();
+	}
+
+	[Test]
+	[Description("Without a history poller, a synchronous answer that is an HTML page is recorded with its status before the build fails")]
+	public void Rebuild_ShouldRecordTheSiteAnswer_WhenTheSynchronousAnswerIsAnHtmlPage() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(502, "<html><title>502 - Bad Gateway</title></html>"));
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateClient(_settings).Returns(client);
+		PackageBuilder sut = new(_settings, factory, _urlBuilder, _logger, _stand, _stand);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<Exception>();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(502, null, null, SiteResponse.HtmlBody));
+	}
+
+	[Test]
 	[Description("Without a history poller the synchronous request's answer is now read too, so a compile error it reports fails the build (issue #1633).")]
 	public void Rebuild_ShouldThrow_WhenSynchronousResponseReportsCompileError() {
 		// Arrange
