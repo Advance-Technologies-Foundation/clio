@@ -481,6 +481,47 @@ namespace Clio.Command {
 		}
 
 		/// <summary>
+		/// A designer or template service's own reason for a refusal (<c>success:false</c>): <c>errorInfo</c>'s code
+		/// and message, or a top-level <c>message</c> or <c>error</c> text, redacted as the site's text;
+		/// <see langword="null"/> when the answer gives none.
+		/// </summary>
+		/// <remarks>
+		/// The text is the site's, so it takes the site-text redaction here, where it is read: the page designer
+		/// hierarchy client (update-page, sync-pages, get-page) and the page template catalog (create-page) put it into
+		/// an exception message that reaches <c>error</c> and the log unchanged. Only the code and the human message are
+		/// read. The whole <c>errorInfo</c> object used to be copied, so its <c>stackTrace</c> - the server's frames,
+		/// assembly names and paths - reached the caller as JSON inside the message, and the escaped quotes of that JSON
+		/// cost the reason itself on the way through clio-run (<c>permissions to run [redacted-path]</c>, 19 Nov).
+		/// </remarks>
+		/// <param name="response">The service's parsed answer.</param>
+		/// <returns>The redacted reason, or <see langword="null"/>.</returns>
+		internal static string DescribeRefusal(JObject response) {
+			string reason = response["errorInfo"] switch {
+				JObject errorInfo => JoinNonBlank(Text(errorInfo["errorCode"]), Text(errorInfo["message"])),
+				JToken errorInfo => Text(errorInfo),
+				null => null
+			};
+			reason ??= Text(response["message"])
+				?? Text(response["error"])
+				?? Text((response["error"] as JObject)?["message"]);
+			return reason is null ? null : SensitiveErrorTextRedactor.RedactSiteText(reason);
+		}
+
+		private static string JoinNonBlank(string code, string message) =>
+			(code, message) switch {
+				(null, null) => null,
+				(null, _) => message,
+				(_, null) => code,
+				_ => $"{code}: {message}"
+			};
+
+		// A string value only, trimmed: an object or an array is not a reason the site wrote for a person to read.
+		private static string Text(JToken token) =>
+			token is JValue { Type: JTokenType.String } value && !string.IsNullOrWhiteSpace(value.Value<string>())
+				? value.Value<string>().Trim()
+				: null;
+
+		/// <summary>
 		/// Queries a single <c>SysSchema</c> row by schema <c>UId</c> via the DataService SelectQuery endpoint.
 		/// </summary>
 		/// <param name="applicationClient">Authenticated Creatio HTTP client.</param>

@@ -92,10 +92,10 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 				throw new InvalidOperationException(BuildNonJsonErrorMessage(url, responseJson, ex));
 			}
 			if (!(response["success"]?.Value<bool>() ?? false)) {
-				string detail = response["errorInfo"]?["message"]?.ToString()
-					?? response["errorInfo"]?.ToString()
-					?? "Failed to load page template catalog";
-				throw new InvalidOperationException(detail);
+				// The site's reason, redacted where it is read; never the whole errorInfo, whose stackTrace create-page
+				// used to put into its error.
+				throw new InvalidOperationException(
+					PageSchemaMetadataHelper.DescribeRefusal(response) ?? "Failed to load page template catalog");
 			}
 			if (response["items"] is not JArray items) {
 				_cache[schemaType] = [];
@@ -180,6 +180,10 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 		});
 	}
 
+	// The longest preview of a non-JSON body, and how much more than that the redaction may read.
+	private const int NonJsonPreviewLength = 200;
+	private const int NonJsonPreviewRedactionInputFactor = 8;
+
 	private static string BuildNonJsonErrorMessage(string url, string responseBody, Exception parseException) {
 		string trimmed = (responseBody ?? string.Empty).TrimStart();
 		bool looksLikeHtml = trimmed.StartsWith("<", StringComparison.Ordinal);
@@ -191,13 +195,18 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 				+ "2) `IsNetCore` flag matches the target instance (omit for .NET Framework, add --IsNetCore for .NET Core); "
 				+ "3) the target Creatio version exposes `/rest/schema.template.api/templates` (Creatio 7.18+).";
 		}
+		// The preview is the site's text: redacted as such BEFORE the cap, so a token that straddles the cap is still
+		// recognized whole. The input is clamped first, as SiteResponse does, so a page-sized body cannot time the
+		// chain out and lose the preview.
+		string redacted = SensitiveErrorTextRedactor.RedactSiteText(TextUtilities.TruncateWithoutSplittingSurrogatePair(
+			responseBody, NonJsonPreviewLength * NonJsonPreviewRedactionInputFactor));
 		string snippet;
-		if (string.IsNullOrWhiteSpace(responseBody)) {
+		if (string.IsNullOrWhiteSpace(redacted)) {
 			snippet = "<empty body>";
-		} else if (responseBody.Length > 200) {
-			snippet = responseBody[..200] + "…";
+		} else if (redacted.Length > NonJsonPreviewLength) {
+			snippet = TextUtilities.TruncateWithoutSplittingSurrogatePair(redacted, NonJsonPreviewLength) + "…";
 		} else {
-			snippet = responseBody;
+			snippet = redacted;
 		}
 		return $"Page template catalog endpoint returned an unparseable response (URL: {url}). "
 			+ $"Parser error: {parseException.Message}. Response preview: {snippet}";
