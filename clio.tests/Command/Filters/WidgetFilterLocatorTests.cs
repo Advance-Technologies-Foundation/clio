@@ -46,6 +46,66 @@ public sealed class WidgetFilterLocatorTests {
 	}
 
 	[Test]
+	[Description("aggregationConfig filters of data-source and page attributes are found in the model-config diffs and run against the group's rootSchemaName.")]
+	public void Locate_Should_Find_Aggregation_Filters_In_Model_Config_Diffs() {
+		// Arrange
+		const string body = """
+			define("UsrPage", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+				return {
+					viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[
+						{ "operation": "merge", "name": "Indicator", "values": { "config": { "data": { "providing": {
+							"schemaName": "Contact", "filters": { "filter": { "filterType": 6, "items": {} } } } } } } }
+					]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+					viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[
+						{ "operation": "merge", "path": ["attributes"], "values": { "OpenCases": { "modelConfig": { "path": "PDS.Id",
+							"aggregationConfig": { "aggregationFunction": "count", "filter": { "filterType": 6, "rootSchemaName": "Case", "items": {} } } } } } }
+					]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/,
+					modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[
+						{ "operation": "merge", "path": [], "values": { "dataSources": { "PDS": { "type": "crt.EntityDataSource", "config": {
+							"entitySchemaName": "Account", "attributes": {
+								"Emails": { "path": "[Activity:Owner].Id", "aggregationConfig": { "aggregationFunction": "count",
+									"filter": { "filterType": 6, "rootSchemaName": "Activity", "items": {} } } },
+								"NoRoot": { "path": "[Activity:Owner].Id", "aggregationConfig": { "aggregationFunction": "count",
+									"filter": { "filterType": 6, "items": {} } } } } } } } } }
+					]/**SCHEMA_MODEL_CONFIG_DIFF*/
+				};
+			});
+			""";
+
+		// Act
+		IReadOnlyList<PageWidgetFilter>? filters = WidgetFilterLocator.Locate(body);
+
+		// Assert
+		filters!.Select(filter => (filter.Path, filter.RootSchemaName)).Should().Equal(
+			[
+				("Indicator.values.config.data.providing.filters.filter", "Contact"),
+				("viewModelConfigDiff[0].values.OpenCases.modelConfig.aggregationConfig.filter", "Case"),
+				("modelConfigDiff[0].values.dataSources.PDS.config.attributes.Emails.aggregationConfig.filter", "Activity")
+			],
+			because: "the aggregation sub-query runs on the group's rootSchemaName, so a group without one is skipped rather than judged against the data source");
+	}
+
+	[Test]
+	[Description("A model-config diff that is not JSON hides only its own filters, not the widget filters of the view-config diff.")]
+	public void Locate_Should_Keep_Widget_Filters_When_A_Model_Config_Diff_Cannot_Be_Read() {
+		// Arrange
+		const string body = """
+			define("UsrPage", [], function() { return {
+				viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[ { "operation": "merge", "name": "Indicator", "values": { "config": { "data": { "providing": {
+					"schemaName": "Contact", "filters": { "filter": { "filterType": 6, "items": {} } } } } } } } ]/**SCHEMA_VIEW_CONFIG_DIFF*/,
+				modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[ { broken /**SCHEMA_MODEL_CONFIG_DIFF*/
+			}; });
+			""";
+
+		// Act
+		IReadOnlyList<PageWidgetFilter>? filters = WidgetFilterLocator.Locate(body);
+
+		// Assert
+		filters.Should().ContainSingle(because: "an unreadable model diff must not turn the whole check into 'nothing was checked'")
+			.Which.Path.Should().Be("Indicator.values.config.data.providing.filters.filter");
+	}
+
+	[Test]
 	[Description("A view-config diff that is not JSON is reported as unreadable (null), not as a page without filters.")]
 	public void Locate_Should_Return_Nothing_For_A_Body_It_Cannot_Read() {
 		// Arrange
