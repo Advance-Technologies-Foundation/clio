@@ -1806,7 +1806,7 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Two rows rejected by Creatio in model binding read the service-root $metadata at most once for the whole batch.")]
+	[Description("Two rows that bring their own Id and are rejected by Creatio in model binding read the service-root $metadata at most once for the whole batch, after the first rejection.")]
 	public void Create_Should_Read_Metadata_Once_When_Several_Rows_Are_Rejected() {
 		// Arrange
 		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
@@ -1816,7 +1816,7 @@ public sealed class ODataCreateToolTests {
 		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
 			EnvironmentName = "dev",
 			Entity = "SysImage",
-			Rows = Arr("[{\"Name\":\"a\",\"labNope\":\"x\"},{\"Name\":\"b\",\"labNope\":\"y\"}]")
+			Rows = Arr("[{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000001\",\"Name\":\"a\",\"labNope\":\"x\"},{\"Id\":\"aaaaaaaa-0000-0000-0000-000000000002\",\"Name\":\"b\",\"labNope\":\"y\"}]")
 		});
 
 		// Assert

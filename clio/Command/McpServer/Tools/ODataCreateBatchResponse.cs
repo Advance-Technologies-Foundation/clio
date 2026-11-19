@@ -112,8 +112,8 @@ public sealed record ODataRowResult {
 	/// </summary>
 	/// <remarks>
 	/// A re-send of the row with this Id cannot create the record twice: if the earlier send was applied, Creatio
-	/// refuses the re-send as a duplicate key. A row clio settled by reading the record back carries it as
-	/// <see cref="Id"/> instead.
+	/// refuses the re-send as a duplicate key. A row clio found by reading the record back is a created row and
+	/// carries it as <see cref="Id"/> instead.
 	/// </remarks>
 	[JsonPropertyName("sent-id")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -154,7 +154,8 @@ public sealed record ODataRowResult {
 	/// </summary>
 	[JsonPropertyName("retry-guidance")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("Next step when record-created is null, or when Creatio rejected the row before writing it. "
-		+ "Never blind-retry an unknown row.")]
+	[Description("Next step when record-created is null, when Creatio rejected the row before writing it, or when "
+		+ "clio read a row whose request failed back by the Id it sent and found it created. Never blind-retry an "
+		+ "unknown row.")]
 	public string? RetryGuidance { get; init; }
 }

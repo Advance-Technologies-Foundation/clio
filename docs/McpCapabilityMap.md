@@ -396,7 +396,9 @@ same object the odata tools already return: `operation`, `entity`, `item-index`,
 and `message` are null: the result's own fields name what failed and why.
 
 `side-effect` is `none` only when clio can prove the call applied nothing on the site. Everything else is
-`unknown`; clio never guesses `none`. The proof needs all three of these:
+`unknown`; clio never guesses `none`. (One exception the other way: an `odata-create` row that clio read back
+by the `Id` it sent and found is a created row, `acknowledged`, though its `site-response` shows the failed
+answer.) The proof needs all three of these:
 
 1. **One write.** The tool sends exactly one write per call (or per batch item), with only reads before it, and
    the tool says so in code. A command that some other tool runs inside a longer sequence proves nothing there,
@@ -422,7 +424,7 @@ and `message` are null: the result's own fields name what failed and why.
 | `update-page`; `sync-pages`, per page | one save (reads before it; cache reset and checksum read only after it succeeds) | `none` when the save is refused without processing |
 | `create-page` | one save (template, catalog and hierarchy reads before it) | `none` when the save is refused without processing |
 | `odata-update` | one PATCH (`$metadata` reads before it) | `none` when the PATCH is refused without processing |
-| `odata-create`, per row | one POST per row, never replayed | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
+| `odata-create`, per row | one POST per row, never replayed by clio (`$metadata` read before the first one when a row has no `Id`; a read-back GET by clio's `Id` after an unknown answer) | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
 | `create-business-process` | one BuildProcess | `none` when BuildProcess is refused without processing |
 | `delete-data-binding-db` | one binding delete | `none` when the delete is refused without processing |
 | `compile-creatio` | one build request | `none` when the build request is refused without processing |
@@ -442,10 +444,12 @@ leaves a write that the second send repeats. This has not been seen on Creatio. 
 
 - `odata-create` sends its own `Id` with a row that has none, when `$metadata` declares the entity's `Id` a GUID
   (a batch with such a row reads `$metadata` once). A second send of that row is refused as a duplicate key, and
-  a row whose result is then unknown is read back by that `Id`: found gives `record-created: true`, even on a
-  failed row; not found keeps `null` and adds `sent-id`, and a re-send of the row with that `Id` cannot create it
-  twice. A row with an `Id` the caller chose, or an entity keyed on another type, is sent as written and keeps
-  the risk.
+  a row whose result is then unknown is read back by that `Id`: found makes it a created row (`success` and
+  `record-created: true`, with the failed answer kept in `site-response`); otherwise it stays `null` and adds
+  `sent-id`, and a re-send of the row with that `Id` cannot create it twice. A row with an `Id` the caller chose,
+  or an entity keyed on another type, is sent as written and keeps the risk. If Creatio answers a created row with
+  another `Id`, the later rows of the batch go without one, and the batch's `warnings` say so. That Creatio keeps
+  a sent `Id` and refuses a repeated one as a duplicate key has not been measured on a stand yet.
 - `restart`, `create-business-process` (BuildProcess) and `odata-update` (update-time business processes) can
   run twice; page and schema saves, `odata-delete` and binding deletes end in the same state.
 

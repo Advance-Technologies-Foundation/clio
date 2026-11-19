@@ -124,23 +124,28 @@ public sealed class ODataCreateTool(
 	/// <summary>Timeout of the read that settles a row whose answer is unknown, by the Id clio sent with it.</summary>
 	internal const int ReadBackTimeoutMs = 10_000;
 
-	private const string CreatedOnReadBackGuidance =
-		"Created: clio read the record back by the Id it sent for this row and found it, so do NOT re-send this row "
-		+ "- a re-send would add a second record. The site's error can be its refusal of a repeated send of the same "
-		+ "request as a duplicate key, or work after the insert that failed, such as an entity event handler.";
+	private const string KeyNotKeptWarning =
+		"Creatio answered a created row with another Id than the one clio sent, so it does not keep a sent Id for this "
+		+ "entity: the later rows of this batch were sent without one, and a repeated send of them is not refused.";
 
-	private const string CreatedOnReadBackNote =
-		" clio read the record back by the Id it sent for this row: the record exists.";
+	/// <summary>Next step for a row the read-back found: it is created although its request was reported as failed.</summary>
+	private static string CreatedOnReadBackGuidance(string? answer) =>
+		"Created: clio read the record back by the Id it sent for this row and found it, so do NOT re-send this row. "
+		+ "The request itself was reported as failed" + (string.IsNullOrWhiteSpace(answer) ? "" : $" ({answer})")
+		+ ": a repeated send of the same request that Creatio refused as a duplicate key, or work after the insert "
+		+ "that failed, such as an entity event handler, answers that way.";
 
-	/// <summary>Next step for a row whose answer is unknown and whose record clio did not find by its sent Id.</summary>
+	/// <summary>Next step for a row whose answer is unknown and whose record clio did not get back by its sent Id.</summary>
 	private static string UnknownWithSentIdGuidance(string sentId, bool readBack) =>
 		"Side effect UNKNOWN: Creatio may have written the record before failing. clio sent this row with Id "
 		+ sentId + " (sent-id) and "
 		+ (readBack
-			? "did not find it when it read it back, but a write still in progress can land later. "
+			? "did not get the record back by that Id: it may not exist, the read may have failed, or a write still "
+				+ "in progress may land later. "
 			: "had no time left in the batch to read it back. ")
-		+ "Do NOT re-send the row without that Id. Re-send it with \"Id\": \"" + sentId + "\" added: if the earlier "
-		+ "send was applied, Creatio refuses the re-send as a duplicate key, so the record cannot be created twice.";
+		+ "Read it back by that Id (odata-read) and re-send it only if it is absent, and only with \"Id\": \""
+		+ sentId + "\" added, never without it. A re-send refused as a duplicate key means the record exists: do "
+		+ "not re-send it again.";
 
 	private const string RefusedWithoutProcessingGuidance =
 		"Not inserted: Creatio refused the request without processing it. Fix what it refused - the request's "
@@ -201,7 +206,8 @@ public sealed class ODataCreateTool(
 		"reported with record-created=false and the reason. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
 		"A row without an Id is sent with an Id clio generates when $metadata declares the entity's Id a GUID: " +
-		"creatio.client sends a request again after a 401 or a sign-in redirect without telling clio, and such a " +
+		"creatio.client sends a request again after a 401, a sign-in redirect or a 403 while the sign-in changed, " +
+		"without telling clio, and such a " +
 		"second send is then refused as a duplicate key instead of creating a second record. " +
 		"Common synonyms of rows - payload, values, body or data (a single object is wrapped into one row) - are accepted and reported in warnings; sending one together with rows or rows-file is rejected as ambiguous. " +
 		"A date-time value without a UTC designator or offset (e.g. '2024-01-01T04:00:00') fails its row before any " +
@@ -213,8 +219,9 @@ public sealed class ODataCreateTool(
 		"but may already have written the record, which happens when a post-insert entity event handler throws; " +
 		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
 		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
-		"state. A row sent with clio's Id is read back by it: found gives record-created=true even on a failed row " +
-		"(do not re-send it); not found keeps null and adds 'sent-id' - re-send the row with that Id, never without. " +
+		"state. A row sent with clio's Id whose result is unknown is read back by it: found makes it a created row " +
+		"(success and record-created true, the failed answer kept in site-response and explained in retry-guidance); " +
+		"otherwise it stays null and adds 'sent-id' - re-send it only with that Id, never without. " +
 		"A response this tool returns - success or failure - carries a correlation-id, which matches this call to clio's own log lines; " +
 		"an exception that escapes the batch is answered by the MCP error envelope instead and carries none. " +
 		"Call get-tool-contract for odata-create to see usage examples and discovery workflow hints.")]
@@ -241,7 +248,7 @@ public sealed class ODataCreateTool(
 			? ODataCreateBatchResponse.RequestError(payloadAlias.Error)
 			: CreateCore(args, cancellationToken);
 		return result with {
-			Warnings = payloadAlias.WarningFor(result.Error is not null) is { } warning ? [warning] : null,
+			Warnings = CombineWarnings(payloadAlias.WarningFor(result.Error is not null), result.Warnings),
 			CorrelationId = correlationId,
 			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
 			Results = result.Results.Select(row => row with {
@@ -264,6 +271,18 @@ public sealed class ODataCreateTool(
 		return row.SiteResponse is { RefusedWithoutProcessing: true }
 			? diagnostic.AsRefusedWithoutProcessing()
 			: diagnostic.AsKnownNotApplied();
+	}
+
+	/// <summary>The argument-synonym note and the batch's own notes, or <see langword="null"/> when there are none.</summary>
+	private static IReadOnlyList<string>? CombineWarnings(string? aliasWarning, IReadOnlyList<string>? batchWarnings) {
+		List<string> all = [];
+		if (aliasWarning is not null) {
+			all.Add(aliasWarning);
+		}
+		if (batchWarnings is not null) {
+			all.AddRange(batchWarnings);
+		}
+		return all.Count > 0 ? all : null;
 	}
 
 	/// <summary>A single row object becomes a one-element array; anything else is left for the usual validation.</summary>
@@ -309,49 +328,70 @@ public sealed class ODataCreateTool(
 			return ODataCreateBatchResponse.RequestError(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 
-		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
 		// The metadata read is at most ONE per batch: the service-root CSDL is a multi-megabyte document.
-		// It is read up front only when some row carries a date-time-shaped literal, for the value guard;
-		// otherwise only after the first row Creatio rejects in model binding, to name a binary column. A
-		// batch of plain rows that all insert never pays for it. It never validates field NAMES, so an
-		// unresolved metadata endpoint must never fail the insert: the guard then falls back to the
-		// literal's shape alone, and a rejected row keeps the generic explanation.
+		// It is read up front when some row has no Id, for the key type, or carries a date-time-shaped literal,
+		// for the value guard; otherwise only after the first row Creatio rejects in model binding, to name a
+		// binary column. Only a batch whose rows all bring their Id and insert never pays for it. It never
+		// validates field NAMES, so an unresolved metadata endpoint must never fail the insert: no Id is then
+		// generated, the guard falls back to the literal's shape alone, and a rejected row keeps the generic
+		// explanation. The batch clock starts before it, so the read counts against the batch budget.
 		string entity = args.Entity.Trim();
-		Lazy<IReadOnlyDictionary<string, string>> propertyTypes =
-			new(() => ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, entity));
-		bool someRowHasNoKey = rows.EnumerateArray().Any(row => row.ValueKind == JsonValueKind.Object && !HasKeyColumn(row));
+		RowBatch batch = new(client, urlBuilder.Build(ODataKeyFormatter.CollectionPath(entity)),
+			id => urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id)),
+			new(() => ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, entity)));
+		bool someRowHasNoKey = rows.EnumerateArray().Any(NeedsKey);
 		if (someRowHasNoKey || rows.EnumerateArray().Any(ODataDateTimeGuard.HasZoneLessCandidate)) {
-			_ = propertyTypes.Value;
+			_ = batch.PropertyTypes.Value;
 		}
 		// A row without a key gets one only when the entity's Id is declared a GUID: generating one for a number or a
 		// text key would make the row fail, and an unreadable $metadata leaves the key type unknown.
-		bool generateKeys = someRowHasNoKey && propertyTypes.Value is { } types
+		batch.GenerateKeys = someRowHasNoKey && batch.PropertyTypes.Value is { } types
 			&& types.TryGetValue(KeyColumn, out string? keyType) && keyType == GuidEdmType;
-		return ODataCreateBatchResponse.From(
-			PostRows(client, url, rows, args.StopOnError, propertyTypes, generateKeys, cancellationToken));
+		ODataCreateBatchResponse response = ODataCreateBatchResponse.From(PostRows(batch, rows, args.StopOnError, cancellationToken));
+		return batch.Warning is null ? response : response with { Warnings = [batch.Warning] };
+	}
+
+	/// <summary>What every row of one batch is sent with, and the batch's wall-clock budget.</summary>
+	private sealed class RowBatch(IApplicationClient client, string url, Func<string, string> recordUrl,
+		Lazy<IReadOnlyDictionary<string, string>> propertyTypes) {
+		private readonly Stopwatch _elapsed = Stopwatch.StartNew();
+
+		/// <summary>Environment-scoped client used for the POSTs and the read-backs.</summary>
+		internal IApplicationClient Client { get; } = client;
+
+		/// <summary>Collection endpoint every row is posted to.</summary>
+		internal string Url { get; } = url;
+
+		/// <summary>Builds the endpoint of one record from its key.</summary>
+		internal Func<string, string> RecordUrl { get; } = recordUrl;
+
+		/// <summary>Entity property types, read on first use; the value is null when the metadata is unavailable.</summary>
+		internal Lazy<IReadOnlyDictionary<string, string>> PropertyTypes { get; } = propertyTypes;
+
+		/// <summary>Whether a row without <see cref="KeyColumn"/> is sent with a new GUID key.</summary>
+		internal bool GenerateKeys { get; set; }
+
+		/// <summary>A note for the batch result, set when the site did not keep a key clio sent.</summary>
+		internal string? Warning { get; set; }
+
+		/// <summary>Milliseconds left of <see cref="MaxBatchDurationMs"/>.</summary>
+		internal int RemainingMs() =>
+			MaxBatchDurationMs - (int)Math.Min(_elapsed.ElapsedMilliseconds, MaxBatchDurationMs);
 	}
 
 	/// <summary>
 	/// POSTs each row in turn and returns the per-row outcomes, stopping early on cancellation, on the batch
 	/// deadline, or on the first failure when <paramref name="stopOnError"/> is set.
 	/// </summary>
-	/// <param name="client">Environment-scoped client used for the POSTs.</param>
-	/// <param name="url">Collection endpoint every row is posted to.</param>
+	/// <param name="batch">What the rows are sent with, and the batch clock.</param>
 	/// <param name="rows">Validated non-empty JSON array of row objects.</param>
 	/// <param name="stopOnError">Whether the first failed row aborts the rest.</param>
-	/// <param name="propertyTypes">
-	/// Entity property types, read on first use; the value is null when the metadata is unavailable.
-	/// </param>
-	/// <param name="generateKeys">Whether a row without <see cref="KeyColumn"/> is sent with a new GUID key.</param>
 	/// <param name="cancellationToken">Caller token; the MCP host cancels it when it disconnects.</param>
 	/// <returns>Outcomes for every ATTEMPTED row, plus the first unattempted row when the batch stopped early.</returns>
 	private static List<ODataRowResult> PostRows(
-		IApplicationClient client,
-		string url,
+		RowBatch batch,
 		JsonElement rows,
 		bool stopOnError,
-		Lazy<IReadOnlyDictionary<string, string>> propertyTypes,
-		bool generateKeys,
 		CancellationToken cancellationToken) {
 		List<ODataRowResult> results = [];
 		int index = 0;
@@ -362,9 +402,8 @@ public sealed class ODataCreateTool(
 		//later rows stop on cancellation would be promising something a caller cannot rely on.
 		//Both are checked BETWEEN rows, so a row that is already in flight completes and is reported -
 		//abandoning it mid-POST would leave its side effect unknown for no gain.
-		Stopwatch elapsed = Stopwatch.StartNew();
 		foreach (JsonElement row in rows.EnumerateArray()) {
-			int remainingMs = MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs);
+			int remainingMs = batch.RemainingMs();
 			string abortReason = DescribeAbort(cancellationToken, remainingMs);
 			if (abortReason is not null) {
 				// Not attempted, so not-inserted is KNOWN - the same shape as a locally rejected row.
@@ -378,10 +417,7 @@ public sealed class ODataCreateTool(
 			}
 			// Cap the per-row timeout to what is left of the batch budget, so the LAST row cannot overshoot
 			// the deadline by a further full timeout.
-			Func<int> remainingBudgetMs = () => MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs);
-			ODataRowResult result = CreateRow(
-				client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs), propertyTypes, remainingBudgetMs,
-				generateKeys);
+			ODataRowResult result = CreateRow(batch, row, index, Math.Min(RowRequestTimeoutMs, remainingMs));
 			results.Add(result);
 			if (!result.Success && stopOnError) {
 				break;
@@ -453,17 +489,28 @@ public sealed class ODataCreateTool(
 	/// Sends one row and settles an unknown answer by the key clio sent with it: a record with that key can only come
 	/// from this row's sends, so finding it proves the row was created.
 	/// </summary>
-	private static ODataRowResult CreateRow(
-		IApplicationClient client, string url, JsonElement row, int index, int requestTimeoutMs,
-		Lazy<IReadOnlyDictionary<string, string>> propertyTypes, Func<int> remainingBudgetMs, bool generateKeys) {
-		string? sentId = generateKeys && row.ValueKind == JsonValueKind.Object && !HasKeyColumn(row)
-			? Guid.NewGuid().ToString("D")
-			: null;
-		ODataRowResult result = SendRow(client, url, row, sentId, index, requestTimeoutMs, propertyTypes,
-			remainingBudgetMs, out bool posted);
-		return sentId is null || !posted || result.RecordCreated is not null
-			? result
-			: SettleBySentId(client, url, result, sentId, remainingBudgetMs());
+	private static ODataRowResult CreateRow(RowBatch batch, JsonElement row, int index, int requestTimeoutMs) {
+		string? sentId = batch.GenerateKeys && NeedsKey(row) ? Guid.NewGuid().ToString("D") : null;
+		ODataRowResult result = SendRow(batch, row, sentId, index, requestTimeoutMs, out bool posted);
+		if (sentId is null || !posted) {
+			return result;
+		}
+		if (result.Success) {
+			StopKeysUnlessKept(batch, result.Id, sentId);
+			return result;
+		}
+		return result.RecordCreated is null ? SettleBySentId(batch, result, sentId) : result;
+	}
+
+	/// <summary>
+	/// A created row echoes its record. When that record's Id is another GUID than the one clio sent, the site does not
+	/// keep a sent Id for this entity, so it cannot refuse a repeated send either: the later rows go without one.
+	/// </summary>
+	private static void StopKeysUnlessKept(RowBatch batch, string? echoedId, string sentId) {
+		if (Guid.TryParse(echoedId, out Guid echoed) && echoed != Guid.Parse(sentId)) {
+			batch.GenerateKeys = false;
+			batch.Warning = KeyNotKeptWarning;
+		}
 	}
 
 	/// <summary>
@@ -471,27 +518,29 @@ public sealed class ODataCreateTool(
 	/// Otherwise the row stays unknown and carries the Id, so a re-send with it cannot create the record twice. An Id
 	/// the caller chose is never read back: it may have existed before this call.
 	/// </summary>
-	private static ODataRowResult SettleBySentId(IApplicationClient client, string url, ODataRowResult unknown,
-		string sentId, int remainingMs) {
+	private static ODataRowResult SettleBySentId(RowBatch batch, ODataRowResult unknown, string sentId) {
+		int remainingMs = batch.RemainingMs();
 		bool readBack = remainingMs >= MinRowBudgetMs;
-		if (readBack && RecordExists(client, url, sentId, Math.Min(ReadBackTimeoutMs, remainingMs))) {
+		if (readBack && RecordExists(batch, sentId, Math.Min(ReadBackTimeoutMs, remainingMs))) {
+			// Inserted, so success: the site's answer stays in site-response, and the guidance says why it failed.
 			return unknown with {
+				Success = true,
 				RecordCreated = true,
 				Id = sentId,
-				RetryGuidance = CreatedOnReadBackGuidance,
-				Error = (unknown.Error ?? "Creatio failed the create.") + CreatedOnReadBackNote
+				Error = null,
+				RetryGuidance = CreatedOnReadBackGuidance(unknown.Error)
 			};
 		}
 		return unknown with { SentId = sentId, RetryGuidance = UnknownWithSentIdGuidance(sentId, readBack) };
 	}
 
 	/// <summary>
-	/// Whether the record with <paramref name="id"/> exists. Only an answer that is that record counts; any other
-	/// answer or failure reads as "not found", which never proves the row was not created.
+	/// Whether the record with <paramref name="id"/> was read back. Only an answer that is that record counts; any
+	/// other answer or failure means it was not read, which never proves the row was not created.
 	/// </summary>
-	private static bool RecordExists(IApplicationClient client, string url, string id, int timeoutMs) {
+	private static bool RecordExists(RowBatch batch, string id, int timeoutMs) {
 		try {
-			string body = client.ExecuteGetRequest($"{url}({id})?$select={KeyColumn}", timeoutMs, 1, 0);
+			string body = batch.Client.ExecuteGetRequest($"{batch.RecordUrl(id)}?$select={KeyColumn}", timeoutMs, 1, 0);
 			if (string.IsNullOrWhiteSpace(body)) {
 				return false;
 			}
@@ -507,17 +556,25 @@ public sealed class ODataCreateTool(
 		}
 	}
 
-	/// <summary>Whether the row names its key, in any case, even as null: such a row is sent as the caller wrote it.</summary>
-	private static bool HasKeyColumn(JsonElement row) =>
-		row.EnumerateObject().Any(property => string.Equals(property.Name, KeyColumn, StringComparison.OrdinalIgnoreCase));
+	/// <summary>
+	/// Whether clio may add a key to the row: a non-empty object that does not name its key, in any case, even as
+	/// null. Any other row is sent as the caller wrote it.
+	/// </summary>
+	private static bool NeedsKey(JsonElement row) =>
+		row.ValueKind == JsonValueKind.Object
+		&& row.EnumerateObject().Any()
+		&& !row.EnumerateObject().Any(property => string.Equals(property.Name, KeyColumn, StringComparison.OrdinalIgnoreCase));
 
-	/// <summary>The row's JSON with <paramref name="key"/> as its first member. The row is a non-empty object.</summary>
+	/// <summary>
+	/// The row's JSON with <paramref name="key"/> as its last member, so a leading <c>@odata.type</c> stays first.
+	/// The row is a non-empty object, whose raw text ends with its closing brace.
+	/// </summary>
 	private static string WithKey(JsonElement row, string key) =>
-		"{\"" + KeyColumn + "\":\"" + key + "\"," + row.GetRawText()[1..];
+		row.GetRawText()[..^1] + ",\"" + KeyColumn + "\":\"" + key + "\"}";
 
-	private static ODataRowResult SendRow(
-		IApplicationClient client, string url, JsonElement row, string? sentId, int index, int requestTimeoutMs,
-		Lazy<IReadOnlyDictionary<string, string>> propertyTypes, Func<int> remainingBudgetMs, out bool posted) {
+	private static ODataRowResult SendRow(RowBatch batch, JsonElement row, string? sentId, int index, int requestTimeoutMs,
+		out bool posted) {
+		Lazy<IReadOnlyDictionary<string, string>> propertyTypes = batch.PropertyTypes;
 		bool received = false;
 		posted = false;
 		try {
@@ -530,8 +587,8 @@ public sealed class ODataCreateTool(
 					Error = "row must be a non-empty object of field/value pairs."
 				};
 			}
-			// Only a type map that is already loaded is used before the POST: loading it here would put the
-			// multi-megabyte metadata read in front of every batch.
+			// Only a type map that is already loaded is used before the POST: loading it here, for a batch that did
+			// not need it up front, would put the multi-megabyte metadata read in front of every such batch.
 			IReadOnlyDictionary<string, string> loadedTypes = propertyTypes.IsValueCreated ? propertyTypes.Value : null;
 			string zoneLessDateTime = ODataDateTimeGuard.FindZoneLessDateTime(row, loadedTypes);
 			if (zoneLessDateTime is not null) {
@@ -559,7 +616,7 @@ public sealed class ODataCreateTool(
 			string body = sentId is null ? row.GetRawText() : WithKey(row, sentId);
 			// From here the request may leave clio, even when the call then throws.
 			posted = true;
-			SiteHttpResponse answer = SiteCall.NonReplayablePost(client, url, body, requestTimeoutMs);
+			SiteHttpResponse answer = SiteCall.NonReplayablePost(batch.Client, batch.Url, body, requestTimeoutMs);
 			received = true;
 			ODataRowResult result = WithSiteAnswer(ParseCreated(answer.Body, index) with { ResponseReceived = true },
 				answer);
@@ -569,7 +626,7 @@ public sealed class ODataCreateTool(
 			// A refusal without processing is about the request's method, size, URL or media type, never a column, so
 			// it gets no column hint.
 			if (result.RecordCreated == false && !answer.IsRefusedWithoutProcessing
-				&& (propertyTypes.IsValueCreated || remainingBudgetMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs)) {
+				&& (propertyTypes.IsValueCreated || batch.RemainingMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs)) {
 				binaryColumns = FindBinaryColumns(row, propertyTypes.Value, BinaryEdmTypes);
 				if (binaryColumns.Count > 0) {
 					result = result with { Error = DescribeBinaryColumns(binaryColumns) };

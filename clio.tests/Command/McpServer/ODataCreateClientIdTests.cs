@@ -22,6 +22,7 @@ public sealed class ODataCreateClientIdTests {
 
 	private const string CollectionUrl = "http://creatio/odata/Account";
 	private const string MetadataUrl = "http://creatio/odata/$metadata";
+	private const string CallerId = "5d1f4ad8-3a4e-4f02-9e1b-7c8a2b3c4d5e";
 
 	// What Creatio answers a POST whose Id already exists: the insert fails on the primary key.
 	private const string DuplicateKeyAnswer =
@@ -34,7 +35,7 @@ public sealed class ODataCreateClientIdTests {
 	private const string ModelBindingRejection =
 		"{\"error\":{\"code\":\"\",\"message\":\"The input was not valid.\"}}";
 
-	private static string Csdl(string idType) => $"""
+	private static string Csdl(string idType, bool withData = false) => $"""
 		<?xml version="1.0" encoding="utf-8" standalone="no"?>
 		<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
 		  <edmx:DataServices>
@@ -43,11 +44,19 @@ public sealed class ODataCreateClientIdTests {
 		        <Key><PropertyRef Name="Id" /></Key>
 		        <Property Name="Id" Type="{idType}" Nullable="false" />
 		        <Property Name="Name" Type="Edm.String" />
+		        {(withData ? "<Property Name=\"Data\" Type=\"Edm.Stream\" />" : "")}
 		      </EntityType>
 		    </Schema>
 		  </edmx:DataServices>
 		</edmx:Edmx>
 		""";
+
+	// A read of one record that finds it: the record, with the Id taken from the URL.
+	private static string Found(string url) {
+		int open = url.IndexOf('(');
+		int close = url.IndexOf(')');
+		return $"{{\"@odata.context\":\"http://creatio/odata/$metadata#Account/$entity\",\"Id\":\"{url[(open + 1)..close]}\"}}";
+	}
 
 	[Test]
 	[Description("A row without Id is sent with a new GUID Id when $metadata declares the entity's Id as Edm.Guid; the row's own fields are kept")]
@@ -81,9 +90,30 @@ public sealed class ODataCreateClientIdTests {
 			.And.HaveCount(2);
 	}
 
-	[TestCase("[{\"Id\":\"5d1f4ad8-3a4e-4f02-9e1b-7c8a2b3c4d5e\",\"Name\":\"Acme\"}]",
-		TestName = "Create_ShouldSendTheRowAsGiven_WhenItHasAnId")]
-	[TestCase("[{\"id\":\"5d1f4ad8-3a4e-4f02-9e1b-7c8a2b3c4d5e\",\"Name\":\"Acme\"}]",
+	[TestCase("[{\"@odata.type\":\"#Terrasoft.Configuration.OData.Account\",\"Name\":\"Acme\"}]",
+		TestName = "Create_ShouldAddTheId_AfterALeadingODataType")]
+	[TestCase("[{ \"Name\" : \"Acme\",\n  \"Address\": { \"City\": \"Kyiv\" }, \"Tags\": [1, 2] }]",
+		TestName = "Create_ShouldAddTheId_ToARowWithWhitespaceAndNestedValues")]
+	[TestCase("[{\"Name\":\"Ünïcödé \\u2603\"}]", TestName = "Create_ShouldAddTheId_ToARowWithUnicode")]
+	[Description("The Id is added as the row's last member: every member the caller wrote keeps its value and order, so a leading @odata.type stays first")]
+	public void Create_ShouldAddTheIdAsTheLastMember(string rows) {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid"));
+		JsonElement written = JsonDocument.Parse(rows).RootElement[0];
+
+		// Act
+		fixture.Create(rows);
+
+		// Assert
+		JsonProperty[] sent = fixture.SentBodies.Single().EnumerateObject().ToArray();
+		sent.Select(property => property.Name).Should().Equal(
+			written.EnumerateObject().Select(property => property.Name).Append("Id"));
+		sent.SkipLast(1).Select(property => property.Value.GetRawText()).Should().Equal(
+			written.EnumerateObject().Select(property => property.Value.GetRawText()));
+	}
+
+	[TestCase("[{\"Id\":\"" + CallerId + "\",\"Name\":\"Acme\"}]", TestName = "Create_ShouldSendTheRowAsGiven_WhenItHasAnId")]
+	[TestCase("[{\"id\":\"" + CallerId + "\",\"Name\":\"Acme\"}]",
 		TestName = "Create_ShouldSendTheRowAsGiven_WhenItHasAnIdInAnotherCase")]
 	[TestCase("[{\"Id\":null,\"Name\":\"Acme\"}]", TestName = "Create_ShouldSendTheRowAsGiven_WhenItSetsIdToNull")]
 	[Description("A row that names its own Id, in any case or as null, is sent exactly as the caller wrote it")]
@@ -149,17 +179,34 @@ public sealed class ODataCreateClientIdTests {
 		Fixture fixture = new(Csdl("Edm.Guid"));
 
 		// Act
-		fixture.Create("[{\"Id\":\"5d1f4ad8-3a4e-4f02-9e1b-7c8a2b3c4d5e\",\"Name\":\"Acme\"}]");
+		fixture.Create("[{\"Id\":\"" + CallerId + "\",\"Name\":\"Acme\"}]");
 
 		// Assert
 		fixture.Client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default, default, default, default);
 	}
 
 	[Test]
-	[Description("The hidden second send: the answer clio sees is a duplicate-key error, and the record read back by the Id clio sent exists, so the row is created and must not be re-sent")]
+	[Description("With the type map read up front for the key, a row without Id that sets a binary column is refused before any POST")]
+	public void Create_ShouldRefuseABinaryColumnBeforeThePost_WhenTheKeyCheckLoadedTheTypeMap() {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid", withData: true));
+
+		// Act
+		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"logo.png\",\"Data\":\"iVBORw0KGgo=\"}]");
+
+		// Assert
+		ODataRowResult row = response.Results.Single();
+		row.RecordCreated.Should().BeFalse();
+		row.Error.Should().Contain("'Data'");
+		row.Diagnostic.SideEffect.Should().Be("not-attempted");
+		fixture.SentRaw.Should().BeEmpty();
+	}
+
+	[Test]
+	[Description("The hidden second send: the answer clio sees is a duplicate-key error, and the record read back by the Id clio sent exists, so the row is a created row and the counters say so")]
 	public void Create_ShouldReportTheRowCreated_WhenAHiddenSecondSendIsRefusedAsADuplicateKey() {
 		// Arrange
-		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer, recordExists: true);
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer, readBack: Found);
 
 		// Act
 		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"}]");
@@ -168,19 +215,30 @@ public sealed class ODataCreateClientIdTests {
 		string sentId = fixture.SentBodies.Single().GetProperty("Id").GetString();
 		ODataRowResult row = response.Results.Single();
 		row.RecordCreated.Should().BeTrue(because: "the record with the Id only clio's sends of this row carry exists");
+		row.Success.Should().BeTrue(because: "the row was inserted, which is what success means");
 		row.Id.Should().Be(sentId);
-		row.Success.Should().BeFalse(because: "the site's answer was still an error, and the result keeps it");
-		row.RetryGuidance.Should().Contain("do NOT re-send");
+		row.Error.Should().BeNull();
+		row.RetryGuidance.Should().Contain("do NOT re-send").And.Contain("An error has occured.",
+			because: "the guidance keeps the failed answer clio got, so the caller sees why the request read as failed");
 		row.Diagnostic.SideEffect.Should().Be("acknowledged");
-		response.Unverified.Should().Be(0, because: "the read-back settled the row");
+		response.Created.Should().Be(1);
+		response.Failed.Should().Be(0, because: "a caller that re-sends failed rows must not re-send this one");
+		response.Unverified.Should().Be(0);
 		fixture.ReadBackUrls.Should().Equal([$"{CollectionUrl}({sentId})?$select=Id"]);
+		fixture.Client.Received(1).ExecuteGetRequest($"{CollectionUrl}({sentId})?$select=Id",
+			Arg.Is<int>(timeout => timeout > 0 && timeout <= ODataCreateTool.ReadBackTimeoutMs), 1, 0);
 	}
 
-	[Test]
-	[Description("A row whose answer is unknown and whose record is not found keeps record-created null, and names the Id it was sent with so a re-send with that Id cannot create it twice")]
-	public void Create_ShouldKeepTheRowUnknownWithItsSentId_WhenTheReadBackFindsNothing() {
+	[TestCase(NotFoundAnswer, TestName = "Create_ShouldKeepTheRowUnknownWithItsSentId_WhenTheReadBackFindsNothing")]
+	[TestCase("<html><body>Sign in</body></html>", TestName = "Create_ShouldKeepTheRowUnknownWithItsSentId_WhenTheReadBackIsAPage")]
+	[TestCase("", TestName = "Create_ShouldKeepTheRowUnknownWithItsSentId_WhenTheReadBackIsEmpty")]
+	[TestCase("{\"Id\":\"" + CallerId + "\"}", TestName = "Create_ShouldKeepTheRowUnknownWithItsSentId_WhenTheReadBackIsAnotherRecord")]
+	[TestCase(null, TestName = "Create_ShouldKeepTheRowUnknownWithItsSentId_WhenTheReadBackThrows")]
+	[Description("Only the record itself settles the row: any other read-back answer, or a failed read, keeps record-created null and names the Id the row was sent with, so a re-send with that Id cannot create it twice")]
+	public void Create_ShouldKeepTheRowUnknownWithItsSentId_WhenTheReadBackDoesNotReturnTheRecord(string readBackAnswer) {
 		// Arrange
-		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer, recordExists: false);
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer,
+			readBack: _ => readBackAnswer ?? throw new System.Net.Http.HttpRequestException("The connection was closed."));
 
 		// Act
 		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"}]");
@@ -189,7 +247,8 @@ public sealed class ODataCreateClientIdTests {
 		string sentId = fixture.SentBodies.Single().GetProperty("Id").GetString();
 		ODataRowResult row = response.Results.Single();
 		row.RecordCreated.Should().BeNull(because: "a write still in progress can land after the read");
-		row.RetryGuidance.Should().Contain(sentId);
+		row.Success.Should().BeFalse();
+		row.RetryGuidance.Should().Contain(sentId).And.Contain("duplicate key means the record exists");
 		response.Unverified.Should().Be(1);
 		JsonSerializer.Serialize(row).Should().Contain($"\"sent-id\":\"{sentId}\"");
 	}
@@ -198,7 +257,7 @@ public sealed class ODataCreateClientIdTests {
 	[Description("A transport failure leaves the row unknown; the record read back by the sent Id settles it")]
 	public void Create_ShouldReportTheRowCreated_WhenThePostFailsInTransportButTheRecordExists() {
 		// Arrange
-		Fixture fixture = new(Csdl("Edm.Guid"), postThrows: true, recordExists: true);
+		Fixture fixture = new(Csdl("Edm.Guid"), postThrows: true, readBack: Found);
 
 		// Act
 		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"}]");
@@ -206,17 +265,19 @@ public sealed class ODataCreateClientIdTests {
 		// Assert
 		ODataRowResult row = response.Results.Single();
 		row.RecordCreated.Should().BeTrue();
+		row.Success.Should().BeTrue();
 		row.Id.Should().Be(fixture.SentBodies.Single().GetProperty("Id").GetString());
+		row.RetryGuidance.Should().Contain("The connection was closed.");
 	}
 
 	[Test]
 	[Description("An Id the caller chose may have existed before this call, so its read-back would prove nothing; the row stays unknown and nothing is read")]
 	public void Create_ShouldNotReadBack_WhenTheCallerChoseTheId() {
 		// Arrange
-		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer, recordExists: true);
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer, readBack: Found);
 
 		// Act
-		ODataCreateBatchResponse response = fixture.Create("[{\"Id\":\"5d1f4ad8-3a4e-4f02-9e1b-7c8a2b3c4d5e\",\"Name\":\"Acme\"}]");
+		ODataCreateBatchResponse response = fixture.Create("[{\"Id\":\"" + CallerId + "\",\"Name\":\"Acme\"}]");
 
 		// Assert
 		response.Results.Single().RecordCreated.Should().BeNull();
@@ -228,7 +289,7 @@ public sealed class ODataCreateClientIdTests {
 	[Description("A row Creatio rejected while reading the body is known not created: no read-back, no sent-id")]
 	public void Create_ShouldNotReadBack_WhenTheRowIsKnownNotCreated() {
 		// Arrange
-		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: ModelBindingRejection, recordExists: true);
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: ModelBindingRejection, readBack: Found);
 
 		// Act
 		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"}]");
@@ -239,10 +300,25 @@ public sealed class ODataCreateClientIdTests {
 	}
 
 	[Test]
-	[Description("Through the status-keeping client the product uses: the POST carries the generated Id, and a 500 duplicate-key answer is settled by the read-back")]
+	[Description("A site that answers a created row with another Id does not keep a sent Id: the later rows go without one, and the batch warns")]
+	public void Create_ShouldStopSendingIds_WhenTheSiteAnswersAnotherId() {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: "{\"Id\":\"22222222-2222-2222-2222-222222222222\"}");
+
+		// Act
+		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]");
+
+		// Assert
+		response.Created.Should().Be(2);
+		fixture.SentRaw[1].Should().Be("{\"Name\":\"Globex\"}");
+		response.Warnings.Should().ContainSingle().Which.Should().Contain("another Id");
+	}
+
+	[Test]
+	[Description("Through the status-keeping client the product uses: the POST carries the generated Id, and a 500 duplicate-key answer is settled by the read-back while its site-response stays")]
 	public void Create_ShouldSettleADuplicateKeyAnswer_ThroughTheStatusKeepingClient() {
 		// Arrange
-		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer, recordExists: true, postStatus: 500);
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: DuplicateKeyAnswer, readBack: Found, postStatus: 500);
 
 		// Act
 		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"}]");
@@ -258,13 +334,14 @@ public sealed class ODataCreateClientIdTests {
 
 	/// <summary>
 	/// A client over a fake site: <c>$metadata</c> answers the given CSDL, every POST answers <c>postAnswer</c> (or
-	/// throws), and a read of one record answers it when <c>recordExists</c>, echoing the Id from the URL.
+	/// throws, or answers a created record with the Id it was sent), and a read of one record answers what
+	/// <c>readBack</c> returns for its URL (by default, that it does not exist).
 	/// </summary>
 	private sealed class Fixture {
 		private readonly ODataCreateTool _tool;
 
-		internal Fixture(string metadata, string postAnswer = null, bool recordExists = false, bool postThrows = false,
-			int? postStatus = null) {
+		internal Fixture(string metadata, string postAnswer = null, Func<string, string> readBack = null,
+			bool postThrows = false, int? postStatus = null) {
 			Client = postStatus is null
 				? Substitute.For<IApplicationClient>()
 				: Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
@@ -274,7 +351,14 @@ public sealed class ODataCreateClientIdTests {
 			resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
 				.Returns((Client, urls));
 			Client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-				.Returns(call => AnswerGet(call.Arg<string>(), metadata, recordExists));
+				.Returns(call => {
+					string url = call.Arg<string>();
+					if (url == MetadataUrl) {
+						return metadata;
+					}
+					ReadBackUrls.Add(url);
+					return (readBack ?? (_ => NotFoundAnswer))(url);
+				});
 			string Answer(string body) {
 				SentRaw.Add(body);
 				if (postThrows) {
@@ -316,17 +400,5 @@ public sealed class ODataCreateClientIdTests {
 			_tool.Create(new ODataCreateArgs {
 				EnvironmentName = "dev", Entity = "Account", Rows = JsonDocument.Parse(rows).RootElement.Clone()
 			});
-
-		private string AnswerGet(string url, string metadata, bool recordExists) {
-			if (url == MetadataUrl) {
-				return metadata;
-			}
-			ReadBackUrls.Add(url);
-			int open = url.IndexOf('(');
-			int close = url.IndexOf(')');
-			return recordExists && open > 0 && close > open
-				? $"{{\"@odata.context\":\"http://creatio/odata/$metadata#Account/$entity\",\"Id\":\"{url[(open + 1)..close]}\"}}"
-				: NotFoundAnswer;
-		}
 	}
 }
