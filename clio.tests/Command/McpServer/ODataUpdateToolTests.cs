@@ -170,7 +170,10 @@ public sealed class ODataUpdateToolTests {
 		response.SiteResponse.Should().BeEquivalentTo(new SiteResponse(status, null, null, kind));
 	}
 
-	[TestCase(403, "", "none", TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAn403")]
+	[TestCase(403, "", "unknown", TestName = "Update_ShouldReportSideEffectUnknown_WhenThePatchIsAnsweredWithAnEmpty403")]
+	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", "none",
+		TestName = "Update_ShouldReportSideEffectNone_WhenThePlatformsAuthenticationEnvelopeRefuses")]
+	[TestCase(413, "", "none", TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsTooLarge")]
 	[TestCase(401, "<html>Sign in</html>", "none", TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAn401Page")]
 	[TestCase(403, "{\"error\":{\"code\":\"\",\"message\":\"No rights to edit\"}}", "unknown",
 		TestName = "Update_ShouldReportSideEffectUnknown_WhenA403CarriesTheApplicationsODataError")]

@@ -89,20 +89,20 @@ public sealed class StatusPreservingClientTests {
 	}
 
 	[Test]
-	[Description("A 403 page that follows clio's own re-send proves nothing about the first send")]
+	[Description("A 401 page that follows clio's own re-send proves nothing about the first send")]
 	public void SendKeepingStatus_ShouldNotProveARefusal_WhenItFollowsAReSend() {
 		// Arrange
 		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
 		transport.ExecutePostRequestAsync(default, default, default, default, default, default)
 			.ReturnsForAnyArgs(_ => Answer(HttpStatusCode.OK, LoginPageBody),
-				_ => Answer(HttpStatusCode.Forbidden, "<html>Forbidden</html>"));
+				_ => Answer(HttpStatusCode.Unauthorized, "<html>Unauthorized</html>"));
 		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
 
 		// Act
 		SiteHttpResponse answer = adapter.SendKeepingStatus(SiteRequestVerb.Post, "/x", "body");
 
 		// Assert
-		answer.StatusCode.Should().Be(403);
+		answer.StatusCode.Should().Be(401);
 		answer.IsRefusedWithoutProcessing.Should().BeFalse(
 			because: "GitHub #1313: a committed write can answer with a body that looks like the sign-in page");
 	}

@@ -111,8 +111,8 @@ public sealed class ODataCreateTool(
 		"Not inserted: Creatio rejected the row before writing anything. Correct the row and re-send it.";
 
 	private const string RefusedWithoutProcessingGuidance =
-		"Not inserted: Creatio refused the request without processing it. Fix what it refused - the sign-in, the "
-		+ "user's rights or the request size - before re-sending the row.";
+		"Not inserted: Creatio refused the request without processing it. Fix what it refused - the sign-in, or "
+		+ "the request's size, method or format - before re-sending the row.";
 
 	/// <summary>
 	/// <c>error.message</c> values Creatio answers when the OData body fails model binding: an unknown

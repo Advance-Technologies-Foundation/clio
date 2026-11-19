@@ -148,23 +148,26 @@ public sealed class SiteResponseWritePathTests {
 		_capture.Last.Should().BeEquivalentTo(new SiteResponse(500, null, null, SiteResponse.EmptyBody));
 	}
 
-	[TestCase("", TestName = "DataService_ShouldSayNotApplied_WhenAnEmpty403Refused")]
-	[TestCase(ErrorPage, TestName = "DataService_ShouldSayNotApplied_WhenA403PageRefused")]
+	[TestCase("", TestName = "DataService_ShouldSayNotApplied_WhenAnEmpty401Refused")]
+	[TestCase(ErrorPage, TestName = "DataService_ShouldSayNotApplied_WhenA401PageRefused")]
+	[TestCase("{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", TestName = "DataService_ShouldSayNotApplied_WhenThePlatformsAuthenticationEnvelopeRefuses")]
 	[Description("A status that refuses without processing says the write was not applied, whatever the body")]
 	public void DataService_ShouldSayNotApplied_WhenRefusedWithoutProcessing(string body) {
 		// Act
-		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(403, body), "InsertQuery");
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(401, body), "InsertQuery");
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>().WithMessage(
-			"InsertQuery failed: the environment refused it without processing it (HTTP 403), so it was not applied.");
-		_capture.Last.Status.Should().Be(403);
+			"InsertQuery failed: the environment refused it without processing it (HTTP 401), so it was not applied.");
+		_capture.Last.Status.Should().Be(401);
 		_capture.LastProvesNothingApplied.Should().BeFalse(
 			because: "an ordinary write's refusal proves nothing for the call: other writes may have come first");
 	}
 
 	[TestCase(404, "", TestName = "DataService_ShouldNotClaimNotApplied_WhenAnEmpty404Refused")]
-	[TestCase(403, "{\"rowsAffected\":0}", TestName = "DataService_ShouldNotClaimNotApplied_WhenA403CarriesAnEnvelope")]
+	[TestCase(401, "{\"rowsAffected\":0}", TestName = "DataService_ShouldNotClaimNotApplied_WhenA401CarriesAnEnvelope")]
+	[TestCase(403, "", TestName = "DataService_ShouldNotClaimNotApplied_WhenAnEmpty403Refused")]
+	[TestCase(403, ErrorPage, TestName = "DataService_ShouldNotClaimNotApplied_WhenA403PageRefused")]
 	[TestCase(302, "", TestName = "DataService_ShouldNotClaimNotApplied_WhenARedirectReachesTheCaller")]
 	[TestCase(409, ErrorPage, TestName = "DataService_ShouldNotClaimNotApplied_WhenA409PageRefused")]
 	[Description("Any other 3xx or 4xx says the refusal does not prove the write was not applied")]
@@ -190,13 +193,13 @@ public sealed class SiteResponseWritePathTests {
 	}
 
 	[Test]
-	[Description("The binding delete is the sole write of delete-data-binding-db: in its declared capture a 403 proves nothing was deleted")]
+	[Description("The binding delete is the sole write of delete-data-binding-db: in its declared capture a 401 proves nothing was deleted")]
 	public void DataService_ShouldProveNothingApplied_WhenTheDeclaredSoleWriteIsRefusedWithoutProcessing() {
 		// Arrange
 		using SiteResponseCapture.Scope declared = SiteResponseCapture.Begin(soleWriteCall: true);
 
 		// Act
-		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(403, ""),
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(401, ""),
 			"DeletePackageSchemaDataRequest", soleWriteAttempts: 1);
 
 		// Assert
@@ -259,6 +262,7 @@ public sealed class SiteResponseWritePathTests {
 	[TestCase(404, TestName = "ODataWrite_ShouldNotClaimNotApplied_WhenA404HasNoBody")]
 	[TestCase(302, TestName = "ODataWrite_ShouldNotClaimNotApplied_WhenA302ReachesTheCaller")]
 	[TestCase(409, TestName = "ODataWrite_ShouldNotClaimNotApplied_WhenA409HasNoBody")]
+	[TestCase(403, TestName = "ODataWrite_ShouldNotClaimNotApplied_WhenA403HasNoBody")]
 	[Description("A 3xx or 4xx that can come from the handler does not prove the write was not applied")]
 	public void ODataWrite_ShouldNotClaimNotApplied(int status) {
 		// Act
@@ -270,8 +274,8 @@ public sealed class SiteResponseWritePathTests {
 	}
 
 	[TestCase(401)]
-	[TestCase(403)]
 	[TestCase(413)]
+	[TestCase(431)]
 	[Description("A status that refuses without processing says this request was not applied")]
 	public void ODataWrite_ShouldSayNotApplied_WhenRefusedWithoutProcessing(int status) {
 		// Act
@@ -340,18 +344,18 @@ public sealed class SiteResponseWritePathTests {
 
 	[TestCase(true, true, TestName = "PageDesigner_ShouldProveNothingSaved_WhenTheDeclaredSaveIsRefusedWithAPage")]
 	[TestCase(false, false, TestName = "PageDesigner_ShouldNotProve_WhenTheSaveRunsInAnUndeclaredCapture")]
-	[Description("A non-JSON 403 to the page save proves nothing was saved only inside a tool's declared capture")]
+	[Description("A non-JSON 401 to the page save proves nothing was saved only inside a tool's declared capture")]
 	public void PageDesigner_ShouldProveNothingSaved_OnlyInADeclaredCapture(bool declared, bool proves) {
 		// Arrange
 		using SiteResponseCapture.Scope scope = SiteResponseCapture.Begin(soleWriteCall: declared);
 
 		// Act
 		Action act = () => PageSchemaMetadataHelper.PostDesignerRequest(
-			KeepingClient(new SiteHttpResponse(403, ErrorPage)), "http://local/x", "{}", soleWrite: true);
+			KeepingClient(new SiteHttpResponse(401, ErrorPage)), "http://local/x", "{}", soleWrite: true);
 
 		// Assert
 		act.Should().Throw<JsonReaderException>();
-		scope.Last.Status.Should().Be(403);
+		scope.Last.Status.Should().Be(401);
 		scope.LastProvesNothingApplied.Should().Be(proves);
 	}
 
@@ -404,10 +408,12 @@ public sealed class SiteResponseWritePathTests {
 		logger.Received(1).WriteError(Arg.Is<string>(text => text.Contains($"HTTP {status}")));
 	}
 
-	[TestCase(1, 403, true, "so the application was not restarted.",
+	[TestCase(1, 401, true, "so the application was not restarted.",
 		TestName = "Restart_ShouldProveNotRestarted_WhenSentOnceAndRefusedWithoutProcessing")]
-	[TestCase(3, 403, false, "which does not prove the application was not restarted.",
+	[TestCase(3, 401, false, "which does not prove the application was not restarted.",
 		TestName = "Restart_ShouldNotProve_WhenTheRequestMayHaveBeenSentAgain")]
+	[TestCase(1, 403, false, "which does not prove the application was not restarted.",
+		TestName = "Restart_ShouldNotProve_WhenA403Refused")]
 	[TestCase(1, 404, false, "which does not prove the application was not restarted.",
 		TestName = "Restart_ShouldNotProve_WhenA404Refused")]
 	[Description("In the restart tool's declared capture, only a single-attempt refusal without processing proves the application was not restarted")]

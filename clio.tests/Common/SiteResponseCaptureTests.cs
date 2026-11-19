@@ -55,10 +55,11 @@ public sealed class SiteResponseCaptureTests {
 		scope.Last.Status.Should().Be(500, because: "a status-less answer cannot be reported and erases nothing");
 	}
 
-	[TestCase(403, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenDeclaredSentOnceAndRefusedWithoutProcessing")]
+	[TestCase(413, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenDeclaredSentOnceAndRefusedWithoutProcessing")]
+	[TestCase(403, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs403")]
 	[TestCase(401, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenA401RefusedTheDeclaredWrite")]
-	[TestCase(403, 1, false, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
-	[TestCase(403, 3, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheWriteMayHaveBeenSentAgain")]
+	[TestCase(401, 1, false, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
+	[TestCase(401, 3, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheWriteMayHaveBeenSentAgain")]
 	[TestCase(404, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs404")]
 	[TestCase(503, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs503")]
 	[Description("A refusal proves nothing was applied only with the tool's declaration, one attempt and a status that refuses without processing")]
@@ -94,7 +95,7 @@ public sealed class SiteResponseCaptureTests {
 	public void RecordRefusal_ShouldReplaceTheProof_WhenALaterRefusalIsRecorded() {
 		// Arrange
 		using SiteResponseCapture.Scope scope = SiteResponseCapture.Begin(soleWriteCall: true);
-		SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(403, ""), 1);
+		SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(401, ""), 1);
 
 		// Act
 		SiteResponseCapture.RecordRefusal(new SiteHttpResponse(500, ""));
@@ -112,7 +113,7 @@ public sealed class SiteResponseCaptureTests {
 
 		// Act
 		using SiteResponseCapture.Scope inner = SiteResponseCapture.Begin();
-		SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(403, ""), 1);
+		SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(401, ""), 1);
 
 		// Assert
 		inner.LastProvesNothingApplied.Should().BeFalse();

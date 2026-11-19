@@ -361,10 +361,14 @@ body alone would pass them: an empty or unrecognized body on `odata-update` / `o
 `odata-create`, and an empty body or an error page on the data-binding writes and on `install-application` /
 `push-workspace` / `install-process-builder`. How such a failure reads depends on the status:
 
-- **401, 403, 405, 413, 414, 415 or 431 with an empty, HTML page or plain-text body: refused without processing.** HTTP defines these as
-  the server refusing to process the request (RFC 9110, RFC 6585), so the result says that request was not
-  applied (an `odata-create` row reads `record-created: false`). With a JSON or XML body the application spoke,
-  so it reads like any other refusal below.
+- **Refused without processing: 401, 405, 413, 414, 415 or 431 with an empty, HTML page or plain-text body, or a
+  401 with the platform's own authentication envelope** (`{"Message":"Authentication failed.", ...}`, matched
+  exactly). HTTP defines these statuses as the server refusing to process the request (RFC 9110, RFC 6585), and
+  Creatio's authentication sends that envelope before any service runs. The result then says that request was
+  not applied; an `odata-create` row reads `record-created: false`. With any other JSON or XML body, the
+  application itself answered, so it reads like any other refusal below.
+- **403: refused, but never proof.** A gateway that inspects responses answers 403 after the backend ran (the
+  same reason `CompileBusinessProcessCommand` gives), so a 403 page can follow a write that landed.
 - **5xx: not confirmed.** A gateway can answer 502/504 after Creatio applied the write or while a long
   installation still runs, so the result says the write "was not confirmed" / "may or may not have been
   applied" / "may still be running" and asks to read back before retrying. An installation log line is not
@@ -398,10 +402,14 @@ and `message` are null: the result's own fields name what failed and why.
    (GitHub #1313). The client's own re-send after a 401 or a redirect to the sign-in page is not visible to clio;
    it is taken as one send, on HTTP's meaning of 401 ("the request has not been applied") and because a sign-in
    redirect comes from the sign-in layer.
-3. **Refused without processing.** The site answered 401, 403, 405, 413, 414, 415 or 431, and the body carries no
-   answer of the application: it is empty, an HTML page or plain text (a byte-order mark and whitespace before
-   it are skipped). Anything that may be the application's own answer proves nothing: JSON of any kind, parseable
-   or not, and markup that is not an HTML page, such as an XML or SOAP fault.
+3. **Refused without processing.** The site answered in one of two ways:
+   - 401, 405, 413, 414, 415 or 431, and the body carries no answer of the application. It is empty, an HTML
+     page or plain text; a byte-order mark and whitespace before it are skipped.
+   - 401 with the platform's authentication envelope, whose `Message` is exactly "Authentication failed.".
+     It is recognized by the same test automatic re-authentication uses. Its words can be quoted.
+
+   Nothing else proves it. That includes any 403, any other JSON (parseable or not), and markup that is not an
+   HTML page, such as an XML or SOAP fault.
 
 | Tool | Its writes, in order | `side-effect` on a refusal |
 |---|---|---|

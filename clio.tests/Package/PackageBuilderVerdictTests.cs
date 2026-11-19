@@ -185,8 +185,9 @@ public sealed class PackageBuilderVerdictTests {
 		capture.Last.Body.Should().Be(SiteResponse.JsonBody);
 	}
 
-	[TestCase(403, true, true, TestName = "Rebuild_ShouldProveNothingCompiled_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
-	[TestCase(403, false, false, TestName = "Rebuild_ShouldNotProve_WhenTheBuildRunsInAnUndeclaredCapture")]
+	[TestCase(401, true, true, TestName = "Rebuild_ShouldProveNothingCompiled_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
+	[TestCase(401, false, false, TestName = "Rebuild_ShouldNotProve_WhenTheBuildRunsInAnUndeclaredCapture")]
+	[TestCase(403, true, false, TestName = "Rebuild_ShouldNotProve_WhenTheBuildIsAnswered403")]
 	[TestCase(502, true, false, TestName = "Rebuild_ShouldNotProve_WhenAGatewayAnswers")]
 	[Description("Without a history poller: the package build request is compile-creatio's one write, so in its declared capture a refusal without processing proves nothing was compiled")]
 	public void Rebuild_ShouldProveNothingCompiled_OnlyWhenProven(int status, bool declared, bool proves) {

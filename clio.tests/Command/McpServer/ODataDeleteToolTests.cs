@@ -62,7 +62,8 @@ public sealed class ODataDeleteToolTests {
 			SiteResponse.JsonBody));
 	}
 
-	[TestCase(403, "none", TestName = "Delete_ShouldReportSideEffectNone_WhenTheSingleDeleteIsRefusedWithAn403")]
+	[TestCase(401, "none", TestName = "Delete_ShouldReportSideEffectNone_WhenTheSingleDeleteIsRefusedWithAn401")]
+	[TestCase(403, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered403")]
 	[TestCase(405, "none", TestName = "Delete_ShouldReportSideEffectNone_WhenTheSingleDeleteIsRefusedWithAn405")]
 	[TestCase(409, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered409")]
 	[TestCase(500, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered500")]
@@ -82,10 +83,10 @@ public sealed class ODataDeleteToolTests {
 	}
 
 	[Test, Category("Unit")]
-	[Description("With ids a refused id is sent again in a later pass, so neither the call nor an item is proven, even for a 403")]
+	[Description("With ids a refused id is sent again in a later pass, so neither the call nor an item is proven, even for a 401")]
 	public void Delete_ShouldReportSideEffectUnknown_WhenSeveralIdsAreRefused() {
 		// Arrange
-		ODataDeleteTool tool = RefusingDeleteTool(new SiteHttpResponse(403, ""));
+		ODataDeleteTool tool = RefusingDeleteTool(new SiteHttpResponse(401, ""));
 
 		// Act
 		ODataWriteResponse result = tool.Delete(new ODataDeleteArgs {
@@ -96,7 +97,7 @@ public sealed class ODataDeleteToolTests {
 		result.Success.Should().BeFalse();
 		result.Diagnostic!.SideEffect.Should().Be("unknown");
 		result.Results.Should().AllSatisfy(item => {
-			item.SiteResponse!.Status.Should().Be(403);
+			item.SiteResponse!.Status.Should().Be(401);
 			item.Diagnostic!.SideEffect.Should().Be("unknown",
 				because: "an item's diagnostic goes beside its site response and never claims more than the call can");
 		});

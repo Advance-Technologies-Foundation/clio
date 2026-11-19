@@ -99,7 +99,8 @@ public sealed class PageSyncToolTests {
 		response.Pages[1].Diagnostic.Should().BeNull(because: "the diagnostic goes only beside a site response");
 	}
 
-	[TestCase(403, "", "none", TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWithAnEmpty403")]
+	[TestCase(401, "", "none", TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWithAnEmpty401")]
+	[TestCase(403, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenThePageSaveIsAnsweredWithAnEmpty403")]
 	[TestCase(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", "unknown",
 		TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenA403CarriesTheDesignersEnvelope")]
 	[TestCase(413, "<html>Request Entity Too Large</html>", "none",

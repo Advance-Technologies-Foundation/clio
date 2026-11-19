@@ -86,7 +86,10 @@ public sealed class ODataCreateToolTests {
 			"http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1, false);
 	}
 
-	[TestCase(403, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenAnEmpty403Refuses")]
+	[TestCase(401, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenAnEmpty401Refuses")]
+	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", false, "none",
+		TestName = "Create_ShouldReportTheRowNotCreated_WhenThePlatformsAuthenticationEnvelopeRefuses")]
+	[TestCase(403, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAnEmpty403Answers")]
 	[TestCase(401, "<html>Sign in</html>", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenA401PageRefuses")]
 	[TestCase(413, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenTheRowIsTooLarge")]
 	[TestCase(404, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAnEmpty404Answers")]

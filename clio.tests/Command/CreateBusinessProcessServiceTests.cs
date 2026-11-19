@@ -111,10 +111,12 @@ public sealed class CreateBusinessProcessServiceTests {
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind));
 	}
 
-	[TestCase(403, "<html>Forbidden</html>", true, true,
+	[TestCase(401, "<html>Unauthorized</html>", true, true,
 		TestName = "BuildProcess_ShouldProveNotCreated_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
 	[TestCase(401, "", true, true, TestName = "BuildProcess_ShouldProveNotCreated_WhenA401RefusesTheDeclaredBuild")]
-	[TestCase(403, "<html>Forbidden</html>", false, false,
+	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", true, true,
+		TestName = "BuildProcess_ShouldProveNotCreated_WhenThePlatformsAuthenticationEnvelopeRefuses")]
+	[TestCase(401, "<html>Unauthorized</html>", false, false,
 		TestName = "BuildProcess_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
 	[Description("BuildProcess is create-business-process's one write: a refusal without processing says NOT created and, in the declared capture, proves it")]
 	public void BuildProcess_ShouldSayNotCreated_WhenRefusedWithoutProcessing(int status, string body, bool declared,
@@ -135,6 +137,26 @@ public sealed class CreateBusinessProcessServiceTests {
 			$"The environment refused BuildProcess without processing it (HTTP {status}), so the process was NOT created.*",
 			because: "the status proves BuildProcess did not run, so the result must not read as unknown");
 		capture.LastProvesNothingApplied.Should().Be(proves);
+	}
+
+	[Test]
+	[Description("A 403 page proves nothing: a gateway that inspects responses answers 403 after the backend ran")]
+	public void BuildProcess_ShouldNotSayNotCreated_WhenA403PageAnswers() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(403, "<html>Forbidden</html>"));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().Where(exception => !exception.Message.Contains("NOT created"),
+			because: "a 403 page can follow a process that was saved");
+		capture.LastProvesNothingApplied.Should().BeFalse();
 	}
 
 	[Test]

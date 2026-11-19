@@ -188,12 +188,13 @@ public sealed class PageCreateCommandTests
 			because: "the failed create reports what the site answered to its save");
 	}
 
-	[TestCase(403, """{"success": false, "errorInfo": {"message": "No rights"}}""", true, false,
-		TestName = "TryCreatePage_ShouldNotProve_WhenA403CarriesTheDesignersEnvelope")]
-	[TestCase(403, "<html>Forbidden</html>", true, true,
+	[TestCase(401, """{"success": false, "errorInfo": {"message": "No rights"}}""", true, false,
+		TestName = "TryCreatePage_ShouldNotProve_WhenA401CarriesTheDesignersEnvelope")]
+	[TestCase(401, "<html>Unauthorized</html>", true, true,
 		TestName = "TryCreatePage_ShouldProveNothingSaved_WhenTheDeclaredSaveIsRefusedWithAPage")]
 	[TestCase(500, "", true, false, TestName = "TryCreatePage_ShouldNotProve_WhenTheSaveIsAnswered500")]
-	[TestCase(403, "", false, false, TestName = "TryCreatePage_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
+	[TestCase(401, "", false, false, TestName = "TryCreatePage_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
+	[TestCase(403, "<html>Forbidden</html>", true, false, TestName = "TryCreatePage_ShouldNotProve_WhenA403PageAnswers")]
 	[Description("The save is create-page's one write: in its declared capture a refusal without processing proves nothing was saved")]
 	public void TryCreatePage_ShouldProveNothingSaved_OnlyWhenProven(int status, string body, bool declared, bool proves) {
 		// Arrange
