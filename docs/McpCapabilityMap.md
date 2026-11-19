@@ -357,7 +357,7 @@ push-workspace (a reported file is named by its file name only, never its direct
 line and the invalid-archive message; the server's text in create-business-process, modify-business-process,
 modify-business-process-as-new-version, set-active-process-version and compile-business-process (fenced there as
 site text), its version and element names and each of its warnings, on failure and on success; and the
-dynamic-case tools' answer messages and quoted bodies. The raw streamed installation log is not covered. **Not
+dynamic-case tools' answer messages, quoted bodies, page and dependency failures and each of their notes, warnings, leftovers and case names. A reported file is named only when its last segment is a plain file name; anything else reads `[redacted-path]`. The raw streamed installation log is not covered. **Not
 every field that carries a site's words is wired yet.** The remaining envelope readers (execute-esq's DataService
 failure, the web-service designer, sys-settings, the ATF data provider, the application, section and schema
 commands, odata-read's debug detail, and more) still pass the general redaction only. Each one is listed by file

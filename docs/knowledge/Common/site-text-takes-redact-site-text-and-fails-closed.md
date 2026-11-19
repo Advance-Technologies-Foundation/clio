@@ -32,6 +32,7 @@ applies-to:
   - clio/Command/ProcessModel/LayoutChangeRelay.cs
   - clio/Command/BuildCaseClient.cs
   - clio/Command/DynamicCaseService.cs
+  - clio/Command/ProcessModel/ProcessWriteDigest.cs
   - clio/Command/McpServer/Tools/CompileStatusTool.cs
   - clio.tests/Common/SiteTextWiringTests.cs
   - clio.tests/Common/SiteTextWritePathWiringTests.cs
@@ -123,7 +124,31 @@ never its `stackTrace`. `ReadServerText` redacts before its cap; the WCF prefix 
 prose no rule takes. The previews and quotes clamp their redaction input to 8x their cap with
 `SensitiveErrorTextRedactor.ClampAtBoundary`, the clamp the fenced rendering and `SiteResponse` use, so a token the
 clamp would cut in two is dropped rather than shown as a head the redactor cannot recognize. The process write
-commands' success-path warnings are logged each through `RedactSiteText` too. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
+commands' success-path warnings are logged each through `RedactSiteText` too, and so are the schema and version
+names a successful write returns.
+
+**Follow-up text at a write tool's sink** - a write tool also quotes text that a reader still on the follow-up list
+produced, and that text is redacted where it enters the write tool's result or log, because the reader itself stays
+unwired: `DynamicCaseService` redacts the page step's refusal (which quotes the RelatedPage add-on read through the
+record page resolver), the package dependency manager's failure, the page write's error, and the server's notes,
+warnings, leftovers and case names item by item; the process writes redact a describe-business-process read-back
+failure (`ProcessWriteDigest`, the access-rights and flow-label guards, the verification warning); compile-creatio and
+compile-package redact a compilation-history baseline that could not be read (the ATF data provider). Not
+redacted at a sink, on purpose: transport texts (`BuildCaseClient`'s route and transport failures, compile-business-process's
+transport detail, compile-creatio's request error), which carry no answer of the site, and the dependency manager's
+own "Validation warnings from server" log line, which the manager writes itself and which is follow-up with it. A
+file the environment names is shown by its last segment only when that is a plain file name (an extension, no
+separator, drive, scheme or key pair) that the redaction leaves whole; anything else - a path ending in a separator,
+a share host, a URI, a secret's fragment - reads `[redacted-path]`. An installation log tail leaves out stack frames
+before it is taken, so a log that ends in frames does not open its tail with one.
+
+**What the guard proves and what it does not** - a `wired:` entry of a write-tool file is checked read by read: each
+counted read in the member must be an argument of a call to the named extractor, or the member must be that
+extractor. A read that reaches the extractor another way (a variable, a record field, a result redacted upstream) is
+listed `via: <extractor>; proven by <test>`, and the guard checks only that the named end-to-end test exists - the
+test, not the scan, is the proof. Entries outside the write-tool files are not checked read by read, and a
+`not text:` entry is accepted as written; both are where a mislabel can still hide, which is why the dynamic-case
+page refusal, once labelled `not text`, now has an end-to-end test over a fake HTTP answer. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
 and `ReportLocallyModifiedSchemas`' raw log lines), a separate finding.
 
 **Fail closed** - `RedactSiteText` runs the cut, the whole Redact chain and every site rule inside ONE
