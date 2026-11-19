@@ -218,8 +218,7 @@ public sealed class ODataCreateClientIdTests {
 		row.Success.Should().BeTrue(because: "the row was inserted, which is what success means");
 		row.Id.Should().Be(sentId);
 		row.Error.Should().BeNull();
-		row.RetryGuidance.Should().Contain("do NOT re-send").And.NotContain("Read the records",
-			because: "clio's own advice for an unknown row must not be quoted into the guidance of a created one");
+		row.RetryGuidance.Should().Contain("do NOT re-send");
 		row.Diagnostic.SideEffect.Should().Be("acknowledged");
 		response.Created.Should().Be(1);
 		response.Failed.Should().Be(0, because: "a caller that re-sends failed rows must not re-send this one");
@@ -333,10 +332,10 @@ public sealed class ODataCreateClientIdTests {
 	}
 
 	[Test]
-	[Description("An empty answer to a created row names no Id: the row reports the one clio sent, and the key check does not trip")]
+	[Description("An empty answer to a created row names no Id: the row reports the one clio sent once the record read back by it exists, and the key check does not trip")]
 	public void Create_ShouldReportTheSentId_WhenACreatedRowIsAnsweredWithAnEmptyBody() {
 		// Arrange
-		Fixture fixture = new(Csdl("Edm.Guid"), postAnswers: ["", ""]);
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswers: ["", ""], readBack: Found);
 
 		// Act
 		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]");
@@ -347,6 +346,37 @@ public sealed class ODataCreateClientIdTests {
 		response.Warnings.Should().BeNull();
 		fixture.SentBodies.Select(body => body.TryGetProperty("Id", out JsonElement id) && id.ValueKind == JsonValueKind.String)
 			.Should().OnlyContain(hasId => hasId, because: "an empty answer is no sign that the site replaced the Id");
+	}
+
+	[Test]
+	[Description("An empty answer to a created row whose record is not found by the sent Id reports no Id: the site may not keep a sent one")]
+	public void Create_ShouldReportNoId_WhenAnEmptyAnswerIsNotConfirmedByTheReadBack() {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswers: ["", "{\"Id\":\"22222222-2222-2222-2222-222222222222\"}"]);
+
+		// Act
+		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]");
+
+		// Assert
+		response.Results[0].Success.Should().BeTrue();
+		response.Results[0].Id.Should().BeNull(because: "nothing shows the record carries the Id clio sent");
+		response.Warnings.Should().ContainSingle().Which.Should().Contain("another Id");
+	}
+
+	[Test]
+	[Description("Through the status-keeping client: a 500 with an empty body is unknown, and when the read-back finds the record the guidance quotes the status without clio's own advice")]
+	public void Create_ShouldQuoteOnlyTheSitesAnswer_WhenAnEmpty500RowIsFoundByTheReadBack() {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: "", readBack: Found, postStatus: 500);
+
+		// Act
+		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"}]");
+
+		// Assert
+		ODataRowResult row = response.Results.Single();
+		row.RecordCreated.Should().BeTrue();
+		row.RetryGuidance.Should().Contain("HTTP 500").And.NotContain("Read the records",
+			because: "clio's own advice for an unknown row must not be quoted into the guidance of a created one");
 	}
 
 	[Test]

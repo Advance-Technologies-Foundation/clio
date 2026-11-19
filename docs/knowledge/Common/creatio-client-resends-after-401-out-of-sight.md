@@ -37,12 +37,12 @@ This has not been seen on Creatio.
 
 **What clio does about it.** `odata-create` sends its own `Id` (a new GUID) with a row that has none, but only
 when `$metadata` declares the entity's `Id` as `Edm.Guid`, because some entities key on a number or a text. A
-second send of that row is then refused as a duplicate key. A row whose result is then unknown is read back by
+second send of that row is then expected to be refused as a duplicate key. A row whose result is then unknown is read back by
 that `Id`:
 - found means the row was created, because no other request carries that `Id`. The row is reported as a
   success; the failed answer stays in `site-response` when the site answered, and in `retry-guidance`;
 - anything else (not found, or the read failed) keeps the result unknown and adds `sent-id`. A re-send with
-  that `Id` cannot create the record twice.
+  that `Id` should not create the record twice.
 
 An `Id` the caller chose is not read back, because it may have existed before the call. If Creatio answers a
 created row with another `Id`, it does not keep a sent one for that entity: the later rows of the batch go

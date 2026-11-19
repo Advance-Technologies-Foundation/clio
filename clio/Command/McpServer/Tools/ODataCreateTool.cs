@@ -113,8 +113,9 @@ public sealed class ODataCreateTool(
 	/// <summary>
 	/// The key column clio fills in for a row that has none, and the only EDM type it fills it for. Creatio sends a
 	/// request again after a 401, a sign-in redirect or a 403 while the sign-in changed, without telling clio
-	/// (creatio.client's session recovery). A row sent with its own key cannot be created twice by such a second send:
-	/// the site refuses it as a duplicate key. Almost every entity keys on a GUID <c>Id</c>, but some key on a number
+	/// (creatio.client's session recovery). A row sent with its own key should not be created twice by such a second
+	/// send: the site is expected to refuse it as a duplicate key (not yet measured on a stand). Almost every entity
+	/// keys on a GUID <c>Id</c>, but some key on a number
 	/// or a text, so the key is generated only when <c>$metadata</c> declares <c>Id</c> as <c>Edm.Guid</c>.
 	/// </summary>
 	internal const string KeyColumn = "Id";
@@ -517,8 +518,12 @@ public sealed class ODataCreateTool(
 		}
 		if (result.Success) {
 			StopKeysUnlessKept(batch, result.Id, sentId);
-			// An empty answer to a created row names no Id; it is the one clio sent.
-			return result.Id is null ? result with { Id = sentId } : result;
+			// An empty answer to a created row names no Id. The one clio sent is reported only when the record read
+			// back by it exists, because a site that does not keep a sent Id would make it the wrong one.
+			return result.Id is null && batch.RemainingMs() >= MinRowBudgetMs
+				&& RecordExists(batch, sentId, Math.Min(ReadBackTimeoutMs, batch.RemainingMs()))
+				? result with { Id = sentId }
+				: result;
 		}
 		return result.RecordCreated is null ? SettleBySentId(batch, result, sentId) : result;
 	}
@@ -536,7 +541,7 @@ public sealed class ODataCreateTool(
 
 	/// <summary>
 	/// Reads the record with <paramref name="sentId"/> back. Found: the row is created, whatever the answer said.
-	/// Otherwise the row stays unknown and carries the Id, so a re-send with it cannot create the record twice. An Id
+	/// Otherwise the row stays unknown and carries the Id, so a re-send with it should not create the record twice. An Id
 	/// the caller chose is never read back: it may have existed before this call.
 	/// </summary>
 	private static ODataRowResult SettleBySentId(RowBatch batch, ODataRowResult unknown, string sentId) {

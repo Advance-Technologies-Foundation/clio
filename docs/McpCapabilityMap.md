@@ -443,11 +443,11 @@ always: a handler that redirects or answers 401 after working, or a gateway that
 leaves a write that the second send repeats. This has not been seen on Creatio. What it means per tool:
 
 - `odata-create` sends its own `Id` with a row that has none, when `$metadata` declares the entity's `Id` a GUID
-  (a batch with such a row reads `$metadata` once). A second send of that row is refused as a duplicate key, and
+  (a batch with such a row reads `$metadata` once). A second send of that row is expected to be refused as a duplicate key, and
   a row whose result is then unknown is read back by that `Id`: found makes it a created row (`success` and
   `record-created: true`; the failed answer stays in `site-response` when the site answered, and in
   `retry-guidance`); otherwise it stays `null` and adds
-  `sent-id`, and a re-send of the row with that `Id` cannot create it twice. A row with an `Id` the caller chose,
+  `sent-id`, and a re-send of the row with that `Id` should not create it twice. A row with an `Id` the caller chose,
   or an entity keyed on another type, is sent as written and keeps the risk. If Creatio answers a created row with
   another `Id`, the later rows of the batch go without one, no row keeps `sent-id`, and the batch's `warnings`
   say so. That Creatio keeps

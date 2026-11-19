@@ -3094,7 +3094,7 @@ internal static class ToolContractCatalog {
 			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
 			"some fields unwritten, so re-read important values with odata-read after a critical write. " +
 			"A PATCH that gets no answer within 30 s fails with diagnostic.side-effect unknown, because Creatio may still apply it; " +
-			"re-sending the same call sets the same values again, but if the first PATCH was applied it is a second update and can run update-time business processes again - read the record first when processes react to its changes. creatio.client can also send the PATCH a second time out of clio's sight, after a 401 or a sign-in redirect, with the same effect. Never performs a keyless mass update.",
+			"re-sending the same call sets the same values again, but if the first PATCH was applied it is a second update and can run update-time business processes again - read the record first when processes react to its changes. creatio.client can also send the PATCH a second time out of clio's sight, after a 401, a sign-in redirect or a 403 while the sign-in changed, with the same effect. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
 				[

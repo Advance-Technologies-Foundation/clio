@@ -111,8 +111,8 @@ public sealed record ODataRowResult {
 	/// (<see cref="RecordCreated"/> is <see langword="null"/>).
 	/// </summary>
 	/// <remarks>
-	/// A re-send of the row with this Id cannot create the record twice: if the earlier send was applied, Creatio
-	/// refuses the re-send as a duplicate key. A row clio found by reading the record back is a created row and
+	/// A re-send of the row with this Id should not create the record twice: if the earlier send was applied, Creatio
+	/// is expected to refuse the re-send as a duplicate key (not yet measured on a stand). A row clio found by reading the record back is a created row and
 	/// carries it as <see cref="Id"/> instead.
 	/// </remarks>
 	[JsonPropertyName("sent-id")]
