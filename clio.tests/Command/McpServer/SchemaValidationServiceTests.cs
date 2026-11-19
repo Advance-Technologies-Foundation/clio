@@ -11491,9 +11491,8 @@ public sealed class SchemaValidationServiceTests
 		result.Errors.Should().BeEmpty();
 	}
 
-	// ENG-95270: the generator now publishes the devkit ESQ filter and expression classes, with their
-	// discriminators pinned to one value. This mirrors that slice of the registry: the data-providing
-	// contract's `filters.filter` group, its `items` union, and two leaf and two expression variants.
+	// ENG-95270: mirrors the registry slice for the devkit ESQ filter classes (discriminators pinned to one
+	// value): `filters.filter`, its `items` union, two leaf and two expression variants.
 	private const string EsqFilterTypeDefinitionsJson =
 		"""
 		{

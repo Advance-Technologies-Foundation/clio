@@ -13,12 +13,6 @@ namespace Clio.Command;
 /// </summary>
 public static partial class SchemaValidationService {
 
-	/// <summary>
-	/// Validates <paramref name="value"/> against the most specific union branch its discriminators select. The
-	/// walk stops without a verdict whenever the registry cannot prove which branch applies: no branch pins a
-	/// value, or a branch is opaque (not defined, an alias of something undefined, no discriminators) and could
-	/// be the one that accepts it. Guessing there would turn valid configs into false errors.
-	/// </summary>
 	private static void ValidateValueAgainstUnion(
 		JsonElement value, string unionExpression,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
@@ -28,8 +22,9 @@ public static partial class SchemaValidationService {
 		}
 		UnionBranchMatch match = MatchUnionBranches(value, unionExpression, typeDefinitions);
 		if (match.Compatible.Count == 0) {
-			// Only an abstract base or an undescribed branch could take the value: a variant the registry does
-			// not publish (a Segment filter, say) is not a broken one.
+			// Report only when the registry proves no branch fits: an opaque branch (undefined, an undefined alias,
+			// no discriminators) or an accepting abstract base may hold a variant it does not publish (a Segment
+			// filter, say), and guessing would turn valid configs into false errors.
 			if (report && match.HasPinnedBranch && !match.HasOpenBranch && !match.BaseAccepts) {
 				result.Errors.Add($"{path} does not match any of {unionExpression}: its discriminator fields " +
 					$"({DescribeSelectors(unionExpression, typeDefinitions)}) name no known variant. {GuidanceHint(path)}");
@@ -39,11 +34,6 @@ public static partial class SchemaValidationService {
 		ValidateValueAgainstMostSpecificBranches(value, match.Compatible, typeDefinitions, path, result, report);
 	}
 
-	/// <summary>
-	/// The union branches whose pinned discriminators all match <paramref name="value"/>, each with how many it
-	/// pins, plus what the other branches say: whether one is opaque, whether any pins a value, and whether an
-	/// abstract base's multi-valued selectors accept the value.
-	/// </summary>
 	private static UnionBranchMatch MatchUnionBranches(
 		JsonElement value, string unionExpression, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
 		List<(string Branch, int Specificity)> compatible = [];
@@ -71,10 +61,6 @@ public static partial class SchemaValidationService {
 		return new UnionBranchMatch(compatible, hasOpenBranch, hasPinnedBranch, baseAccepts);
 	}
 
-	/// <summary>
-	/// Accepts <paramref name="value"/> when any of the most specific compatible branches does; otherwise reports
-	/// the errors of the branch that failed with the fewest.
-	/// </summary>
 	private static void ValidateValueAgainstMostSpecificBranches(
 		JsonElement value, IReadOnlyList<(string Branch, int Specificity)> compatible,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
@@ -102,11 +88,7 @@ public static partial class SchemaValidationService {
 		IReadOnlyList<(string Branch, int Specificity)> Compatible,
 		bool HasOpenBranch, bool HasPinnedBranch, bool BaseAccepts);
 
-	/// <summary>
-	/// Required fields with a <c>values</c> list. Single-valued ones pin a concrete variant; multi-valued ones
-	/// only tell whether an abstract base could hold the value. An optional field is left out, since a value
-	/// that omits it is still that variant.
-	/// </summary>
+	// Required fields only: a value that omits an optional pinned field is still that variant.
 	private static IReadOnlyList<(string Name, JsonElement Values)> GetSelectors(JsonElement fields) {
 		List<(string Name, JsonElement Values)> selectors = [];
 		foreach (JsonProperty field in fields.EnumerateObject()) {
@@ -132,7 +114,7 @@ public static partial class SchemaValidationService {
 		return string.Join(", ", names);
 	}
 
-	/// <summary>Union branches with alias branches expanded (one level of nesting is all the registry emits).</summary>
+	// Expands alias branches one level only: the registry never nests deeper.
 	private static IEnumerable<string> FlattenUnion(string unionExpression, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
 		foreach (string branch in SplitTopLevelUnion(unionExpression)) {
 			string resolved = ResolveTypeAliasExpression(branch, typeDefinitions);
@@ -143,7 +125,6 @@ public static partial class SchemaValidationService {
 		}
 	}
 
-	/// <summary>Splits <c>A | B&lt;C | D&gt;</c> at the top level only.</summary>
 	private static IReadOnlyList<string> SplitTopLevelUnion(string expression) {
 		List<string> parts = [];
 		int depth = 0;
@@ -166,10 +147,7 @@ public static partial class SchemaValidationService {
 		return parts.Where(part => part.Length > 0).ToList();
 	}
 
-	/// <summary>
-	/// Follows a definition that is only a type expression (<c>IESQFilter</c> → its union text) to the
-	/// expression itself. Bounded, since an alias chain in a registry is short and could in theory cycle.
-	/// </summary>
+	// IESQFilter → its union text. Bounded: an alias chain is short but could in theory cycle.
 	private static string ResolveTypeAliasExpression(string typeExpression, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
 		string current = typeExpression.Trim();
 		for (int hop = 0; hop < 8; hop++) {
@@ -187,10 +165,7 @@ public static partial class SchemaValidationService {
 		return current;
 	}
 
-	/// <summary>
-	/// A value outside a field's published <c>values</c>. Null is left to the required-field check, and a
-	/// number stored as its string (or the reverse) is accepted, as the page runtime coerces both.
-	/// </summary>
+	// Null is left to the required-field check.
 	private static bool ValueIsAllowed(JsonElement value, JsonElement fieldDefinition, string path, SchemaValidationResult result) {
 		if (!fieldDefinition.TryGetProperty("values", out JsonElement values) || values.ValueKind != JsonValueKind.Array ||
 		    values.GetArrayLength() == 0 || value.ValueKind is JsonValueKind.Object or JsonValueKind.Array or JsonValueKind.Null) {
@@ -222,6 +197,7 @@ public static partial class SchemaValidationService {
 		};
 	}
 
+	// A number stored as its string counts as that number: the page runtime coerces both ways.
 	private static bool TryReadNumber(JsonElement element, out decimal number) {
 		number = 0;
 		return element.ValueKind switch {

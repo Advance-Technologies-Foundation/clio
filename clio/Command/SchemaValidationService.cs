@@ -2341,9 +2341,10 @@ public static partial class SchemaValidationService
 	/// <summary>
 	/// Registry-driven validation of <c>crt.ChartWidget</c> inserts in the page's <c>viewConfigDiff</c>.
 	/// Walks <paramref name="typeDefinitions"/> (the merged per-component + document-level registry type
-	/// schemas) from <c>ChartWidgetConfig</c> down to each series' <c>data.providing</c> block and reports
-	/// required fields missing INSIDE that block — most importantly <c>aggregation.column</c>, whose
-	/// absence renders an empty chart. Cosmetic fields above the data block (color, formatting, legend,
+	/// schemas) from <c>ChartWidgetConfig</c> down to each series' <c>data.providing</c> block and reports, INSIDE
+	/// that block, missing required fields (most importantly <c>aggregation.column</c>, whose absence renders an
+	/// empty chart), values outside a field's published <c>values</c>, primitive type mismatches, and filter
+	/// leaves whose discriminators name no known variant. Cosmetic fields above the data block (color, formatting, legend,
 	/// title) are intentionally NOT checked, so the registry over-marking them required cannot false-positive.
 	/// <para>
 	/// Scope: only <c>operation:"insert"</c> entries are checked (a <c>merge</c> legitimately omits
