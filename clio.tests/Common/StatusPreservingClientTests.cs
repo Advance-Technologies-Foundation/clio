@@ -134,7 +134,7 @@ public sealed class StatusPreservingClientTests {
 	[TestCase(SiteRequestVerb.Delete, "{\"id\":1}", TestName = "SendKeepingStatus_ShouldNotMarkARedirect_WhenADeleteCarriesABody")]
 	[TestCase(SiteRequestVerb.Post, "", TestName = "SendKeepingStatus_ShouldNotMarkARedirect_WhenAnEmptyPostIsAnswered")]
 	[Description("Only a DELETE without a body counts as possibly redirected: anything sent with content cannot be repeated with its method kept")]
-	public void SendKeepingStatus_ShouldNotMarkARedirect_WhenTheRequestHasContent(SiteRequestVerb verb, string data) {
+	public void SendKeepingStatus_ShouldNotMarkARedirect_WhenTheRequestIsNotABodylessDelete(SiteRequestVerb verb, string data) {
 		// Arrange
 		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
 		HttpMethod method = verb == SiteRequestVerb.Delete ? HttpMethod.Delete : HttpMethod.Post;

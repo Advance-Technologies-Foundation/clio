@@ -156,5 +156,4 @@ internal static class DataServiceResponse {
 			return false;
 		}
 	}
-
 }
