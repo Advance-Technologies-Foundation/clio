@@ -36,7 +36,7 @@ internal sealed class StaticFilterProbe(IApplicationClient applicationClient, IS
 	];
 
 	public StaticFilterProbeResult Probe(string esqEnvelope, string rootSchemaName, string targetAttribute) {
-		JsonObject query = JsonSerializer.SerializeToNode(SelectQueryHelper.BuildCountQuery(rootSchemaName, CountAlias))!.AsObject();
+		JsonObject query = JsonSerializer.SerializeToNode(SelectQueryHelper.BuildCountQuery(rootSchemaName, CountAlias)).AsObject();
 		query["filters"] = JsonNode.Parse(esqEnvelope);
 		try {
 			ProbeResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ProbeResponseDto>(

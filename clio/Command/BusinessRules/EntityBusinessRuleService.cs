@@ -223,10 +223,13 @@ internal sealed class EntityBusinessRuleService(
 		}
 		return results
 			.Select((result, index) => index < rules.Count && rules[index] is { } rule && probes.TryGetValue(rule, out StaticFilterProbeResult? probe)
-				? result with { FilterMatchCount = result.Success ? probe.MatchCount : null, Warning = probe.Warning }
+				? WithProbeResult(result, probe)
 				: result)
 			.ToList();
 	}
+
+	private static BusinessRuleBatchItemResult WithProbeResult(BusinessRuleBatchItemResult result, StaticFilterProbeResult probe) =>
+		result with { FilterMatchCount = result.Success ? probe.MatchCount : null, Warning = probe.Warning };
 
 	private static bool RequiresStaticFilterScope(BusinessRule rule) =>
 		rule?.Actions?.Any(action =>
