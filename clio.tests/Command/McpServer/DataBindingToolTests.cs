@@ -317,6 +317,40 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		_applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[TestCase("SysSettings")]
+	[TestCase(null)]
+	[Category("Unit")]
+	[Description("Routes from-environment through the environment-aware command for a templated schema and without schema-name, and passes the flag and the schema through (ENG-106290).")]
+	public void CreateDataBinding_ShouldResolveEnvironmentCommand_WhenFromEnvironmentIsTrue(string? schemaName) {
+		// Arrange
+		CreateDataBindingCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingCommand>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		CreateDataBindingTool tool = new(
+			Container.GetRequiredService<CreateDataBindingCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver,
+			Container.GetRequiredService<IDataBindingTemplateCatalog>());
+
+		// Act
+		tool.CreateDataBinding(new CreateDataBindingArgs(
+			EnvironmentName: "dev",
+			PackageName: _packageName,
+			WorkspacePath: _workspaceRoot,
+			SchemaName: schemaName,
+			BindingName: "SysSettings_Custom",
+			FromEnvironment: true));
+
+		// Assert
+		commandResolver.Received(1).Resolve<CreateDataBindingCommand>(Arg.Is<EnvironmentOptions>(options =>
+			options.Environment == "dev"
+			&& ((CreateDataBindingOptions)options).FromEnvironment
+			&& ((CreateDataBindingOptions)options).BindingName == "SysSettings_Custom"
+			&& ((CreateDataBindingOptions)options).SchemaName == (schemaName ?? string.Empty)));
+		// The offline path never resolves an environment; reaching the resolver proves from-environment skipped the
+		// built-in SysSettings template.
+	}
+
 	[Test]
 	[Description("Adds a row through the MCP wrapper and generates the GUID primary key when the row payload omits it.")]
 	public void AddDataBindingRow_Should_Generate_Primary_Key_When_Missing() {

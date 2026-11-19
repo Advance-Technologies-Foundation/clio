@@ -547,6 +547,7 @@ internal static class ToolContractCatalog {
 	private const string ArrayType = "array";
 	private const string ResultsFieldName = "results";
 	private const string BindingNameFieldName = "binding-name";
+	private const string FromEnvironmentFieldName = "from-environment";
 	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
 	private const string BodyFileFieldName = "body-file";
@@ -5462,18 +5463,19 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBinding() {
 		return new ToolContractDefinition(
 			CreateDataBindingTool.CreateDataBindingToolName,
-			"Creates or regenerates a local package data binding from a built-in template or a runtime entity schema. For workflow selection, call get-guidance with name `data-bindings`.",
+			"Creates or regenerates a local package data binding from a built-in template or a runtime entity schema, or with `from-environment` writes one existing DB binding to disk exactly as the platform package export does (only that binding folder; no environment-wide export). For workflow selection, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
-				[PackageNameFieldName, SchemaNameFieldName, WorkspacePathFieldName],
+				[PackageNameFieldName, WorkspacePathFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
+					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings, and always with from-environment, because the MCP tool does not expose a uri fallback."),
 						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
-						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
+						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings. Required unless `from-environment` is true; with it, it must match the binding's schema, and it names the binding when `binding-name` is omitted."),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(BindingNameFieldName, StringType, "Optional binding folder name; defaults to the schema name. A plain folder name, without path separators or '..'."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files."),
+						Field(FromEnvironmentFieldName, BooleanType, "Optional. When true, writes the existing DB binding of `package-name` from `environment-name` to disk as the platform package export does: the DB binding UId, its columns, its stored rows and every culture's Localization file. The binding is `binding-name`, or `schema-name` when `binding-name` is omitted. Replaces only that binding folder. Requires `environment-name`; cannot be combined with `values` or `localizations`.")
 					],
 					Validators: [
 						new ToolContractValidator(
@@ -5484,6 +5486,26 @@ internal static class ToolContractCatalog {
 							EnvironmentNameFieldName
 						],
 						Context: "`environment-name` is required when `schema-name` is not `SysSettings` because this MCP tool only supports offline generation for built-in templates and does not expose `--uri`.",
+						Required: true),
+						new ToolContractValidator(
+							"require-schema-name-or-from-environment",
+							MissingRequiredParameterCode,
+						Fields: [
+							SchemaNameFieldName,
+							FromEnvironmentFieldName
+						],
+						Context: "`schema-name` is required unless `from-environment` is true.",
+						Required: true),
+						new ToolContractValidator(
+							"from-environment-requires-environment-and-binding",
+							MissingRequiredParameterCode,
+						Fields: [
+							FromEnvironmentFieldName,
+							EnvironmentNameFieldName,
+							BindingNameFieldName,
+							SchemaNameFieldName
+						],
+						Context: "`from-environment` reads the binding from the environment, so it requires `environment-name` and the binding: `binding-name`, or `schema-name` when the binding is named after its schema. It rejects `values` and `localizations`.",
 						Required: true)
 				]),
 			CommandExecutionOutput(),
@@ -5511,6 +5533,13 @@ internal static class ToolContractCatalog {
 						[PackageNameFieldName] = ExamplePackageName,
 						[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
 						[WorkspacePathFieldName] = ExampleWorkspacePath
+					}),
+					Example("Write an existing DB binding to disk in file system mode", new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName,
+						[PackageNameFieldName] = ExamplePackageName,
+						[BindingNameFieldName] = "UsrTaskStatus_Custom",
+						[WorkspacePathFieldName] = ExampleWorkspacePath,
+						[FromEnvironmentFieldName] = true
 					})
 				],
 			Flow(
