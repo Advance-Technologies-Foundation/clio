@@ -277,7 +277,7 @@ public sealed class SiteResponseWritePathTests {
 
 	[TestCase(405)]
 	[TestCase(413)]
-	[TestCase(431)]
+	[TestCase(414)]
 	[Description("A status that refuses without processing says this request was not applied")]
 	public void ODataWrite_ShouldSayNotApplied_WhenRefusedWithoutProcessing(int status) {
 		// Act

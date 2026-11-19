@@ -99,7 +99,8 @@ public sealed class PageSyncToolTests {
 		response.Pages[1].Diagnostic.Should().BeNull(because: "the diagnostic goes only beside a site response");
 	}
 
-	[TestCase(431, "", "none", TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWithAnEmpty431")]
+	[TestCase(414, "", "none", TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWithAnEmpty414")]
+	[TestCase(431, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenThePageSaveIsAnsweredWithAnEmpty431")]
 	[TestCase(401, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenThePageSaveIsAnsweredWithAnEmpty401")]
 	[TestCase(403, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenThePageSaveIsAnsweredWithAnEmpty403")]
 	[TestCase(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", "unknown",

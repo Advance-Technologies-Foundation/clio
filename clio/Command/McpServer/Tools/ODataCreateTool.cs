@@ -111,8 +111,8 @@ public sealed class ODataCreateTool(
 		"Not inserted: Creatio rejected the row before writing anything. Correct the row and re-send it.";
 
 	private const string RefusedWithoutProcessingGuidance =
-		"Not inserted: Creatio refused the request without processing it. Fix what it refused - the sign-in, or "
-		+ "the request's size, method or format - before re-sending the row.";
+		"Not inserted: Creatio refused the request without processing it. Fix what it refused - the request's "
+		+ "method, size, URL length or media type - before re-sending the row.";
 
 	/// <summary>
 	/// <c>error.message</c> values Creatio answers when the OData body fails model binding: an unknown
@@ -451,7 +451,8 @@ public sealed class ODataCreateTool(
 			// Model binding names no column, so the type map is the only way to tell a binary column from an
 			// unknown property or a malformed value. The read is skipped when it does not fit in the batch
 			// budget: the row keeps the generic explanation instead of overshooting the deadline.
-			// A refusal without processing is about access or size, never a column, so it gets no column hint.
+			// A refusal without processing is about the request's method, size, URL or media type, never a column, so
+			// it gets no column hint.
 			if (result.RecordCreated == false && !answer.IsRefusedWithoutProcessing
 				&& (propertyTypes.IsValueCreated || remainingBudgetMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs)) {
 				binaryColumns = FindBinaryColumns(row, propertyTypes.Value, BinaryEdmTypes);

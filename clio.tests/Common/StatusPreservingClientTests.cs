@@ -89,6 +89,48 @@ public sealed class StatusPreservingClientTests {
 	}
 
 	[Test]
+	[Description("A 405 to the GET creatio.client sent after following a redirect of the write proves nothing about the write")]
+	public void SendKeepingStatus_ShouldMarkARedirect_WhenTheAnswerIsToAnotherRequest() {
+		// Arrange
+		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
+		transport.ExecutePostRequestAsync(default, default, default, default, default, default)
+			.ReturnsForAnyArgs(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MethodNotAllowed) {
+				Content = new StringContent(""),
+				RequestMessage = new HttpRequestMessage(HttpMethod.Get, "http://site/0/Shell/")
+			}));
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		SiteHttpResponse answer = adapter.SendKeepingStatus(SiteRequestVerb.Post, "http://site/0/x", "body");
+
+		// Assert
+		answer.StatusCode.Should().Be(405);
+		answer.Redirected.Should().BeTrue();
+		answer.IsRefusedWithoutProcessing.Should().BeFalse(
+			because: "the write may have been applied before it was answered with the redirect the client followed");
+	}
+
+	[Test]
+	[Description("A 405 to the write itself is a refusal without processing")]
+	public void SendKeepingStatus_ShouldNotMarkARedirect_WhenTheAnswerIsToTheWrite() {
+		// Arrange
+		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
+		transport.ExecutePostRequestAsync(default, default, default, default, default, default)
+			.ReturnsForAnyArgs(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MethodNotAllowed) {
+				Content = new StringContent(""),
+				RequestMessage = new HttpRequestMessage(HttpMethod.Post, "http://site/0/x")
+			}));
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		SiteHttpResponse answer = adapter.SendKeepingStatus(SiteRequestVerb.Post, "http://site/0/x", "body");
+
+		// Assert
+		answer.Redirected.Should().BeFalse();
+		answer.IsRefusedWithoutProcessing.Should().BeTrue();
+	}
+
+	[Test]
 	[Description("A 413 page that follows clio's own re-send proves nothing about the first send")]
 	public void SendKeepingStatus_ShouldNotProveARefusal_WhenItFollowsAReSend() {
 		// Arrange

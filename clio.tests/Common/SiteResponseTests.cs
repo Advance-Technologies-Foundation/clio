@@ -237,7 +237,6 @@ public sealed class SiteResponseTests {
 	[TestCase(413)]
 	[TestCase(414)]
 	[TestCase(415)]
-	[TestCase(431)]
 	[Description("The statuses with which HTTP defines the server as refusing to process the request")]
 	public void IsRefusedWithoutProcessing_ShouldBeTrue_ForAStatusThatRefusesToProcess(int status) {
 		new SiteHttpResponse(status, "").IsRefusedWithoutProcessing.Should().BeTrue();
@@ -294,6 +293,42 @@ public sealed class SiteResponseTests {
 		new SiteHttpResponse(401, body).IsRefusedWithoutProcessing.Should().BeFalse();
 		response.RefusedWithoutProcessing.Should().BeFalse();
 		SiteHttpResponse.HasRefusalStatus(401).Should().BeFalse();
+	}
+
+	[Test]
+	[Description("431 proves nothing: a re-send after signing in again carries other cookies and headers than the first send")]
+	public void IsRefusedWithoutProcessing_ShouldBeFalse_For431() {
+		new SiteHttpResponse(431, "").IsRefusedWithoutProcessing.Should().BeFalse();
+		SiteHttpResponse.HasRefusalStatus(431).Should().BeFalse();
+	}
+
+	[Test]
+	[Description("An answer to a request the client sent after following a redirect proves nothing about the write")]
+	public void IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheAnswerFollowedARedirect() {
+		new SiteHttpResponse(405, "") { Redirected = true }.IsRefusedWithoutProcessing.Should().BeFalse();
+	}
+
+	[TestCase("POST", "http://site/0/ServiceModel/X.svc/Save", false, TestName = "Read_ShouldNotMarkARedirect_WhenTheAnswerIsToTheRequestSent")]
+	[TestCase("GET", "http://site/0/ServiceModel/X.svc/Save", true, TestName = "Read_ShouldMarkARedirect_WhenTheClientTurnedThePostIntoAGet")]
+	[TestCase("POST", "http://site/0/Shell/", true, TestName = "Read_ShouldMarkARedirect_WhenTheAnswerIsToAnotherAddress")]
+	[TestCase("post", "HTTP://SITE/0/ServiceModel/X.svc/Save", false, TestName = "Read_ShouldNotMarkARedirect_WhenOnlyTheCaseDiffers")]
+	[Description("Read compares the request the response belongs to with the one clio sent")]
+	public void Read_ShouldMarkARedirect_OnlyWhenTheMethodOrAddressChanged(string answeredMethod, string answeredUrl,
+		bool redirected) {
+		// Arrange
+		using System.Net.Http.HttpResponseMessage response = new(System.Net.HttpStatusCode.MethodNotAllowed) {
+			RequestMessage = new System.Net.Http.HttpRequestMessage(new System.Net.Http.HttpMethod(answeredMethod),
+				answeredUrl)
+		};
+
+		// Act
+		SiteHttpResponse answer = SiteHttpResponse.Read(response, "", System.Net.Http.HttpMethod.Post,
+			"http://site/0/ServiceModel/X.svc/Save");
+
+		// Assert
+		answer.StatusCode.Should().Be(405);
+		answer.Redirected.Should().Be(redirected);
+		answer.IsRefusedWithoutProcessing.Should().Be(!redirected);
 	}
 
 	[Test]

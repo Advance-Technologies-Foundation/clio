@@ -530,7 +530,7 @@
 				string body = response.Content is null
 					? null
 					: await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-				return new SiteHttpResponse((int)response.StatusCode, body);
+				return SiteHttpResponse.Read(response, body, HttpMethod.Post, url);
 			}
 		}
 

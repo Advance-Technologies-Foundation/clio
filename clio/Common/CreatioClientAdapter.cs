@@ -445,7 +445,8 @@ public class CreatioClientAdapter : IOwnedApplicationClient, IStatusPreservingAp
 			() => {
 				sends++;
 				return _loginDiagnostics.TrackRequest(() =>
-					ReadKeepingStatus(StartKeepingStatus(verb, url, requestData, requestTimeout, maxAttempts, delaySec)));
+					ReadKeepingStatus(StartKeepingStatus(verb, url, requestData, requestTimeout, maxAttempts, delaySec),
+					verb, url));
 			},
 			response => ReauthExecutor.IsSessionExpiredResponse(response.Body),
 			replayAllowed);
@@ -464,11 +465,19 @@ public class CreatioClientAdapter : IOwnedApplicationClient, IStatusPreservingAp
 			_ => throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unsupported request verb.")
 		};
 
-	private static SiteHttpResponse ReadKeepingStatus(Task<HttpResponseMessage> pending) {
+	private static SiteHttpResponse ReadKeepingStatus(Task<HttpResponseMessage> pending, SiteRequestVerb verb,
+		string url) {
 		using HttpResponseMessage response = pending.Result;
 		string body = response.Content is null ? string.Empty : response.Content.ReadAsStringAsync().Result;
-		return new SiteHttpResponse((int)response.StatusCode, body);
+		return SiteHttpResponse.Read(response, body, ToHttpMethod(verb), url);
 	}
+
+	private static HttpMethod ToHttpMethod(SiteRequestVerb verb) => verb switch {
+		SiteRequestVerb.Post => HttpMethod.Post,
+		SiteRequestVerb.Patch => HttpMethod.Patch,
+		SiteRequestVerb.Delete => HttpMethod.Delete,
+		_ => throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unsupported request verb.")
+	};
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) {

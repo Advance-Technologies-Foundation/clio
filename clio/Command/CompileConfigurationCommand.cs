@@ -347,7 +347,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				delaySec: 1, cancellationToken)
 			.ConfigureAwait(false);
 		string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-		return new SiteHttpResponse((int)response.StatusCode, body);
+		return SiteHttpResponse.Read(response, body, HttpMethod.Post, ServiceUri);
 	}
 
 	/// <summary>The bound actually applied, falling back to the declared one for a non-positive value.</summary>

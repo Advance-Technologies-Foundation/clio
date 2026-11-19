@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -304,13 +305,56 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	public bool Resent { get; init; }
 
 	/// <summary>
+	/// Whether the answer is to a request the HTTP client sent itself after following a redirect - another method
+	/// (creatio.client turns a POST or PATCH answered 301, 302 or 303 into a GET) or another address - rather than
+	/// to the write clio sent. The write may have been applied before the redirect, so such an answer proves
+	/// nothing about it.
+	/// </summary>
+	public bool Redirected { get; init; }
+
+	/// <summary>
+	/// Reads an answer, keeping its status and noting whether the client followed a redirect to produce it: the
+	/// request the response belongs to has another method or another address than the one sent.
+	/// </summary>
+	/// <param name="response">The response the client returned.</param>
+	/// <param name="body">Its body, already read.</param>
+	/// <param name="sentMethod">The HTTP method clio sent.</param>
+	/// <param name="sentUrl">The URL clio sent, absolute or relative to the site.</param>
+	/// <remarks>
+	/// A response without its request (only test doubles build one) cannot show a redirect, so it is read as not
+	/// redirected.
+	/// </remarks>
+	public static SiteHttpResponse Read(HttpResponseMessage response, string body, HttpMethod sentMethod,
+		string sentUrl) {
+		ArgumentNullException.ThrowIfNull(response);
+		HttpRequestMessage answered = response.RequestMessage;
+		bool redirected = answered is not null
+			&& (answered.Method != sentMethod || !IsSameTarget(answered.RequestUri, sentUrl));
+		return new SiteHttpResponse((int)response.StatusCode, body) { Redirected = redirected };
+	}
+
+	private static bool IsSameTarget(Uri answered, string sentUrl) {
+		if (answered is null || string.IsNullOrEmpty(sentUrl)) {
+			return answered is null && string.IsNullOrEmpty(sentUrl);
+		}
+		if (Uri.TryCreate(sentUrl, UriKind.Absolute, out Uri sent)) {
+			return Uri.Compare(answered, sent, UriComponents.HttpRequestUrl, UriFormat.SafeUnescaped,
+				StringComparison.OrdinalIgnoreCase) == 0;
+		}
+		return answered.IsAbsoluteUri
+			? answered.PathAndQuery.EndsWith(sentUrl, StringComparison.OrdinalIgnoreCase)
+			: string.Equals(answered.OriginalString, sentUrl, StringComparison.OrdinalIgnoreCase);
+	}
+
+	/// <summary>
 	/// Whether this answer shows the site refused the request without processing it. All of these must hold:
 	/// <list type="bullet">
 	/// <item>the status refuses the request for its shape (<see cref="HasRefusalStatus"/>);</item>
 	/// <item>the body carries no answer of the application: it is empty, an HTML page or plain text, never JSON and
 	/// never other markup such as an XML or SOAP fault (<see cref="SiteResponse.CarriesNoServiceAnswer"/>). Such a
 	/// body is written by the application, which may have done part of its work before it refused;</item>
-	/// <item>clio did not send the request again (<see cref="Resent"/>).</item>
+	/// <item>clio did not send the request again (<see cref="Resent"/>), and the answer is to the request clio sent,
+	/// not to one the client sent after following a redirect (<see cref="Redirected"/>).</item>
 	/// </list>
 	/// </summary>
 	/// <remarks>
@@ -318,31 +362,32 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	/// <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>.
 	/// </remarks>
 	public bool IsRefusedWithoutProcessing =>
-		!Resent && HasRefusalStatus(StatusCode) && SiteResponse.CarriesNoServiceAnswer(Body);
+		!Resent && !Redirected && HasRefusalStatus(StatusCode) && SiteResponse.CarriesNoServiceAnswer(Body);
 
 	/// <summary>
 	/// Whether <paramref name="status"/> refuses the request for its shape, before any application code runs:
-	/// 405 (the method), 413 (the body size), 414 (the URI length), 415 (the media type) and 431 (the header size) -
-	/// statuses with which HTTP defines the server as refusing to process or to service the request (RFC 9110,
-	/// RFC 6585).
+	/// 405 (the method), 413 (the body size), 414 (the URI length) and 415 (the media type) - statuses with which
+	/// HTTP defines the server as refusing to process or to service the request (RFC 9110).
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// These are decided by the request's shape, so the same request gets the same answer every time: even when the
-	/// HTTP client sends it again out of sight (creatio.client re-sends after a 401, and after a 403 when the sign-in
+	/// These are decided by the method, URI and body, which a re-send repeats unchanged: even when the HTTP client
+	/// sends the request again out of sight (creatio.client re-sends after a 401, and after a 403 when the sign-in
 	/// changed meanwhile, without showing the first answer), the first send was refused the same way.
 	/// </para>
 	/// <para>
-	/// Nothing else qualifies. 401 does not: creatio.client signs in again and re-sends after any 401, so the 401 a
-	/// caller sees answers the second send and the first answer is never seen; and ASP.NET writes its 401
-	/// <c>{"Message":"Authentication failed."}</c> envelope for any redirect during a REST call (ScriptModule's
-	/// <c>HttpResponse_Redirecting</c>), including one after the handler ran. 403 does not: a gateway that inspects
-	/// responses answers 403 after the backend ran (the reason <c>CompileBusinessProcessCommand</c> gives,
-	/// #ENG-92711). 400, 404, 409 and 422 can come from the handler after it started; a 3xx can follow a request the
-	/// server did process (a 303 or 302 after a POST); a 5xx can come from a gateway after the write landed.
+	/// Nothing else qualifies. 431 does not: a re-send after signing in again carries new cookies and a new CSRF
+	/// header, so its header size differs from the first send's. 401 does not: creatio.client signs in again and
+	/// re-sends after any 401, so the 401 a caller sees answers the second send and the first answer is never seen;
+	/// and ASP.NET writes its 401 <c>{"Message":"Authentication failed."}</c> envelope for any redirect during a REST
+	/// call (ScriptModule's <c>HttpResponse_Redirecting</c>), including one after the handler ran. 403 does not: a
+	/// gateway that inspects responses answers 403 after the backend ran (the reason
+	/// <c>CompileBusinessProcessCommand</c> gives, #ENG-92711). 400, 404, 409 and 422 can come from the handler after
+	/// it started; a 3xx can follow a request the server did process (a 303 or 302 after a POST); a 5xx can come from
+	/// a gateway after the write landed.
 	/// </para>
 	/// </remarks>
 	/// <param name="status">An HTTP status, or <see langword="null"/>.</param>
-	public static bool HasRefusalStatus(int? status) => status is 405 or 413 or 414 or 415 or 431;
+	public static bool HasRefusalStatus(int? status) => status is 405 or 413 or 414 or 415;
 
 }

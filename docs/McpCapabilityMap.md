@@ -361,8 +361,9 @@ body alone would pass them: an empty or unrecognized body on `odata-update` / `o
 `odata-create`, and an empty body or an error page on the data-binding writes and on `install-application` /
 `push-workspace` / `install-process-builder`. How such a failure reads depends on the status:
 
-- **Refused without processing: 405, 413, 414, 415 or 431 with an empty, HTML page or plain-text body.** These
-  statuses refuse the request for its shape: its method, body size, URI length, media type or header size. HTTP
+- **Refused without processing: 405, 413, 414 or 415 with an empty, HTML page or plain-text body,** answering
+  the request clio sent and not one the HTTP client sent after following a redirect. These statuses refuse the
+  request for its shape: its method, body size, URI length or media type. HTTP
   defines them as the server refusing to process the request (RFC 9110, RFC 6585). The result then says that
   request was not applied, and an `odata-create` row reads `record-created: false`. With a JSON or XML body the
   application itself answered, so it reads like any other refusal below.
@@ -405,10 +406,13 @@ and `message` are null: the result's own fields name what failed and why.
    after a body that looks like an expired session proves nothing either: that reading comes from the body
    (GitHub #1313). The client's own re-send, after a 401, a redirect to the sign-in page or a 403 with a changed
    sign-in, is not visible to clio. That is why only statuses decided by the request's shape count (point 3).
-3. **Refused without processing.** The site answered 405, 413, 414, 415 or 431 - a refusal of the request's shape
-   - with a body that carries no answer of the application: empty, an HTML page or plain text (a byte-order mark
-   and whitespace before it are skipped). The same request gets the same answer every time, so even a send the
-   HTTP client repeated out of sight was refused the same way. Nothing else proves it: not a 401 or a 403 (see
+3. **Refused without processing.** The site answered 405, 413, 414 or 415 - a refusal of the request's shape -
+   with a body that carries no answer of the application: empty, an HTML page or plain text (a byte-order mark
+   and whitespace before it are skipped). The answer must be to the request clio sent: creatio.client follows a
+   same-site redirect itself and turns a POST or PATCH into a GET, so an answer to another method or address
+   proves nothing. The same method, URI and body get the same answer every time, so even a send the HTTP client
+   repeated out of sight was refused the same way. 431 is out: a re-send after signing in again carries other
+   cookies and headers. Nothing else proves it: not a 401 or a 403 (see
    above), not JSON of any kind, parseable or not, and not markup other than an HTML page, such as an XML or SOAP
    fault.
 

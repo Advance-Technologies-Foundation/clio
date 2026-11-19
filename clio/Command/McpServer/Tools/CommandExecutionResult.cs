@@ -48,7 +48,7 @@ public record CommandExecutionResult(
 	/// </summary>
 	[JsonPropertyName("diagnostic")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("Present beside site-response. side-effect is none only when the site refused the command's sole write without processing it (HTTP 405, 413, 414, 415 or 431 with an empty, page or plain-text body, sent once and not re-sent, nothing written before it; never a 401, which the HTTP client re-sends out of sight, or a 403, which a gateway can send after the write), so nothing was applied; otherwise unknown. retry-advice says what to do next. Absent whenever site-response is.")]
+	[Description("Present beside site-response. side-effect is none only when the site refused the command's sole write without processing it (HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, sent once, not re-sent and not redirected, nothing written before it; never a 401, which the HTTP client re-sends out of sight, or a 403, which a gateway can send after the write), so nothing was applied; otherwise unknown. retry-advice says what to do next. Absent whenever site-response is.")]
 	public DataWriteDiagnostic Diagnostic { get; init; }
 
 	public const string CompileNotRequiredNote = "compile-creatio not required";

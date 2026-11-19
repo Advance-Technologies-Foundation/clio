@@ -34,7 +34,8 @@ public sealed class PageUpdateToolSideEffectTests {
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
-	[TestCase(431, "", "none", TestName = "UpdatePage_ShouldReportSideEffectNone_WhenTheSaveIsRefusedWithAnEmpty431")]
+	[TestCase(405, "", "none", TestName = "UpdatePage_ShouldReportSideEffectNone_WhenTheSaveIsRefusedWithAnEmpty405")]
+	[TestCase(431, "", "unknown", TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenTheSaveIsAnsweredWithAnEmpty431")]
 	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", "unknown",
 		TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenTheAuthenticationEnvelopeAnswers")]
 	[TestCase(413, "<html>Request Entity Too Large</html>", "none",

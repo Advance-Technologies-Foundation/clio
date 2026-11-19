@@ -67,7 +67,7 @@ public sealed record DataWriteDiagnostic(
 	/// <summary>Retry advice when the site refused the call's sole write without processing it.</summary>
 	public const string RefusedWithoutProcessingAdvice =
 		"The site refused the request without processing it, so nothing was applied. Fix what it refused - the "
-		+ "sign-in, or the request's size, method or format - before resubmitting.";
+		+ "request's method, size, URL length or media type - before resubmitting.";
 
 	/// <summary>
 	/// Marks an attempted, answered, unacknowledged write as not applied because the site refused it without

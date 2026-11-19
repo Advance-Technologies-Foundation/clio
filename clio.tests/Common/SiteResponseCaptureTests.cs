@@ -57,7 +57,8 @@ public sealed class SiteResponseCaptureTests {
 
 	[TestCase(413, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenDeclaredSentOnceAndRefusedWithoutProcessing")]
 	[TestCase(403, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs403")]
-	[TestCase(431, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenA431RefusedTheDeclaredWrite")]
+	[TestCase(415, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenA415RefusedTheDeclaredWrite")]
+	[TestCase(431, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs431")]
 	[TestCase(401, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs401")]
 	[TestCase(413, 1, false, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
 	[TestCase(413, 3, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheWriteMayHaveBeenSentAgain")]

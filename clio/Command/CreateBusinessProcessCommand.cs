@@ -400,7 +400,7 @@ public sealed class CreateBusinessProcessService(
 			// and a refusal status with no answer of the application proves BuildProcess did not run.
 			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, BuildProcessAttempts);
 			throw new InvalidOperationException($"The environment refused BuildProcess without processing it (HTTP "
-				+ $"{answer.StatusCode}), so the process was NOT created. Check the sign-in and the request.");
+				+ $"{answer.StatusCode}), so the process was NOT created. Check the request's method, size, URL and media type.");
 		}
 		try {
 			return ReadBuildProcessAnswer(answer.Body);
