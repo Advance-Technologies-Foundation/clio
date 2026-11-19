@@ -586,8 +586,9 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, kind));
 	}
 
-	[TestCase(401, true, true, TestName = "Execute_ShouldProveNothingCompiled_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
-	[TestCase(401, false, false, TestName = "Execute_ShouldNotProve_WhenTheCompileRunsInAnUndeclaredCapture")]
+	[TestCase(413, true, true, TestName = "Execute_ShouldProveNothingCompiled_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
+	[TestCase(413, false, false, TestName = "Execute_ShouldNotProve_WhenTheCompileRunsInAnUndeclaredCapture")]
+	[TestCase(401, true, false, TestName = "Execute_ShouldNotProve_WhenTheBuildIsAnswered401")]
 	[TestCase(403, true, false, TestName = "Execute_ShouldNotProve_WhenTheBuildIsAnswered403")]
 	[TestCase(500, true, false, TestName = "Execute_ShouldNotProve_WhenTheBuildIsAnswered500")]
 	[Description("The build request is compile-creatio's one write: in its declared capture a refusal without processing proves nothing was compiled")]

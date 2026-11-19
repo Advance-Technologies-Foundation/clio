@@ -233,7 +233,6 @@ public sealed class SiteResponseTests {
 
 	#region Tests: refusal without processing
 
-	[TestCase(401)]
 	[TestCase(405)]
 	[TestCase(413)]
 	[TestCase(414)]
@@ -254,22 +253,22 @@ public sealed class SiteResponseTests {
 		SiteHttpResponse.HasRefusalStatus(status).Should().BeTrue();
 	}
 
-	[TestCase("{\"error\":{\"code\":\"\",\"message\":\"No rights\"}}", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesAnODataError")]
-	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesAServiceEnvelope")]
-	[TestCase("{\"success\":false,", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesBrokenJson")]
-	[TestCase("  [1]", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesAJsonArray")]
+	[TestCase("{\"error\":{\"code\":\"\",\"message\":\"No rights\"}}", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesAnODataError")]
+	[TestCase("{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesAServiceEnvelope")]
+	[TestCase("{\"success\":false,", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesBrokenJson")]
+	[TestCase("  [1]", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesAJsonArray")]
 	[TestCase("\uFEFF{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}",
-		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesJsonAfterAByteOrderMark")]
-	[TestCase("\"No rights\"", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesAJsonString")]
-	[TestCase("false", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesAJsonScalar")]
+		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesJsonAfterAByteOrderMark")]
+	[TestCase("\"No rights\"", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesAJsonString")]
+	[TestCase("false", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesAJsonScalar")]
 	[TestCase("<?xml version=\"1.0\"?><Fault><Reason>No rights</Reason></Fault>",
-		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesAnXmlFault")]
+		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesAnXmlFault")]
 	[TestCase("<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body/></s:Envelope>",
-		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401CarriesASoapEnvelope")]
+		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA413CarriesASoapEnvelope")]
 	[Description("A body that starts like JSON may be the application's own answer, written after part of its work")]
 	public void IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheBodyMayBeTheApplications(string body) {
-		new SiteHttpResponse(401, body).IsRefusedWithoutProcessing.Should().BeFalse();
-		SiteResponse.FromRefusal(new SiteHttpResponse(401, body)).RefusedWithoutProcessing.Should().BeFalse();
+		new SiteHttpResponse(413, body).IsRefusedWithoutProcessing.Should().BeFalse();
+		SiteResponse.FromRefusal(new SiteHttpResponse(413, body)).RefusedWithoutProcessing.Should().BeFalse();
 	}
 
 	[TestCase("", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenAnEmpty403Answers")]
@@ -282,40 +281,31 @@ public sealed class SiteResponseTests {
 		SiteHttpResponse.HasRefusalStatus(403).Should().BeFalse();
 	}
 
-	[Test]
-	[Description("The platform's own authentication rejection, a 401 with exactly this envelope, comes before any service runs")]
-	public void IsRefusedWithoutProcessing_ShouldBeTrue_ForThePlatformsAuthenticationEnvelope() {
-		// Arrange
-		SiteHttpResponse answer = new(401,
-			"{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}");
-
+	[TestCase("", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenAnEmpty401Answers")]
+	[TestCase("<html><title>401 - Unauthorized</title></html>", TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenA401PageAnswers")]
+	[TestCase("{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.InvalidOperationException\"}",
+		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheAuthenticationEnvelopeAnswers")]
+	[Description("No 401 proves anything: creatio.client signs in again and re-sends after any 401, so the 401 a caller sees answers the second send, and ASP.NET writes its 401 envelope for any redirect during a REST call, one after the handler ran included")]
+	public void IsRefusedWithoutProcessing_ShouldBeFalse_ForAny401(string body) {
 		// Act
-		SiteResponse response = SiteResponse.FromRefusal(answer);
+		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(401, body));
 
 		// Assert
-		answer.IsRefusedWithoutProcessing.Should().BeTrue(
-			because: "Creatio's authentication answers it before the request reaches a service");
-		response.RefusedWithoutProcessing.Should().BeTrue();
-		response.Message.Should().Be("Authentication failed.", because: "the card can quote the site's own words");
-		response.Body.Should().Be(SiteResponse.JsonBody);
-	}
-
-	[TestCase(401, "{\"Message\":\"Authentication failed. Contact your administrator.\"}",
-		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheEnvelopeMessageIsNotExact")]
-	[TestCase(401, "{\"message\":\"Authentication failed.\"}",
-		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheEnvelopeKeyIsNotExact")]
-	[TestCase(500, "{\"Message\":\"Authentication failed.\"}",
-		TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheEnvelopeComesWithA500")]
-	[Description("Only a 401 with the exact envelope counts; anything close to it is the application's own answer")]
-	public void IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheAuthenticationEnvelopeIsNotExact(int status, string body) {
-		new SiteHttpResponse(status, body).IsRefusedWithoutProcessing.Should().BeFalse();
+		new SiteHttpResponse(401, body).IsRefusedWithoutProcessing.Should().BeFalse();
+		response.RefusedWithoutProcessing.Should().BeFalse();
+		SiteHttpResponse.HasRefusalStatus(401).Should().BeFalse();
 	}
 
 	[Test]
-	[Description("A re-sent 401 envelope proves nothing either")]
-	public void IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheAuthenticationEnvelopeFollowsAReSend() {
-		new SiteHttpResponse(401, "{\"Message\":\"Authentication failed.\"}") { Resent = true }
-			.IsRefusedWithoutProcessing.Should().BeFalse();
+	[Description("The authentication envelope's own words still reach the site response, to be quoted as not confirmed")]
+	public void FromRefusal_ShouldCarryTheAuthenticationEnvelopesMessage() {
+		// Act
+		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(401,
+			"{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.InvalidOperationException\"}"));
+
+		// Assert
+		response.Message.Should().Be("Authentication failed.");
+		response.Body.Should().Be(SiteResponse.JsonBody);
 	}
 
 	[Test]
@@ -333,19 +323,19 @@ public sealed class SiteResponseTests {
 	[Test]
 	[Description("An answer that followed clio's own re-send never proves a refusal without processing")]
 	public void IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheRequestWasResent() {
-		new SiteHttpResponse(401, "") { Resent = true }.IsRefusedWithoutProcessing.Should().BeFalse();
+		new SiteHttpResponse(413, "") { Resent = true }.IsRefusedWithoutProcessing.Should().BeFalse();
 	}
 
 	[Test]
 	[Description("The site response remembers the proof without serializing it")]
 	public void FromRefusal_ShouldCarryTheProof_WithoutSerializingIt() {
 		// Act
-		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(401, "<html>Unauthorized</html>"));
+		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(413, "<html>Request Entity Too Large</html>"));
 
 		// Assert
 		response.RefusedWithoutProcessing.Should().BeTrue();
-		JsonSerializer.Serialize(response).Should().Be("{\"status\":401,\"body\":\"html\"}");
-		Newtonsoft.Json.JsonConvert.SerializeObject(response).Should().Be("{\"status\":401,\"body\":\"html\"}");
+		JsonSerializer.Serialize(response).Should().Be("{\"status\":413,\"body\":\"html\"}");
+		Newtonsoft.Json.JsonConvert.SerializeObject(response).Should().Be("{\"status\":413,\"body\":\"html\"}");
 	}
 
 	[TestCase(400, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For400_WhichAHandlerCanSend")]

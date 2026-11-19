@@ -828,13 +828,13 @@ public sealed class BaseToolTests {
 	public void InternalExecute_ShouldReportSideEffectNone_WhenTheDeclaredSoleWriteIsRefusedWithoutProcessing() {
 		// Arrange
 		ConsoleLogger.Instance.ClearMessages();
-		SoleWriteToolHarness tool = SoleWriteTool(new SiteHttpResponse(401, "<html>Unauthorized</html>"), attempts: 1);
+		SoleWriteToolHarness tool = SoleWriteTool(new SiteHttpResponse(413, "<html>Request Entity Too Large</html>"), attempts: 1);
 
 		// Act
 		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions(), declared: true);
 
 		// Assert
-		result.SiteResponse.Status.Should().Be(401);
+		result.SiteResponse.Status.Should().Be(413);
 		result.Diagnostic.SideEffect.Should().Be("none",
 			because: "the tool's only write was refused without being processed, so nothing was applied");
 		result.Diagnostic.RetryAdvice.Should().Be(DataWriteDiagnostic.RefusedWithoutProcessingAdvice);
@@ -843,8 +843,9 @@ public sealed class BaseToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
-	[TestCase(401, 1, false, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenTheToolDoesNotDeclareASoleWrite")]
-	[TestCase(401, 3, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenTheWriteMayHaveBeenSentAgain")]
+	[TestCase(413, 1, false, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenTheToolDoesNotDeclareASoleWrite")]
+	[TestCase(413, 3, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenTheWriteMayHaveBeenSentAgain")]
+	[TestCase(401, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA401Refused")]
 	[TestCase(403, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA403Refused")]
 	[TestCase(404, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA404Refused")]
 	[TestCase(409, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA409Refused")]
@@ -876,7 +877,7 @@ public sealed class BaseToolTests {
 		// Arrange
 		BaseToolHarness tool = new(null, ConsoleLogger.Instance);
 		Func<CarrierResult> refusedSave = () => {
-			SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(401, ""), 1);
+			SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(413, ""), 1);
 			return new CarrierResult(failed: true);
 		};
 

@@ -359,10 +359,10 @@ internal class PackageInstallerTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("A 401 with no service verdict refused the install request without processing it: the package was not installed, yet the upload before it keeps the call's side effect unknown")]
-	public void Install_ShouldSayNotInstalled_WhenA401RefusesWithNoVerdict() {
+	[Description("A 413 with no service verdict refused the install request without processing it: the package was not installed, yet the upload before it keeps the call's side effect unknown")]
+	public void Install_ShouldSayNotInstalled_WhenA413RefusesWithNoVerdict() {
 		// Arrange
-		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 401);
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 413);
 		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
 
 		// Act
@@ -370,16 +370,17 @@ internal class PackageInstallerTests : BaseClioModuleTests
 
 		// Assert
 		result.Should().BeFalse();
-		capture.Last.Should().BeEquivalentTo(new SiteResponse(401, null, null, SiteResponse.EmptyBody));
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(413, null, null, SiteResponse.EmptyBody));
 		capture.LastProvesNothingApplied.Should().BeFalse(
 			because: "the upload and backup wrote before the install request, so the call did write something");
 		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
-			line.Contains("refused the installation request without processing it (HTTP 401)", StringComparison.Ordinal)
+			line.Contains("refused the installation request without processing it (HTTP 413)", StringComparison.Ordinal)
 			&& line.Contains("the package was not installed", StringComparison.Ordinal)));
 	}
 
 	[TestCase(404, TestName = "Install_ShouldNotClaimNotInstalled_WhenA404RefusesWithNoVerdict")]
 	[TestCase(403, TestName = "Install_ShouldNotClaimNotInstalled_WhenA403RefusesWithNoVerdict")]
+	[TestCase(401, TestName = "Install_ShouldNotClaimNotInstalled_WhenA401RefusesWithNoVerdict")]
 	[Description("A 404 may come from the installer itself and a 403 from a gateway after the backend ran, so neither proves nothing was installed")]
 	public void Install_ShouldNotClaimNotInstalled_WhenTheStatusProvesNothing(int status) {
 		// Arrange

@@ -304,18 +304,13 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	public bool Resent { get; init; }
 
 	/// <summary>
-	/// Whether this answer shows the site refused the request without processing it. clio must not have sent the
-	/// request again (<see cref="Resent"/>), and one of these must hold:
+	/// Whether this answer shows the site refused the request without processing it. All of these must hold:
 	/// <list type="bullet">
-	/// <item>the status is one with which HTTP defines the server as refusing to process the request
-	/// (<see cref="HasRefusalStatus"/>), and the body carries no answer of the application: it is empty, an HTML
-	/// page or plain text, never JSON and never other markup such as an XML or SOAP fault
-	/// (<see cref="SiteResponse.CarriesNoServiceAnswer"/>). Such a body is written by the application, which may
-	/// have done part of its work before it refused;</item>
-	/// <item>or the status is 401 and the body is the platform's own authentication rejection - the JSON envelope
-	/// whose <c>Message</c> is exactly "Authentication failed.", or the sign-in page - recognized by the same test
-	/// automatic re-authentication uses (<see cref="ReauthExecutor.IsSessionExpiredResponse"/>). Creatio's
-	/// authentication answers it before the request reaches any service.</item>
+	/// <item>the status refuses the request for its shape (<see cref="HasRefusalStatus"/>);</item>
+	/// <item>the body carries no answer of the application: it is empty, an HTML page or plain text, never JSON and
+	/// never other markup such as an XML or SOAP fault (<see cref="SiteResponse.CarriesNoServiceAnswer"/>). Such a
+	/// body is written by the application, which may have done part of its work before it refused;</item>
+	/// <item>clio did not send the request again (<see cref="Resent"/>).</item>
 	/// </list>
 	/// </summary>
 	/// <remarks>
@@ -323,23 +318,31 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	/// <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>.
 	/// </remarks>
 	public bool IsRefusedWithoutProcessing =>
-		!Resent
-		&& ((HasRefusalStatus(StatusCode) && SiteResponse.CarriesNoServiceAnswer(Body))
-			|| (StatusCode == 401 && ReauthExecutor.IsSessionExpiredResponse(Body)));
+		!Resent && HasRefusalStatus(StatusCode) && SiteResponse.CarriesNoServiceAnswer(Body);
 
 	/// <summary>
-	/// Whether <paramref name="status"/> is one with which HTTP defines the server as refusing to process the
-	/// request at all, and which nothing in front of the site sends after the backend ran: 401 (RFC 9110 15.5.2: "the
-	/// request has not been applied"), 405, 413, 414 and 415 ("refusing to process" or "to service" the request) and
-	/// 431 (RFC 6585: "unwilling to process the request").
+	/// Whether <paramref name="status"/> refuses the request for its shape, before any application code runs:
+	/// 405 (the method), 413 (the body size), 414 (the URI length), 415 (the media type) and 431 (the header size) -
+	/// statuses with which HTTP defines the server as refusing to process or to service the request (RFC 9110,
+	/// RFC 6585).
 	/// </summary>
 	/// <remarks>
-	/// Nothing else qualifies. 403 does not: a gateway that inspects responses answers 403 after the backend ran (the
-	/// same reason <c>CompileBusinessProcessCommand</c> gives, #ENG-92711), so a 403 page can follow a write that
-	/// landed. 400, 404, 409 and 422 can come from the handler after it started; a 3xx can follow a request the
+	/// <para>
+	/// These are decided by the request's shape, so the same request gets the same answer every time: even when the
+	/// HTTP client sends it again out of sight (creatio.client re-sends after a 401, and after a 403 when the sign-in
+	/// changed meanwhile, without showing the first answer), the first send was refused the same way.
+	/// </para>
+	/// <para>
+	/// Nothing else qualifies. 401 does not: creatio.client signs in again and re-sends after any 401, so the 401 a
+	/// caller sees answers the second send and the first answer is never seen; and ASP.NET writes its 401
+	/// <c>{"Message":"Authentication failed."}</c> envelope for any redirect during a REST call (ScriptModule's
+	/// <c>HttpResponse_Redirecting</c>), including one after the handler ran. 403 does not: a gateway that inspects
+	/// responses answers 403 after the backend ran (the reason <c>CompileBusinessProcessCommand</c> gives,
+	/// #ENG-92711). 400, 404, 409 and 422 can come from the handler after it started; a 3xx can follow a request the
 	/// server did process (a 303 or 302 after a POST); a 5xx can come from a gateway after the write landed.
+	/// </para>
 	/// </remarks>
 	/// <param name="status">An HTTP status, or <see langword="null"/>.</param>
-	public static bool HasRefusalStatus(int? status) => status is 401 or 405 or 413 or 414 or 415 or 431;
+	public static bool HasRefusalStatus(int? status) => status is 405 or 413 or 414 or 415 or 431;
 
 }

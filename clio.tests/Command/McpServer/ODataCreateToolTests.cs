@@ -86,11 +86,12 @@ public sealed class ODataCreateToolTests {
 			"http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1, false);
 	}
 
-	[TestCase(401, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenAnEmpty401Refuses")]
-	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", false, "none",
-		TestName = "Create_ShouldReportTheRowNotCreated_WhenThePlatformsAuthenticationEnvelopeRefuses")]
+	[TestCase(415, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenAnEmpty415Refuses")]
+	[TestCase(401, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAnEmpty401Answers")]
+	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", null, "unknown",
+		TestName = "Create_ShouldKeepTheRowUnknown_WhenTheAuthenticationEnvelopeAnswers")]
 	[TestCase(403, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAnEmpty403Answers")]
-	[TestCase(401, "<html>Sign in</html>", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenA401PageRefuses")]
+	[TestCase(405, "<html>Method Not Allowed</html>", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenA405PageRefuses")]
 	[TestCase(413, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenTheRowIsTooLarge")]
 	[TestCase(404, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAnEmpty404Answers")]
 	[TestCase(403, "{\"error\":{\"code\":\"\",\"message\":\"No rights to insert\"}}", null, "unknown",

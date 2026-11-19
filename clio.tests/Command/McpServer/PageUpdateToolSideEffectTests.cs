@@ -34,15 +34,15 @@ public sealed class PageUpdateToolSideEffectTests {
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
-	[TestCase(401, "", "none", TestName = "UpdatePage_ShouldReportSideEffectNone_WhenTheSaveIsRefusedWithAnEmpty401")]
-	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", "none",
-		TestName = "UpdatePage_ShouldReportSideEffectNone_WhenThePlatformsAuthenticationEnvelopeRefuses")]
+	[TestCase(431, "", "none", TestName = "UpdatePage_ShouldReportSideEffectNone_WhenTheSaveIsRefusedWithAnEmpty431")]
+	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", "unknown",
+		TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenTheAuthenticationEnvelopeAnswers")]
 	[TestCase(413, "<html>Request Entity Too Large</html>", "none",
 		TestName = "UpdatePage_ShouldReportSideEffectNone_WhenTheSaveIsTooLarge")]
 	[TestCase(403, "", "unknown", TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenTheSaveIsAnsweredWithAnEmpty403")]
 	[TestCase(403, "<html>Forbidden</html>", "unknown",
 		TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenTheSaveIsAnsweredWithA403Page")]
-	[TestCase(401, "<html>Sign in</html>", "none", TestName = "UpdatePage_ShouldReportSideEffectNone_WhenTheSaveIsRefusedWithA401Page")]
+	[TestCase(401, "<html>Sign in</html>", "unknown", TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenTheSaveIsAnsweredWithA401Page")]
 	[TestCase(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", "unknown",
 		TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenA403CarriesTheDesignersEnvelope")]
 	[TestCase(500, "", "unknown", TestName = "UpdatePage_ShouldReportSideEffectUnknown_WhenTheSaveIsAnswered500")]

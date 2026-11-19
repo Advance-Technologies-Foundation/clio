@@ -104,9 +104,10 @@ public sealed class SiteResponseCapture {
 	/// <returns>The site response recorded, or <see langword="null"/> when nothing was recorded.</returns>
 	/// <remarks>
 	/// clio's own re-send after a body that looks like an expired session is a guess from the body, so such an answer
-	/// is marked <see cref="SiteHttpResponse.Resent"/> and never proves anything. The client's re-send after a 401 or
-	/// a redirect to the sign-in page is not visible here; it is taken as one send, on HTTP's meaning of 401 ("the
-	/// request has not been applied") and because a sign-in redirect comes from the sign-in layer.
+	/// is marked <see cref="SiteHttpResponse.Resent"/> and never proves anything. creatio.client's own re-send - after
+	/// a 401, a sign-in redirect, or a 403 when the sign-in changed meanwhile - is not visible here. That is why only
+	/// statuses decided by the request's shape count (<see cref="SiteHttpResponse.HasRefusalStatus"/>): the hidden
+	/// first send of the same request was refused the same way.
 	/// </remarks>
 	public static SiteResponse RecordRefusalOfSoleWrite(SiteHttpResponse response, int maxAttempts) {
 		bool refusedOnceWithoutProcessing = maxAttempts <= 1 && response is { IsRefusedWithoutProcessing: true };

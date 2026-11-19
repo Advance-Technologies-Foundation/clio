@@ -1444,7 +1444,7 @@ public sealed class PageSyncPageResult {
 	/// <summary>Beside <see cref="SiteResponse"/>: whether the refusal proves this page's save applied nothing.</summary>
 	[JsonPropertyName("diagnostic")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[System.ComponentModel.Description("Present beside site-response. side-effect is none only when the site refused this page's save without processing it (HTTP 401, 405, 413, 414, 415 or 431 with an empty, page or plain-text body, or the platform's 401 \"Authentication failed.\" envelope, not re-sent; never a 403); the save is the only write for a page, so nothing was applied to it. Otherwise unknown.")]
+	[System.ComponentModel.Description("Present beside site-response. side-effect is none only when the site refused this page's save without processing it (HTTP 405, 413, 414, 415 or 431 with an empty, page or plain-text body, not re-sent; never a 401 or 403); the save is the only write for a page, so nothing was applied to it. Otherwise unknown.")]
 	public DataWriteDiagnostic Diagnostic { get; init; }
 
 	[JsonPropertyName("resources-registered")]

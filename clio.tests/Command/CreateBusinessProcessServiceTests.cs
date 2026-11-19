@@ -111,12 +111,10 @@ public sealed class CreateBusinessProcessServiceTests {
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind));
 	}
 
-	[TestCase(401, "<html>Unauthorized</html>", true, true,
+	[TestCase(413, "<html>Request Entity Too Large</html>", true, true,
 		TestName = "BuildProcess_ShouldProveNotCreated_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
-	[TestCase(401, "", true, true, TestName = "BuildProcess_ShouldProveNotCreated_WhenA401RefusesTheDeclaredBuild")]
-	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", true, true,
-		TestName = "BuildProcess_ShouldProveNotCreated_WhenThePlatformsAuthenticationEnvelopeRefuses")]
-	[TestCase(401, "<html>Unauthorized</html>", false, false,
+	[TestCase(431, "", true, true, TestName = "BuildProcess_ShouldProveNotCreated_WhenA431RefusesTheDeclaredBuild")]
+	[TestCase(413, "<html>Request Entity Too Large</html>", false, false,
 		TestName = "BuildProcess_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
 	[Description("BuildProcess is create-business-process's one write: a refusal without processing says NOT created and, in the declared capture, proves it")]
 	public void BuildProcess_ShouldSayNotCreated_WhenRefusedWithoutProcessing(int status, string body, bool declared,
@@ -139,14 +137,16 @@ public sealed class CreateBusinessProcessServiceTests {
 		capture.LastProvesNothingApplied.Should().Be(proves);
 	}
 
-	[Test]
-	[Description("A 403 page proves nothing: a gateway that inspects responses answers 403 after the backend ran")]
-	public void BuildProcess_ShouldNotSayNotCreated_WhenA403PageAnswers() {
+	[TestCase(403, "<html>Forbidden</html>", TestName = "BuildProcess_ShouldNotSayNotCreated_WhenA403PageAnswers")]
+	[TestCase(401, "", TestName = "BuildProcess_ShouldNotSayNotCreated_WhenAnEmpty401Answers")]
+	[TestCase(401, "{\"Message\":\"Authentication failed.\",\"StackTrace\":null,\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}", TestName = "BuildProcess_ShouldNotSayNotCreated_WhenTheAuthenticationEnvelopeAnswers")]
+	[Description("A 403 can follow a backend that ran, and a 401 answers creatio.client's hidden second send: neither proves BuildProcess did not run")]
+	public void BuildProcess_ShouldNotSayNotCreated_WhenTheStatusProvesNothing(int status, string body) {
 		// Arrange
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
 		((IStatusPreservingApplicationClient)client)
 			.SendKeepingStatus(default, default, default, default, default, default, default)
-			.ReturnsForAnyArgs(new SiteHttpResponse(403, "<html>Forbidden</html>"));
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, body));
 		CreateBusinessProcessService service = CreateService(client, out _);
 		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
 
@@ -155,7 +155,7 @@ public sealed class CreateBusinessProcessServiceTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>().Where(exception => !exception.Message.Contains("NOT created"),
-			because: "a 403 page can follow a process that was saved");
+			because: "such an answer can follow a process that was saved");
 		capture.LastProvesNothingApplied.Should().BeFalse();
 	}
 
