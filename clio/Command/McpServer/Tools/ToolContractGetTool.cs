@@ -3078,7 +3078,8 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				ODataCreateTool.RowCountLimitDescription,
 				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent.",
-				"Binary columns (file or image Data, Edm.Stream in $metadata) cannot be written through OData. Use upload-file for a file attached to a record and upload-image for an image."
+				"Binary columns (file or image Data, Edm.Stream in $metadata) cannot be written through OData. Use upload-file for a file attached to a record and upload-image for an image.",
+				"A row without an Id is sent with an Id clio generates when $metadata declares the entity's Id a GUID (a batch with such a row reads $metadata once). creatio.client sends a request again after a 401 or a sign-in redirect without telling clio; with its own Id, such a second send of the row is refused as a duplicate key instead of creating a second record."
 			]);
 	}
 
@@ -7560,14 +7561,17 @@ internal static class ToolContractCatalog {
 					"Failed rows whose side effect could NOT be verified (a subset of 'failed'). Non-zero means the "
 					+ "batch must not be blindly re-sent."),
 				Field(ResultsFieldName, ArrayType,
-					"Per-row outcomes for every attempted row; each item has index, success, id, error, diagnostic, "
+					"Per-row outcomes for every attempted row; each item has index, success, id, sent-id, error, diagnostic, "
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
 					+ "record-created is null or Creatio rejected the row before writing it, retry-guidance. "
 					+ "Creatio rejects a row while reading the request body - an unknown column, a value of the "
 					+ "wrong type, or any value for a binary column - and that row is reported as false with "
 					+ "diagnostic side-effect none. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
-					+ "duplicates it. A failed row the site answered also carries site-response. "
+					+ "duplicates it. A row sent with clio's Id whose result is unknown is read back by that Id: found "
+					+ "gives record-created true (on a failed row too - do not re-send it); not found keeps null and adds "
+					+ "sent-id - re-send the row with that Id, never without it. "
+					+ "A failed row the site answered also carries site-response. "
 					+ ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that payload was accepted as rows; absent when there is nothing to note."),

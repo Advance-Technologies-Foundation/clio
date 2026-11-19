@@ -73,6 +73,10 @@ is reachable, and replaying it commits the write twice.
 `maxAttempts: 1` does not prevent this: that argument bounds `Creatio.Client`'s own transport retry,
 which is a different layer from the reauth retry above it.
 
+`replayAllowed: false` does not stop every second send either. Below this executor, creatio.client re-sends any
+request itself after a 401, a sign-in redirect or a 403 while the sign-in changed, and shows clio only the second
+answer. See `creatio-client-resends-after-401-out-of-sight.md`.
+
 **What breaks if you ignore it** — passing `replayAllowed: true` from a write call site brings back a
 silently duplicated PUT/PATCH/POST: two records created, or an update applied twice, with `success`
 reported and nothing in the log. Passing `false` from a read call site (or from `ExecutePostRequest`

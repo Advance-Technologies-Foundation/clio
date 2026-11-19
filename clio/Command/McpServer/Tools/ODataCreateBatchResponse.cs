@@ -106,6 +106,21 @@ public sealed record ODataRowResult {
 	[Description("Primary key of the created record, when known.")]
 	public string? Id { get; init; }
 
+	/// <summary>
+	/// Gets the Id clio generated and sent with a row that had none, when the row's result is unknown
+	/// (<see cref="RecordCreated"/> is <see langword="null"/>).
+	/// </summary>
+	/// <remarks>
+	/// A re-send of the row with this Id cannot create the record twice: if the earlier send was applied, Creatio
+	/// refuses the re-send as a duplicate key. A row clio settled by reading the record back carries it as
+	/// <see cref="Id"/> instead.
+	/// </remarks>
+	[JsonPropertyName("sent-id")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("The Id clio generated and sent with this row, present when record-created is null. Re-send the "
+		+ "row with this Id: if the earlier send was applied, Creatio refuses it as a duplicate key.")]
+	public string? SentId { get; init; }
+
 	/// <summary>Gets the failure reason when the row was not inserted.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

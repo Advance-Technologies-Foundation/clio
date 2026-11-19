@@ -433,6 +433,22 @@ and `message` are null: the result's own fields name what failed and why.
 | `odata-delete` | a DELETE per id, sent without a body (so the client can repeat it through a 307 or 308 unseen); with `ids`, a refused id sent again in a later pass; with cascade, owned rows first | always `unknown`, on the call and on each item |
 | `sync-schemas`, per operation | the entity-schema and data-binding writes above, with retries for transient faults | always `unknown` |
 
+**A write can be sent twice without clio seeing it.** creatio.client, the HTTP client clio uses, sends a request
+again after a 401, after a redirect to the sign-in page, and (cookie sessions) after a 403 when the sign-in changed
+while the request was in flight. It does so for every verb, signs in first, and shows clio only the second answer;
+it has no per-request way to turn this off. Usually the first send was refused before the handler ran, but not
+always: a handler that redirects or answers 401 after working, or a gateway that answers 403 after the backend ran,
+leaves a write that the second send repeats. This has not been seen on Creatio. What it means per tool:
+
+- `odata-create` sends its own `Id` with a row that has none, when `$metadata` declares the entity's `Id` a GUID
+  (a batch with such a row reads `$metadata` once). A second send of that row is refused as a duplicate key, and
+  a row whose result is then unknown is read back by that `Id`: found gives `record-created: true`, even on a
+  failed row; not found keeps `null` and adds `sent-id`, and a re-send of the row with that `Id` cannot create it
+  twice. A row with an `Id` the caller chose, or an entity keyed on another type, is sent as written and keeps
+  the risk.
+- `restart`, `create-business-process` (BuildProcess) and `odata-update` (update-time business processes) can
+  run twice; page and schema saves, `odata-delete` and binding deletes end in the same state.
+
 **Not covered:** a compile that outlives the MCP response deadline reports its verdict through
 `compile-status`, which carries no `site-response`; and the very first request of a process, when it is one of
 these writes and the sign-in endpoint itself answers non-2xx, reports the sign-in error without
