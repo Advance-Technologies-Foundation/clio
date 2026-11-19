@@ -2343,8 +2343,8 @@ public static partial class SchemaValidationService
 	/// Walks <paramref name="typeDefinitions"/> (the merged per-component + document-level registry type
 	/// schemas) from <c>ChartWidgetConfig</c> down to each series' <c>data.providing</c> block and reports, INSIDE
 	/// that block, missing required fields (most importantly <c>aggregation.column</c>, whose absence renders an
-	/// empty chart), values outside a field's published <c>values</c>, primitive type mismatches, and filter
-	/// leaves whose discriminators name no known variant. Cosmetic fields above the data block (color, formatting, legend,
+	/// empty chart) and filter leaves whose discriminators name no known variant; inside a stored filter also
+	/// values outside a field's published <c>values</c> and primitive type mismatches. Cosmetic fields above the data block (color, formatting, legend,
 	/// title) are intentionally NOT checked, so the registry over-marking them required cannot false-positive.
 	/// <para>
 	/// Scope: only <c>operation:"insert"</c> entries are checked (a <c>merge</c> legitimately omits
@@ -2529,7 +2529,7 @@ public static partial class SchemaValidationService
 			ValidateFieldsMap(value, shape, EmptyTypeSubstitution, typeDefinitions, path, result, report);
 			return;
 		}
-		if (report && !ValueIsAllowed(value, fieldDefinition, path, result)) {
+		if (report && IsInStoredFilter(path) && !ValueIsAllowed(value, fieldDefinition, path, result)) {
 			return;
 		}
 		if (!fieldDefinition.TryGetProperty("type", out JsonElement typeElement) ||
@@ -2597,7 +2597,7 @@ public static partial class SchemaValidationService
 			ValidateValueAgainstUnion(value, resolved, typeDefinitions, path, result, report);
 			return;
 		}
-		if (report && !PrimitiveMatches(value, resolved)) {
+		if (report && IsInStoredFilter(path) && !PrimitiveMatches(value, resolved)) {
 			result.Errors.Add($"{path} must be a {resolved}. {GuidanceHint(path)}");
 			return;
 		}

@@ -17,7 +17,8 @@ public static partial class SchemaValidationService {
 		JsonElement value, string unionExpression,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
 		string path, SchemaValidationResult result, bool report) {
-		if (value.ValueKind != JsonValueKind.Object) {
+		// Outside stored filters a union stays unchecked, as it was before ENG-95270 (see IsInStoredFilter).
+		if (value.ValueKind != JsonValueKind.Object || !IsInStoredFilter(path)) {
 			return;
 		}
 		UnionBranchMatch match = MatchUnionBranches(value, unionExpression, typeDefinitions);
@@ -165,7 +166,6 @@ public static partial class SchemaValidationService {
 		return current;
 	}
 
-	// Null is left to the required-field check.
 	private static bool ValueIsAllowed(JsonElement value, JsonElement fieldDefinition, string path, SchemaValidationResult result) {
 		if (!fieldDefinition.TryGetProperty("values", out JsonElement values) || values.ValueKind != JsonValueKind.Array ||
 		    values.GetArrayLength() == 0 || value.ValueKind is JsonValueKind.Object or JsonValueKind.Array or JsonValueKind.Null) {
@@ -208,7 +208,12 @@ public static partial class SchemaValidationService {
 	}
 
 	private static string GuidanceHint(string path) =>
-		path.EndsWith(".filters.filter", StringComparison.Ordinal) || path.Contains(".filters.filter.", StringComparison.Ordinal)
+		IsInStoredFilter(path)
 			? "Call get-guidance with name 'esq-filters-frontend' for the filter contract."
 			: "Call get-guidance with name 'chart-widget' for the full contract.";
+
+	// The value and primitive checks stay inside stored filters: elsewhere in the data block a field may hold a
+	// binding or a literal the runtime coerces, and bodies that passed before ENG-95270 must keep passing.
+	private static bool IsInStoredFilter(string path) =>
+		path.EndsWith(".filters.filter", StringComparison.Ordinal) || path.Contains(".filters.filter.", StringComparison.Ordinal);
 }
