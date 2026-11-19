@@ -218,8 +218,8 @@ public sealed class ODataCreateClientIdTests {
 		row.Success.Should().BeTrue(because: "the row was inserted, which is what success means");
 		row.Id.Should().Be(sentId);
 		row.Error.Should().BeNull();
-		row.RetryGuidance.Should().Contain("do NOT re-send").And.Contain("An error has occured.",
-			because: "the guidance keeps the failed answer clio got, so the caller sees why the request read as failed");
+		row.RetryGuidance.Should().Contain("do NOT re-send").And.NotContain("Read the records",
+			because: "clio's own advice for an unknown row must not be quoted into the guidance of a created one");
 		row.Diagnostic.SideEffect.Should().Be("acknowledged");
 		response.Created.Should().Be(1);
 		response.Failed.Should().Be(0, because: "a caller that re-sends failed rows must not re-send this one");
@@ -315,6 +315,56 @@ public sealed class ODataCreateClientIdTests {
 	}
 
 	[Test]
+	[Description("When a later row shows the site does not keep a sent Id, an earlier unknown row loses its sent-id: a re-send with it would not be refused either")]
+	public void Create_ShouldDropTheSentIdOfEarlierRows_WhenALaterRowShowsTheSiteDoesNotKeepIt() {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid"),
+			postAnswers: [DuplicateKeyAnswer, "{\"Id\":\"22222222-2222-2222-2222-222222222222\"}"]);
+
+		// Act
+		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]");
+
+		// Assert
+		ODataRowResult first = response.Results[0];
+		first.RecordCreated.Should().BeNull();
+		JsonSerializer.Serialize(first).Should().NotContain("sent-id");
+		first.RetryGuidance.Should().Contain("Do NOT retry blindly");
+		response.Warnings.Should().ContainSingle().Which.Should().Contain("no row of this batch carries sent-id");
+	}
+
+	[Test]
+	[Description("An empty answer to a created row names no Id: the row reports the one clio sent, and the key check does not trip")]
+	public void Create_ShouldReportTheSentId_WhenACreatedRowIsAnsweredWithAnEmptyBody() {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswers: ["", ""]);
+
+		// Act
+		ODataCreateBatchResponse response = fixture.Create("[{\"Name\":\"Acme\"},{\"Name\":\"Globex\"}]");
+
+		// Assert
+		response.Results.Select(row => row.Id).Should().Equal(
+			fixture.SentBodies.Select(body => body.GetProperty("Id").GetString()));
+		response.Warnings.Should().BeNull();
+		fixture.SentBodies.Select(body => body.TryGetProperty("Id", out JsonElement id) && id.ValueKind == JsonValueKind.String)
+			.Should().OnlyContain(hasId => hasId, because: "an empty answer is no sign that the site replaced the Id");
+	}
+
+	[Test]
+	[Description("The synonym warning and the key warning are both reported")]
+	public void Create_ShouldReportBothWarnings_WhenRowsComeAsASynonymAndTheSiteDoesNotKeepTheId() {
+		// Arrange
+		Fixture fixture = new(Csdl("Edm.Guid"), postAnswer: "{\"Id\":\"22222222-2222-2222-2222-222222222222\"}");
+
+		// Act
+		ODataCreateBatchResponse response = fixture.CreateAsPayload("[{\"Name\":\"Acme\"}]");
+
+		// Assert
+		response.Warnings.Should().HaveCount(2);
+		response.Warnings.Should().Contain(warning => warning.Contains("payload"));
+		response.Warnings.Should().Contain(warning => warning.Contains("another Id"));
+	}
+
+	[Test]
 	[Description("Through the status-keeping client the product uses: the POST carries the generated Id, and a 500 duplicate-key answer is settled by the read-back while its site-response stays")]
 	public void Create_ShouldSettleADuplicateKeyAnswer_ThroughTheStatusKeepingClient() {
 		// Arrange
@@ -327,6 +377,8 @@ public sealed class ODataCreateClientIdTests {
 		ODataRowResult row = response.Results.Single();
 		row.RecordCreated.Should().BeTrue();
 		row.SiteResponse.Status.Should().Be(500, because: "the site's own answer is still reported");
+		row.RetryGuidance.Should().Contain("HTTP 500, \"An error has occured.\"",
+			because: "the guidance quotes what the request got: the site's status and its own message");
 		((IStatusPreservingApplicationClient)fixture.Client).Received(1).SendKeepingStatus(SiteRequestVerb.Post,
 			CollectionUrl, Arg.Is<string>(body => body.Contains($"\"Id\":\"{row.Id}\"")), Arg.Any<int>(), 1,
 			Arg.Any<int>(), false);
@@ -341,7 +393,7 @@ public sealed class ODataCreateClientIdTests {
 		private readonly ODataCreateTool _tool;
 
 		internal Fixture(string metadata, string postAnswer = null, Func<string, string> readBack = null,
-			bool postThrows = false, int? postStatus = null) {
+			bool postThrows = false, int? postStatus = null, IReadOnlyList<string> postAnswers = null) {
 			Client = postStatus is null
 				? Substitute.For<IApplicationClient>()
 				: Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
@@ -363,6 +415,9 @@ public sealed class ODataCreateClientIdTests {
 				SentRaw.Add(body);
 				if (postThrows) {
 					throw new System.Net.Http.HttpRequestException("The connection was closed.");
+				}
+				if (postAnswers is not null) {
+					return postAnswers[SentRaw.Count - 1];
 				}
 				if (postAnswer is not null) {
 					return postAnswer;
@@ -399,6 +454,15 @@ public sealed class ODataCreateClientIdTests {
 		internal ODataCreateBatchResponse Create(string rows) =>
 			_tool.Create(new ODataCreateArgs {
 				EnvironmentName = "dev", Entity = "Account", Rows = JsonDocument.Parse(rows).RootElement.Clone()
+			});
+
+		// The rows go as the synonym "payload", which the tool accepts and names in a warning.
+		internal ODataCreateBatchResponse CreateAsPayload(string rows) =>
+			_tool.Create(new ODataCreateArgs {
+				EnvironmentName = "dev", Entity = "Account",
+				ExtensionData = new Dictionary<string, JsonElement> {
+					["payload"] = JsonDocument.Parse(rows).RootElement.Clone()
+				}
 			});
 	}
 }

@@ -3079,7 +3079,7 @@ internal static class ToolContractCatalog {
 				ODataCreateTool.RowCountLimitDescription,
 				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent.",
 				"Binary columns (file or image Data, Edm.Stream in $metadata) cannot be written through OData. Use upload-file for a file attached to a record and upload-image for an image.",
-				"A row without an Id is sent with an Id clio generates when $metadata declares the entity's Id a GUID (a batch with such a row reads $metadata once). creatio.client sends a request again after a 401, a sign-in redirect or a 403 while the sign-in changed, without telling clio; with its own Id, such a second send of the row is refused as a duplicate key instead of creating a second record. If Creatio answers a created row with another Id, the later rows of the batch go without one and a warning says so."
+				"A row without an Id is sent with an Id clio generates when $metadata declares the entity's Id a GUID (a batch with such a row reads $metadata once). creatio.client sends a request again after a 401, a sign-in redirect or a 403 while the sign-in changed, without telling clio; with its own Id, such a second send of the row is expected to be refused as a duplicate key (not yet measured on a stand) instead of creating a second record. If Creatio answers a created row with another Id, the later rows of the batch go without one, no row keeps sent-id, and a warning says so."
 			]);
 	}
 
@@ -3094,7 +3094,7 @@ internal static class ToolContractCatalog {
 			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
 			"some fields unwritten, so re-read important values with odata-read after a critical write. " +
 			"A PATCH that gets no answer within 30 s fails with diagnostic.side-effect unknown, because Creatio may still apply it; " +
-			"re-sending the same call sets the same values again, but if the first PATCH was applied it is a second update and can run update-time business processes again - read the record first when processes react to its changes. Never performs a keyless mass update.",
+			"re-sending the same call sets the same values again, but if the first PATCH was applied it is a second update and can run update-time business processes again - read the record first when processes react to its changes. creatio.client can also send the PATCH a second time out of clio's sight, after a 401 or a sign-in redirect, with the same effect. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
 				[
@@ -7569,9 +7569,9 @@ internal static class ToolContractCatalog {
 					+ "diagnostic side-effect none. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. A row sent with clio's Id whose result is unknown is read back by that Id: found "
-					+ "makes it a created row (success and record-created true, the failed answer kept in site-response "
-					+ "and explained in retry-guidance); otherwise it stays null and adds sent-id - re-send it only with "
-					+ "that Id, never without it. "
+					+ "makes it a created row (success and record-created true; the failed answer is in site-response "
+					+ "when the site answered, and in retry-guidance); otherwise it stays null and adds sent-id - re-send "
+					+ "it only with that Id, never without it. "
 					+ "A failed row the site answered also carries site-response. "
 					+ ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),

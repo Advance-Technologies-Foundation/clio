@@ -84,7 +84,7 @@ public sealed record ODataRowResult {
 
 	/// <summary>What the site itself answered to this failed write; see <see cref="Clio.Common.SiteResponse"/>.</summary>
 	[JsonPropertyName("site-response"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("What the Creatio site itself answered to the failed write: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
+	[Description("What the Creatio site itself answered to the failed write: status, and its own message and code when the body carries them. Absent on success (except a row clio read back by its sent Id and found created, which keeps the failed answer) and when no HTTP response exists.")]
 	public SiteResponse? SiteResponse { get; init; }
 
 	[JsonIgnore]
@@ -118,7 +118,7 @@ public sealed record ODataRowResult {
 	[JsonPropertyName("sent-id")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[Description("The Id clio generated and sent with this row, present when record-created is null. Re-send the "
-		+ "row with this Id: if the earlier send was applied, Creatio refuses it as a duplicate key.")]
+		+ "row only with this Id: if the earlier send was applied, Creatio is expected to refuse it as a duplicate key.")]
 	public string? SentId { get; init; }
 
 	/// <summary>Gets the failure reason when the row was not inserted.</summary>
@@ -149,8 +149,9 @@ public sealed record ODataRowResult {
 	public bool? RecordCreated { get; init; }
 
 	/// <summary>
-	/// Gets the agent-actionable next step, set when <see cref="RecordCreated"/> is unknown or when Creatio
-	/// rejected the row before writing it.
+	/// Gets the agent-actionable next step, set when <see cref="RecordCreated"/> is unknown, when Creatio
+	/// rejected the row before writing it, or when clio read a row whose request failed back by its sent Id and
+	/// found it created.
 	/// </summary>
 	[JsonPropertyName("retry-guidance")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

@@ -126,14 +126,25 @@ public sealed class ODataCreateTool(
 
 	private const string KeyNotKeptWarning =
 		"Creatio answered a created row with another Id than the one clio sent, so it does not keep a sent Id for this "
-		+ "entity: the later rows of this batch were sent without one, and a repeated send of them is not refused.";
+		+ "entity: the later rows of this batch were sent without one, a repeated send of a row is not refused, and "
+		+ "no row of this batch carries sent-id.";
 
 	/// <summary>Next step for a row the read-back found: it is created although its request was reported as failed.</summary>
+	/// <param name="answer">What the request got: the site's status and message, or the transport failure.</param>
 	private static string CreatedOnReadBackGuidance(string? answer) =>
 		"Created: clio read the record back by the Id it sent for this row and found it, so do NOT re-send this row. "
-		+ "The request itself was reported as failed" + (string.IsNullOrWhiteSpace(answer) ? "" : $" ({answer})")
-		+ ": a repeated send of the same request that Creatio refused as a duplicate key, or work after the insert "
-		+ "that failed, such as an entity event handler, answers that way.";
+		+ "The request itself did not succeed" + (string.IsNullOrWhiteSpace(answer) ? "" : $" (what it got: {answer})")
+		+ ". A repeated send of the same request refused as a duplicate key, work after the insert that failed (such "
+		+ "as an entity event handler), or a connection that failed after the insert ends this way.";
+
+	/// <summary>
+	/// What a failed request got, for the guidance of a row the read-back found: the site's status and own message
+	/// when it answered, the transport failure when it did not. clio's own advice text is never quoted.
+	/// </summary>
+	private static string? DescribeFailedAnswer(ODataRowResult unknown) =>
+		unknown.SiteResponse is { } site
+			? $"HTTP {site.Status}" + (string.IsNullOrWhiteSpace(site.Message) ? "" : $", \"{site.Message}\"")
+			: unknown.ResponseReceived ? null : unknown.Error;
 
 	/// <summary>Next step for a row whose answer is unknown and whose record clio did not get back by its sent Id.</summary>
 	private static string UnknownWithSentIdGuidance(string sentId, bool readBack) =>
@@ -208,7 +219,8 @@ public sealed class ODataCreateTool(
 		"A row without an Id is sent with an Id clio generates when $metadata declares the entity's Id a GUID: " +
 		"creatio.client sends a request again after a 401, a sign-in redirect or a 403 while the sign-in changed, " +
 		"without telling clio, and such a " +
-		"second send is then refused as a duplicate key instead of creating a second record. " +
+		"second send is then expected to be refused as a duplicate key (not yet measured on a stand) instead of " +
+		"creating a second record. " +
 		"Common synonyms of rows - payload, values, body or data (a single object is wrapped into one row) - are accepted and reported in warnings; sending one together with rows or rows-file is rejected as ambiguous. " +
 		"A date-time value without a UTC designator or offset (e.g. '2024-01-01T04:00:00') fails its row before any " +
 		"request - send '...Z' or '...+02:00' instead. " +
@@ -220,7 +232,8 @@ public sealed class ODataCreateTool(
 		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
 		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
 		"state. A row sent with clio's Id whose result is unknown is read back by it: found makes it a created row " +
-		"(success and record-created true, the failed answer kept in site-response and explained in retry-guidance); " +
+		"(success and record-created true; the failed answer is in site-response when the site answered, and in " +
+		"retry-guidance); " +
 		"otherwise it stays null and adds 'sent-id' - re-send it only with that Id, never without. " +
 		"A response this tool returns - success or failure - carries a correlation-id, which matches this call to clio's own log lines; " +
 		"an exception that escapes the batch is answered by the MCP error envelope instead and carries none. " +
@@ -347,8 +360,15 @@ public sealed class ODataCreateTool(
 		// text key would make the row fail, and an unreadable $metadata leaves the key type unknown.
 		batch.GenerateKeys = someRowHasNoKey && batch.PropertyTypes.Value is { } types
 			&& types.TryGetValue(KeyColumn, out string? keyType) && keyType == GuidEdmType;
-		ODataCreateBatchResponse response = ODataCreateBatchResponse.From(PostRows(batch, rows, args.StopOnError, cancellationToken));
-		return batch.Warning is null ? response : response with { Warnings = [batch.Warning] };
+		List<ODataRowResult> results = PostRows(batch, rows, args.StopOnError, cancellationToken);
+		if (batch.Warning is null) {
+			return ODataCreateBatchResponse.From(results);
+		}
+		// The site does not keep a sent Id, so a re-send with an earlier row's sent-id would not be refused either.
+		ODataCreateBatchResponse response = ODataCreateBatchResponse.From(results.Select(row => row.SentId is null
+			? row
+			: row with { SentId = null, RetryGuidance = UnknownSideEffectGuidance }).ToList());
+		return response with { Warnings = [batch.Warning] };
 	}
 
 	/// <summary>What every row of one batch is sent with, and the batch's wall-clock budget.</summary>
@@ -497,7 +517,8 @@ public sealed class ODataCreateTool(
 		}
 		if (result.Success) {
 			StopKeysUnlessKept(batch, result.Id, sentId);
-			return result;
+			// An empty answer to a created row names no Id; it is the one clio sent.
+			return result.Id is null ? result with { Id = sentId } : result;
 		}
 		return result.RecordCreated is null ? SettleBySentId(batch, result, sentId) : result;
 	}
@@ -528,7 +549,7 @@ public sealed class ODataCreateTool(
 				RecordCreated = true,
 				Id = sentId,
 				Error = null,
-				RetryGuidance = CreatedOnReadBackGuidance(unknown.Error)
+				RetryGuidance = CreatedOnReadBackGuidance(DescribeFailedAnswer(unknown))
 			};
 		}
 		return unknown with { SentId = sentId, RetryGuidance = UnknownWithSentIdGuidance(sentId, readBack) };

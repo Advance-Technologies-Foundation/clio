@@ -40,17 +40,19 @@ when `$metadata` declares the entity's `Id` as `Edm.Guid`, because some entities
 second send of that row is then refused as a duplicate key. A row whose result is then unknown is read back by
 that `Id`:
 - found means the row was created, because no other request carries that `Id`. The row is reported as a
-  success, with the failed answer kept in `site-response`;
+  success; the failed answer stays in `site-response` when the site answered, and in `retry-guidance`;
 - anything else (not found, or the read failed) keeps the result unknown and adds `sent-id`. A re-send with
   that `Id` cannot create the record twice.
 
 An `Id` the caller chose is not read back, because it may have existed before the call. If Creatio answers a
-created row with another `Id`, it does not keep a sent one for that entity, so the later rows of the batch go
-without one and the batch warns.
+created row with another `Id`, it does not keep a sent one for that entity: the later rows of the batch go
+without one, the rows already sent lose their `sent-id` (a re-send with it would not be refused), and the batch
+warns.
 
 **Not measured on a stand.** That Creatio keeps a client-sent `Id` on an OData POST, and refuses a repeated
 one as a duplicate key (rather than ignoring it), has not been checked against a site. The echo check above
-catches the first case at run time; the second needs a capture.
+catches the first case only once a row of the batch succeeds with an echoed `Id`, and only from then on; a
+batch whose rows all end unknown never checks. The second case needs a capture.
 
 The other writes stay exposed:
 - a restart can run twice;
