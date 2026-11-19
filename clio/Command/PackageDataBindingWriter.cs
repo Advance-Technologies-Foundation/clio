@@ -183,6 +183,12 @@ internal sealed class PackageDataBindingWriter(
 	/// </summary>
 	internal const string FileSystemImportCommandName = "pkg-to-db";
 
+	/// <summary>
+	/// The command that writes one database binding into the package folder on disk without exporting the rest
+	/// of the environment (with <c>--from-environment</c>). Its CLI verb and its MCP tool share this name.
+	/// </summary>
+	internal const string SingleBindingExportCommandName = "create-data-binding";
+
 	private readonly Dictionary<string, DataBindingDbSchema> _projectedSchemas = new(StringComparer.Ordinal);
 
 	private bool _fileDesignModeStateRead;
@@ -347,8 +353,20 @@ internal sealed class PackageDataBindingWriter(
 			BindingChange.Refreshed => "re-saved in",
 			_ => "removed from"
 		};
-		string remedy =
-			$"To write the database state to disk, run {FileSystemExportCommandName} for this environment " +
+		// A removed binding has nothing left to read back, so only the environment-wide export applies to it.
+		string singleBindingRemedy = string.Empty;
+		string exportPurpose = "To write the database state to disk";
+		if (change != BindingChange.Removed) {
+			singleBindingRemedy =
+				$"To write only this binding to disk, run {SingleBindingExportCommandName} with --from-environment " +
+				$"(CLI: clio {SingleBindingExportCommandName} -e <environment> --package {packageName} " +
+				$"--binding-name {bindingName} --from-environment, with --workspace-path when the current " +
+				$"directory is not the workspace; MCP: {SingleBindingExportCommandName} with from-environment " +
+				"true). It replaces only that binding folder, as the package export writes it. ";
+			exportPurpose = "To write the database state of every package to disk instead";
+		}
+		string remedy = singleBindingRemedy +
+			$"{exportPurpose}, run {FileSystemExportCommandName} for this environment " +
 			$"(CLI: clio {FileSystemExportCommandName} -e <environment>; MCP: clio-run with command " +
 			$"{FileSystemExportCommandName}). It rewrites " +
 			"every package folder on disk from the database, except client modules and C# source code, and " +
