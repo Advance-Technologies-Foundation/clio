@@ -164,8 +164,9 @@ names a successful write returns.
 produced, and that text is redacted where it enters the write tool's result or log, because the reader itself stays
 unwired. Only the quoted part is redacted, where it is embedded, never clio's sentence around it: a sentence that
 carries a remedy or a `docs://` link would lose it to the stack-frame cut or the URI rule. The record page resolver
-redacts the RelatedPage add-on read's failure and the page step redacts get-page's error and a page write that
-throws; `DynamicCaseService` redacts the package dependency manager's failure (each part of a remove-again warning
+redacts every site text it quotes - the RelatedPage add-on read's failure, the card registrations' SelectQuery failure
+(list-entity-client-schemas, read by `DataServiceSelectResponse`) and the name of a Classic card - and the page step
+redacts get-page's error and a page write that throws; `DynamicCaseService` redacts the package dependency manager's failure (each part of a remove-again warning
 on its own) and the server's notes, warnings, leftovers, case names and captions item by item. update-page's own
 error, from the dry run or the save, is passed on as it came: update-page redacts the site parts it quotes, and
 redacting its sentence again turns `docs://mcp/guides/page-modification.]` into `[redacted-uri]`. The process writes
@@ -173,7 +174,10 @@ redact a describe-business-process read-back failure (`ProcessWriteDigest` befor
 access-rights and flow-label guards, the verification warning) and a failure while the digest is built;
 compile-creatio and compile-package redact a compilation-history baseline that could not be read (the ATF data
 provider), and compile-package's tolerated poll round quotes that provider through the site fence
-(`CompilationHistoryPoller`; compile-creatio's activity watcher writes no line for a failed round). Not
+(`CompilationHistoryPoller`; compile-creatio's activity watcher writes no line for a failed round). When the poll
+gives up, `PackageBuilder` chains the data provider's failure rebuilt with only its quote of the answer site-redacted
+(`WithSiteRedactedServerText`): that quote ends the failure's message and console text, so the give-up's elapsed
+time and window and the failed read's operation stay, and the debug excerpt is site-redacted too. Not
 redacted at a sink, on purpose: transport texts (`BuildCaseClient`'s route and transport failures, compile-business-process's
 transport detail, compile-creatio's request error), which carry no answer of the site, and the dependency manager's
 own "Validation warnings from server" log line, which the manager writes itself and which is follow-up with it. A
@@ -188,10 +192,12 @@ text, so `2026-09-05 21:18:24,665 UsrX.cs(1,79) error CS1519` keeps `UsrX.cs`.
 counted read in the member must be an argument of a call to the named extractor - by its qualified name
 (`ProcessDesignServerFault.SiteText(`), or by its bare name only inside the extractor's own class, so a same-named
 helper of another class does not count - or the member must be that extractor. A read that reaches the extractor another way (a variable, a record field, a result redacted upstream) is
-listed `via: <extractor>; proven by <test>`, and the guard checks only that the named end-to-end test exists - the
-test, not the scan, is the proof. Entries outside the write-tool files are not checked read by read, and a
-`not text:` entry is accepted as written; both are where a mislabel can still hide, which is why the dynamic-case
-page refusal, once labelled `not text`, now has an end-to-end test over a fake HTTP answer. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
+listed `via: <extractor>; proven by <test>[, <test>…]` - one test per branch of the extractor that quotes site text,
+as the record page resolver's three (the add-on read, the card registrations, the Classic card) - and the guard
+checks only that each named end-to-end test exists: the tests, not the scan, are the proof. Entries outside the
+write-tool files are not checked read by read, and a `not text:` entry is checked only for one of its two forms;
+both are where a mislabel can still hide, which is why the dynamic-case page refusal, once labelled `not text`, now
+has end-to-end tests over fake answers. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
 and `ReportLocallyModifiedSchemas`' raw log lines), a separate finding.
 
 **Fail closed** - `RedactSiteText` runs the cut, the whole Redact chain and every site rule inside ONE
