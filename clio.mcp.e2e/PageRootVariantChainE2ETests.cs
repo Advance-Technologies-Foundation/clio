@@ -75,47 +75,58 @@ public sealed class PageRootVariantChainE2ETests : McpContractFixtureBase {
 				() => SeedAsync(context, suffix, pageName, packages, workDirectory));
 
 			// Act
-			IReadOnlyList<VariantRow> variants = await ReadVariantRowsAsync(pageName);
-			PageGetResponse seeded = await GetPageAsync(context, pageName, workDirectory);
-			PageUpdateResponse written = await UpdatePageAsync(context, pageName,
-				BuildFragment(pageName, "UsrClioE2ERootChain"), workDirectory);
-			IReadOnlyList<VariantRow> variantsAfter = await ReadVariantRowsAsync(pageName);
+			IReadOnlyList<VariantRow> variants = await AllureApi.Step(
+				"Act: read the stored variants of the page from SysSchema", () => ReadVariantRowsAsync(pageName));
+			PageGetResponse seeded = await AllureApi.Step(
+				"Act: read the page with get-page", () => GetPageAsync(context, pageName, workDirectory));
+			PageUpdateResponse written = await AllureApi.Step(
+				"Act: write the page with update-page, naming no target package",
+				() => UpdatePageAsync(context, pageName, BuildFragment(pageName, "UsrClioE2ERootChain"), workDirectory));
+			IReadOnlyList<VariantRow> variantsAfter = await AllureApi.Step(
+				"Act: read the stored variants again after the write", () => ReadVariantRowsAsync(pageName));
 
 			// Assert
 			TestContext.Progress.WriteLine("Stored variants: " + string.Join("; ", variants));
-			AllureApi.Step("Assert SysSchema marks exactly the base variant as the root", () => {
+			AllureApi.Step("Assert the base variant is stored with ExtendParent = false", () =>
 				variants.Should().Contain(row => row.PackageUId == basePackageUId && !row.ExtendParent,
-					because: "the page created in the base package is the variant update-page reads the chain from");
+					because: "the page created in the base package is the variant update-page reads the chain from"));
+			AllureApi.Step("Assert the layer variant is stored with ExtendParent = true", () =>
 				variants.Should().Contain(row => row.PackageUId == layerPackageUId && row.ExtendParent,
-					because: "the layer written into the second package replaces the base variant");
+					because: "the layer written into the second package replaces the base variant"));
+			AllureApi.Step("Assert exactly one variant is marked as the root", () =>
 				variants.Count(row => !row.ExtendParent).Should().Be(1,
-					because: "update-page takes the one ExtendParent = false row as the root variant");
-			});
-			seeded.Success.Should().BeTrue(because: $"get-page must read the seeded page. Error: {seeded.Error}");
+					because: "update-page takes the one ExtendParent = false row as the root variant"));
+			AllureApi.Step("Assert get-page read the seeded page", () =>
+				seeded.Success.Should().BeTrue(because: $"get-page must read the seeded page. Error: {seeded.Error}"));
 			PagePackageChoice choice = seeded.Page!.PackageChoice;
-			choice.Should().NotBeNull(because: "packageChoice must survive the MCP serialization of get-page");
+			AllureApi.Step("Assert get-page reports packageChoice", () =>
+				choice.Should().NotBeNull(because: "packageChoice must survive the MCP serialization of get-page"));
 			if (choice.Required) {
-				AllureApi.Step("Assert the untargeted write is refused with the layers get-page lists", () => {
-					written.Success.Should().BeFalse(because: "get-page asks for a choice, so update-page must too");
+				AllureApi.Step("Assert the untargeted write is refused", () =>
+					written.Success.Should().BeFalse(because: "get-page asks for a choice, so update-page must too"));
+				AllureApi.Step("Assert the refusal is package-choice-required", () =>
 					written.Error.Should().StartWith(RequiredMarker,
-						because: "both commands read the same root-variant chain");
+						because: "both commands read the same root-variant chain"));
+				AllureApi.Step("Assert the refusal lists the layers get-page lists", () =>
 					written.PackageChoice!.Layers.Select(layer => layer.PackageUId.ToLowerInvariant())
 						.Should().BeEquivalentTo(choice.Layers.Select(layer => layer.PackageUId.ToLowerInvariant()),
-							because: "update-page and get-page must list the same layers for the same page");
-					variantsAfter.Should().BeEquivalentTo(variants, because: "a refused write saves nothing");
-				});
+							because: "update-page and get-page must list the same layers for the same page"));
+				AllureApi.Step("Assert the refused write saved nothing", () =>
+					variantsAfter.Should().BeEquivalentTo(variants, because: "a refused write saves nothing"));
 			}
 			else {
-				AllureApi.Step("Assert the untargeted write saves into the default target only", () => {
+				AllureApi.Step("Assert the untargeted write succeeded", () =>
 					written.Success.Should().BeTrue(
-						because: $"get-page needs no choice, so update-page must not refuse. Error: {written.Error}");
+						because: $"get-page needs no choice, so update-page must not refuse. Error: {written.Error}"));
+				AllureApi.Step("Assert the default target variant changed", () => {
 					VariantRow changed = variantsAfter.Single(row => SameUId(row.PackageUId, choice.DefaultTargetPackageUId));
 					variants.Should().NotContain(changed, because: "the change is stored in the default target");
+				});
+				AllureApi.Step("Assert no other variant changed", () =>
 					variantsAfter.Where(row => !SameUId(row.PackageUId, choice.DefaultTargetPackageUId))
 						.Should().BeEquivalentTo(
 							variants.Where(row => !SameUId(row.PackageUId, choice.DefaultTargetPackageUId)),
-							because: "no other variant of the page may change");
-				});
+							because: "no other variant of the page may change"));
 			}
 		}
 		finally {
