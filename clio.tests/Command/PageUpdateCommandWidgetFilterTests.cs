@@ -10,11 +10,7 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Command;
 
-/// <summary>
-/// ENG-95270: the save path of update-page and sync-pages checks widget filters against the environment's
-/// entity schemas. A definite mismatch blocks the save, a dry run reports it, and a check that could not run
-/// never blocks anything.
-/// </summary>
+// ENG-95270: widget-filter check on the update-page/sync-pages save path.
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Command")]

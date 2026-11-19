@@ -287,6 +287,7 @@
 		/// <param name="pageLayerInspector">Finds the page's replacing layers for the package-choice check
 		/// (<see cref="PageUpdateOptions.EnforcePackageChoice"/>). Optional only for hand-built test constructions;
 		/// DI always supplies it. Without it the check does not run.</param>
+		/// <param name="widgetFilterValidator">Optional: without it widget filters are not checked.</param>
 		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
@@ -443,10 +444,8 @@
 			return true;
 		}
 
-		// ENG-95270: the semantic half of the widget-filter check (does the column exist on the widget's
-		// schema, does the operator, macro or lookup value fit it). It needs the environment, so it lives on the
-		// save path rather than in validate-page. Anything that only failed to be READ is a warning: a schema
-		// read must never be the reason a save is refused.
+		// ENG-95270: needs the environment, so it runs on the save path rather than in validate-page. A check that
+		// could not run is a warning, never the reason a save is refused.
 		private PageWidgetFilterReport ValidateWidgetFilters(
 			PageUpdateOptions options, EditableSchemaContext context, string bodyToWrite, string? persistedBody = null) {
 			if (!options.Validate || _widgetFilterValidator is null || context.SchemaType == PageSchemaType.Mobile

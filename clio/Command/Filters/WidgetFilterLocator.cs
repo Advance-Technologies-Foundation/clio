@@ -18,7 +18,7 @@ internal static class WidgetFilterLocator {
 	// Older page bodies carry the same diff under the pre-Freedom-UI marker name.
 	private const string LegacyDiffMarker = "SCHEMA_DIFF";
 
-	/// <returns>The filters; <c>null</c> when the view-config diff is present but is not readable JSON.</returns>
+	// Null when the view-config diff is present but is not readable JSON.
 	internal static IReadOnlyList<PageWidgetFilter>? Locate(string body) {
 		List<PageWidgetFilter> found = [];
 		if (string.IsNullOrEmpty(body)

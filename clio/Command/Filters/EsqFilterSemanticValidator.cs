@@ -14,17 +14,10 @@ internal sealed class EsqFilterFindings {
 	internal List<string> Warnings { get; } = [];
 }
 
-/// <summary>
-/// Checks a stored ESQ filter tree against the live entity schemas — the part no registry type can
-/// express: does the column exist, does the operator fit its type, does a macro fit the column, does a
-/// lookup parameter carry a record Id. These are the mistakes that make a widget render an error or a
-/// wrong number while the page saves fine (ENG-95270). Only definite mismatches are errors; anything the
-/// environment could not answer is a warning, so a flaky read never blocks a save.
-/// </summary>
+// Checks what no registry type can express, against live schemas: the mistakes that let a page save while its
+// widget shows an error or a wrong number (ENG-95270).
 internal sealed class EsqFilterSemanticValidator {
 
-	private const int EqualComparison = 3;
-	private const int NotEqualComparison = 4;
 	private const int FirstRelationalComparison = 5;
 	private const int LastRelationalComparison = 8;
 	private const int FirstTextComparison = 9;
@@ -192,7 +185,7 @@ internal sealed class EsqFilterSemanticValidator {
 			&& Guid.TryParse(property.Value.GetString(), out _));
 	}
 
-	/// <summary>The designer stores an unset lookup filter value as <c>""</c> or an object with an empty value.</summary>
+	// The designer stores an unset lookup value as "" or as an object whose fields are empty.
 	private static bool IsEmptyLookupValue(JsonElement value) =>
 		value.ValueKind == JsonValueKind.String && string.IsNullOrEmpty(value.GetString())
 		|| value.ValueKind == JsonValueKind.Object && value.EnumerateObject().All(property =>

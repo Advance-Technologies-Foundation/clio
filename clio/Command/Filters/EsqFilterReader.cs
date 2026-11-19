@@ -3,12 +3,8 @@ using System.Text.Json;
 
 namespace Clio.Command.Filters;
 
-/// <summary>
-/// Reads a stored ESQ filter group into <see cref="EsqFilterGroupNode"/>. Deliberately tolerant: a node it
-/// cannot interpret is skipped rather than reported, because structure is the registry's job (the
-/// published ESQ filter types) and this reader only feeds the semantic checks. Disabled nodes are skipped
-/// too — the runtime ignores them, so a stale column inside one cannot break the widget.
-/// </summary>
+// Tolerant on purpose: structure is the registry's job (the published ESQ filter types), so a node this
+// reader cannot interpret is skipped, not reported. Disabled nodes are skipped too: the runtime ignores them.
 internal static class EsqFilterReader {
 
 	internal static EsqFilterGroupNode? ReadGroup(JsonElement element, string path) {
@@ -87,7 +83,6 @@ internal static class EsqFilterReader {
 		if (element.TryGetProperty("parameter", out JsonElement parameterElement)
 			&& parameterElement.ValueKind == JsonValueKind.Object) {
 			parameter = new EsqParameterNode(
-				ReadInt(parameterElement, "dataValueType"),
 				parameterElement.TryGetProperty("value", out JsonElement value) ? value.Clone() : null);
 		}
 		return new EsqExpressionNode(
@@ -96,7 +91,6 @@ internal static class EsqFilterReader {
 			ReadString(element, "columnPath"),
 			ReadInt(element, "functionType"),
 			ReadInt(element, "macrosType"),
-			ReadInt(element, "datePartType"),
 			element.TryGetProperty("functionArgument", out JsonElement argument)
 				? ReadExpression(argument, $"{path}.functionArgument")
 				: null,

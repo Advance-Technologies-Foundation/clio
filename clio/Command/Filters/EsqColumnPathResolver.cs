@@ -5,14 +5,10 @@ using Clio.Command.BusinessRules.Filters.Schema;
 
 namespace Clio.Command.Filters;
 
-/// <summary>
-/// Outcome of resolving an ESQ column path. <see cref="Unverifiable"/> means a schema on the way could not be
-/// read (the environment refused or the schema is not visible from the package): the caller must not turn
-/// that into a rejection, since the path itself may be fine.
-/// </summary>
+// Unverifiable: a schema on the path could not be read (refused, or not visible from the package), so the path
+// may still be valid; never turn it into a rejection.
 internal sealed record EsqColumnResolution(
 	FilterSchemaColumn? Column,
-	string? OwnerSchema,
 	string? LastJoinedSchema,
 	string? Error,
 	bool Unverifiable) {
@@ -20,16 +16,9 @@ internal sealed record EsqColumnResolution(
 	internal bool IsResolved => Column is not null;
 }
 
-/// <summary>
-/// Resolves ESQ column paths as stored on pages, including backward references (<c>[Child:Link]</c> or
-/// <c>[Child:Link:SourceColumn]</c>) and mixed forward/backward chains such as
-/// <c>Contact.[Lead:QualifiedContact].Id</c>, against live entity-schema metadata.
-/// </summary>
-/// <remarks>
-/// Kept apart from <c>SchemaAwareFilterValidator.ResolveColumnPath</c>, which serves the business-rule friendly
-/// dialect: that one throws on the first problem and accepts only exact column names, as the friendly contract
-/// requires; stored filters need the lenient spellings ESQ itself accepts and a verdict instead of an exception.
-/// </remarks>
+// Covers backward references ([Child:Link], [Child:Link:SourceColumn]) and mixed chains
+// (Contact.[Lead:QualifiedContact].Id). Kept apart from SchemaAwareFilterValidator.ResolveColumnPath, which serves
+// the friendly dialect (throws, exact names); stored filters need ESQ's lenient spellings and a verdict.
 internal sealed class EsqColumnPathResolver {
 
 	private const string LookupTypeName = "Lookup";
@@ -88,13 +77,11 @@ internal sealed class EsqColumnPathResolver {
 			}
 			currentSchema = column.ReferenceSchemaName;
 		}
-		return new EsqColumnResolution(column, currentSchema, lastJoinedSchema, null, false);
+		return new EsqColumnResolution(column, lastJoinedSchema, null, false);
 	}
 
-	/// <remarks>
-	/// ESQ resolves column names case-insensitively, and a lookup is also reachable by its value-column name
-	/// (<c>CountryId</c> for <c>Country</c>); rejecting either spelling would flag filters the runtime runs.
-	/// </remarks>
+	// ESQ matches names case-insensitively and reaches a lookup by its value-column name (CountryId for Country);
+	// rejecting either spelling would flag filters the runtime runs.
 	private static FilterSchemaColumn? FindColumn(IReadOnlyDictionary<string, FilterSchemaColumn> columns, string name) {
 		if (columns.TryGetValue(name, out FilterSchemaColumn? exact)) {
 			return exact;
@@ -130,8 +117,8 @@ internal sealed class EsqColumnPathResolver {
 		return true;
 	}
 
-	private static EsqColumnResolution Failed(string error) => new(null, null, null, error, false);
+	private static EsqColumnResolution Failed(string error) => new(null, null, error, false);
 
 	private static EsqColumnResolution Unreadable(string schemaName) =>
-		new(null, null, null, $"schema '{schemaName}' could not be read from the environment", true);
+		new(null, null, $"schema '{schemaName}' could not be read from the environment", true);
 }
