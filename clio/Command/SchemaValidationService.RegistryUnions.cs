@@ -26,6 +26,26 @@ public static partial class SchemaValidationService {
 		if (value.ValueKind != JsonValueKind.Object) {
 			return;
 		}
+		UnionBranchMatch match = MatchUnionBranches(value, unionExpression, typeDefinitions);
+		if (match.Compatible.Count == 0) {
+			// Only an abstract base or an undescribed branch could take the value: a variant the registry does
+			// not publish (a Segment filter, say) is not a broken one.
+			if (report && match.HasPinnedBranch && !match.HasOpenBranch && !match.BaseAccepts) {
+				result.Errors.Add($"{path} does not match any of {unionExpression}: its discriminator fields " +
+					$"({DescribeSelectors(unionExpression, typeDefinitions)}) name no known variant. {GuidanceHint(path)}");
+			}
+			return;
+		}
+		ValidateValueAgainstMostSpecificBranches(value, match.Compatible, typeDefinitions, path, result, report);
+	}
+
+	/// <summary>
+	/// The union branches whose pinned discriminators all match <paramref name="value"/>, each with how many it
+	/// pins, plus what the other branches say: whether one is opaque, whether any pins a value, and whether an
+	/// abstract base's multi-valued selectors accept the value.
+	/// </summary>
+	private static UnionBranchMatch MatchUnionBranches(
+		JsonElement value, string unionExpression, IReadOnlyDictionary<string, JsonElement> typeDefinitions) {
 		List<(string Branch, int Specificity)> compatible = [];
 		bool hasOpenBranch = false;
 		bool hasPinnedBranch = false;
@@ -39,42 +59,48 @@ public static partial class SchemaValidationService {
 			List<(string Name, JsonElement Values)> pinned = selectors.Where(selector => selector.Values.GetArrayLength() == 1).ToList();
 			if (pinned.Count > 0) {
 				hasPinnedBranch = true;
-				if (Matches(pinned)) {
+				if (SelectorsMatch(value, pinned)) {
 					compatible.Add((branch, pinned.Count));
 				}
 			} else if (selectors.Count > 0) {
-				baseAccepts |= Matches(selectors);
+				baseAccepts |= SelectorsMatch(value, selectors);
 			} else {
 				hasOpenBranch = true;
 			}
 		}
-		if (compatible.Count == 0) {
-			// Only an abstract base or an undescribed branch could take the value: a variant the registry does
-			// not publish (a Segment filter, say) is not a broken one.
-			if (report && hasPinnedBranch && !hasOpenBranch && !baseAccepts) {
-				result.Errors.Add($"{path} does not match any of {unionExpression}: its discriminator fields " +
-					$"({DescribeSelectors(unionExpression, typeDefinitions)}) name no known variant. {GuidanceHint(path)}");
-			}
-			return;
-		}
+		return new UnionBranchMatch(compatible, hasOpenBranch, hasPinnedBranch, baseAccepts);
+	}
+
+	/// <summary>
+	/// Accepts <paramref name="value"/> when any of the most specific compatible branches does; otherwise reports
+	/// the errors of the branch that failed with the fewest.
+	/// </summary>
+	private static void ValidateValueAgainstMostSpecificBranches(
+		JsonElement value, IReadOnlyList<(string Branch, int Specificity)> compatible,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
 		int best = compatible.Max(candidate => candidate.Specificity);
-		List<string>? fewestErrors = null;
+		List<string> fewestErrors = [];
 		foreach ((string branch, int _) in compatible.Where(candidate => candidate.Specificity == best)) {
 			var branchResult = new SchemaValidationResult { IsValid = true };
 			ValidateValueAgainstType(value, branch, EmptyTypeSubstitution, typeDefinitions, path, branchResult, report);
 			if (branchResult.Errors.Count == 0) {
 				return;
 			}
-			if (fewestErrors is null || branchResult.Errors.Count < fewestErrors.Count) {
+			if (fewestErrors.Count == 0 || branchResult.Errors.Count < fewestErrors.Count) {
 				fewestErrors = branchResult.Errors;
 			}
 		}
-		result.Errors.AddRange(fewestErrors!);
-
-		bool Matches(IEnumerable<(string Name, JsonElement Values)> selectors) =>
-			selectors.All(selector => value.TryGetProperty(selector.Name, out JsonElement actual)
-				&& selector.Values.EnumerateArray().Any(allowed => ScalarEquals(allowed, actual)));
+		result.Errors.AddRange(fewestErrors);
 	}
+
+	private static bool SelectorsMatch(JsonElement value, IEnumerable<(string Name, JsonElement Values)> selectors) =>
+		selectors.All(selector => value.TryGetProperty(selector.Name, out JsonElement actual)
+			&& selector.Values.EnumerateArray().Any(allowed => ScalarEquals(allowed, actual)));
+
+	private sealed record UnionBranchMatch(
+		IReadOnlyList<(string Branch, int Specificity)> Compatible,
+		bool HasOpenBranch, bool HasPinnedBranch, bool BaseAccepts);
 
 	/// <summary>
 	/// Required fields with a <c>values</c> list. Single-valued ones pin a concrete variant; multi-valued ones

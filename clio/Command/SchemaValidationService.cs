@@ -2539,31 +2539,46 @@ public static partial class SchemaValidationService
 		string typeExpression = typeElement.GetString() ?? string.Empty;
 		// Record<string, T>: every entry is a T (an ESQ filter group's `items`).
 		if (string.Equals(typeExpression, "Record", StringComparison.Ordinal)) {
-			if (value.ValueKind == JsonValueKind.Object &&
-			    fieldDefinition.TryGetProperty("valueType", out JsonElement valueType) &&
-			    valueType.ValueKind == JsonValueKind.String) {
-				foreach (JsonProperty entry in value.EnumerateObject()) {
-					ValidateValueAgainstTypeExpression(entry.Value, valueType.GetString() ?? string.Empty, typeDefinitions,
-						$"{path}.{entry.Name}", result, report);
-				}
-			}
+			ValidateRecordEntries(value, fieldDefinition, typeDefinitions, path, result, report);
 			return;
 		}
-		// Array: validate each element against the item type.
 		if (string.Equals(typeExpression, "array", StringComparison.Ordinal)) {
-			if (value.ValueKind == JsonValueKind.Array &&
-			    fieldDefinition.TryGetProperty("items", out JsonElement items)) {
-				int index = 0;
-				foreach (JsonElement element in value.EnumerateArray()) {
-					RecurseIntoFieldValue(element, items, substitution, typeDefinitions, $"{path}[{index}]", result, report);
-					index++;
-				}
-			}
+			ValidateArrayElements(value, fieldDefinition, substitution, typeDefinitions, path, result, report);
 			return;
 		}
 		// Resolve a generic placeholder ("TProvidingConfig") to the concrete argument bound above.
 		typeExpression = ApplyTypeSubstitution(typeExpression, substitution);
 		ValidateValueAgainstTypeExpression(value, typeExpression, typeDefinitions, path, result, report);
+	}
+
+	private static void ValidateRecordEntries(
+		JsonElement value, JsonElement fieldDefinition,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		if (value.ValueKind != JsonValueKind.Object ||
+		    !fieldDefinition.TryGetProperty("valueType", out JsonElement valueType) ||
+		    valueType.ValueKind != JsonValueKind.String) {
+			return;
+		}
+		foreach (JsonProperty entry in value.EnumerateObject()) {
+			ValidateValueAgainstTypeExpression(entry.Value, valueType.GetString() ?? string.Empty, typeDefinitions,
+				$"{path}.{entry.Name}", result, report);
+		}
+	}
+
+	private static void ValidateArrayElements(
+		JsonElement value, JsonElement fieldDefinition,
+		IReadOnlyDictionary<string, string> substitution,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		if (value.ValueKind != JsonValueKind.Array || !fieldDefinition.TryGetProperty("items", out JsonElement items)) {
+			return;
+		}
+		int index = 0;
+		foreach (JsonElement element in value.EnumerateArray()) {
+			RecurseIntoFieldValue(element, items, substitution, typeDefinitions, $"{path}[{index}]", result, report);
+			index++;
+		}
 	}
 
 	private static void ValidateValueAgainstTypeExpression(
