@@ -82,7 +82,8 @@ public sealed class SiteTextWritePathWiringTests {
 
 	#region update-page and sync-pages (PageDesignerHierarchyClient, PageUpdateCommand)
 
-	private static IApplicationClient UpdatePageSite(string designPackage, string hierarchy, string getSchema) {
+	private static IApplicationClient UpdatePageSite(string designPackage, string hierarchy, string getSchema,
+		string save = """{"success": true}""") {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(call => call.ArgAt<string>(0) switch {
@@ -90,7 +91,7 @@ public sealed class SiteTextWritePathWiringTests {
 				DesignPackageUrl => designPackage,
 				ParentSchemasUrl => hierarchy,
 				GetSchemaUrl => getSchema,
-				SaveSchemaUrl => """{"success": true}""",
+				SaveSchemaUrl => save,
 				_ => """{"success": false}"""
 			});
 		return client;
@@ -231,6 +232,49 @@ public sealed class SiteTextWritePathWiringTests {
 			because: "the login reaches neither the error nor the log");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("update-page: a design-package refusal whose message is only a stack trace (DescribeRefusal redacts it "
+		+ "to nothing) reads as clio's own sentence, not as a dangling 'Failed to resolve design package: '.")]
+	public void UpdatePage_ShouldSayItsOwnSentence_WhenTheRefusalRedactsToNothing() {
+		// Arrange
+		IApplicationClient client = UpdatePageSite(Refusal("\n   at Terrasoft.Fixture.Designer.Read()"),
+			HierarchyOf(DesignPackage), Refusal("unused"));
+
+		// Act
+		(string error, List<string> _) = RunUpdatePage(client, () => UpdatePageOptions());
+
+		// Assert
+		error.Should().Be($"Failed to resolve design package for '{SchemaName}': Failed to resolve design package",
+			because: "a reason that redacts to nothing is no reason");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-page: an addonsErrors item of the designer's save refusal (ParseSaveErrorMessage) gives its "
+		+ "code and message only, redacted as site text - never its stackTrace - in the error and in the logged response.")]
+	public void UpdatePage_ShouldReadOnlyTheMessageOfAnAddonError_NeverItsStackTrace() {
+		// Arrange
+		string save = JsonSerializer.Serialize(new {
+			success = false,
+			addonsErrors = new[] {
+				new { errorCode = "AddonException", message = SiteMessage, stackTrace = "   at Terrasoft.Fixture.Addon.Save()" }
+			}
+		});
+		IApplicationClient client = UpdatePageSite(DesignPackageOf(DesignPackage), HierarchyOf(DesignPackage),
+			JsonSerializer.Serialize(new { success = true, schema = new { body = "old", name = SchemaName } }), save);
+
+		// Act
+		(string error, List<string> logged) = RunUpdatePage(client, () => UpdatePageOptions());
+
+		// Assert
+		error.Should().Contain("AddonException: " + RedactedReason, because: "the item's code and reason stay");
+		foreach (string text in logged.Append(error)) {
+			text.Should().NotContainAny([Marker, "Terrasoft.Fixture", "stackTrace"],
+				because: "neither the login nor the item's stack trace reaches the error or the log");
+		}
+	}
+
 	#endregion
 
 	#region create-page (PageCreateCommand, SchemaTemplateCatalog)
@@ -320,15 +364,40 @@ public sealed class SiteTextWritePathWiringTests {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecuteGetRequest(Arg.Any<string>()).Returns(SiteMessage + "\r\n   at Terrasoft.Fixture.Catalog.Read()");
-		SchemaTemplateCatalog catalog = new(client, CreatePageUrls());
+		IServiceUrlBuilder urls = CreatePageUrls();
+		ILogger logger = Substitute.For<ILogger>();
+		PageCreateCommand command = new(client, urls, new SchemaTemplateCatalog(client, urls), logger,
+			Substitute.For<ICaptionCultureResolver>());
 
 		// Act
-		Action act = () => catalog.GetTemplates(PageSchemaType.Web);
+		command.TryCreatePage(CreatePageOptions(), out PageCreateResponse response);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
-			.Which.Message.Should().Contain("Response preview: " + RedactedReason, because: "the reason stays")
-			.And.NotContainAny([Marker, "Terrasoft.Fixture"], because: "the login and the stack trace go");
+		response.Error.Should().Contain("Response preview: " + RedactedReason, because: "the reason stays");
+		foreach (string text in Logged(logger).Append(response.Error)) {
+			text.Should().NotContainAny([Marker, "Terrasoft.Fixture"],
+				because: "the login and the stack trace reach neither the error nor create-page's failure line");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-page: a template catalog refusal whose message redacts to nothing (DescribeRefusal) reads as "
+		+ "clio's own sentence instead of an empty one.")]
+	public void CreatePage_ShouldSayItsOwnSentence_WhenTheCatalogRefusalRedactsToNothing() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecuteGetRequest(Arg.Any<string>()).Returns(Refusal("\n   at Terrasoft.Fixture.Catalog.Read()"));
+		IServiceUrlBuilder urls = CreatePageUrls();
+		PageCreateCommand command = new(client, urls, new SchemaTemplateCatalog(client, urls), Substitute.For<ILogger>(),
+			Substitute.For<ICaptionCultureResolver>());
+
+		// Act
+		command.TryCreatePage(CreatePageOptions(), out PageCreateResponse response);
+
+		// Assert
+		response.Error.Should().Be("Failed to resolve template catalog: Failed to load page template catalog",
+			because: "a reason that redacts to nothing is no reason");
 	}
 
 	#endregion
@@ -421,6 +490,9 @@ public sealed class SiteTextWritePathWiringTests {
 		exception.Message.Should().NotContain(Marker, because: "every SelectQuery caller logs this message");
 	}
 
+	// SelectQueryHelper writes no log line of its own: it throws, and the message it builds is what each caller puts
+	// into its error and its log line verbatim. The exception's message is therefore both halves of these two cases.
+
 	[Test]
 	[Category("Unit")]
 	[Description("The preview of a SelectQuery (and designer) body that is not JSON (ServiceResponseJsonGuard) goes "
@@ -436,6 +508,30 @@ public sealed class SiteTextWritePathWiringTests {
 		exception.Should().BeAssignableTo<InvalidOperationException>(because: "the body is not JSON");
 		exception.Message.Should().Contain("Response preview: " + RedactedReason, because: "the reason stays")
 			.And.NotContainAny([Marker, "Terrasoft.Fixture"], because: "the login and the stack trace go");
+	}
+
+	// The head of a JSON Web Token: header and part of the payload, with no signature - the shape the redactor does
+	// not recognize on its own (it needs all three segments).
+	private const string TokenHead = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaXh0dXJlLXVzZXIiLCJyb2xlIjoi";
+
+	[Test]
+	[Category("Unit")]
+	[Description("The non-JSON preview's redaction input is clamped (8x the 200-character preview) without cutting a "
+		+ "token in two: a token that straddles the clamp is dropped, not shown as a head the redactor cannot "
+		+ "recognize.")]
+	public void SelectQuery_ShouldNotShowATokenHead_WhenTheClampCutsTheToken() {
+		// Arrange - a secret value the redaction shortens to a placeholder, so what follows it reaches the preview, and
+		// a token that starts just before the 1,600-character clamp.
+		string lead = "password=" + new string('k', 1600 - 9 - 1 - 30) + " ";
+		string body = lead + TokenHead + ".dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk tail";
+
+		// Act
+		Exception exception = RunSelectQuery(body);
+
+		// Assert
+		exception.Message.Should().Contain("Response preview: password=[redacted]",
+			because: "the secret before the token is redacted");
+		exception.Message.Should().NotContain("eyJhbGciOiJIUzI1NiJ9", because: "no head of the cut token is shown");
 	}
 
 	#endregion
@@ -470,6 +566,50 @@ public sealed class SiteTextWritePathWiringTests {
 		// Assert
 		description.Should().Contain(RedactedReason, because: "the site's reason stays");
 		description.Should().NotContain(Marker, because: "the description is the installer's error line");
+		if (part == "compiler") {
+			description.Should().Contain("UsrFixture.cs(1,79) error CS1519",
+				because: "the line still names the file to fix; only its directories are the environment's layout");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The installation failure line names the file of a compiler line whatever path the environment wrote "
+		+ "it under: an absolute Windows or POSIX path, or a relative Autogenerated\\Src one.")]
+	public void InstallFailure_ShouldNameTheFile_OfACompilerLine(
+		[Values(@"C:\inetpub\wwwroot\creatio\Terrasoft.Configuration\Autogenerated\Src\UsrFixture.cs",
+			"/app/Terrasoft.Configuration/Autogenerated/Src/UsrFixture.cs", @"Autogenerated\Src\UsrFixture.cs")]
+		string path) {
+		// Arrange
+		BaseResponse response = new() {
+			Success = false, ErrorInfo = new SiteErrorInfo { ErrorCode = "Exception", Message = "Packages installation failed" }
+		};
+
+		// Act
+		string description = InstallLogAnalyzer.DescribeFailure(response,
+			path + "(1,79) error CS1519: Invalid token '!=' in a member declaration\r\n");
+
+		// Assert
+		description.Should().Be("the configuration failed to compile. UsrFixture.cs(1,79) error CS1519: Invalid token "
+			+ "'!=' in a member declaration", because: "the file name stays and the directories go");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The installation failure line's log tail is redacted with its lines still apart, so the site-text "
+		+ "cut drops the stack frames of an exception the log ended with.")]
+	public void InstallFailure_ShouldCutTheStackFrames_OfTheLogTail() {
+		// Arrange
+		string log = "Install failed\r\nSystem.NullReferenceException: Object reference not set to an instance of an "
+			+ "object.\r\n   at Terrasoft.Core.Packages.PackageInstaller.Install(String name)\r\n";
+
+		// Act
+		string description = InstallLogAnalyzer.DescribeFailure(new BaseResponse { Success = false }, log);
+
+		// Assert
+		description.Should().Be("the installation service reported a failure without an error message. Last log lines: "
+			+ "Install failed | System.NullReferenceException: Object reference not set to an instance of an object.",
+			because: "the reason stays and the frames after it go");
 	}
 
 	#endregion
@@ -567,13 +707,14 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("compile-business-process: the compile's message, each error's location and message, and a server "
-		+ "name that is not a code are fenced as SITE text (UntrustedText.FencedSiteText) in the command's log lines.")]
+	[Description("compile-business-process: the compile's message and each error's location and message are fenced as "
+		+ "SITE text (UntrustedText.FencedSiteText) in the command's log lines. The command writes no result field of "
+		+ "its own: its log lines are what a caller reads.")]
 	public void CompileBusinessProcess_ShouldFenceTheServerText_AsSiteText() {
 		// Arrange
 		ICompileBusinessProcessService service = Substitute.For<ICompileBusinessProcessService>();
 		service.Compile(Env, Arg.Any<CompileBusinessProcessRequest>()).Returns(new CompileBusinessProcessResult(false,
-			SiteMessage, "UsrFixtureProcess", "Custom " + SiteMessage, "general", true, true, 1000,
+			SiteMessage, "UsrFixtureProcess", "Custom", "general", true, true, 1000,
 			[new CompileBusinessProcessError("UsrFixture.Custom.cs " + SiteMessage, 3, 4, "CS0103", SiteMessage, true)],
 			1));
 		ILogger logger = Substitute.For<ILogger>();
@@ -590,6 +731,342 @@ public sealed class SiteTextWritePathWiringTests {
 			because: "the server's summary stays, fenced and redacted");
 		logged.Should().NotContain(text => text.Contains(Marker, StringComparison.Ordinal),
 			because: "no fenced segment of the log carries the login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("compile-business-process: a process or package name the server echoes back that is not a code is "
+		+ "fenced as SITE text in the success line (ServerName runs only on success).")]
+	public void CompileBusinessProcess_ShouldFenceAServerName_AsSiteText_OnSuccess() {
+		// Arrange
+		ICompileBusinessProcessService service = Substitute.For<ICompileBusinessProcessService>();
+		service.Compile(Env, Arg.Any<CompileBusinessProcessRequest>()).Returns(new CompileBusinessProcessResult(true,
+			null, "UsrFixtureProcess " + SiteMessage, "Custom " + SiteMessage, "general", true, true, 1000, [], 0));
+		ILogger logger = Substitute.For<ILogger>();
+		CompileBusinessProcessCommand command = new(service, logger);
+
+		// Act
+		int exitCode = command.Execute(new CompileBusinessProcessOptions { Environment = Env, ProcessName = "UsrFixtureProcess" });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the compile succeeded; only how its names are shown is under test");
+		List<string> logged = Logged(logger);
+		logged.Should().Contain(text => text.Contains("Compiled package '[untrusted-source-text begin] Custom "
+				+ RedactedReason, StringComparison.Ordinal),
+			because: "the package name stays, fenced and redacted");
+		logged.Should().NotContain(text => text.Contains(Marker, StringComparison.Ordinal),
+			because: "the success line is the caller's whole result");
+	}
+
+	private static (ILogger Logger, int ExitCode) RunModifyAsNewVersion(string body) {
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(body);
+		(EnvironmentSettings environment, ISettingsRepository settings, IApplicationClientFactory factory) =
+			ProcessEnvironment(client);
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.ModifyProcessAsNewVersion, environment)
+			.Returns("http://sandbox/0/rest/ProcessDesignService/ModifyProcessAsNewVersion");
+		ILogger logger = Substitute.For<ILogger>();
+		ModifyProcessAsNewVersionService service = new(settings, factory, urls,
+			Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>());
+		int exitCode = new ModifyProcessAsNewVersionCommand(service, Substitute.For<IProcessDescriber>(), logger).Execute(
+			new ModifyProcessAsNewVersionOptions {
+				Environment = Env, ProcessName = "UsrFixtureProcess",
+				OperationsJson = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"Amount\",\"type\":\"Integer\"}}]"
+			});
+		return (logger, exitCode);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process-as-new-version: the refusal's errorMessage, the created version's name, the "
+		+ "layout elements and every warning (BuildFailureMessage) go through RedactSiteText, in the exception and in "
+		+ "the command's error line, and each warning is redacted on its own.")]
+	public void ModifyAsNewVersion_ShouldRedactTheServerText_InTheExceptionAndTheLog() {
+		// Arrange
+		string body = JsonSerializer.Serialize(new {
+			ModifyProcessAsNewVersionResult = new {
+				success = false, errorMessage = SiteMessage, versionName = "UsrFixtureProcess_v2 " + SiteMessage,
+				versionSchemaUId = "55555555-5555-5555-5555-555555555555",
+				layoutChange = new { elements = new[] { "UsrStart " + SiteMessage } },
+				warnings = new[] { "Warning " + SiteMessage + "\n   at Terrasoft.Fixture.Process.Save()", OwedCompileWarning }
+			}
+		});
+
+		// Act
+		(ILogger logger, int exitCode) = RunModifyAsNewVersion(body);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the server refused the new version");
+		string line = Logged(logger).Single(text => text.StartsWith(RedactedReason, StringComparison.Ordinal));
+		line.Should().Contain("The version 'UsrFixtureProcess_v2 " + RedactedReason + "'",
+			because: "the version name stays, redacted");
+		line.Should().Contain("Affected elements: UsrStart " + RedactedReason, because: "the element name stays");
+		line.Should().Contain(OwedCompileWarning, because: "a frame in the first warning may not cut the second");
+		line.Should().NotContainAny([Marker, "Terrasoft.Fixture"],
+			because: "the error line is the exception's message, which carries no login and no frame");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("set-active-process-version: the refusal's errorMessage, the active version's name and the warnings "
+		+ "(BuildFailureMessage) go through RedactSiteText, in the exception and in the command's error line.")]
+	public void SetActiveProcessVersion_ShouldRedactTheServerText_InTheExceptionAndTheLog() {
+		// Arrange
+		string body = JsonSerializer.Serialize(new {
+			SetActiveProcessVersionResult = new {
+				success = false, errorMessage = SiteMessage, activeVersionName = "UsrFixtureProcess_v1 " + SiteMessage,
+				activeVersionSchemaUId = "66666666-6666-6666-6666-666666666666",
+				warnings = new[] { "Warning " + SiteMessage }
+			}
+		});
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(body);
+		(EnvironmentSettings environment, ISettingsRepository settings, IApplicationClientFactory factory) =
+			ProcessEnvironment(client);
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.SetActiveProcessVersion, environment)
+			.Returns("http://sandbox/0/rest/ProcessDesignService/SetActiveProcessVersion");
+		ILogger logger = Substitute.For<ILogger>();
+		SetActiveProcessVersionService service = new(settings, factory, urls, Substitute.For<ILogger>());
+
+		// Act
+		int exitCode = new SetActiveProcessVersionCommand(service, Substitute.For<IProcessDescriber>(), logger).Execute(
+			new SetActiveProcessVersionOptions { Environment = Env, VersionName = "UsrFixtureProcess_v2" });
+
+		// Assert
+		exitCode.Should().Be(1, because: "the server refused the activation");
+		string line = Logged(logger).Single(text => text.StartsWith(RedactedReason, StringComparison.Ordinal));
+		line.Should().Contain("'UsrFixtureProcess_v1 " + RedactedReason + "'", because: "the version name stays");
+		line.Should().Contain("Warning " + RedactedReason, because: "the warning stays");
+		Logged(logger).Should().NotContain(text => text.Contains(Marker, StringComparison.Ordinal),
+			because: "the error line is the exception's message, which carries no login");
+	}
+
+	private const string OwedCompileWarning =
+		"The process has a script task: compile it with compile-business-process before it runs.";
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-business-process: a failure after the save keeps every warning, each redacted on its own, so "
+		+ "a stack frame in one warning cannot cut the owed-compile warning after it.")]
+	public void CreateBusinessProcess_ShouldKeepTheOwedCompileWarning_WhenAnEarlierWarningCarriesAFrame() {
+		// Arrange
+		string body = JsonSerializer.Serialize(new {
+			BuildProcessResult = new {
+				success = false, errorMessage = "Tracing could not be switched on.",
+				schemaUId = "77777777-7777-7777-7777-777777777777",
+				warnings = new[] { "Warning " + SiteMessage + "\n   at Terrasoft.Fixture.Process.Save()", OwedCompileWarning }
+			}
+		});
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(200, body));
+		(EnvironmentSettings environment, ISettingsRepository settings, IApplicationClientFactory factory) =
+			ProcessEnvironment(client);
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.BuildProcess, environment)
+			.Returns("http://sandbox/0/rest/ProcessDesignService/BuildProcess");
+		ILogger logger = Substitute.For<ILogger>();
+		CreateBusinessProcessService service = new(settings, factory, urls, Substitute.For<IProcessPageFactsChecker>(),
+			Substitute.For<ILogger>());
+
+		// Act
+		int exitCode = new CreateBusinessProcessCommand(service, Substitute.For<IProcessDescriber>(), logger).Execute(
+			new CreateBusinessProcessOptions { Environment = Env, DescriptorJson = ProcessDescriptor });
+
+		// Assert
+		exitCode.Should().Be(1, because: "the build reported a failure");
+		string line = Logged(logger).Single(text => text.StartsWith("Tracing could not be switched on.", StringComparison.Ordinal));
+		line.Should().Contain(OwedCompileWarning, because: "the compile the script task owes must not vanish");
+		line.Should().NotContainAny([Marker, "Terrasoft.Fixture"], because: "each warning is redacted as site text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process: a saved edit's failure keeps every warning, each redacted on its own, and "
+		+ "a layout refusal's element names are redacted as site text.")]
+	public void ModifyBusinessProcess_ShouldRedactTheElementNamesAndEachWarning([Values(true, false)] bool saved) {
+		// Arrange
+		string body = JsonSerializer.Serialize(new {
+			ModifyProcessResult = new {
+				success = false, errorMessage = "The edit was refused.",
+				schemaUId = saved ? "88888888-8888-8888-8888-888888888888" : null,
+				layoutChange = new { elements = new[] { "UsrStart " + SiteMessage } },
+				warnings = new[] { "Warning " + SiteMessage + "\n   at Terrasoft.Fixture.Process.Save()", OwedCompileWarning }
+			}
+		});
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(body);
+		(EnvironmentSettings environment, ISettingsRepository settings, IApplicationClientFactory factory) =
+			ProcessEnvironment(client);
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.ModifyProcess, environment)
+			.Returns("http://sandbox/0/rest/ProcessDesignService/ModifyProcess");
+		ILogger logger = Substitute.For<ILogger>();
+		ModifyBusinessProcessService service = new(settings, factory, urls, Substitute.For<IProcessPageFactsChecker>(),
+			Substitute.For<ILogger>());
+
+		// Act
+		int exitCode = new ModifyBusinessProcessCommand(service, Substitute.For<IProcessDescriber>(), logger).Execute(
+			new ModifyBusinessProcessOptions {
+				Environment = Env, ProcessName = "UsrFixtureProcess",
+				OperationsJson = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"Amount\",\"type\":\"Integer\"}}]"
+			});
+
+		// Assert
+		exitCode.Should().Be(1, because: "the server refused the edit");
+		string line = Logged(logger).Single(text => text.StartsWith("The edit was refused.", StringComparison.Ordinal));
+		line.Should().Contain("Affected elements: UsrStart " + RedactedReason, because: "the element name stays");
+		if (saved) {
+			line.Should().Contain(OwedCompileWarning, because: "a frame in the first warning may not cut the second");
+		}
+		line.Should().NotContainAny([Marker, "Terrasoft.Fixture"], because: "the server's text is redacted as site text");
+	}
+
+	#endregion
+
+	#region Dynamic cases (DynamicCaseService, BuildCaseClient)
+
+	private static (IBuildCaseClient Client, IDynamicCaseSession Session, DynamicCaseService Service) DynamicCaseSite() {
+		IBuildCaseClient client = Substitute.For<IBuildCaseClient>();
+		IDynamicCaseSession session = Substitute.For<IDynamicCaseSession>();
+		client.OpenSession(Env).Returns(session);
+		IDynamicCasePageStep pageStep = Substitute.For<IDynamicCasePageStep>();
+		pageStep.Plan(Env, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+			.Returns(new DynamicCasePagePlan {
+				Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = "UsrOrders_FormPage",
+				ResolvedBy = DynamicCaseRecordPageResolver.ResolvedByRelatedPageAddon, DesignPackageName = "UsrOrders",
+				Template = "PageWithTabsFreedomTemplate", SaveOnChange = false,
+				Fragment = ProgressBarFragment.BuildBody("UsrOrders_FormPage", "UsrOrder", string.Empty)
+			});
+		IPackageDependencyManager dependencies = Substitute.For<IPackageDependencyManager>();
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		EnvironmentSettings environment = new() { Uri = "http://sandbox" };
+		settings.FindEnvironment(Env).Returns(environment);
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(Arg.Any<string>(), environment).Returns(call => "http://sandbox/0/" + call.ArgAt<string>(0));
+		return (client, session, new DynamicCaseService(client, pageStep, dependencies, settings, urls));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-dynamic-case: a refused build's errorMessage and errorCode (DynamicCaseService.FromServer) go "
+		+ "through RedactSiteText, in the result and in the command's verdict and result log lines.")]
+	public void CreateDynamicCase_ShouldRedactTheBuildRefusal_InTheResultAndTheLog() {
+		// Arrange
+		(IBuildCaseClient _, IDynamicCaseSession session, DynamicCaseService service) = DynamicCaseSite();
+		session.Build(Arg.Any<BuildCaseRequest>()).Returns(new DynamicCaseReply<BuildCaseResponse>(
+			DynamicCaseReplyKind.Envelope,
+			new BuildCaseResponse { Success = false, ErrorCode = "StageColumnInvalid", ErrorMessage = SiteMessage }, null));
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		int exitCode = new CreateDynamicCaseCommand(service, logger).Execute(new CreateDynamicCaseOptions {
+			Environment = Env, PackageName = "UsrOrders", EntitySchemaName = "UsrOrder", StageColumnName = "UsrStatus"
+		});
+		DynamicCaseResult result = service.Create(new CreateDynamicCaseOptions {
+			Environment = Env, PackageName = "UsrOrders", EntitySchemaName = "UsrOrder", StageColumnName = "UsrStatus"
+		});
+
+		// Assert
+		exitCode.Should().Be(1, because: "the build was refused");
+		result.ErrorMessage.Should().Be(RedactedReason, because: "the server's reason is the result's message, redacted");
+		Logged(logger).Should().Contain(text => text.Contains("Refused [StageColumnInvalid]: " + RedactedReason,
+				StringComparison.Ordinal), because: "the verdict quotes the redacted reason")
+			.And.NotContain(text => text.Contains(Marker, StringComparison.Ordinal),
+				because: "neither the verdict nor the result line may carry the login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-dynamic-case: a refused change's errorMessage (DynamicCaseService.Modify) goes through "
+		+ "RedactSiteText, in the result and in the command's log lines.")]
+	public void ModifyDynamicCase_ShouldRedactTheRefusal_InTheResultAndTheLog() {
+		// Arrange
+		(IBuildCaseClient _, IDynamicCaseSession session, DynamicCaseService service) = DynamicCaseSite();
+		session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.Envelope,
+			new ModifyCaseResponse { Success = false, ErrorCode = "CaseNotFound", ErrorMessage = SiteMessage }, null));
+		ILogger logger = Substitute.For<ILogger>();
+		ModifyDynamicCaseOptions options = new() { Environment = Env, CaseName = "UsrOrderCase", Caption = "Orders" };
+
+		// Act
+		int exitCode = new ModifyDynamicCaseCommand(service, logger).Execute(options);
+		ModifyDynamicCaseResult result = service.Modify(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the change was refused");
+		result.ErrorMessage.Should().Be(RedactedReason, because: "the server's reason is the result's message, redacted");
+		Logged(logger).Should().Contain(text => text.Contains(RedactedReason, StringComparison.Ordinal),
+				because: "the verdict quotes the redacted reason")
+			.And.NotContain(text => text.Contains(Marker, StringComparison.Ordinal), because: "no log line carries the login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("describe-dynamic-case: a refused read's errorMessage (DynamicCaseService.Describe) goes through "
+		+ "RedactSiteText, in the result and in the command's log lines.")]
+	public void DescribeDynamicCase_ShouldRedactTheRefusal_InTheResultAndTheLog() {
+		// Arrange
+		(IBuildCaseClient _, IDynamicCaseSession session, DynamicCaseService service) = DynamicCaseSite();
+		session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope,
+			new DescribeCaseResponse { Success = false, ErrorCode = "CaseNotFound", ErrorMessage = SiteMessage }, null));
+		ILogger logger = Substitute.For<ILogger>();
+		DescribeDynamicCaseOptions options = new() { Environment = Env, CaseName = "UsrOrderCase" };
+
+		// Act
+		int exitCode = new DescribeDynamicCaseCommand(service, logger).Execute(options);
+		DescribeDynamicCaseResult result = service.Describe(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the read was refused");
+		result.ErrorMessage.Should().Be(RedactedReason, because: "the server's reason is the result's message, redacted");
+		Logged(logger).Should().Contain(text => text.Contains("Refused [CaseNotFound]: " + RedactedReason,
+				StringComparison.Ordinal), because: "the verdict quotes the redacted reason")
+			.And.NotContain(text => text.Contains(Marker, StringComparison.Ordinal), because: "no log line carries the login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every dynamic-case tool: a body the BuildCase/DescribeCase/ModifyCase route answers that is not the "
+		+ "envelope (BuildCaseClient's quoted detail) goes through RedactSiteText before its cap, in the result and in "
+		+ "the command's log lines - a non-JSON body, a JSON body that is not the envelope, and a bare fault string.")]
+	public void BuildCaseClient_ShouldRedactTheQuotedBody_InTheResultAndTheLog(
+		[Values("text", "json", "fault")] string shape) {
+		// Arrange
+		string body = shape switch {
+			"text" => SiteMessage + "\r\n   at Terrasoft.Fixture.Case.Describe()",
+			"json" => $$"""{"unexpected": "{{SiteMessage}}"}""",
+			_ => JsonSerializer.Serialize(SiteMessage)
+		};
+		IOwnedApplicationClient applicationClient = Substitute.For<IOwnedApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(body);
+		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
+		EnvironmentSettings environment = new() { Uri = "http://sandbox" };
+		settings.FindEnvironment(Env).Returns(environment);
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateEnvironmentClient(environment).Returns(applicationClient);
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>(), environment).Returns("http://sandbox/0/rest/ProcessDesignService/X");
+		urls.Build(Arg.Any<string>(), environment).Returns(call => "http://sandbox/0/" + call.ArgAt<string>(0));
+		DynamicCaseService service = new(new BuildCaseClient(settings, factory, urls), Substitute.For<IDynamicCasePageStep>(),
+			Substitute.For<IPackageDependencyManager>(), settings, urls);
+		ILogger logger = Substitute.For<ILogger>();
+		DescribeDynamicCaseOptions options = new() { Environment = Env, CaseName = "UsrOrderCase" };
+
+		// Act
+		int exitCode = new DescribeDynamicCaseCommand(service, logger).Execute(options);
+		DescribeDynamicCaseResult result = service.Describe(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the answer was not the envelope");
+		result.ErrorMessage.Should().Contain("Login failed for user", because: "the reason stays")
+			.And.NotContainAny([Marker, "Terrasoft.Fixture"], because: "the quoted body is the site's text");
+		Logged(logger).Should().NotContain(text => text.Contains(Marker, StringComparison.Ordinal),
+			because: "the verdict and the result line quote the same redacted detail");
 	}
 
 	#endregion

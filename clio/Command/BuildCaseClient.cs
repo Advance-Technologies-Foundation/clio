@@ -152,20 +152,20 @@ public sealed class BuildCaseClient(
 		try {
 			root = JsonNode.Parse(responseBody);
 		} catch (JsonException) {
-			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, Cap(responseBody));
+			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, SiteDetail(responseBody));
 		}
 		if (root is not JsonObject envelope || envelope[envelopeName] is not JsonObject result) {
 			string serverText = ProcessDesignServerFault.ReadServerText(responseBody);
 			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null,
-				serverText ?? Cap(responseBody));
+				serverText ?? SiteDetail(responseBody));
 		}
 		try {
 			TResponse response = result.Deserialize<TResponse>(JsonOptions);
 			return response is null
-				? new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, Cap(responseBody))
+				? new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, SiteDetail(responseBody))
 				: new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.Envelope, response, null);
 		} catch (JsonException) {
-			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, Cap(responseBody));
+			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, SiteDetail(responseBody));
 		}
 	}
 
@@ -190,6 +190,13 @@ public sealed class BuildCaseClient(
 		}
 		return false;
 	}
+
+	// A body the site answered with, quoted back: it is the site's text, so it takes the site-text redaction BEFORE
+	// the cap (a token straddling the cap is still recognized whole), on an input clamped as everywhere else. Every
+	// dynamic-case tool quotes it into its error and its log line, beside ReadServerText's already redacted text.
+	private static string SiteDetail(string responseBody) =>
+		Cap(SensitiveErrorTextRedactor.RedactSiteText(SiteTextInput.ClampForRedaction(
+			(responseBody ?? string.Empty).Trim(), MaxDetailLength * SiteTextInput.RedactionInputFactor)));
 
 	private static string Cap(string text) {
 		string trimmed = (text ?? string.Empty).Trim();

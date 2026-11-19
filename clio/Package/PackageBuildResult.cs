@@ -46,16 +46,32 @@ public sealed record PackageBuildDiagnostic(string ErrorNumber, string ErrorText
 
 	/// <summary>
 	/// The same diagnostic with every part the environment wrote - its code, its text and the file it names - passed
-	/// through the site-text redaction (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>).
+	/// through the site-text redaction (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>), the file cut to its
+	/// NAME first.
 	/// </summary>
 	/// <returns>A redacted copy; the position is a number and stays.</returns>
 	/// <remarks>
 	/// For a log line or a message clio builds from the diagnostic: compile-creatio and push-workspace log it, and a
 	/// stdio log is not redacted again. Not applied by the parser, because compile-status already fences the history
 	/// diagnostics it renders with the site-text redaction, and a second pass there would be redaction twice.
+	/// <para>The file is cut to its name BEFORE the redaction, as compile-status does: the redactor takes a whole
+	/// absolute path (<c>C:\inetpub\…\UsrClass.cs</c>, <c>/app/…/UsrClass.cs</c>) as <c>[redacted-path]</c> and a
+	/// relative <c>Terrasoft.Configuration\Pkg\…</c> one as a server instance, so the line stopped naming the file to
+	/// fix. The directories are the environment's layout and are not reported.</para>
 	/// </remarks>
 	internal PackageBuildDiagnostic WithSiteTextRedacted() =>
-		this with { ErrorNumber = Site(ErrorNumber), ErrorText = Site(ErrorText), FileName = Site(FileName) };
+		this with {
+			ErrorNumber = Site(ErrorNumber), ErrorText = Site(ErrorText), FileName = Site(FileNameOnly(FileName))
+		};
+
+	/// <summary>
+	/// The file name of a path the ENVIRONMENT reported, without its directories, on either separator.
+	/// </summary>
+	/// <remarks>Not <see cref="System.IO.Path.GetFileName(string)"/>: a Windows path must lose its directories on a
+	/// Linux host too.</remarks>
+	/// <param name="path">The environment's path; blank is returned as it is.</param>
+	internal static string FileNameOnly(string path) =>
+		string.IsNullOrWhiteSpace(path) ? path : path[(path.LastIndexOfAny(['/', '\\']) + 1)..];
 
 	private static string Site(string text) => text is null ? null : SensitiveErrorTextRedactor.RedactSiteText(text);
 

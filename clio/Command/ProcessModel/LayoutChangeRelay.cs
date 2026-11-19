@@ -36,10 +36,13 @@ public sealed class LayoutChangeRelay {
 	/// Omitted rather than left empty, because "Affected elements: ." reads as a truncated message and sends a
 	/// reader looking for what was cut off.
 	/// </remarks>
+	/// <para>The names are the server's: each is redacted as the site's text, because the clause follows the
+	/// server's redacted sentence into the error and the log.</para>
 	/// <returns>The clause to append, already separated from what precedes it.</returns>
 	public string ElementsClause() =>
 		Elements is { Count: > 0 }
-			? $" Affected elements: {string.Join(", ", Elements.Where(name => !string.IsNullOrWhiteSpace(name)))}."
+			? " Affected elements: "
+				+ string.Join(", ", Elements.Select(ProcessDesignServerFault.SiteText).Where(name => name.Length > 0)) + "."
 			: string.Empty;
 
 	/// <summary>

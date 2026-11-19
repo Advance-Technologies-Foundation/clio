@@ -413,7 +413,11 @@ public sealed class SiteTextWiringTests {
 		// The write-tool paths (A2). A member with several site-text parts is listed once per part, so reverting any
 		// one of them fails here.
 		("clio/Command/PageSchemaMetadataHelper.cs", "internal static string DescribeRefusal(",
+			"SiteValue(errorInfo["),
+		("clio/Command/PageSchemaMetadataHelper.cs", "private static string SiteValue(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/PageSchemaMetadataHelper.cs", "private static string AddonErrorText(",
+			"SiteValue(error["),
 		("clio/Command/PageUpdateOptions.cs", "private bool TryGetSchema(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/PageCreateOptions.cs", "private bool TryLoadTemplateLocalizableStrings(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
@@ -438,26 +442,64 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/CompileConfigurationCommand.cs", "private static string SiteText(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/PackageBuildResult.cs", "private static string Site(", "SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Package/PackageBuildResult.cs", "internal PackageBuildDiagnostic WithSiteTextRedacted(",
+			"Site(FileNameOnly(FileName))"),
+		("clio/Command/CompileConfigurationCommand.cs", "private void ApplyEnvironmentVerdict(",
+			"SiteText(PackageBuildDiagnostic.FileNameOnly(diagnostic.fileName))"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "diagnostic.WithSiteTextRedacted()"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(rawHistoryErrors)"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(errorMessage)"),
-		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(compilationErrorLine)"),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(",
+			"SiteText(CompilerLineWithFileNameOnly(compilationErrorLine))"),
 		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(message)"),
 		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(errorCode)"),
-		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(logTail)"),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteTail(MeaningfulTailLines("),
+		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteTail(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/BasePackageInstaller.cs", "private static string GetInvalidGZipArchiveMessage(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? ReadServerText(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? ReadServerText(",
+			"SiteTextInput.ClampForRedaction("),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string SiteText(",
+			"SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string SiteMessageOr(",
+			"SiteText(errorMessage)"),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string SiteWarnings(",
+			".Select(SiteText)"),
+		("clio/Command/ProcessModel/LayoutChangeRelay.cs", "public string ElementsClause(",
+			".Select(ProcessDesignServerFault.SiteText)"),
 		("clio/Command/CreateBusinessProcessCommand.cs", "private static CreateBusinessProcessResult ReadBuildProcessAnswer(",
-			"SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage)"),
+			"ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage,"),
 		("clio/Command/CreateBusinessProcessCommand.cs", "private static CreateBusinessProcessResult ReadBuildProcessAnswer(",
-			"SensitiveErrorTextRedactor.RedactSiteText(string.Join(\" \", result.Warnings))"),
+			"ProcessDesignServerFault.SiteWarnings(result.Warnings)"),
 		("clio/Command/ModifyBusinessProcessCommand.cs", "private static string BuildFailureMessage(",
-			"SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage)"),
+			"ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage,"),
 		("clio/Command/ModifyBusinessProcessCommand.cs", "private static string BuildFailureMessage(",
-			"SensitiveErrorTextRedactor.RedactSiteText(string.Join(\" \", result.Warnings))"),
+			"ProcessDesignServerFault.SiteWarnings(result.Warnings)"),
+		("clio/Command/ModifyProcessAsNewVersionCommand.cs", "private static string BuildFailureMessage(",
+			"ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage,"),
+		("clio/Command/ModifyProcessAsNewVersionCommand.cs", "private static string BuildFailureMessage(",
+			"ProcessDesignServerFault.SiteText(result.VersionName)"),
+		("clio/Command/ModifyProcessAsNewVersionCommand.cs", "private static string BuildFailureMessage(",
+			"ProcessDesignServerFault.SiteWarnings(result.Warnings)"),
+		("clio/Command/SetActiveProcessVersionCommand.cs", "private static string BuildFailureMessage(",
+			"ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage,"),
+		("clio/Command/SetActiveProcessVersionCommand.cs", "private static string BuildFailureMessage(",
+			"ProcessDesignServerFault.SiteText(result.ActiveVersionName)"),
+		("clio/Command/SetActiveProcessVersionCommand.cs", "private static string BuildFailureMessage(",
+			"ProcessDesignServerFault.SiteWarnings(result.Warnings)"),
+		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SiteTextInput.ClampForRedaction("),
+		("clio/Command/DynamicCaseService.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
+		("clio/Command/DynamicCaseService.cs", "public DescribeDynamicCaseResult Describe(", "SiteText(response.ErrorMessage)"),
+		("clio/Command/DynamicCaseService.cs", "public ModifyDynamicCaseResult Modify(", "SiteText(response.ErrorMessage)"),
+		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult FromServer(", "SiteText(response.ErrorMessage)"),
+		("clio/Command/SchemaTemplateCatalog.cs", "private static string BuildNonJsonErrorMessage(",
+			"SiteTextInput.ClampForRedaction("),
+		("clio/Package/ServiceResponseJsonGuard.cs", "private static string BuildResponsePreview(",
+			"SiteTextInput.ClampForRedaction("),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private void ReportFailure(", "UntrustedText.FencedSiteText("),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private static string ServerName(", "UntrustedText.FencedSiteText("),
 	];
@@ -467,6 +509,8 @@ public sealed class SiteTextWiringTests {
 	// site-only shapes.
 	private static readonly (string File, string Member)[] SiteOnlyMembers = [
 		("clio/Command/PageSchemaMetadataHelper.cs", "internal static string DescribeRefusal("),
+		("clio/Command/PageSchemaMetadataHelper.cs", "private static string SiteValue("),
+		("clio/Command/PageSchemaMetadataHelper.cs", "internal static string ParseSaveErrorMessage("),
 		("clio/Command/SchemaTemplateCatalog.cs", "private static string BuildNonJsonErrorMessage("),
 		("clio/Package/SelectQueryHelper.cs", "internal static string DescribeServerFailure("),
 		("clio/Package/ServiceResponseJsonGuard.cs", "private static string BuildResponsePreview("),
@@ -475,6 +519,15 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? ReadServerText("),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private void ReportFailure("),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private static string ServerName("),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string SiteText("),
+		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string SiteWarnings("),
+		("clio/Command/ProcessModel/LayoutChangeRelay.cs", "public string ElementsClause("),
+		("clio/Command/ModifyProcessAsNewVersionCommand.cs", "private static string BuildFailureMessage("),
+		("clio/Command/SetActiveProcessVersionCommand.cs", "private static string BuildFailureMessage("),
+		("clio/Command/ModifyBusinessProcessCommand.cs", "private static string BuildFailureMessage("),
+		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail("),
+		("clio/Command/DynamicCaseService.cs", "private static string SiteText("),
+		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteTail("),
 	];
 
 	// The general entry points a site-only member must not call.
@@ -526,6 +579,7 @@ public sealed class SiteTextWiringTests {
 		// Wired: the text reaches a caller only through an extractor this fixture checks.
 		["clio/Command/DataServiceBatchCommand.cs|ReadError"] = (2, "wired: DataServiceBatchCommand.ReadError"),
 		["clio/Command/PageSchemaMetadataHelper.cs|ParseSaveErrorMessage"] = (1, "wired: PageSchemaMetadataHelper.ParseSaveErrorMessage"),
+		["clio/Command/PageSchemaMetadataHelper.cs|AddonErrorText"] = (2, "wired: PageSchemaMetadataHelper.ParseSaveErrorMessage"),
 		["clio/Command/PageSchemaMetadataHelper.cs|DescribeRefusal"] = (1, "wired: PageSchemaMetadataHelper.DescribeRefusal"),
 		["clio/Command/RuntimeVerification/RecordDeletionService.cs|ReadInnerMessage"] = (2, "wired: RecordDeletionService.ReadInnerMessage"),
 		["clio/Common/CreatioResponseError.cs|TryDetectBaseResponse"] = (6, "wired: CreatioResponseError.TryDetect"),
@@ -540,6 +594,7 @@ public sealed class SiteTextWiringTests {
 		["clio/Command/CreateBusinessProcessCommand.cs|ReadBuildProcessAnswer"] = (2, "wired: ProcessDesignServerFault.ReadServerText"),
 		["clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs|EnsureSuccess"] = (2, "wired: RemoteEntitySchemaDesignerClient.EnsureSuccess"),
 		["clio/Command/ModifyBusinessProcessCommand.cs|ModifyProcess"] = (2, "wired: ProcessDesignServerFault.ReadServerText"),
+		["clio/Command/ModifyProcessAsNewVersionCommand.cs|ModifyAsNewVersion"] = (2, "wired: ProcessDesignServerFault.ReadServerText"),
 		["clio/Command/PageCreateOptions.cs|TryLoadTemplateLocalizableStrings"] = (1, "wired: PageCreateOptions.TryLoadTemplateLocalizableStrings"),
 		["clio/Command/PageUpdateOptions.cs|TryGetSchema"] = (1, "wired: PageUpdateOptions.TryGetSchema"),
 		["clio/Package/BasePackageInstaller.cs|GetInvalidGZipArchiveMessage"] = (1, "wired: BasePackageInstaller.GetInvalidGZipArchiveMessage"),
@@ -584,7 +639,6 @@ public sealed class SiteTextWiringTests {
 		["clio/Command/LocalizePageCommand.cs|TryGetSchema"] = (1, "follow-up"),
 		["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|TryDataServiceFailure"] = (3, "follow-up"),
 		["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|ExtractErrorMessage"] = (3, "follow-up"),
-		["clio/Command/ModifyProcessAsNewVersionCommand.cs|ModifyAsNewVersion"] = (2, "follow-up"),
 		["clio/Command/NavigationCacheResetter.cs|ReadFailure"] = (1, "follow-up"),
 		["clio/Command/PackageCommand/LicenseResponseParser.cs|EnsureSuccess"] = (1, "follow-up"),
 		["clio/Command/PageListOptions.cs|ResolvePrimaryPackageName"] = (1, "follow-up"),
@@ -765,7 +819,8 @@ public sealed class SiteTextWiringTests {
 			"PageDesignerHierarchyClient", "PageUpdateOptions", "PageCreateOptions", "SchemaTemplateCatalog",
 			"RemoteEntitySchemaDesignerClient", "SelectQueryHelper", "CompileConfigurationCommand", "PackageBuildResult",
 			"PackageBuilder", "InstallLogAnalyzer", "BasePackageInstaller", "CreateBusinessProcessCommand",
-			"ModifyBusinessProcessCommand", "ProcessDesignServerFault", "CompileBusinessProcessCommand"
+			"ModifyBusinessProcessCommand", "ProcessDesignServerFault", "CompileBusinessProcessCommand",
+			"ModifyProcessAsNewVersionCommand", "SetActiveProcessVersionCommand", "BuildCaseClient", "DynamicCaseService"
 		];
 
 		// Act
@@ -820,6 +875,116 @@ public sealed class SiteTextWiringTests {
 			because: "a tuple return type is not the member's name");
 		source.MemberAt(source.CodeWithLiterals.IndexOf("errorInfo", StringComparison.Ordinal)).Should().Be("E");
 		source.Code.Should().NotContain("RedactSiteText(", because: "a comment and a string are masked");
+	}
+
+	// SITE ANSWERS' OWN MESSAGE MEMBERS. The direct-read scan above does not see a site's text read through a DTO
+	// member of another name - a ProcessDesignService or dynamic-case answer's ".ErrorMessage" - because clio's own
+	// result types use that name too. This scan finds the members a site answer DECLARES for it (a property decorated
+	// [JsonPropertyName("errorMessage")]), and counts every read of such a member's name in the files that declare
+	// one or name a non-private type that does. Each read is listed like KnownSiteErrorReads: wired through a checked
+	// extractor, not text, or follow-up outside the write-tool files.
+	private static readonly Regex DecoratedErrorMessageMember = new(
+		@"\[\s*JsonPropertyName\(\s*""errorMessage""\s*\)\s*\]\s*(?:(?:public|internal|required)\s+)+[\w.?<>\[\]]+\s+(?<name>[A-Za-z_]\w*)",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+	private static readonly Regex TypeDeclaration = new(
+		@"(?<private>\bprivate\s+(?:(?:sealed|static|abstract|partial)\s+)*)?\b(?:class|record)\s+(?<name>[A-Za-z_]\w*)");
+
+	private static readonly Dictionary<string, (int Count, string Wiring)> KnownSiteAnswerMessageReads = new(StringComparer.Ordinal) {
+		// The ProcessDesignService write answers: the message reaches a caller only through SiteMessageOr, or fenced as
+		// site text by compile-business-process.
+		["clio/Command/CreateBusinessProcessCommand.cs|ReadBuildProcessAnswer"] = (1, "wired: ProcessDesignServerFault.SiteMessageOr"),
+		["clio/Command/ModifyBusinessProcessCommand.cs|BuildFailureMessage"] = (1, "wired: ProcessDesignServerFault.SiteMessageOr"),
+		["clio/Command/ModifyProcessAsNewVersionCommand.cs|BuildFailureMessage"] = (1, "wired: ProcessDesignServerFault.SiteMessageOr"),
+		["clio/Command/SetActiveProcessVersionCommand.cs|BuildFailureMessage"] = (1, "wired: ProcessDesignServerFault.SiteMessageOr"),
+		["clio/Command/CompileBusinessProcessCommand.cs|Compile"] = (1, "wired: CompileBusinessProcessCommand.ReportFailure"),
+		["clio/Command/CompileBusinessProcessCommand.cs|ReportFailure"] = (1, "wired: CompileBusinessProcessCommand.ReportFailure"),
+		// The dynamic-case answers: DynamicCaseService redacts the code and the message where they enter the result,
+		// and the commands' verdicts read that result.
+		["clio/Command/DynamicCaseService.cs|Describe"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/DynamicCaseService.cs|Modify"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/DynamicCaseService.cs|FromServer"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/CreateDynamicCaseCommand.cs|Verdict"] = (4, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/CreateDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/DescribeDynamicCaseCommand.cs|Verdict"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/ModifyDynamicCaseCommand.cs|Verdict"] = (4, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/ModifyDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "not text: the page step's own plan, whose page reads are wired in update-page"),
+		["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "not text: the page step's own plan, whose page reads are wired in update-page"),
+		// KNOWN-UNWIRED, follow-up: the read tools of the same service.
+		["clio/Command/ListUserTasksCommand.cs|GetUserTasks"] = (1, "follow-up"),
+		["clio/Command/ProcessModel/IProcessDescriber.cs|Describe"] = (1, "follow-up"),
+	};
+
+	[Test]
+	[Category("Unit")]
+	[Description("A scan of clio's code finds exactly the known reads of a site answer's own message member (a DTO "
+		+ "property decorated [JsonPropertyName(\"errorMessage\")]): a new one fails here until it is wired through "
+		+ "RedactSiteText or listed - the blind spot that let modify-business-process-as-new-version's message through.")]
+	public void SourceGuard_ShouldKnowEveryReadOfASiteAnswersMessageMember() {
+		// Arrange
+		HashSet<string> extractors = Extractors.Select(extractor => extractor.Name)
+			.Concat(CentralExtractors.Select(central => $"{Path.GetFileNameWithoutExtension(central.File)}.{MemberName(central.Member)}"))
+			.ToHashSet(StringComparer.Ordinal);
+
+		// Act
+		Dictionary<string, int> found = FindSiteAnswerMessageReads();
+		string[] missing = found.Where(pair => !KnownSiteAnswerMessageReads.TryGetValue(pair.Key, out (int Count, string _) known)
+				|| known.Count != pair.Value)
+			.Select(pair => $"[\"{pair.Key}\"] = ({pair.Value}, \"...\"),").ToArray();
+		string[] stale = KnownSiteAnswerMessageReads.Keys.Where(key => !found.ContainsKey(key)).ToArray();
+		string[] unknownWiring = KnownSiteAnswerMessageReads
+			.Where(pair => !(pair.Value.Wiring.StartsWith("not text: ", StringComparison.Ordinal)
+				|| pair.Value.Wiring == "follow-up" && !WriteToolFile(pair.Key)
+				|| pair.Value.Wiring.StartsWith("wired: ", StringComparison.Ordinal)
+					&& extractors.Contains(pair.Value.Wiring["wired: ".Length..])))
+			.Select(pair => $"{pair.Key}: {pair.Value.Wiring}").ToArray();
+
+		// Assert
+		missing.Should().BeEmpty(because: "a read of a site answer's message must be wired through RedactSiteText or "
+			+ "listed; found:\n" + string.Join('\n', missing));
+		stale.Should().BeEmpty(because: "an entry whose reads are gone must leave the list, so it stays exact");
+		unknownWiring.Should().BeEmpty(because: "each read names a checked extractor, or why it holds no site text");
+	}
+
+	// The read tools of a write tool's service may be follow-up; a write tool's own file may not.
+	private static bool WriteToolFile(string key) =>
+		key.StartsWith("clio/Command/CreateBusinessProcessCommand.cs|", StringComparison.Ordinal)
+		|| key.StartsWith("clio/Command/ModifyBusinessProcessCommand.cs|", StringComparison.Ordinal)
+		|| key.StartsWith("clio/Command/ModifyProcessAsNewVersionCommand.cs|", StringComparison.Ordinal)
+		|| key.StartsWith("clio/Command/SetActiveProcessVersionCommand.cs|", StringComparison.Ordinal)
+		|| key.StartsWith("clio/Command/CompileBusinessProcessCommand.cs|", StringComparison.Ordinal)
+		|| key.Contains("DynamicCase", StringComparison.Ordinal);
+
+	private static Dictionary<string, int> FindSiteAnswerMessageReads() {
+		Dictionary<string, CSharpSource> sources = ClioSources()
+			.ToDictionary(file => file, file => CSharpSource.Read(Path.Combine(RepositoryRoot, file)), StringComparer.Ordinal);
+		HashSet<string> declaringFiles = new(StringComparer.Ordinal);
+		HashSet<string> memberNames = new(StringComparer.Ordinal);
+		HashSet<string> visibleTypes = new(StringComparer.Ordinal);
+		foreach ((string file, CSharpSource source) in sources) {
+			foreach (Match member in DecoratedErrorMessageMember.Matches(source.CodeWithLiterals)) {
+				declaringFiles.Add(file);
+				memberNames.Add(member.Groups["name"].Value);
+				Match type = TypeDeclaration.Matches(source.Code[..member.Index]).LastOrDefault();
+				if (type is not null && !type.Groups["private"].Success) {
+					visibleTypes.Add(type.Groups["name"].Value);
+				}
+			}
+		}
+		Regex typeMention = new($@"\b(?:{string.Join('|', visibleTypes.Select(Regex.Escape))})\b");
+		Regex memberRead = new($@"(?<=[\w)\]?!])\.(?:{string.Join('|', memberNames.Select(Regex.Escape))})\b");
+		Dictionary<string, int> found = new(StringComparer.Ordinal);
+		foreach ((string file, CSharpSource source) in sources) {
+			if (!declaringFiles.Contains(file) && (visibleTypes.Count == 0 || !typeMention.IsMatch(source.Code))) {
+				continue;
+			}
+			foreach (Match read in memberRead.Matches(source.Code)) {
+				string key = $"{file}|{source.MemberAt(read.Index)}";
+				found[key] = found.GetValueOrDefault(key) + 1;
+			}
+		}
+		return found;
 	}
 
 	private static Dictionary<string, int> FindDirectSiteErrorReads() {

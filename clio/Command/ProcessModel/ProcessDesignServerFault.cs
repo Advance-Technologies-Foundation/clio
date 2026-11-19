@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Clio.Common;
 
@@ -43,8 +45,8 @@ internal static class ProcessDesignServerFault {
 			if (string.IsNullOrWhiteSpace(text)) {
 				return null;
 			}
-			text = SensitiveErrorTextRedactor.RedactSiteText(TextUtilities.TruncateWithoutSplittingSurrogatePair(
-				text.Trim(), MaxServerTextLength * RedactionInputFactor)).Trim();
+			text = SensitiveErrorTextRedactor.RedactSiteText(SiteTextInput.ClampForRedaction(
+				text.Trim(), MaxServerTextLength * SiteTextInput.RedactionInputFactor)).Trim();
 			if (text.Length == 0) {
 				return null;
 			}
@@ -55,9 +57,6 @@ internal static class ProcessDesignServerFault {
 			return null;
 		}
 	}
-
-	// How much more of the fault than MaxServerTextLength the redaction reads.
-	private const int RedactionInputFactor = 8;
 
 	/// <summary>
 	/// True when <paramref name="serverText"/> is WCF's request-deserialization failure. WCF answers it when it
@@ -76,5 +75,42 @@ internal static class ProcessDesignServerFault {
 	/// <param name="serverText">The text returned by <see cref="ReadServerText"/>.</param>
 	internal static string ServerSaid(string? serverText) =>
 		serverText is null ? string.Empty : $" The server said: {serverText}";
+
+	/// <summary>
+	/// The server's own sentence on a refused ProcessDesignService write (its <c>errorMessage</c>), redacted as the
+	/// site's text; <paramref name="fallback"/> - clio's own sentence, not redacted - when it sent none.
+	/// </summary>
+	/// <remarks>
+	/// Every write path (create, modify in place, save as a new version, activate a version) throws this sentence,
+	/// so it becomes the tool's error and the command's log line, and a stdio log is not redacted again.
+	/// </remarks>
+	/// <param name="errorMessage">The answer's <c>errorMessage</c>.</param>
+	/// <param name="fallback">clio's sentence for a refusal without one.</param>
+	internal static string SiteMessageOr(string? errorMessage, string fallback) {
+		string redacted = SiteText(errorMessage);
+		return redacted.Length == 0 ? fallback : redacted;
+	}
+
+	/// <summary>
+	/// The server's warnings on a refused write, each redacted as the site's text ON ITS OWN, joined after a leading
+	/// space; empty when there are none.
+	/// </summary>
+	/// <remarks>
+	/// One by one, not joined first: the site-text cut drops everything after a stack frame, so a frame in the first
+	/// warning would otherwise cut every later one - the owed-compile warning among them.
+	/// </remarks>
+	/// <param name="warnings">The answer's <c>warnings</c>.</param>
+	internal static string SiteWarnings(IEnumerable<string>? warnings) {
+		string joined = string.Join(" ", (warnings ?? []).Select(SiteText).Where(warning => warning.Length > 0));
+		return joined.Length == 0 ? string.Empty : " " + joined;
+	}
+
+	/// <summary>
+	/// A name or a sentence the server wrote into its answer (a version name, an element name), redacted as the
+	/// site's text and trimmed; empty for none.
+	/// </summary>
+	/// <param name="text">The server's text.</param>
+	internal static string SiteText(string? text) =>
+		string.IsNullOrWhiteSpace(text) ? string.Empty : SensitiveErrorTextRedactor.RedactSiteText(text).Trim();
 
 }

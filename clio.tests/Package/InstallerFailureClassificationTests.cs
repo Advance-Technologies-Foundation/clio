@@ -254,10 +254,14 @@ internal sealed class InstallerFailureClassificationTests : BaseClioModuleTests 
 		// Act
 		Action act = () => installer.Install(packagePath, environmentSettings);
 
-		// Assert
+		// Assert - the installer writes no line of its own for an invalid archive: it throws, and install-application
+		// writes the exception's message as its error line (InstallApplicationCommand's InvalidGZipArchiveInstallException
+		// catch). So the message below IS that log line, and no error line the installer wrote carries the login either.
 		act.Should().Throw<InvalidGZipArchiveInstallException>(because: "the service named an invalid archive")
 			.Which.Message.Should().Be("Login failed for user '[redacted]'.",
 				because: "the service's message is the site's text, redacted");
+		ErrorLines().Should().NotContain(line => line.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no error line may carry the login");
 	}
 
 	[Test]

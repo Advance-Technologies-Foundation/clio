@@ -836,6 +836,81 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 			because: "the rendered history is a log line");
 	}
 
+	// A file the environment reports under its full path: a Windows one, a POSIX one and a relative
+	// Terrasoft.Configuration one. Only the name may reach the line; the directories are the environment's layout.
+	private static readonly string[] EnvironmentFilePaths = [
+		@"C:\inetpub\wwwroot\creatio\Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs",
+		"/app/Terrasoft.Configuration/Pkg/UsrPkg/Files/cs/UsrClass.cs",
+		@"Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs"
+	];
+
+	[Test]
+	[Description("compile-creatio names the file of a failed build's diagnostic whatever path the environment reported "
+		+ "it under: the path is cut to its name before the site-text redaction, which would take a whole path.")]
+	public void Execute_ShouldNameTheFile_OfABuildResponseDiagnostic([ValueSource(nameof(EnvironmentFilePaths))] string path) {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse(System.Text.Json.JsonSerializer.Serialize(new {
+			success = false, buildResult = 1,
+			errors = new[] { new { errorNumber = "CS0103", errorText = "The name 'x' does not exist", fileName = path, warning = false } }
+		}));
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteError("(CS0103) in UsrClass.cs: The name 'x' does not exist");
+	}
+
+	[Test]
+	[Description("compile-creatio names the file of the environment's verdict diagnostic whatever path it reported.")]
+	public void Execute_ShouldNameTheFile_OfAnEnvironmentVerdictDiagnostic([ValueSource(nameof(EnvironmentFilePaths))] string path) {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse(
+			[new CreatioCompilationError(12, 3, "CS0103", "The name 'x' does not exist", false, path)], 1, false));
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteError("(CS0103) in UsrClass.cs at (12,3): The name 'x' does not exist");
+	}
+
+	[Test]
+	[Description("compile-creatio's history line (LogRecord, written as each compilation-history row arrives) carries "
+		+ "the row's diagnostics redacted as site text and names their file.")]
+	public void Execute_ShouldRedactTheHistoryLine_AsSiteText() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		CompilationHistory row = new() {
+			ProjectName = "UsrPkg.csproj", Result = false, CreatedOn = DateTime.UtcNow, DurationInSeconds = 3,
+			ErrorsWarnings = System.Text.Json.JsonSerializer.Serialize(new[] {
+				new { ErrorNumber = "CS0006", ErrorText = site, FileName = EnvironmentFilePaths[0], IsWarning = false }
+			})
+		};
+		_activityWatcher.When(watcher => watcher.Start(Arg.Any<DateTime>(), Arg.Any<Action<CompilationHistory>>(),
+				Arg.Any<Action<int, Exception>>()))
+			.Do(call => call.ArgAt<Action<CompilationHistory>>(1)(row));
+		StubCompileResponse(SuccessResponse);
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("Login failed for user '[redacted]'.")
+			&& line.Contains("UsrClass.cs") && !line.Contains("inetpub")));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the history line is the environment's text");
+	}
+
 	private CompileConfigurationCommand CreateCommand() {
 		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
 		// The production grace is 90 seconds, sized for a cold stand's first compilation-history row. A

@@ -126,12 +126,17 @@ public sealed class SetActiveProcessVersionService(
 	// A failed activation must say WHICH version is actually active, because that is the whole point of the
 	// read-back: the platform logs and SWALLOWS a failure to deactivate a sibling, so "it did not work" leaves
 	// the caller not knowing whether the environment is running the old version, the new one, or two at once.
+	//
+	// The server's sentence, the active version's name and the warnings are the site's text: they take the site-text
+	// redaction here, where they become the exception's message, the tool's error and the command's log line. clio's
+	// own sentences do not.
 	private static string BuildFailureMessage(ResultDto result) {
-		string message = result.ErrorMessage ?? "SetActiveProcessVersion failed.";
+		string message = ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage, "SetActiveProcessVersion failed.");
 		if (!string.IsNullOrWhiteSpace(result.ActiveVersionName)
 			|| !string.IsNullOrWhiteSpace(result.ActiveVersionSchemaUId)) {
-			message += $" The version the environment reports as actual is '{result.ActiveVersionName}' "
-				+ $"(UId: {result.ActiveVersionSchemaUId}).";
+			message += $" The version the environment reports as actual is "
+				+ $"'{ProcessDesignServerFault.SiteText(result.ActiveVersionName)}' "
+				+ $"(UId: {ProcessDesignServerFault.SiteText(result.ActiveVersionSchemaUId)}).";
 		}
 		if (result.DeactivationFailureCount > 0) {
 			message += $" {result.DeactivationFailureCount} sibling(s) are ALSO still flagged active, so which "
@@ -143,9 +148,7 @@ public sealed class SetActiveProcessVersionService(
 		// so anything not appended here is discarded. The warnings describe what the write DID do (activation
 		// re-saves every member of the family in one transaction), and that is not less relevant because the
 		// outcome was refused: it is what the caller has to reason about before retrying.
-		if (result.Warnings is { Count: > 0 }) {
-			message += " " + string.Join(" ", result.Warnings);
-		}
+		message += ProcessDesignServerFault.SiteWarnings(result.Warnings);
 
 		return message;
 	}

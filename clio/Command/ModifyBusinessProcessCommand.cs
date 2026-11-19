@@ -390,9 +390,7 @@ public sealed class ModifyBusinessProcessService(
 	// The server's sentence and its warnings are the site's text: they take the site-text redaction here, where they
 	// become the exception's message, the tool's error and the command's log line. clio's own sentences do not.
 	private static string BuildFailureMessage(ModifyProcessResultDto result) {
-		string message = string.IsNullOrWhiteSpace(result.ErrorMessage)
-			? "ModifyProcess failed."
-			: SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage);
+		string message = ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage, "ModifyProcess failed.");
 		if (result.FailedOperationIndex.HasValue) {
 			message += $" The operation at index {result.FailedOperationIndex.Value} is the one that refused.";
 		}
@@ -407,8 +405,8 @@ public sealed class ModifyBusinessProcessService(
 			// sentence and no way to tell the user WHICH parts of their diagram move.
 			message += saved ? result.LayoutChange.ElementsClause() : result.LayoutChange.RelaySentence();
 		}
-		if (saved && result.Warnings is { Count: > 0 }) {
-			message += " " + SensitiveErrorTextRedactor.RedactSiteText(string.Join(" ", result.Warnings));
+		if (saved) {
+			message += ProcessDesignServerFault.SiteWarnings(result.Warnings);
 		}
 		return message;
 	}

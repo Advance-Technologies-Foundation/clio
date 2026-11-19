@@ -180,9 +180,8 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 		});
 	}
 
-	// The longest preview of a non-JSON body, and how much more than that the redaction may read.
+	// The longest preview of a non-JSON body.
 	private const int NonJsonPreviewLength = 200;
-	private const int NonJsonPreviewRedactionInputFactor = 8;
 
 	private static string BuildNonJsonErrorMessage(string url, string responseBody, Exception parseException) {
 		string trimmed = (responseBody ?? string.Empty).TrimStart();
@@ -196,10 +195,10 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 				+ "3) the target Creatio version exposes `/rest/schema.template.api/templates` (Creatio 7.18+).";
 		}
 		// The preview is the site's text: redacted as such BEFORE the cap, so a token that straddles the cap is still
-		// recognized whole. The input is clamped first, as SiteResponse does, so a page-sized body cannot time the
-		// chain out and lose the preview.
-		string redacted = SensitiveErrorTextRedactor.RedactSiteText(TextUtilities.TruncateWithoutSplittingSurrogatePair(
-			responseBody, NonJsonPreviewLength * NonJsonPreviewRedactionInputFactor));
+		// recognized whole. The input is clamped first (SiteTextInput), so a page-sized body cannot time the chain out
+		// and lose the preview, and never inside a token.
+		string redacted = SensitiveErrorTextRedactor.RedactSiteText(SiteTextInput.ClampForRedaction(
+			responseBody, NonJsonPreviewLength * SiteTextInput.RedactionInputFactor));
 		string snippet;
 		if (string.IsNullOrWhiteSpace(redacted)) {
 			snippet = "<empty body>";

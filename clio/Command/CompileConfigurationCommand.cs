@@ -458,13 +458,15 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		}
 		Logger.WriteError($"Compilation failed on the environment. Build result: {result.buildResult}.");
 		// The diagnostics are the environment's text: they take the site-text redaction here, where they become log
-		// lines, because compile-creatio returns those lines and a stdio log is not redacted again.
+		// lines, because compile-creatio returns those lines and a stdio log is not redacted again. The file is cut to
+		// its name first, or the redaction takes the whole path and the line stops naming the file to fix.
 		foreach (CreatioCompilationError diagnostic in result.errors ?? []) {
 			if (diagnostic.warning) {
 				continue;
 			}
 			Logger.WriteError(
-				$"({SiteText(diagnostic.errorNumber)}) in {SiteText(diagnostic.fileName)} at ({diagnostic.line},"
+				$"({SiteText(diagnostic.errorNumber)}) in {SiteText(PackageBuildDiagnostic.FileNameOnly(diagnostic.fileName))} "
+				+ $"at ({diagnostic.line},"
 				+ $"{diagnostic.column}): {SiteText(diagnostic.errorText)}");
 		}
 	}

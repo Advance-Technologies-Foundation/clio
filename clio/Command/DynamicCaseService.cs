@@ -168,6 +168,12 @@ public sealed class DynamicCaseService(
 		return WithPage(options, built, dependencies, pagePlan);
 	}
 
+	// The answer's code and message are the site's text: they take the site-text redaction here, where they enter the
+	// result, because every dynamic-case tool returns them and its command logs them in its verdict line; a stdio
+	// log is not redacted again. Null stays null, so a code-less answer still reads as one.
+	private static string SiteText(string text) =>
+		text is null ? null : SensitiveErrorTextRedactor.RedactSiteText(text);
+
 	/// <inheritdoc />
 	public DescribeDynamicCaseResult Describe(DescribeDynamicCaseOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -186,8 +192,8 @@ public sealed class DynamicCaseService(
 		DescribeCaseResponse response = reply.Response;
 		return new DescribeDynamicCaseResult {
 			Success = response.Success,
-			ErrorCode = response.ErrorCode,
-			ErrorMessage = response.ErrorMessage,
+			ErrorCode = SiteText(response.ErrorCode),
+			ErrorMessage = SiteText(response.ErrorMessage),
 			Cases = [.. (response.Cases ?? []).Select(info => ExistingCaseInfo(options.Environment, info))],
 			Settings = response.Settings ?? [],
 			Notes = response.Notes ?? [],
@@ -226,8 +232,8 @@ public sealed class DynamicCaseService(
 		return new ModifyDynamicCaseResult {
 			Success = response.Success && DynamicCaseModifyOutcomes.IsSuccess(outcome),
 			Outcome = outcome,
-			ErrorCode = response.ErrorCode,
-			ErrorMessage = response.ErrorMessage,
+			ErrorCode = SiteText(response.ErrorCode),
+			ErrorMessage = SiteText(response.ErrorMessage),
 			Case = response.Case is null ? null : ExistingCaseInfo(options.Environment, response.Case),
 			Diff = response.Diff,
 			RunningInstances = response.RunningInstances,
@@ -517,8 +523,8 @@ public sealed class DynamicCaseService(
 		return new DynamicCaseResult {
 			Success = false,
 			Outcome = outcome,
-			ErrorCode = response.ErrorCode,
-			ErrorMessage = response.ErrorMessage,
+			ErrorCode = SiteText(response.ErrorCode),
+			ErrorMessage = SiteText(response.ErrorMessage),
 			Case = CaseInfo(options, response.Case, designerUrl: null),
 			Settings = response.Settings,
 			DeactivatedCases = response.DeactivatedCases ?? [],

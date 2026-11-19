@@ -262,8 +262,12 @@ public sealed class ModifyProcessAsNewVersionService(
 	// at modify-business-process's description, which promises the index. Dropping them left a 40-operation batch
 	// refused at index 17 answering with a bare sentence, and the agent bisecting against a live environment -
 	// which is the work splitting the field was meant to remove.
+	//
+	// The server's sentence, the version name and the warnings are the site's text: they take the site-text redaction
+	// here, where they become the exception's message, the tool's error and the command's log line. clio's own
+	// sentences do not.
 	private static string BuildFailureMessage(ResultDto result) {
-		string message = result.ErrorMessage ?? "ModifyProcessAsNewVersion failed.";
+		string message = ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage, "ModifyProcessAsNewVersion failed.");
 		// Only when an operation actually refused. Absent means the failure was not an operation's - an identity
 		// that did not resolve, a read-only package, the save itself - and inventing index 0 there would name a
 		// descriptor that was never the problem.
@@ -286,17 +290,16 @@ public sealed class ModifyProcessAsNewVersionService(
 		}
 
 		if (!string.IsNullOrWhiteSpace(result.VersionName) || !string.IsNullOrWhiteSpace(result.VersionSchemaUId)) {
-			message += $" The version '{result.VersionName}' (UId: {result.VersionSchemaUId}) WAS created and "
-				+ "still exists — a version cannot be deleted.";
+			message += $" The version '{ProcessDesignServerFault.SiteText(result.VersionName)}' (UId: "
+				+ $"{ProcessDesignServerFault.SiteText(result.VersionSchemaUId)}) WAS created and still exists — a version "
+				+ "cannot be deleted.";
 		}
 
 		// Relayed on the failure path too. warnings[] is a declared response member the package's own fixtures
 		// pin as wire contract, and this throw is where a refused create leaves clio - so a warning not appended
 		// here is discarded. It matters most on exactly the exits that name a version: the artifact exists, and
 		// what the server has to say about it is part of what the caller must act on.
-		if (result.Warnings is { Count: > 0 }) {
-			message += " " + string.Join(" ", result.Warnings);
-		}
+		message += ProcessDesignServerFault.SiteWarnings(result.Warnings);
 
 		return message;
 	}

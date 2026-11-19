@@ -454,13 +454,11 @@ public sealed class CreateBusinessProcessService(
 			// compile its script task owes must not vanish with the failure.
 			// The message and the warnings are the site's text: they take the site-text redaction here, where they
 			// become the exception's message, the tool's error and the command's log line. clio's fallback does not.
-			string warnings = !string.IsNullOrWhiteSpace(result.SchemaUId) && result.Warnings is { Count: > 0 }
-				? " " + SensitiveErrorTextRedactor.RedactSiteText(string.Join(" ", result.Warnings))
+			string warnings = !string.IsNullOrWhiteSpace(result.SchemaUId)
+				? ProcessDesignServerFault.SiteWarnings(result.Warnings)
 				: string.Empty;
-			string message = string.IsNullOrWhiteSpace(result.ErrorMessage)
-				? "BuildProcess failed."
-				: SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage);
-			throw new InvalidOperationException(message + warnings);
+			throw new InvalidOperationException(
+				ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage, "BuildProcess failed.") + warnings);
 		}
 
 		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId, result.Warnings);

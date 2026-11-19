@@ -709,6 +709,35 @@ public sealed class PackageBuilderVerdictTests {
 			because: "the raw history line is the environment's text");
 	}
 
+	// A file the environment reports under its full path: a Windows one, a POSIX one and a relative
+	// Terrasoft.Configuration one. Only the name may reach the line; the directories are the environment's layout.
+	private static readonly string[] EnvironmentFilePaths = [
+		@"C:\inetpub\wwwroot\creatio\Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs",
+		"/app/Terrasoft.Configuration/Pkg/UsrPkg/Files/cs/UsrClass.cs",
+		@"Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs"
+	];
+
+	[Test]
+	[Description("compile-creatio package and push-workspace name the file of a failure answer's diagnostic whatever "
+		+ "path the environment reported it under.")]
+	public void Rebuild_ShouldNameTheFile_OfAFailureDiagnostic([ValueSource(nameof(EnvironmentFilePaths))] string path) {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, System.Text.Json.JsonSerializer.Serialize(new {
+				success = false, buildResult = 1,
+				errors = new[] { new { errorNumber = "CS0246", errorText = "EntitySchema not found", fileName = path,
+					line = 5, column = 26, warning = false } }
+			}))
+			.WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "Creatio answered success:false");
+		_logger.Received(1).WriteError("(CS0246) in UsrClass.cs at (5,26): EntitySchema not found");
+	}
+
 	private const string SecondProjectError =
 		"[{\"Line\":3,\"Column\":1,\"ErrorNumber\":\"CS1002\",\"ErrorText\":\"; expected\","
 		+ "\"IsWarning\":false,\"FileName\":\"UsrSecond.cs\"}]";
