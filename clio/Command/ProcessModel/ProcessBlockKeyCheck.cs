@@ -656,12 +656,15 @@ internal static class ProcessBlockKeyCheck {
 		}
 
 		// The timer block (ENG-91849) is ONE object on the server's contract, 'weekday' one nested object, 'daysOfWeek' a
-		// list of strings, 'every', 'fromHour', 'toHour' and 'month' Int32 members, and 'dayOfMonth' a string member the
-		// host also reads from a whole number. None of these wrong shapes is a key the contract drops: the serializer
-		// fails to read the WHOLE request, which reaches the caller only as "could not read the request" - and the
-		// member names invite them ("weekday": "wed", "daysOfWeek": "mon"). A null member reads as absent and is left
-		// alone; the schedule rules themselves (which members each kind takes, ranges) stay the server's. Returns whether
-		// the value is not an object at all, so there is nothing to walk.
+		// list of strings, 'every', 'fromHour', 'toHour' and 'month' Int32 members (a quoted whole number reads too),
+		// 'dayOfMonth' a string member the host also reads from a whole number, and 'schedule', 'at', 'cron', 'start',
+		// 'end', 'timeZone' and 'workday' string members. None of the wrong shapes refused here is a key the contract
+		// drops: the serializer fails to read the WHOLE request, which reaches the caller only as "could not read the
+		// request" - and the member names invite them ("weekday": "wed", "daysOfWeek": "mon", "at": ["08:00", "17:00"]).
+		// The one exception is a daysOfWeek entry that is not a string: the serializer reads it (2 as "2", null as null)
+		// and the server refuses it by its own day-name rule, so clio refuses it only to answer without a round trip. A
+		// null member reads as absent and is left alone; the schedule rules themselves (which members each kind takes,
+		// ranges) stay the server's. Returns whether the value is not an object at all, so there is nothing to walk.
 		internal bool RefusesTimerShape(JsonNode value, string where, string path) {
 			if (value is null) {
 				return false;
@@ -694,13 +697,18 @@ internal static class ProcessBlockKeyCheck {
 					case "daysOfWeek" when ((JsonArray)member).Any(day => day is not JsonValue text
 						|| text.GetValueKind() != JsonValueKind.String):
 						RefuseShape($"{where}: every entry of '{memberPath}' is one day name as a string (\"sun\" ... "
-							+ "\"sat\"); anything else there makes the server fail the whole request.");
+							+ "\"sat\"); the server refuses any other entry as an unknown day name.");
 						break;
-					case "every" or "fromHour" or "toHour" or "month" when !IsWholeInt32(member):
+					case "schedule" or "at" or "cron" or "start" or "end" or "timeZone" or "workday"
+						when member is JsonArray or JsonObject:
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes "
+							+ $"ONE string, not {(member is JsonArray ? "a list" : "an object")}.");
+						break;
+					case "every" or "fromHour" or "toHour" or "month" when !ReadsAsInt32(member):
 						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
 							+ "whole number.");
 						break;
-					case "dayOfMonth" when !IsWholeInt32(member) && (member as JsonValue)?.GetValueKind()
+					case "dayOfMonth" when !ReadsAsInt32(member) && (member as JsonValue)?.GetValueKind()
 						!= JsonValueKind.String:
 						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
 							+ "day number (1..31) or \"last\".");
@@ -710,12 +718,22 @@ internal static class ProcessBlockKeyCheck {
 			return false;
 		}
 
-		// A JSON number with no fraction that fits Int32 - what the server's Int32 members read; a quoted number, a
-		// fraction (1.5, also 1e-1) or a value beyond Int32 fails the whole request.
-		private static bool IsWholeInt32(JsonNode value) =>
-			value is JsonValue number && number.GetValueKind() == JsonValueKind.Number
-			&& decimal.TryParse(number.ToJsonString(), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal parsed)
-			&& parsed == decimal.Truncate(parsed) && parsed >= int.MinValue && parsed <= int.MaxValue;
+		// What the server's Int32 members read: a JSON number with no fraction that fits Int32, or a JSON string whose
+		// trimmed content is such a whole number ("9" and " 9" read as 9). A fraction (1.5, also 1e-1), a value beyond
+		// Int32, a boolean, or any other string ("abc", "1.5") fails the whole request.
+		private static bool ReadsAsInt32(JsonNode value) {
+			if (value is not JsonValue scalar) {
+				return false;
+			}
+			return scalar.GetValueKind() switch {
+				JsonValueKind.Number => decimal.TryParse(scalar.ToJsonString(), NumberStyles.Float,
+						CultureInfo.InvariantCulture, out decimal parsed)
+					&& parsed == decimal.Truncate(parsed) && parsed >= int.MinValue && parsed <= int.MaxValue,
+				JsonValueKind.String => int.TryParse(scalar.GetValue<string>().Trim(), NumberStyles.Integer,
+					CultureInfo.InvariantCulture, out _),
+				_ => false
+			};
+		}
 
 		// A caller's value echoed into a refusal, cut so a large one does not swamp the message.
 		private static string Echo(JsonNode value) {

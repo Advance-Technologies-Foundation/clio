@@ -1109,14 +1109,22 @@ public sealed class ProcessBlockKeyCheckTests {
 	[TestCase("""{ "schedule": "month", "weekday": "wed" }""", "'timer.weekday' is \"wed\", which the server cannot read: it takes ONE object")]
 	[TestCase("""{ "schedule": "month", "weekday": [ { "position": "first", "day": "mon" } ] }""", "'timer.weekday' is [")]
 	[TestCase("""{ "schedule": "week", "daysOfWeek": "mon" }""", "'timer.daysOfWeek' is \"mon\", which the server cannot read: it takes a LIST of day names")]
-	[TestCase("""{ "schedule": "week", "daysOfWeek": [ "mon", 2 ] }""", "every entry of 'timer.daysOfWeek' is one day name as a string")]
+	[TestCase("""{ "schedule": "week", "daysOfWeek": [ "mon", 2 ] }""", "every entry of 'timer.daysOfWeek' is one day name as a string (\"sun\" ... \"sat\"); the server refuses any other entry as an unknown day name")]
 	[TestCase("""{ "schedule": "minute", "every": 1.5 }""", "'timer.every' is 1.5, which the server cannot read: it takes a whole number")]
-	[TestCase("""{ "schedule": "minute", "fromHour": "9" }""", "'timer.fromHour' is \"9\", which the server cannot read: it takes a whole number")]
+	[TestCase("""{ "schedule": "minute", "fromHour": "abc" }""", "'timer.fromHour' is \"abc\", which the server cannot read: it takes a whole number")]
+	[TestCase("""{ "schedule": "minute", "every": "1.5" }""", "'timer.every' is \"1.5\", which the server cannot read: it takes a whole number")]
 	[TestCase("""{ "schedule": "hour", "toHour": 1e10 }""", "'timer.toHour' is 1e10, which the server cannot read: it takes a whole number")]
 	[TestCase("""{ "schedule": "year", "month": true }""", "'timer.month' is true, which the server cannot read: it takes a whole number")]
 	[TestCase("""{ "schedule": "month", "dayOfMonth": 15.5 }""", "'timer.dayOfMonth' is 15.5, which the server cannot read: it takes a day number (1..31) or \"last\"")]
 	[TestCase("""{ "schedule": "month", "dayOfMonth": [ 1, 15 ] }""", "'timer.dayOfMonth' is [1,15], which the server cannot read")]
-	[Description("A timer block of a shape the server's serializer cannot read - not one object, a scalar or list weekday, a daysOfWeek that is not a list of strings, a fractional, quoted or out-of-range every/fromHour/toHour/month, a dayOfMonth that is neither a whole number nor a string - is refused before sending with its path, instead of failing the whole request on the server.")]
+	[TestCase("""{ "schedule": "day", "at": [ "08:00", "17:00" ] }""", "'timer.at' is [\"08:00\",\"17:00\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "cron", "cron": { "expression": "0 0 8 * * ?" } }""", "'timer.cron' is {\"expression\":\"0 0 8 * * ?\"}, which the server cannot read: it takes ONE string, not an object")]
+	[TestCase("""{ "schedule": [ "day" ], "at": "08:00" }""", "'timer.schedule' is [\"day\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "start": [ "2026-01-01" ] }""", "'timer.start' is [\"2026-01-01\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "end": { "date": "2026-12-31" } }""", "'timer.end' is {\"date\":\"2026-12-31\"}, which the server cannot read: it takes ONE string, not an object")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "timeZone": [ "UTC" ] }""", "'timer.timeZone' is [\"UTC\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "month", "workday": { "position": "first" } }""", "'timer.workday' is {\"position\":\"first\"}, which the server cannot read: it takes ONE string, not an object")]
+	[Description("A timer block of a shape the server's serializer cannot read - not one object, a scalar or list weekday, a daysOfWeek that is not a list of strings, an every/fromHour/toHour/month that is fractional, out of range, boolean or a string that is not a whole number, a dayOfMonth that is neither a whole number nor a string, a list or object in a string member (schedule, at, cron, start, end, timeZone, workday) - is refused before sending with its path, instead of failing the whole request on the server.")]
 	public void Check_Should_RefuseATimerShapeTheServerCannotRead(string timerJson, string expected) {
 		// Arrange
 		string element = $$"""{ "name": "Timer1", "type": "timerStart", "timer": {{timerJson}} }""";
@@ -1149,13 +1157,16 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("The shapes the server reads pass the shape guard: a whole-number or string dayOfMonth, whole-number every/fromHour/toHour/month, a weekday object, a daysOfWeek list of strings, and null members.")]
+	[Description("The shapes the server reads pass the shape guard: a whole-number or string dayOfMonth, whole-number every/fromHour/toHour/month also as a quoted whole number, a weekday object, a daysOfWeek list of strings, string schedule members, and null members.")]
 	public void Check_Should_AcceptTheTimerShapesTheServerReads() {
 		// Arrange
 		string operations = """
 			[ { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "month", "dayOfMonth": 15, "every": 2 } },
 			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "month", "dayOfMonth": "last", "weekday": null } },
 			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "minute", "every": 5, "fromHour": 9, "toHour": 18 } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "minute", "every": "5", "fromHour": "9", "toHour": " 18 " } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "year", "month": "3", "dayOfMonth": "1", "at": "08:00", "start": "2026-01-01", "end": null, "timeZone": "UTC" } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "cron", "cron": "0 0 8 * * ?" } },
 			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "year", "month": 3, "weekday": { "position": "first", "day": "mon" } } },
 			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "week", "daysOfWeek": [ "mon" ], "every": null } },
 			  { "op": "setTimer", "elementName": "Timer1", "timer": null } ]

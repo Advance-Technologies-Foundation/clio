@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-91849-timer-start-element.md](../prd/spec-eng-91849-timer-start-element.md) - R12
 **ADR**: [adr-eng-91849-timer-start-element.md](../adr/adr-eng-91849-timer-start-element.md) - D8
 **Test plan**: [tp-eng-91849-timer-start-element.md](../test-plans/tp-eng-91849-timer-start-element.md)
-**Status**: in-progress
+**Status**: review
 **Repo**: clio (one PR titled `ENG-91849 Timer start element`, branch `feature/ENG-91849-timer-start-element`).
 Stories 2-6 ship in the same PR.
 **Depends on**: the crt-process-builder PR (the `timerStart` element, `setTimer`, the scheduler read, the message-start

@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-91849-timer-start-element.md](../prd/spec-eng-91849-timer-start-element.md) - R2, R9
 **ADR**: [adr-eng-91849-timer-start-element.md](../adr/adr-eng-91849-timer-start-element.md) - D6, D7
 **Test plan**: [tp-eng-91849-timer-start-element.md](../test-plans/tp-eng-91849-timer-start-element.md)
-**Status**: in-progress
+**Status**: review
 **Repo**: clio (same PR as story 1)
 **Depends on**: [story 1](story-eng-91849-timer-start-element-1.md); the guide pointer depends on the clio-knowledge
 release that publishes `process-timer-start` ([story 6](story-eng-91849-timer-start-element-6.md))

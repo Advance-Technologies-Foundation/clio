@@ -5254,7 +5254,7 @@ stories:
     feature: "eng-91849-timer-start-element"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     jira: ENG-91849
     file: spec/stories/story-eng-91849-timer-start-element-1.md
     prd: spec/prd/spec-eng-91849-timer-start-element.md
@@ -5276,7 +5276,7 @@ stories:
     feature: "eng-91849-timer-start-element"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-91849
     file: spec/stories/story-eng-91849-timer-start-element-2.md
     prd: spec/prd/spec-eng-91849-timer-start-element.md
@@ -5291,7 +5291,7 @@ stories:
     feature: "eng-91849-timer-start-element"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-91849
     file: spec/stories/story-eng-91849-timer-start-element-3.md
     prd: spec/prd/spec-eng-91849-timer-start-element.md
@@ -5306,7 +5306,7 @@ stories:
     feature: "eng-91849-timer-start-element"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-91849
     file: spec/stories/story-eng-91849-timer-start-element-4.md
     prd: spec/prd/spec-eng-91849-timer-start-element.md
@@ -5322,7 +5322,7 @@ stories:
     feature: "eng-91849-timer-start-element"
     repo: "clio"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-91849
     file: spec/stories/story-eng-91849-timer-start-element-5.md
     prd: spec/prd/spec-eng-91849-timer-start-element.md
@@ -5339,7 +5339,7 @@ stories:
     feature: "eng-91849-timer-start-element"
     repo: "clio"
     size: S
-    status: in-progress
+    status: review
     jira: ENG-91849
     file: spec/stories/story-eng-91849-timer-start-element-6.md
     prd: spec/prd/spec-eng-91849-timer-start-element.md

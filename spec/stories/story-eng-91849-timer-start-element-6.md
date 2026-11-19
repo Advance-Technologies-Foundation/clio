@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-91849-timer-start-element.md](../prd/spec-eng-91849-timer-start-element.md) - R10
 **ADR**: [adr-eng-91849-timer-start-element.md](../adr/adr-eng-91849-timer-start-element.md) - D7
 **Test plan**: [tp-eng-91849-timer-start-element.md](../test-plans/tp-eng-91849-timer-start-element.md)
-**Status**: in-progress
+**Status**: review
 **Repo**: clio (same PR as story 1)
 **Depends on**: the clio-knowledge PR (the `process-timer-start` guide with the confirm-before-save gate, its routing
 entry, the read-only sweep) merged and released

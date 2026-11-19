@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-91849-timer-start-element.md](../prd/spec-eng-91849-timer-start-element.md) - R5, R6, R7, R8
 **ADR**: [adr-eng-91849-timer-start-element.md](../adr/adr-eng-91849-timer-start-element.md) - D2, D4, D5
 **Test plan**: [tp-eng-91849-timer-start-element.md](../test-plans/tp-eng-91849-timer-start-element.md)
-**Status**: in-progress
+**Status**: review
 **Repo**: clio (same PR as story 1)
 **Depends on**: [story 1](story-eng-91849-timer-start-element-1.md)
 **Blocks**: [story 5](story-eng-91849-timer-start-element-5.md)
