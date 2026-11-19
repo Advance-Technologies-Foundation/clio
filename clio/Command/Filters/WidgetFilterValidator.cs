@@ -7,15 +7,12 @@ using Clio.Command.BusinessRules.Filters.Schema;
 
 namespace Clio.Command.Filters;
 
+/// <summary>Errors block the save; warnings are reported beside it.</summary>
 public sealed record PageWidgetFilterReport(IReadOnlyList<string> Errors, IReadOnlyList<string> Warnings) {
 	internal static readonly PageWidgetFilterReport Empty = new([], []);
 }
 
-/// <summary>
-/// Validates the stored ESQ filters of a page's widgets against the environment's entity schemas
-/// (ENG-95270). Before this, a chart/indicator filter leaf was checked by nothing: the registry validator
-/// stops at the opaque filter types, and the only signal was an optional <c>execute-esq</c> dry run.
-/// </summary>
+/// <summary>Validates a page's stored widget ESQ filters against the environment's entity schemas (ENG-95270).</summary>
 public interface IWidgetFilterValidator {
 	/// <param name="body">Freedom UI page body (web) about to be saved.</param>
 	/// <param name="packageUId">Package the page is saved to; entity schemas are read in its context.</param>

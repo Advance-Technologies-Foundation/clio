@@ -3,13 +3,8 @@ using System.Text.Json;
 
 namespace Clio.Command.Filters;
 
-/// <summary>
-/// Encoding-neutral view of a stored ESQ filter tree. Both stored encodings — the devkit
-/// <c>classToPlain</c> form Freedom UI pages hold and the backend serializable-filter form (with
-/// <c>className</c>) business rules hold — read into this one model, so every filter surface is checked
-/// by the same rules (ENG-95270). Only what the semantic checks need is modelled; anything else in the
-/// JSON is ignored, not rejected.
-/// </summary>
+// Encoding-neutral model of a stored ESQ filter tree: the devkit classToPlain form (pages) and the backend
+// serializable form with className (business rules) both read into it. Unmodelled JSON is ignored, not rejected.
 internal abstract record EsqFilterNode(string Path);
 
 internal sealed record EsqFilterGroupNode(
@@ -31,12 +26,11 @@ internal sealed record EsqExpressionNode(
 	string? ColumnPath,
 	int? FunctionType,
 	int? MacrosType,
-	int? DatePartType,
 	EsqExpressionNode? FunctionArgument,
 	EsqParameterNode? Parameter,
 	EsqFilterGroupNode? SubFilters);
 
-internal sealed record EsqParameterNode(int? DataValueType, JsonElement? Value);
+internal sealed record EsqParameterNode(JsonElement? Value);
 
 /// <summary>Wire codes shared by both stored encodings (devkit <c>ɵFilterType</c>/<c>ɵExpressionType</c>/<c>ɵFunctionType</c>).</summary>
 internal static class EsqFilterCodes {
