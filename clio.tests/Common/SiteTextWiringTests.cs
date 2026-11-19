@@ -124,6 +124,42 @@ public sealed class SiteTextWiringTests {
 		error.Should().Contain("Response: Login failed for user '[redacted]'.", because: "the reason stays in the preview");
 	}
 
+	[TestCase("rejected eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJpbnZlbnRlZCJ9.aW52ZW50ZWRzaWduYXR1cmU", "eyJ",
+		TestName = "NonJsonPreview_JwtAcrossTheCut")]
+	[TestCase("Login failed for user 'zq_invented_login'.", "zq_", TestName = "NonJsonPreview_SignInNameAcrossTheCut")]
+	[Category("Unit")]
+	[Description("The non-JSON preview is redacted BEFORE it is cut to 500 characters: a JWT or a quoted sign-in name "
+		+ "that crosses the cut goes whole instead of leaving the half before the cut, which matched no rule.")]
+	public void NonJsonPreview_ShouldRedactBeforeTheCut_WhenASecretCrossesIt(string secretText, string fragment) {
+		// Arrange
+		string body = new string('x', 494 - secretText.IndexOf(fragment, StringComparison.Ordinal)) + " " + secretText;
+
+		// Act
+		string error = CreatioResponseError.DescribeNonJsonResponse(body);
+
+		// Assert
+		error.Should().NotContain(fragment, because: "no part of the secret may survive the preview's cut");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A refused delete's inner message is not cut before the redaction either: a sign-in name after a long "
+		+ "URI, crossing the old 500-character cut, goes whole.")]
+	public void RecordDeletionInnerMessage_ShouldRedactBeforeAnyCut_WhenASecretCrossesTheOldCut() {
+		// Arrange
+		string message = "See https://" + new string('a', 450) + ".invalid/x Login failed for user 'zq_invented_login'.";
+		string body = JsonSerializer.Serialize(new {
+			error = new { message = "An error has occurred.", innererror = new { message } }
+		});
+
+		// Act
+		string inner = RecordDeletionService.ReadInnerMessage(body);
+
+		// Assert
+		inner.Should().NotContain("zq_", because: "the name crossed the old cut and must still go");
+		inner.Should().Contain("Login failed for user '[redacted]'", because: "the reason stays");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("odata-create's per-row error, its site-response and its diagnostic message all go through the site "
