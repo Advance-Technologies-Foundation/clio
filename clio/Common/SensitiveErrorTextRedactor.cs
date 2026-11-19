@@ -345,13 +345,16 @@ internal static partial class SensitiveErrorTextRedactor {
 	//     "=", the name optionally quoted ("Authorization: Basic …", "\"Authorization\": \"Basic …");
 	//   - a credential key of the pair rule's list (CredentialSecretKeys and "credential(s)": password, pwd, secret,
 	//     the token family, auth, api_key, client_secret, cookie, …) written as a key: QUOTED before its ":" or "=" -
-	//     a JSON or dict key ("\"token\": \"Basic …") - or bare before an "=" (a pair: "password=Basic …").
+	//     a JSON or dict key ("\"token\": \"Basic …") - or bare before an "=" (a pair: "password=Basic …");
+	//   - a "key" or "auth" word JOINED by "-" or "_" to the word before it, a header name or a compound key, before
+	//     its ":" or "=" ("X-Auth: Basic …", "X_Key: …", "Api-Key: …", "Proxy-Auth: …").
 	// A key word with a colon in a sentence is not one: "Primary key: Basic info", "auth: Basic mode is off" and
 	// "The secret: Negotiate later" keep the prose word after the scheme word.
 	[GeneratedRegex(
 		$@"(?:(?<![\w\-])(?:""|'|\\""|\\u0022)?(?:(?:proxy-)?authori[sz]ation|(?:www|proxy)-authenticate)(?:""|'|\\""|\\u0022)?[ \t]*[:=]"
 		+ $@"|(?<![\w.\-])(?:""|'|\\""|\\u0022)(?:{CredentialSecretKeys}|{CredentialWordKeys})(?:""|'|\\""|\\u0022)[ \t]*[:=]"
-		+ $@"|(?<![\w.\-])(?:{CredentialSecretKeys}|{CredentialWordKeys})[ \t]*=)"
+		+ $@"|(?<![\w.\-])(?:{CredentialSecretKeys}|{CredentialWordKeys})[ \t]*="
+		+ $@"|(?<![\w\-])[A-Za-z]\w*(?:[\-_][A-Za-z0-9]+)*[\-_](?:key|auth)(?:""|'|\\""|\\u0022)?[ \t]*[:=])"
 		+ @"[ \t]*(?:""|'|\\""|\\u0022)?[ \t]*$",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex HeaderPositionRegex();
@@ -1140,7 +1143,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		// The ";"-list form before the ordinary pair rule, which would otherwise stop the value at its first space.
 		string listed = result;
 		result = CredentialListPairRegex().Replace(result, match => RedactListPair(listed, match));
-		result = CredentialPairRegex().Replace(result, RedactCredentialPair);
+		string paired = result;
+		result = CredentialPairRegex().Replace(result, match => RedactCredentialPair(paired, match));
 		return ApplyInjectedRule(RedactLastStage, result);
 	}
 
@@ -1304,7 +1308,7 @@ internal static partial class SensitiveErrorTextRedactor {
 			: match.Value;
 	}
 
-	private static string RedactCredentialPair(Match match) {
+	private static string RedactCredentialPair(string text, Match match) {
 		if (match.Groups["kept"].Success) {
 			return match.Value;
 		}
@@ -1319,8 +1323,12 @@ internal static partial class SensitiveErrorTextRedactor {
 		// is no credential. After any OTHER credential key - password, secret, cookie, token, access_token,
 		// client_secret, … - the value is the secret whatever it looks like, so it goes ("password: Basic
 		// secrettokenvalue"). THE TRADE, removing wins: such a key in a sentence ("The token: NTLM handshake failed")
-		// loses the words after it too. With "=" it is a pair after every key, and the value goes.
-		if (colon && !match.Groups["kq"].Success && ProseKeyRegex().IsMatch(key)
+		// loses the words after it too. A "key" or "auth" joined by "-" or "_" to the word before it ("X-Auth:",
+		// "Proxy-Auth:") is a header name, not prose, and keeps nothing either. With "=" it is a pair after every key,
+		// and the value goes.
+		int keyAt = match.Groups["key"].Index;
+		bool joined = keyAt > 0 && text[keyAt - 1] is '-' or '_';
+		if (colon && !match.Groups["kq"].Success && !joined && ProseKeyRegex().IsMatch(key)
 			&& SchemeWordAndKeptWordRegex().Match(match.Groups["value"].Value) is { Success: true } schemed
 			&& (schemed.Groups["scheme"].Value.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
 				? BearerTradeRegex().IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential)
@@ -1499,7 +1507,8 @@ internal static partial class SensitiveErrorTextRedactor {
 			result = DigestCredentialRegex().Replace(result, RedactDigestCredential);
 			string listed = result;
 			result = CredentialListPairRegex().Replace(result, match => RedactListPair(listed, match));
-			return CredentialPairRegex().Replace(result, RedactCredentialPair);
+			string paired = result;
+			return CredentialPairRegex().Replace(result, match => RedactCredentialPair(paired, match));
 		});
 	}
 

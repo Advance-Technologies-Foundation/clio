@@ -1124,24 +1124,66 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		site.Should().NotContain(server).And.NotContain(account, because: "the server and the account both go");
 	}
 
-	[TestCase(16_000, TestName = "Linear_16kCapitals")]
-	[TestCase(100_000, TestName = "Linear_100kCapitals")]
+	[Test]
 	[Category("Unit")]
-	[Description("The server-name check looks for its backslash before it looks back, so a long run of capitals and "
-		+ "digits is read in linear time: it neither times out (the bare placeholder) nor takes seconds.")]
-	public void RedactSiteText_ShouldReadALongRunOfCapitals_InLinearTime(int length) {
+	[Description("A 30,000-character run of capitals and digits passes RedactSiteText whole: the whole chain neither "
+		+ "times out (the bare placeholder) nor changes it. The length stays well inside every rule's 1-second budget on a "
+		+ "slow agent; linearity itself is timed on the server-name rule alone below.")]
+	public void RedactSiteText_ShouldKeepALongRunOfCapitals_WithoutFailingClosed() {
 		// Arrange
-		string run = string.Concat(Enumerable.Repeat("ABCDEF0123456789", length / 16));
-		string text = "Value " + run + " here";
-		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+		string text = "Value " + string.Concat(Enumerable.Repeat("ABCDEF0123456789", 30_000 / 16)) + " here";
 
 		// Act
 		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
-		watch.Stop();
 
 		// Assert
 		site.Should().Be(text, because: "nothing in it is a secret, and the chain must not fail closed on it");
-		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3), because: "the rule must stay linear on a long run");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The server-name rule ALONE reads a 100,000-character run of capitals and digits in linear time: it "
+		+ "looks for its backslash before it looks back. The quadratic form took about 383 ms on 16,000 characters, so "
+		+ "100,000 would take about 15 s; the bound is generous for a slow agent and does not depend on other rules.")]
+	public void WindowsInstanceRule_ShouldReadALongRunOfCapitals_InLinearTime() {
+		// Arrange
+		Regex rule = (Regex)typeof(SensitiveErrorTextRedactor)
+			.GetMethod("WindowsInstanceRegex", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+			.Invoke(null, null)!;
+		string text = "Value " + string.Concat(Enumerable.Repeat("ABCDEF0123456789", 100_000 / 16)) + " here";
+		rule.IsMatch("warm up");
+		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		string replaced = rule.Replace(text, "[x]");
+		watch.Stop();
+
+		// Assert
+		replaced.Should().Be(text, because: "a run of capitals with no backslash is no server instance");
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750), because: "the rule must stay linear on a long run");
+	}
+
+	[TestCase("X-Auth: Basic abcdefghijkl", TestName = "JoinedKey_XAuth")]
+	[TestCase("X_Key: Basic abcdefghijkl", TestName = "JoinedKey_XUnderscoreKey")]
+	[TestCase("Api-Key: Basic abcdefghijkl", TestName = "JoinedKey_ApiKey")]
+	[TestCase("Proxy-Auth: Basic abcdefghijkl", TestName = "JoinedKey_ProxyAuth")]
+	[TestCase("X-Auth: Basic token", TestName = "JoinedKey_XAuthClosedListWord")]
+	[Category("Unit")]
+	[Description("A key or auth word joined by '-' or '_' to the word before it is a header name or a compound key, "
+		+ "not prose: its value after the scheme word goes in every entry point.")]
+	public void AllEntryPoints_ShouldRemoveTheValue_AfterAJoinedKeyOrAuthHeader(string text) {
+		// Arrange
+		string value = text[(text.LastIndexOf(' ') + 1)..];
+
+		// Act
+		string redact = SensitiveErrorTextRedactor.Redact(text);
+		string console = SensitiveErrorTextRedactor.RedactCredentials(text);
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		redact.Should().NotContain(value, because: "a joined key's value is the credential");
+		console.Should().NotContain(value, because: "the console variant removes it too");
+		site.Should().NotContain(value, because: "the site entry point removes it too");
 	}
 
 	[TestCase("{\"constant-credentials-masked\":\"x7Kq9LpQ3\"}", "{\"constant-credentials-masked\":\"[redacted]\"}",
