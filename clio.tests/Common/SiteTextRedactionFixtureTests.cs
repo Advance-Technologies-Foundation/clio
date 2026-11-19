@@ -133,8 +133,8 @@ public sealed class SiteTextRedactionFixtureTests {
 	[Test]
 	[Category("Unit")]
 	[Description("The fixture holds the host lane's 350 distinct inputs in their classes - the gap analysis's counts, "
-		+ "with the 12 rows clio has nothing to remove from moved from A and B to D - and every rule-9 SQL row, and only "
-		+ "those, pending for PR B.")]
+		+ "with the 12 rows clio has nothing to remove from moved from A and B to D and case-320 moved to A - and "
+		+ "every rule-9 SQL row, and only those, pending for PR B.")]
 	public void Fixture_ShouldHoldTheAnalysedRows_WithOnlySqlRowsPending() {
 		// Arrange
 		IReadOnlyList<SiteTextRedactionCase> rows = LoadRows();
@@ -146,9 +146,10 @@ public sealed class SiteTextRedactionFixtureTests {
 		// Assert
 		rows.Should().HaveCount(350, because: "the 42 host tests expand to 350 distinct inputs");
 		rows.Select(row => row.Input).Should().OnlyHaveUniqueItems(because: "a repeated host case is one row with several case numbers");
-		byClass.Should().BeEquivalentTo(new Dictionary<string, int> { ["A"] = 45, ["B"] = 168, ["C"] = 112, ["D"] = 25 },
-			because: "the gap analysis counted A 46, B 179, C 120 assertions (112 distinct inputs) and D 13, and the 11 B "
-				+ "rows and 1 A row clio keeps by choice are D: the host removes something there and clio does not");
+		byClass.Should().BeEquivalentTo(new Dictionary<string, int> { ["A"] = 46, ["B"] = 167, ["C"] = 112, ["D"] = 25 },
+			because: "the gap analysis counted A 46, B 179, C 120 assertions (112 distinct inputs) and D 13; the 11 B rows "
+				+ "and 1 A row clio keeps by choice are D (the host removes something there and clio does not), and case-320, "
+				+ "whose password master's JSON rule already removes, is A");
 		pendingKinds.Should().Equal(["sql"], because: "only rule 9 (SQL) is left to PR B");
 		rows.Count(row => row.Pending is not null).Should().Be(71, because: "the analysis counted 71 SQL rows");
 		rows.Should().OnlyContain(row => row.Entry == "redact" || row.Entry == "site",

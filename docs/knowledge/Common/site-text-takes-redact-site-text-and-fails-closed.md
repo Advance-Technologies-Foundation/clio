@@ -73,7 +73,7 @@ index names, CRM role words (`Access denied for role "Sales managers"`, `locked 
 words around a scheme (`The bearer token expired`, `WWW-Authenticate: Bearer realm=…`, `NTLM v2`, `basic
 OAuth`, `negotiate TLS1.2`, `basic 8.1.0.5`), a version after a version word (`Version=10.0.0.0`), a count line
 (`Failed:22`, `Total:443`), and `file.js:42:13`. `clio.tests/Common/Fixtures/site-text-redaction-cases.json` pins
-350 invented inputs from the Accelerator host lane: A 45 and B 168 rows name the secret core that must go, C 112
+350 invented inputs from the Accelerator host lane: A 46 and B 167 rows name the secret core that must go, C 112
 rows must stay, and D 25 rows are what the host removes and clio keeps (its documented trades, and the 12 rows
 clio declines by choice); every mustStay is the phrase that carries the reason. Its rule-9 SQL rows wait for PR B,
 and its header and safety test forbid any real host, login, password, key, token or public IPv4 address.

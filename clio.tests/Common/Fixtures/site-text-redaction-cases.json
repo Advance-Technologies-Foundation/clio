@@ -199,7 +199,8 @@
       "hostOutput": "Login failed: Password=[redacted]; pwd=[redacted]; Server=[redacted]; User Id=[redacted]; uid=[redacted]",
       "mustGo": [
         "hunter2",
-        "p w",
+        "='p",
+        "w'",
         "db01",
         "1433",
         "sa"
@@ -225,7 +226,8 @@
       "mustGo": [
         "db.local",
         "Creatio_Prod",
-        "Bw Prod"
+        "Bw",
+        "Prod"
       ],
       "mustStay": [
         "Data Source",
@@ -1152,7 +1154,8 @@
       "hostOutput": "Server=[redacted];Password=[redacted];",
       "mustGo": [
         "db01",
-        "p@ss w0rd"
+        "p@ss",
+        "w0rd"
       ],
       "mustStay": [
         "Server",
@@ -1171,9 +1174,11 @@
       "input": "Data Source=my server;User Id=my user;Password=x y",
       "hostOutput": "Data Source=[redacted];User Id=[redacted];Password=[redacted]",
       "mustGo": [
-        "my server",
-        "my user",
-        "=x y"
+        "my",
+        "server",
+        "user",
+        "=x",
+        " y"
       ],
       "mustStay": [
         "Data Source",
@@ -1246,7 +1251,8 @@
       "input": "{\"password\":\"a\\\"b c\"}",
       "hostOutput": "{\"password\":[redacted]}",
       "mustGo": [
-        "a\\\"b c"
+        "a\\\"b",
+        "b c"
       ],
       "mustStay": [
         "{\"password\":\""
@@ -5463,9 +5469,8 @@
         320
       ],
       "testLine": 1020,
-      "class": "B",
-      "kind": "sign-in",
-      "entry": "site",
+      "class": "A",
+      "entry": "redact",
       "input": "{\"password\":\"abc\\\", \"user\":\"sa\"}",
       "hostOutput": "{\"password\":[redacted], \"user\":[redacted]}",
       "mustGo": [
@@ -5475,7 +5480,7 @@
         "{\"password\":\"",
         "\"user\":\"sa\"}"
       ],
-      "note": "The \"user\" value is a JSON-shape artifact of the input (analysis kind 3): only the password goes."
+      "note": "Master's JSON credential rule already removes the password (the escaped quote is read as part of the value), so this row is A for what clio removes; the \"user\" value is a JSON-shape artifact of the input (analysis kind 3) and stays."
     },
     {
       "id": "case-321",
@@ -5506,7 +5511,8 @@
       "input": "password=\"he said \\\"no\\\"\" end",
       "hostOutput": "password=[redacted] end",
       "mustGo": [
-        "he said \\\"no\\"
+        "he said",
+        "no"
       ],
       "mustStay": [
         "password",
@@ -5525,7 +5531,8 @@
       "input": "password='it\\'s' end",
       "hostOutput": "password=[redacted] end",
       "mustGo": [
-        "it\\'s"
+        "it",
+        "s'"
       ],
       "mustStay": [
         "password",
