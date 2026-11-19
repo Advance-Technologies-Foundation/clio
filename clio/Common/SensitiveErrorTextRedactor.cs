@@ -74,7 +74,21 @@ internal static partial class SensitiveErrorTextRedactor {
 	// tail that took the bracket left the reader "([redacted-path]" with nothing to close it - the same defect
 	// UriRegex fixed for "(URL: …)". A directory whose own name ends in a bracket loses only that character, and
 	// the path before it is redacted either way.
-	[GeneratedRegex(@"(?:[A-Za-z]:\\|\\\\)[^\s""'<>|)}\]]*", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	//
+	// ESCAPE-AWARE, because Redact also runs over a serialized envelope (ClioRunTool.RedactSerializedText), where a
+	// site message that quotes its own JSON carries "run \"CanManageSolution\"" as run \\\u0022CanManageSolution\\\u0022
+	// (an escaped backslash, then an escaped quote). The UNC alternative used to start on that "\\" and run to the
+	// next space, so the operation name - the site's whole reason - became "[redacted-path]" (found live through
+	// clio-run update-page, 19 Nov). So:
+	//   - a UNC start is two backslashes (four, once escaped) NOT after another backslash, followed by a host token
+	//     and a further backslash ("\\fs01\share", "\\\\fs01\\share"); an escaped quote is not a host;
+	//   - a drive takes "C:\" or its escaped spelling "C:\\" whole;
+	//   - in the tail an escaped backslash pair is one unit, and a single backslash right before a quote ends the
+	//     path - it escapes that quote - so the match can never take half of an escape and leave the JSON broken.
+	[GeneratedRegex(
+		@"(?:[A-Za-z]:(?:\\\\|\\(?!""))|(?<!\\)(?:\\\\){1,2}(?=[A-Za-z0-9_$][\w.$\-]*\\))"
+		+ @"(?:\\\\|\\(?![""\\])|[^\s""'<>|)}\]\\])*",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex WindowsPathRegex();
 
 	// A drive followed by a FORWARD slash ("C:/Secrets/db.config", "D:/data/x.mdf"), which .NET and the IIS
@@ -90,8 +104,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	// generic URL fragments (e.g. "/rest/CreatioApiGateway/…", "/DataService/…") and prose are left
 	// intact. The root token must be followed by a path separator + at least one segment so a bare
 	// "/app" word boundary in prose is not mistaken for a path.
-	// A closing bracket ends the path, for the reason given on WindowsPathRegex.
-	[GeneratedRegex(@"/(?:Users|home|root|var|etc|opt|usr|tmp|private|mnt|srv|Library|Applications|System|app|data|config)(?:/[^\s""'<>:)}\]]*)+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	// A closing bracket ends the path, and a backslash right before a quote does too (it escapes that quote), for
+	// the reasons given on WindowsPathRegex.
+	[GeneratedRegex(@"/(?:Users|home|root|var|etc|opt|usr|tmp|private|mnt|srv|Library|Applications|System|app|data|config)(?:/(?:[^\s""'<>:)}\]\\]|\\(?!""))*)+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex PosixPathRegex();
 
 	// key=value / key: value pairs whose key denotes a secret or a connection-string host/db; the
@@ -202,8 +217,11 @@ internal static partial class SensitiveErrorTextRedactor {
 	//      Without escapes "password=\"he said \\\"no\\\"\"" kept everything after the first escaped quote;
 	//   4. an UNCLOSED quote, to the end of its line - never past it, and never across a JSON bracket, so on a
 	//      serialized envelope (one line, structural brackets) it cannot run to the end of the document;
-	//   5. a bare value, which stops at "&" when a new "name=" follows ("client_secret=s3cr3t&api_key=abc" used
-	//      to lose all five key names into one placeholder), "&amp;" included.
+	//   5. a value quoted with escaped quotes (\"…\"), which is how a pair reads inside a JSON string written with
+	//      the relaxed encoder; it is taken whole, quotes included, so the string stays closed;
+	//   6. a bare value, which stops at "&" when a new "name=" follows ("client_secret=s3cr3t&api_key=abc" used
+	//      to lose all five key names into one placeholder), "&amp;" included, and never takes the backslash of an
+	//      escaped quote: taking it left that quote unescaped and closed the JSON string early.
 	private const string CredentialPairValue =
 		$@"(?<kept>(?:{SchemeWords})[ \t]+(?<sq>[""']?)\[redacted\]\k<sq>)"
 		+ $@"|(?:{SchemeWords})[ \t]+[^\s,;""']+"
@@ -211,12 +229,15 @@ internal static partial class SensitiveErrorTextRedactor {
 		+ @"|'(?:[^'\\\r\n]|\\'(?![\s,;&)\]}]|\z)|\\[^'\r\n]|\\(?='))*'"
 		+ @"|""[^""\r\n{}\[\]]+(?=[\r\n]|\z)"
 		+ @"|'[^'\r\n{}\[\]]+(?=[\r\n]|\z)"
-		+ @"|(?:[^\s,;""'&]|&(?!(?:amp;)?[A-Za-z_][\w.\-]*=))+";
+		+ @"|\\""(?:[^""\\\r\n]|\\[^""\r\n])*\\"""
+		+ @"|(?:[^\s,;""'&\\]|\\(?!"")|&(?!(?:amp;)?[A-Za-z_][\w.\-]*=))+";
 
 	// A key may be written in single quotes, as a Python- or JavaScript-shaped dict does ({'Password': 'x'}); the
 	// pair rule could not reach it, because the key's closing quote sits where it needs its "=" or ":".
+	// A key right after a "\n", "\r" or "\t" escape counts as starting a word: in a serialized envelope a line
+	// break is written that way, and "\nPassword=hunter2" had no word boundary before the key, so it shipped.
 	[GeneratedRegex(
-		$@"(?<kq>')?\b(?<key>{CredentialSecretKeys}|{ConnectionStringPartKeys}|{PairOnlyKeys})\b(?(kq)')"
+		$@"(?<kq>')?(?:(?<=\\[nrt])|\b)(?<key>{CredentialSecretKeys}|{ConnectionStringPartKeys}|{PairOnlyKeys})\b(?(kq)')"
 		+ $@"(?<sep>\s*[=:]\s*)(?<value>{CredentialPairValue})",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialPairRegex();

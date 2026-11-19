@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Common;
@@ -121,6 +122,61 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	#endregion
 
 	#region Serialized envelopes through Redact
+
+	// The site message the coordinator found live (clio-run update-page, 19 Nov): the site's JSON pretty-printed
+	// inside the error string, whose own quotes are escaped. Every value is invented.
+	private const string QuotedOperationMessage =
+		"Failed to load page schema hierarchy: {\n  \"errorCode\": \"SecurityException\",\n  \"message\": "
+		+ "\"Current user does not have sufficient permissions to run \\\"CanManageSolution\\\"\",\n  \"stackTrace\": null\n}";
+
+	[TestCase(false, TestName = "Envelope_DefaultEncoder_QuotesAsU0022")]
+	[TestCase(true, TestName = "Envelope_RelaxedEncoder_QuotesAsBackslashQuote")]
+	[Category("Unit")]
+	[Description("An escaped backslash before an escaped quote in a serialized envelope is not a UNC path: the site's "
+		+ "operation name 'CanManageSolution' - its whole reason - stays, and the envelope stays valid JSON. Found live: "
+		+ "the UNC alternative started on the escaped backslash and ran to the next space.")]
+	public void Redact_ShouldKeepTheQuotedOperationName_WhenTheEnvelopeEscapesTheSitesOwnJson(bool relaxed) {
+		// Arrange
+		JsonSerializerOptions options = relaxed
+			? new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
+			: new JsonSerializerOptions();
+		string envelope = JsonSerializer.Serialize(new { success = false, error = QuotedOperationMessage }, options);
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
+
+		// Assert
+		Action parse = () => JsonDocument.Parse(redacted).Dispose();
+		parse.Should().NotThrow(because: "a redacted envelope must still parse for the caller");
+		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
+		error.Should().Be(QuotedOperationMessage,
+			because: "nothing in it is a secret: the operation the user may not run is the site's reason");
+	}
+
+	[TestCase(false, TestName = "EnvelopePaths_DefaultEncoder")]
+	[TestCase(true, TestName = "EnvelopePaths_RelaxedEncoder")]
+	[Category("Unit")]
+	[Description("The escape-aware path rule still redacts a real UNC path, a drive path and a quoted drive path ending "
+		+ "in a backslash inside a serialized envelope, and the envelope stays valid JSON.")]
+	public void Redact_ShouldStillRedactRealWindowsPaths_InsideASerializedEnvelope(bool relaxed) {
+		// Arrange
+		const string message = "Share \\\\fs01\\creatio$\\pkg is down; could not write C:\\inetpub\\x.config; "
+			+ "Data Source=\"C:\\data\\\" was refused";
+		JsonSerializerOptions options = relaxed
+			? new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
+			: new JsonSerializerOptions();
+		string envelope = JsonSerializer.Serialize(new { error = message }, options);
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
+
+		// Assert
+		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
+		error.Should().NotContain("fs01", because: "the UNC host must go").And.NotContain("creatio$")
+			.And.NotContain("inetpub", because: "the drive path must go").And.NotContain("data\\",
+				because: "the quoted drive path must go");
+		error.Should().Contain("is down").And.Contain("was refused", because: "the reasons around the paths stay");
+	}
 
 	[Test]
 	[Category("Unit")]
