@@ -358,18 +358,20 @@
 		/// </summary>
 		private void Fail(string packageName, int? buildResult, IEnumerable<PackageBuildDiagnostic> diagnostics,
 			string errorMessage, string rawHistoryErrors) {
+			// Everything the environment wrote - the diagnostics, the raw history payload and the build's message - takes
+			// the site-text redaction here, where it becomes a log line or the exception's message: compile-creatio and
+			// push-workspace return both, and a stdio log is not redacted again.
 			List<PackageBuildDiagnostic> errors = diagnostics.Where(diagnostic => !diagnostic.IsWarning).ToList();
 			foreach (PackageBuildDiagnostic diagnostic in errors) {
-				_logger.WriteError(diagnostic.ToString());
+				_logger.WriteError(diagnostic.WithSiteTextRedacted().ToString());
 			}
 			if (errors.Count == 0 && !string.IsNullOrWhiteSpace(rawHistoryErrors)) {
 				// The history payload was not in the expected shape; show it as it came rather than lose it.
-				_logger.WriteError(rawHistoryErrors);
+				_logger.WriteError(SensitiveErrorTextRedactor.RedactSiteText(rawHistoryErrors));
 			}
 			string resultPart = buildResult is { } value ? $" (build result {value})" : string.Empty;
-			string messagePart = string.IsNullOrWhiteSpace(errorMessage)
-				? string.Empty
-				: $" Creatio reported: {errorMessage.Trim().TrimEnd('.')}.";
+			string reported = SensitiveErrorTextRedactor.RedactSiteText(errorMessage).Trim().TrimEnd('.');
+			string messagePart = reported.Length == 0 ? string.Empty : $" Creatio reported: {reported}.";
 			throw new PackageCompilationException(
 				$"Package compilation failed for '{packageName}'{resultPart}.{messagePart} The new code was not "
 				+ "loaded: the environment keeps running the previous build until the errors are fixed and the "

@@ -386,8 +386,13 @@ public sealed class ModifyBusinessProcessService(
 	// client what the server split the field to stop them doing: bisecting the batch against a live environment.
 	// Appended rather than woven in because the server's own sentence is the primary message and several guards name
 	// neither endpoint.
+	//
+	// The server's sentence and its warnings are the site's text: they take the site-text redaction here, where they
+	// become the exception's message, the tool's error and the command's log line. clio's own sentences do not.
 	private static string BuildFailureMessage(ModifyProcessResultDto result) {
-		string message = result.ErrorMessage ?? "ModifyProcess failed.";
+		string message = string.IsNullOrWhiteSpace(result.ErrorMessage)
+			? "ModifyProcess failed."
+			: SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage);
 		if (result.FailedOperationIndex.HasValue) {
 			message += $" The operation at index {result.FailedOperationIndex.Value} is the one that refused.";
 		}
@@ -403,7 +408,7 @@ public sealed class ModifyBusinessProcessService(
 			message += saved ? result.LayoutChange.ElementsClause() : result.LayoutChange.RelaySentence();
 		}
 		if (saved && result.Warnings is { Count: > 0 }) {
-			message += " " + string.Join(" ", result.Warnings);
+			message += " " + SensitiveErrorTextRedactor.RedactSiteText(string.Join(" ", result.Warnings));
 		}
 		return message;
 	}

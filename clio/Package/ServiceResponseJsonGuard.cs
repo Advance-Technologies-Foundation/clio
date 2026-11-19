@@ -77,6 +77,9 @@ internal static class ServiceResponseJsonGuard
 	/// <summary>Upper bound on the response preview embedded in the error message.</summary>
 	private const int ResponsePreviewMaxLength = 200;
 
+	/// <summary>How much more of the body than <see cref="ResponsePreviewMaxLength"/> the redaction reads.</summary>
+	private const int PreviewRedactionInputFactor = 8;
+
 	/// <summary>UTF-8 byte-order mark, which <see cref="char.IsWhiteSpace(char)"/> does not report as whitespace.</summary>
 	private const char ByteOrderMark = '\uFEFF';
 
@@ -253,15 +256,23 @@ internal static class ServiceResponseJsonGuard
 	/// three-segment token, so truncating first would cut a token that straddles the cap into a prefix the
 	/// patterns no longer recognise, and that prefix would be surfaced.
 	/// </para>
+	/// <para>
+	/// The body is the site's text, so it takes the site-text redaction
+	/// (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>), and BEFORE the line breaks are collapsed: the
+	/// site-text cut keys on the break before a stack frame. The input is clamped first to a multiple of the
+	/// cap, as <c>SiteResponse</c> does, so a page-sized body cannot time the chain out and lose the preview.
+	/// </para>
 	/// </summary>
 	/// <param name="responseBody">Raw, non-empty response body.</param>
 	/// <returns>The preview to embed in the error message.</returns>
 	private static string BuildResponsePreview(string responseBody)
 	{
+		string redacted = SensitiveErrorTextRedactor.RedactSiteText(TextUtilities.TruncateWithoutSplittingSurrogatePair(
+			responseBody, ResponsePreviewMaxLength * PreviewRedactionInputFactor));
 		// Byte-order marks are trimmed alongside whitespace: char.IsWhiteSpace does not report a BOM, so a
 		// BOM-only body survives the IsNullOrWhiteSpace gate in Deserialize and would otherwise produce a
 		// preview made entirely of invisible characters.
-		string collapsed = responseBody
+		string collapsed = redacted
 			.Replace("\r", " ", StringComparison.Ordinal)
 			.Replace("\n", " ", StringComparison.Ordinal)
 			.Trim()
@@ -272,9 +283,8 @@ internal static class ServiceResponseJsonGuard
 			return "<empty body>";
 		}
 
-		string redacted = SensitiveErrorTextRedactor.Redact(collapsed);
-		return redacted.Length > ResponsePreviewMaxLength
-			? redacted[..ResponsePreviewMaxLength] + "…"
-			: redacted;
+		return collapsed.Length > ResponsePreviewMaxLength
+			? TextUtilities.TruncateWithoutSplittingSurrogatePair(collapsed, ResponsePreviewMaxLength) + "…"
+			: collapsed;
 	}
 }

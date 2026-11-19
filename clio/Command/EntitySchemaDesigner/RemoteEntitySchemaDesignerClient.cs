@@ -439,10 +439,13 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		}
 
 		if (!response.Success) {
+			// The designer's message is the site's text: redacted here, where it is read, because every entity-schema,
+			// lookup and data-binding tool puts the exception's message into its error and its log line. clio's
+			// fallback sentence is not.
 			throw new InvalidOperationException(
 				string.IsNullOrWhiteSpace(response.ErrorInfo?.Message)
 					? $"{methodName} failed."
-					: response.ErrorInfo.Message);
+					: SensitiveErrorTextRedactor.RedactSiteText(response.ErrorInfo.Message));
 		}
 
 		return response;

@@ -5,6 +5,7 @@ namespace Clio.Package
 	using System.IO;
 	using System.Linq;
 	using System.Text.RegularExpressions;
+	using Clio.Common;
 	using Clio.Common.Responses;
 
 	/// <summary>
@@ -234,6 +235,12 @@ namespace Clio.Package
 		/// Pass <c>true</c> when the check was not requested.
 		/// </param>
 		/// <returns>A non-empty description of what failed.</returns>
+		/// <remarks>
+		/// Every part the environment wrote - the compiler's log line, the service's code and message, the log tail -
+		/// takes the site-text redaction here, where it is read: the description becomes the installer's failure log
+		/// line, which push-pkg, install-application and the other install tools return, and a stdio log is not
+		/// redacted again. clio's own wording around it is not redacted.
+		/// </remarks>
 		public static string DescribeFailure(BaseResponse response, string installLog,
 			bool successMessageCheckPassed = true) {
 			string compilationErrorLine = GetFirstCompilationErrorLine(installLog);
@@ -241,15 +248,15 @@ namespace Clio.Package
 				// Measured on Creatio 10.1.725: a run that failed to compile is still answered with the
 				// generic message, so echoing the response would tell the operator nothing. The compiler's
 				// own line names the schema, the position and the diagnostic.
-				return $"the configuration failed to compile. {compilationErrorLine}";
+				return $"the configuration failed to compile. {SiteText(compilationErrorLine)}";
 			}
 			string message = response?.ErrorInfo?.Message;
 			if (!string.IsNullOrWhiteSpace(message)) {
 				// response and response.ErrorInfo are both non-null here: message came from them.
 				string errorCode = response.ErrorInfo.ErrorCode;
 				return string.IsNullOrWhiteSpace(errorCode)
-					? message.Trim()
-					: $"{errorCode.Trim()}: {message.Trim()}";
+					? SiteText(message)
+					: $"{SiteText(errorCode)}: {SiteText(message)}";
 			}
 			if (!successMessageCheckPassed) {
 				return $"--fail-on-error is set and the installation log does not contain \"{SuccessMessage}\".";
@@ -257,8 +264,10 @@ namespace Clio.Package
 			string logTail = GetMeaningfulLogTail(installLog);
 			return string.IsNullOrWhiteSpace(logTail)
 				? "the installation service reported a failure without an error message."
-				: $"the installation service reported a failure without an error message. Last log lines: {logTail}";
+				: $"the installation service reported a failure without an error message. Last log lines: {SiteText(logTail)}";
 		}
+
+		private static string SiteText(string text) => SensitiveErrorTextRedactor.RedactSiteText(text.Trim()).Trim();
 
 		/// <summary>
 		/// Returns the last non-empty log lines, joined by " | ", for use in a failure message.

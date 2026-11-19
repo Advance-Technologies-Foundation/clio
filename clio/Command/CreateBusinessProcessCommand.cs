@@ -452,10 +452,15 @@ public sealed class CreateBusinessProcessService(
 			// A failure that still names the schema came AFTER the save: today only a tracing switch that failed
 			// behind a created process (ENG-102111). The process exists, so the build's warnings still apply - a
 			// compile its script task owes must not vanish with the failure.
+			// The message and the warnings are the site's text: they take the site-text redaction here, where they
+			// become the exception's message, the tool's error and the command's log line. clio's fallback does not.
 			string warnings = !string.IsNullOrWhiteSpace(result.SchemaUId) && result.Warnings is { Count: > 0 }
-				? " " + string.Join(" ", result.Warnings)
+				? " " + SensitiveErrorTextRedactor.RedactSiteText(string.Join(" ", result.Warnings))
 				: string.Empty;
-			throw new InvalidOperationException((result.ErrorMessage ?? "BuildProcess failed.") + warnings);
+			string message = string.IsNullOrWhiteSpace(result.ErrorMessage)
+				? "BuildProcess failed."
+				: SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage);
+			throw new InvalidOperationException(message + warnings);
 		}
 
 		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId, result.Warnings);

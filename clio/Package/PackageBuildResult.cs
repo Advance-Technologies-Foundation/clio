@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Common;
 
 namespace Clio.Package;
 
@@ -42,6 +43,21 @@ public sealed record PackageBuildDiagnostic(string ErrorNumber, string ErrorText
 		string position = Line is { } line && Column is { } column ? $" at ({line},{column})" : string.Empty;
 		return $"{code} in {decorateFile(FileName)}{position}: {ErrorText}";
 	}
+
+	/// <summary>
+	/// The same diagnostic with every part the environment wrote - its code, its text and the file it names - passed
+	/// through the site-text redaction (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>).
+	/// </summary>
+	/// <returns>A redacted copy; the position is a number and stays.</returns>
+	/// <remarks>
+	/// For a log line or a message clio builds from the diagnostic: compile-creatio and push-workspace log it, and a
+	/// stdio log is not redacted again. Not applied by the parser, because compile-status already fences the history
+	/// diagnostics it renders with the site-text redaction, and a second pass there would be redaction twice.
+	/// </remarks>
+	internal PackageBuildDiagnostic WithSiteTextRedacted() =>
+		this with { ErrorNumber = Site(ErrorNumber), ErrorText = Site(ErrorText), FileName = Site(FileName) };
+
+	private static string Site(string text) => text is null ? null : SensitiveErrorTextRedactor.RedactSiteText(text);
 
 }
 

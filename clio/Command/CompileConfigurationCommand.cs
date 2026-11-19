@@ -457,13 +457,15 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 			return;
 		}
 		Logger.WriteError($"Compilation failed on the environment. Build result: {result.buildResult}.");
+		// The diagnostics are the environment's text: they take the site-text redaction here, where they become log
+		// lines, because compile-creatio returns those lines and a stdio log is not redacted again.
 		foreach (CreatioCompilationError diagnostic in result.errors ?? []) {
 			if (diagnostic.warning) {
 				continue;
 			}
 			Logger.WriteError(
-				$"({diagnostic.errorNumber}) in {diagnostic.fileName} at ({diagnostic.line},{diagnostic.column}): "
-				+ diagnostic.errorText);
+				$"({SiteText(diagnostic.errorNumber)}) in {SiteText(diagnostic.fileName)} at ({diagnostic.line},"
+				+ $"{diagnostic.column}): {SiteText(diagnostic.errorText)}");
 		}
 	}
 
@@ -530,17 +532,21 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	/// </summary>
 	/// <param name="errorsWarnings">The row's raw <c>ErrorsWarnings</c> JSON.</param>
 	/// <returns>The rendered diagnostics, or the raw payload when it holds none that can be read.</returns>
+	/// <remarks>
+	/// The payload is the environment's text, so the rendered diagnostics - and the raw payload when none can be read -
+	/// take the site-text redaction here, where they become a log line.
+	/// </remarks>
 	internal static string FormatHistoryDiagnostics(string errorsWarnings) {
 		IReadOnlyList<PackageBuildDiagnostic> diagnostics =
 			PackageBuildResultParser.ParseHistoryDiagnostics(errorsWarnings);
 		if (diagnostics.Count == 0) {
-			return errorsWarnings;
+			return SiteText(errorsWarnings);
 		}
 		StringBuilder sb = new();
 		int errorNumber = 1;
 		foreach (PackageBuildDiagnostic diagnostic in diagnostics) {
 			Func<string, string> decorateCode = diagnostic.IsWarning ? ConsoleLogger.WrapYellow : ConsoleLogger.WrapRed;
-			string message = diagnostic.Format(decorateCode, ConsoleLogger.WrapYellow);
+			string message = diagnostic.WithSiteTextRedacted().Format(decorateCode, ConsoleLogger.WrapYellow);
 			sb.AppendLine().Append('\t').Append($"{errorNumber++} of {diagnostics.Count} ").Append(message);
 		}
 		return sb.ToString();
@@ -590,15 +596,19 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		// Absent fields are left out rather than printed blank, as compile-package's Fail does.
 		string buildResultPart = result.BuildResult is { } buildResult ? $" Build result: {buildResult}." : string.Empty;
 		Logger.WriteError($"Compilation failed on the environment.{buildResultPart}");
+		// errorInfo and the diagnostics are the environment's text: they take the site-text redaction here, where they
+		// become log lines, because compile-creatio returns those lines and a stdio log is not redacted again.
 		string errorInfo = string.Join(": ",
 			new[] { result.ErrorCode, result.ErrorMessage }.Where(part => !string.IsNullOrWhiteSpace(part)));
 		if (errorInfo.Length > 0) {
-			Logger.WriteError(errorInfo);
+			Logger.WriteError(SiteText(errorInfo));
 		}
 		foreach (PackageBuildDiagnostic diagnostic in result.Errors) {
-			Logger.WriteError(diagnostic.ToString());
+			Logger.WriteError(diagnostic.WithSiteTextRedacted().ToString());
 		}
 	}
+
+	private static string SiteText(string text) => SensitiveErrorTextRedactor.RedactSiteText(text);
 }
 
 #endregion
