@@ -336,9 +336,10 @@ apart from clio's wording.
 | `status` | The HTTP status of that response, always present. A Creatio service often refuses with HTTP 200 and `success:false`; the status then reads 200, because that is what the site sent. |
 | `message` | The site's own message, only from a known JSON shape: `errorInfo.message`, OData `error.message` (or `error.message.value`), `responseStatus.Message`, `errorMessage`, or an ASP.NET fault's `Message` / `message` / `ExceptionMessage`; each also inside a WCF `<Method>Result` wrapper. It passes the same sensitive-text redaction as the `error` text beside it (URIs, paths, host:port, emails, credential and connection-string pairs become placeholders) and is capped at 2,000 characters with a trailing "…". Omitted for an HTML page, an empty body, plain text or an unknown JSON shape. |
 | `code` | The site's own error code (`errorInfo.errorCode`, OData `error.code`, `responseStatus.ErrorCode`), when present; redacted like `message`. |
-| `body` | What kind of body the site sent: `json`, `html`, `text` or `empty`. |
+| `body` | What KIND of body the site sent: one of the four words `json`, `html`, `text` or `empty`. It never holds the body itself, so no HTML page, stack trace or other unredacted text reaches the result through it. |
 
-clio copies nothing beyond what the site sent and never copies `errorInfo.stackTrace`. A host that shows the
+Nothing in `site-response` is unredacted site text: `message` and `code` are redacted and capped, `status` is a
+number and `body` one of four fixed words. clio never copies `errorInfo.stackTrace`. A host that shows the
 text may apply its own redaction on top.
 
 **Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the

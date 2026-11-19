@@ -317,6 +317,41 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(502, null, null, SiteResponse.HtmlBody));
 	}
 
+	[TestCase(504, TestName = "Install_ShouldTrustTheLog_WhenAGateway504AnswersAnInstallTheLogConfirms")]
+	[TestCase(502, TestName = "Install_ShouldTrustTheLog_WhenAGateway502AnswersAnInstallTheLogConfirms")]
+	[Description("A gateway can answer a long installation that Creatio then finishes: an empty gateway answer is not a refusal when this run's log says the application was installed")]
+	public void Install_ShouldTrustTheLog_WhenAGatewayAnswersAnInstallTheLogConfirms(int status) {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: status,
+			logAfterInstall: "baseline\r\nApplication installed successfully\r\n");
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeTrue(because: "the installation log of this run confirms the install the gateway lost");
+		capture.Last.Should().BeNull();
+		arrangement.Logger.Received(1).WriteWarning(Arg.Is<string>(line => line.Contains($"HTTP {status}")
+			&& line.Contains("treated as successful")));
+	}
+
+	[Test]
+	[Description("A gateway answer is still a failure when this run's log does not confirm the install")]
+	public void Install_ShouldFail_WhenAGatewayAnswersAndTheLogDoesNotConfirm() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 504,
+			logAfterInstall: "baseline\r\nInstalling package UsrA\r\n");
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(504, null, null, SiteResponse.EmptyBody));
+	}
+
 	[TestCase(200, TestName = "Install_ShouldRecordNothing_WhenTheInstallSucceedsWith200")]
 	[TestCase(null, TestName = "Install_ShouldRecordNothing_WhenTheClientDoesNotKeepTheStatus")]
 	[Description("A successful installation records nothing")]
@@ -333,7 +368,8 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		capture.Last.Should().BeNull();
 	}
 
-	private InstallerArrangement ArrangeInstaller(string installResponse, int? installStatus = null) {
+	private InstallerArrangement ArrangeInstaller(string installResponse, int? installStatus = null,
+		string logAfterInstall = null) {
 		string packagePath = "T:\\Package.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		// The installer is built for one environment and installs into another, the way WorkspaceInstaller and
@@ -354,8 +390,14 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
 		clientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(session);
 		IApplicationLogProvider logProvider = Substitute.For<IApplicationLogProvider>();
-		logProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
-			.Returns("baseline\r\n");
+		if (logAfterInstall is null) {
+			logProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+				.Returns("baseline\r\n");
+		}
+		else {
+			logProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+				.Returns("baseline\r\n", logAfterInstall);
+		}
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => callInfo.ArgAt<string>(0));

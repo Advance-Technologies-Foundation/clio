@@ -276,6 +276,21 @@
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
 		}
 
+		// A gateway (502/503/504) can answer an installation that takes longer than its timeout while Creatio goes on
+		// and finishes it. An empty gateway answer is therefore not a refusal when this run's installation log says
+		// the application was installed; the call reports that it trusted the log.
+		private bool IsGatewayAnswerConfirmedByLog(SiteHttpResponse answer, BaseResponse response,
+			string currentInstallLog) {
+			bool confirmed = response == null && (answer.StatusCode is 502 or 503 or 504)
+				&& InstallLogAnalyzer.IsSuccessMessagePresent(currentInstallLog);
+			if (confirmed) {
+				_logger.WriteWarning($"The environment answered the installation request with HTTP {answer.StatusCode}, "
+					+ "a gateway answer, but this run's installation log says the application was installed "
+					+ "successfully, so the installation is treated as successful.");
+			}
+			return confirmed;
+		}
+
 		// The install answer as an envelope. One that is not JSON fails the installation, so it is recorded as the
 		// site's answer before the parser's exception leaves.
 		private static BaseResponse ReadInstallResponse(SiteHttpResponse answer) {
@@ -345,7 +360,8 @@
 			_logger.Write(GetLogDiff(log, completeInstallLog));
 			// A non-2xx status the client kept is a failure even with an empty body, which alone reads as success:
 			// the site said the installation request failed.
-			bool answerAccepted = (response == null || response.Success) && !answer.IsKnownFailureStatus;
+			bool answerAccepted = (response == null || response.Success)
+				&& (!answer.IsKnownFailureStatus || IsGatewayAnswerConfirmedByLog(answer, response, currentInstallLog));
 			var success = answerAccepted && successLog;
 			if (!success && (response is { Success: false } || answer.IsKnownFailureStatus)) {
 				// Only when the site's own answer failed the installation, not when the log check alone did.

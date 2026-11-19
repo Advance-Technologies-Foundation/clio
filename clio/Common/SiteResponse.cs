@@ -27,8 +27,8 @@ namespace Clio.Common;
 /// nothing else is changed.</param>
 /// <param name="Code">The site's own error code (<c>errorInfo.errorCode</c>, OData <c>error.code</c> or
 /// <c>responseStatus.ErrorCode</c>), or <see langword="null"/>.</param>
-/// <param name="Body">What kind of body the site sent: <c>json</c>, <c>html</c>, <c>text</c> or
-/// <c>empty</c>.</param>
+/// <param name="Body">What KIND of body the site sent: one of <c>json</c>, <c>html</c>, <c>text</c> or
+/// <c>empty</c>. It never holds the body itself.</param>
 public sealed record SiteResponse(
 	[property: JsonPropertyName("status")]
 	[property: Newtonsoft.Json.JsonProperty("status")]

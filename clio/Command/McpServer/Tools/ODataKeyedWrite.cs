@@ -86,8 +86,8 @@ internal static class ODataKeyedWrite {
 		if (bodyError is not null || !answer.IsKnownFailureStatus) {
 			return bodyError;
 		}
-		return $"Creatio answered the write with HTTP {answer.StatusCode} and no recognized error body, so it was "
-			+ "not accepted. Read the record before deciding whether to resubmit.";
+		return $"Creatio answered the write with HTTP {answer.StatusCode} and no recognized error body, so it is not "
+			+ "confirmed: it may or may not have been applied. Read the record before deciding whether to resubmit.";
 	}
 
 	/// <summary>

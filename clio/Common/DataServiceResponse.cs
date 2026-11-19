@@ -25,8 +25,11 @@ internal static class DataServiceResponse {
 		try {
 			ThrowIfUnsuccessful(answer.Body, operationName);
 			if (answer.IsKnownFailureStatus) {
+				// Not "failed": a gateway can answer 502/504 after the service applied the write, so the outcome is
+				// unknown rather than refused.
 				throw new InvalidOperationException(
-					$"{operationName} failed: the environment answered HTTP {answer.StatusCode}.");
+					$"{operationName} was not confirmed: the environment answered HTTP {answer.StatusCode} with no "
+					+ "service response, so whether it was applied is unknown. Read the data before retrying.");
 			}
 		}
 		catch (InvalidOperationException) {

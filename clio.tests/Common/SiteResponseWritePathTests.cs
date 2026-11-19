@@ -144,7 +144,7 @@ public sealed class SiteResponseWritePathTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("InsertQuery failed: the environment answered HTTP 500.");
+			.WithMessage("InsertQuery was not confirmed: the environment answered HTTP 500 with no service response, *");
 		_capture.Last.Should().BeEquivalentTo(new SiteResponse(500, null, null, SiteResponse.EmptyBody));
 	}
 
@@ -200,6 +200,8 @@ public sealed class SiteResponseWritePathTests {
 		// Assert
 		error.Should().StartWith("Creatio answered the write with HTTP 503",
 			because: "an empty or unrecognized body used to read as a successful write");
+		error.Should().Contain("may or may not have been applied",
+			because: "a gateway can answer after the write was applied, so the outcome is unknown, not refused");
 	}
 
 	[TestCase(204, "", TestName = "ODataWrite_ShouldAccept_WhenA204HasNoBody")]
