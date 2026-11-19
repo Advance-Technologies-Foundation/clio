@@ -1004,13 +1004,11 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[TestCase("Primary key: Basic info is shown", TestName = "Header_KeyWordInProse")]
 	[TestCase("auth: Basic mode is off", TestName = "Header_AuthWordInProse")]
-	[TestCase("The secret: Negotiate later", TestName = "Header_SecretWordInProse")]
-	[TestCase("The token: NTLM handshake failed", TestName = "Header_TokenWordInProse")]
 	[TestCase("Expected Basic secrettokenvalue here", TestName = "KnownKeep_LowerCaseRunAfterBasicInProse")]
 	[Category("Unit")]
-	[Description("A word ending in key, auth, secret or token and a colon in a sentence is not a header position, so "
-		+ "the prose word after the scheme word stays. A lower-case run after Basic in a sentence is a known keep: "
-		+ "master had no floor there.")]
+	[Description("'key' or 'auth' and a colon in a sentence is no header position and no credential pair, so the prose "
+		+ "word after the scheme word stays. A lower-case run after Basic in a sentence is a known keep: master had no "
+		+ "floor there.")]
 	public void SchemeWord_ShouldKeepAProseWord_AfterAKeyWordInASentence(string text) {
 		// Arrange
 
@@ -1062,6 +1060,120 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		error.Should().NotContain("zq", because: "the part of the name before the clamp must not survive the preview");
 		fenced.Should().NotContain("zq", because: "the part of the name before the clamp must not survive the fence");
 		fenced.Should().Contain("Login failed for user", because: "the reason before the quote stays");
+	}
+
+	#endregion
+
+	#region Round 4: credential keys keep no prose, server names with _ . $, linear time, the masked flag's value
+
+	[TestCase("password: Basic secrettokenvalue", "secrettokenvalue", TestName = "CredentialKey_PasswordBasic")]
+	[TestCase("client_secret: NTLM abcdefghijkl", "abcdefghijkl", TestName = "CredentialKey_ClientSecretNtlm")]
+	[TestCase("token: Basic Summer", "Summer", TestName = "CredentialKey_TokenBasic")]
+	[TestCase("access_token: Negotiate abcdefgh", "abcdefgh", TestName = "CredentialKey_AccessTokenNegotiate")]
+	[TestCase("Cookie: Basic abcdefghijkl", "abcdefghijkl", TestName = "CredentialKey_CookieBasic")]
+	[TestCase("password: Digest secret", "Digest secret", TestName = "CredentialKey_PasswordDigest")]
+	[Category("Unit")]
+	[Description("After a credential key - password, secret, cookie, token, access_token, client_secret, … - the value "
+		+ "is the secret whatever it looks like: a scheme word and a prose-shaped word after the key's colon go in every "
+		+ "entry point.")]
+	public void AllEntryPoints_ShouldRemoveTheValue_AfterACredentialKeyAndASchemeWord(string text, string secret) {
+		// Arrange
+
+		// Act
+		string redact = SensitiveErrorTextRedactor.Redact(text);
+		string console = SensitiveErrorTextRedactor.RedactCredentials(text);
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		redact.Should().NotContain(secret, because: "a credential key's value is the secret");
+		console.Should().NotContain(secret, because: "the console variant removes it too");
+		site.Should().NotContain(secret, because: "the site entry point removes it too");
+	}
+
+	[TestCase("The token: NTLM handshake failed", "The token=[redacted] failed", TestName = "Trade_TokenKeyInASentence")]
+	[TestCase("The secret: Negotiate later", "The secret=[redacted]", TestName = "Trade_SecretKeyInASentence")]
+	[Category("Unit")]
+	[Description("THE TRADE, removing wins: a credential key in a sentence ('The token:', 'The secret:') cannot be told "
+		+ "from a credential pair, so its value goes with the words after it. Only 'key' and 'auth' keep a scheme word and "
+		+ "a prose word after their colon.")]
+	public void Redact_ShouldRemoveTheValue_AfterACredentialKeyInASentence(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "after a credential key, removing wins over reading the sentence");
+	}
+
+	[TestCase("Instance SQL_PROD\\reporting is down", "SQL_PROD", "reporting", TestName = "ServerName_Underscore")]
+	[TestCase("Instance SQL01.CORP.LOCAL\\reporting is down", "CORP.LOCAL", "reporting", TestName = "ServerName_Dotted")]
+	[TestCase("Login as CORP.LOCAL\\nick failed", "CORP.LOCAL", "nick", TestName = "ServerName_DottedDomain")]
+	[TestCase("Run as SRV$\\nick now", "SRV$", "nick", TestName = "ServerName_Dollar")]
+	[Category("Unit")]
+	[Description("A server or domain name with '_', '.' or '$' before \\r, \\n or \\t and a lower-case word is still "
+		+ "SERVER\\account, so it goes whole.")]
+	public void RedactSiteText_ShouldTakeTheAccount_AfterAServerNameWithUnderscoreDotOrDollar(string text, string server,
+		string account) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().NotContain(server).And.NotContain(account, because: "the server and the account both go");
+	}
+
+	[TestCase(16_000, TestName = "Linear_16kCapitals")]
+	[TestCase(100_000, TestName = "Linear_100kCapitals")]
+	[Category("Unit")]
+	[Description("The server-name check looks for its backslash before it looks back, so a long run of capitals and "
+		+ "digits is read in linear time: it neither times out (the bare placeholder) nor takes seconds.")]
+	public void RedactSiteText_ShouldReadALongRunOfCapitals_InLinearTime(int length) {
+		// Arrange
+		string run = string.Concat(Enumerable.Repeat("ABCDEF0123456789", length / 16));
+		string text = "Value " + run + " here";
+		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+		watch.Stop();
+
+		// Assert
+		site.Should().Be(text, because: "nothing in it is a secret, and the chain must not fail closed on it");
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3), because: "the rule must stay linear on a long run");
+	}
+
+	[TestCase("{\"constant-credentials-masked\":\"x7Kq9LpQ3\"}", "{\"constant-credentials-masked\":\"[redacted]\"}",
+		TestName = "MaskedFlag_StringValueGoes")]
+	[TestCase("{\"constant-credentials-masked\": false}", "{\"constant-credentials-masked\": false}", TestName = "MaskedFlag_FalseStays")]
+	[TestCase("{\"constant-credentials-masked\": true}", "{\"constant-credentials-masked\": true}", TestName = "MaskedFlag_TrueStays")]
+	[Category("Unit")]
+	[Description("clio's own 'constant-credentials-masked' flag is left alone only when its value is true or false; "
+		+ "any other value under that key goes.")]
+	public void Redact_ShouldKeepTheMaskedFlag_OnlyWhenItIsABoolean(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "only a boolean is the flag");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("THE COUNT-LINE TRADE, pinned: a host on a count word's name ('tests:5432', 'ok:6379', 'pending:1433') "
+		+ "on the same line as a count summary reads as a count and stays. Master removed none of them either.")]
+	public void Redact_ShouldKeepCountWordHosts_OnACountSummaryLine_AsTheDocumentedTrade() {
+		// Arrange
+		const string text = "Cannot reach tests:5432 or ok:6379 or pending:1433; Tests run: Failed:22, Passed:421, Total:443";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text, because: "the documented trade keeps a count word on a count line, host or not");
 	}
 
 	#endregion

@@ -369,6 +369,10 @@ internal static partial class SensitiveErrorTextRedactor {
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex ProseAfterSchemeWordRegex();
 
+	// The only pair keys whose colon may stand in a sentence before a scheme word and a prose word.
+	[GeneratedRegex(@"^(?:key|auth)$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
+	private static partial Regex ProseKeyRegex();
+
 	// A pair value that is a scheme word and one more word, read by RedactCredentialPair.
 	[GeneratedRegex($@"^(?<scheme>{SchemeWords})\s+(?<word>\S+)$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase,
 		RegexTimeoutMilliseconds)]
@@ -425,8 +429,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		$@"(?:[A-Za-z0-9]+[_.\-])*(?:{CredentialSecretKeys}|server|hostname|host|database|{CredentialWordKeys})"
 		+ @"(?:[_.\-][A-Za-z0-9]+)*";
 
-	// The exact key of clio's own read-only flag, which the JSON rule leaves alone - in this letter case only, so
-	// "Constant-Credentials-Masked" is a credential key like any other.
+	// The exact key of clio's own read-only flag, which the JSON rule leaves alone - in this letter case only, and only
+	// when its value is true or false, so "Constant-Credentials-Masked" and a string under the key are credentials.
 	private const string OwnMaskedFlagKey = "constant-credentials-masked";
 
 	// The three spellings one JSON quote can take in text this rule runs over: a literal quote, the
@@ -472,7 +476,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	// begin a match on the "u" INSIDE a \u0022 escape and swallow the backslash. This rule begins on a
 	// complete quote spelling instead, so it cannot start mid-escape.
 	[GeneratedRegex(
-		$@"(?<q>{JsonQuoteSpellings})(?!(?-i:{OwnMaskedFlagKey})\k<q>)(?<key>{JsonCredentialKeyPattern})\k<q>\s*:\s*(?:\k<q>{JsonStringContent}\k<q>|{JsonLiteralValue})",
+		$@"(?<q>{JsonQuoteSpellings})(?!(?-i:{OwnMaskedFlagKey})\k<q>\s*:\s*(?:true|false)\b)(?<key>{JsonCredentialKeyPattern})\k<q>\s*:\s*(?:\k<q>{JsonStringContent}\k<q>|{JsonLiteralValue})",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex JsonCredentialPropertyRegex();
 
@@ -703,14 +707,16 @@ internal static partial class SensitiveErrorTextRedactor {
 	// written as text that is a line break of a body escaped twice ("null.\r\nParameter name: …"). Such an escape
 	// before a LOWER-CASE letter is ambiguous: "SQL01\reporting", "CORP\nick" and "DOMAIN\tanya" are an instance and
 	// two accounts, while "line one\nanother line", "Error 404\nnot found" and "Status: FAILED\nreason" are line
-	// breaks. It is read as an account only when the segment before it is a SERVER NAME: shaped like a host label -
-	// capitals, digits and "-", at least one letter ("SQL01", "CORP", "DB-PROD") - and not a status word (ERROR,
-	// FAILED, FAIL, OK, WARN, WARNING, INFO, DEBUG, TRUE, FALSE, NULL, NONE). After a number, a status word or any
-	// other word it is a line break and the text stays.
+	// breaks. It is read as an account only when the segment before it is a SERVER NAME: capitals, digits, "-", "_",
+	// "." and "$", at least one letter ("SQL01", "CORP", "DB-PROD", "SQL_PROD", "CORP.LOCAL", "SRV$"), and not a
+	// status word (ERROR, FAILED, FAIL, OK, WARN, WARNING, INFO, DEBUG, TRUE, FALSE, NULL, NONE). After a number, a
+	// status word or any other word it is a line break and the text stays.
+	// The backslash and the escape after it are checked FIRST, by a lookahead, and only then does the rule look back
+	// at the server name: looking back at every position of a long run of capitals made it quadratic.
 	[GeneratedRegex(
 		@"(?<![\w\\.$\-])[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?"
-		+ @"(?:(?:\\(?![rnt])|(?<=(?<![\w.$\-])(?!(?:ERROR|FAILED|FAIL|OK|WARN|WARNING|INFO|DEBUG|TRUE|FALSE|NULL|NONE)\\)"
-		+ @"(?=[A-Z0-9\-]*[A-Z])[A-Z0-9](?:[A-Z0-9\-]*[A-Z0-9])?)\\(?=[rnt][a-z]))"
+		+ @"(?:(?:\\(?![rnt])|(?=\\[rnt][a-z])(?<=(?<![\w.$\-])(?!(?:ERROR|FAILED|FAIL|OK|WARN|WARNING|INFO|DEBUG|TRUE|FALSE|NULL|NONE)\\)"
+		+ @"(?=[A-Z0-9_.$\-]*[A-Z])[A-Z0-9_$](?:[A-Z0-9_.$\-]*[A-Z0-9_$])?)\\)"
 		+ @"[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?)+(?!\w)",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex WindowsInstanceRegex();
@@ -1308,10 +1314,14 @@ internal static partial class SensitiveErrorTextRedactor {
 			&& IdentifierPairValueRegex().IsMatch(match.Groups["value"].Value)) {
 			return match.Value;
 		}
-		// A key word with a colon in a sentence, followed by a scheme word and a word the scheme rules keep there
-		// ("auth: Basic mode is off", "The token: NTLM handshake failed"), is prose: the scheme rules already ruled
-		// that word is no credential. With "=" it is a pair, and the value goes.
-		if (colon && !match.Groups["kq"].Success && SchemeWordAndKeptWordRegex().Match(match.Groups["value"].Value) is { Success: true } schemed
+		// "key" or "auth" with a colon in a sentence, followed by a scheme word and a word the scheme rules keep there
+		// ("Primary key: Basic info", "auth: Basic mode is off"), is prose: the scheme rules already ruled that word
+		// is no credential. After any OTHER credential key - password, secret, cookie, token, access_token,
+		// client_secret, … - the value is the secret whatever it looks like, so it goes ("password: Basic
+		// secrettokenvalue"). THE TRADE, removing wins: such a key in a sentence ("The token: NTLM handshake failed")
+		// loses the words after it too. With "=" it is a pair after every key, and the value goes.
+		if (colon && !match.Groups["kq"].Success && ProseKeyRegex().IsMatch(key)
+			&& SchemeWordAndKeptWordRegex().Match(match.Groups["value"].Value) is { Success: true } schemed
 			&& (schemed.Groups["scheme"].Value.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
 				? BearerTradeRegex().IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential)
 				: ProseAfterSchemeWordRegex().IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential))) {
