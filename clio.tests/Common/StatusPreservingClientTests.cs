@@ -131,6 +131,31 @@ public sealed class StatusPreservingClientTests {
 		answer.IsRefusedWithoutProcessing.Should().BeFalse();
 	}
 
+	[TestCase(SiteRequestVerb.Delete, "{\"id\":1}", TestName = "SendKeepingStatus_ShouldNotMarkARedirect_WhenADeleteCarriesABody")]
+	[TestCase(SiteRequestVerb.Post, "", TestName = "SendKeepingStatus_ShouldNotMarkARedirect_WhenAnEmptyPostIsAnswered")]
+	[Description("Only a DELETE without a body counts as possibly redirected: anything sent with content cannot be repeated with its method kept")]
+	public void SendKeepingStatus_ShouldNotMarkARedirect_WhenTheRequestHasContent(SiteRequestVerb verb, string data) {
+		// Arrange
+		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
+		HttpMethod method = verb == SiteRequestVerb.Delete ? HttpMethod.Delete : HttpMethod.Post;
+		Task<HttpResponseMessage> Respond() => Task.FromResult(new HttpResponseMessage(HttpStatusCode.MethodNotAllowed) {
+			Content = new StringContent(""),
+			RequestMessage = new HttpRequestMessage(method, "http://site/0/x")
+		});
+		transport.ExecuteDeleteRequestAsync(default, default, default, default, default, default)
+			.ReturnsForAnyArgs(_ => Respond());
+		transport.ExecutePostRequestAsync(default, default, default, default, default, default)
+			.ReturnsForAnyArgs(_ => Respond());
+		CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		SiteHttpResponse answer = adapter.SendKeepingStatus(verb, "http://site/0/x", data, replayAllowed: false);
+
+		// Assert
+		answer.Redirected.Should().BeFalse();
+		answer.IsRefusedWithoutProcessing.Should().BeTrue();
+	}
+
 	[Test]
 	[Description("A 405 to the write itself is a refusal without processing")]
 	public void SendKeepingStatus_ShouldNotMarkARedirect_WhenTheAnswerIsToTheWrite() {

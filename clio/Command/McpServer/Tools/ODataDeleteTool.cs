@@ -721,9 +721,9 @@ public sealed record ODataDeleteItemResult(
 	[Description("What the Creatio site itself answered to the refused DELETE (of this record, or of the owned row that stopped the cascade): status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
 	public SiteResponse? SiteResponse { get; init; }
 
-	/// <summary>Beside <see cref="SiteResponse"/>: this record's side effect, always unknown in a batch.</summary>
+	/// <summary>Beside <see cref="SiteResponse"/>: this record's side effect, always unknown.</summary>
 	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("Present beside site-response. side-effect is always unknown for an item: with ids a refused DELETE is sent again in a later pass, and with cascade owned rows may already be gone. A single id without cascade reports its proven side effect in the top-level diagnostic instead.")]
+	[Description("Present beside site-response. side-effect is always unknown for an item: a DELETE goes without a body, which the client can redirect unseen; with ids a refused DELETE is also sent again in a later pass, and with cascade owned rows may already be gone. The top-level diagnostic is always unknown too.")]
 	public DataWriteDiagnostic? Diagnostic { get; init; }
 }
 

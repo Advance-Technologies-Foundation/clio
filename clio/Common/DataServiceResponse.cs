@@ -52,33 +52,6 @@ internal static class DataServiceResponse {
 		}
 	}
 
-	private static string DescribeFailureStatus(SiteHttpResponse answer, string operationName) {
-		if (answer.IsRefusedWithoutProcessing) {
-			return $"{operationName} failed: the environment refused it without processing it (HTTP "
-				+ $"{answer.StatusCode}), so it was not applied.";
-		}
-		return answer.StatusCode >= 500
-			? $"{operationName} was not confirmed: the environment answered HTTP {answer.StatusCode} without a "
-				+ "service verdict, so whether it was applied is unknown. Read the data before retrying."
-			: $"{operationName} failed: the environment refused it with HTTP {answer.StatusCode} and no service "
-				+ "verdict, which does not prove it was not applied. Read the data before retrying.";
-	}
-
-	// Whether the body is a JSON object, the shape every service envelope has. Anything else - no body, an error
-	// page, plain text - carries no verdict of the service.
-	private static bool IsServiceEnvelope(string body) {
-		if (string.IsNullOrWhiteSpace(body)) {
-			return false;
-		}
-		try {
-			using JsonDocument document = JsonDocument.Parse(body);
-			return document.RootElement.ValueKind is JsonValueKind.Object;
-		}
-		catch (JsonException) {
-			return false;
-		}
-	}
-
 	/// <summary>
 	/// Throws when the response envelope reports failure, naming <paramref name="operationName"/> and the
 	/// server's message. An absent body is accepted, as is an envelope carrying no <c>success</c> flag at all.
@@ -156,4 +129,32 @@ internal static class DataServiceResponse {
 			+ "native RightsService instead). For object operation rights (SysEntitySchemaOperationRight) use the "
 			+ "set-object-rights tool, which goes through the native Object permissions service instead.";
 	}
+
+	private static string DescribeFailureStatus(SiteHttpResponse answer, string operationName) {
+		if (answer.IsRefusedWithoutProcessing) {
+			return $"{operationName} failed: the environment refused it without processing it (HTTP "
+				+ $"{answer.StatusCode}), so it was not applied.";
+		}
+		return answer.StatusCode >= 500
+			? $"{operationName} was not confirmed: the environment answered HTTP {answer.StatusCode} without a "
+				+ "service verdict, so whether it was applied is unknown. Read the data before retrying."
+			: $"{operationName} failed: the environment refused it with HTTP {answer.StatusCode} and no service "
+				+ "verdict, which does not prove it was not applied. Read the data before retrying.";
+	}
+
+	// Whether the body is a JSON object, the shape every service envelope has. Anything else - no body, an error
+	// page, plain text - carries no verdict of the service.
+	private static bool IsServiceEnvelope(string body) {
+		if (string.IsNullOrWhiteSpace(body)) {
+			return false;
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(body);
+			return document.RootElement.ValueKind is JsonValueKind.Object;
+		}
+		catch (JsonException) {
+			return false;
+		}
+	}
+
 }

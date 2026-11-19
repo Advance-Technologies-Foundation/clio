@@ -409,7 +409,7 @@ and `message` are null: the result's own fields name what failed and why.
 3. **Refused without processing.** The site answered 405, 413, 414 or 415 - a refusal of the request's shape -
    with a body that carries no answer of the application: empty, an HTML page or plain text (a byte-order mark
    and whitespace before it are skipped). The answer must be to the request clio sent. creatio.client follows a
-   same-site redirect itself: on 301, 302 or 303 it turns any method other than GET into a GET, so an answer to
+   same-site redirect itself: on 301, 302 or 303 it turns any method other than GET or HEAD into a GET, so an answer to
    another method or address proves nothing; on 300, 307 or 308 it repeats a request that has no body, possibly
    to the same address, so a request sent without a body (a DELETE) never proves anything. The same method, URI and body get the same answer every time, so even a send the HTTP client
    repeated out of sight was refused the same way. 431 is out: a re-send after signing in again carries other

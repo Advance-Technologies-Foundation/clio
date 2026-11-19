@@ -70,7 +70,7 @@ public sealed class ODataDeleteToolTests {
 	[TestCase(500, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered500")]
 	[Category("Unit")]
 	[Description("A DELETE goes without a body, so creatio.client can repeat it through a 307 or 308 back to the same address unseen: no refusal of it proves nothing was deleted")]
-	public void Delete_ShouldReportTheProvenSideEffect_ForASingleId(int status, string sideEffect) {
+	public void Delete_ShouldNeverReportSideEffectNone_ForASingleId(int status, string sideEffect) {
 		// Arrange
 		ODataDeleteTool tool = RefusingDeleteTool(new SiteHttpResponse(status, ""));
 

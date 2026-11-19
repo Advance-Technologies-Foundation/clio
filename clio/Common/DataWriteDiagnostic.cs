@@ -14,6 +14,9 @@ public sealed record DataWriteDiagnostic(
 	[property: JsonPropertyName("side-effect")] string SideEffect,
 	[property: JsonPropertyName("retry-advice")] string RetryAdvice,
 	[property: JsonPropertyName("message")] string Message) {
+	// The side effect and transport outcome a failed or unanswered write cannot rule out.
+	private const string Unknown = "unknown";
+
 	/// <summary>Builds bounded context from observed write boundaries, preserving uncertainty after submission.</summary>
 	/// <param name="operation">Write verb such as insert, update or delete.</param>
 	/// <param name="entity">Target entity name.</param>
@@ -28,10 +31,10 @@ public sealed record DataWriteDiagnostic(
 	public static DataWriteDiagnostic Create(string operation, string entity, int? itemIndex, bool attempted,
 		bool responseReceived, bool acknowledged, string message) {
 		string transport = (attempted, responseReceived) switch {
-			(false, _) => "not-attempted", (true, true) => "response-received", _ => "unknown"
+			(false, _) => "not-attempted", (true, true) => "response-received", _ => Unknown
 		};
 		string effect = (attempted, acknowledged) switch {
-			(false, _) => "not-attempted", (true, true) => "acknowledged", _ => "unknown"
+			(false, _) => "not-attempted", (true, true) => "acknowledged", _ => Unknown
 		};
 		string advice = effect switch {
 			"not-attempted" => "Correct the input or permissions before submitting.",
@@ -57,7 +60,7 @@ public sealed record DataWriteDiagnostic(
 	/// boundary keeps its own outcome.
 	/// </summary>
 	public DataWriteDiagnostic AsKnownNotApplied() =>
-		WriteAttempted && TransportOutcome == "response-received" && SideEffect == "unknown"
+		WriteAttempted && TransportOutcome == "response-received" && SideEffect == Unknown
 			? this with {
 				SideEffect = "none",
 				RetryAdvice = "The server rejected the write before applying it. Correct the input and resubmit."
@@ -75,7 +78,7 @@ public sealed record DataWriteDiagnostic(
 	/// <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>. Every other boundary keeps its own outcome.
 	/// </summary>
 	public DataWriteDiagnostic AsRefusedWithoutProcessing() =>
-		WriteAttempted && TransportOutcome == "response-received" && SideEffect == "unknown"
+		WriteAttempted && TransportOutcome == "response-received" && SideEffect == Unknown
 			? this with { SideEffect = "none", RetryAdvice = RefusedWithoutProcessingAdvice }
 			: this;
 

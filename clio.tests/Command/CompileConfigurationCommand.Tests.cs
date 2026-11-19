@@ -609,6 +609,29 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
+	[Description("A 413 that answers the build request itself, sent once, proves nothing was compiled")]
+	public void Execute_ShouldProve_WhenTheAnswerIsToTheBuildRequestItself() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		_ownedClient.ExecutePostRequestAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(call => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.RequestEntityTooLarge) {
+				Content = new StringContent("<html>Too large</html>"),
+				RequestMessage = new HttpRequestMessage(HttpMethod.Post, call.ArgAt<string>(0))
+			}));
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1);
+		capture.LastProvesNothingApplied.Should().BeTrue(
+			because: "the answer belongs to the request the command sent, so the exact-match path decides");
+	}
+
+	[Test]
 	[Description("A 413 that answers a GET the client sent after following a redirect of the build request proves nothing")]
 	public void Execute_ShouldNotProve_WhenTheAnswerIsToARedirectedRequest() {
 		// Arrange
