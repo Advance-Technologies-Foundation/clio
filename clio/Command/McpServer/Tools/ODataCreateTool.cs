@@ -142,10 +142,14 @@ public sealed class ODataCreateTool(
 	/// What a failed request got, for the guidance of a row the read-back found: the site's status and own message
 	/// when it answered, the transport failure when it did not. clio's own advice text is never quoted.
 	/// </summary>
-	private static string? DescribeFailedAnswer(ODataRowResult unknown) =>
-		unknown.SiteResponse is { } site
-			? $"HTTP {site.Status}" + (string.IsNullOrWhiteSpace(site.Message) ? "" : $", \"{site.Message}\"")
-			: unknown.ResponseReceived ? null : unknown.Error;
+	private static string? DescribeFailedAnswer(ODataRowResult unknown) {
+		if (unknown.SiteResponse is not { } site) {
+			// No site answer clio kept: quote the transport failure, or nothing when an answer came but was not kept.
+			return unknown.ResponseReceived ? null : unknown.Error;
+		}
+		string status = $"HTTP {site.Status}";
+		return string.IsNullOrWhiteSpace(site.Message) ? status : $"{status}, \"{site.Message}\"";
+	}
 
 	/// <summary>Next step for a row whose answer is unknown and whose record clio did not get back by its sent Id.</summary>
 	private static string UnknownWithSentIdGuidance(string sentId, bool readBack) =>
