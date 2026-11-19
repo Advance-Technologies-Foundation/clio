@@ -57,19 +57,48 @@ holds each reading member, by file and member, in `KnownSiteErrorReads`: wired t
 "not text" (a field-name set, a marker, or a member of clio's own result type that shares a site-error name), or
 KNOWN-UNWIRED with the change that wires it - "A2" for the 15 write-tool paths and the dynamic-case files (the
 stacked PR A2) and "follow-up" for the remaining envelope readers, whose text passes `Redact` only until then
-(odata-read's `TryClassify` debug detail is the follow-up entry in `KnownCallSites`). The scan sees:
+(odata-read's `TryClassify` debug detail is the follow-up entry in `KnownCallSites`). The scan sees exactly these
+forms:
 - the JSON names `errorInfo`, `responseStatus`, `ExceptionMessage`, `errorMessage`, `innererror` and
-  `internalexception` written as a literal outside a `[JsonPropertyName]`/`[JsonProperty]`/`[DataMember]` line;
-- a read of a member named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage`, or of ANY member a source
-  decorates with one of those JSON names, whatever its C# name - today that makes every `.ErrorMessage` a read;
-- one of those member names in a property pattern (`is { ErrorInfo: { } }`);
-- a reference to a constant or read-only field that holds one of those names (`InnerErrorMemberNames`);
+  `internalexception` written as a literal, on a line with no `[JsonPropertyName]`, `[JsonProperty]` or
+  `[DataMember]` decoration;
+- a read (a member access that is no call) of a member named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage`,
+  or of ANY member a clio source decorates with one of those JSON names, whatever its C# name. A decoration is
+  `[JsonPropertyName("…")]`, `[JsonProperty("…", …)]` or `[DataMember(…Name = "…"…)]`, alone or in a list with other
+  attributes. Today that makes every `.ErrorMessage` a read;
+- one of those member names, alone or as the head of an extended pattern (`ErrorInfo.Message:`), right after a
+  `{` or a `,` whose innermost open bracket is a `{` and followed by `:` - a property pattern, nested or in a
+  switch arm (`is { Body: { ErrorInfo: { } } }`, `switch { { ResponseStatus: null } => … }`);
+- a reference to a constant, a read-only field, a static expression-bodied property or an initialized
+  auto-property that holds one of those names (`InnerErrorMemberNames`, `Names => ["innererror"]`);
 - `ProcessDesignServerFault.ServerSaid` and `ServerReportedFailureText.Describe`.
 
-A new read of one of those shapes in an unlisted member, or one more in a listed member, fails the build. The scan
-is by NAME, not by type, and does not see: a site's text read through a member of any other name that no clio
-source decorates with a site-error JSON name (an external library's DTO); a property name built at run time or
-read from a parameter; a JSON path such as `"errorInfo.message"`; or reflection and `dynamic`.
+A new read of one of those forms in an unlisted member, or one more in a listed member, fails the build. The scan
+is by NAME, not by type, and does not see:
+- a site's text read through a member of any other name that no clio source decorates with a site-error JSON
+  name (an external library's DTO);
+- a member name used as a pattern name in any other place than right after `{` or `,`;
+- a property name built at run time or read from a parameter;
+- a JSON path such as `"errorInfo.message"`;
+- a name constant held in a local variable;
+- reflection and `dynamic`.
+
+Every "not text" entry is checked by `SourceGuard_ShouldProveEveryNotTextEntry`, in one of two forms:
+- `name constant: …` - the member holds only a site-error name inside a constant's declaration, or references
+  to one;
+- `own <Type>: …` - the member reads only `.ErrorMessage` of the named types, each declared in clio with no
+  site-error decoration, or FluentValidation's `ValidationFailure`.
+
+`SourceGuard_ListSizes_ShouldBeTheStatedOnes` holds the list sizes:
+
+| Wiring | Members | Reads |
+|---|---|---|
+| wired | 8 | 21 |
+| not text | 23 | 30 |
+| A2 | 30 | 46 |
+| follow-up | 88 | 108 |
+
+`KnownCallSites` holds 28 call sites: 18 central, 6 at a call site, 3 discarded and 1 follow-up.
 
 **Fail closed** - `RedactSiteText` runs the cut, the whole Redact chain and every site rule inside ONE
 `ExecuteRegex` guard, so a `RegexMatchTimeoutException` in any of them returns `[redacted]` for the whole text:
@@ -81,35 +110,57 @@ dotted run proves it without the seam.
 index names, CRM role words (`Access denied for role "Sales managers"`, `locked by user "Supervisor"`), the
 words around a scheme (`The bearer token expired`, `WWW-Authenticate: Bearer realm=…`, `NTLM v2`, `basic
 OAuth`, `negotiate TLS1.2`, `basic 8.1.0.5`), a version after a version word (`Version=10.0.0.0`), a count line
-(`Failed:22`, `Total:443`), and `file.js:42:13`. `clio.tests/Common/Fixtures/site-text-redaction-cases.json` pins
-350 invented inputs from the Accelerator host lane: A 46 and B 167 rows name the secret core that must go, C 112
-rows must stay (case-357 keeps only "bearer": clio is stricter there, as the Bearer floor requires), and D 25 rows
-are what the host removes and clio keeps (its documented trades, and the 12 rows clio declines by choice); every mustStay is the phrase that carries the reason. Its rule-9 SQL rows wait for PR B,
+(`Failed:22, Passed:421, Total:443`), and `file.js:42:13`. `clio.tests/Common/Fixtures/site-text-redaction-cases.json` pins
+350 invented inputs from the Accelerator host lane:
+- A 46 and B 167 rows name the secret core that must go;
+- C 111 rows must stay;
+- D 25 rows are what the host removes and clio keeps (its documented trades, and the 12 rows clio declines by
+  choice);
+- E 1 row is what the host keeps and clio removes because master did: case-357, `bearer ABCD`, under the Bearer
+  floor.
+
+Every mustStay is the phrase that carries the reason. Its rule-9 SQL rows wait for PR B,
 and its header and safety test forbid any real host, login, password, key, token or public IPv4 address.
 
 **The Bearer floor** - master's rule was `\bBearer\s+[^\s,;"']+` with IgnoreCase, and it removed the whole run
-after the word. `AllEntryPoints_ShouldLetNothingMastersBearerRuleRemovedSurvive_ExceptTheNamedTrades` applies
-that exact rule to every fixture input, a corpus of token shapes and master's own Bearer cases. It asserts that
-no piece of any run the rule removes - no two-character letter or digit piece, and not the whole run - survives
-`Redact`, `RedactCredentials`, `RedactSiteText`, `RedactUntrustedOrNull` or `RedactUntrustedSiteTextOrNull`.
-The only exceptions are three named, documented trades:
+after the word. `AllEntryPoints_ShouldLetNothingMastersBearerRuleRemovedSurvive_ExceptTheNamedTrades` applies that
+exact rule to every fixture input, a corpus of token shapes and master's own Bearer cases. For each run the rule
+removes, the test takes:
+- every piece of two or more letters or digits (JSON escapes and HTML entities taken out first);
+- the whole run without its trailing punctuation.
+
+It drops each one that also appears anywhere else in the input. It then asserts that none of the rest appears in
+the output of `Redact`, `RedactCredentials`, `RedactSiteText`, `RedactUntrustedOrNull` or
+`RedactUntrustedSiteTextOrNull` once clio's placeholders are taken out. A one-character piece, and a piece that
+also stands elsewhere in the input, is not checked. The only runs exempt are three named, documented trades:
 - the word `token` or `tokens`, alone or with a prose ending such as `-based` ("The bearer token expired",
   "Invalid Bearer token.", "Bearer token-based access denied");
 - a challenge parameter (`realm=`, `scope=`, `error=`, `error_description=`, `error_uri=`, `charset=`:
   "WWW-Authenticate: Bearer realm=…");
 - clio's own placeholder.
 
-So after Bearer nothing else stays, in any position: not a prose word, an acronym, a version or `2FA`. The run is
-master's with three changes, and none of them lets a credential character through:
+So after Bearer nothing else stays, in any position: not a prose word, an acronym, a version or `2FA`. clio's own
+sentences say "token-based (Bearer) authentication" and "a bearer token" instead of putting another word after
+"bearer"; `OwnText_ShouldComeOutUnchanged_FromRedactAndRedactCredentials` holds them to it. The run is master's
+with three changes, and none of them lets a credential character through:
 - a backslash continues it except where it starts an escaped quote;
 - `&amp;` is part of it;
-- the quote around it may be `"`, `'`, `\"`, `"`, `'` or `&quot;` and stays.
+- the quote around it may be `"`, `'`, `\"`, `\u0022`, `\u0027` or `&quot;` and stays.
 
 **After Basic, NTLM and Negotiate** - master had no rule for these, so the line is drawn by position:
-- In a HEADER POSITION, right after `Authorization:`, `Proxy-Authorization:`, `WWW-Authenticate:`,
-  `Proxy-Authenticate:` or a credential key (`token:`, `access_token=`, `password=` …), only these stay: a
-  challenge parameter, one word of a short closed list (`token`, `realm`, `challenge`, `negotiate`, `negotiation`,
-  `required`, `missing`, `invalid`, `expired`, `rejected`, `refused`, `failed`, `none`, `null`) or a placeholder.
+- In a HEADER POSITION, only a challenge parameter, one word of a short closed list (`token`, `realm`,
+  `challenge`, `negotiate`, `negotiation`, `required`, `missing`, `invalid`, `expired`, `rejected`, `refused`,
+  `failed`, `none`, `null`) or a placeholder stays. A header position is exactly one of:
+  - a header name - `Authorization`, `Proxy-Authorization`, `WWW-Authenticate` or `Proxy-Authenticate` -
+    optionally quoted, then `:` or `=`;
+  - a key of the pair rule's credential list (`CredentialSecretKeys` and `credential(s)`: the pass words, `secret`,
+    the token family, `api_key`, `client_secret`, `client_id`, `private_key`, `access_key`, `connection string`,
+    `authorization`, `auth`, `bearer`, the cookie and session names), written QUOTED before its `:` or `=` (a JSON
+    or dict key), or bare before an `=` (a pair).
+  A key word with a colon in a sentence ("Primary key: Basic info", "auth: Basic mode is off", "The secret:
+  Negotiate later") is no header position, and the pair rule keeps the same sentence: a key word, a colon, a scheme
+  word and a word the scheme rule keeps there is prose (master removed the scheme word there, and the scheme word
+  is no credential).
 - ELSEWHERE, in a sentence, these stay:
   - a prose word (all lower case, or one leading capital then lower case, optionally "-"-joined);
   - an acronym, alone or with `/n`, `/n.n`, `/ACRONYM`, `vn` or a dotted version of up to four short parts;
@@ -118,7 +169,27 @@ master's with three changes, and none of them lets a credential character throug
   - a CamelCase word with ONE inner capital and no digit (`OAuth`).
 
   Everything else goes: `UsrPage1`, `AdminApiKey`, `1700000000.123456789`, `v2.0.0.1-secret`, and base64 even when
-  it is all letters (`dXNlcjpwYXNz`).
+  it has inner capitals (`dXNlcjpwYXNz`). KNOWN KEEP: a lower-case run after Basic, NTLM or Negotiate in a sentence
+  stays ("Expected Basic secrettokenvalue here"); master had no floor there, and a header position takes it.
+
+**Counts, folders, server names and clamps** -
+- A count word (`total`, `passed`, `failed`, `skipped`, `tests`, `ok`, …) with a number is a count when another
+  one is on the same line; a real or a written line break ends the line. Alone, `word:port` takes the general
+  single-label rule, so `ok:6379` and `tests:5432` go and `tests:4000` stays. Master had no single-label rule and
+  removed none of these. KNOWN TRADE: a lone `Failed:22` reads as a host on port 22.
+- After a closing bracket in a Windows path, a written `\r`, `\n` or `\t` before a lower-case letter is the next
+  folder (`jdoe(old)\temp`, `data[1]\nightly`): when the two readings disagree, the one that removes the path
+  wins. Before a capital, a backslash, whitespace or the end it is a line break, and `\uXXXX` is an escaped quote.
+- In `RedactSiteText`, a written `\r`, `\n` or `\t` before a lower-case letter is `SERVER\account` only after a
+  server name: capitals, digits and `-`, at least one letter (`SQL01`, `CORP`, `DB-PROD`), and not a status word
+  (`ERROR`, `FAILED`, `FAIL`, `OK`, `WARN`, `WARNING`, `INFO`, `DEBUG`, `TRUE`, `FALSE`, `NULL`, `NONE`). After a
+  number, a status word or any other word it is a line break, so "Error 404\nnot found" keeps its reason. KNOWN
+  TRADE: an all-capitals acronym that is not a status word ("HTTP\nfailed") still reads as a server.
+- Every clamp before redaction (`ClampAtBoundary`) cuts back to a word boundary, drops the partial run and marks
+  the cut with " …". A cut inside an open quote goes back to before the quote, so "for user 'zq invented login'"
+  keeps nothing of the name.
+- The JSON rule leaves exactly one credentials key alone, clio's own `constant-credentials-masked` flag, in that
+  letter case only.
 
 Every endpoint placeholder is `[redacted-uri]`, the one master already wrote for host:port.
 
