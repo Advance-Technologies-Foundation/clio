@@ -42,6 +42,15 @@ public record CommandExecutionResult(
 	[Description("What the Creatio site itself answered to the call that made this command fail: status (the HTTP status), message and code (the site's own, when the body carries them) and body (json, html, text or empty). Absent on success, when no HTTP response exists (timeout, DNS, TLS, connection refused) and when the failure is clio's own.")]
 	public SiteResponse SiteResponse { get; init; }
 
+	/// <summary>
+	/// Beside <see cref="SiteResponse"/>: whether the site's refusal proves the command applied nothing
+	/// (<c>side-effect</c> <c>none</c>) or not (<c>unknown</c>). Absent whenever <see cref="SiteResponse"/> is.
+	/// </summary>
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Present beside site-response. side-effect is none only when the site refused the command's sole write without processing it (HTTP 401, 403, 405, 413, 414, 415 or 431, sent once, nothing written before it), so nothing was applied; otherwise unknown. retry-advice says what to do next. Absent whenever site-response is.")]
+	public DataWriteDiagnostic Diagnostic { get; init; }
+
 	public const string CompileNotRequiredNote = "compile-creatio not required";
 
 	/// <summary>

@@ -111,6 +111,32 @@ public sealed class CreateBusinessProcessServiceTests {
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind));
 	}
 
+	[TestCase(403, "<html>Forbidden</html>", true, true,
+		TestName = "BuildProcess_ShouldProveNotCreated_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
+	[TestCase(401, "", true, true, TestName = "BuildProcess_ShouldProveNotCreated_WhenA401RefusesTheDeclaredBuild")]
+	[TestCase(403, "<html>Forbidden</html>", false, false,
+		TestName = "BuildProcess_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
+	[Description("BuildProcess is create-business-process's one write: a refusal without processing says NOT created and, in the declared capture, proves it")]
+	public void BuildProcess_ShouldSayNotCreated_WhenRefusedWithoutProcessing(int status, string body, bool declared,
+		bool proves) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, body));
+		CreateBusinessProcessService service = CreateService(client, out _);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage(
+			$"The environment refused BuildProcess without processing it (HTTP {status}), so the process was NOT created.*",
+			because: "the status proves BuildProcess did not run, so the result must not read as unknown");
+		capture.LastProvesNothingApplied.Should().Be(proves);
+	}
+
 	[Test]
 	[Description("A successful build records nothing")]
 	public void BuildProcess_ShouldRecordNothing_WhenTheBuildSucceeds() {

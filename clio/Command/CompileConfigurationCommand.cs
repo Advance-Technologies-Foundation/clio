@@ -385,8 +385,9 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				ProceedResponse(responseBody, options);
 				if (!_isSuccess) {
 					// The answer to the build request is the verdict on this path, so a failed one is what the
-					// tool reports as the site's response.
-					SiteResponseCapture.RecordRefusal(_compileAnswer);
+					// tool reports as the site's response. The build request is compile-creatio's one write, sent
+					// with one attempt.
+					SiteResponseCapture.RecordRefusalOfSoleWrite(_compileAnswer, 1);
 				}
 				return;
 			case CompilationCompletionKind.ConfirmedByReload:

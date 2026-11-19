@@ -15,27 +15,67 @@ internal static class DataServiceResponse {
 	/// <remarks>
 	/// One rule is added to the body check: a status the client kept that is not 2xx is a failure even when the
 	/// body would pass it - an empty body or an envelope without a <c>success</c> flag - because accepting it would
-	/// report a write that may not have happened as done. A 5xx is reported as not confirmed (a gateway can answer
-	/// after the service applied the write); a 3xx or 4xx as refused.
+	/// report a write that may not have happened as done. With such a status and no service envelope (an empty
+	/// body, an error page), the status decides the wording: only a refusal without processing
+	/// (<see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>) says the write was not applied; a 5xx says it
+	/// is not confirmed (a gateway can answer after the service applied it); any other 3xx or 4xx says the refusal
+	/// does not prove it was not applied.
 	/// </remarks>
 	/// <param name="answer">The answer as <see cref="SiteCall"/> returned it.</param>
 	/// <param name="operationName">The operation to name in the failure message.</param>
+	/// <param name="soleWriteAttempts">
+	/// The attempt count of the request when it is the sole write of the tools that run it, so its refusal is
+	/// recorded through <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>; <see langword="null"/> for
+	/// any other write.
+	/// </param>
 	/// <exception cref="InvalidOperationException">Thrown as by the body check, or for a non-2xx status.</exception>
-	internal static void ThrowIfUnsuccessful(SiteHttpResponse answer, string operationName) {
+	internal static void ThrowIfUnsuccessful(SiteHttpResponse answer, string operationName,
+		int? soleWriteAttempts = null) {
 		ArgumentNullException.ThrowIfNull(answer);
 		try {
+			if (answer.IsKnownFailureStatus && !IsServiceEnvelope(answer.Body)) {
+				throw new InvalidOperationException(DescribeFailureStatus(answer, operationName));
+			}
 			ThrowIfUnsuccessful(answer.Body, operationName);
 			if (answer.IsKnownFailureStatus) {
-				throw new InvalidOperationException(answer.StatusCode >= 500
-					? $"{operationName} was not confirmed: the environment answered HTTP {answer.StatusCode} without a "
-						+ "service verdict, so whether it was applied is unknown. Read the data before retrying."
-					: $"{operationName} failed: the environment refused it with HTTP {answer.StatusCode} and no service "
-						+ "verdict.");
+				throw new InvalidOperationException(DescribeFailureStatus(answer, operationName));
 			}
 		}
 		catch (InvalidOperationException) {
-			SiteResponseCapture.RecordRefusal(answer);
+			if (soleWriteAttempts is int attempts) {
+				SiteResponseCapture.RecordRefusalOfSoleWrite(answer, attempts);
+			}
+			else {
+				SiteResponseCapture.RecordRefusal(answer);
+			}
 			throw;
+		}
+	}
+
+	private static string DescribeFailureStatus(SiteHttpResponse answer, string operationName) {
+		if (answer.IsRefusedWithoutProcessing) {
+			return $"{operationName} failed: the environment refused it without processing it (HTTP "
+				+ $"{answer.StatusCode}), so it was not applied.";
+		}
+		return answer.StatusCode >= 500
+			? $"{operationName} was not confirmed: the environment answered HTTP {answer.StatusCode} without a "
+				+ "service verdict, so whether it was applied is unknown. Read the data before retrying."
+			: $"{operationName} failed: the environment refused it with HTTP {answer.StatusCode} and no service "
+				+ "verdict, which does not prove it was not applied. Read the data before retrying.";
+	}
+
+	// Whether the body is a JSON object, the shape every service envelope has. Anything else - no body, an error
+	// page, plain text - carries no verdict of the service.
+	private static bool IsServiceEnvelope(string body) {
+		if (string.IsNullOrWhiteSpace(body)) {
+			return false;
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(body);
+			return document.RootElement.ValueKind is JsonValueKind.Object;
+		}
+		catch (JsonException) {
+			return false;
 		}
 	}
 

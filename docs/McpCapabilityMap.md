@@ -358,21 +358,60 @@ sees the same envelope as before.
 
 **Status-aware failures.** Because the status is now kept, a failure status fails these writes even when the
 body alone would pass them: an empty or unrecognized body on `odata-update` / `odata-delete`, an empty body on
-`odata-create` (the row is then reported as not confirmed, with `record-created` unknown), and an empty body or
-an error page on the data-binding writes and on `install-application` / `push-workspace` /
-`install-process-builder`. How such a failure reads depends on the status:
+`odata-create`, and an empty body or an error page on the data-binding writes and on `install-application` /
+`push-workspace` / `install-process-builder`. How such a failure reads depends on the status:
 
+- **401, 403, 405, 413, 414, 415 or 431: refused without processing.** HTTP defines these as the server refusing
+  to process the request (RFC 9110, RFC 6585), so the result says that request was not applied (an
+  `odata-create` row reads `record-created: false`).
 - **5xx: not confirmed.** A gateway can answer 502/504 after Creatio applied the write or while a long
   installation still runs, so the result says the write "was not confirmed" / "may or may not have been
   applied" / "may still be running" and asks to read back before retrying. An installation log line is not
   taken as proof either way: the log window is bounded by time, not by this run.
-- **3xx or 4xx: refused.** The request never reached the service (a redirect to another origin, no rights, an
-  unknown route), so the result says it was refused and not applied.
+- **Any other 3xx or 4xx: refused, but not proof.** A 400, 404, 409 or 422 can come from the service's own
+  handler after it started, and a 302 or 303 can follow a POST the server did process, so the result says the
+  refusal does not prove the write was not applied, and asks to read back before retrying.
 
 A restart (`restart-by-environment-name` / `restart-by-credentials`) answered with a 4xx fails, where it used to
-report "Done" with exit code 0 whatever the site answered. A 5xx answer to a restart is not a refusal - a restart
-in progress behind a proxy can produce one - so it is reported as a warning that the restart is not confirmed,
-and with the readiness wait, readiness decides.
+report "Done" with exit code 0 whatever the site answered. It says the application was not restarted only when
+that is proven (see below); otherwise it asks to check the application before restarting again. A 5xx answer
+to a restart is not a refusal - a restart in progress behind a proxy can produce one - so it is reported as a
+warning that the restart is not confirmed, and with the readiness wait, readiness decides.
+
+### Whether anything was applied (`diagnostic.side-effect`)
+
+Beside every `site-response` - on the result, or on the batch item that carries it - is a `diagnostic`, the
+same object the odata tools already return: `operation`, `entity`, `item-index`, `write-attempted`,
+`transport-outcome`, `side-effect`, `retry-advice`, `message`. Outside the odata tools `operation`, `entity`
+and `message` are null: the result's own fields name what failed and why.
+
+`side-effect` is `none` only when clio can prove the call applied nothing on the site. Everything else is
+`unknown`; clio never guesses `none`. The proof needs all three of these:
+
+1. **One write.** The tool sends exactly one write per call (or per batch item), with only reads before it, and
+   the tool says so in code. A command that some other tool runs inside a longer sequence proves nothing there,
+   because that other tool may have written first.
+2. **Sent once.** The write went out with a single attempt. With more attempts, the client sends it again after
+   a timeout, and the attempt that timed out may have been applied. A replay after a session renewal still
+   counts as one send: it follows only a sign-in refusal, which applied nothing.
+3. **Refused without processing.** The site answered 401, 403, 405, 413, 414, 415 or 431.
+
+| Tool | Its writes, in order | `side-effect` on a refusal |
+|---|---|---|
+| `update-page`; `sync-pages`, per page | one save (reads before it; cache reset and checksum read only after it succeeds) | `none` when the save is refused without processing |
+| `create-page` | one save (template, catalog and hierarchy reads before it) | `none` when the save is refused without processing |
+| `odata-update` | one PATCH (`$metadata` reads before it) | `none` when the PATCH is refused without processing |
+| `odata-delete`, one `id`, no `cascade` | one DELETE (an existence read before it) | `none` when the DELETE is refused without processing |
+| `odata-create`, per row | one POST per row, never replayed | `none` (`record-created: false`) when the row is refused without processing or rejected while Creatio reads the body |
+| `create-business-process` | one BuildProcess | `none` when BuildProcess is refused without processing |
+| `delete-data-binding-db` | one binding delete | `none` when the delete is refused without processing |
+| `compile-creatio` | one build request | `none` when the build request is refused without processing |
+| `restart-by-environment-name`, `restart-by-credentials` | one restart request, sent with the call's attempt count (3 unless set) | `none` only with a single attempt; with the default 3, `unknown` |
+| `create-entity-schema`, `update-entity-schema`, `modify-entity-schema-column`, `create-lookup` | designer state, save, DB structure, publish, OData build, then (create-lookup) the lookup registration; the designer requests go with 3 attempts | always `unknown` |
+| `create-data-binding-db`, `upsert-data-binding-row-db`, `remove-data-binding-row-db` | row writes, then the binding save or delete | always `unknown` |
+| `install-application`, `push-workspace`, `install-process-builder` | package upload and backup, then the install request | always `unknown`, even when the install request was refused without processing: the text then says the package was not installed, but the upload had already written |
+| `odata-delete` with `ids` or `cascade` | a DELETE per id, a refused id sent again in a later pass; with cascade, owned rows first | always `unknown`, on the call and on each item |
+| `sync-schemas`, per operation | the entity-schema and data-binding writes above, with retries for transient faults | always `unknown` |
 
 **Not covered:** a compile that outlives the MCP response deadline reports its verdict through
 `compile-status`, which carries no `site-response`; and the very first request of a process, when it is one of

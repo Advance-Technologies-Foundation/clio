@@ -62,6 +62,60 @@ public sealed class ODataDeleteToolTests {
 			SiteResponse.JsonBody));
 	}
 
+	[TestCase(403, "none", TestName = "Delete_ShouldReportSideEffectNone_WhenTheSingleDeleteIsRefusedWithAn403")]
+	[TestCase(405, "none", TestName = "Delete_ShouldReportSideEffectNone_WhenTheSingleDeleteIsRefusedWithAn405")]
+	[TestCase(409, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered409")]
+	[TestCase(500, "unknown", TestName = "Delete_ShouldReportSideEffectUnknown_WhenTheSingleDeleteIsAnswered500")]
+	[Category("Unit")]
+	[Description("With one id and no cascade the DELETE is the call's one write, sent once: a refusal without processing proves nothing was deleted")]
+	public void Delete_ShouldReportTheProvenSideEffect_ForASingleId(int status, string sideEffect) {
+		// Arrange
+		ODataDeleteTool tool = RefusingDeleteTool(new SiteHttpResponse(status, ""));
+
+		// Act
+		ODataWriteResponse result = tool.Delete(new ODataDeleteArgs { EnvironmentName = "dev", Entity = "Contact", Id = Guid, Confirm = true });
+
+		// Assert
+		result.Success.Should().BeFalse();
+		result.SiteResponse.Status.Should().Be(status);
+		result.Diagnostic!.SideEffect.Should().Be(sideEffect);
+	}
+
+	[Test, Category("Unit")]
+	[Description("With ids a refused id is sent again in a later pass, so neither the call nor an item is proven, even for a 403")]
+	public void Delete_ShouldReportSideEffectUnknown_WhenSeveralIdsAreRefused() {
+		// Arrange
+		ODataDeleteTool tool = RefusingDeleteTool(new SiteHttpResponse(403, ""));
+
+		// Act
+		ODataWriteResponse result = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Contact", Ids = [Guid, "1c0c5a3e-6b8f-4b0e-9a47-2f6f7c3b9d11"], Confirm = true
+		});
+
+		// Assert
+		result.Success.Should().BeFalse();
+		result.Diagnostic!.SideEffect.Should().Be("unknown");
+		result.Results.Should().AllSatisfy(item => {
+			item.SiteResponse!.Status.Should().Be(403);
+			item.Diagnostic!.SideEffect.Should().Be("unknown",
+				because: "an item's diagnostic goes beside its site response and never claims more than the call can");
+		});
+	}
+
+	private static ODataDeleteTool RefusingDeleteTool(SiteHttpResponse answer) {
+		IApplicationClient client = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns((client, urls));
+		urls.Build(Arg.Any<string>()).Returns("http://creatio/odata/Contact");
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(answer);
+		resolver.Resolve<IRecordDeletionService>(Arg.Any<EnvironmentOptions>()).Returns(new RecordDeletionService(
+			client, urls, Substitute.For<IRuntimeEntitySchemaReader>()));
+		return new ODataDeleteTool(resolver, new OperationCorrelationIdProvider());
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable, destructive, idempotent MCP tool name for odata-delete.")]

@@ -86,6 +86,49 @@ public sealed class ODataCreateToolTests {
 			"http://creatio/odata/Account", "{\"Name\":\"Acme\"}", 30_000, 1, 1, false);
 	}
 
+	[TestCase(403, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenAnEmpty403Refuses")]
+	[TestCase(401, "<html>Sign in</html>", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenA401PageRefuses")]
+	[TestCase(413, "", false, "none", TestName = "Create_ShouldReportTheRowNotCreated_WhenTheRowIsTooLarge")]
+	[TestCase(404, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAnEmpty404Answers")]
+	[TestCase(502, "", null, "unknown", TestName = "Create_ShouldKeepTheRowUnknown_WhenAGatewayAnswers")]
+	[Category("Unit")]
+	[Description("A row's POST is that row's one write, sent once and never replayed: a refusal without processing proves the row was not created")]
+	public void Create_ShouldReportTheProvenRowOutcome(int status, string body, bool? recordCreated, string sideEffect) {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, body));
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio/odata/Account");
+		MockFileSystem fileSystem = new();
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(),
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account",
+			Rows = System.Text.Json.JsonDocument.Parse("[{\"Name\":\"Acme\"}]").RootElement
+		});
+
+		// Assert
+		ODataRowResult row = response.Results.Should().ContainSingle().Subject;
+		row.Success.Should().BeFalse();
+		row.RecordCreated.Should().Be(recordCreated);
+		row.Diagnostic!.SideEffect.Should().Be(sideEffect);
+		row.SiteResponse!.Status.Should().Be(status);
+		if (sideEffect == "none") {
+			row.Diagnostic.RetryAdvice.Should().Be(DataWriteDiagnostic.RefusedWithoutProcessingAdvice);
+			row.Error.Should().Be($"Creatio refused the create with HTTP {status} without processing it, so this row "
+				+ "was not created.");
+		}
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Refuses a rows-file that passed the open-time ceiling check and then grew, instead of allocating and reading whatever it became.")]

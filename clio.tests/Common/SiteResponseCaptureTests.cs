@@ -55,6 +55,76 @@ public sealed class SiteResponseCaptureTests {
 		scope.Last.Status.Should().Be(500, because: "a status-less answer cannot be reported and erases nothing");
 	}
 
+	[TestCase(403, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenDeclaredSentOnceAndRefusedWithoutProcessing")]
+	[TestCase(401, 1, true, true, TestName = "RecordRefusalOfSoleWrite_ShouldProve_WhenA401RefusedTheDeclaredWrite")]
+	[TestCase(403, 1, false, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
+	[TestCase(403, 3, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheWriteMayHaveBeenSentAgain")]
+	[TestCase(404, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs404")]
+	[TestCase(503, 1, true, false, TestName = "RecordRefusalOfSoleWrite_ShouldNotProve_WhenTheStatusIs503")]
+	[Description("A refusal proves nothing was applied only with the tool's declaration, one attempt and a status that refuses without processing")]
+	public void RecordRefusalOfSoleWrite_ShouldProveNothingApplied_OnlyWhenAllConditionsHold(int status, int attempts,
+		bool declared, bool proves) {
+		// Arrange
+		using SiteResponseCapture.Scope scope = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(status, ""), attempts);
+
+		// Assert
+		scope.Last.Status.Should().Be(status, because: "the answer is recorded either way");
+		scope.LastProvesNothingApplied.Should().Be(proves);
+		scope.LastDiagnostic.SideEffect.Should().Be(proves ? "none" : "unknown");
+	}
+
+	[Test]
+	[Description("An ordinary refusal never proves anything, even in a declared capture")]
+	public void RecordRefusal_ShouldNotProve_EvenInADeclaredCapture() {
+		// Arrange
+		using SiteResponseCapture.Scope scope = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		SiteResponseCapture.RecordRefusal(new SiteHttpResponse(403, ""));
+
+		// Assert
+		scope.LastProvesNothingApplied.Should().BeFalse(because: "only the declared sole write can be proof");
+	}
+
+	[Test]
+	[Description("A later refusal replaces the proof of an earlier one")]
+	public void RecordRefusal_ShouldReplaceTheProof_WhenALaterRefusalIsRecorded() {
+		// Arrange
+		using SiteResponseCapture.Scope scope = SiteResponseCapture.Begin(soleWriteCall: true);
+		SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(403, ""), 1);
+
+		// Act
+		SiteResponseCapture.RecordRefusal(new SiteHttpResponse(500, ""));
+
+		// Assert
+		scope.LastRefusal.Should().Be((new SiteResponse(500, null, null, SiteResponse.EmptyBody), false),
+			because: "the refusal reported is the last one, and the proof belongs to that one");
+	}
+
+	[Test]
+	[Description("A capture nested in a declared one is not declared unless its own opener says so")]
+	public void Begin_ShouldNotInheritTheDeclaration_InANestedCapture() {
+		// Arrange
+		using SiteResponseCapture.Scope outer = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		using SiteResponseCapture.Scope inner = SiteResponseCapture.Begin();
+		SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(403, ""), 1);
+
+		// Assert
+		inner.LastProvesNothingApplied.Should().BeFalse();
+	}
+
+	[Test]
+	[Description("No refusal recorded, no diagnostic")]
+	public void LastDiagnostic_ShouldBeNull_WhenNothingWasRecorded() {
+		using SiteResponseCapture.Scope scope = SiteResponseCapture.Begin(soleWriteCall: true);
+		scope.LastDiagnostic.Should().BeNull();
+	}
+
 	[Test]
 	[Description("A nested capture keeps its own refusals and gives the outer one back when disposed")]
 	public void Begin_ShouldIsolateANestedCapture_AndRestoreTheOuterOne() {

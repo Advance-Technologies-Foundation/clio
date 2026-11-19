@@ -148,27 +148,59 @@ public sealed class SiteResponseWritePathTests {
 		_capture.Last.Should().BeEquivalentTo(new SiteResponse(500, null, null, SiteResponse.EmptyBody));
 	}
 
-	[Test]
-	[Description("An empty body with a 4xx is reported as a refusal, not as an unknown outcome")]
-	public void DataService_ShouldReportARefusal_WhenTheBodyIsEmptyAndTheStatusIs4xx() {
+	[TestCase("", TestName = "DataService_ShouldSayNotApplied_WhenAnEmpty403Refused")]
+	[TestCase(ErrorPage, TestName = "DataService_ShouldSayNotApplied_WhenA403PageRefused")]
+	[Description("A status that refuses without processing says the write was not applied, whatever the body")]
+	public void DataService_ShouldSayNotApplied_WhenRefusedWithoutProcessing(string body) {
 		// Act
-		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(403, ""), "InsertQuery");
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(403, body), "InsertQuery");
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("InsertQuery failed: the environment refused it with HTTP 403 and no service verdict.");
+		act.Should().Throw<InvalidOperationException>().WithMessage(
+			"InsertQuery failed: the environment refused it without processing it (HTTP 403), so it was not applied.");
 		_capture.Last.Status.Should().Be(403);
+		_capture.LastProvesNothingApplied.Should().BeFalse(
+			because: "an ordinary write's refusal proves nothing for the call: other writes may have come first");
+	}
+
+	[TestCase(404, "", TestName = "DataService_ShouldNotClaimNotApplied_WhenAnEmpty404Refused")]
+	[TestCase(302, "", TestName = "DataService_ShouldNotClaimNotApplied_WhenARedirectReachesTheCaller")]
+	[TestCase(409, ErrorPage, TestName = "DataService_ShouldNotClaimNotApplied_WhenA409PageRefused")]
+	[Description("Any other 3xx or 4xx says the refusal does not prove the write was not applied")]
+	public void DataService_ShouldNotClaimNotApplied_WhenTheStatusProvesNothing(int status, string body) {
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(status, body), "InsertQuery");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage($"InsertQuery failed: the environment refused it "
+			+ $"with HTTP {status} and no service verdict, which does not prove it was not applied. *");
 	}
 
 	[Test]
-	[Description("An HTML page is recorded with its status and no message")]
-	public void DataService_ShouldRecordTheSiteAnswer_WhenTheBodyIsAnHtmlPage() {
+	[Description("An error page with a 5xx says not confirmed, not that the request never reached the service")]
+	public void DataService_ShouldSayNotConfirmed_WhenA5xxPageAnswered() {
 		// Act
-		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(403, ErrorPage), "DeleteQuery");
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(502, ErrorPage), "InsertQuery");
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("InsertQuery was not confirmed: the environment answered HTTP 502 without a service verdict, *");
+		_capture.Last.Should().BeEquivalentTo(new SiteResponse(502, null, null, SiteResponse.HtmlBody));
+	}
+
+	[Test]
+	[Description("The binding delete is the sole write of delete-data-binding-db: in its declared capture a 403 proves nothing was deleted")]
+	public void DataService_ShouldProveNothingApplied_WhenTheDeclaredSoleWriteIsRefusedWithoutProcessing() {
+		// Arrange
+		using SiteResponseCapture.Scope declared = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(new SiteHttpResponse(403, ""),
+			"DeletePackageSchemaDataRequest", soleWriteAttempts: 1);
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>();
-		_capture.Last.Should().BeEquivalentTo(new SiteResponse(403, null, null, SiteResponse.HtmlBody));
+		declared.LastProvesNothingApplied.Should().BeTrue();
 	}
 
 	[TestCase(200, "", TestName = "DataService_ShouldAccept_WhenA200HasAnEmptyBody")]
@@ -223,15 +255,30 @@ public sealed class SiteResponseWritePathTests {
 		ODataKeyedWrite.ValidateWriteResponse(new SiteHttpResponse(status, body)).Should().BeNull();
 	}
 
-	[TestCase(404, TestName = "ODataWrite_ShouldReportARefusal_WhenA404HasNoBody")]
-	[TestCase(302, TestName = "ODataWrite_ShouldReportARefusal_WhenA302ReachesTheCaller")]
-	[Description("A 3xx or 4xx with no error body is a refusal: the write was not applied")]
-	public void ODataWrite_ShouldReportARefusal(int status) {
+	[TestCase(404, TestName = "ODataWrite_ShouldNotClaimNotApplied_WhenA404HasNoBody")]
+	[TestCase(302, TestName = "ODataWrite_ShouldNotClaimNotApplied_WhenA302ReachesTheCaller")]
+	[TestCase(409, TestName = "ODataWrite_ShouldNotClaimNotApplied_WhenA409HasNoBody")]
+	[Description("A 3xx or 4xx that can come from the handler does not prove the write was not applied")]
+	public void ODataWrite_ShouldNotClaimNotApplied(int status) {
 		// Act
 		string error = ODataKeyedWrite.ValidateWriteResponse(new SiteHttpResponse(status, ""));
 
 		// Assert
-		error.Should().Be($"Creatio refused the write with HTTP {status} and no recognized error body; it was not applied.");
+		error.Should().Be($"Creatio refused the write with HTTP {status} and no recognized error body, which does not "
+			+ "prove it was not applied. Read the record before deciding whether to resubmit.");
+	}
+
+	[TestCase(401)]
+	[TestCase(403)]
+	[TestCase(413)]
+	[Description("A status that refuses without processing says this request was not applied")]
+	public void ODataWrite_ShouldSayNotApplied_WhenRefusedWithoutProcessing(int status) {
+		// Act
+		string error = ODataKeyedWrite.ValidateWriteResponse(new SiteHttpResponse(status, ""));
+
+		// Assert
+		error.Should().Be($"Creatio refused the write with HTTP {status} without processing it, so this request was "
+			+ "not applied.");
 	}
 
 	[Test]
@@ -290,6 +337,23 @@ public sealed class SiteResponseWritePathTests {
 		_capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, kind));
 	}
 
+	[TestCase(true, true, TestName = "PageDesigner_ShouldProveNothingSaved_WhenTheDeclaredSaveIsRefusedWithAPage")]
+	[TestCase(false, false, TestName = "PageDesigner_ShouldNotProve_WhenTheSaveRunsInAnUndeclaredCapture")]
+	[Description("A non-JSON 403 to the page save proves nothing was saved only inside a tool's declared capture")]
+	public void PageDesigner_ShouldProveNothingSaved_OnlyInADeclaredCapture(bool declared, bool proves) {
+		// Arrange
+		using SiteResponseCapture.Scope scope = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		Action act = () => PageSchemaMetadataHelper.PostDesignerRequest(
+			KeepingClient(new SiteHttpResponse(403, ErrorPage)), "http://local/x", "{}", soleWrite: true);
+
+		// Assert
+		act.Should().Throw<JsonReaderException>();
+		scope.Last.Status.Should().Be(403);
+		scope.LastProvesNothingApplied.Should().Be(proves);
+	}
+
 	[Test]
 	[Description("An advisory read does not record a non-JSON answer")]
 	public void PageDesigner_ShouldRecordNothing_WhenTheReadIsAdvisory() {
@@ -337,6 +401,30 @@ public sealed class SiteResponseWritePathTests {
 		exitCode.Should().Be(1, because: "a refused restart used to report 'Done' with exit code 0");
 		_capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, SiteResponse.HtmlBody));
 		logger.Received(1).WriteError(Arg.Is<string>(text => text.Contains($"HTTP {status}")));
+	}
+
+	[TestCase(1, 403, true, "so the application was not restarted.",
+		TestName = "Restart_ShouldProveNotRestarted_WhenSentOnceAndRefusedWithoutProcessing")]
+	[TestCase(3, 403, false, "which does not prove the application was not restarted.",
+		TestName = "Restart_ShouldNotProve_WhenTheRequestMayHaveBeenSentAgain")]
+	[TestCase(1, 404, false, "which does not prove the application was not restarted.",
+		TestName = "Restart_ShouldNotProve_WhenA404Refused")]
+	[Description("In the restart tool's declared capture, only a single-attempt refusal without processing proves the application was not restarted")]
+	public void Restart_ShouldSayNotRestarted_OnlyWhenProven(int maxAttempts, int status, bool proves, string wording) {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		RestartCommand restart = new(KeepingClient(new SiteHttpResponse(status, ErrorPage)),
+			new EnvironmentSettings { Uri = "http://test.domain.com", IsNetCore = true },
+			Substitute.For<IServerReadinessWaiter>()) { Logger = logger };
+		using SiteResponseCapture.Scope declared = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		int exitCode = restart.Execute(new RestartOptions { MaxAttempts = maxAttempts });
+
+		// Assert
+		exitCode.Should().Be(1);
+		declared.LastProvesNothingApplied.Should().Be(proves);
+		logger.Received(1).WriteError(Arg.Is<string>(text => text.Contains($"HTTP {status}") && text.Contains(wording)));
 	}
 
 	[TestCase(500, TestName = "Restart_ShouldWarn_WhenTheSiteAnswers500")]

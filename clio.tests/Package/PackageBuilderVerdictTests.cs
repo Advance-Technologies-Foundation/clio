@@ -185,6 +185,30 @@ public sealed class PackageBuilderVerdictTests {
 		capture.Last.Body.Should().Be(SiteResponse.JsonBody);
 	}
 
+	[TestCase(403, true, true, TestName = "Rebuild_ShouldProveNothingCompiled_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
+	[TestCase(403, false, false, TestName = "Rebuild_ShouldNotProve_WhenTheBuildRunsInAnUndeclaredCapture")]
+	[TestCase(502, true, false, TestName = "Rebuild_ShouldNotProve_WhenAGatewayAnswers")]
+	[Description("Without a history poller: the package build request is compile-creatio's one write, so in its declared capture a refusal without processing proves nothing was compiled")]
+	public void Rebuild_ShouldProveNothingCompiled_OnlyWhenProven(int status, bool declared, bool proves) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(status, "<html>refused</html>"));
+		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
+		factory.CreateClient(_settings).Returns(client);
+		PackageBuilder sut = new(_settings, factory, _urlBuilder, _logger, _stand, _stand);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<Exception>();
+		capture.Last.Status.Should().Be(status);
+		capture.LastProvesNothingApplied.Should().Be(proves);
+	}
+
 	[Test]
 	[Description("A successful build answer records nothing")]
 	public void Rebuild_ShouldRecordNothing_WhenTheAnswerReportsSuccess() {

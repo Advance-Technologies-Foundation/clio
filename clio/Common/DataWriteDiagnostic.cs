@@ -63,4 +63,39 @@ public sealed record DataWriteDiagnostic(
 				RetryAdvice = "The server rejected the write before applying it. Correct the input and resubmit."
 			}
 			: this;
+
+	/// <summary>Retry advice when the site refused the call's sole write without processing it.</summary>
+	public const string RefusedWithoutProcessingAdvice =
+		"The site refused the request without processing it, so nothing was applied. Fix what it refused - the "
+		+ "sign-in, the user's rights or the request size - before resubmitting.";
+
+	/// <summary>
+	/// Marks an attempted, answered, unacknowledged write as not applied because the site refused it without
+	/// processing it, and nothing the call sent before it could have written; see
+	/// <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>. Every other boundary keeps its own outcome.
+	/// </summary>
+	public DataWriteDiagnostic AsRefusedWithoutProcessing() =>
+		WriteAttempted && TransportOutcome == "response-received" && SideEffect == "unknown"
+			? this with { SideEffect = "none", RetryAdvice = RefusedWithoutProcessingAdvice }
+			: this;
+
+	/// <summary>
+	/// The diagnostic that goes beside a <c>site-response</c> on a tool that has no data-write diagnostic of its
+	/// own: the request was sent and answered, and the side effect is <c>none</c> only when the refusal proves
+	/// it, otherwise <c>unknown</c>. Operation, entity and message are left empty: the tool's own result names
+	/// what failed and why.
+	/// </summary>
+	/// <param name="itemIndex">The item's index in a batch result, or <see langword="null"/>.</param>
+	/// <param name="nothingApplied">Whether the refusal proves the call (or the item) applied nothing.</param>
+	public static DataWriteDiagnostic ForSiteRefusal(int? itemIndex, bool nothingApplied) {
+		DataWriteDiagnostic answered = Create(null, null, itemIndex, true, true, false, null);
+		return nothingApplied
+			? answered.AsRefusedWithoutProcessing()
+			: answered with { RetryAdvice = SiteRefusalUnknownAdvice };
+	}
+
+	/// <summary>Retry advice when a site refusal does not prove that nothing was applied.</summary>
+	public const string SiteRefusalUnknownAdvice =
+		"The site's answer does not prove that nothing was applied: the call may have written before or despite "
+		+ "it. Read back what the call changes before deciding whether to resubmit; no automatic retry was made.";
 }

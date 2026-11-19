@@ -231,6 +231,38 @@ public sealed class SiteResponseTests {
 
 	#endregion
 
+	#region Tests: refusal without processing
+
+	[TestCase(401)]
+	[TestCase(403)]
+	[TestCase(405)]
+	[TestCase(413)]
+	[TestCase(414)]
+	[TestCase(415)]
+	[TestCase(431)]
+	[Description("The statuses with which HTTP defines the server as refusing to process the request")]
+	public void IsRefusedWithoutProcessing_ShouldBeTrue_ForAStatusThatRefusesToProcess(int status) {
+		new SiteHttpResponse(status, "").IsRefusedWithoutProcessing.Should().BeTrue();
+		SiteHttpResponse.RefusesWithoutProcessing(status).Should().BeTrue();
+	}
+
+	[TestCase(400, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For400_WhichAHandlerCanSend")]
+	[TestCase(404, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For404_WhichAHandlerCanSend")]
+	[TestCase(409, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For409_WhichAHandlerCanSend")]
+	[TestCase(422, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For422_WhichAHandlerCanSend")]
+	[TestCase(302, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For302_WhichCanFollowAProcessedPost")]
+	[TestCase(303, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For303_WhichCanFollowAProcessedPost")]
+	[TestCase(500, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For500")]
+	[TestCase(502, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For502_WhichAGatewayCanSendAfterTheWrite")]
+	[TestCase(200, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_For200")]
+	[TestCase(null, TestName = "IsRefusedWithoutProcessing_ShouldBeFalse_WhenTheStatusIsUnknown")]
+	[Description("Every other status, and an unknown one, proves nothing about whether the request was processed")]
+	public void IsRefusedWithoutProcessing_ShouldBeFalse(int? status) {
+		new SiteHttpResponse(status, "").IsRefusedWithoutProcessing.Should().BeFalse();
+	}
+
+	#endregion
+
 	#region Tests: page results
 
 	[Test]

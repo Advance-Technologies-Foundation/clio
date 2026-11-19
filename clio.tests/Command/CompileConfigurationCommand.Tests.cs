@@ -586,6 +586,26 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, kind));
 	}
 
+	[TestCase(403, true, true, TestName = "Execute_ShouldProveNothingCompiled_WhenTheDeclaredBuildIsRefusedWithoutProcessing")]
+	[TestCase(403, false, false, TestName = "Execute_ShouldNotProve_WhenTheCompileRunsInAnUndeclaredCapture")]
+	[TestCase(500, true, false, TestName = "Execute_ShouldNotProve_WhenTheBuildIsAnswered500")]
+	[Description("The build request is compile-creatio's one write: in its declared capture a refusal without processing proves nothing was compiled")]
+	public void Execute_ShouldProveNothingCompiled_OnlyWhenProven(int status, bool declared, bool proves) {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse("<html>Forbidden</html>", (System.Net.HttpStatusCode)status);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1);
+		capture.Last.Status.Should().Be(status);
+		capture.LastProvesNothingApplied.Should().Be(proves);
+	}
+
 	[Test]
 	[Description("A successful build answer records nothing")]
 	public void Execute_ShouldRecordNothing_WhenTheBuildAnswerSucceeds() {

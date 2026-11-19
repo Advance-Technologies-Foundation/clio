@@ -374,7 +374,8 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 						[.. McpPassthroughRedaction.SanitizeAndRedact([.. _logger.FlushAndSnapshotMessages(clearMessages: true)], tenantKey)],
 						null,
 						dataForge) {
-						SiteResponse = exitCode == 0 ? null : siteResponses.Last
+						SiteResponse = exitCode == 0 ? null : siteResponses.Last,
+						Diagnostic = exitCode == 0 ? null : siteResponses.LastDiagnostic
 					};
 					return returnResult;
 				}
@@ -385,7 +386,8 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 						logMessages,
 						null,
 						dataForge) {
-						SiteResponse = siteResponses.Last
+						SiteResponse = siteResponses.Last,
+						Diagnostic = siteResponses.LastDiagnostic
 					};
 					return returnResult;
 				}

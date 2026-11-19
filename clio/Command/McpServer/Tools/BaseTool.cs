@@ -106,16 +106,22 @@ public abstract class BaseTool<T>(
 	/// <see cref="InternalExecute(Clio.Common.Command{T}, T)"/>) so that log lines produced inside
 	/// <paramref name="executor"/> do not leak into the next tool invocation's <c>execution-log-messages</c>.
 	/// </summary>
-	private protected TResponse ExecuteWithCleanLog<TResponse>(EnvironmentOptions options, Func<TResponse> executor) =>
-		ExecuteUnderTenantLock(options, () => WithCleanLog(executor));
+	/// <param name="options">The environment the executor works against.</param>
+	/// <param name="executor">The work to run.</param>
+	/// <param name="soleWriteCall">The tool's declaration that one call of it sends exactly one write, so a refusal
+	/// of that write recorded through <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/> can prove the call
+	/// applied nothing; see <see cref="SiteResponseCapture.Begin"/>.</param>
+	private protected TResponse ExecuteWithCleanLog<TResponse>(EnvironmentOptions options, Func<TResponse> executor,
+		bool soleWriteCall = false) =>
+		ExecuteUnderTenantLock(options, () => WithCleanLog(executor, soleWriteCall));
 
 	/// <summary>
-	/// Environment-less overload of <see cref="ExecuteWithCleanLog{TResponse}(EnvironmentOptions, Func{TResponse})"/>
+	/// Environment-less overload of <see cref="ExecuteWithCleanLog{TResponse}(EnvironmentOptions, Func{TResponse}, bool)"/>
 	/// for callers that carry no per-tenant identity (e.g. a pre-computed result). Uses the shared
 	/// fallback lock; must NOT be used to execute a per-tenant command (that would serialize tenants).
 	/// </summary>
-	private protected TResponse ExecuteWithCleanLog<TResponse>(Func<TResponse> executor) =>
-		ExecuteUnderTenantLock(null, () => WithCleanLog(executor));
+	private protected TResponse ExecuteWithCleanLog<TResponse>(Func<TResponse> executor, bool soleWriteCall = false) =>
+		ExecuteUnderTenantLock(null, () => WithCleanLog(executor, soleWriteCall));
 
 	/// <summary>
 	/// Runs <paramref name="executor"/> serialized against other calls to the SAME tool rather than against
@@ -139,16 +145,16 @@ public abstract class BaseTool<T>(
 		}
 	}
 
-	private TResponse WithCleanLog<TResponse>(Func<TResponse> executor) {
+	private TResponse WithCleanLog<TResponse>(Func<TResponse> executor, bool soleWriteCall = false) {
 		// Establish a FRESH per-flow capture buffer for this scope (FIX 6, ENG-93208), matching
 		// InternalExecute. Setting PreserveMessages = true resets the flow-local buffer, so log lines
 		// this executor produces are isolated from the process-wide MCP-mode flag (Program.cs) and any
 		// parent-flow context rather than merely being cleared on exit. Saved/restored in finally.
 		bool previousPreserveMessages = logger.PreserveMessages;
 		logger.PreserveMessages = true;
-		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin();
+		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin(soleWriteCall);
 		try {
-			return WithSiteResponse(executor(), siteResponses.Last);
+			return WithSiteResponse(executor(), siteResponses);
 		}
 		finally {
 			logger.ClearMessages();
@@ -156,11 +162,15 @@ public abstract class BaseTool<T>(
 		}
 	}
 
-	// A failed typed result reports what the site answered to the call that failed it, when one was recorded;
-	// a result the tool already gave a site response (a batch item, a per-call write) keeps its own.
-	private static TResponse WithSiteResponse<TResponse>(TResponse response, SiteResponse recorded) {
-		if (recorded is not null && response is ISiteResponseCarrier { ReportsFailure: true, SiteResponse: null } carrier) {
-			carrier.SiteResponse = recorded;
+	// A failed typed result reports what the site answered to the call that failed it, when one was recorded,
+	// and beside it whether that answer proves the call applied nothing; a result the tool already gave a site
+	// response (a batch item, a per-call write) keeps its own.
+	private static TResponse WithSiteResponse<TResponse>(TResponse response, SiteResponseCapture.Scope recorded) {
+		(SiteResponse siteResponse, bool nothingApplied) = recorded.LastRefusal;
+		if (siteResponse is not null
+			&& response is ISiteResponseCarrier { ReportsFailure: true, SiteResponse: null } carrier) {
+			carrier.SiteResponse = siteResponse;
+			carrier.Diagnostic = DataWriteDiagnostic.ForSiteRefusal(null, nothingApplied);
 		}
 		return response;
 	}
@@ -223,8 +233,13 @@ public abstract class BaseTool<T>(
 		return InternalExecute(command, options);
 	}
 
+	/// <summary>Resolves <typeparamref name="TCommand"/> for the call's environment and runs it.</summary>
+	/// <param name="options">The command options.</param>
+	/// <param name="configureCommand">Optional configuration of the resolved command before it runs.</param>
+	/// <param name="soleWriteCall">The tool's declaration that one call of it sends exactly one write; see
+	/// <see cref="SiteResponseCapture.Begin"/>.</param>
 	private protected CommandExecutionResult InternalExecute<TCommand>(T options,
-		Action<TCommand> configureCommand = null) where TCommand : Command<T> {
+		Action<TCommand> configureCommand = null, bool soleWriteCall = false) where TCommand : Command<T> {
 		// Review #5 (ENG-93208): reserve the per-tenant lock AND the session-container in-flight guard
 		// BEFORE the first Acquire (symmetric with the typed-response ExecuteUnderTenantLock path). The key
 		// is computed up-front via ResolveTenantLockKey — the SAME key ResolveCommand's Acquire caches
@@ -242,7 +257,7 @@ public abstract class BaseTool<T>(
 			McpToolExecutionLock.MarkInUse(tenantKey);
 			try {
 				(result, messagesToForward, correlationId) =
-					ResolveAndRun(options, tenantKey, configureCommand);
+					ResolveAndRun(options, tenantKey, configureCommand, soleWriteCall);
 			}
 			finally {
 				McpToolExecutionLock.MarkAvailable(tenantKey);
@@ -311,7 +326,8 @@ public abstract class BaseTool<T>(
 	// Messages come back for the caller to forward AFTER it releases, so stdio I/O never happens under a
 	// held lock; they are null when resolution failed and the command never ran.
 	private (CommandExecutionResult Result, IReadOnlyList<LogMessage> Messages, string CorrelationId)
-		ResolveAndRun<TCommand>(T options, string tenantKey, Action<TCommand> configureCommand)
+		ResolveAndRun<TCommand>(T options, string tenantKey, Action<TCommand> configureCommand,
+			bool soleWriteCall = false)
 		where TCommand : Command<T> {
 		TCommand resolvedCommand;
 		try {
@@ -352,7 +368,7 @@ public abstract class BaseTool<T>(
 		}
 
 		configureCommand?.Invoke(resolvedCommand);
-		return RunCommandUnderHeldLock(resolvedCommand, options, tenantKey);
+		return RunCommandUnderHeldLock(resolvedCommand, options, tenantKey, soleWriteCall);
 	}
 
 	/// <summary>
@@ -506,20 +522,26 @@ public abstract class BaseTool<T>(
 		return result;
 	}
 
+	// The diagnostic beside a recorded site response: its side effect is none only when the refusal proves the
+	// call applied nothing. No site response, no diagnostic.
+	private static DataWriteDiagnostic SiteRefusalDiagnostic((SiteResponse Response, bool NothingApplied) refusal) =>
+		refusal.Response is null ? null : DataWriteDiagnostic.ForSiteRefusal(null, refusal.NothingApplied);
+
 	// Executes command.Execute assuming the caller ALREADY holds the per-tenant execution lock for
 	// tenantKey and has marked the in-flight guard (FR-05/FR-08). Returns the execution result plus the
 	// messages to forward AFTER the lock is released (the caller performs the stdio-I/O forwarding outside
 	// the lock). Never takes the lock or the in-use markers itself, so it composes with both the
 	// reserve-before-Acquire generic path (review #5) and the injected/direct ExecuteLocked entry.
 	private (CommandExecutionResult Result, IReadOnlyList<LogMessage> Messages, string CorrelationId)
-		RunCommandUnderHeldLock(Command<T> command, T options, string tenantKey) {
+		RunCommandUnderHeldLock(Command<T> command, T options, string tenantKey, bool soleWriteCall = false) {
 		string correlationId = Guid.NewGuid().ToString("N")[..12];
 		dbOperationLogContextAccessor?.ClearLastCompletedPath();
 		bool previousPreserveMessages = logger.PreserveMessages;
 		logger.PreserveMessages = true;
-		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin();
+		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin(soleWriteCall);
 		try {
 			int exitCode = command.Execute(options);
+			(SiteResponse Response, bool NothingApplied) refusal = siteResponses.LastRefusal;
 			IReadOnlyList<LogMessage> flushedMessages = McpPassthroughRedaction.SanitizeAndRedact(
 				logger.FlushAndSnapshotMessages(clearMessages: true), tenantKey);
 			CommandExecutionResult executionResult = new(
@@ -529,7 +551,8 @@ public abstract class BaseTool<T>(
 				CorrelationId: correlationId) {
 				// Only a failed call reports what the site answered; a refusal the command recovered from is
 				// not the outcome of a call that succeeded.
-				SiteResponse = exitCode == 0 ? null : siteResponses.Last
+				SiteResponse = exitCode == 0 ? null : refusal.Response,
+				Diagnostic = exitCode == 0 ? null : SiteRefusalDiagnostic(refusal)
 			};
 			return (executionResult, flushedMessages, correlationId);
 		}
@@ -538,9 +561,10 @@ public abstract class BaseTool<T>(
 				logger.FlushAndSnapshotMessages(clearMessages: true), tenantKey)];
 			// FR-11 (ENG-93208): scrub the exception chain ONLY on a passthrough request (same tenant-key
 			// signal RedactForPassthrough uses). The trusted stdio / -e path keeps full-fidelity -1 text.
+			(SiteResponse Response, bool NothingApplied) refusal = siteResponses.LastRefusal;
 			CommandExecutionResult executionResult = CommandExecutionResult.FromException(
 				e, priorLogs, correlationId, redactSensitive: McpPassthroughRedaction.IsPassthroughKey(tenantKey))
-				with { SiteResponse = siteResponses.Last };
+				with { SiteResponse = refusal.Response, Diagnostic = SiteRefusalDiagnostic(refusal) };
 			return (executionResult, priorLogs, correlationId);
 		}
 		finally {

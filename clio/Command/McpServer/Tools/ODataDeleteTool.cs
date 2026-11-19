@@ -85,11 +85,18 @@ public sealed class ODataDeleteTool(
 		//core-rules promises - refusals and validation failures included.
 		string correlationId = correlationIds.New();
 		ODataWriteResponse result = DeleteCore(args, out bool attempted, out bool received);
-		return result with {
-			CorrelationId = correlationId,
-			Diagnostic = result.Plan is not null ? null : DataWriteDiagnostic.Create(DeleteVerb, args.Entity, null,
-				attempted, received, result.Success, result.Error)
-		};
+		DataWriteDiagnostic diagnostic = result.Plan is not null ? null : DataWriteDiagnostic.Create(DeleteVerb,
+			args.Entity, null, attempted, received, result.Success, result.Error);
+		// With one id and no cascade the DELETE is the call's sole write: before it only the existence read runs,
+		// a single id gets one pass so it is sent once with one attempt, and after its refusal only the
+		// diagnosis reads run. Its site response is copied from that DELETE alone, so a refusal without
+		// processing proves nothing was deleted. With ids a refused id is sent again in a later pass, and with
+		// cascade owned rows go first, so neither is proven.
+		if (diagnostic is not null && !args.Cascade && !string.IsNullOrWhiteSpace(args.Id)
+			&& result.SiteResponse is { } refusal && SiteHttpResponse.RefusesWithoutProcessing(refusal.Status)) {
+			diagnostic = diagnostic.AsRefusedWithoutProcessing();
+		}
+		return result with { CorrelationId = correlationId, Diagnostic = diagnostic };
 	}
 
 	private ODataWriteResponse DeleteCore(ODataDeleteArgs args, out bool attempted, out bool received) {
@@ -297,9 +304,14 @@ public sealed class ODataDeleteTool(
 		RecordDeleteDiagnosis diagnosis = service.Diagnose(entity, id, DiagnosisRequestMs, DiagnosisStop(callDeadline));
 		return new ODataDeleteItemResult(id, false, outcome.Error, DeleteRefusalText.Explain(entity, id, outcome, diagnosis),
 			diagnosis.Referencing.Count > 0 ? diagnosis.Referencing : null, removed) {
-			SiteResponse = outcome.SiteResponse
+			SiteResponse = outcome.SiteResponse,
+			Diagnostic = UnprovenItemRefusal(outcome.SiteResponse)
 		};
 	}
+
+	// An item's refusal never proves it applied nothing; see ODataDeleteItemResult.Diagnostic.
+	private static DataWriteDiagnostic? UnprovenItemRefusal(SiteResponse? siteResponse) =>
+		siteResponse is null ? null : DataWriteDiagnostic.ForSiteRefusal(null, false);
 
 	// The id the caller passed decides the shape, so `id` with an empty `ids: []` still answers like a single.
 	private static ODataWriteResponse BuildDeleteResponse(ODataDeleteArgs args, List<ODataDeleteItemResult> results) {
@@ -428,7 +440,8 @@ public sealed class ODataDeleteTool(
 		return new ODataDeleteItemResult(target.Id, false,
 			$"cascade stopped: owned row {child.Entity}({child.Id}) was not deleted, so {target.Entity}({target.Id}) "
 			+ $"was left in place: {reason}", null, plan.Referencing, (cascadeDeleted.Count > 0 ? cascadeDeleted : null)) {
-			SiteResponse = outcome.SiteResponse
+			SiteResponse = outcome.SiteResponse,
+			Diagnostic = UnprovenItemRefusal(outcome.SiteResponse)
 		};
 	}
 
@@ -713,6 +726,11 @@ public sealed record ODataDeleteItemResult(
 	[JsonPropertyName("site-response"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[Description("What the Creatio site itself answered to the refused DELETE (of this record, or of the owned row that stopped the cascade): status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
 	public SiteResponse? SiteResponse { get; init; }
+
+	/// <summary>Beside <see cref="SiteResponse"/>: this record's side effect, always unknown in a batch.</summary>
+	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Present beside site-response. side-effect is always unknown for an item: with ids a refused DELETE is sent again in a later pass, and with cascade owned rows may already be gone. A single id without cascade reports its proven side effect in the top-level diagnostic instead.")]
+	public DataWriteDiagnostic? Diagnostic { get; init; }
 }
 
 /// <summary>What a dry run found for one id.</summary>

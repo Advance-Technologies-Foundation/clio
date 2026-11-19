@@ -394,7 +394,14 @@ public sealed class CreateBusinessProcessService(
 		string requestBody = new JsonObject { ["request"] = descriptor }.ToJsonString();
 		logger.WriteInfo($"Building process '{descriptor["name"]}' on '{environmentName}'...");
 
-		SiteHttpResponse answer = SiteCall.Post(client, url, requestBody);
+		SiteHttpResponse answer = SiteCall.Post(client, url, requestBody, maxAttempts: BuildProcessAttempts);
+		if (answer.IsRefusedWithoutProcessing) {
+			// Read before the body: the page that comes with such a refusal says nothing about the process, and the
+			// status alone proves BuildProcess did not run.
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, BuildProcessAttempts);
+			throw new InvalidOperationException($"The environment refused BuildProcess without processing it (HTTP "
+				+ $"{answer.StatusCode}), so the process was NOT created. Check the user's sign-in and rights.");
+		}
 		try {
 			return ReadBuildProcessAnswer(answer.Body);
 		}
@@ -404,6 +411,9 @@ public sealed class CreateBusinessProcessService(
 			throw;
 		}
 	}
+
+	// BuildProcess is sent once and never retried: a retry after a timeout could create the process twice.
+	private const int BuildProcessAttempts = 1;
 
 	private static CreateBusinessProcessResult ReadBuildProcessAnswer(string responseBody) {
 		// The response is parsed inside a try, for the reason ParseOperations just below parses the REQUEST inside

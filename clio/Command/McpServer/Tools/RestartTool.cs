@@ -49,7 +49,7 @@ public class RestartTool(
 		SharedFileResource = McpToolSharedFileResource.None,
 		StartsOperation = true)]
 	[McpServerTool(Name = RestartByEnvironmentNameToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id: the note says whether the restart request was already accepted (then only the readiness wait continues) or is not yet confirmed, and either keeps running server-side. restart-status reports requestfailed when the request itself failed - no restart happened: ask the user, then retry once. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead. If YOUR client stops waiting first (for example 'Request timed out'), the restart and its readiness wait keep running too: do NOT restart again - poll restart-status. If the instance refuses the restart request with a 4xx status (no rights, an unknown route), the call fails with exit-code 1, nothing was restarted, and the result carries the instance's answer as site-response; a 5xx answer is reported as a warning that the restart is not confirmed.")]
+	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id: the note says whether the restart request was already accepted (then only the readiness wait continues) or is not yet confirmed, and either keeps running server-side. restart-status reports requestfailed when the request itself failed - no restart is known to have happened: ask the user, then retry once. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead. If YOUR client stops waiting first (for example 'Request timed out'), the restart and its readiness wait keep running too: do NOT restart again - poll restart-status. If the instance refuses the restart request with a 4xx status (no rights, an unknown route), the call fails with exit-code 1 and carries the instance's answer as site-response, with diagnostic.side-effect none (nothing was restarted) only when the request went once and was refused with 401, 403, 405, 413, 414, 415 or 431; a 5xx answer is reported as a warning that the restart is not confirmed.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
 		[Description("Target Environment name to restart")] [Required] string environmentName,
 		[DefaultValue(true)] [Description("Wait after the restart until the instance answers an authenticated application-layer round-trip (not merely the liveness health-check ping); default true")] bool waitReady = true,
@@ -95,7 +95,7 @@ public class RestartTool(
 		SharedFileResource = McpToolSharedFileResource.None,
 		StartsOperation = true)]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note saying whether the restart request was already accepted or is not yet confirmed; either keeps running server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); check that the environment answers with describe-environment (through clio-run), or use restart-by-environment-name when you need a pollable restart. If the instance refuses the restart request with a 4xx status (no rights, an unknown route), the call fails with exit-code 1, nothing was restarted, and the result carries the instance's answer as site-response; a 5xx answer is reported as a warning that the restart is not confirmed.")]
+	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note saying whether the restart request was already accepted or is not yet confirmed; either keeps running server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); check that the environment answers with describe-environment (through clio-run), or use restart-by-environment-name when you need a pollable restart. If the instance refuses the restart request with a 4xx status (no rights, an unknown route), the call fails with exit-code 1 and carries the instance's answer as site-response, with diagnostic.side-effect none (nothing was restarted) only when the request went once and was refused with 401, 403, 405, 413, 414, 415 or 431; a 5xx answer is reported as a warning that the restart is not confirmed.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
@@ -161,7 +161,8 @@ public class RestartTool(
 		global::ModelContextProtocol.Server.McpServer server, RequestContext<CallToolRequestParams> requestContext,
 		CancellationToken cancellationToken) {
 		if (!waitReady) {
-			return InternalExecute<RestartCommand>(options);
+			// A restart call sends one write, the restart request; the readiness wait only reads.
+			return InternalExecute<RestartCommand>(options, soleWriteCall: true);
 		}
 
 		// The operation is begun BEFORE the restart request, and the request runs INSIDE the deadline race (ENG-102333).
@@ -199,7 +200,7 @@ public class RestartTool(
 		string tenantKey, string operationId, RestartRequestPhase requestPhase) {
 		CommandExecutionResult requestResult;
 		try {
-			requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options));
+			requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options), soleWriteCall: true);
 		} catch (Exception) {
 			registry.FinishRequestFailed(operationId, 1);
 			throw;
@@ -308,8 +309,8 @@ public class RestartTool(
 			? " Whether this restart happened is unknown, and nothing here will report it: do not assume new code is "
 			  + "loaded - an instance that answers proves nothing, because it also answers when the request failed and "
 			  + "it never went down. Ask the user before restarting again."
-			: " A request that fails is reported there as requestfailed: no restart happened, so ask the user, then "
-			  + "retry once.")
+			: " A request that fails is reported there as requestfailed: no restart is known to have happened, so ask "
+			  + "the user, then retry once.")
 		+ $" Do NOT retry {toolName}.";
 
 	// restart-status resolves its tenant key from a REQUIRED environment name; the credentials path has

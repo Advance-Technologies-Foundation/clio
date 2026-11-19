@@ -359,11 +359,11 @@ internal class PackageInstallerTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("A 4xx with no service verdict is a refusal: the request never reached the installer")]
-	public void Install_ShouldReportARefusal_WhenA4xxAnswersWithNoVerdict() {
+	[Description("A 403 with no service verdict refused the install request without processing it: the package was not installed, yet the upload before it keeps the call's side effect unknown")]
+	public void Install_ShouldSayNotInstalled_WhenA403RefusesWithNoVerdict() {
 		// Arrange
 		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 403);
-		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
 
 		// Act
 		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
@@ -371,9 +371,28 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		// Assert
 		result.Should().BeFalse();
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(403, null, null, SiteResponse.EmptyBody));
+		capture.LastProvesNothingApplied.Should().BeFalse(
+			because: "the upload and backup wrote before the install request, so the call did write something");
 		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
-			line.Contains("refused the installation request with HTTP 403", StringComparison.Ordinal)
-			&& line.Contains("nothing was installed", StringComparison.Ordinal)));
+			line.Contains("refused the installation request without processing it (HTTP 403)", StringComparison.Ordinal)
+			&& line.Contains("the package was not installed", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A 404 with no service verdict may come from the installer itself, so it does not prove nothing was installed")]
+	public void Install_ShouldNotClaimNotInstalled_WhenA404RefusesWithNoVerdict() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 404);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.Contains("refused the installation request with HTTP 404", StringComparison.Ordinal)
+			&& line.Contains("which does not prove nothing was installed", StringComparison.Ordinal)));
 	}
 
 	[Test]

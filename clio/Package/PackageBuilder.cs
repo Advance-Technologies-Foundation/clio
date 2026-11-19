@@ -64,6 +64,10 @@
 		#region Constants: Private
 
 		private const int CompilationSettleSeconds = 5;
+
+		// The package build request is sent once, with no retry, on both send paths; it is compile-creatio's one
+		// write, which the tool declares.
+		private const int CompileRequestAttempts = 1;
 		private const int CompilationTimeoutMinutes = 10;
 
 		#endregion
@@ -169,13 +173,14 @@
 					CompileWithPolling(fullBuildPackageUrl, requestData, safePackageName, waitOptions, suggestWait: force);
 				} else {
 					using IOwnedApplicationClient applicationClient = CreateClient();
-					SiteHttpResponse answer = SiteCall.Post(applicationClient, fullBuildPackageUrl, requestData);
+					SiteHttpResponse answer = SiteCall.Post(applicationClient, fullBuildPackageUrl, requestData,
+						maxAttempts: CompileRequestAttempts);
 					string responseBody = answer.Body;
 					PackageBuildResult verdict = PackageBuildResultParser.IsUnrecognizedBody(responseBody)
 						? null
 						: PackageBuildResultParser.TryParseResponse(responseBody);
 					if (verdict is not { Success: true }) {
-						SiteResponseCapture.RecordRefusal(answer);
+						SiteResponseCapture.RecordRefusalOfSoleWrite(answer, CompileRequestAttempts);
 					}
 					ThrowIfUnrecognizedBody(safePackageName, responseBody);
 					ApplyVerdict(new BuildVerdictEvidence(safePackageName, verdict, History: null,
@@ -249,7 +254,7 @@
 		private bool TryConcludeOnAnswer(AnsweredBuild answered, CompilationProgress progress, Action endMonitoring) {
 			if (PackageBuildResultParser.IsUnrecognizedBody(answered.Body)) {
 				endMonitoring();
-				SiteResponseCapture.RecordRefusal(answered.Answer);
+				SiteResponseCapture.RecordRefusalOfSoleWrite(answered.Answer, CompileRequestAttempts);
 				ThrowIfUnrecognizedBody(answered.PackageName, answered.Body);
 			}
 			PackageBuildResult response = PackageBuildResultParser.TryParseResponse(answered.Body);
@@ -263,7 +268,7 @@
 			if (response is not { Success: true }) {
 				// The site's own answer is the verdict here (a refusal, or a body without one), so it is what a
 				// failed call reports as the site's; a history-only verdict below records nothing.
-				SiteResponseCapture.RecordRefusal(answered.Answer);
+				SiteResponseCapture.RecordRefusalOfSoleWrite(answered.Answer, CompileRequestAttempts);
 			}
 			ApplyVerdict(new BuildVerdictEvidence(answered.PackageName, response, progress.Snapshot(),
 				CompletionInferred: false, Waited: answered.Waited, SuggestWait: answered.SuggestWait));
@@ -520,7 +525,8 @@
 			async Task<SiteHttpResponse> SendCompilationRequestAsync(CancellationToken cancellationToken) {
 				using IOwnedApplicationClient client = CreateClient();
 				using HttpResponseMessage response = await client.ExecutePostRequestAsync(
-					url, requestData, Timeout.Infinite, cancellationToken: cancellationToken).ConfigureAwait(false);
+					url, requestData, Timeout.Infinite, maxAttempts: CompileRequestAttempts,
+					cancellationToken: cancellationToken).ConfigureAwait(false);
 				string body = response.Content is null
 					? null
 					: await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

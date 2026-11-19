@@ -762,11 +762,14 @@ public sealed class PageSyncTool(
 			(string metaFilePath, bool refreshBaseline, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
 			PageUpdateResponse updateResponse;
-			// A capture of this page's own: the site's answer to one page must not be reported on another.
-			using (SiteResponseCapture.Scope pageSiteResponse = SiteResponseCapture.Begin()) {
+			// A capture of this page's own: the site's answer to one page must not be reported on another. A page
+			// gets one write, its save, as in update-page.
+			using (SiteResponseCapture.Scope pageSiteResponse = SiteResponseCapture.Begin(soleWriteCall: true)) {
 				opOptions.UpdateCommand.TryUpdatePage(updateOptions, out updateResponse);
-				if (updateResponse is { Success: false, SiteResponse: null }) {
-					updateResponse.SiteResponse = pageSiteResponse.Last;
+				(SiteResponse refusal, bool nothingApplied) = pageSiteResponse.LastRefusal;
+				if (refusal is not null && updateResponse is { Success: false, SiteResponse: null }) {
+					updateResponse.SiteResponse = refusal;
+					updateResponse.Diagnostic = DataWriteDiagnostic.ForSiteRefusal(null, nothingApplied);
 				}
 			}
 			string outcomeBaselineWarning = PageBaselineGuard.ForSaveOutcome(baselineWarning, updateOptions, updateResponse.Success);
@@ -787,6 +790,7 @@ public sealed class PageSyncTool(
 						validationResult, opOptions.EnvironmentName, page.SchemaName),
 					Error = updateResponse.Error,
 					SiteResponse = updateResponse.SiteResponse,
+					Diagnostic = updateResponse.Diagnostic,
 					Conflict = updateResponse.Conflict,
 					ConflictDetails = updateResponse.ConflictDetails,
 					ConflictCheck = updateResponse.ConflictCheck
@@ -1436,6 +1440,12 @@ public sealed class PageSyncPageResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[System.ComponentModel.Description("What the Creatio site itself answered to this page's failed save: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
 	public SiteResponse SiteResponse { get; init; }
+
+	/// <summary>Beside <see cref="SiteResponse"/>: whether the refusal proves this page's save applied nothing.</summary>
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[System.ComponentModel.Description("Present beside site-response. side-effect is none only when the site refused this page's save without processing it (HTTP 401, 403, 405, 413, 414, 415 or 431); the save is the only write for a page, so nothing was applied to it. Otherwise unknown.")]
+	public DataWriteDiagnostic Diagnostic { get; init; }
 
 	[JsonPropertyName("resources-registered")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

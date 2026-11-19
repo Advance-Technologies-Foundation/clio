@@ -1635,15 +1635,18 @@
 		private bool TrySaveSchema(JObject schemaToSave, PageUpdateOptions options, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			options.SaveOutcomeUnknown = true;
+			// The save is the only write an update-page call sends: everything before it reads, the cache reset
+			// and the checksum read run only after it succeeded, and a refused save ends the call. So its refusal
+			// is recorded as the refusal of the call's sole write.
 			(JObject saveResponse, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(
-				_applicationClient, saveUrl, schemaToSave.ToString(Formatting.None));
+				_applicationClient, saveUrl, schemaToSave.ToString(Formatting.None), soleWrite: true);
 			options.SaveOutcomeUnknown = false;
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
 				TryResetScriptCache();
 				response = null;
 				return true;
 			}
-			SiteResponseCapture.RecordRefusal(answer);
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, PageSchemaMetadataHelper.DesignerRequestAttempts);
 			response = new PageUpdateResponse {
 				Success = false,
 				Error = BuildSaveErrorMessage(saveResponse)

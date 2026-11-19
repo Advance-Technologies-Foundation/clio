@@ -244,4 +244,23 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	/// <summary>Whether the status is known and outside the 2xx range.</summary>
 	public bool IsKnownFailureStatus => StatusCode is int status && status is < 200 or > 299;
 
+	/// <summary>
+	/// Whether the status is one with which HTTP defines the server as refusing to process the request at all:
+	/// 401 (RFC 9110 15.5.2: "the request has not been applied"), 403 ("refuses to fulfill it"), 405, 413, 414 and
+	/// 415 ("refusing to process" or "to service" the request) and 431 (RFC 6585: "unwilling to process the
+	/// request").
+	/// </summary>
+	/// <remarks>
+	/// Nothing else qualifies. 400, 404, 409 and 422 can come from the handler after it started; a 3xx can follow
+	/// a request the server did process (a 303 or 302 after a POST); a 5xx can come from a gateway after the
+	/// write landed. Whether a refusal with one of these statuses proves nothing was written also depends on
+	/// what the call sent before it; see <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>.
+	/// </remarks>
+	public bool IsRefusedWithoutProcessing => RefusesWithoutProcessing(StatusCode);
+
+	/// <summary>Whether <paramref name="status"/> is one of the statuses <see cref="IsRefusedWithoutProcessing"/>
+	/// accepts.</summary>
+	/// <param name="status">An HTTP status, or <see langword="null"/>.</param>
+	public static bool RefusesWithoutProcessing(int? status) => status is 401 or 403 or 405 or 413 or 414 or 415 or 431;
+
 }

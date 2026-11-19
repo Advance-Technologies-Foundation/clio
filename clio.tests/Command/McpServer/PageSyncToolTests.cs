@@ -94,6 +94,39 @@ public sealed class PageSyncToolTests {
 			SiteResponse.JsonBody));
 		response.Pages[1].Success.Should().BeTrue();
 		response.Pages[1].SiteResponse.Should().BeNull(because: "the first page's refusal must not reach the second");
+		response.Pages[0].Diagnostic!.SideEffect.Should().Be("none",
+			because: "a page's save is its one write, and a 403 refused it without processing it");
+		response.Pages[1].Diagnostic.Should().BeNull(because: "the diagnostic goes only beside a site response");
+	}
+
+	[TestCase(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights\"}}", "none",
+		TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsRefusedWith403")]
+	[TestCase(413, "<html>Request Entity Too Large</html>", "none",
+		TestName = "SyncPages_ShouldReportSideEffectNone_WhenThePageSaveIsTooLarge")]
+	[TestCase(200, "{\"success\":false,\"errorInfo\":{\"message\":\"Schema is locked\"}}", "unknown",
+		TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenTheSaveRefusesInA200Body")]
+	[TestCase(502, "", "unknown", TestName = "SyncPages_ShouldReportSideEffectUnknown_WhenAGatewayAnswersTheSave")]
+	[Category("Unit")]
+	[Description("Through the real update-page save: a page's save is its one write, so only a refusal without processing proves the page applied nothing")]
+	public async Task SyncPages_ShouldReportThePagesProvenSideEffect(int status, string body, string sideEffect) {
+		// Arrange
+		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithSaveAnswer(new SiteHttpResponse(status, body));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new("dev", [new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
+			Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse();
+		response.Pages[0].SiteResponse!.Status.Should().Be(status);
+		response.Pages[0].Diagnostic!.SideEffect.Should().Be(sideEffect);
+		System.Text.Json.JsonSerializer.Serialize(response.Pages[0]).Should().Contain("\"diagnostic\":{");
 	}
 
 	[TestCase(200, "{\"success\":false,\"errorInfo\":{\"message\":\"Schema is locked by another user\"}}",

@@ -170,6 +170,32 @@ public sealed class ODataUpdateToolTests {
 		response.SiteResponse.Should().BeEquivalentTo(new SiteResponse(status, null, null, kind));
 	}
 
+	[TestCase(403, "", "none", TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAn403")]
+	[TestCase(401, "<html>Sign in</html>", "none", TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAn401Page")]
+	[TestCase(403, "{\"error\":{\"code\":\"\",\"message\":\"No rights to edit\"}}", "none",
+		TestName = "Update_ShouldReportSideEffectNone_WhenThePatchIsRefusedWithAnODataError403")]
+	[TestCase(404, "", "unknown", TestName = "Update_ShouldReportSideEffectUnknown_WhenThePatchIsAnswered404")]
+	[TestCase(400, "{\"error\":{\"code\":\"\",\"message\":\"Bad value\"}}", "unknown",
+		TestName = "Update_ShouldReportSideEffectUnknown_WhenThePatchIsAnswered400")]
+	[TestCase(503, "", "unknown", TestName = "Update_ShouldReportSideEffectUnknown_WhenThePatchIsAnswered503")]
+	[Category("Unit")]
+	[Description("The PATCH is odata-update's one write, sent once: a refusal without processing proves nothing was written")]
+	public void Update_ShouldReportTheProvenSideEffect(int status, string body, string sideEffect) {
+		// Arrange
+		Fixture f = KeepingStatusFixture(new SiteHttpResponse(status, body));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.SiteResponse.Status.Should().Be(status);
+		response.Diagnostic!.SideEffect.Should().Be(sideEffect);
+		if (sideEffect == "none") {
+			response.Diagnostic.RetryAdvice.Should().Be(DataWriteDiagnostic.RefusedWithoutProcessingAdvice);
+		}
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("A successful PATCH carries no site response")]

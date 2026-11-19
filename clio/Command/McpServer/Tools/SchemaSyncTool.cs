@@ -1239,6 +1239,7 @@ public sealed class SchemaSyncTool(
 				Status = FailedStatus,
 				Error = SensitiveErrorTextRedactor.Redact(execution.CaughtException.Message),
 				SiteResponse = execution.SiteResponse,
+				Diagnostic = UnprovenSiteRefusal(execution.SiteResponse),
 				Messages = messages,
 				Attempts = attempts
 			};
@@ -1253,9 +1254,15 @@ public sealed class SchemaSyncTool(
 			Messages = messages,
 			Error = BuildOperationError(operationName, execution.ExitCode, messages),
 			SiteResponse = success ? null : execution.SiteResponse,
+			Diagnostic = success ? null : UnprovenSiteRefusal(execution.SiteResponse),
 			Attempts = attempts
 		};
 	}
+
+	// An operation sends several writes (create, save, DDL, publish, registration, seed rows) and may be retried,
+	// so a refusal never proves it applied nothing: the diagnostic beside its site response says unknown.
+	private static DataWriteDiagnostic? UnprovenSiteRefusal(SiteResponse? siteResponse) =>
+		siteResponse is null ? null : DataWriteDiagnostic.ForSiteRefusal(null, false);
 
 	private static string? TryGetLastErrorMessage(IReadOnlyList<LogMessage> messages) =>
 		messages
@@ -1705,6 +1712,12 @@ public sealed class SchemaSyncOperationResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[System.ComponentModel.Description("What the Creatio site itself answered to this failed operation: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
 	public SiteResponse? SiteResponse { get; init; }
+
+	/// <summary>Beside <see cref="SiteResponse"/>: the operation's side effect, always unknown.</summary>
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[System.ComponentModel.Description("Present beside site-response. side-effect is always unknown here: an operation sends several writes and may be retried, so a refusal does not prove nothing was applied. Read back before re-running it.")]
+	public DataWriteDiagnostic? Diagnostic { get; init; }
 
 	[JsonPropertyName("messages")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

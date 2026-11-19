@@ -977,6 +977,16 @@ public sealed class PageUpdateResponse : Clio.Common.ISiteResponseCarrier {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public Clio.Common.SiteResponse SiteResponse { get; set; }
 
+	/// <summary>
+	/// Beside <see cref="SiteResponse"/>: whether the site's refusal proves the save applied nothing
+	/// (<c>side-effect</c> <c>none</c>) or not (<c>unknown</c>). Absent whenever <see cref="SiteResponse"/> is.
+	/// </summary>
+	[DataMember(Name = "diagnostic", EmitDefaultValue = false)]
+	[JsonProperty("diagnostic", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Clio.Common.DataWriteDiagnostic Diagnostic { get; set; }
+
 	bool Clio.Common.ISiteResponseCarrier.ReportsFailure => !Success;
 
 	/// <summary>
@@ -1411,6 +1421,16 @@ public sealed class PageCreateResponse : Clio.Common.ISiteResponseCarrier {
 	[JsonPropertyName("site-response")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public Clio.Common.SiteResponse SiteResponse { get; set; }
+
+	/// <summary>
+	/// Beside <see cref="SiteResponse"/>: whether the site's refusal proves the save applied nothing
+	/// (<c>side-effect</c> <c>none</c>) or not (<c>unknown</c>). Absent whenever <see cref="SiteResponse"/> is.
+	/// </summary>
+	[DataMember(Name = "diagnostic", EmitDefaultValue = false)]
+	[JsonProperty("diagnostic", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Clio.Common.DataWriteDiagnostic Diagnostic { get; set; }
 
 	bool Clio.Common.ISiteResponseCarrier.ReportsFailure => !Success;
 	[DataMember(Name = "success")]

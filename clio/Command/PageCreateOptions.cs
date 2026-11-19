@@ -380,12 +380,13 @@ namespace Clio.Command {
 		private bool TrySaveSchema(JObject schemaToSave, out string error) {
 			error = null;
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
+			// The save is the page's one write, and its refusal ends the create.
 			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
-				url, schemaToSave.ToString(Formatting.None));
+				url, schemaToSave.ToString(Formatting.None), soleWrite: true);
 			if (response["success"]?.Value<bool>() ?? false) {
 				return true;
 			}
-			SiteResponseCapture.RecordRefusal(answer);
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, PageSchemaMetadataHelper.DesignerRequestAttempts);
 			error = BuildSaveErrorMessage(response);
 			return false;
 		}

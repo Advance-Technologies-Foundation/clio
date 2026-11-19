@@ -391,8 +391,9 @@ public sealed class CompileCreatioTool(
 		bool previousPreserveMessages = logger.PreserveMessages;
 		logger.PreserveMessages = true;
 		// Self-captured like the log: the site's answer to a failed build is reported on this result, as
-		// RunCommandUnderHeldLock does for the tools that run through it.
-		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin();
+		// RunCommandUnderHeldLock does for the tools that run through it. A compile sends one write, the build
+		// request: the history and status reads around it only read.
+		using SiteResponseCapture.Scope siteResponses = SiteResponseCapture.Begin(soleWriteCall: true);
 		try
 		{
 			preflight?.Invoke();
@@ -403,7 +404,8 @@ public sealed class CompileCreatioTool(
 			// self-managed-capture tool must do it too. No-op off passthrough.
 			CommandExecutionResult result = new(exitCode,
 				[.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey)]) {
-				SiteResponse = exitCode == 0 ? null : siteResponses.Last
+				SiteResponse = exitCode == 0 ? null : siteResponses.Last,
+				Diagnostic = exitCode == 0 ? null : siteResponses.LastDiagnostic
 			};
 			logger.ClearMessages();
 			return result;
@@ -414,7 +416,8 @@ public sealed class CompileCreatioTool(
 				.. McpPassthroughRedaction.SanitizeAndRedact([.. logger.LogMessages], tenantKey),
 				new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))];
 			CommandExecutionResult result = new(1, logMessages) {
-				SiteResponse = siteResponses.Last
+				SiteResponse = siteResponses.Last,
+				Diagnostic = siteResponses.LastDiagnostic
 			};
 			logger.ClearMessages();
 			return result;

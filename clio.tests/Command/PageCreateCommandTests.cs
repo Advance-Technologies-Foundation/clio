@@ -188,6 +188,30 @@ public sealed class PageCreateCommandTests
 			because: "the failed create reports what the site answered to its save");
 	}
 
+	[TestCase(403, """{"success": false, "errorInfo": {"message": "No rights"}}""", true, true,
+		TestName = "TryCreatePage_ShouldProveNothingSaved_WhenTheDeclaredSaveIsRefusedWithAJson403")]
+	[TestCase(403, "<html>Forbidden</html>", true, true,
+		TestName = "TryCreatePage_ShouldProveNothingSaved_WhenTheDeclaredSaveIsRefusedWithAPage")]
+	[TestCase(500, "", true, false, TestName = "TryCreatePage_ShouldNotProve_WhenTheSaveIsAnswered500")]
+	[TestCase(403, "", false, false, TestName = "TryCreatePage_ShouldNotProve_WhenTheCaptureIsNotDeclared")]
+	[Description("The save is create-page's one write: in its declared capture a refusal without processing proves nothing was saved")]
+	public void TryCreatePage_ShouldProveNothingSaved_OnlyWhenProven(int status, string body, bool declared, bool proves) {
+		// Arrange
+		PageCreateCommand command = KeepingStatusCommand(new SiteHttpResponse(200, TemplateSchemaAnswer),
+			new SiteHttpResponse(status, body));
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: declared);
+
+		// Act
+		bool result = false;
+		System.Action act = () => result = command.TryCreatePage(DemoPageOptions(), out _);
+
+		// Assert
+		act.Should().NotThrow();
+		result.Should().BeFalse();
+		capture.Last.Status.Should().Be(status);
+		capture.LastProvesNothingApplied.Should().Be(proves);
+	}
+
 	[Test]
 	public void TryCreatePage_ShouldRecordTheSiteAnswer_WhenTheTemplateLoadIsRefused() {
 		// Arrange
@@ -203,6 +227,8 @@ public sealed class PageCreateCommandTests
 		result.Should().BeFalse();
 		capture.Last.Should().BeEquivalentTo(new SiteResponse(403, "No rights to read the template", null,
 			SiteResponse.JsonBody));
+		capture.LastProvesNothingApplied.Should().BeFalse(
+			because: "only the save's refusal is recorded as the sole write's");
 	}
 
 	[Test]

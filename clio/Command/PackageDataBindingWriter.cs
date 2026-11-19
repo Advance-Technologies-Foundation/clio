@@ -296,6 +296,9 @@ internal sealed class PackageDataBindingWriter(
 			existingBindingUId.HasValue ? BindingChange.Refreshed : BindingChange.Created);
 	}
 
+	// The binding delete is sent once and never retried.
+	private const int DeleteBindingAttempts = 1;
+
 	/// <inheritdoc />
 	public void DeleteBinding(PackageRef package, string bindingName) {
 		string body = JsonSerializer.Serialize(new {
@@ -303,8 +306,11 @@ internal sealed class PackageDataBindingWriter(
 			packageSchemaDataName = bindingName
 		});
 		SiteHttpResponse response = SiteCall.Post(applicationClient,
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeletePackageSchemaData), body);
-		DataServiceResponse.ThrowIfUnsuccessful(response, "DeletePackageSchemaDataRequest");
+			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.DeletePackageSchemaData), body,
+			maxAttempts: DeleteBindingAttempts);
+		// The delete is the one write of delete-data-binding-db, which declares it; in another tool's longer
+		// sequence (remove-data-binding-row-db) that declaration is absent, so the refusal proves nothing there.
+		DataServiceResponse.ThrowIfUnsuccessful(response, "DeletePackageSchemaDataRequest", DeleteBindingAttempts);
 		WarnIfPackageFolderIsNotUpdated(package, bindingName, BindingChange.Removed);
 	}
 
