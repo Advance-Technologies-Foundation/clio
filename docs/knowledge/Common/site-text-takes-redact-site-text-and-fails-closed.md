@@ -11,7 +11,24 @@ applies-to:
   - clio/Command/PageSchemaMetadataHelper.cs
   - clio/Command/McpServer/Tools/ODataKeyedWrite.cs
   - clio/Command/McpServer/Tools/ODataCreateTool.cs
+  - clio/Command/PageDesignerHierarchyClient.cs
+  - clio/Command/PageUpdateOptions.cs
+  - clio/Command/PageCreateOptions.cs
+  - clio/Command/SchemaTemplateCatalog.cs
+  - clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs
+  - clio/Package/SelectQueryHelper.cs
+  - clio/Package/ServiceResponseJsonGuard.cs
+  - clio/Command/CompileConfigurationCommand.cs
+  - clio/Package/PackageBuildResult.cs
+  - clio/Package/PackageBuilder.cs
+  - clio/Package/InstallLogAnalyzer.cs
+  - clio/Package/BasePackageInstaller.cs
+  - clio/Command/CreateBusinessProcessCommand.cs
+  - clio/Command/ModifyBusinessProcessCommand.cs
+  - clio/Command/ProcessModel/ProcessDesignServerFault.cs
+  - clio/Command/CompileBusinessProcessCommand.cs
   - clio.tests/Common/SiteTextWiringTests.cs
+  - clio.tests/Common/SiteTextWritePathWiringTests.cs
   - clio.tests/Common/Fixtures/site-text-redaction-cases.json
 date: 2026-11-19
 ---
@@ -50,6 +67,24 @@ email templates, branding), the non-JSON preview inside `DescribeNonJsonResponse
 `DataWriteDiagnostic.message` and the refused delete's inner message. `SiteTextWiringTests` drives each path
 with a marker only `RedactSiteText` removes, and its source guard greps clio for every call of those
 extractors: a new call site fails the build until it has a wiring case and an entry in `KnownCallSites`.
+
+**The write paths** - the same rule, at the point each write tool reads the site's text: the designer and
+template refusals (`PageSchemaMetadataHelper.DescribeRefusal`, used by `PageDesignerHierarchyClient` and
+`SchemaTemplateCatalog`: update-page, sync-pages, get-page, create-page), `TryGetSchema` and
+`TryLoadTemplateLocalizableStrings`, the catalog's non-JSON preview, the entity-schema designer's
+`EnsureSuccess`, `SelectQueryHelper.DescribeServerFailure` and `ServiceResponseJsonGuard`'s body preview, the
+compile verdicts (compile-creatio's `ProceedResponse`, `ApplyEnvironmentVerdict` and history lines,
+`PackageBuilder.Fail`), the installer's `InstallLogAnalyzer.DescribeFailure` and invalid-archive message,
+`ProcessDesignServerFault.ReadServerText`, the create and modify process failures, and compile-business-process's
+fenced lines (`UntrustedText.FencedSiteText`). These texts become log lines as well as errors, and on stdio the
+returned log is deliberately not redacted again (`McpPassthroughRedaction` redacts only on passthrough), so the
+redaction at the read is the only one a stdio caller gets; `SiteTextWritePathWiringTests` asserts the marker in
+both the result and the log. `DescribeRefusal` reads only `errorInfo`'s code and message: the whole `errorInfo` used
+to be copied, so its `stackTrace` reached update-page's `error`. A compile diagnostic is redacted where it is
+rendered (`PackageBuildDiagnostic.WithSiteTextRedacted`), not in the parser, because compile-status already fences
+the history diagnostics it renders - the guard lists such parser calls as `rendered`. `ReadServerText` redacts
+before its cap; the WCF prefix `IsUnreadableRequest` looks for is prose no rule takes. Out of this rule by decision:
+the raw streamed installation log (`BasePackageInstaller.ListenForLogs`), a separate finding.
 
 **Fail closed** - `RedactSiteText` runs the cut, the whole Redact chain and every site rule inside ONE
 `ExecuteRegex` guard, so a `RegexMatchTimeoutException` in any of them returns `[redacted]` for the whole text:

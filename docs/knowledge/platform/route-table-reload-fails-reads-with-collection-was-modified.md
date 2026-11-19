@@ -22,7 +22,8 @@ error see an empty string. The two read it differently (PR #1782 review):
 `SelectQueryHelper.IsTransientServerFailure` looks in the unredacted raw body for `Collection was modified`
 ONLY — a permanent failure's stack trace can mention `CommandTimeout` or a deadlock handler, and the full
 marker list would re-send it three times — while `SelectQueryHelper.DescribeServerFailure` puts the raw
-body into the exception message through `UntrustedText.Fenced`, since it is server-authored and unbounded.
+body into the exception message through `UntrustedText.FencedSiteText`, since it is server-authored and unbounded
+(and a non-blank message through `RedactSiteText`; see `docs/knowledge/Common/site-text-takes-redact-site-text-and-fails-closed.md`).
 
 **Why it is this way** — the window is milliseconds long and clears on its own, so a bounded re-send of
 a read is the only fix on clio's side; a write must not be re-sent blindly.
