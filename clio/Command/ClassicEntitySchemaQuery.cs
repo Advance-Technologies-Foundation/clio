@@ -43,7 +43,7 @@ internal static class ClassicEntitySchemaQuery {
 
 	/// <summary>Selects the entity's <c>SysSchema</c> rows (UId + ExtendParent) by name and manager.</summary>
 	internal static JObject BuildSelectEntity(string entityName) => Query("SysSchema",
-		new JObject { ["UId"] = Column("UId"), ["ExtendParent"] = Column("ExtendParent") },
+		new JObject { ["UId"] = Column("UId"), [ExtendParentColumn] = Column(ExtendParentColumn) },
 		Group(("byName", Eq("Name", entityName, 1)), ("byManager", Eq("ManagerName", "EntitySchemaManager", 1))),
 		EntityRowCount);
 
@@ -57,6 +57,18 @@ internal static class ClassicEntitySchemaQuery {
 		Group(("byUId", InFilter("UId", uIds, 0))),
 		uIds.Count);
 
+	/// <summary>The <c>SysSchema</c> column that is <c>false</c> on a schema's base row and <c>true</c> on a replacing one.</summary>
+	internal const string ExtendParentColumn = "ExtendParent";
+
+	/// <summary>
+	/// The one rule for the base row among a schema name's <c>SysSchema</c> rows: the row whose
+	/// <see cref="ExtendParentColumn"/> is <c>false</c>. A missing or null value never counts as the base.
+	/// </summary>
+	/// <param name="rows">The rows, each selecting <see cref="ExtendParentColumn"/>.</param>
+	/// <returns>The base row, or <c>null</c> when no row is marked as the base.</returns>
+	internal static JToken FindBaseRow(IEnumerable<JToken> rows) =>
+		rows.FirstOrDefault(row => row[ExtendParentColumn]?.Value<bool?>() == false);
+
 	/// <summary>
 	/// Picks the base row (<c>ExtendParent == false</c>) UId from entity SysSchema rows. The base row — not a
 	/// replacing layer — is the stable migration unit; refusing to guess when it is absent avoids resolving the
@@ -66,7 +78,7 @@ internal static class ClassicEntitySchemaQuery {
 		if (rows.Count == 0) {
 			return (null, $"Entity '{entityName}' not found (ManagerName='EntitySchemaManager')");
 		}
-		JToken baseRow = rows.FirstOrDefault(row => row["ExtendParent"]?.Value<bool?>() == false);
+		JToken baseRow = FindBaseRow(rows);
 		if (baseRow is null) {
 			return (null,
 				$"Entity '{entityName}' metadata did not include a base row (ExtendParent=false); " +
