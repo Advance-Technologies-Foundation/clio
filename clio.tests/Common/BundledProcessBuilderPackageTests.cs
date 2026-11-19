@@ -72,7 +72,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>41aa113f</c>, the
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>13ab3dc4</c>, the
 	/// restamp commit of branch <c>feature/ENG-91849-timer-start-element</c>, which carries <c>main</c> at 1.6.6.186
 	/// (<c>4287d9cb</c>, the cut master bundles before this one), so the cut carries everything 1.6.6.186 carries and
 	/// the Timer start element.
@@ -196,7 +196,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"7EB24D580FF4A4F19FE26A29962612D07A5FA640CFEC83459681DDDBE23D554D";
+		"1134E0599441528DAE17C2C6F23D2E62856456F2BF16F7A192E9AC988430733E";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -237,9 +237,9 @@ public class BundledProcessBuilderPackageTests {
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
 	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
 	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
-	/// number from the package's restamp <c>41aa113f</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
+	/// number from the package's restamp <c>13ab3dc4</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
 	/// the check of kept timers before a modify save or an activation, the gate-3 fixes and the core-reuse changes, stored dates read as the scheduler reads them and the fixes of their review; both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
-	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c>, <c>24e2dfbb</c>, <c>4f338365</c>, <c>1313a72c</c> and <c>6ed95468</c>, reached only the author's own test stands.
+	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c>, <c>24e2dfbb</c>, <c>4f338365</c>, <c>1313a72c</c>, <c>6ed95468</c> and <c>41aa113f</c>, reached only the author's own test stands.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -247,7 +247,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "41aa113f05e1b9ca1e297d5e0f33ea417c46f9c4";
+	private const string ExpectedProducingCommit = "13ab3dc4feeb62aeed54356222f6c44bbae06236";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -273,7 +273,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795100366000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795101712000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -288,7 +288,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795100373000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795101719000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
