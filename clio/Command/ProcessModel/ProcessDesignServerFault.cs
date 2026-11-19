@@ -45,8 +45,8 @@ internal static class ProcessDesignServerFault {
 			if (string.IsNullOrWhiteSpace(text)) {
 				return null;
 			}
-			text = SensitiveErrorTextRedactor.RedactSiteText(SiteTextInput.ClampForRedaction(
-				text.Trim(), MaxServerTextLength * SiteTextInput.RedactionInputFactor)).Trim();
+			text = SensitiveErrorTextRedactor.RedactSiteText(SensitiveErrorTextRedactor.ClampAtBoundary(
+				text.Trim(), MaxServerTextLength * RedactionInputFactor)).Trim();
 			if (text.Length == 0) {
 				return null;
 			}
@@ -57,6 +57,9 @@ internal static class ProcessDesignServerFault {
 			return null;
 		}
 	}
+
+	// How much more of the fault than MaxServerTextLength the redaction reads.
+	private const int RedactionInputFactor = 8;
 
 	/// <summary>
 	/// True when <paramref name="serverText"/> is WCF's request-deserialization failure. WCF answers it when it

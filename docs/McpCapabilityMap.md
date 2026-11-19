@@ -356,18 +356,23 @@ preview of any non-JSON service body; the build verdict, diagnostics and history
 push-workspace (a reported file is named by its file name only, never its directories); the installation failure
 line and the invalid-archive message; the server's text in create-business-process, modify-business-process,
 modify-business-process-as-new-version, set-active-process-version and compile-business-process (fenced there as
-site text), its version and element names and each of its warnings; and the dynamic-case tools' answer messages
-and quoted bodies. The raw streamed installation log is not covered. **Not every field that carries a site's words is wired yet.** The
-remaining envelope readers (execute-esq's DataService failure, the web-service designer, sys-settings, the
-application, section and schema commands, odata-read's debug detail, and more) still pass the general redaction
-only. Each one is listed by file and member in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`,
-whose source guard fails the build on a new unlisted reader. clio's own error text, its log lines, and the
-serialized envelope `clio-run` returns pass the general redaction only by design. That redaction leaves relative
-paths and the database's sign-in phrases alone; keeps a four-part version unless it falls in a private address
-range with no version word before it (`version 10.0.0.1`, `Version=10.0.0.0` and `Creatio 8.1.0.5` stay, a bare
-`10.0.0.1` goes); and keeps a serialized envelope valid JSON for the escapes its tests cover (`\"`, `\u0022`, and
-an escaped backslash before the closing quote). Every redacted endpoint - a URI, a host and port, an IPv6 or a
-private IPv4 address - reads `[redacted-uri]`.
+site text), its version and element names and each of its warnings; and the
+dynamic-case tools' answer messages and quoted bodies. The raw streamed installation log is not covered. **Not
+every field that carries a site's words is wired yet.** The remaining envelope readers (execute-esq's DataService
+failure, the web-service designer, sys-settings, the ATF data provider, the application, section and schema
+commands, odata-read's debug detail, and more) still pass the general redaction only. Each one is listed by file
+and member in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`. Its source guard fails the
+build on a new unlisted reader OF THE SHAPES IT SCANS FOR: the site-error JSON names written as literals, members
+named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage` or decorated with a site-error JSON name (which makes
+`.ErrorMessage` one), those names in a property pattern, and constants that hold them. The scan is by name; it
+does not see a site's text read through a member of any other name, a property name built at run time, or a JSON
+path (`docs/knowledge/Common/site-text-takes-redact-site-text-and-fails-closed.md`). clio's own error text, its log lines, and the serialized envelope `clio-run` returns pass the
+general redaction only by design. That redaction leaves relative paths and the database's sign-in phrases alone;
+keeps a four-part version unless it falls in a private address range with no version word before it
+(`version 10.0.0.1`, `Version=10.0.0.0` and `Creatio 8.1.0.5` stay, a bare `10.0.0.1` goes); and keeps a
+serialized envelope valid JSON for the escapes its tests cover (`\"`, `\u0022`, and an escaped backslash before
+the closing quote). Every redacted endpoint - a URI, a host and port, an IPv6 or a private IPv4 address - reads
+`[redacted-uri]`.
 
 **Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
 failure is clio's own (validation, a refused precondition). The field is optional, so a caller that ignores it

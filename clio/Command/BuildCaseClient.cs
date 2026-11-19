@@ -195,8 +195,11 @@ public sealed class BuildCaseClient(
 	// the cap (a token straddling the cap is still recognized whole), on an input clamped as everywhere else. Every
 	// dynamic-case tool quotes it into its error and its log line, beside ReadServerText's already redacted text.
 	private static string SiteDetail(string responseBody) =>
-		Cap(SensitiveErrorTextRedactor.RedactSiteText(SiteTextInput.ClampForRedaction(
-			(responseBody ?? string.Empty).Trim(), MaxDetailLength * SiteTextInput.RedactionInputFactor)));
+		Cap(SensitiveErrorTextRedactor.RedactSiteText(SensitiveErrorTextRedactor.ClampAtBoundary(
+			(responseBody ?? string.Empty).Trim(), MaxDetailLength * RedactionInputFactor)));
+
+	// How much more of a body than MaxDetailLength the redaction reads.
+	private const int RedactionInputFactor = 8;
 
 	private static string Cap(string text) {
 		string trimmed = (text ?? string.Empty).Trim();

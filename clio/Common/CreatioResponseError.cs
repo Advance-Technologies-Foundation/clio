@@ -131,10 +131,11 @@ internal static partial class CreatioResponseError {
 		// REDACTED FIRST, then cut to the preview length: cutting first split a token or a quoted name at the cut, and
 		// the half left before it matched no rule ("…for user 'inven" kept "inven", a JWT kept its first segments).
 		// The text handed to the redaction is clamped to a multiple of the preview, as RedactUntrustedOrNull does, so
-		// a page-sized body does not run the chain over text the preview drops.
+		// a page-sized body does not run the chain over text the preview drops - at a word boundary, so the clamp
+		// cannot split a secret either.
 		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: "
 			+ Truncate(SensitiveErrorTextRedactor.RedactSiteText(
-				TextUtilities.TruncateWithoutSplittingSurrogatePair(body, PreviewLength * PreviewRedactionInputFactor)));
+				SensitiveErrorTextRedactor.ClampAtBoundary(body, PreviewLength * PreviewRedactionInputFactor)));
 	}
 
 	// The preview length of a non-JSON body, and how much longer the text handed to the redaction before the cut may

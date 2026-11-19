@@ -77,6 +77,9 @@ internal static class ServiceResponseJsonGuard
 	/// <summary>Upper bound on the response preview embedded in the error message.</summary>
 	private const int ResponsePreviewMaxLength = 200;
 
+	/// <summary>How much more of the body than <see cref="ResponsePreviewMaxLength"/> the redaction reads.</summary>
+	private const int PreviewRedactionInputFactor = 8;
+
 	/// <summary>UTF-8 byte-order mark, which <see cref="char.IsWhiteSpace(char)"/> does not report as whitespace.</summary>
 	private const char ByteOrderMark = '\uFEFF';
 
@@ -257,7 +260,7 @@ internal static class ServiceResponseJsonGuard
 	/// The body is the site's text, so it takes the site-text redaction
 	/// (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>), and BEFORE the line breaks are collapsed: the
 	/// site-text cut keys on the break before a stack frame. The input is clamped first to a multiple of the
-	/// cap (<see cref="SiteTextInput.ClampForRedaction"/>), so a page-sized body cannot time the chain out and lose the
+	/// cap (<see cref="SensitiveErrorTextRedactor.ClampAtBoundary"/>), so a page-sized body cannot time the chain out and lose the
 	/// preview, and the clamp never cuts a token in two.
 	/// </para>
 	/// </summary>
@@ -265,8 +268,8 @@ internal static class ServiceResponseJsonGuard
 	/// <returns>The preview to embed in the error message.</returns>
 	private static string BuildResponsePreview(string responseBody)
 	{
-		string redacted = SensitiveErrorTextRedactor.RedactSiteText(SiteTextInput.ClampForRedaction(
-			responseBody, ResponsePreviewMaxLength * SiteTextInput.RedactionInputFactor));
+		string redacted = SensitiveErrorTextRedactor.RedactSiteText(SensitiveErrorTextRedactor.ClampAtBoundary(
+			responseBody, ResponsePreviewMaxLength * PreviewRedactionInputFactor));
 		// Byte-order marks are trimmed alongside whitespace: char.IsWhiteSpace does not report a BOM, so a
 		// BOM-only body survives the IsNullOrWhiteSpace gate in Deserialize and would otherwise produce a
 		// preview made entirely of invisible characters.

@@ -32,7 +32,6 @@ applies-to:
   - clio/Command/ProcessModel/LayoutChangeRelay.cs
   - clio/Command/BuildCaseClient.cs
   - clio/Command/DynamicCaseService.cs
-  - clio/Common/SiteTextInput.cs
   - clio/Command/McpServer/Tools/CompileStatusTool.cs
   - clio.tests/Common/SiteTextWiringTests.cs
   - clio.tests/Common/SiteTextWritePathWiringTests.cs
@@ -76,16 +75,24 @@ with a marker only `RedactSiteText` removes. Its source guard reads clio's code 
 and on any line ending: every call of those extractors must be in `KnownCallSites`, and at a "call site" entry the
 variable the extractor writes to may be read only inside a `RedactSiteText` argument.
 
-**Not every reader is wired yet** - the same guard finds every DIRECT read of a site's error text (the
-`errorInfo`, `responseStatus`, `ExceptionMessage`, `errorMessage` and `innererror` names, the `.ErrorInfo`,
-`.ResponseStatus` and `.ExceptionMessage` members, `ProcessDesignServerFault.ServerSaid` and
-`ServerReportedFailureText.Describe`) and holds each one, by file and member, in `KnownSiteErrorReads`: wired
-through a checked extractor, "not text" when the name only classifies a failure, or KNOWN-UNWIRED "follow-up"
-for the remaining envelope readers, whose text passes `Redact` only until then (odata-read's `TryClassify` debug
-detail is the follow-up entry in `KnownCallSites`). The write-tool files are wired and may hold no follow-up entry.
-A new reader, or one more read in a listed member, fails the build. The scan sees those shapes only; a site's text
-read through a DTO member of another name (`.ErrorMessage` of the BuildProcess and package-build answers) is in
-the write-tool files, each with a behaviour case.
+**Not every reader is wired yet** - the same guard scans clio's code for DIRECT reads of a site's error text and
+holds each reading member, by file and member, in `KnownSiteErrorReads`: wired through a checked extractor,
+"not text" (a field-name set, a marker, a failure classifier, or a member of clio's own result type that shares a
+site-error name), or KNOWN-UNWIRED "follow-up" for the remaining envelope readers, whose text passes `Redact` only
+until then (odata-read's `TryClassify` debug detail is the follow-up entry in `KnownCallSites`). The write-tool and
+dynamic-case files are wired and may hold no follow-up entry. The scan sees:
+- the JSON names `errorInfo`, `responseStatus`, `ExceptionMessage`, `errorMessage`, `innererror` and
+  `internalexception` written as a literal outside a `[JsonPropertyName]`/`[JsonProperty]`/`[DataMember]` line;
+- a read of a member named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage`, or of ANY member a source
+  decorates with one of those JSON names, whatever its C# name - today that makes every `.ErrorMessage` a read;
+- one of those member names in a property pattern (`is { ErrorInfo: { } }`);
+- a reference to a constant or read-only field that holds one of those names (`InnerErrorMemberNames`);
+- `ProcessDesignServerFault.ServerSaid` and `ServerReportedFailureText.Describe`.
+
+A new read of one of those shapes in an unlisted member, or one more in a listed member, fails the build. The scan
+is by NAME, not by type, and does not see: a site's text read through a member of any other name that no clio
+source decorates with a site-error JSON name (an external library's DTO); a property name built at run time or
+read from a parameter; a JSON path such as `"errorInfo.message"`; or reflection and `dynamic`.
 
 **The write paths** - the same rule, at the point each write tool reads the site's text: the designer and
 template refusals (`PageSchemaMetadataHelper.DescribeRefusal`, used by `PageDesignerHierarchyClient` and
@@ -113,12 +120,9 @@ file to fix. An installation log tail is redacted with its lines apart and flatt
 never sees the line break before a stack frame. A designer refusal that redacts to nothing (only a stack trace) is
 no reason: the caller says its own sentence. A save refusal's `addonsErrors` item gives its code and message only,
 never its `stackTrace`. `ReadServerText` redacts before its cap; the WCF prefix `IsUnreadableRequest` looks for is
-prose no rule takes. The previews and quotes clamp their redaction input to 8x their cap (`SiteTextInput`), at the
-last whitespace or delimiter before the clamp, so a token the clamp would cut in two is dropped rather than shown as
-a head the redactor cannot recognize; the known edge is one run with no boundary longer than the clamp, kept whole
-(the preview's cap then shows its head). The guard also counts every read of a site answer's own `errorMessage`
-member (a DTO property decorated `[JsonPropertyName("errorMessage")]`), which the name scan cannot tell from clio's
-own result types. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
+prose no rule takes. The previews and quotes clamp their redaction input to 8x their cap with
+`SensitiveErrorTextRedactor.ClampAtBoundary`, the clamp the fenced rendering and `SiteResponse` use, so a token the
+clamp would cut in two is dropped rather than shown as a head the redactor cannot recognize. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
 and `ReportLocallyModifiedSchemas`' raw log lines), a separate finding.
 
 **Fail closed** - `RedactSiteText` runs the cut, the whole Redact chain and every site rule inside ONE
@@ -133,16 +137,44 @@ words around a scheme (`The bearer token expired`, `WWW-Authenticate: Bearer rea
 OAuth`, `negotiate TLS1.2`, `basic 8.1.0.5`), a version after a version word (`Version=10.0.0.0`), a count line
 (`Failed:22`, `Total:443`), and `file.js:42:13`. `clio.tests/Common/Fixtures/site-text-redaction-cases.json` pins
 350 invented inputs from the Accelerator host lane: A 46 and B 167 rows name the secret core that must go, C 112
-rows must stay, and D 25 rows are what the host removes and clio keeps (its documented trades, and the 12 rows
-clio declines by choice); every mustStay is the phrase that carries the reason. Its rule-9 SQL rows wait for PR B,
+rows must stay (case-357 keeps only "bearer": clio is stricter there, as the Bearer floor requires), and D 25 rows
+are what the host removes and clio keeps (its documented trades, and the 12 rows clio declines by choice); every mustStay is the phrase that carries the reason. Its rule-9 SQL rows wait for PR B,
 and its header and safety test forbid any real host, login, password, key, token or public IPv4 address.
 
-**What a scheme credential is** - the WHOLE run after Basic, NTLM, Negotiate or Bearer that the old
-`\bBearer\s+[^\s,;"']+` rule removed, so nothing it removed survives (a test runs master's Bearer cases through
-every entry point). The run takes a backslash only as a whole JSON escape unit and may be quoted with `"`, `'`,
-`\"`, `\u0022` or `\u0027`; what stays after a scheme word is a CLOSED list of prose words (an open "any lower-case
-word" guard kept `Bearer secrettokenvalue`), an acronym with or without a version, a version, a factor word or a
-CamelCase identifier. Every endpoint placeholder is `[redacted-uri]`, the one master already wrote for host:port.
+**The Bearer floor** - master's rule was `\bBearer\s+[^\s,;"']+` with IgnoreCase, and it removed the whole run
+after the word. `AllEntryPoints_ShouldLetNothingMastersBearerRuleRemovedSurvive_ExceptTheNamedTrades` applies
+that exact rule to every fixture input, a corpus of token shapes and master's own Bearer cases. It asserts that
+no piece of any run the rule removes - no two-character letter or digit piece, and not the whole run - survives
+`Redact`, `RedactCredentials`, `RedactSiteText`, `RedactUntrustedOrNull` or `RedactUntrustedSiteTextOrNull`.
+The only exceptions are three named, documented trades:
+- the word `token` or `tokens`, alone or with a prose ending such as `-based` ("The bearer token expired",
+  "Invalid Bearer token.", "Bearer token-based access denied");
+- a challenge parameter (`realm=`, `scope=`, `error=`, `error_description=`, `error_uri=`, `charset=`:
+  "WWW-Authenticate: Bearer realm=…");
+- clio's own placeholder.
+
+So after Bearer nothing else stays, in any position: not a prose word, an acronym, a version or `2FA`. The run is
+master's with three changes, and none of them lets a credential character through:
+- a backslash continues it except where it starts an escaped quote;
+- `&amp;` is part of it;
+- the quote around it may be `"`, `'`, `\"`, `"`, `'` or `&quot;` and stays.
+
+**After Basic, NTLM and Negotiate** - master had no rule for these, so the line is drawn by position:
+- In a HEADER POSITION, right after `Authorization:`, `Proxy-Authorization:`, `WWW-Authenticate:`,
+  `Proxy-Authenticate:` or a credential key (`token:`, `access_token=`, `password=` …), only these stay: a
+  challenge parameter, one word of a short closed list (`token`, `realm`, `challenge`, `negotiate`, `negotiation`,
+  `required`, `missing`, `invalid`, `expired`, `rejected`, `refused`, `failed`, `none`, `null`) or a placeholder.
+- ELSEWHERE, in a sentence, these stay:
+  - a prose word (all lower case, or one leading capital then lower case, optionally "-"-joined);
+  - an acronym, alone or with `/n`, `/n.n`, `/ACRONYM`, `vn` or a dotted version of up to four short parts;
+  - a version of up to four short parts;
+  - a factor word (`2FA`);
+  - a CamelCase word with ONE inner capital and no digit (`OAuth`).
+
+  Everything else goes: `UsrPage1`, `AdminApiKey`, `1700000000.123456789`, `v2.0.0.1-secret`, and base64 even when
+  it is all letters (`dXNlcjpwYXNz`).
+
+Every endpoint placeholder is `[redacted-uri]`, the one master already wrote for host:port.
 
 **What breaks if you ignore it** - a site rule moved into Redact corrupts clio-run envelopes and clio's own
 messages; a new extractor that calls Redact instead leaks the database login, the server name or the stack
