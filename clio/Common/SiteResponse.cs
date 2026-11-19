@@ -109,16 +109,42 @@ public sealed record SiteResponse(
 	internal bool RefusedWithoutProcessing { get; init; }
 
 	/// <summary>
-	/// Whether <paramref name="body"/> carries no answer of the service: empty, a page, or plain text that does not
-	/// even start like JSON. A body that starts like JSON, parseable or not, may be the application's own.
+	/// Whether <paramref name="body"/> carries no answer of the service: empty, an HTML page, or plain text. Anything
+	/// that may be the application's own answer is excluded, after skipping whitespace and a byte-order mark (some
+	/// Creatio WCF endpoints start their JSON with one): a body that starts like JSON (<c>{</c>, <c>[</c> or a
+	/// <c>"</c> string), parseable or not; any other body that parses as JSON (a number, <c>true</c>,
+	/// <c>null</c>); a body too long to check; and markup that is not an HTML page (an XML or SOAP fault).
 	/// </summary>
 	/// <param name="body">The response body.</param>
 	internal static bool CarriesNoServiceAnswer(string body) {
-		if (string.IsNullOrWhiteSpace(body)) {
+		ReadOnlySpan<char> content = SkipLeadingNoise(body);
+		if (content.IsEmpty) {
 			return true;
 		}
-		char first = body.AsSpan().TrimStart()[0];
-		return first is not ('{' or '[');
+		if (content[0] is '{' or '[' or '"' || content.Length > MaxParsedBodyLength) {
+			return false;
+		}
+		if (content[0] == '<') {
+			return content.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase)
+				|| content.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
+		}
+		try {
+			using JsonDocument scalar = JsonDocument.Parse(content.ToString());
+			return false;
+		}
+		catch (JsonException) {
+			return true;
+		}
+	}
+
+	// The body without the leading whitespace and byte-order marks that come before its first real character.
+	private static ReadOnlySpan<char> SkipLeadingNoise(string body) {
+		ReadOnlySpan<char> content = body.AsSpan();
+		int start = 0;
+		while (start < content.Length && (char.IsWhiteSpace(content[start]) || content[start] == '\uFEFF')) {
+			start++;
+		}
+		return content[start..];
 	}
 
 	#endregion
@@ -127,21 +153,21 @@ public sealed record SiteResponse(
 
 	private static string ClassifyBody(string body, out JsonDocument document) {
 		document = null;
-		if (string.IsNullOrWhiteSpace(body)) {
+		ReadOnlySpan<char> trimmed = SkipLeadingNoise(body);
+		if (trimmed.IsEmpty) {
 			return EmptyBody;
 		}
-		ReadOnlySpan<char> trimmed = body.AsSpan().TrimStart();
 		if (trimmed[0] == '<') {
 			return HtmlBody;
 		}
 		if (trimmed[0] is not ('{' or '[')) {
 			return TextBody;
 		}
-		if (body.Length > MaxParsedBodyLength) {
+		if (trimmed.Length > MaxParsedBodyLength) {
 			return JsonBody;
 		}
 		try {
-			document = JsonDocument.Parse(body);
+			document = JsonDocument.Parse(trimmed.ToString());
 			return JsonBody;
 		}
 		catch (JsonException) {

@@ -508,9 +508,9 @@ public sealed class ODataCreateTool(
 	/// </summary>
 	/// <remarks>
 	/// A row's POST is the only write for that row: it is sent once, never replayed, and nothing else is written
-	/// for the row. So when the site refused it without processing it
-	/// (<see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>), the row is known not created, whatever the
-	/// body holds.
+	/// for the row. So when the answer shows the site refused it without processing it
+	/// (<see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>: a refusal status with a body that is no answer of
+	/// the application), the row is known not created.
 	/// </remarks>
 	private static ODataRowResult WithSiteAnswer(ODataRowResult parsed, SiteHttpResponse answer) {
 		if (answer.IsRefusedWithoutProcessing) {
@@ -520,8 +520,8 @@ public sealed class ODataCreateTool(
 				ResponseReceived = true,
 				RecordCreated = false,
 				RetryGuidance = RefusedWithoutProcessingGuidance,
-				// The status decides, not the body: a page or an error envelope with this status says nothing more
-				// about the row, and the site's own words, if any, are in the site response.
+				// Such a body - empty, a page, plain text - says nothing about the row; the site's own words, if any,
+				// are in the site response.
 				Error = $"Creatio refused the create with HTTP {answer.StatusCode} without processing it, so this row "
 					+ "was not created.",
 				SiteResponse = SiteResponse.FromRefusal(answer)

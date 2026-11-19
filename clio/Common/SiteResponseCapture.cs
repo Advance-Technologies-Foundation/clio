@@ -91,10 +91,10 @@ public sealed class SiteResponseCapture {
 	/// <summary>
 	/// Records the refusal of a write whose refusal ends the writing of the work that sent it. The refusal proves
 	/// that nothing was applied only when all of these hold: the capture was opened with the sole-write
-	/// declaration (<see cref="Begin"/>); the request was sent with a single attempt; and the site refused it
-	/// with a status with which the server refuses to process a request
-	/// (<see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>). Otherwise it is recorded like
-	/// <see cref="RecordRefusal"/>.
+	/// declaration (<see cref="Begin"/>); the request was sent with a single attempt; and the answer shows the
+	/// site refused it without processing it - a refusal status, a body that is no answer of the application, and
+	/// no re-send by clio (<see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>). Otherwise it is recorded
+	/// like <see cref="RecordRefusal"/>.
 	/// </summary>
 	/// <param name="response">The answer as the client returned it.</param>
 	/// <param name="maxAttempts">
@@ -103,8 +103,10 @@ public sealed class SiteResponseCapture {
 	/// </param>
 	/// <returns>The site response recorded, or <see langword="null"/> when nothing was recorded.</returns>
 	/// <remarks>
-	/// A replay after a session renewal does not count as a second attempt: the client replays only after the
-	/// first answer was itself a sign-in refusal, which applied nothing.
+	/// clio's own re-send after a body that looks like an expired session is a guess from the body, so such an answer
+	/// is marked <see cref="SiteHttpResponse.Resent"/> and never proves anything. The client's re-send after a 401 or
+	/// a redirect to the sign-in page is not visible here; it is taken as one send, on HTTP's meaning of 401 ("the
+	/// request has not been applied") and because a sign-in redirect comes from the sign-in layer.
 	/// </remarks>
 	public static SiteResponse RecordRefusalOfSoleWrite(SiteHttpResponse response, int maxAttempts) {
 		bool refusedOnceWithoutProcessing = maxAttempts <= 1 && response is { IsRefusedWithoutProcessing: true };

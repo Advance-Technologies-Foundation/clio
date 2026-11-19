@@ -55,30 +55,38 @@ public sealed class PageUpdateToolSideEffectTests {
 		System.Text.Json.JsonSerializer.Serialize(response).Should().Contain("\"diagnostic\":{");
 	}
 
-	[Test]
-	[Description("The declaration holds: an update-page call sends exactly one request that is not a read, the save")]
-	public async Task UpdatePage_ShouldSendExactlyOneWrite_TheSave() {
+	[TestCase(null, TestName = "UpdatePage_ShouldSendExactlyOneWrite_TheSave")]
+	[TestCase("{\"UsrCaption\":\"Caption\"}", TestName = "UpdatePage_ShouldSendExactlyOneWrite_TheSave_WhenResourcesAreSent")]
+	[Description("The declaration holds: every request an update-page call sends is an allow-listed read, except one, the save")]
+	public async Task UpdatePage_ShouldSendExactlyOneWrite(string resources) {
 		// Arrange
 		IApplicationClient client = KeepingClient(new SiteHttpResponse(403, ""));
 		PageUpdateTool tool = CreateTool(client);
 
 		// Act
-		await tool.UpdatePage(new PageUpdateArgs(SchemaName, ValidBody));
+		await tool.UpdatePage(new PageUpdateArgs(SchemaName, ValidBody, Resources: resources));
 
-		// Assert
-		string[] readUrls = [SelectQueryUrl, GetSchemaUrl];
-		string[] otherRequests = client.ReceivedCalls()
-			.Where(call => call.GetMethodInfo().Name is nameof(IApplicationClient.ExecutePostRequest)
-				or nameof(IStatusPreservingApplicationClient.SendKeepingStatus)
-				or nameof(IApplicationClient.ExecuteNonReplayablePostRequest)
-				or nameof(IApplicationClient.ExecutePatchRequest)
-				or nameof(IApplicationClient.ExecuteDeleteRequest))
-			.Select(call => call.GetArguments().OfType<string>().First(argument => argument.StartsWith("http")))
-			.Where(url => !readUrls.Contains(url))
+		// Assert - any method that sends a request counts, whatever its name, unless it is a GET or a known read.
+		string[] writes = client.ReceivedCalls()
+			.Select(call => (Method: call.GetMethodInfo().Name,
+				Url: call.GetArguments().OfType<string>().FirstOrDefault()))
+			.Where(call => IsRequest(call.Method) && !IsRead(call.Method, call.Url))
+			.Select(call => $"{call.Method} {call.Url}")
 			.ToArray();
-		otherRequests.Should().Equal([SaveSchemaUrl],
+		writes.Should().Equal([$"{nameof(IStatusPreservingApplicationClient.SendKeepingStatus)} {SaveSchemaUrl}"],
 			because: "update-page declares one write per call; a second write would make a refusal of it no proof");
 	}
+
+	private static bool IsRequest(string method) =>
+		method.StartsWith("Execute", System.StringComparison.Ordinal)
+		|| method.StartsWith("Send", System.StringComparison.Ordinal)
+		|| method.StartsWith("Upload", System.StringComparison.Ordinal)
+		|| method.StartsWith("Download", System.StringComparison.Ordinal)
+		|| method.StartsWith("CallConfigurationService", System.StringComparison.Ordinal);
+
+	private static bool IsRead(string method, string url) =>
+		method.StartsWith(nameof(IApplicationClient.ExecuteGetRequest), System.StringComparison.Ordinal)
+		|| url is SelectQueryUrl or GetSchemaUrl;
 
 	// A client that keeps the status: designer reads succeed, the save gets the given answer, selects find the page.
 	private static IApplicationClient KeepingClient(SiteHttpResponse saveAnswer) {

@@ -870,7 +870,7 @@ internal static class ToolContractCatalog {
 		+ "retry-guidance.";
 
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
-	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field. side-effect is none only when the write is known not applied: it was rejected before writing, or its one request (one PATCH; one DELETE for a single id without cascade; one POST per odata-create row) was refused without processing (HTTP 401, 403, 405, 413, 414, 415 or 431 with no JSON body).";
+	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field. side-effect is none only when the write is known not applied: it was rejected before writing, or its one request (one PATCH; one DELETE for a single id without cascade; one POST per odata-create row) was refused without processing (HTTP 401, 403, 405, 413, 414, 415 or 431 with an empty, page or plain-text body).";
 
 	private const string ODataReadErrorCodeFieldName = "error-code";
 
@@ -4788,7 +4788,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every page operation succeeded."),
-				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `site-response` (on a failed item the site answered: status, and the site's own message and code) with `diagnostic` beside it (side-effect none only when the page's save was refused without processing: HTTP 401, 403, 405, 413, 414, 415 or 431 with no JSON body), `resources-registered` (new keys), `resources-updated` (existing keys whose en-US value changed), optional `page` metadata, optional `verified-body-file` when `verify=true`, and on a saved page a `digest` (validation, basis, components written, otherSections, checksum - the update-page digest) to confirm the save without get-page.")
+				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `site-response` (on a failed item the site answered: status, and the site's own message and code) with `diagnostic` beside it (side-effect none only when the page's save was refused without processing: HTTP 401, 403, 405, 413, 414, 415 or 431 with an empty, page or plain-text body, not re-sent), `resources-registered` (new keys), `resources-updated` (existing keys whose en-US value changed), optional `page` metadata, optional `verified-body-file` when `verify=true`, and on a saved page a `digest` (validation, basis, components written, otherSections, checksum - the update-page digest) to confirm the save without get-page.")
 			),
 			CommonErrorContract,
 			[],

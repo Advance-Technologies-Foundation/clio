@@ -395,11 +395,13 @@ and `message` are null: the result's own fields name what failed and why.
 2. **Sent once.** The write went out with a single attempt, and clio did not send it again. With more attempts,
    the client re-sends after a timeout, and the attempt that timed out may have been applied. clio's own re-send
    after a body that looks like an expired session proves nothing either: that reading comes from the body
-   (GitHub #1313). The client's re-send after a 401 or a redirect to the sign-in page still counts as one send:
-   the first answer was itself a refusal by the sign-in layer.
+   (GitHub #1313). The client's own re-send after a 401 or a redirect to the sign-in page is not visible to clio;
+   it is taken as one send, on HTTP's meaning of 401 ("the request has not been applied") and because a sign-in
+   redirect comes from the sign-in layer.
 3. **Refused without processing.** The site answered 401, 403, 405, 413, 414, 415 or 431, and the body carries no
-   answer of the application: it is empty, a page or plain text. A JSON error body is written by the application,
-   which may have done part of its work before refusing, so it proves nothing.
+   answer of the application: it is empty, an HTML page or plain text (a byte-order mark and whitespace before
+   it are skipped). Anything that may be the application's own answer proves nothing: JSON of any kind, parseable
+   or not, and markup that is not an HTML page, such as an XML or SOAP fault.
 
 | Tool | Its writes, in order | `side-effect` on a refusal |
 |---|---|---|

@@ -396,8 +396,8 @@ public sealed class CreateBusinessProcessService(
 
 		SiteHttpResponse answer = SiteCall.Post(client, url, requestBody, maxAttempts: BuildProcessAttempts);
 		if (answer.IsRefusedWithoutProcessing) {
-			// Read before the body: the page that comes with such a refusal says nothing about the process, and the
-			// status alone proves BuildProcess did not run.
+			// Before the envelope is parsed: such an answer has no envelope (its body is empty, a page or plain text),
+			// and a refusal status with no answer of the application proves BuildProcess did not run.
 			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, BuildProcessAttempts);
 			throw new InvalidOperationException($"The environment refused BuildProcess without processing it (HTTP "
 				+ $"{answer.StatusCode}), so the process was NOT created. Check the user's sign-in and rights.");
