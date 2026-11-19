@@ -18,7 +18,7 @@
 		/// <returns>An owned client that the caller must dispose.</returns>
 		IOwnedApplicationClient CreateBearerEnvironmentClient(EnvironmentSettings environment,
 			string accessToken) => throw new System.NotSupportedException(
-				"The configured factory does not support dedicated bearer clients.");
+				"The configured factory does not support dedicated clients that sign in with a bearer token.");
 	}
 
 	/// <summary>Ownership-aware accessors for clients produced by the application client factory.</summary>

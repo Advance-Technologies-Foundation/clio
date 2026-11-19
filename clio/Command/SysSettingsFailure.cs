@@ -103,7 +103,7 @@ internal static class SysSettingFailureTexts {
 	//"Register the environment with reg-web-app" is unusable over mcp-http credential passthrough - there is no
 	//environment to register and reg-web-app is not reachable on that transport.
 	internal const string PassthroughAuthenticationRecovery =
-		"Supply the authentication material the message names (a Bearer access token, or a login/password pair) "
+		"Supply the authentication material the message names (a bearer token, or a login/password pair) "
 		+ "and call the operation again.";
 
 	internal const string RefusedTargetRecovery =

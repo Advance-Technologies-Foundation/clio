@@ -222,7 +222,7 @@ internal class ApplicationClientFactory : IApplicationClientFactory{
 	// is reported by type name only.
 	private static void GuardBearerSettings(EnvironmentSettings settings) {
 		if (string.IsNullOrWhiteSpace(settings.AccessToken)) {
-			throw new ArgumentException("Bearer authentication requires a non-empty access token.", nameof(settings));
+			throw new ArgumentException("Token-based (Bearer) authentication requires a non-empty access token.", nameof(settings));
 		}
 		if (string.IsNullOrWhiteSpace(settings.Uri)) {
 			throw new ArgumentException(

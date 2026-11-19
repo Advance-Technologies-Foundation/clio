@@ -1033,7 +1033,7 @@ public static partial class WebServiceDefinitionBuilder {
 			errors.Add($"{owner}: a constant default is refused on a cookie, under a credential-like code or wire name "
 				+ "(key, token, secret, password, auth, session...) or SOAP-header parent, and where the value looks like a "
 				+ "key (in a header or soap-header value: an authentication scheme and its credentials, a credential "
-				+ "pair such as password=..., a generated key, a long letters-only or digits-only run, a password-like word, or an "
+				+ "pair such as a password and its value, a generated key, a long letters-only or digits-only run, a password-like word, or an "
 				+ "address with credentials or a key in it; in a query, a 16+ character sig, sas, code, appid, sign or hmac); "
 				+ "reference a system setting with default-sys-setting and let the user fill its value.");
 			return Empty();
