@@ -1416,11 +1416,13 @@ internal static partial class SensitiveErrorTextRedactor {
 			? injectedRule.Replace(text, "$0")
 			: text;
 
+	private static void ClearInjectedRule() {
+		injectedRule = null;
+		injectedStage = null;
+	}
+
 	private sealed class InjectedRuleScope : IDisposable {
-		public void Dispose() {
-			injectedRule = null;
-			injectedStage = null;
-		}
+		public void Dispose() => ClearInjectedRule();
 	}
 
 	#endregion
