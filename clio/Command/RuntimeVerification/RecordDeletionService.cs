@@ -508,7 +508,7 @@ internal sealed class RecordDeletionService(
 				return null;
 			}
 			string firstLine = ProcessRunMonitor.FirstLine(inner);
-			return UntrustedText.Fenced(firstLine.Length > 500 ? firstLine[..500] : firstLine);
+			return UntrustedText.FencedSiteText(firstLine.Length > 500 ? firstLine[..500] : firstLine);
 		}
 		catch (System.Text.Json.JsonException) {
 			return null;

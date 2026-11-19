@@ -562,7 +562,7 @@ public sealed class ODataCreateTool(
 							+ "OData cannot write a binary column: use upload-file (or upload-image for an image)."
 					};
 				}
-				// Redact like the sibling error paths: a routing Message can embed the absolute request
+				// Redact as site text like the sibling error paths: a routing Message can embed the absolute request
 				// URI (host/port/app path), which must not leak into the MCP transcript or logs. The FK hint
 				// (GH-1699) adds the cause only: record-created stays unknown, because the violation can come
 				// from a post-insert handler writing another row after this one persisted.
@@ -572,7 +572,7 @@ public sealed class ODataCreateTool(
 					RecordCreated = null,
 					RetryGuidance = UnknownSideEffectGuidance,
 					Error = CreatioResponseError.AppendStructuredODataWriteError(
-						SensitiveErrorTextRedactor.Redact(serverError), root)
+						SensitiveErrorTextRedactor.RedactSiteText(serverError), root)
 				};
 			}
 			// The primary key is normally a GUID string, but some entities key on a numeric column;

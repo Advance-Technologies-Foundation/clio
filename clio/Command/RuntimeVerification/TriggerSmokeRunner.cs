@@ -346,7 +346,7 @@ internal sealed class TriggerSmokeRunner(
 			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload, out string serverError)) {
 				string inner = RecordDeletionService.ReadInnerMessage(response);
 				error = $"The triggering {request.Entity} record was not created: "
-					+ CreatioResponseError.AppendStructuredODataWriteError(SensitiveErrorTextRedactor.Redact(serverError),
+					+ CreatioResponseError.AppendStructuredODataWriteError(SensitiveErrorTextRedactor.RedactSiteText(serverError),
 						document.RootElement)
 					+ (inner is null ? string.Empty : $" The server's own reason: {inner}.");
 				return null;

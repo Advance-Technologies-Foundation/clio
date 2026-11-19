@@ -126,7 +126,10 @@ internal static partial class CreatioResponseError {
 		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
 			? $" The server answered with an {MarkupStatusPhrase(statusCode)}."
 			: string.Empty;
-		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: {Truncate(body)}";
+		// The preview is the site's own text, so it takes the site-text redaction: a stack trace or an HTML page
+		// after a line break goes, as do sign-in and server names. The callers still Redact the whole sentence.
+		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: "
+			+ SensitiveErrorTextRedactor.RedactSiteText(Truncate(body));
 	}
 
 	/// <summary>
