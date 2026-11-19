@@ -6,7 +6,8 @@
       "A": "clio already removed what the host removes; the marker wording may differ.",
       "B": "the host removes it and clio did not; closed by the site-text redaction plan, rule per kind.",
       "C": "the host keeps it on purpose (the site's reason, prose, a code); clio must keep it too.",
-      "D": "the host removes it - a documented trade of its own, or a shape clio declines by choice (plan rules 7 and 8, analysis kind 10) - and clio keeps the site's words."
+      "D": "the host removes it - a documented trade of its own, or a shape clio declines by choice (plan rules 7 and 8, analysis kind 10) - and clio keeps the site's words.",
+      "E": "the host keeps it, and clio removes it because master removed it: after Bearer only the documented trades of the Bearer floor stay. clio keeps the words around it."
     },
     "entries": {
       "redact": "SensitiveErrorTextRedactor.Redact must satisfy the row, and so must RedactSiteText.",
@@ -6092,16 +6093,18 @@
         357
       ],
       "testLine": 1072,
-      "class": "C",
+      "class": "E",
       "kind": "trade",
       "entry": "redact",
       "input": "bearer ABCD",
       "hostOutput": "bearer ABCD",
-      "mustGo": [],
+      "mustGo": [
+        "ABCD"
+      ],
       "mustStay": [
         "bearer"
       ],
-      "note": "Host trade: the host keeps \"ABCD\"; clio is stricter here (the note allows it): after Bearer only the documented trades stay - the word token, a challenge parameter, a placeholder - because master's Bearer rule removed every run after the word and nothing it removed may survive. The scheme word stays."
+      "note": "Host trade: the host keeps \"ABCD\". By the header's definitions this is no C row - clio does not keep it - so it is E: master's Bearer rule removed every run after the word, and nothing it removed may survive, so clio removes \"ABCD\" and keeps the scheme word."
     }
   ]
 }
