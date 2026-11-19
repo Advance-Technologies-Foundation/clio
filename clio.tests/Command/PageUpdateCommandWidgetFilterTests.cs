@@ -19,6 +19,7 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 	private const string Uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 	private const string PackageUId = "11111111-2222-3333-4444-555555555555";
 	private const string FilterError = "Chart.values.config.data.providing.filters.filter.items.a.leftExpression.columnPath: 'Nmae' does not resolve";
+	private const string UnchangedWarning = "Already on the page, not changed by this save: " + FilterError;
 
 	private ServiceProvider _provider;
 	private IApplicationClient _client;
@@ -32,6 +33,10 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 		+ "modelConfigDiff:/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/,"
 		+ "handlers:/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/,converters:/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/,"
 		+ "validators:/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/};});";
+
+	private static readonly string AppendFragment = Body.Replace(
+		"handlers:/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+		"handlers:/**SCHEMA_HANDLERS*/[{request:'usr.Ping',handler:async (request, next) => next?.handle(request)}]/**SCHEMA_HANDLERS*/");
 
 	[SetUp]
 	public void SetUp() {
@@ -102,6 +107,75 @@ public sealed class PageUpdateCommandWidgetFilterTests {
 		result.Should().BeTrue(because: "a dry run reports instead of refusing: " + response.Error);
 		response.Warnings.Should().Contain("Widget filter would block the save: " + FilterError,
 			because: "the dry run must say that the real save would be rejected and why");
+	}
+
+	[TestCase("replace")]
+	[TestCase("append")]
+	[Description("A broken filter the page already stores warns on both the dry run and the save, in replace and append mode alike: the dry run gives the save's verdict.")]
+	public void TryUpdatePage_DryRunShouldMatchSave_WhenBrokenFilterIsAlreadyOnThePage(string mode) {
+		// Arrange
+		StubValidatorSeeingStoredFilter();
+		// Append refuses a fragment that adds nothing, so it brings one handler.
+		string body = mode == "append" ? AppendFragment : Body;
+		PageUpdateOptions dryRun = new() { SchemaName = "UsrPage", Mode = mode, DryRun = true, Body = body };
+		PageUpdateOptions save = new() { SchemaName = "UsrPage", Mode = mode, Body = body };
+
+		// Act
+		bool dryRunResult = _command.TryUpdatePage(dryRun, out PageUpdateResponse dryRunResponse);
+		bool saveResult = _command.TryUpdatePage(save, out PageUpdateResponse saveResponse);
+
+		// Assert
+		saveResult.Should().BeTrue(because: "a stale filter left on the page must not block an unrelated save: " + saveResponse.Error);
+		saveResponse.Warnings.Should().Contain(UnchangedWarning, because: "the save reports the stale filter as a warning");
+		dryRunResult.Should().BeTrue(because: "a dry run reports instead of refusing: " + dryRunResponse.Error);
+		dryRunResponse.Warnings.Should().Contain(UnchangedWarning,
+			because: "the dry run must report exactly what the save reports");
+		dryRunResponse.Warnings.Should().NotContain(w => w.StartsWith("Widget filter would block the save"),
+			because: "the save does not block on a filter the page already holds, so the dry run must not say it would");
+	}
+
+	[Test]
+	[Description("A broken filter the stored page does not hold still blocks: the dry run says so and the save is refused.")]
+	public void TryUpdatePage_DryRunShouldMatchSave_WhenBrokenFilterIsNew() {
+		// Arrange
+		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string?>())
+			.Returns(new PageWidgetFilterReport([FilterError], []));
+		PageUpdateOptions dryRun = new() { SchemaName = "UsrPage", Mode = "replace", DryRun = true, Body = Body };
+		PageUpdateOptions save = new() { SchemaName = "UsrPage", Mode = "replace", Body = Body };
+
+		// Act
+		bool dryRunResult = _command.TryUpdatePage(dryRun, out PageUpdateResponse dryRunResponse);
+		bool saveResult = _command.TryUpdatePage(save, out PageUpdateResponse saveResponse);
+
+		// Assert
+		saveResult.Should().BeFalse(because: "a broken filter the save introduces is refused");
+		dryRunResult.Should().BeTrue(because: "a dry run reports instead of refusing: " + dryRunResponse.Error);
+		dryRunResponse.Warnings.Should().Contain("Widget filter would block the save: " + FilterError,
+			because: "the dry run must announce the refusal the save makes");
+	}
+
+	[Test]
+	[Description("A replace dry run with clean filters does not read the stored page for the filter check.")]
+	public void TryUpdatePage_ShouldNotReadStoredBodyOnReplaceDryRun_WhenFiltersAreClean() {
+		// Arrange
+		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = "replace", DryRun = true, Body = Body };
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "nothing is wrong with the page: " + response.Error);
+		_filterValidator.Received(1).Validate(Body, Guid.Parse(PackageUId), null);
+		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("GetSchema")), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	// Mirrors WidgetFilterValidator: a filter that is byte-for-byte in the stored body is reported as a warning.
+	private void StubValidatorSeeingStoredFilter() {
+		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Is<string?>(stored => stored == null))
+			.Returns(new PageWidgetFilterReport([FilterError], []));
+		_filterValidator.Validate(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Is<string?>(stored => stored != null))
+			.Returns(new PageWidgetFilterReport([], [UnchangedWarning]));
 	}
 
 	[Test]

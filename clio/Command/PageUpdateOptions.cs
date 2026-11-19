@@ -459,6 +459,19 @@
 			}
 		}
 
+		// Replace writes the caller's body as is, so the only input the save has beyond it is the stored body, which
+		// can only turn an error into a warning (a filter the page already holds). It is read only when there is an
+		// error to turn, so a clean dry run costs no schema read and still gives the save's verdict.
+		private PageWidgetFilterReport ValidateWidgetFiltersForReplaceDryRun(
+			PageUpdateOptions options, EditableSchemaContext context) {
+			PageWidgetFilterReport report = ValidateWidgetFilters(options, context, options.Body);
+			if (report.Errors.Count == 0
+				|| !TryLoadSchemaForSave(options.SchemaName, context, out JObject stored, out _)) {
+				return report;
+			}
+			return ValidateWidgetFilters(options, context, options.Body, stored["body"]?.ToString());
+		}
+
 		private static IReadOnlyList<string> WidgetFilterWarningsForDryRun(PageWidgetFilterReport report) =>
 			[
 				.. report.Errors.Select(error => $"Widget filter would block the save: {error}"),
@@ -571,7 +584,7 @@
 						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
 					PageInertOperationDetector.Detect(options.Body),
 					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)),
-					WidgetFilterWarningsForDryRun(ValidateWidgetFilters(options, context, options.Body)));
+					WidgetFilterWarningsForDryRun(ValidateWidgetFiltersForReplaceDryRun(options, context)));
 				return true;
 			}
 			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
