@@ -72,7 +72,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>24e2dfbb</c>, the
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>4f338365</c>, the
 	/// restamp commit of branch <c>feature/ENG-91849-timer-start-element</c>, which carries <c>main</c> at 1.6.6.186
 	/// (<c>4287d9cb</c>, the cut master bundles before this one), so the cut carries everything 1.6.6.186 carries and
 	/// the Timer start element.
@@ -113,9 +113,8 @@ public class BundledProcessBuilderPackageTests {
 	/// floors stay as master set them. What earlier cuts carried is in this file's git history.
 	/// </para>
 	/// <para>
-	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7183 passed, 0 failed
-	/// (<c>dev-nf</c>), on the producing commit itself. <c>dev-n8</c> was NOT run, because the cutting host has no
-	/// net-core reference set.
+	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7224 passed, 0 failed,
+	/// on both <c>dev-nf</c> and <c>dev-n8</c>, on the producing commit itself.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
@@ -197,7 +196,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"1B01669611E39A5C272A4FCF5EBDC277CCDCEEBB977F4AE4144AFCD2ED4CD52F";
+		"EAEBD3150D546F350A134CD4611A988A2A1975477C7F4CBD03D569AFF011E047";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -238,9 +237,9 @@ public class BundledProcessBuilderPackageTests {
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
 	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
 	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
-	/// number from the package's restamp <c>24e2dfbb</c> (after the gate-1 fixes, the noJob and misfire follow-ups and
-	/// the check of kept timers before a modify save; both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
-	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c> and <c>7c14a526</c>, reached only the author's own test stands.
+	/// number from the package's restamp <c>4f338365</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
+	/// the check of kept timers before a modify save or an activation, and the gate-3 fixes; both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
+	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c> and <c>24e2dfbb</c>, reached only the author's own test stands.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -248,7 +247,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "24e2dfbb3aa2f08b010190c24b3d2092e287b7d3";
+	private const string ExpectedProducingCommit = "4f338365bb30aafd199df7ba6f7292098ee9ac81";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -274,7 +273,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795086135000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795088979000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -289,7 +288,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795086142000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795088986000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
