@@ -160,7 +160,9 @@ with three changes, and none of them lets a credential character through:
   - a key of the pair rule's credential list (`CredentialSecretKeys` and `credential(s)`: the pass words, `secret`,
     the token family, `api_key`, `client_secret`, `client_id`, `private_key`, `access_key`, `connection string`,
     `authorization`, `auth`, `bearer`, the cookie and session names), written QUOTED before its `:` or `=` (a JSON
-    or dict key), or bare before an `=` (a pair).
+    or dict key), or bare before an `=` (a pair);
+  - a `key` or `auth` word JOINED by `-` or `_` to the word before it - a header name or a compound key - before
+    its `:` or `=` (`X-Auth:`, `X_Key:`, `Api-Key:`, `Proxy-Auth:`).
   A key word with a colon in a sentence is no header position. The PAIR rule decides what happens to it next:
   - after `key` or `auth` and a colon, a scheme word and a word the scheme rule keeps in a sentence is prose and
     stays ("Primary key: Basic info", "auth: Basic mode is off"). Master removed the scheme word there, which is no
@@ -171,7 +173,9 @@ with three changes, and none of them lets a credential character through:
   - with `=` after any key it is a pair, and the value goes.
 
   THE TRADE, removing wins: such a key in a sentence loses the words after it ("The token: NTLM handshake failed"
-  becomes "The token=[redacted] failed"). KNOWN KEEP: `auth:` followed by Basic and a lower-case run stays ("auth:
+  becomes "The token=[redacted] failed"), and so does a Bearer value after a credential key, even a documented trade
+  word ("token: Bearer tokens" becomes "token=[redacted]"). A joined `key` or `auth` ("X-Auth:", "Proxy-Auth:")
+  keeps nothing either. KNOWN KEEP: `auth:` followed by Basic and a lower-case run stays ("auth:
   Basic abcdefghijkl").
 - ELSEWHERE, in a sentence, these stay:
   - a prose word (all lower case, or one leading capital then lower case, optionally "-"-joined);
@@ -201,8 +205,9 @@ with three changes, and none of them lets a credential character through:
   server name: capitals, digits, `-`, `_`, `.` and `$`, at least one letter (`SQL01`, `CORP`, `DB-PROD`, `SQL_PROD`,
   `CORP.LOCAL`, `SRV$`), and not a status word (`ERROR`, `FAILED`, `FAIL`, `OK`, `WARN`, `WARNING`, `INFO`,
   `DEBUG`, `TRUE`, `FALSE`, `NULL`, `NONE`). After a number, a status word or any other word it is a line break, so
-  "Error 404\nnot found" keeps its reason. KNOWN TRADE: an all-capitals word that is not a status word eats the word
-  after the escape ("Error from HTTP\nfailed here" becomes "Error from [redacted] here"). The rule checks for the
+  "Error 404\nnot found" keeps its reason. KNOWN TRADE: an all-capitals word that is not a status word - dotted
+  capitals included - eats the word after the escape ("Error from HTTP\nfailed here" becomes "Error from [redacted]
+  here", "Use NOTE.TXT\nthen run" becomes "Use [redacted] run"). The rule checks for the
   backslash and the escape first and only then looks back at the name, so a long run of capitals is read in linear
   time.
 - Every clamp before redaction (`ClampAtBoundary`) cuts back to a word boundary, drops the partial run and marks
