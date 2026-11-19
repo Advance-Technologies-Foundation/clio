@@ -391,12 +391,12 @@ public sealed class DynamicCaseService(
 			Template = pagePlan.Template,
 			Fragment = pagePlan.Fragment,
 			SaveOnChange = pagePlan.SaveOnChange,
-			Error = SiteText(write.Error),
+			Error = write.Error,
 			Retry = new DynamicCasePageRetry { Tool = RetryTool, Args = RetryArgs(options, pagePlan) }
 		};
 		return Result(DynamicCaseOutcomes.CreatedPageFailed, options, built, designerUrl, dependencies, failedPage,
 			notes, warnings, pageWritten: false, DynamicCaseErrorCodes.PageAppendRejected,
-			$"The progress bar could not be added to '{pagePlan.PageSchemaName}': {SiteText(write.Error)}");
+			$"The progress bar could not be added to '{pagePlan.PageSchemaName}': {write.Error}");
 	}
 
 	private static Dictionary<string, string> RetryArgs(CreateDynamicCaseOptions options, DynamicCasePagePlan pagePlan) {
@@ -506,9 +506,9 @@ public sealed class DynamicCaseService(
 			Success = false,
 			Outcome = DynamicCaseOutcomes.Refused,
 			ErrorCode = pagePlan.ErrorCode,
-			// The page step's sentence quotes what its readers caught - the RelatedPage add-on read (a follow-up reader)
-			// and the page reads - so it takes the site-text redaction here, where it enters the result and the log.
-			ErrorMessage = SiteText(pagePlan.ErrorMessage),
+			// clio's own sentence: the page step and the resolver redact the site text they quote where they embed it,
+			// so the remedy around it is never cut or redacted a second time.
+			ErrorMessage = pagePlan.ErrorMessage,
 			Case = CaseInfo(options, plan.Case, designerUrl: null),
 			Settings = plan.Settings,
 			Dependencies = Dependencies(plan, missing, [], missing.Count == 0 ? DependenciesNoneMissing : DependenciesMissing,
@@ -707,9 +707,10 @@ public sealed class DynamicCaseService(
 		string entitySchemaName, string stageColumnName) =>
 		new() {
 			Status = info.Status,
-			SchemaName = info.SchemaName,
+			// The case's name and caption are the site's text: every verdict line and the result line show them.
+			SchemaName = SiteText(info.SchemaName),
 			SchemaUId = info.SchemaUId,
-			Caption = info.Caption,
+			Caption = SiteText(info.Caption),
 			PackageName = packageName,
 			EntitySchemaName = entitySchemaName,
 			StageColumnName = stageColumnName,
@@ -741,7 +742,7 @@ public sealed class DynamicCaseService(
 				Fragment = plan.Fragment,
 				// Set by the page step only with a fragment: absent for an already-present bar, which keeps its own mode.
 				SaveOnChange = plan.SaveOnChange,
-				Error = SiteText(plan.ErrorMessage),
+				Error = plan.ErrorMessage,
 				Candidates = plan.Candidates is { Count: > 0 } ? [.. plan.Candidates] : null
 			};
 

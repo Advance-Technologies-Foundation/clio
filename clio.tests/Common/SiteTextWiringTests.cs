@@ -513,10 +513,37 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SensitiveErrorTextRedactor.ClampAtBoundary("),
 		("clio/Command/DynamicCaseService.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/DynamicCaseService.cs", "private static List<string> SiteList(", ".Select(SiteText)"),
-		("clio/Command/DynamicCaseService.cs", "private static DynamicCaseResult PageRefusal(", "SiteText(pagePlan.ErrorMessage)"),
-		("clio/Command/DynamicCaseService.cs", "private static DynamicCasePageInfo PageInfo(", "SiteText(plan.ErrorMessage)"),
 		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult TryAddDependencies(", "SiteText(exception.Message)"),
-		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult WithPage(", "SiteText(write.Error)"),
+		("clio/Command/DynamicCaseService.cs", "private (string Status, List<string> Warnings) RemoveAfterUncertainAdd(",
+			"SiteText(failure.Message)"),
+		("clio/Command/DynamicCaseService.cs", "private (string Status, List<string> Warnings) RemoveAfterUncertainAdd(",
+			"SiteText(exception.Message)"),
+		("clio/Command/DynamicCaseService.cs", "private (string Status, List<string> Warnings) UndoDependencies(",
+			"SiteText(exception.Message)"),
+		("clio/Command/DynamicCaseService.cs", "private static DynamicCaseInfo ToCaseInfo(", "SiteText(info.SchemaName)"),
+		("clio/Command/DynamicCaseRecordPageResolver.cs", "public RecordPageResolution Resolve(",
+			"SensitiveErrorTextRedactor.RedactSiteText(exception.Message)"),
+		("clio/Command/DynamicCasePageStep.cs", "public DynamicCasePagePlan Plan(",
+			"SensitiveErrorTextRedactor.RedactSiteText(pageError)"),
+		("clio/Command/DynamicCasePageStep.cs", "public DynamicCasePageWrite Write(",
+			"SensitiveErrorTextRedactor.RedactSiteText(exception.Message)"),
+		("clio/Command/ProcessModel/ProcessWriteDigest.cs", "internal static void Report(",
+			"ProcessDesignServerFault.SiteText(previous.FirstError.Description)"),
+		("clio/Command/ProcessModel/ProcessWriteDigest.cs", "internal static void Report(",
+			"ProcessDesignServerFault.SiteText(exception.Message)"),
+		("clio/Command/CreateBusinessProcessCommand.cs", "private bool WarnOnDiscardedConfigurationBlocks(",
+			"ProcessDesignServerFault.SiteText(described.FirstError.Description)"),
+		("clio/Command/CreateBusinessProcessCommand.cs", "public override int Execute(",
+			"ProcessDesignServerFault.SiteText(verification.Message)"),
+		("clio/Command/ModifyBusinessProcessCommand.cs", "private bool WarnOnDiscardedConfigurationBlocks(",
+			"ProcessDesignServerFault.SiteText(described.FirstError.Description)"),
+		("clio/Command/ModifyBusinessProcessCommand.cs", "public override int Execute(",
+			"ProcessDesignServerFault.SiteText(verification.Message)"),
+		("clio/Command/CompileConfigurationCommand.cs", "private CompilationHistory TryGetBaseline(",
+			"SiteText(exception.GetReadableMessageException())"),
+		("clio/Package/PackageBuilder.cs", "private CompilationHistory TryGetBaseline(",
+			"SensitiveErrorTextRedactor.RedactSiteText(exception.GetReadableMessageException())"),
+		("clio/Common/CompilationHistoryPoller.cs", "private static string Describe(", "UntrustedText.FencedSiteText("),
 		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult WithPage(", "SiteList(built.Notes)"),
 		("clio/Command/DynamicCaseService.cs", "public DescribeDynamicCaseResult Describe(", "SiteList(response.Notes)"),
 		("clio/Command/DynamicCaseService.cs", "public ModifyDynamicCaseResult Modify(", "SiteList(response.Leftovers)"),
@@ -560,6 +587,7 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail("),
 		("clio/Command/DynamicCaseService.cs", "private static string SiteText("),
 		("clio/Command/DynamicCaseService.cs", "private static List<string> SiteList("),
+		("clio/Common/CompilationHistoryPoller.cs", "private static string Describe("),
 		("clio/Package/PackageBuildResult.cs", "internal static string SiteFileName("),
 		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteTail("),
 	];
@@ -689,9 +717,9 @@ public sealed class SiteTextWiringTests {
 		// own sentence; no site text of theirs is extracted.
 		["clio/Package/BasePackageInstaller.cs|IsInvalidGZipArchiveFailure"] = (3, "not text: looks for the invalid-archive type name"),
 		["clio/Package/InstallLogAnalyzer.cs|IsGenericInstallationFailure"] = (1, "not text: compares with the generic failure message"),
-		["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "via: DynamicCaseService.SiteText; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
-		["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "wired: DynamicCaseService.SiteText"),
-		["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "wired: DynamicCaseService.SiteText"),
+		["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
+		["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
+		["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "via: DynamicCaseRecordPageResolver.Resolve; proven by CreateDynamicCase_ShouldRedactThePageRefusal_EndToEnd"),
 		// KNOWN-UNWIRED, follow-up: the envelope readers the follow-up after A2 wires. Their text passes Redact
 		// (directly, or through UntrustedText.Fenced / ForConsole / ServerReportedFailureText) and no site-only rule.
 		["clio/Command/FeatureStateService.cs|ThrowIfSaveFailed"] = (1, "follow-up"),
@@ -981,23 +1009,74 @@ public sealed class SiteTextWiringTests {
 			if (!WritePathFiles.Contains(Path.GetFileNameWithoutExtension(parts[0]), StringComparer.Ordinal)) {
 				continue;
 			}
-			string extractorMember = wiring["wired: ".Length..].Split('.')[^1];
-			if (parts[1] == extractorMember) {
-				continue;
-			}
 			CSharpSource source = sources.Single(entry => entry.File == parts[0]).Source;
-			List<(int Start, int End)> callArguments = Regex.Matches(source.Code, $@"\b{Regex.Escape(extractorMember)}\(")
-				.Where(call => source.MemberAt(call.Index) == parts[1])
-				.Select(call => (call.Index + call.Length, ClosingParenthesis(source.Code, call.Index + call.Length - 1)))
-				.ToList();
-			foreach (int read in sites[key].Where(read => !callArguments.Any(span => span.Start <= read && read < span.End))) {
-				unproven.Add($"{key}:{source.LineOf(read)} is not an argument of {extractorMember}(");
-			}
+			unproven.AddRange(UnprovenWiredReads(key, wiring, source, sites[key]));
 		}
 
 		// Assert
 		unproven.Should().BeEmpty(because: "a 'wired:' read must visibly flow into its extractor; one that does not is "
 			+ "listed 'via:' with the end-to-end test that proves it; found:\n" + string.Join('\n', unproven));
+	}
+
+	// The reads of a "wired: Class.Member" entry that are not arguments of a call to that extractor: the qualified
+	// "Class.Member(" anywhere, or the bare "Member(" only inside Class's own file - a same-named helper of another
+	// class (ProcessDesignServerFault.SiteText for DynamicCaseService.SiteText) is not the extractor the entry names.
+	// None when the reading member is the extractor itself.
+	private static IEnumerable<string> UnprovenWiredReads(string key, string wiring, CSharpSource source,
+		IEnumerable<int> reads) {
+		string[] parts = key.Split('|');
+		string[] extractor = wiring["wired: ".Length..].Split('.');
+		string extractorClass = extractor[0];
+		string extractorMember = extractor[^1];
+		bool ownFile = Path.GetFileNameWithoutExtension(parts[0]) == extractorClass;
+		if (ownFile && parts[1] == extractorMember) {
+			return [];
+		}
+		Regex call = new(ownFile
+			? $@"(?:\b{Regex.Escape(extractorClass)}\.|(?<![\w.])){Regex.Escape(extractorMember)}\("
+			: $@"\b{Regex.Escape(extractorClass)}\.{Regex.Escape(extractorMember)}\(");
+		List<(int Start, int End)> callArguments = call.Matches(source.Code)
+			.Where(match => source.MemberAt(match.Index) == parts[1])
+			.Select(match => (match.Index + match.Length, ClosingParenthesis(source.Code, match.Index + match.Length - 1)))
+			.ToList();
+		return reads.Where(read => !callArguments.Any(span => span.Start <= read && read < span.End))
+			.Select(read => $"{key}:{source.LineOf(read)} is not an argument of {extractorClass}.{extractorMember}(")
+			.ToList();
+	}
+
+	[TestCase("ProcessDesignServerFault.SiteText(answer.ErrorMessage)", "CreateDynamicCaseCommand", false,
+		TestName = "WiredReadCheck_ShouldRefuse_ASameNamedHelperOfAnotherClass")]
+	[TestCase("DynamicCaseService.SiteText(answer.ErrorMessage)", "CreateDynamicCaseCommand", true,
+		TestName = "WiredReadCheck_ShouldAccept_TheQualifiedExtractor")]
+	[TestCase("SiteText(answer.ErrorMessage)", "CreateDynamicCaseCommand", false,
+		TestName = "WiredReadCheck_ShouldRefuse_AnUnqualifiedCallOutsideTheExtractorsClass")]
+	[TestCase("SiteText(answer.ErrorMessage)", "DynamicCaseService", true,
+		TestName = "WiredReadCheck_ShouldAccept_AnUnqualifiedCallInsideTheExtractorsClass")]
+	[TestCase("Log(answer.ErrorMessage)", "DynamicCaseService", false,
+		TestName = "WiredReadCheck_ShouldRefuse_AReadThatReachesNoExtractor")]
+	[Category("Unit")]
+	[Description("Mutation check of the read-by-read guard: a 'wired: DynamicCaseService.SiteText' read passes only "
+		+ "as an argument of that extractor - qualified, or bare inside DynamicCaseService - never through a "
+		+ "same-named helper of another class or no extractor at all.")]
+	public void WiredReadCheck_ShouldMatchTheNamedExtractorOnly(string call, string className, bool proven) {
+		// Arrange
+		string dto = "internal sealed class Answer {\n\t[JsonPropertyName(\"errorMessage\")] public string ErrorMessage { get; set; }\n}\n";
+		string code = $"internal sealed class {className} {{\n\tprivate static string Render(Answer answer) => {call};\n}}\n";
+		string file = $"clio/Command/{className}.cs";
+		List<(string File, CSharpSource Source)> sources = [("clio/Command/Answer.cs", CSharpSource.Parse(dto)),
+			(file, CSharpSource.Parse(code))];
+		List<int> reads = DirectSiteErrorReadSites(sources).Where(site => site.Key == $"{file}|Render")
+			.Select(site => site.Index).ToList();
+
+		// Act
+		List<string> unproven = UnprovenWiredReads($"{file}|Render", "wired: DynamicCaseService.SiteText",
+			sources[1].Source, reads).ToList();
+
+		// Assert
+		reads.Should().ContainSingle(because: "the decorated member's read is the one under test");
+		unproven.Should().HaveCount(proven ? 0 : 1, because: proven
+			? "the read is an argument of the named extractor"
+			: "the read does not reach the named extractor");
 	}
 
 	[TestCase("\n", TestName = "SourceScan_LfLineEndings")]

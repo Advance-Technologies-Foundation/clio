@@ -221,7 +221,7 @@ internal static class ProcessWriteDigest {
 			logger.WriteInfo(ProcessDigest.Write(digest));
 		} catch (Exception exception) {
 			logger.WriteWarning(
-				$"The write landed, but its summary could not be built: {exception.Message}. "
+				$"The write landed, but its summary could not be built: {ProcessDesignServerFault.SiteText(exception.Message)}. "
 				+ "describe-business-process mode=summary confirms the saved state.");
 		}
 	}

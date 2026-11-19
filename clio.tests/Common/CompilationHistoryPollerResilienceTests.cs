@@ -319,6 +319,29 @@ public class CompilationHistoryPollerResilienceTests {
 	}
 
 	[Test]
+	[Description("compile-creatio and compile-package: a tolerated poll round's warning (the line both commands return) "
+		+ "quotes the ATF data provider's text through the SITE fence, so a sign-in name the environment wrote goes.")]
+	public void Poll_ShouldFenceTheRoundFailure_AsSiteText() {
+		// Arrange
+		ScriptedDataProvider provider = new(_ => true) { FailureMessage = SiteTextWiringTests.SiteMessage };
+		FakeTimeProvider clock = new();
+		using CancellationTokenSource cts = new();
+		RecordingDelay delay = new(clock, cts, waitsBeforeCancel: 1);
+		ILogger logger = Substitute.For<ILogger>();
+		CompilationHistoryPoller sut = CreatePoller(provider, logger, clock, delay);
+		string warning = null;
+		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(call => warning ??= call.Arg<string>());
+
+		// Act
+		sut.Poll(DateTime.UtcNow.AddMinutes(-1), cts.Token, _ => { });
+
+		// Assert
+		warning.Should().Contain("Login failed for user '[redacted]'", because: "the reason stays, redacted as site text")
+			.And.NotContain(SiteTextWiringTests.Marker, because: "the warning reaches the stdio caller unredacted otherwise")
+			.And.Contain("untrusted-source-text", because: "the text stays fenced");
+	}
+
+	[Test]
 	[Description("The diagnostic must not copy server-derived text through unscrubbed: the failure message the data layer produces routinely carries the full request URI, and this line goes to a console and to CI logs.")]
 	public void Poll_ShouldRedactServerDerivedText_InTheToleratedRoundWarning() {
 		// Arrange

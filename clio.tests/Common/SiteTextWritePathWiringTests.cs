@@ -1584,4 +1584,391 @@ public sealed class SiteTextWritePathWiringTests {
 	}
 
 	#endregion
+
+	#region Round 5: the quoted site part only, and every write-tool sink proven
+
+	private const string DocsHint =
+		"[hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See "
+		+ "docs://mcp/guides/page-modification.]";
+
+	private static DynamicCaseService PageRefusalService(string addonAnswer) {
+		IApplicationClient addonClient = Substitute.For<IApplicationClient>();
+		addonClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(addonAnswer);
+		(ISettingsRepository settings, IServiceUrlBuilder urls) = CaseEnvironment();
+		IEntityAddonTargetResolver targets = Substitute.For<IEntityAddonTargetResolver>();
+		targets.Resolve(Arg.Any<string>(), Arg.Any<string>()).Returns(new EntityAddonTarget("pkg-uid", Guid.NewGuid(),
+			new EntityDesignSchemaDto { UId = Guid.NewGuid(), Name = "UsrOrder" }));
+		RelatedPageAddonService addons = new(addonClient, urls,
+			new AddonSchemaDesignerClient(addonClient, new JsonConverter(), urls, Substitute.For<ILogger>()), targets,
+			Substitute.For<IPageSchemaResolver>(), Substitute.For<ILogger>());
+		DynamicCasePageStep pageStep = new(new DynamicCaseRecordPageResolver(addons, Substitute.For<IEntityClientSchemaReader>()),
+			Substitute.For<IProcessPageReader>(), Substitute.For<IPageBodyWriter>(),
+			Substitute.For<IPageDataSourceReferenceValidator>());
+		(IDynamicCaseSession _, IBuildCaseClient client) = CaseSession(new BuildCaseResponse { Success = true });
+		return new DynamicCaseService(client, pageStep, Substitute.For<IPackageDependencyManager>(), settings, urls);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-dynamic-case END TO END: only the quoted add-on text is redacted, so clio's remedy sentence "
+		+ "after it survives a stack frame and a URI in the site's text, in the result and in the verdict line.")]
+	public void CreateDynamicCase_ShouldKeepTheRemedySentence_WhenTheAddonTextCarriesAFrameAndAUri() {
+		// Arrange
+		DynamicCaseService service = PageRefusalService(Refusal(SiteMessage + " See http://fixture-site.invalid/0/addon"
+			+ "\r\n   at Terrasoft.Fixture.Addon.GetSchema()"));
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		new CreateDynamicCaseCommand(service, logger).Execute(CaseOptions());
+		DynamicCaseResult result = service.Create(CaseOptions());
+
+		// Assert
+		const string remedy = "Pass page-schema-name with the Freedom UI record page to decorate.";
+		result.ErrorMessage.Should().Contain(remedy, because: "clio's own remedy is not the site's text")
+			.And.Contain(RedactedReason, because: "the site's reason stays")
+			.And.NotContainAny([Marker, "fixture-site.invalid", "Terrasoft.Fixture"], because: "the site part is redacted");
+		Logged(logger).Should().Contain(text => text.Contains(remedy, StringComparison.Ordinal),
+			because: "the verdict line keeps the remedy too");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-dynamic-case: a page write that update-page refused keeps update-page's error as it came - "
+		+ "already redacted there - so its docs link and closing bracket survive, in the result and the verdict line.")]
+	public void CreateDynamicCase_ShouldKeepTheDocsLink_OfAPageWriteRefusal() {
+		// Arrange
+		(IDynamicCaseSession _, IBuildCaseClient client) = CaseSession(new BuildCaseResponse { Success = true },
+			new BuildCaseResponse {
+				Success = true, Outcome = "created",
+				Case = new BuildCaseCaseInfo { Status = "created", SchemaName = "UsrOrderCase", SchemaUId = Guid.NewGuid().ToString() }
+			});
+		IDynamicCasePageStep pageStep = Substitute.For<IDynamicCasePageStep>();
+		pageStep.Plan(Env, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
+				Arg.Any<bool?>())
+			.Returns(new DynamicCasePagePlan {
+				Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = "UsrOrders_FormPage",
+				Fragment = ProgressBarFragment.BuildBody("UsrOrders_FormPage", "UsrOrder", string.Empty)
+			});
+		string refusal = "Append merge failed: bad marker " + DocsHint;
+		pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>()).Returns(new DynamicCasePageWrite(false, refusal, []));
+		(ISettingsRepository settings, IServiceUrlBuilder urls) = CaseEnvironment();
+		DynamicCaseService service = new(client, pageStep, Substitute.For<IPackageDependencyManager>(), settings, urls);
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		new CreateDynamicCaseCommand(service, logger).Execute(CaseOptions());
+		DynamicCaseResult result = service.Create(CaseOptions());
+
+		// Assert
+		result.Page.Error.Should().Be(refusal, because: "update-page's error is already redacted and reaches the result as is");
+		result.ErrorMessage.Should().EndWith("docs://mcp/guides/page-modification.]",
+			because: "the docs link and its bracket survive");
+		Logged(logger).Should().Contain(text => text.Contains("docs://mcp/guides/page-modification.]", StringComparison.Ordinal),
+			because: "the verdict line keeps the link");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page step's write: an exception the page write throws is quoted redacted as site text where it "
+		+ "is embedded (DynamicCasePageStep.Write), and create-dynamic-case's page error carries it so.")]
+	public void PageStepWrite_ShouldRedactAThrownPageWriteText() {
+		// Arrange
+		IPageBodyWriter writer = Substitute.For<IPageBodyWriter>();
+		writer.TryUpdatePage(Arg.Any<PageUpdateOptions>(), out Arg.Any<PageUpdateResponse>())
+			.Returns(_ => throw new InvalidOperationException(SiteMessage));
+		DynamicCasePageStep pageStep = new(Substitute.For<IDynamicCaseRecordPageResolver>(),
+			Substitute.For<IProcessPageReader>(), writer, Substitute.For<IPageDataSourceReferenceValidator>());
+
+		// Act
+		DynamicCasePageWrite write = pageStep.Write(Env, new DynamicCasePagePlan { PageSchemaName = "UsrOrders_FormPage" });
+
+		// Assert
+		write.Inserted.Should().BeFalse(because: "the write threw");
+		write.Error.Should().Be(RedactedReason, because: "the thrown text is the reader's, redacted where it is quoted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-dynamic-case END TO END through WithPage: a page write that throws (the real page step's "
+		+ "Write) reaches the result's page error and the verdict line redacted where the page step quotes it.")]
+	public void CreateDynamicCase_ShouldRedactAThrownPageWrite_InTheResultAndTheVerdict() {
+		// Arrange
+		(IDynamicCaseSession _, IBuildCaseClient client) = CaseSession(new BuildCaseResponse { Success = true },
+			new BuildCaseResponse {
+				Success = true, Outcome = "created",
+				Case = new BuildCaseCaseInfo { Status = "created", SchemaName = "UsrOrderCase", SchemaUId = Guid.NewGuid().ToString() }
+			});
+		IPageBodyWriter writer = Substitute.For<IPageBodyWriter>();
+		writer.TryUpdatePage(Arg.Any<PageUpdateOptions>(), out Arg.Any<PageUpdateResponse>())
+			.Returns(_ => throw new InvalidOperationException(SiteMessage));
+		DynamicCasePageStep realStep = new(Substitute.For<IDynamicCaseRecordPageResolver>(),
+			Substitute.For<IProcessPageReader>(), writer, Substitute.For<IPageDataSourceReferenceValidator>());
+		IDynamicCasePageStep pageStep = Substitute.For<IDynamicCasePageStep>();
+		pageStep.Plan(Env, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
+				Arg.Any<bool?>())
+			.Returns(new DynamicCasePagePlan {
+				Status = DynamicCasePageStep.StatusPlanned, PageSchemaName = "UsrOrders_FormPage",
+				Fragment = ProgressBarFragment.BuildBody("UsrOrders_FormPage", "UsrOrder", string.Empty)
+			});
+		pageStep.Write(Env, Arg.Any<DynamicCasePagePlan>())
+			.Returns(call => realStep.Write(Env, call.ArgAt<DynamicCasePagePlan>(1)));
+		(ISettingsRepository settings, IServiceUrlBuilder urls) = CaseEnvironment();
+		DynamicCaseService service = new(client, pageStep, Substitute.For<IPackageDependencyManager>(), settings, urls);
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		new CreateDynamicCaseCommand(service, logger).Execute(CaseOptions());
+		DynamicCaseResult result = service.Create(CaseOptions());
+
+		// Assert
+		result.Page.Error.Should().Be(RedactedReason, because: "the thrown text is redacted where the page step quotes it");
+		Logged(logger).Should().Contain(text => text.Contains(RedactedReason, StringComparison.Ordinal),
+			because: "the verdict line names the reason, redacted");
+		foreach (string text in Logged(logger).Append(JsonSerializer.Serialize(result))) {
+			text.Should().NotContain(Marker, because: "no line or field carries the login");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The page step's plan: get-page's error about the record page is quoted redacted where it is "
+		+ "embedded, and the sentence around it is kept.")]
+	public void PageStepPlan_ShouldRedactTheQuotedPageReadError() {
+		// Arrange
+		IDynamicCaseRecordPageResolver resolver = Substitute.For<IDynamicCaseRecordPageResolver>();
+		resolver.Resolve(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+			.Returns(new RecordPageResolution(["UsrOrders_FormPage"], DynamicCaseRecordPageResolver.ResolvedByExplicit, null,
+				null, []));
+		IProcessPageReader reader = Substitute.For<IProcessPageReader>();
+		reader.TryGetPage(Arg.Any<PageGetOptions>(), out Arg.Any<PageGetResponse>()).Returns(call => {
+			call[1] = new PageGetResponse { Success = false, Error = SiteMessage };
+			return false;
+		});
+		DynamicCasePageStep pageStep = new(resolver, reader, Substitute.For<IPageBodyWriter>(),
+			Substitute.For<IPageDataSourceReferenceValidator>());
+
+		// Act
+		DynamicCasePagePlan plan = pageStep.Plan(Env, "UsrOrders", "UsrOrder", "UsrOrders_FormPage");
+
+		// Assert
+		plan.ErrorMessage.Should().Be("Record page 'UsrOrders_FormPage' could not be read: " + RedactedReason + ".",
+			because: "only the quoted part is redacted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A process write's digest whose BEFORE read failed (describe-business-process, a follow-up reader) "
+		+ "carries that failure in changesUnavailable redacted as site text (ProcessWriteDigest.Report).")]
+	public void ProcessWriteDigest_ShouldRedactTheBeforeReadFailure_InChangesUnavailable() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		Clio.Command.ProcessModel.DescribeProcessResult after =
+			Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(Clio.Tests.Command.ProcessModel.ProcessDigestTests.SmallFixture);
+
+		// Act
+		ProcessWriteDigest.Report(logger, after, ErrorOr.Error.Failure("DescribeFailed", SiteMessage), versionFactsRead: true);
+
+		// Assert
+		Logged(logger).Should().Contain(text => text.Contains("the read before the write failed: " + RedactedReason,
+				StringComparison.Ordinal), because: "the reason stays, redacted")
+			.And.NotContain(text => text.Contains(Marker, StringComparison.Ordinal), because: "the digest line carries no login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A process write's digest that fails while it is built over the site's process quotes the failure "
+		+ "redacted as site text ('its summary could not be built: ...'), since the text can carry the site's names.")]
+	public void ProcessWriteDigest_ShouldRedactTheBuildFailure() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		logger.When(value => value.WriteInfo(Arg.Any<string>())).Do(_ => throw new InvalidOperationException(SiteMessage));
+		Clio.Command.ProcessModel.DescribeProcessResult after =
+			Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(Clio.Tests.Command.ProcessModel.ProcessDigestTests.SmallFixture);
+
+		// Act
+		ProcessWriteDigest.Report(logger, after, versionFactsRead: true);
+
+		// Assert
+		logger.Received().WriteWarning(Arg.Is<string>(text =>
+			text.Contains("its summary could not be built: " + RedactedReason, StringComparison.Ordinal)));
+		logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains(Marker, StringComparison.Ordinal)));
+	}
+
+	private const string RightsDescriptor = "{\"name\":\"UsrFixtureProcess\",\"packageName\":\"Custom\",\"elements\":[{\"name\":"
+		+ "\"Grant\",\"type\":\"changeAccessRights\",\"accessRights\":{\"object\":\"Order\"}}],\"flows\":[]}";
+
+	private const string LabelDescriptor = "{\"name\":\"UsrFixtureProcess\",\"packageName\":\"Custom\",\"elements\":[],"
+		+ "\"flows\":[{\"source\":\"Start1\",\"target\":\"End1\",\"label\":\"Yes\"}]}";
+
+	private const string RightsOperations =
+		"[{\"op\":\"setElement\",\"elementName\":\"Grant\",\"elementUpdate\":{\"accessRights\":{\"add\":[]}}}]";
+
+	private const string LabelOperations = "[{\"op\":\"addFlow\",\"source\":\"Start1\",\"target\":\"End1\",\"label\":\"Yes\"}]";
+
+	private static ILogger RunGuardedWrite(bool create, string blocks, Exception guardWarningThrows = null) {
+		IProcessDescriber describer = Substitute.For<IProcessDescriber>();
+		describer.Describe(default!, default!).ReturnsForAnyArgs(ErrorOr.Error.Failure("DescribeFailed",
+			guardWarningThrows is null ? SiteMessage : "Describe failed."));
+		ILogger logger = Substitute.For<ILogger>();
+		if (guardWarningThrows is not null) {
+			// The guard's own warning throws once, the way a guard that fails mid-check does; later lines log.
+			bool thrown = false;
+			logger.When(value => value.WriteWarning(Arg.Is<string>(text => text.StartsWith("Could not verify",
+					StringComparison.Ordinal))))
+				.Do(_ => {
+					if (!thrown) {
+						thrown = true;
+						throw guardWarningThrows;
+					}
+				});
+		}
+		if (create) {
+			ICreateBusinessProcessService service = Substitute.For<ICreateBusinessProcessService>();
+			service.BuildProcess(Env, Arg.Any<CreateBusinessProcessRequest>())
+				.Returns(new CreateBusinessProcessResult("UsrFixtureProcess", "99999999-9999-9999-9999-999999999999"));
+			new CreateBusinessProcessCommand(service, describer, logger)
+				.Execute(new CreateBusinessProcessOptions { Environment = Env, DescriptorJson = blocks });
+		} else {
+			IModifyBusinessProcessService service = Substitute.For<IModifyBusinessProcessService>();
+			service.ModifyProcess(Env, Arg.Any<ModifyBusinessProcessRequest>())
+				.Returns(new ModifyBusinessProcessResult("UsrFixtureProcess", "99999999-9999-9999-9999-999999999999", 1));
+			new ModifyBusinessProcessCommand(service, describer, logger).Execute(new ModifyBusinessProcessOptions {
+				Environment = Env, ProcessName = "UsrFixtureProcess", OperationsJson = blocks
+			});
+		}
+		return logger;
+	}
+
+	[TestCase(true, RightsDescriptor, TestName = "ProcessWriteGuard_ShouldRedactTheReadBackFailure(create, rights)")]
+	[TestCase(true, LabelDescriptor, TestName = "ProcessWriteGuard_ShouldRedactTheReadBackFailure(create, labels)")]
+	[TestCase(false, RightsOperations, TestName = "ProcessWriteGuard_ShouldRedactTheReadBackFailure(modify, rights)")]
+	[TestCase(false, LabelOperations, TestName = "ProcessWriteGuard_ShouldRedactTheReadBackFailure(modify, labels)")]
+	[Category("Unit")]
+	[Description("create- and modify-business-process: when the read-back the access-rights or flow-label guard needs "
+		+ "fails (describe-business-process, a follow-up reader), the guard's 'could not verify' warning quotes the "
+		+ "failure redacted as site text.")]
+	public void ProcessWriteGuard_ShouldRedactTheReadBackFailure(bool create, string blocks) {
+		// Act
+		ILogger logger = RunGuardedWrite(create, blocks);
+
+		// Assert
+		Logged(logger).Should().Contain(text => text.Contains(RedactedReason, StringComparison.Ordinal),
+				because: "the guard names why it could not verify, redacted")
+			.And.NotContain(text => text.Contains(Marker, StringComparison.Ordinal), because: "no warning carries the login");
+	}
+
+	[TestCase(true, TestName = "ProcessWriteVerification_ShouldRedactTheFailure(create)")]
+	[TestCase(false, TestName = "ProcessWriteVerification_ShouldRedactTheFailure(modify)")]
+	[Category("Unit")]
+	[Description("create- and modify-business-process: a verification that throws after the write landed is reported "
+		+ "with its text redacted as site text ('verifying its configuration failed: ...').")]
+	public void ProcessWriteVerification_ShouldRedactTheFailure(bool create) {
+		// Act
+		ILogger logger = RunGuardedWrite(create, create ? RightsDescriptor : RightsOperations,
+			new InvalidOperationException(SiteMessage));
+
+		// Assert
+		Logged(logger).Should().Contain(text => text.Contains("verifying its configuration failed: " + RedactedReason,
+				StringComparison.Ordinal), because: "the verification's reason is logged, redacted")
+			.And.NotContain(text => text.Contains(Marker, StringComparison.Ordinal), because: "no line carries the login");
+	}
+
+	[TestCase(true, TestName = "DependencyRemoveAgain_ShouldRedactTheText(after an uncertain add)")]
+	[TestCase(false, TestName = "DependencyRemoveAgain_ShouldRedactTheText(after a failed build)")]
+	[Category("Unit")]
+	[Description("create-dynamic-case: removing the dependencies again - after an add whose outcome is unknown, or after "
+		+ "a build that failed - fails with the dependency manager's text (a follow-up reader), which the warning "
+		+ "quotes redacted as site text, in the result and in the command's warning line.")]
+	public void DependencyRemoveAgain_ShouldRedactTheText(bool uncertainAdd) {
+		// Arrange
+		(IDynamicCaseSession _, IBuildCaseClient client) = CaseSession(
+			new BuildCaseResponse { Success = true, MissingDependencies = ["CrtBase"] },
+			new BuildCaseResponse { Success = false, Outcome = "refused", ErrorCode = "BuildRefused", ErrorMessage = "Refused." });
+		IPackageDependencyManager dependencies = Substitute.For<IPackageDependencyManager>();
+		if (uncertainAdd) {
+			dependencies.AddDependenciesReportingCompilation(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>())
+				.Returns(_ => throw new System.Net.Http.HttpRequestException("First " + SiteMessage));
+		} else {
+			dependencies.AddDependenciesReportingCompilation(Arg.Any<string>(), Arg.Any<IEnumerable<PackageDependencySpec>>())
+				.Returns(new PackageDependencyAddResult(["CrtBase"], false));
+		}
+		dependencies.When(value => value.RemoveDependencies(Arg.Any<string>(), Arg.Any<IEnumerable<string>>()))
+			.Do(_ => throw new InvalidOperationException("Second " + SiteMessage));
+		(ISettingsRepository settings, IServiceUrlBuilder urls) = CaseEnvironment();
+		DynamicCaseService service = new(client, Substitute.For<IDynamicCasePageStep>(), dependencies, settings, urls);
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		new CreateDynamicCaseCommand(service, logger).Execute(CaseOptions(addProgressBar: false));
+		DynamicCaseResult result = service.Create(CaseOptions(addProgressBar: false));
+
+		// Assert
+		result.Warnings.Should().Contain(warning => warning.Contains("Second " + RedactedReason, StringComparison.Ordinal),
+			because: "the removal's reason is quoted, redacted");
+		foreach (string text in Logged(logger).Append(JsonSerializer.Serialize(result))) {
+			text.Should().NotContain(Marker, because: "no line or field carries the login");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-dynamic-case and modify-dynamic-case: the case's name and caption the server returns are "
+		+ "redacted in the result and in the verdict line ('Dynamic case ... created').")]
+	public void DynamicCase_ShouldRedactTheCaseName_InTheVerdictAndTheResult([Values(true, false)] bool create) {
+		// Arrange
+		BuildCaseCaseInfo info = new() {
+			Status = "created", SchemaName = "UsrOrderCase " + SiteMessage, Caption = "Orders " + SiteMessage,
+			SchemaUId = Guid.NewGuid().ToString()
+		};
+		(IDynamicCaseSession session, IBuildCaseClient client) = CaseSession(new BuildCaseResponse { Success = true },
+			new BuildCaseResponse { Success = true, Outcome = "created", Case = info });
+		session.Modify(Arg.Any<ModifyCaseRequest>()).Returns(new DynamicCaseReply<ModifyCaseResponse>(
+			DynamicCaseReplyKind.Envelope,
+			new ModifyCaseResponse { Success = true, Outcome = DynamicCaseModifyOutcomes.Modified, Case = info }, null));
+		(ISettingsRepository settings, IServiceUrlBuilder urls) = CaseEnvironment();
+		DynamicCaseService service = new(client, Substitute.For<IDynamicCasePageStep>(),
+			Substitute.For<IPackageDependencyManager>(), settings, urls);
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		object result;
+		if (create) {
+			new CreateDynamicCaseCommand(service, logger).Execute(CaseOptions(addProgressBar: false));
+			result = service.Create(CaseOptions(addProgressBar: false));
+		} else {
+			ModifyDynamicCaseOptions options = new() { Environment = Env, CaseName = "UsrOrderCase", Caption = "Orders" };
+			new ModifyDynamicCaseCommand(service, logger).Execute(options);
+			result = service.Modify(options);
+		}
+
+		// Assert
+		Logged(logger).Should().Contain(text => text.Contains("UsrOrderCase " + RedactedReason, StringComparison.Ordinal),
+			because: "the verdict names the case, redacted");
+		foreach (string text in Logged(logger).Append(JsonSerializer.Serialize(result))) {
+			text.Should().NotContain(Marker, because: "no line or field carries the login");
+		}
+	}
+
+	[TestCase("", TestName = "InstallFailure_ShouldNameTheFile_OfABareCompilerLine")]
+	[TestCase("2026-09-05 21:18:24,665 ", TestName = "InstallFailure_ShouldNameTheFile_AfterATimestamp")]
+	[Category("Unit")]
+	[Description("The installation failure line names the file of a compiler line that has no directory, with or "
+		+ "without the log's timestamp before it: only the token right before the position is the file.")]
+	public void InstallFailure_ShouldNameTheFile_WithOrWithoutATimestamp(string prefix) {
+		// Arrange
+		BaseResponse response = new() {
+			Success = false, ErrorInfo = new SiteErrorInfo { ErrorCode = "Exception", Message = "Packages installation failed" }
+		};
+
+		// Act
+		string description = InstallLogAnalyzer.DescribeFailure(response,
+			prefix + "UsrX.cs(1,79) error CS1519: Invalid token\r\n");
+
+		// Assert
+		description.Should().Contain("UsrX.cs(1,79) error CS1519: Invalid token", because: "the file name stays")
+			.And.NotContain("[redacted-path](1,79)", because: "the timestamp is not part of the file's path");
+	}
+
+	#endregion
 }

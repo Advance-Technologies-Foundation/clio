@@ -882,6 +882,28 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
+	[Description("compile-creatio: a compilation-history baseline the real poller cannot read (the ATF data provider, a "
+		+ "follow-up reader) is reported with its text redacted as site text in the warning line (TryGetBaseline).")]
+	public void Execute_ShouldRedactTheBaselineReadFailure_AsSiteText() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		_dataProvider.GetItems(Arg.Any<ISelectQuery>())
+			.Returns(_ => throw new InvalidOperationException(Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		StubCompileResponse(SuccessResponse);
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteWarning(Arg.Is<string>(line =>
+			line.StartsWith("Could not read the compilation history baseline: ", StringComparison.Ordinal)
+			&& line.Contains("Login failed for user '[redacted]'.", StringComparison.Ordinal)));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the warning line is the stdio caller's result");
+	}
+
+	[Test]
 	[Description("compile-creatio names an environment verdict diagnostic whose path ends in a separator as "
 		+ "[redacted-path], not as an empty name ('in  at (12,3)').")]
 	public void Execute_ShouldNotPrintAnEmptyFileName_OfAnEnvironmentVerdictDiagnostic() {

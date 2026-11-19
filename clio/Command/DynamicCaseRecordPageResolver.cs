@@ -77,7 +77,9 @@ public sealed class DynamicCaseRecordPageResolver(
 					break;
 				}
 			} catch (Exception exception) {
-				addonFailure ??= exception.Message;
+				// The add-on read's text is the site's (its reader is still a follow-up one): redacted here, where it is
+				// quoted, so the remedy sentence around it survives a stack frame in it.
+				addonFailure ??= SensitiveErrorTextRedactor.RedactSiteText(exception.Message);
 			}
 		}
 		// An add-on that could not be read is not an empty one: the card registrations would then decorate a page

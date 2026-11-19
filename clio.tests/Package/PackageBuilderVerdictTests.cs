@@ -762,6 +762,45 @@ public sealed class PackageBuilderVerdictTests {
 			because: "the warning line is the stdio caller's result");
 	}
 
+	[Test]
+	[Description("compile-package: a tolerated poll round's failure, which the real CompilationHistoryPoller reports "
+		+ "on PackageBuilder's poll thread, quotes the ATF data provider's text through the SITE fence, in the warning "
+		+ "line and in every other line the build writes, while the build itself still succeeds.")]
+	public void Rebuild_ShouldFenceAPollRoundFailure_AsSiteText() {
+		// Arrange
+		ATF.Repository.Providers.IDataProvider failing = Substitute.For<ATF.Repository.Providers.IDataProvider>();
+		failing.GetItems(Arg.Any<ATF.Repository.ISelectQuery>())
+			.Returns(_ => throw new InvalidOperationException(Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		ICancellableDelay oneRound = Substitute.For<ICancellableDelay>();
+		oneRound.WaitOrCancelled(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
+		CompilationHistoryPoller rounds = new(failing, _logger, TimeProvider.System, oneRound);
+		_poller = Substitute.For<ICompilationHistoryPoller>();
+		_poller.GetBaseline().Returns(new CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+				Arg.Any<Action<CompilationHistory>>()))
+			.Do(call => {
+				// One failing round of the real poller, then the simulated stand's history.
+				rounds.Poll(call.ArgAt<DateTime>(0), call.ArgAt<CancellationToken>(1),
+					call.ArgAt<Action<CompilationHistory>>(2));
+				_stand.Poll(call.ArgAt<Action<CompilationHistory>>(2), call.ArgAt<CancellationToken>(1));
+			});
+		// Answered a second in: the answer is due only once the poll thread attached, so after the real round.
+		_stand.AnswersAt(TimeSpan.FromSeconds(1), SucceededResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().NotThrow(because: "one tolerated round does not end the build");
+		LoggedText().Should().Contain(line => line.StartsWith("Compilation polling round 1 failed", StringComparison.Ordinal)
+				&& line.Contains("Login failed for user '[redacted]'.", StringComparison.Ordinal)
+				&& line.Contains("untrusted-source-text", StringComparison.Ordinal),
+			because: "the round's warning quotes the provider's text through the site fence");
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the warning line is the stdio caller's result");
+	}
+
 	private const string SecondProjectError =
 		"[{\"Line\":3,\"Column\":1,\"ErrorNumber\":\"CS1002\",\"ErrorText\":\"; expected\","
 		+ "\"IsWarning\":false,\"FileName\":\"UsrSecond.cs\"}]";
