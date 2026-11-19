@@ -13,7 +13,8 @@ namespace Clio.Common;
 /// <summary>
 /// Adapts clients returned by legacy factory implementations to the ownership-aware internal contract.
 /// </summary>
-internal sealed class ApplicationClientLease(IApplicationClient client) : IOwnedApplicationClient {
+internal sealed class ApplicationClientLease(IApplicationClient client) : IOwnedApplicationClient,
+	IStatusPreservingApplicationClient {
 	private readonly IApplicationClient _client = client ?? throw new ArgumentNullException(nameof(client));
 	private ICreatioApplicationClient Extended => _client as ICreatioApplicationClient
 		?? throw new NotSupportedException("The configured client does not expose extended Creatio transport operations.");
@@ -67,6 +68,20 @@ internal sealed class ApplicationClientLease(IApplicationClient client) : IOwned
 	public string ExecuteNonReplayablePostRequest(string url, string requestData,
 		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1) =>
 		_client.ExecuteNonReplayablePostRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
+
+	// Forwarded through SiteCall, so a leased client that keeps the status still does, and one that does not
+	// answers with an unknown status instead of failing.
+	public SiteHttpResponse SendKeepingStatus(SiteRequestVerb verb, string url, string requestData,
+		int requestTimeout = Timeout.Infinite, int maxAttempts = 1, int delaySec = 1, bool replayAllowed = true) =>
+		verb switch {
+			SiteRequestVerb.Post when replayAllowed =>
+				SiteCall.Post(_client, url, requestData, requestTimeout, maxAttempts, delaySec),
+			SiteRequestVerb.Post => SiteCall.NonReplayablePost(_client, url, requestData, requestTimeout, maxAttempts,
+				delaySec),
+			SiteRequestVerb.Patch => SiteCall.Patch(_client, url, requestData, requestTimeout, maxAttempts, delaySec),
+			SiteRequestVerb.Delete => SiteCall.Delete(_client, url, requestData, requestTimeout, maxAttempts, delaySec),
+			_ => throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unsupported request verb.")
+		};
 
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout = Timeout.Infinite,
 		int maxAttempts = 1, int delaySec = 1) =>

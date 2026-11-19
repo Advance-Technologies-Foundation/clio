@@ -106,6 +106,53 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A failed operation carries the site's answer to it as site-response on its own result")]
+	public async Task SchemaSync_ShouldCarryTheSiteResponse_OnTheFailedOperation() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(new SiteRefusingCreateEntitySchemaCommand(exitCode: 1));
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, new OptionSuggestionService(), Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeFalse();
+		response.Results[0].SiteResponse.Should().BeEquivalentTo(new SiteResponse(200, "Schema exists",
+			"SchemaDesignerException", SiteResponse.JsonBody),
+			because: "each failed operation reports what the site answered to it");
+		System.Text.Json.JsonSerializer.Serialize(response).Should().Contain("\"site-response\":{\"status\":200");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An operation that succeeded after a refusal it recovered from carries no site response")]
+	public async Task SchemaSync_ShouldCarryNoSiteResponse_OnASucceededOperation() {
+		// Arrange
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(new SiteRefusingCreateEntitySchemaCommand(exitCode: 0));
+		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ILookupRegistrationService>());
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, new OptionSuggestionService(), Convergence());
+		SchemaSyncArgs args = new(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-lookup", "UsrTodoStatus", TitleLocalizations: Localizations("Todo Status"))]);
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(args);
+
+		// Assert
+		response.Success.Should().BeTrue();
+		response.Results[0].SiteResponse.Should().BeNull();
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes create-lookup operation through CreateEntitySchemaCommand with BaseLookup parent")]
 	public async Task SchemaSync_CreateLookup_Should_Route_Through_CreateEntitySchemaCommand() {
 		// Arrange
@@ -4499,6 +4546,15 @@ public sealed class SchemaSyncToolTests {
 			result["uk-UA"] = ukUa;
 		}
 		return result;
+	}
+
+	private sealed class SiteRefusingCreateEntitySchemaCommand(int exitCode) : CreateEntitySchemaCommand(
+		Substitute.For<IRemoteEntitySchemaCreator>(), Substitute.For<ILogger>()) {
+		public override int Execute(CreateEntitySchemaOptions options) {
+			SiteResponseCapture.RecordRefusal(new SiteHttpResponse(200,
+				"{\"success\":false,\"errorInfo\":{\"errorCode\":\"SchemaDesignerException\",\"message\":\"Schema exists\"}}"));
+			return exitCode;
+		}
 	}
 
 	private sealed class FakeCreateEntitySchemaCommand : CreateEntitySchemaCommand {

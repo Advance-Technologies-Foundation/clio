@@ -94,4 +94,44 @@ public sealed class DataWriteDiagnosticTests {
 		// Assert
 		result.SideEffect.Should().Be("unknown", because: "the default must preserve uncertainty after submission");
 	}
+
+	[Test]
+	[Description("Beside a site response that proves nothing was applied: an answered write with side effect none and access advice.")]
+	public void ForSiteRefusal_ShouldReportNone_WhenTheRefusalProvesNothingApplied() {
+		// Act
+		DataWriteDiagnostic result = DataWriteDiagnostic.ForSiteRefusal(null, nothingApplied: true);
+		// Assert
+		result.Should().BeEquivalentTo(new {
+			Operation = (string)null, Entity = (string)null, ItemIndex = (int?)null, WriteAttempted = true,
+			TransportOutcome = "response-received", SideEffect = "none",
+			RetryAdvice = DataWriteDiagnostic.RefusedWithoutProcessingAdvice, Message = (string)null
+		}, because: "the request was sent and answered, and the answer proves it was not processed");
+		JsonSerializer.Serialize(result).Should().Contain("\"side-effect\":\"none\"");
+	}
+
+	[Test]
+	[Description("Beside any other site response: side effect unknown with read-back advice.")]
+	public void ForSiteRefusal_ShouldReportUnknown_WhenTheRefusalProvesNothing() {
+		// Act
+		DataWriteDiagnostic result = DataWriteDiagnostic.ForSiteRefusal(3, nothingApplied: false);
+		// Assert
+		result.SideEffect.Should().Be("unknown");
+		result.ItemIndex.Should().Be(3);
+		result.RetryAdvice.Should().Be(DataWriteDiagnostic.SiteRefusalUnknownAdvice,
+			because: "a refusal that proves nothing leaves a read-back as the only safe next step");
+	}
+
+	[Test]
+	[Description("Only an attempted, answered, unknown write becomes none; other boundaries keep their outcome.")]
+	public void AsRefusedWithoutProcessing_ShouldChangeOnlyAnAnsweredUnknownWrite() {
+		// Arrange
+		DataWriteDiagnostic answered = DataWriteDiagnostic.Create("update", "Contact", null, true, true, false, "x");
+		DataWriteDiagnostic unanswered = DataWriteDiagnostic.Create("update", "Contact", null, true, false, false, "x");
+		DataWriteDiagnostic acknowledged = DataWriteDiagnostic.Create("update", "Contact", null, true, true, true, null);
+		// Act + Assert
+		answered.AsRefusedWithoutProcessing().SideEffect.Should().Be("none");
+		unanswered.AsRefusedWithoutProcessing().SideEffect.Should().Be("unknown",
+			because: "without an answer nothing proves the write was not applied");
+		acknowledged.AsRefusedWithoutProcessing().SideEffect.Should().Be("acknowledged");
+	}
 }

@@ -132,6 +132,12 @@ public sealed class ODataUpdateTool(
 		if (timedOut) {
 			diagnostic = diagnostic with { RetryAdvice = PatchTimedOutRetryAdvice };
 		}
+		// The PATCH is the call's sole write: before it only GET reads ($metadata), it is sent with one attempt,
+		// and its refusal ends the call. A site response is set only from its answer, so a refusal without
+		// processing proves nothing was written.
+		if (result.SiteResponse is { RefusedWithoutProcessing: true }) {
+			diagnostic = diagnostic.AsRefusedWithoutProcessing();
+		}
 		return result with { Warnings = payloadAlias.WarningFor(!result.Success && !attempted) is { } warning ? [warning] : null,
 			CorrelationId = correlationId, Diagnostic = diagnostic };
 	}
@@ -190,17 +196,19 @@ public sealed class ODataUpdateTool(
 				return ODataWriteResponse.Failure($"odata-update rejected: {zoneLessDateTime}");
 			}
 			attempted = true;
-			string response;
+			SiteHttpResponse answer;
 			try {
-				response = client.ExecutePatchRequest(url, data.GetRawText(), PatchTimeoutMs);
+				answer = SiteCall.Patch(client, url, data.GetRawText(), PatchTimeoutMs);
 			} catch (Exception ex) when (IsPatchCancelledByTimeout(ex)) {
 				timedOut = true;
 				return ODataWriteResponse.Failure(PatchTimedOutError);
 			}
 			received = true;
-			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
+			string validationError = ODataKeyedWrite.ValidateWriteResponse(answer);
 			if (validationError is not null) {
-				return ODataWriteResponse.Failure(validationError);
+				return ODataWriteResponse.Failure(validationError) with {
+					SiteResponse = SiteResponse.FromRefusal(answer)
+				};
 			}
 			return new ODataWriteResponse(true, null, args.Id.Trim());
 		} catch (Exception ex) {

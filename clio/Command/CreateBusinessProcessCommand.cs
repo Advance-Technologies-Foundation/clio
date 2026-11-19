@@ -394,7 +394,28 @@ public sealed class CreateBusinessProcessService(
 		string requestBody = new JsonObject { ["request"] = descriptor }.ToJsonString();
 		logger.WriteInfo($"Building process '{descriptor["name"]}' on '{environmentName}'...");
 
-		string responseBody = client.ExecutePostRequest(url, requestBody);
+		SiteHttpResponse answer = SiteCall.Post(client, url, requestBody, maxAttempts: BuildProcessAttempts);
+		if (answer.IsRefusedWithoutProcessing) {
+			// Before the envelope is parsed: such an answer has no envelope (its body is empty, a page or plain text),
+			// and a refusal status with no answer of the application proves BuildProcess did not run.
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, BuildProcessAttempts);
+			throw new InvalidOperationException($"The environment refused BuildProcess without processing it (HTTP "
+				+ $"{answer.StatusCode}), so the process was NOT created. Check the request's method, size, URL and media type.");
+		}
+		try {
+			return ReadBuildProcessAnswer(answer.Body);
+		}
+		catch (InvalidOperationException) {
+			// Every refusal below is this answer failing the call, so it is what the tool reports as the site's.
+			SiteResponseCapture.RecordRefusal(answer);
+			throw;
+		}
+	}
+
+	// BuildProcess is sent once and never retried: a retry after a timeout could create the process twice.
+	private const int BuildProcessAttempts = 1;
+
+	private static CreateBusinessProcessResult ReadBuildProcessAnswer(string responseBody) {
 		// The response is parsed inside a try, for the reason ParseOperations just below parses the REQUEST inside
 		// one: a body that is not this envelope makes JsonSerializer throw a message built for a developer — a
 		// .NET type name and a byte offset — and this one reaches an agent, which cannot act on it. Worse, it
