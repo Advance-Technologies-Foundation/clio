@@ -76,6 +76,37 @@ public sealed class WidgetFilterValidatorTests {
 	}
 
 	[Test]
+	[Description("A broken column in a data-source attribute's aggregationConfig.filter blocks the save like a widget filter does.")]
+	public void Validate_Should_Report_A_Broken_Aggregation_Filter() {
+		// Arrange
+		WidgetFilterValidator validator = CreateValidator();
+		const string body = """
+			define("UsrPage", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ {
+				return {
+					modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[
+						{ "operation": "merge", "path": [], "values": { "dataSources": { "PDS": { "type": "crt.EntityDataSource", "config": {
+							"entitySchemaName": "Contact", "attributes": { "AccountCount": { "path": "[Account:PrimaryContact].Id",
+								"aggregationConfig": { "aggregationFunction": "count", "filter": { "filterType": 6, "logicalOperation": 0,
+									"rootSchemaName": "Account", "items": { "a": { "filterType": 2, "comparisonType": 2,
+										"leftExpression": { "expressionType": 0, "columnPath": "Nmae" } } } } } } } } } } } }
+					]/**SCHEMA_MODEL_CONFIG_DIFF*/
+				};
+			});
+			""";
+
+		// Act
+		PageWidgetFilterReport report = validator.Validate(body, PackageUId);
+		PageWidgetFilterReport untouched = validator.Validate(body, PackageUId, persistedBody: body);
+
+		// Assert
+		report.Errors.Should().ContainSingle(because: "the aggregation sub-query would fail on the misspelled column")
+			.Which.Should().Contain("modelConfigDiff[0].values.dataSources.PDS.config.attributes.AccountCount.aggregationConfig.filter")
+			.And.Contain("'Nmae' was not found on schema 'Account'");
+		untouched.Errors.Should().BeEmpty(because: "an aggregation filter the page already stores unchanged must not block an unrelated edit either");
+		untouched.Warnings.Should().ContainSingle().Which.Should().StartWith("Already on the page");
+	}
+
+	[Test]
 	[Description("A view-config diff that is not JSON yields a warning that nothing was checked.")]
 	public void Validate_Should_Warn_When_The_Diff_Cannot_Be_Read() {
 		// Arrange
