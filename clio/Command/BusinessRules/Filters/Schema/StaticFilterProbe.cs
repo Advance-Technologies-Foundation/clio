@@ -9,7 +9,6 @@ using Clio.Package;
 
 namespace Clio.Command.BusinessRules.Filters.Schema;
 
-/// <summary>Outcome of running an apply-static-filter envelope: how many records match, or why it was not checked.</summary>
 internal sealed record StaticFilterProbeResult(int? MatchCount, string? Warning);
 
 /// <summary>
@@ -30,9 +29,8 @@ internal sealed class StaticFilterProbe(IApplicationClient applicationClient, IS
 	// than holding the whole MCP call.
 	private const int RequestTimeoutMs = 30_000;
 
-	// Server failures that say nothing about the filter: the caller's rights on the lookup, or a transient
-	// condition that outlived the helper's retries. Reporting those as "fix your filter" would send the agent
-	// round in circles.
+	// Failures that say nothing about the filter: rights on the lookup, or a transient condition (a bounded
+	// SelectQuery is not retried). Reporting those as "fix your filter" would send the agent round in circles.
 	private static readonly string[] NotAboutTheFilterMarkers = [
 		"permission", "access", "denied", "security", "deadlock", "timeout", "timed out", "collection was modified"
 	];

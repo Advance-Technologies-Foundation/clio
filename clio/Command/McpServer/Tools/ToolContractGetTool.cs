@@ -3350,7 +3350,9 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. EntityBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(StaticFilterBatchResultsDescription),
+			BusinessRuleBatchOutput(
+				"Per-rule outcomes in input order; each item has name, success, ruleName, and error. " +
+				StaticFilterResultFields),
 			CommonErrorContract,
 			[
 			],
@@ -7477,9 +7479,6 @@ internal static class ToolContractCatalog {
 	private const string StaticFilterResultFields =
 		"An apply-static-filter rule also carries filterMatchCount (how many records of the target lookup its filter " +
 		"matched on the environment) and, when the filter could not be run, warning.";
-
-	private const string StaticFilterBatchResultsDescription =
-		"Per-rule outcomes in input order; each item has name, success, ruleName, and error. " + StaticFilterResultFields;
 
 	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
 		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {

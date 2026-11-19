@@ -193,17 +193,13 @@ internal sealed class EntityBusinessRuleService(
 			request.RuleNames);
 	}
 
-	/// <summary>
-	/// Runs the envelope just built for an apply-static-filter rule on the environment (ENG-95270), so the
-	/// agent learns before anything is saved whether the server can run it, and how many lookup records it
-	/// keeps. A rejection throws and fails only that rule; an unverifiable run comes back as a warning.
-	/// </summary>
+	// ENG-95270: runs the built filter on the environment before the rule is saved; null when there is nothing to probe.
 	private static StaticFilterProbeResult? ProbeStaticFilter(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributes,
 		IReadOnlyList<BusinessRuleMetadataDto> builtRules,
 		StaticFilterContext? context) {
-		if (context?.Probe is null
+		if (context is null
 			|| rule.Actions?.OfType<ApplyStaticFilterBusinessRuleAction>().FirstOrDefault() is not { } action
 			|| !attributes.TryGetValue(action.TargetAttribute, out BusinessRuleAttributeDescriptor? target)
 			|| string.IsNullOrEmpty(target.ReferenceSchemaName)) {

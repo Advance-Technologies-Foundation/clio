@@ -1,11 +1,12 @@
 namespace Clio.Command.BusinessRules;
 
 /// <summary>
-/// Returns the generated internal rule name created in add-on metadata.
+/// Returns the generated internal rule name created in add-on metadata, and for an apply-static-filter rule what
+/// running its filter showed.
 /// </summary>
 /// <param name="RuleName">The generated internal rule name.</param>
 /// <param name="FilterMatchCount">For an apply-static-filter rule, how many records of the target lookup its filter
-/// matched on the environment when it was saved; lets the caller judge the filter's meaning without re-running it.</param>
+/// matched on the environment before saving.</param>
 /// <param name="Warning">Set when the rule was saved but something about it could not be checked.</param>
 public sealed record BusinessRuleCreateResult(string RuleName, int? FilterMatchCount = null, string? Warning = null);
 

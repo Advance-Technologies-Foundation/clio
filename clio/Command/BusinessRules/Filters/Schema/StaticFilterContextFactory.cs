@@ -5,12 +5,12 @@ using Clio.Common;
 namespace Clio.Command.BusinessRules.Filters.Schema;
 
 /// <summary>
-/// Bundles the schema provider and lookup-value resolver required for apply-static-filter handling.
+/// Bundles the schema provider, lookup-value resolver and filter probe required for apply-static-filter handling.
 /// </summary>
 internal sealed record StaticFilterContext(
 	IFilterSchemaProvider SchemaProvider,
 	ILookupValueResolver LookupResolver,
-	IStaticFilterProbe? Probe = null);
+	IStaticFilterProbe Probe);
 
 internal interface IStaticFilterContextFactory {
 	StaticFilterContext Create(Guid packageUId, EntityDesignSchemaDto rootSchema);
