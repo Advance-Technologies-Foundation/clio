@@ -50,7 +50,9 @@ public sealed record SiteResponse(
 	/// <summary>The body kind of a response whose body parses as a JSON object or array.</summary>
 	public const string JsonBody = "json";
 
-	/// <summary>The body kind of a markup response: an HTML error page, an IIS or proxy page, a login page.</summary>
+	/// <summary>The body kind of a markup response: an HTML error page, an IIS or proxy page, a login page - or any
+	/// other markup, such as an XML or SOAP fault, which is not an HTML page and so never proves a refusal without
+	/// processing.</summary>
 	public const string HtmlBody = "html";
 
 	/// <summary>The body kind of any other non-empty body.</summary>
@@ -128,11 +130,15 @@ public sealed record SiteResponse(
 			return content.StartsWith("<!DOCTYPE html", StringComparison.OrdinalIgnoreCase)
 				|| content.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
 		}
+		// Only a JSON number, true, false or null is left that could parse; other text is plain text.
+		if (content[0] is not ('-' or 't' or 'f' or 'n' or (>= '0' and <= '9'))) {
+			return true;
+		}
 		try {
 			using JsonDocument scalar = JsonDocument.Parse(content.ToString());
 			return false;
 		}
-		catch (JsonException) {
+		catch (Exception exception) when (exception is JsonException or ArgumentException) {
 			return true;
 		}
 	}
@@ -302,8 +308,9 @@ public sealed record SiteHttpResponse(int? StatusCode, string Body) {
 	/// <list type="bullet">
 	/// <item>the status is one with which HTTP defines the server as refusing to process the request
 	/// (<see cref="HasRefusalStatus"/>);</item>
-	/// <item>the body carries no answer of the service: it is empty, a page or plain text, never JSON. A JSON
-	/// error body is written by the application, which may have done part of its work before it refused;</item>
+	/// <item>the body carries no answer of the application: it is empty, an HTML page or plain text, never JSON and
+	/// never other markup such as an XML or SOAP fault (<see cref="SiteResponse.CarriesNoServiceAnswer"/>). Such a
+	/// body is written by the application, which may have done part of its work before it refused;</item>
 	/// <item>clio did not send the request again (<see cref="Resent"/>).</item>
 	/// </list>
 	/// </summary>

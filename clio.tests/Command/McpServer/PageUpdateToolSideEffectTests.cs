@@ -66,7 +66,9 @@ public sealed class PageUpdateToolSideEffectTests {
 		// Act
 		await tool.UpdatePage(new PageUpdateArgs(SchemaName, ValidBody, Resources: resources));
 
-		// Assert - any method that sends a request counts, whatever its name, unless it is a GET or a known read.
+		// Assert - any method that sends a request counts, whatever its name, unless it is a GET or a known read. Only
+		// the client is observed; the hierarchy client and the other collaborators here are read-only substitutes, and
+		// the create-replacing branch (no editable schema yet) is covered by reading the code, not by this test.
 		string[] writes = client.ReceivedCalls()
 			.Select(call => (Method: call.GetMethodInfo().Name,
 				Url: call.GetArguments().OfType<string>().FirstOrDefault()))

@@ -247,6 +247,10 @@ public sealed class SiteResponseTests {
 		new SiteHttpResponse(status, "<html>refused</html>").IsRefusedWithoutProcessing.Should().BeTrue();
 		new SiteHttpResponse(status, "  <!DOCTYPE html><html><title>403</title></html>").IsRefusedWithoutProcessing
 			.Should().BeTrue();
+		new SiteHttpResponse(status, "<HTML><BODY>Forbidden</BODY></HTML>").IsRefusedWithoutProcessing.Should().BeTrue();
+		new SiteHttpResponse(status, "403 Forbidden").IsRefusedWithoutProcessing.Should().BeTrue(
+			because: "text that starts like a number but is not JSON is plain text");
+		new SiteHttpResponse(status, "null pointer").IsRefusedWithoutProcessing.Should().BeTrue();
 		new SiteHttpResponse(status, "Request body too large").IsRefusedWithoutProcessing.Should().BeTrue();
 		SiteHttpResponse.HasRefusalStatus(status).Should().BeTrue();
 	}

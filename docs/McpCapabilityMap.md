@@ -361,9 +361,9 @@ body alone would pass them: an empty or unrecognized body on `odata-update` / `o
 `odata-create`, and an empty body or an error page on the data-binding writes and on `install-application` /
 `push-workspace` / `install-process-builder`. How such a failure reads depends on the status:
 
-- **401, 403, 405, 413, 414, 415 or 431 with no JSON body: refused without processing.** HTTP defines these as
+- **401, 403, 405, 413, 414, 415 or 431 with an empty, HTML page or plain-text body: refused without processing.** HTTP defines these as
   the server refusing to process the request (RFC 9110, RFC 6585), so the result says that request was not
-  applied (an `odata-create` row reads `record-created: false`). With a JSON error body the application spoke,
+  applied (an `odata-create` row reads `record-created: false`). With a JSON or XML body the application spoke,
   so it reads like any other refusal below.
 - **5xx: not confirmed.** A gateway can answer 502/504 after Creatio applied the write or while a long
   installation still runs, so the result says the write "was not confirmed" / "may or may not have been
