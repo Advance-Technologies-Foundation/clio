@@ -390,11 +390,10 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase("NTLM v2 is required; a basic OAuth flow; negotiate HTTP/1.1", TestName = "Kept_VersionAndCamelCase")]
 	[TestCase("Expected basic 8.1.0.5 or later", TestName = "Kept_VersionAfterLowerCaseScheme")]
 	[TestCase("Could not negotiate TLS1.2 with the server", TestName = "Kept_AcronymWithDottedVersion")]
-	[TestCase("Open the Basic UsrPage1 layout", TestName = "Kept_IdentifierEndingInDigits")]
 	[Category("Unit")]
 	[Description("The earlier over-redaction fixes still hold with the whole-run decision and the closed prose list, "
-		+ "and a scheme word read as an English word before a version, an acronym with a version or an identifier "
-		+ "keeps what follows it.")]
+		+ "and a scheme word read as an English word before a version, an acronym with a version or a one-hump "
+		+ "CamelCase word keeps what follows it.")]
 	public void Redact_ShouldKeepTheWordsAfterASchemeWord_WhenTheyAreProseOrAnIdentifier(string text) {
 		// Arrange
 
@@ -427,6 +426,13 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		"Authorization: bearer abc123",
 		"Authorization: Bearer X7q2",
 		"token: Bearer abcdefgh12345",
+		// The shapes the round-2 delta review found leaking.
+		"Authorization: Bearer MySecretToken2024 was refused",
+		"Authorization: Bearer AdminApiKey was refused",
+		"Authorization: Bearer 1700000000.123456789 was refused",
+		"Authorization: Bearer ABCDE was refused",
+		"Authorization: Bearer\u00A0x7Kq9LpQ3 was refused",
+		"Authorization: Bearer x7Kq\\9Lp was refused",
 	];
 
 	[Test]
@@ -601,6 +607,324 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 		// Assert
 		redacted.Should().Be(expected, because: "a reader handles one spelling of a redacted endpoint");
+	}
+
+	#endregion
+
+	#region Round 2: the Bearer floor, scheme words in prose, escapes, clamps, versions, counts, keys
+
+	// MASTER'S SCHEME RULE, EXACTLY as origin/master's SensitiveErrorTextRedactor.BearerTokenRegex declares it - the
+	// pattern and its options, IgnoreCase included. Whatever run it removes is the floor: the new chain may not let
+	// any of it through, except the documented trades below.
+	private static readonly Regex MastersBearerRule = new(@"\bBearer\s+[^\s,;""']+",
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+	// The run master's rule removed, after "Bearer" and its gap.
+	private static readonly Regex MastersBearerRun = new(@"^\S+\s+(?<run>.+)$", RegexOptions.Singleline);
+
+	// The runs master removed that clio keeps ON PURPOSE, each with its reason. Nothing else may stay.
+	private static readonly (string Name, Regex Run, string Reason)[] DocumentedBearerTrades = [
+		("the word token", new Regex(@"^(?i:tokens?)(?:-(?:based|enabled|disabled|only|protected|secured|style|like|type|related|specific|level|scoped|bound|aware))?[.)\]}:!?]*$"),
+			"'The bearer token expired', 'Invalid Bearer token.' and 'Bearer token-based access denied' (fixture C rows "
+			+ "case-016, case-240, case-078) name the kind of credential, not the credential"),
+		("a challenge parameter", new Regex(@"^(?i:realm|scope|error|error_description|error_uri|charset)="),
+			"'WWW-Authenticate: Bearer realm=…' (case-255) is what the site asks for, not what a client sent"),
+		("a placeholder", new Regex(@"^\[redacted(?:-[a-z]+)?\][.)\]}:!?]*$"),
+			"the run is already one of clio's own placeholders"),
+	];
+
+	// Token shapes a Bearer credential takes, the ones the review found leaking first.
+	private static readonly string[] BearerTokenCorpus = [
+		"Bearer MySecretToken2024 was refused", "Bearer AdminApiKey was refused", "Bearer SecretToken was refused",
+		"Bearer 1700000000.123456789 was refused", "Bearer ABCDE was refused", "Bearer ABCD", "bearer ABCD",
+		"Bearer\u00A0x7Kq9LpQ3 was refused", "Bearer\u2003x7Kq9LpQ3 was refused", "Bearer x7Kq\\9Lp was refused",
+		"Bearer secrettokenvalue was refused", "Bearer credentials was refused", "Bearer access was refused",
+		"Bearer login was refused", "Bearer user was refused", "Bearer value was refused", "Bearer session was refused",
+		"Bearer authentication failed", "Bearer x7Kq%2F9LpQ3 was refused", "Bearer \\\"x7Kq2mVb9LpQ3\\\" was refused",
+		"Bearer \\u0022x7Kq2mVb9LpQ3\\u0022 was refused", "Bearer \"x7Kq2mVb9LpQ3\" was refused",
+		"Bearer\tx7Kq9LpQ3 tab gap", "Bearer  x7Kq9LpQ3 double space", "Bearer\nx7Kq9LpQ3 on the next line",
+		"Bearer x7Kq9LpQ3", "Bearer x7Kq9LpQ3...", "Bearer x7Kq9Lp&amp;Q3 end", "Bearer &quot;x7Kq9LpQ3&quot; end",
+		"Bearer x7Kq9LpQ3\u00E9\u00E9 tail", "Bearer x7Kq!9LpQ3 tail", "Bearer x7Kq9LpQ3: next", "Bearer 2FA",
+		"Bearer TLSv1.2x", "Bearer v2.0.0.1-secret", "Bearer OAuth", "Bearer UsrPage1", "Bearer 8.1.0.5",
+		"Bearer TLS1.2", "Bearer v2", "BEARER X7Q2", "(Authorization: Bearer x7Kq9LpQ3)", "x-Bearer abc123def",
+		"Bearer x7Kq\\u002B9Lp/Q3==", "Bearer x7Kq\\\\9Lp\\\" end", "Authorization: Bearer token", "Bearer tokens-secret",
+		"Bearer token-based", "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"",
+		"Authorization: Bearer [redacted] was refused",
+	];
+
+	private static IEnumerable<string> FloorTexts() =>
+		SiteTextRedactionFixtureTests.LoadRows().Select(row => row.Input).Concat(BearerTokenCorpus).Concat(MasterBearerCases);
+
+	// The secret content of a run: its alphanumeric pieces of two or more characters, once JSON escapes and HTML
+	// entities are taken out (those are the envelope's own syntax, not the credential).
+	private static IEnumerable<string> RunPieces(string run) =>
+		Regex.Split(Regex.Replace(run, @"\\u[0-9A-Fa-f]{4}|\\[nrtbf""\\/]|&(?:amp|quot|apos|lt|gt|#\d+);", " "), @"[^\p{L}\p{N}]+")
+			.Where(piece => piece.Length >= 2);
+
+	[Test]
+	[Category("Unit")]
+	[Description("THE BEARER FLOOR, as a property: master's exact scheme rule is applied to every fixture input, a "
+		+ "corpus of token shapes and master's own Bearer cases, and no piece of any run it removes survives Redact, "
+		+ "RedactCredentials, RedactSiteText or either fenced rendering - except the named, documented trades.")]
+	public void AllEntryPoints_ShouldLetNothingMastersBearerRuleRemovedSurvive_ExceptTheNamedTrades() {
+		// Arrange
+		List<string> survivors = [];
+		HashSet<string> tradesUsed = [];
+
+		// Act
+		foreach (string text in FloorTexts().Distinct(StringComparer.Ordinal)) {
+			(string Entry, string Output)[] outputs = [
+				("Redact", SensitiveErrorTextRedactor.Redact(text)),
+				("RedactCredentials", SensitiveErrorTextRedactor.RedactCredentials(text)),
+				("RedactSiteText", SensitiveErrorTextRedactor.RedactSiteText(text)),
+				("RedactUntrustedOrNull", SensitiveErrorTextRedactor.RedactUntrustedOrNull(text) ?? string.Empty),
+				("RedactUntrustedSiteTextOrNull", SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text) ?? string.Empty)
+			];
+			foreach (Match removed in MastersBearerRule.Matches(text)) {
+				string run = MastersBearerRun.Match(removed.Value).Groups["run"].Value;
+				(string Name, Regex Run, string Reason) trade = DocumentedBearerTrades.FirstOrDefault(entry => entry.Run.IsMatch(run));
+				if (trade.Name is not null) {
+					tradesUsed.Add(trade.Name);
+					continue;
+				}
+				string rest = text.Remove(removed.Index, removed.Length);
+				string core = run.TrimEnd('.', ')', ']', '}', ':', '!', '?');
+				string[] pieces = RunPieces(run).Append(core).Where(piece => piece.Length >= 2)
+					.Where(piece => !rest.Contains(piece, StringComparison.Ordinal)).Distinct().ToArray();
+				foreach ((string entry, string output) in outputs) {
+					string withoutPlaceholders = Regex.Replace(output, @"\[redacted(?:-[a-z]+)?\]", " ");
+					survivors.AddRange(pieces.Where(piece => withoutPlaceholders.Contains(piece, StringComparison.Ordinal))
+						.Select(piece => $"{entry} kept \"{piece}\" of the run \"{run}\" in \"{text}\": {output}"));
+				}
+			}
+		}
+
+		// Assert
+		survivors.Should().BeEmpty(because: "nothing master's scheme rule removed may reach a caller now, except the "
+			+ $"documented trades; {survivors.Count} survivors:\n{string.Join('\n', survivors)}\n");
+		tradesUsed.Should().BeEquivalentTo(DocumentedBearerTrades.Select(trade => trade.Name),
+			because: "every documented trade is one the fixture or the corpus actually exercises");
+	}
+
+	[TestCase("Could not negotiate protocol version")]
+	[TestCase("Unable to negotiate connection with the server")]
+	[TestCase("Negotiate handshake failed")]
+	[TestCase("NTLM handshake failed")]
+	[TestCase("Basic configuration is missing")]
+	[TestCase("Open the Basic Information tab")]
+	[TestCase("Visual Basic compiler error")]
+	[TestCase("basic price list is empty")]
+	[TestCase("Failed to negotiate SSL/TLS")]
+	[TestCase("Could not negotiate TLS 1.2 with the server")]
+	[TestCase("Basic authentication is disabled; NTLM negotiation failed; Digest authentication is off")]
+	[TestCase("Basic auth-enabled endpoint")]
+	[TestCase("WWW-Authenticate: Basic realm=\"Creatio\"")]
+	[TestCase("WWW-Authenticate: Negotiate")]
+	[TestCase("The client could not negotiate HTTP/2")]
+	[TestCase("SVG icons must use static basic shapes without styles, animation, event handlers or external references.")]
+	[TestCase("Emergency fallback only: login paired with 'uri' (basic auth).")]
+	[TestCase("when the token endpoint refuses a Basic header, set Send client credentials in body")]
+	[TestCase("IdentityService did not return a usable bearer token. Check the OAuth client credentials.")]
+	[Category("Unit")]
+	[Description("English sentences and clio's own console lines with a scheme word in them come out unchanged from "
+		+ "Redact, RedactCredentials (clio's console lines) and RedactSiteText: outside a header position a prose "
+		+ "word after Basic, NTLM or Negotiate stays, and 'bearer token' is a documented trade.")]
+	public void SchemeWordsInProse_ShouldComeOutUnchanged(string text) {
+		// Arrange
+
+		// Act
+		string redact = SensitiveErrorTextRedactor.Redact(text);
+		string console = SensitiveErrorTextRedactor.RedactCredentials(text);
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		redact.Should().Be(text, because: "Redact must not take an English word after a scheme word");
+		console.Should().Be(text, because: "clio's own console line must stay readable");
+		site.Should().Be(text, because: "the site's sentence is its reason");
+	}
+
+	[TestCase("Authorization: Basic configuration", "Authorization: Basic [redacted]", TestName = "Header_ProseWordAfterAuthorization")]
+	[TestCase("Proxy-Authorization: Negotiate handshake", "Proxy-Authorization: Negotiate [redacted]",
+		TestName = "Header_ProseWordAfterProxyAuthorization")]
+	[TestCase("Authorization: NTLM abcdefghijkl", "Authorization: NTLM [redacted]", TestName = "Header_LowerCaseRun")]
+	[TestCase("Open the Basic UsrPage1 layout", "Open the Basic [redacted] layout", TestName = "Prose_IdentifierWithDigits")]
+	[TestCase("Open the Basic AdminApiKey layout", "Open the Basic [redacted] layout", TestName = "Prose_TwoInnerCapitals")]
+	[TestCase("Expected NTLM 1700000000.123456789 here", "Expected NTLM [redacted] here", TestName = "Prose_LongDottedRun")]
+	[TestCase("Expected Negotiate v2.0.0.1-secret here", "Expected Negotiate [redacted] here", TestName = "Prose_VersionWithATail")]
+	[TestCase("Rejected NTLM dXNlcjpwYXNz now", "Rejected NTLM [redacted] now", TestName = "Prose_Base64OfLettersOnly")]
+	[Category("Unit")]
+	[Description("After Basic, NTLM or Negotiate in a header position only a challenge parameter or a word of the "
+		+ "closed list stays; in prose a token with an inner capital and a digit, two inner capitals, a long dotted run "
+		+ "or a version with a tail goes, and so does base64 made of letters only.")]
+	public void SchemeCredential_ShouldGo_InHeaderPositionOrWhenItIsNotAProseWord(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "a credential-shaped run after a scheme word is a credential");
+	}
+
+	[TestCase("Message: line one\\nanother line", TestName = "Escape_LineBreakBeforeALowerCaseWord")]
+	[TestCase("Error\\nancestor failed at step\\nrestart", TestName = "Escape_TwoLineBreaks")]
+	[TestCase("Value cannot be null.\\r\\nParameter name: password", TestName = "Escape_CarriageReturnLineFeed")]
+	[Category("Unit")]
+	[Description("A written line break before a lower-case word is a line break, not DOMAIN\\account, when the word "
+		+ "before it is not a server or domain name (capitals and digits).")]
+	public void RedactSiteText_ShouldKeepAWrittenLineBreak_WhenTheWordBeforeIsNoServer(string text) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(text, because: "nothing here is a server instance or an account");
+	}
+
+	[TestCase("Login as CORP\\nick failed", "Login as [redacted] failed", TestName = "Account_DomainAndAnAccountStartingWithN")]
+	[TestCase("Server SQL01\\nexus01 down", "Server [redacted] down", TestName = "Account_ServerAndAnInstanceStartingWithN")]
+	[TestCase("Instance SQL01\\reporting is down", "Instance [redacted] is down", TestName = "Account_ServerAndAnInstanceStartingWithR")]
+	[Category("Unit")]
+	[Description("A server or domain name in capitals and digits before \\n, \\r or \\t and a lower-case word is still "
+		+ "read as SERVER\\instance or DOMAIN\\account and goes whole.")]
+	public void RedactSiteText_ShouldTakeTheAccount_WhenTheWordBeforeIsAServer(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "the server, the domain and the account all go");
+	}
+
+	[TestCase("see (C:\\x\\y.dll)\\nNext line", "see ([redacted-path])\\nNext line", TestName = "PathEscape_LineBreakAfterBracket")]
+	[TestCase("Could not load (C:\\app\\x.dll)\\r\\nParameter name: path", "Could not load ([redacted-path])\\r\\nParameter name: path",
+		TestName = "PathEscape_CrLfAfterBracket")]
+	[TestCase("see [C:\\x\\y.dll]\\tnext", "see [[redacted-path]]\\tnext", TestName = "PathEscape_TabAfterBracket")]
+	[Category("Unit")]
+	[Description("A closing bracket followed by a written \\n, \\r, \\t or \\u escape ends the path: only a backslash "
+		+ "that starts no escape continues it into the next segment.")]
+	public void Redact_ShouldEndThePathAtABracket_WhenAnEscapeFollowsIt(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "the escape and the text after it are not part of the path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Inside an envelope written with the default encoder, a bracket followed by the \\u0022 of the closing "
+		+ "quote ends the path, so the quote stays.")]
+	public void Redact_ShouldKeepTheQuoteAfterABracketedPath_InsideASerializedEnvelope() {
+		// Arrange
+		string envelope = JsonSerializer.Serialize(new { error = "Error: \"(C:\\app\\x.dll)\" failed" });
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
+
+		// Assert
+		JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString().Should()
+			.Be("Error: \"([redacted-path])\" failed", because: "the escaped quote after the bracket is not the path");
+	}
+
+	// A secret that crosses a clamp: a long URI that redaction shortens, then a quoted sign-in name across the clamp.
+	private static string AcrossTheClamp(int clamp) =>
+		"https://x.example/" + new string('a', clamp - 18 - 30) + " Login failed for user 'zq_invented_login'.";
+
+	[Test]
+	[Category("Unit")]
+	[Description("The non-JSON preview's clamp before redaction cuts back to a word boundary, so a sign-in name that "
+		+ "crosses the 4,000-character clamp goes whole instead of leaving its first letters.")]
+	public void NonJsonPreview_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
+		// Arrange
+		string body = AcrossTheClamp(4_000);
+
+		// Act
+		string error = CreatioResponseError.DescribeNonJsonResponse(body);
+
+		// Assert
+		error.Should().NotContain("zq_", because: "the half of the name before the clamp must not survive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The fenced site rendering's 2,400-character clamp before redaction cuts back to a word boundary too.")]
+	public void FencedSiteText_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
+		// Arrange
+		string text = AcrossTheClamp(2_400);
+
+		// Act
+		string fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
+
+		// Assert
+		fenced.Should().NotContain("zq_", because: "the half of the name before the clamp must not survive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("site-response.message's clamp before redaction (eight times its 2,000-character cap) cuts back to a "
+		+ "word boundary too.")]
+	public void SiteResponseMessage_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
+		// Arrange
+		string body = JsonSerializer.Serialize(new { errorInfo = new { message = AcrossTheClamp(16_000) } });
+
+		// Act
+		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(500, body));
+
+		// Assert
+		response.Message.Should().NotContain("zq_", because: "the half of the name before the clamp must not survive");
+	}
+
+	[TestCase("Cannot connect to Creatio: 10.0.3.17 refused", TestName = "Ipv4_AfterCreatioColon")]
+	[TestCase("release: 10.0.3.17 is down", TestName = "Ipv4_AfterReleaseColon")]
+	[TestCase("v=10.0.3.17", TestName = "Ipv4_AfterVEquals")]
+	[TestCase("host build:10.0.3.17", TestName = "Ipv4_AfterBuildColon")]
+	[Category("Unit")]
+	[Description("A separator after a version word keeps an address only after 'version' or 'ver': after 'Creatio', "
+		+ "'release', 'v' or 'build' with a ':' or '=' the private address goes.")]
+	public void Redact_ShouldRemoveAPrivateAddress_AfterAVersionWordOtherThanVersionWithASeparator(string text) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().NotContain("10.0.3.17", because: "only 'version'/'ver' with a separator reads as a version");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A count word in front of a database or cache port is still a host: 'tests:5432', 'ok:6379' and "
+		+ "'pending:1433' go, while a count line keeps its counts.")]
+	public void Redact_ShouldRemoveACountWordHost_OnADatabaseOrCachePort() {
+		// Arrange
+		const string text = "Cannot reach tests:5432 or ok:6379 or pending:1433; Tests run: Failed:22, Passed:421, Total:443";
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be("Cannot reach [redacted-uri] or [redacted-uri] or [redacted-uri]; Tests run: Failed:22, "
+			+ "Passed:421, Total:443", because: "a word on a database or cache port is a host whatever the word");
+	}
+
+	[TestCase("{\"db_credentials\":\"sa:Passw0rd\"}", "{\"db_credentials\":\"[redacted]\"}", TestName = "Json_PrefixedCredentials")]
+	[TestCase("{\"smtp.credentials\":\"user:Passw0rd\"}", "{\"smtp.credentials\":\"[redacted]\"}", TestName = "Json_DottedCredentials")]
+	[TestCase("{\"constant-credentials-masked\": true}", "{\"constant-credentials-masked\": true}", TestName = "Json_MaskedFlag")]
+	[Category("Unit")]
+	[Description("The JSON rule takes 'credentials' in its compound spellings again; only clio's own '-masked' flag stays.")]
+	public void Redact_ShouldTakeCompoundCredentialsKeys_ButNotTheMaskedFlag(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "a compound credentials key holds a secret; the masked flag is a boolean");
 	}
 
 	#endregion

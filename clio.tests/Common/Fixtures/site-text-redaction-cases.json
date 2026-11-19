@@ -6099,9 +6099,9 @@
       "hostOutput": "bearer ABCD",
       "mustGo": [],
       "mustStay": [
-        "bearer ABCD"
+        "bearer"
       ],
-      "note": "Host trade: the host keeps \"ABCD\"; clio may keep it or be stricter."
+      "note": "Host trade: the host keeps \"ABCD\"; clio is stricter here (the note allows it): after Bearer only the documented trades stay - the word token, a challenge parameter, a placeholder - because master's Bearer rule removed every run after the word and nothing it removed may survive. The scheme word stays."
     }
   ]
 }

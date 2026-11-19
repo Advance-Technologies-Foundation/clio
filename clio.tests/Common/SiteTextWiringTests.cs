@@ -85,7 +85,9 @@ public sealed class SiteTextWiringTests {
 		+ "page-sized message neither times out the chain nor exceeds the 2,000-character cap.")]
 	public void SiteResponse_ShouldKeepTheCap_WhenTheSiteMessageIsPageSized() {
 		// Arrange
-		string body = JsonSerializer.Serialize(new { errorInfo = new { message = SiteMessage + " " + new string('x', 1_000_000) } });
+		string body = JsonSerializer.Serialize(new {
+			errorInfo = new { message = SiteMessage + " " + string.Join(' ', Enumerable.Repeat("word", 190_000)) }
+		});
 
 		// Act
 		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(500, body));

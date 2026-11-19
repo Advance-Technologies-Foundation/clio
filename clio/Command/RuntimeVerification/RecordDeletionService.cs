@@ -507,8 +507,9 @@ internal sealed class RecordDeletionService(
 			if (inner is null) {
 				return null;
 			}
-			// Not cut before the redaction: a cut there split a token or a quoted name, and the half before it matched
-			// no rule. The fenced rendering clamps its input and caps its output itself, after it redacts.
+			// Not cut here: a cut before the redaction split a token or a quoted name, and the half before it matched
+			// no rule. The fenced rendering clamps its input itself - at a word boundary, BEFORE it redacts - and
+			// caps its output after.
 			return UntrustedText.FencedSiteText(ProcessRunMonitor.FirstLine(inner));
 		}
 		catch (System.Text.Json.JsonException) {
