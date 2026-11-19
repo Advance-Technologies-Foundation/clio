@@ -74,26 +74,38 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 	}
 
 	/// <summary>
-	/// Sends the restart request and fails when the environment answers it with a status outside 2xx.
+	/// Sends the restart request and fails when the environment refuses it with a 4xx status.
 	/// </summary>
 	/// <remarks>
-	/// The base command reads no answer for a restart, so a refusal - no rights (403), a server error (500), an
-	/// error page - was reported as "Done" with exit code 0, and with a readiness wait a site that refused and
-	/// stayed up then read "ready". The status is now kept and a failure status fails the call, carrying the
-	/// site's answer as its site response. The body of a 2xx answer is still not read: what it holds differs
-	/// between runtimes and carries no verdict.
+	/// <para>
+	/// The base command reads no answer for a restart, so a refusal - no rights (403), an unknown route (404) - was
+	/// reported as "Done" with exit code 0, and with a readiness wait a site that refused and stayed up then read
+	/// "ready". The status is now kept: a 4xx answer fails the call and carries the site's answer as its site
+	/// response.
+	/// </para>
+	/// <para>
+	/// A 5xx answer is not a refusal: stopping the application mid-request is how a restart behind a proxy or the
+	/// ASP.NET Core module can end, with a 502 or 503 for a restart that did happen. It is reported as a warning
+	/// that the restart is not confirmed and the call goes on as before - with a readiness wait, readiness decides.
+	/// The body of an answer is still not read: what it holds differs between runtimes and carries no verdict.
+	/// </para>
 	/// </remarks>
 	/// <param name="options">Restart options.</param>
 	protected override void ExecuteRemoteCommand(RestartOptions options) {
 		SiteHttpResponse answer = SiteCall.Post(ApplicationClient, ServiceUri, GetRequestData(options), RequestTimeout,
 			MaxAttempts, DelaySec);
+		if (answer.StatusCode is >= 500) {
+			Logger.WriteWarning($"The environment answered the restart request with HTTP {answer.StatusCode}, which a "
+				+ "restart in progress can produce, so the restart is not confirmed.");
+			return;
+		}
 		if (!answer.IsKnownFailureStatus) {
 			return;
 		}
 		SiteResponseCapture.RecordRefusal(answer);
 		CommandSuccess = false;
-		Logger.WriteError($"The environment refused the restart request: it answered HTTP {answer.StatusCode}, so "
-			+ "the restart is not confirmed. Check the environment before relying on a restart.");
+		Logger.WriteError($"The environment refused the restart request: it answered HTTP {answer.StatusCode}, so the "
+			+ "application was not restarted.");
 	}
 
 	internal int ExecuteForEnvironment(

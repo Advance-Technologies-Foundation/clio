@@ -644,8 +644,9 @@ internal static class ToolContractCatalog {
 	private const string SiteResponseFieldName = "site-response";
 	private const string SiteResponseDescription =
 		"What the Creatio site itself sent back for the failed request: status (HTTP), message and code (the site's own, "
-		+ "from a known JSON shape) and body (json|html|text|empty). Never clio's wording or a stack trace. Absent on "
-		+ "success and when no HTTP response exists.";
+		+ "from a known JSON shape, redacted like error, message capped at 2,000 characters) and body "
+		+ "(json|html|text|empty). Never clio's wording or a stack trace. Absent on success, when no HTTP response "
+		+ "exists and when the failure is clio's own.";
 	private const string SiteResponseShortDescription = "Site answer to a failed save: status, message, code, body.";
 	private const string ExampleAccountSchemaName = "Account";
 	private const string ExampleContactSchemaName = "Contact";

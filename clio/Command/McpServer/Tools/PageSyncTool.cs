@@ -1434,6 +1434,7 @@ public sealed class PageSyncPageResult {
 	/// <summary>What the site itself answered to this page's failed save; see <see cref="Clio.Common.SiteResponse"/>.</summary>
 	[JsonPropertyName("site-response")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[System.ComponentModel.Description("What the Creatio site itself answered to this page's failed save: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
 	public SiteResponse SiteResponse { get; init; }
 
 	[JsonPropertyName("resources-registered")]

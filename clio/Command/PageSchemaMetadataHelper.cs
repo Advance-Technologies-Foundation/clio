@@ -426,15 +426,14 @@ namespace Clio.Command {
 		/// <param name="client">The client to send through.</param>
 		/// <param name="url">The designer endpoint.</param>
 		/// <param name="body">The JSON request body.</param>
-		/// <param name="answer">The answer as sent back, for the caller to record when it refuses.</param>
 		/// <param name="recordRefusal">Whether a non-JSON answer is recorded; <see langword="false"/> for an
 		/// advisory read whose failure the caller tolerates.</param>
-		/// <returns>The parsed answer.</returns>
-		internal static JObject PostDesignerRequest(IApplicationClient client, string url, string body,
-			out SiteHttpResponse answer, bool recordRefusal = true) {
-			answer = SiteCall.Post(client, url, body);
+		/// <returns>The parsed answer, and the answer as sent back for the caller to record when it refuses.</returns>
+		internal static (JObject Parsed, SiteHttpResponse Answer) PostDesignerRequest(IApplicationClient client,
+			string url, string body, bool recordRefusal = true) {
+			SiteHttpResponse answer = SiteCall.Post(client, url, body);
 			try {
-				return JObject.Parse(answer.Body ?? string.Empty);
+				return (JObject.Parse(answer.Body ?? string.Empty), answer);
 			}
 			catch (JsonReaderException) {
 				if (recordRefusal) {

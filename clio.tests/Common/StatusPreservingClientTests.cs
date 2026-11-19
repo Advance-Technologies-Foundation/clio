@@ -185,6 +185,47 @@ public sealed class StatusPreservingClientTests {
 
 	#endregion
 
+	#region Tests: ApplicationClientLease
+
+	[TestCase(SiteRequestVerb.Post, true, TestName = "Lease_ShouldForwardAReplayablePost")]
+	[TestCase(SiteRequestVerb.Post, false, TestName = "Lease_ShouldForwardANonReplayablePost")]
+	[TestCase(SiteRequestVerb.Patch, false, TestName = "Lease_ShouldForwardAPatch")]
+	[TestCase(SiteRequestVerb.Delete, false, TestName = "Lease_ShouldForwardADelete")]
+	[Description("A leased client that keeps the status gets the same verb and replay rule")]
+	public void Lease_ShouldForwardTheVerbAndReplayRule(SiteRequestVerb verb, bool replayAllowed) {
+		// Arrange
+		IApplicationClient inner = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		IStatusPreservingApplicationClient keeping = (IStatusPreservingApplicationClient)inner;
+		keeping.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(409, "{}"));
+		ApplicationClientLease lease = new(inner);
+
+		// Act
+		SiteHttpResponse answer = lease.SendKeepingStatus(verb, "/x", "b", 9, 2, 4, replayAllowed);
+
+		// Assert
+		answer.StatusCode.Should().Be(409);
+		keeping.Received(1).SendKeepingStatus(verb, "/x", "b", 9, 2, 4, replayAllowed);
+	}
+
+	[Test]
+	[Description("A leased client that does not keep the status is called through the matching non-replayable string method")]
+	public void Lease_ShouldUseTheNonReplayableStringPost_WhenTheInnerClientDoesNotKeepTheStatus() {
+		// Arrange
+		IApplicationClient inner = Substitute.For<IApplicationClient>();
+		inner.ExecuteNonReplayablePostRequest("/x", "b", 9, 2, 4).Returns("{}");
+		ApplicationClientLease lease = new(inner);
+
+		// Act
+		SiteHttpResponse answer = lease.SendKeepingStatus(SiteRequestVerb.Post, "/x", "b", 9, 2, 4, replayAllowed: false);
+
+		// Assert
+		answer.Should().BeEquivalentTo(new SiteHttpResponse(null, "{}"));
+		inner.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	#endregion
+
 	#region Tests: SiteHttpResponse
 
 	[TestCase(200, false)]

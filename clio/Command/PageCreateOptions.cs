@@ -365,8 +365,8 @@ namespace Clio.Command {
 				["useFullHierarchy"] = false
 			};
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
-			JObject response = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient, url,
-				request.ToString(Formatting.None), out SiteHttpResponse answer);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, request.ToString(Formatting.None));
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject schema) {
 				SiteResponseCapture.RecordRefusal(answer);
 				error = response["errorInfo"]?["message"]?.ToString()
@@ -380,8 +380,8 @@ namespace Clio.Command {
 		private bool TrySaveSchema(JObject schemaToSave, out string error) {
 			error = null;
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
-			JObject response = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient, url,
-				schemaToSave.ToString(Formatting.None), out SiteHttpResponse answer);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, schemaToSave.ToString(Formatting.None));
 			if (response["success"]?.Value<bool>() ?? false) {
 				return true;
 			}

@@ -99,13 +99,13 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 	public AvailableEntitySchemasResponse GetAvailableParentSchemas(GetAvailableSchemasRequestDto request,
 		RemoteCommandOptions options) {
 		return Post<GetAvailableSchemasRequestDto, AvailableEntitySchemasResponse>("GetAvailableParentSchemas",
-			request, options);
+			request, options, recordRefusal: false);
 	}
 
 	public AvailableEntitySchemasResponse GetAvailableReferenceSchemas(GetAvailableSchemasRequestDto request,
 		RemoteCommandOptions options) {
 		return Post<GetAvailableSchemasRequestDto, AvailableEntitySchemasResponse>("GetAvailableReferenceSchemas",
-			request, options);
+			request, options, recordRefusal: false);
 	}
 
 	public DesignerResponse<EntityDesignSchemaDto> AssignParentSchema(
@@ -121,7 +121,7 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			managerName,
 			schemaName,
 			excludeUId
-		}, options);
+		}, options, recordRefusal: false);
 	}
 
 	public DesignerResponse<EntityDesignSchemaDto> GetSchemaDesignItem(GetSchemaDesignItemRequestDto request,
@@ -197,7 +197,8 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 				UId = schemaUId
 			},
 			options,
-			"GetRuntimeEntitySchema");
+			"GetRuntimeEntitySchema",
+			recordRefusal: false);
 	}
 
 	public IReadOnlyList<SystemValueLookupValueDto> GetSystemValues(Guid dataValueTypeUId, RemoteCommandOptions options) {
@@ -206,7 +207,8 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			new {
 				dataValueTypeUId
 			},
-			options);
+			options,
+			recordRefusal: false);
 		return response.Items ?? [];
 	}
 
@@ -231,7 +233,8 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
 			query,
 			options,
-			"SelectQuery(SysSettings)");
+			"SelectQuery(SysSettings)",
+			recordRefusal: false);
 		return response.Rows ?? [];
 	}
 
@@ -254,7 +257,8 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 				_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
 				query,
 				options,
-				$"SelectQuery({schemaName})");
+				$"SelectQuery({schemaName})",
+				recordRefusal: false);
 			return (response.Rows?.Length ?? 0) > 0 ? LookupRecordExistence.Exists : LookupRecordExistence.NotFound;
 		} catch (Exception ex) when (ex is InvalidOperationException
 				or System.Net.Http.HttpRequestException
@@ -268,23 +272,27 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 		}
 	}
 
-	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, RemoteCommandOptions options)
+	// recordRefusal: false for a read whose failure a caller may tolerate (a lookup probe, a catalog read, a retried
+	// read). Its refusal must not be reported as the site's answer to a later step that fails for another reason -
+	// for example a save that then gets no HTTP response at all.
+	private TResponse Post<TRequest, TResponse>(string methodName, TRequest request, RemoteCommandOptions options,
+		bool recordRefusal = true)
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string url = BuildDesignerMethodUrl(methodName);
-		return PostToUrl<TRequest, TResponse>(url, request, options, methodName);
+		return PostToUrl<TRequest, TResponse>(url, request, options, methodName, recordRefusal);
 	}
 
 	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, RemoteCommandOptions options,
-		string methodName)
+		string methodName, bool recordRefusal = true)
 		where TRequest : class
 		where TResponse : BaseResponse {
 		return PostToUrl<TRequest, TResponse>(url, request, options.TimeOut, options.MaxAttempts, options.RetryDelay,
-			methodName);
+			methodName, recordRefusal);
 	}
 
 	private TResponse PostToUrl<TRequest, TResponse>(string url, TRequest request, int timeoutMs, int maxAttempts,
-		int retryDelay, string methodName)
+		int retryDelay, string methodName, bool recordRefusal = true)
 		where TRequest : class
 		where TResponse : BaseResponse {
 		string requestBody = request == null ? "{}" : _jsonConverter.SerializeObject(request);
@@ -294,10 +302,9 @@ internal sealed class RemoteEntitySchemaDesignerClient : IRemoteEntitySchemaDesi
 			TResponse response = DeserializeResponse<TResponse>(methodName, url, answer.Body);
 			return EnsureSuccess(response, methodName);
 		}
-		catch (Exception) {
+		catch (Exception) when (recordRefusal) {
 			// Every throw above is this answer failing the call, so it is what the tool reports as the site's.
-			// The probing TryPostToUrl below records nothing: its callers may tolerate a failed probe, and a
-			// tolerated answer must not be reported as the reason a later step failed.
+			// The probing TryPostToUrl below records nothing, for the same reason as recordRefusal: false.
 			SiteResponseCapture.RecordRefusal(answer);
 			throw;
 		}

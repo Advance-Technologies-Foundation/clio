@@ -57,6 +57,45 @@ public sealed class PageSyncToolTests {
 			because: "sync-pages modifies remote page schemas and should warn clients");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Each page reports only the site's answer to its own save: a refused page and a saved page in one batch")]
+	public async Task SyncPages_ShouldNotCarryOnePagesSiteResponseOntoAnother() {
+		// Arrange - the first save is refused, the second succeeds.
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		PageUpdateCommand updateCommand = ConfigureSuccessfulPageUpdateCommand(applicationClient, schemaType: 9);
+		Queue<SiteHttpResponse> saves = new([
+			new SiteHttpResponse(403, "{\"success\":false,\"errorInfo\":{\"message\":\"No rights to save\"}}"),
+			new SiteHttpResponse(200, "{\"success\":true}")
+		]);
+		((IStatusPreservingApplicationClient)applicationClient)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(callInfo => callInfo.ArgAt<string>(1).Contains("SaveSchema", StringComparison.Ordinal)
+				? saves.Dequeue()
+				: new SiteHttpResponse(200, new JObject {
+					["success"] = true,
+					["schema"] = new JObject { ["body"] = "original" }
+				}.ToString()));
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new("dev", [
+			new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers),
+			new PageSyncPageInput("UsrMobile_ListPage", MobileBodyWithHandlers)
+		], Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].SiteResponse.Should().BeEquivalentTo(new SiteResponse(403, "No rights to save", null,
+			SiteResponse.JsonBody));
+		response.Pages[1].Success.Should().BeTrue();
+		response.Pages[1].SiteResponse.Should().BeNull(because: "the first page's refusal must not reach the second");
+	}
+
 	[TestCase(200, "{\"success\":false,\"errorInfo\":{\"message\":\"Schema is locked by another user\"}}",
 		"Schema is locked by another user", "json", TestName = "SyncPages_ShouldCarryTheSiteResponse_WhenTheSaveIsRefused")]
 	[TestCase(500, "<html><title>500 - Internal server error.</title></html>", null, "html",

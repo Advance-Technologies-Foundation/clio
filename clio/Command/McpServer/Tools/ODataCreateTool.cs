@@ -437,23 +437,8 @@ public sealed class ODataCreateTool(
 			// twice (GitHub #1313).
 			SiteHttpResponse answer = SiteCall.NonReplayablePost(client, url, row.GetRawText(), requestTimeoutMs);
 			received = true;
-			ODataRowResult result = ParseCreated(answer.Body, index) with { ResponseReceived = true };
-			if (result.Success && answer.IsKnownFailureStatus) {
-				// An empty body reads as a created record; with a failure status the site said the create failed,
-				// and whether a row was written before it is not known.
-				result = new ODataRowResult {
-					Index = index,
-					Success = false,
-					ResponseReceived = true,
-					RecordCreated = null,
-					RetryGuidance = UnknownSideEffectGuidance,
-					Error = $"Creatio answered the create with HTTP {answer.StatusCode} and no recognized body, so it "
-						+ "was not confirmed. Read the records before re-sending this row."
-				};
-			}
-			if (!result.Success) {
-				result = result with { SiteResponse = SiteResponse.FromRefusal(answer) };
-			}
+			ODataRowResult result = WithSiteAnswer(ParseCreated(answer.Body, index) with { ResponseReceived = true },
+				answer);
 			// Model binding names no column, so the type map is the only way to tell a binary column from an
 			// unknown property or a malformed value. The read is skipped when it does not fit in the batch
 			// budget: the row keeps the generic explanation instead of overshooting the deadline.
@@ -504,6 +489,26 @@ public sealed class ODataCreateTool(
 				&& types.TryGetValue(property.Name, out string type) && edmTypes.Contains(type))
 			.Select(property => property.Name)
 			.ToList();
+	}
+
+	/// <summary>
+	/// Applies the site's answer to a parsed row: an empty body reads as a created record, but with a failure
+	/// status the site said the create failed, and whether a row was written before it is not known. A failed
+	/// row then carries the answer as its site response.
+	/// </summary>
+	private static ODataRowResult WithSiteAnswer(ODataRowResult parsed, SiteHttpResponse answer) {
+		ODataRowResult result = parsed.Success && answer.IsKnownFailureStatus
+			? new ODataRowResult {
+				Index = parsed.Index,
+				Success = false,
+				ResponseReceived = true,
+				RecordCreated = null,
+				RetryGuidance = UnknownSideEffectGuidance,
+				Error = $"Creatio answered the create with HTTP {answer.StatusCode} and no recognized body, so it "
+					+ "was not confirmed. Read the records before re-sending this row."
+			}
+			: parsed;
+		return result.Success ? result : result with { SiteResponse = SiteResponse.FromRefusal(answer) };
 	}
 
 	private static ODataRowResult ParseCreated(string json, int index) {

@@ -345,8 +345,8 @@
 			_logger.Write(GetLogDiff(log, completeInstallLog));
 			// A non-2xx status the client kept is a failure even with an empty body, which alone reads as success:
 			// the site said the installation request failed.
-			var success = (response != null && response.Success || response == null) && successLog
-				&& !answer.IsKnownFailureStatus;
+			bool answerAccepted = (response == null || response.Success) && !answer.IsKnownFailureStatus;
+			var success = answerAccepted && successLog;
 			if (!success && (response is { Success: false } || answer.IsKnownFailureStatus)) {
 				// Only when the site's own answer failed the installation, not when the log check alone did.
 				// Recorded before the invalid-archive throw below; a failure the log then downgrades to success is

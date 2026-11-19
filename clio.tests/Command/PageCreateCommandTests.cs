@@ -146,6 +146,80 @@ public sealed class PageCreateCommandTests
 		response.Error.Should().Contain("already exists");
 	}
 
+	// A command whose client keeps the status: GetSchema and SaveSchema go through SendKeepingStatus.
+	private PageCreateCommand KeepingStatusCommand(SiteHttpResponse getSchema, SiteHttpResponse saveSchema) {
+		IApplicationClient client = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}"""
+		]);
+		client.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(_ => selectResponses.Dequeue());
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(call => call.ArgAt<string>(1) == SaveSchemaUrl ? saveSchema : getSchema);
+		return new PageCreateCommand(client, _serviceUrlBuilder, _catalog, _logger,
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>());
+	}
+
+	private static PageCreateOptions DemoPageOptions() => new() {
+		SchemaName = "UsrDemo_BlankPage", Template = TemplateName, PackageName = "Custom", Caption = "Demo page"
+	};
+
+	private const string TemplateSchemaAnswer = """{"success": true, "schema": {"localizableStrings": []}}""";
+
+	[TestCase(200, """{"success": false, "errorInfo": {"message": "Schema name is not unique"}}""",
+		"Schema name is not unique", "json", TestName = "TryCreatePage_ShouldRecordTheSiteAnswer_WhenTheSaveIsRefused")]
+	[TestCase(500, "<html><title>500 - Internal server error.</title></html>", null, "html",
+		TestName = "TryCreatePage_ShouldRecordTheSiteAnswer_WhenTheSaveIsAnsweredWithAnHtmlPage")]
+	[TestCase(502, "", null, "empty", TestName = "TryCreatePage_ShouldRecordTheSiteAnswer_WhenTheSaveIsEmpty")]
+	public void TryCreatePage_ShouldRecordTheSiteAnswer(int status, string body, string message, string kind) {
+		// Arrange
+		PageCreateCommand command = KeepingStatusCommand(new SiteHttpResponse(200, TemplateSchemaAnswer),
+			new SiteHttpResponse(status, body));
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = command.TryCreatePage(DemoPageOptions(), out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeFalse();
+		response.Success.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, message, null, kind),
+			because: "the failed create reports what the site answered to its save");
+	}
+
+	[Test]
+	public void TryCreatePage_ShouldRecordTheSiteAnswer_WhenTheTemplateLoadIsRefused() {
+		// Arrange
+		PageCreateCommand command = KeepingStatusCommand(
+			new SiteHttpResponse(403, """{"success": false, "errorInfo": {"message": "No rights to read the template"}}"""),
+			new SiteHttpResponse(200, """{"success": true}"""));
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = command.TryCreatePage(DemoPageOptions(), out _);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(403, "No rights to read the template", null,
+			SiteResponse.JsonBody));
+	}
+
+	[Test]
+	public void TryCreatePage_ShouldRecordNothing_WhenTheSaveSucceeds() {
+		// Arrange
+		PageCreateCommand command = KeepingStatusCommand(new SiteHttpResponse(200, TemplateSchemaAnswer),
+			new SiteHttpResponse(200, """{"success": true}"""));
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = command.TryCreatePage(DemoPageOptions(), out _);
+
+		// Assert
+		result.Should().BeTrue();
+		capture.Last.Should().BeNull();
+	}
+
 	[Test]
 	public void TryCreatePage_Happy_Path_Posts_SaveSchema_And_Returns_SchemaUId() {
 		Queue<string> selectResponses = new([

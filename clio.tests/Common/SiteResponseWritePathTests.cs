@@ -85,6 +85,41 @@ public sealed class SiteResponseWritePathTests {
 		_capture.Last.Should().BeNull();
 	}
 
+	[Test]
+	[Description("A refused read the caller tolerates (a lookup probe) records nothing")]
+	public void SchemaDesigner_ShouldRecordNothing_WhenAToleratedProbeIsRefused() {
+		// Arrange
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(default(ServiceUrlBuilder.KnownRoute)).ReturnsForAnyArgs("http://local/0/DataService/json/SyncReply/SelectQuery");
+		RemoteEntitySchemaDesignerClient designer = new(KeepingClient(new SiteHttpResponse(403,
+			"{\"success\":false,\"errorInfo\":{\"message\":\"No rights to read Contact\"}}")), new Clio.Common.JsonConverter(), urls);
+
+		// Act
+		LookupRecordExistence existence = designer.CheckRecordExists("Contact", Guid.NewGuid(), new RemoteCommandOptions());
+
+		// Assert
+		existence.Should().Be(LookupRecordExistence.Unknown, because: "the probe's failure is tolerated");
+		_capture.Last.Should().BeNull(
+			because: "a tolerated refusal must not be reported as the site's answer to a later step that fails");
+	}
+
+	[Test]
+	[Description("A refused catalog read records nothing even when it throws, because its callers may tolerate it")]
+	public void SchemaDesigner_ShouldRecordNothing_WhenACatalogReadIsRefused() {
+		// Arrange
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(default(string)).ReturnsForAnyArgs("http://local/ServiceModel/EntitySchemaDesignerService.svc");
+		RemoteEntitySchemaDesignerClient designer = new(KeepingClient(new SiteHttpResponse(500, ServiceRefusal)),
+			new Clio.Common.JsonConverter(), urls);
+
+		// Act
+		Action act = () => designer.GetSystemValues(Guid.NewGuid(), new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>();
+		_capture.Last.Should().BeNull();
+	}
+
 	#endregion
 
 	#region Tests: DataService (data-binding-db writes)
@@ -223,7 +258,7 @@ public sealed class SiteResponseWritePathTests {
 	public void PageDesigner_ShouldRecordTheSiteAnswer_WhenTheBodyIsNotJson(int status, string body, string kind) {
 		// Act
 		Action act = () => PageSchemaMetadataHelper.PostDesignerRequest(
-			KeepingClient(new SiteHttpResponse(status, body)), "http://local/x", "{}", out _);
+			KeepingClient(new SiteHttpResponse(status, body)), "http://local/x", "{}");
 
 		// Assert
 		act.Should().Throw<JsonReaderException>(because: "the caller reports the parse failure as before");
@@ -235,7 +270,7 @@ public sealed class SiteResponseWritePathTests {
 	public void PageDesigner_ShouldRecordNothing_WhenTheReadIsAdvisory() {
 		// Act
 		Action act = () => PageSchemaMetadataHelper.PostDesignerRequest(
-			KeepingClient(new SiteHttpResponse(500, ErrorPage)), "http://local/x", "{}", out _,
+			KeepingClient(new SiteHttpResponse(500, ErrorPage)), "http://local/x", "{}",
 			recordRefusal: false);
 
 		// Assert
@@ -247,9 +282,8 @@ public sealed class SiteResponseWritePathTests {
 	[Description("A JSON answer is returned with the status kept for the caller to record a refusal")]
 	public void PageDesigner_ShouldReturnTheAnswer_WhenTheBodyIsJson() {
 		// Act
-		var parsed = PageSchemaMetadataHelper.PostDesignerRequest(
-			KeepingClient(new SiteHttpResponse(200, ServiceRefusal)), "http://local/x", "{}",
-			out SiteHttpResponse answer);
+		var (parsed, answer) = PageSchemaMetadataHelper.PostDesignerRequest(
+			KeepingClient(new SiteHttpResponse(200, ServiceRefusal)), "http://local/x", "{}");
 
 		// Assert
 		parsed["success"]!.ToString().Should().Be("False");
@@ -262,8 +296,8 @@ public sealed class SiteResponseWritePathTests {
 	#region Tests: restart-by-environment-name
 
 	[TestCase(403, TestName = "Restart_ShouldFail_WhenTheSiteAnswers403")]
-	[TestCase(500, TestName = "Restart_ShouldFail_WhenTheSiteAnswers500")]
-	[Description("A restart the site refuses fails the call and records the site's answer")]
+	[TestCase(404, TestName = "Restart_ShouldFail_WhenTheSiteAnswers404")]
+	[Description("A restart the site refuses with a 4xx status fails the call and records the site's answer")]
 	public void Restart_ShouldFail_WhenTheSiteRefuses(int status) {
 		// Arrange
 		ILogger logger = Substitute.For<ILogger>();
@@ -278,6 +312,28 @@ public sealed class SiteResponseWritePathTests {
 		exitCode.Should().Be(1, because: "a refused restart used to report 'Done' with exit code 0");
 		_capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, SiteResponse.HtmlBody));
 		logger.Received(1).WriteError(Arg.Is<string>(text => text.Contains($"HTTP {status}")));
+	}
+
+	[TestCase(500, TestName = "Restart_ShouldWarn_WhenTheSiteAnswers500")]
+	[TestCase(502, TestName = "Restart_ShouldWarn_WhenTheSiteAnswers502")]
+	[TestCase(503, TestName = "Restart_ShouldWarn_WhenTheSiteAnswers503")]
+	[Description("A 5xx answer, which a restart in progress behind a proxy can produce, is a warning and not a refusal")]
+	public void Restart_ShouldWarnAndGoOn_WhenTheSiteAnswers5xx(int status) {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		RestartCommand restart = new(KeepingClient(new SiteHttpResponse(status, ErrorPage)),
+			new EnvironmentSettings { Uri = "http://test.domain.com", IsNetCore = true },
+			Substitute.For<IServerReadinessWaiter>()) { Logger = logger };
+
+		// Act
+		int exitCode = restart.Execute(new RestartOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the restart may have happened; without the readiness wait nothing more is known");
+		_capture.Last.Should().BeNull(because: "only a refusal carries a site response");
+		logger.Received(1).WriteWarning(Arg.Is<string>(text => text.Contains($"HTTP {status}")
+			&& text.Contains("not confirmed")));
+		logger.DidNotReceive().WriteError(Arg.Any<string>());
 	}
 
 	[TestCase(200, TestName = "Restart_ShouldSucceed_WhenTheSiteAnswers200")]

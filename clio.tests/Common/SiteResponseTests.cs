@@ -191,6 +191,28 @@ public sealed class SiteResponseTests {
 
 	#endregion
 
+	[Test]
+	[Description("The site's message and code pass the same sensitive-text redaction as the error text beside them")]
+	public void FromRefusal_ShouldRedactSensitiveText_InTheMessageAndCode() {
+		// Arrange
+		SiteHttpResponse answer = new(500, JsonSerializer.Serialize(new {
+			success = false,
+			errorInfo = new {
+				errorCode = "Npgsql password=Secret1",
+				message = "Cannot connect to db-host.internal:5432 for https://tenant.example.com/0/odata (Password=Secret1)"
+			}
+		}));
+
+		// Act
+		SiteResponse response = SiteResponse.FromRefusal(answer);
+
+		// Assert
+		response.Message.Should().NotContain("Secret1").And.NotContain("db-host.internal:5432")
+			.And.NotContain("https://tenant.example.com", because: "a result reaches a model transcript");
+		response.Message.Should().StartWith("Cannot connect to", because: "the rest of the site's words are kept");
+		response.Code.Should().NotContain("Secret1");
+	}
+
 	#region Tests: Serialization
 
 	[Test]

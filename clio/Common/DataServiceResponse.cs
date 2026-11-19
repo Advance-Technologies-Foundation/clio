@@ -9,20 +9,6 @@ namespace Clio.Common;
 internal static class DataServiceResponse {
 
 	/// <summary>
-	/// Throws when the response envelope reports failure, naming <paramref name="operationName"/> and the
-	/// server's message. An absent body is accepted, as is an envelope carrying no <c>success</c> flag at all.
-	/// Everything that leaves the outcome undetermined is a failure: a non-empty body that is not JSON (an
-	/// authentication redirect, an error page) means the request never reached the service, and a
-	/// <c>success</c> flag that is present but not a true/false value means the envelope cannot be read.
-	/// Accepting either would report a write that did not happen as done.
-	/// </summary>
-	/// <param name="response">The raw response body.</param>
-	/// <param name="operationName">The operation to name in the failure message.</param>
-	/// <exception cref="InvalidOperationException">
-	/// Thrown when the envelope reports failure, when the body is not an envelope at all, or when its
-	/// <c>success</c> flag cannot be read as a true/false value.
-	/// </exception>
-	/// <summary>
 	/// Same check for an answer whose HTTP status is known, recording the answer as the site's response when
 	/// the check fails.
 	/// </summary>
@@ -49,6 +35,20 @@ internal static class DataServiceResponse {
 		}
 	}
 
+	/// <summary>
+	/// Throws when the response envelope reports failure, naming <paramref name="operationName"/> and the
+	/// server's message. An absent body is accepted, as is an envelope carrying no <c>success</c> flag at all.
+	/// Everything that leaves the outcome undetermined is a failure: a non-empty body that is not JSON (an
+	/// authentication redirect, an error page) means the request never reached the service, and a
+	/// <c>success</c> flag that is present but not a true/false value means the envelope cannot be read.
+	/// Accepting either would report a write that did not happen as done.
+	/// </summary>
+	/// <param name="response">The raw response body.</param>
+	/// <param name="operationName">The operation to name in the failure message.</param>
+	/// <exception cref="InvalidOperationException">
+	/// Thrown when the envelope reports failure, when the body is not an envelope at all, or when its
+	/// <c>success</c> flag cannot be read as a true/false value.
+	/// </exception>
 	internal static void ThrowIfUnsuccessful(string response, string operationName) {
 		if (string.IsNullOrWhiteSpace(response)) {
 			return;

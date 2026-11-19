@@ -1575,8 +1575,8 @@
 				["useFullHierarchy"] = false
 			};
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
-			JObject response = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient, url,
-				request.ToString(Formatting.None), out SiteHttpResponse answer, recordRefusal);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, request.ToString(Formatting.None), recordRefusal);
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject loaded) {
 				if (recordRefusal) {
 					SiteResponseCapture.RecordRefusal(answer);
@@ -1635,8 +1635,8 @@
 		private bool TrySaveSchema(JObject schemaToSave, PageUpdateOptions options, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			options.SaveOutcomeUnknown = true;
-			JObject saveResponse = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient, saveUrl,
-				schemaToSave.ToString(Formatting.None), out SiteHttpResponse answer);
+			(JObject saveResponse, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(
+				_applicationClient, saveUrl, schemaToSave.ToString(Formatting.None));
 			options.SaveOutcomeUnknown = false;
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
 				TryResetScriptCache();

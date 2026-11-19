@@ -1703,6 +1703,7 @@ public sealed class SchemaSyncOperationResult {
 	/// <summary>What the site itself answered to this failed operation; see <see cref="Clio.Common.SiteResponse"/>.</summary>
 	[JsonPropertyName("site-response")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[System.ComponentModel.Description("What the Creatio site itself answered to this failed operation: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
 	public SiteResponse? SiteResponse { get; init; }
 
 	[JsonPropertyName("messages")]

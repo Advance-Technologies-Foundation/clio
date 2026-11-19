@@ -75,17 +75,6 @@ internal static class ODataKeyedWrite {
 	}
 
 	/// <summary>
-	/// Validates the response body of a keyed PATCH/DELETE write. Creatio normally answers a
-	/// successful update or delete with <c>204 No Content</c> (empty body), so an empty response is
-	/// success. The transport layer (<see cref="IApplicationClient"/>) returns whatever body came
-	/// back regardless of HTTP status - it never throws for a non-2xx response - so a body that IS
-	/// present must be inspected: a recognized Creatio error shape, or a body that fails to parse as
-	/// JSON at all (an IIS/proxy error page, a stale-session redirect), both mean the write must not
-	/// be reported as successful.
-	/// </summary>
-	/// <param name="response">The raw response body returned by the PATCH/DELETE request.</param>
-	/// <returns>A redacted failure message, or <c>null</c> when the response is consistent with success.</returns>
-	/// <summary>
 	/// Same check for an answer whose HTTP status is known: a status the client kept that is not 2xx is a
 	/// failure even when the body would pass the check - an empty body or a JSON shape no error recognizer
 	/// matches - because the site said the write failed.
@@ -101,6 +90,17 @@ internal static class ODataKeyedWrite {
 			+ "not accepted. Read the record before deciding whether to resubmit.";
 	}
 
+	/// <summary>
+	/// Validates the response body of a keyed PATCH/DELETE write. Creatio normally answers a
+	/// successful update or delete with <c>204 No Content</c> (empty body), so an empty response is
+	/// success. The transport layer (<see cref="IApplicationClient"/>) returns whatever body came
+	/// back regardless of HTTP status - it never throws for a non-2xx response - so a body that IS
+	/// present must be inspected: a recognized Creatio error shape, or a body that fails to parse as
+	/// JSON at all (an IIS/proxy error page, a stale-session redirect), both mean the write must not
+	/// be reported as successful.
+	/// </summary>
+	/// <param name="response">The raw response body returned by the PATCH/DELETE request.</param>
+	/// <returns>A redacted failure message, or <c>null</c> when the response is consistent with success.</returns>
 	internal static string ValidateWriteResponse(string response) {
 		// Whitespace counts as "no body", not as an unparsable body: a proxy that pads an otherwise
 		// empty 204 with a newline is the realistic source of a whitespace-only response, and Creatio

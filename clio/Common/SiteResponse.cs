@@ -22,8 +22,9 @@ namespace Clio.Common;
 /// </remarks>
 /// <param name="Status">The HTTP status of that response. A Creatio service often refuses with HTTP 200 and
 /// <c>success:false</c>; the status then reads 200, because that is what the site sent.</param>
-/// <param name="Message">The site's own message from the body, verbatim except for a length cap, or
-/// <see langword="null"/> when the body holds none in a known shape.</param>
+/// <param name="Message">The site's own message from the body, or <see langword="null"/> when the body holds none
+/// in a known shape. It passes clio's sensitive-text redaction, like the error text beside it, and a length cap;
+/// nothing else is changed.</param>
 /// <param name="Code">The site's own error code (<c>errorInfo.errorCode</c>, OData <c>error.code</c> or
 /// <c>responseStatus.ErrorCode</c>), or <see langword="null"/>.</param>
 /// <param name="Body">What kind of body the site sent: <c>json</c>, <c>html</c>, <c>text</c> or
@@ -95,8 +96,8 @@ public sealed record SiteResponse(
 				return new SiteResponse(status, null, null, kind);
 			}
 			JsonElement root = document.RootElement;
-			return new SiteResponse(status, Cap(FindMessage(root), MaxMessageLength),
-				Cap(FindCode(root), MaxCodeLength), kind);
+			return new SiteResponse(status, Carry(FindMessage(root), MaxMessageLength),
+				Carry(FindCode(root), MaxCodeLength), kind);
 		}
 	}
 
@@ -212,6 +213,12 @@ public sealed record SiteResponse(
 		root.TryGetProperty(name, out element) && element.ValueKind == JsonValueKind.Object;
 
 	private static string NonBlank(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+	// The site's text goes through the same sensitive-text redaction as the error field next to it (URIs, paths,
+	// host:port, emails, credential and connection-string pairs become placeholders), then the length cap: a
+	// result reaches a model transcript, so it must not carry more than the error text already does.
+	private static string Carry(string value, int maxLength) =>
+		value is null ? null : Cap(SensitiveErrorTextRedactor.Redact(value), maxLength);
 
 	private static string Cap(string value, int maxLength) {
 		if (value is null || value.Length <= maxLength) {

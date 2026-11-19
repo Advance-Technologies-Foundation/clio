@@ -334,12 +334,12 @@ apart from clio's wording.
 | Member | Meaning |
 |---|---|
 | `status` | The HTTP status of that response, always present. A Creatio service often refuses with HTTP 200 and `success:false`; the status then reads 200, because that is what the site sent. |
-| `message` | The site's own message, only from a known JSON shape: `errorInfo.message`, OData `error.message` (or `error.message.value`), `responseStatus.Message`, `errorMessage` (also inside a WCF `<Method>Result` wrapper), or an ASP.NET fault's `Message` / `ExceptionMessage`. Verbatim, capped at 2,000 characters with a trailing "…". Omitted for an HTML page, an empty body, plain text or an unknown JSON shape. |
-| `code` | The site's own error code (`errorInfo.errorCode`, OData `error.code`, `responseStatus.ErrorCode`), when present. |
+| `message` | The site's own message, only from a known JSON shape: `errorInfo.message`, OData `error.message` (or `error.message.value`), `responseStatus.Message`, `errorMessage`, or an ASP.NET fault's `Message` / `message` / `ExceptionMessage`; each also inside a WCF `<Method>Result` wrapper. It passes the same sensitive-text redaction as the `error` text beside it (URIs, paths, host:port, emails, credential and connection-string pairs become placeholders) and is capped at 2,000 characters with a trailing "…". Omitted for an HTML page, an empty body, plain text or an unknown JSON shape. |
+| `code` | The site's own error code (`errorInfo.errorCode`, OData `error.code`, `responseStatus.ErrorCode`), when present; redacted like `message`. |
 | `body` | What kind of body the site sent: `json`, `html`, `text` or `empty`. |
 
-clio copies nothing beyond what the site sent and never copies `errorInfo.stackTrace`. The text is the
-site's, so a host that shows it applies its own redaction.
+clio copies nothing beyond what the site sent and never copies `errorInfo.stackTrace`. A host that shows the
+text may apply its own redaction on top.
 
 **Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
 failure is clio's own (validation, a refused precondition). The field is optional, so a caller that ignores it
@@ -351,15 +351,17 @@ sees the same envelope as before.
   `modify-entity-schema-column`, `create-lookup`, `create-page`, `update-page`, `create-data-binding-db`,
   `upsert-data-binding-row-db`, `remove-data-binding-row-db`, `delete-data-binding-db`, `odata-update`,
   `odata-delete` (one `id`), `install-application`, `push-workspace`, `install-process-builder`,
-  `compile-creatio`, `restart-by-environment-name`, `create-business-process`;
+  `compile-creatio`, `restart-by-environment-name`, `restart-by-credentials`, `create-business-process`;
 - on each failed item of a batch: `odata-create` `results[i]`, `odata-delete` with `ids` `results[i]`,
   `sync-pages` `pages[i]`, `sync-schemas` `results[i]`.
 
 **Status-aware failures.** Because the status is now kept, a failure status fails these writes even when the
 body alone would pass them: an empty or unrecognized body on `odata-update` / `odata-delete`, an empty body on
 `odata-create` (the row is then reported as not confirmed, with `record-created` unknown), an empty body on the
-data-binding writes and on `install-application`, and any non-2xx answer to `restart-by-environment-name`,
-which used to report "Done" with exit code 0 whatever the site answered.
+data-binding writes and on `install-application`, and a 4xx answer to `restart-by-environment-name` /
+`restart-by-credentials`, which used to report "Done" with exit code 0 whatever the site answered. A 5xx answer
+to a restart is not a refusal - a restart in progress behind a proxy can produce one - so it is reported as a
+warning that the restart is not confirmed, and with the readiness wait, readiness decides.
 
 **Not covered:** a compile that outlives the MCP response deadline reports its verdict through
 `compile-status`, which carries no `site-response`; and the very first request of a process, when it is one of
