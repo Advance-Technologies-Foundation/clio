@@ -82,6 +82,9 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	/// </summary>
 	private Exception _requestFailure;
 
+	// The answer to the build request, kept with its status for the site response a failed verdict reports.
+	private SiteHttpResponse _compileAnswer;
+
 	private const string OdataProjName = "Terrasoft.Configuration.ODataEntities.csproj";
 	private const string DevProjName = "Terrasoft.Configuration.Dev.csproj";
 
@@ -145,6 +148,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		_compileAll = options.All;
 		_reloadReported = false;
 		_requestFailure = null;
+		_compileAnswer = null;
 		Stopwatch sw = new();
 		sw.Start();
 		_logger.WriteLine("=================================================================================");
@@ -254,7 +258,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		DateTime startedUtc = DateTime.UtcNow;
 
 		using CancellationTokenSource requestCancellation = new();
-		Task<string> requestTask = SendCompileRequestAsync(options, requestCancellation.Token);
+		Task<SiteHttpResponse> requestTask = SendCompileRequestAsync(options, requestCancellation.Token);
 		try {
 			_activityWatcher.Start(baseline?.CreatedOn ?? DateTime.MinValue, LogRecord);
 			// Availability is watched SEPARATELY from build activity, and on a different endpoint, because
@@ -270,7 +274,8 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 				CompilationCompletionKind completion = Decide(requestTask, startedUtc);
 				if (completion != CompilationCompletionKind.KeepWaiting) {
 					if (completion == CompilationCompletionKind.ResponseReceived) {
-						responseBody = requestTask.Result;
+						_compileAnswer = requestTask.Result;
+						responseBody = _compileAnswer.Body;
 					} else if (completion == CompilationCompletionKind.TransportFailure) {
 						// Keep WHY the request failed. TransportFailure is only decided once the request has
 						// ended, so the fault is available here - and it is the whole diagnosis (401, DNS,
@@ -296,7 +301,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	}
 
 	/// <summary>Samples the current evidence and asks the completion rule what it means.</summary>
-	private CompilationCompletionKind Decide(Task<string> requestTask, DateTime startedUtc) {
+	private CompilationCompletionKind Decide(Task<SiteHttpResponse> requestTask, DateTime startedUtc) {
 		CompilationActivitySnapshot activity = _activityWatcher.Snapshot;
 		EnvironmentReloadSnapshot availability = _reloadWatcher.Snapshot;
 		ReportReloadOnce(availability);
@@ -334,14 +339,15 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	/// <summary>
 	/// Sends the configuration-build request on its own owned client, once, with cancellation.
 	/// </summary>
-	private async Task<string> SendCompileRequestAsync(CompileConfigurationOptions options,
+	private async Task<SiteHttpResponse> SendCompileRequestAsync(CompileConfigurationOptions options,
 		CancellationToken cancellationToken) {
 		using IOwnedApplicationClient client = _applicationClientFactory.CreateOwnedClient(EnvironmentSettings);
 		using HttpResponseMessage response = await client
 			.ExecutePostRequestAsync(ServiceUri, "{}", EffectiveTimeoutMs(options), maxAttempts: 1,
 				delaySec: 1, cancellationToken)
 			.ConfigureAwait(false);
-		return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+		string body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+		return SiteHttpResponse.Read(response, body, HttpMethod.Post, ServiceUri);
 	}
 
 	/// <summary>The bound actually applied, falling back to the declared one for a non-positive value.</summary>
@@ -357,7 +363,7 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 	/// unrelated part of the process. The fault is still REPORTED on the transport-failure path - see
 	/// <see cref="_requestFailure"/>; this method only makes sure the abandoned ones are observed.
 	/// </remarks>
-	private static void ObserveAbandonedRequest(Task<string> requestTask) =>
+	private static void ObserveAbandonedRequest(Task requestTask) =>
 		_ = requestTask.ContinueWith(static task => _ = task.Exception,
 			CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
 
@@ -377,6 +383,12 @@ public class CompileConfigurationCommand : RemoteCommand<CompileConfigurationOpt
 		switch (completion) {
 			case CompilationCompletionKind.ResponseReceived:
 				ProceedResponse(responseBody, options);
+				if (!_isSuccess) {
+					// The answer to the build request is the verdict on this path, so a failed one is what the
+					// tool reports as the site's response. The build request is compile-creatio's one write, sent
+					// with one attempt.
+					SiteResponseCapture.RecordRefusalOfSoleWrite(_compileAnswer, 1);
+				}
 				return;
 			case CompilationCompletionKind.ConfirmedByReload:
 				ApplyEnvironmentVerdict(inferred: false);

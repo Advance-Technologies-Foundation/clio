@@ -419,6 +419,39 @@ namespace Clio.Command {
 			return (columnUIds, null);
 		}
 
+		/// <summary>
+		/// Sends a designer request keeping the HTTP status, and parses the answer; an answer that is not JSON
+		/// is recorded as the site's refusal before the parser's exception leaves, because it fails the call.
+		/// </summary>
+		/// <param name="client">The client to send through.</param>
+		/// <param name="url">The designer endpoint.</param>
+		/// <param name="body">The JSON request body.</param>
+		/// <param name="recordRefusal">Whether a non-JSON answer is recorded; <see langword="false"/> for an
+		/// advisory read whose failure the caller tolerates.</param>
+		/// <param name="soleWrite">Whether this request is the call's sole write, so a non-JSON refusal is recorded
+		/// through <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>; the caller guarantees what that
+		/// method requires. The request is always sent with a single attempt.</param>
+		/// <returns>The parsed answer, and the answer as sent back for the caller to record when it refuses.</returns>
+		internal static (JObject Parsed, SiteHttpResponse Answer) PostDesignerRequest(IApplicationClient client,
+			string url, string body, bool recordRefusal = true, bool soleWrite = false) {
+			SiteHttpResponse answer = SiteCall.Post(client, url, body, maxAttempts: DesignerRequestAttempts);
+			try {
+				return (JObject.Parse(answer.Body ?? string.Empty), answer);
+			}
+			catch (JsonReaderException) {
+				if (soleWrite) {
+					SiteResponseCapture.RecordRefusalOfSoleWrite(answer, DesignerRequestAttempts);
+				}
+				else if (recordRefusal) {
+					SiteResponseCapture.RecordRefusal(answer);
+				}
+				throw;
+			}
+		}
+
+		/// <summary>The attempt count of every <see cref="PostDesignerRequest"/>: one, never retried.</summary>
+		internal const int DesignerRequestAttempts = 1;
+
 		internal static string ParseSaveErrorMessage(JObject saveResponse, string defaultMessage) {
 			string errorMessage = defaultMessage;
 			if (saveResponse["errorInfo"] is JObject errorInfo) {

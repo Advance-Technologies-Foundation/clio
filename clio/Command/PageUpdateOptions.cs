@@ -680,7 +680,10 @@
 				// denied, a redirected target UId), TryGetSchema returns false with the server's own message,
 				// and discarding it through `out _` handed the caller back the misleading "resource 'X' is
 				// neither auto-provided ... nor registered" that issue #1320 opened with.
-				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
+				// recordRefusal: false - this read is advisory, and its refusal must not be reported as the
+				// site's answer to a later step that fails for another reason.
+				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError,
+						recordRefusal: false)) {
 					return LogPersistedResourceKeyFailure(schemaError);
 				}
 				return PersistedResourceKeyRead.FromKeys(
@@ -1566,15 +1569,18 @@
 			return true;
 		}
 
-		private bool TryGetSchema(string schemaUId, out JObject schema, out string error) {
+		private bool TryGetSchema(string schemaUId, out JObject schema, out string error, bool recordRefusal = true) {
 			var request = new JObject {
 				["schemaUId"] = schemaUId,
 				["useFullHierarchy"] = false
 			};
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
-			string json = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
-			var response = JObject.Parse(json);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, request.ToString(Formatting.None), recordRefusal);
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject loaded) {
+				if (recordRefusal) {
+					SiteResponseCapture.RecordRefusal(answer);
+				}
 				schema = null;
 				error = response["errorInfo"]?["message"]?.ToString() ?? $"Failed to load schema '{schemaUId}'";
 				return false;
@@ -1629,14 +1635,18 @@
 		private bool TrySaveSchema(JObject schemaToSave, PageUpdateOptions options, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			options.SaveOutcomeUnknown = true;
-			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
-			var saveResponse = JObject.Parse(saveJson);
+			// The save is the only write an update-page call sends: everything before it reads, the cache reset
+			// and the checksum read run only after it succeeded, and a refused save ends the call. So its refusal
+			// is recorded as the refusal of the call's sole write.
+			(JObject saveResponse, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(
+				_applicationClient, saveUrl, schemaToSave.ToString(Formatting.None), soleWrite: true);
 			options.SaveOutcomeUnknown = false;
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
 				TryResetScriptCache();
 				response = null;
 				return true;
 			}
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, PageSchemaMetadataHelper.DesignerRequestAttempts);
 			response = new PageUpdateResponse {
 				Success = false,
 				Error = BuildSaveErrorMessage(saveResponse)

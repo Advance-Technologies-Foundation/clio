@@ -260,20 +260,205 @@ internal class PackageInstallerTests : BaseClioModuleTests
 			&& line.Contains("backup refused by the server", StringComparison.Ordinal)));
 	}
 
-	private InstallerArrangement ArrangeInstaller(string installResponse) {
+	[Test]
+	[Description("A refused installation records the site's answer with its own message")]
+	public void Install_ShouldRecordTheSiteAnswer_WhenTheInstallServiceRefuses() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(
+			"{\"success\":false,\"errorInfo\":{\"errorCode\":\"InstallException\",\"message\":\"Package UsrA depends on UsrB\"}}",
+			installStatus: 200);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(200, "Package UsrA depends on UsrB", "InstallException",
+			SiteResponse.JsonBody), because: "the site's own refusal is what the failed install reports");
+	}
+
+	[Test]
+	[Description("An empty install answer with a failure status fails the installation, where it used to read as success")]
+	public void Install_ShouldFail_WhenTheAnswerIsEmptyWithAFailureStatus() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 504);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse(because: "the site said the installation request failed");
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(504, null, null, SiteResponse.EmptyBody));
+		CallsTo(arrangement.Application, nameof(IApplication.Restart)).Should().Be(0,
+			because: "a failed installation must not restart the application");
+	}
+
+	[Test]
+	[Description("An install answered with an HTML page records the site's answer before the parse failure leaves")]
+	public void Install_ShouldRecordTheSiteAnswer_WhenTheAnswerIsAnHtmlPage() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(
+			"<html><head><title>502 - Bad Gateway</title></head></html>", installStatus: 502);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool succeeded;
+		try {
+			succeeded = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+		}
+		catch (Exception) {
+			succeeded = false;
+		}
+
+		// Assert
+		succeeded.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(502, null, null, SiteResponse.HtmlBody));
+	}
+
+	[TestCase(504, TestName = "Install_ShouldReportNotConfirmed_WhenA504AnswersEvenIfTheLogSaysInstalled")]
+	[TestCase(502, TestName = "Install_ShouldReportNotConfirmed_WhenA502AnswersEvenIfTheLogSaysInstalled")]
+	[TestCase(503, TestName = "Install_ShouldReportNotConfirmed_WhenA503AnswersEvenIfTheLogSaysInstalled")]
+	[Description("An empty 5xx is never turned into a success by a log line: the log window is bounded by time, not by this run, so a stale or another run's line could forge it. The install is reported as not confirmed instead.")]
+	public void Install_ShouldReportNotConfirmed_WhenA5xxAnswersEvenIfTheLogSaysInstalled(int status) {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: status,
+			logAfterInstall: "baseline\r\nApplication installed successfully\r\n");
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse(because: "a line in a shared log cannot prove this installation finished");
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(status, null, null, SiteResponse.EmptyBody));
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.StartsWith("Package installation failed: not confirmed", StringComparison.Ordinal)
+			&& line.Contains($"HTTP {status}", StringComparison.Ordinal)
+			&& line.Contains("may still be running", StringComparison.Ordinal)));
+		CallsTo(arrangement.Application, nameof(IApplication.Restart)).Should().Be(0);
+	}
+
+	[Test]
+	[Description("A gateway HTML page with a 5xx is reported as a not confirmed installation, not as a parser exception")]
+	public void Install_ShouldReportNotConfirmed_WhenA5xxAnswersWithAnHtmlPage() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller("<html><head><title>504 Gateway Time-out</title></head></html>",
+			installStatus: 504);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(504, null, null, SiteResponse.HtmlBody));
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.StartsWith("Package installation failed: not confirmed", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A 413 with no service verdict refused the install request without processing it: the package was not installed, yet the upload before it keeps the call's side effect unknown")]
+	public void Install_ShouldSayNotInstalled_WhenA413RefusesWithNoVerdict() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 413);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin(soleWriteCall: true);
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(413, null, null, SiteResponse.EmptyBody));
+		capture.LastProvesNothingApplied.Should().BeFalse(
+			because: "the upload and backup wrote before the install request, so the call did write something");
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.Contains("refused the installation request without processing it (HTTP 413)", StringComparison.Ordinal)
+			&& line.Contains("the package was not installed", StringComparison.Ordinal)));
+	}
+
+	[TestCase(404, TestName = "Install_ShouldNotClaimNotInstalled_WhenA404RefusesWithNoVerdict")]
+	[TestCase(403, TestName = "Install_ShouldNotClaimNotInstalled_WhenA403RefusesWithNoVerdict")]
+	[TestCase(401, TestName = "Install_ShouldNotClaimNotInstalled_WhenA401RefusesWithNoVerdict")]
+	[Description("A 404 may come from the installer itself and a 403 from a gateway after the backend ran, so neither proves nothing was installed")]
+	public void Install_ShouldNotClaimNotInstalled_WhenTheStatusProvesNothing(int status) {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: status);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		arrangement.Logger.Received(1).WriteError(Arg.Is<string>(line =>
+			line.Contains($"refused the installation request with HTTP {status}", StringComparison.Ordinal)
+			&& line.Contains("which does not prove nothing was installed", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("A gateway answer is still a failure when this run's log does not confirm the install")]
+	public void Install_ShouldFail_WhenAGatewayAnswersAndTheLogDoesNotConfirm() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(string.Empty, installStatus: 504,
+			logAfterInstall: "baseline\r\nInstalling package UsrA\r\n");
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeFalse();
+		capture.Last.Should().BeEquivalentTo(new SiteResponse(504, null, null, SiteResponse.EmptyBody));
+	}
+
+	[TestCase(200, TestName = "Install_ShouldRecordNothing_WhenTheInstallSucceedsWith200")]
+	[TestCase(null, TestName = "Install_ShouldRecordNothing_WhenTheClientDoesNotKeepTheStatus")]
+	[Description("A successful installation records nothing")]
+	public void Install_ShouldRecordNothing_WhenTheInstallSucceeds(int? status) {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller("{\"success\":true}", status);
+		using SiteResponseCapture.Scope capture = SiteResponseCapture.Begin();
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeTrue();
+		capture.Last.Should().BeNull();
+	}
+
+	private InstallerArrangement ArrangeInstaller(string installResponse, int? installStatus = null,
+		string logAfterInstall = null) {
 		string packagePath = "T:\\Package.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
 		// The installer is built for one environment and installs into another, the way WorkspaceInstaller and
 		// apply-environment-manifest use it, so a step that reads the constructor's settings is caught.
 		EnvironmentSettings constructorSettings = new() { IsNetCore = true, Uri = "http://constructor-environment" };
 		EnvironmentSettings environmentSettings = new() { IsNetCore = true, Uri = "http://install-environment" };
-		IOwnedApplicationClient session = Substitute.For<IOwnedApplicationClient>();
+		// With a status, the session keeps it the way the real client does, so the install answer is sent through
+		// SendKeepingStatus; without one it answers through the string POST as before.
+		IOwnedApplicationClient session = installStatus is null
+			? Substitute.For<IOwnedApplicationClient>()
+			: Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
 		session.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(installResponse);
+		if (installStatus is not null) {
+			((IStatusPreservingApplicationClient)session)
+				.SendKeepingStatus(default, default, default, default, default, default, default)
+				.ReturnsForAnyArgs(new SiteHttpResponse(installStatus, installResponse));
+		}
 		IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
 		clientFactory.CreateClient(Arg.Any<EnvironmentSettings>()).Returns(session);
 		IApplicationLogProvider logProvider = Substitute.For<IApplicationLogProvider>();
-		logProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
-			.Returns("baseline\r\n");
+		if (logAfterInstall is null) {
+			logProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+				.Returns("baseline\r\n");
+		}
+		else {
+			logProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+				.Returns("baseline\r\n", logAfterInstall);
+		}
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		serviceUrlBuilder.Build(Arg.Any<string>(), Arg.Any<EnvironmentSettings>())
 			.Returns(callInfo => callInfo.ArgAt<string>(0));

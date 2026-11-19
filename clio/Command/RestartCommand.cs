@@ -73,6 +73,49 @@ public class RestartCommand : RemoteCommand<RestartOptions> {
 		return WaitForReadiness(options) ? 0 : 1;
 	}
 
+	/// <summary>
+	/// Sends the restart request and fails when the environment refuses it with a 4xx status.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// The base command reads no answer for a restart, so a refusal - no rights (403), an unknown route (404) - was
+	/// reported as "Done" with exit code 0, and with a readiness wait a site that refused and stayed up then read
+	/// "ready". The status is now kept: a 4xx answer fails the call and carries the site's answer as its site
+	/// response. The error says the application was not restarted only when that is proven: the request was
+	/// sent with a single attempt and refused without processing
+	/// (<see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>).
+	/// </para>
+	/// <para>
+	/// A 5xx answer is not a refusal: stopping the application mid-request is how a restart behind a proxy or the
+	/// ASP.NET Core module can end, with a 502 or 503 for a restart that did happen. It is reported as a warning
+	/// that the restart is not confirmed and the call goes on as before - with a readiness wait, readiness decides.
+	/// The body of an answer is still not read: what it holds differs between runtimes and carries no verdict.
+	/// </para>
+	/// </remarks>
+	/// <param name="options">Restart options.</param>
+	protected override void ExecuteRemoteCommand(RestartOptions options) {
+		SiteHttpResponse answer = SiteCall.Post(ApplicationClient, ServiceUri, GetRequestData(options), RequestTimeout,
+			MaxAttempts, DelaySec);
+		if (answer.StatusCode is >= 500) {
+			Logger.WriteWarning($"The environment answered the restart request with HTTP {answer.StatusCode}, which a "
+				+ "restart in progress can produce, so the restart is not confirmed.");
+			return;
+		}
+		if (!answer.IsKnownFailureStatus) {
+			return;
+		}
+		// The restart request is the only request a restart call sends before the readiness wait, which only
+		// reads. With a single attempt and a refusal without processing, the application was not restarted;
+		// with more attempts an earlier one may have timed out after the restart began.
+		SiteResponseCapture.RecordRefusalOfSoleWrite(answer, MaxAttempts);
+		CommandSuccess = false;
+		Logger.WriteError(MaxAttempts <= 1 && answer.IsRefusedWithoutProcessing
+			? $"The environment refused the restart request without processing it: it answered HTTP "
+				+ $"{answer.StatusCode}, so the application was not restarted."
+			: $"The environment refused the restart request with HTTP {answer.StatusCode}, which does not prove "
+				+ "the application was not restarted. Check the application before restarting it again.");
+	}
+
 	internal int ExecuteForEnvironment(
 		RestartOptions options,
 		EnvironmentSettings environment,
