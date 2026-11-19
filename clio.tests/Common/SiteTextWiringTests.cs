@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Command;
@@ -32,11 +33,10 @@ namespace Clio.Tests.Common;
 /// fails when a new call site of a site-text extractor appears without a case here, and
 /// <see cref="SourceGuard_ShouldKnowEveryDirectReadOfASitesErrorText"/> when a new direct read of a site's error
 /// text appears that is neither wired nor in the known-unwired list (A2 for the write-tool and dynamic-case paths,
-/// follow-up for the remaining envelope readers). That scan is by NAME: it sees the site-error JSON names as
-/// literals, members named ErrorInfo, ResponseStatus or ExceptionMessage or decorated with a site-error JSON name,
-/// those names in a property pattern, and constants that hold them (see <see cref="DirectSiteErrorReads"/>). It
-/// does not see a site's text read through a member of any other name that no clio source decorates, a property
-/// name built at run time, a JSON path, reflection or <c>dynamic</c>.
+/// follow-up for the remaining envelope readers). That scan is by NAME and sees exactly the forms listed on
+/// <see cref="ScanDirectSiteErrorReads"/>. It does not see a site's text read through a member of any other name that no
+/// clio source decorates, a member name used as a pattern name anywhere but right after "{" or ",", a property name
+/// built at run time, a JSON path, a name constant held in a local variable, reflection or <c>dynamic</c>.
 /// </remarks>
 [TestFixture]
 [Property("Module", "Common")]
@@ -338,36 +338,36 @@ public sealed class SiteTextWiringTests {
 	//   "follow-up": KNOWN-UNWIRED - the text reaches a caller through Redact only, and the follow-up after A2 wires
 	//                it (see KnownSiteErrorReads for what that means).
 	private static readonly Dictionary<string, (int Count, string Wiring)> KnownCallSites = new(StringComparer.Ordinal) {
-		["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (2, "central"),
-		["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataUpdateTool.cs"] = (1, "central"),
-		["SiteResponse.FromRefusal|clio/Command/RuntimeVerification/RecordDeletionService.cs"] = (1, "central"),
-		["SiteResponse.FromRefusal|clio/Common/SiteResponseCapture.cs"] = (1, "central"),
-		["CreatioResponseError.TryDetect|clio/Command/Branding/BrandingBackgroundService.cs"] = (1, "call site"),
-		["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/EmailTemplateTool.cs"] = (2, "call site"),
-		["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (1, "call site"),
-		["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/ODataFieldValidation.cs"] = (2, "call site"),
-		["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/ODataKeyedWrite.cs"] = (1, "call site"),
-		["CreatioResponseError.TryDetect|clio/Command/RuntimeVerification/TriggerSmokeRunner.cs"] = (1, "call site"),
-		["CreatioResponseError.TryDetect|clio/Query/DataServiceQuery.cs"] = (1, "discarded"),
+				["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (2, "central"),
+				["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataUpdateTool.cs"] = (1, "central"),
+				["SiteResponse.FromRefusal|clio/Command/RuntimeVerification/RecordDeletionService.cs"] = (1, "central"),
+				["SiteResponse.FromRefusal|clio/Common/SiteResponseCapture.cs"] = (1, "central"),
+				["CreatioResponseError.TryDetect|clio/Command/Branding/BrandingBackgroundService.cs"] = (1, "call site"),
+				["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/EmailTemplateTool.cs"] = (2, "call site"),
+				["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (1, "call site"),
+				["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/ODataFieldValidation.cs"] = (2, "call site"),
+				["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/ODataKeyedWrite.cs"] = (1, "call site"),
+				["CreatioResponseError.TryDetect|clio/Command/RuntimeVerification/TriggerSmokeRunner.cs"] = (1, "call site"),
+				["CreatioResponseError.TryDetect|clio/Query/DataServiceQuery.cs"] = (1, "discarded"),
 		// TryClassify's server detail goes to odata-read's debug channel through UntrustedText.Fenced (Redact).
-		["CreatioResponseError.TryClassify|clio/Command/McpServer/Tools/ODataReadTool.cs"] = (1, "follow-up"),
-		["CreatioResponseError.TryClassify|clio/Command/McpServer/Tools/ODataFileContract.cs"] = (1, "discarded"),
+				["CreatioResponseError.TryClassify|clio/Command/McpServer/Tools/ODataReadTool.cs"] = (1, "follow-up"),
+				["CreatioResponseError.TryClassify|clio/Command/McpServer/Tools/ODataFileContract.cs"] = (1, "discarded"),
 		// The overload that returns no text at all, only whether the body is an error.
-		["CreatioResponseError.TryClassify|clio/Command/CompileBusinessProcessCommand.cs"] = (1, "discarded"),
-		["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (1, "central"),
-		["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataFieldValidation.cs"] = (3, "central"),
-		["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataKeyedWrite.cs"] = (1, "central"),
-		["RecordDeletionService.ReadInnerMessage|clio/Command/RuntimeVerification/RecordDeletionService.cs"] = (1, "central"),
-		["RecordDeletionService.ReadInnerMessage|clio/Command/RuntimeVerification/TriggerSmokeRunner.cs"] = (1, "central"),
-		["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/ClientUnitSchemaCreate.cs"] = (1, "central"),
-		["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/LocalizePageCommand.cs"] = (1, "central"),
-		["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/PageCreateOptions.cs"] = (1, "central"),
-		["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/PageUpdateOptions.cs"] = (1, "central"),
-		["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/SchemaDesignerHelper.cs"] = (1, "central"),
-		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/ApplicationSectionLocalization.cs"] = (4, "central"),
-		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbCommand.cs"] = (5, "central"),
-		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbLocalizer.cs"] = (2, "central"),
-		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/PackageDataBindingWriter.cs"] = (2, "central"),
+				["CreatioResponseError.TryClassify|clio/Command/CompileBusinessProcessCommand.cs"] = (1, "discarded"),
+				["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (1, "central"),
+				["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataFieldValidation.cs"] = (3, "central"),
+				["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataKeyedWrite.cs"] = (1, "central"),
+				["RecordDeletionService.ReadInnerMessage|clio/Command/RuntimeVerification/RecordDeletionService.cs"] = (1, "central"),
+				["RecordDeletionService.ReadInnerMessage|clio/Command/RuntimeVerification/TriggerSmokeRunner.cs"] = (1, "central"),
+				["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/ClientUnitSchemaCreate.cs"] = (1, "central"),
+				["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/LocalizePageCommand.cs"] = (1, "central"),
+				["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/PageCreateOptions.cs"] = (1, "central"),
+				["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/PageUpdateOptions.cs"] = (1, "central"),
+				["PageSchemaMetadataHelper.ParseSaveErrorMessage|clio/Command/SchemaDesignerHelper.cs"] = (1, "central"),
+				["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/ApplicationSectionLocalization.cs"] = (4, "central"),
+				["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbCommand.cs"] = (5, "central"),
+				["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbLocalizer.cs"] = (2, "central"),
+				["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/PackageDataBindingWriter.cs"] = (2, "central"),
 	};
 
 	// The extractors and the call shape of each, as found in clio's CODE (never in a comment or a string).
@@ -426,17 +426,24 @@ public sealed class SiteTextWiringTests {
 
 	private static readonly Regex PropertyNameDeclaration = new(@"\b(?:JsonPropertyName|JsonProperty|DataMember)\(");
 
-	// A [JsonPropertyName]/[JsonProperty] decoration with a site-error name, and the C# member it decorates.
+	// A decoration with a site-error name - [JsonPropertyName("…")], [JsonProperty("…", …)] or [DataMember(Name = "…")],
+	// alone or in a list with other attributes - up to the end of its attribute list, and the C# member it decorates.
+	private const string SiteErrorJsonNames =
+		"errorInfo|ErrorInfo|responseStatus|ResponseStatus|exceptionMessage|ExceptionMessage|errorMessage|ErrorMessage"
+		+ "|innererror|internalexception";
+
 	private static readonly Regex SiteErrorNameDecoration = new(
-		@"\bJson(?:PropertyName|Property)\(""(?:errorInfo|ErrorInfo|responseStatus|ResponseStatus|exceptionMessage|ExceptionMessage"
-		+ @"|errorMessage|ErrorMessage|innererror|internalexception)""\)\]");
+		$@"\b(?:Json(?:PropertyName|Property)\(\s*""(?:{SiteErrorJsonNames})""[^)\]]*\)"
+		+ $@"|DataMember\([^)\]]*\bName\s*=\s*""(?:{SiteErrorJsonNames})""[^)\]]*\))[^\]]*\]");
 
 	private static readonly Regex DecoratedMemberName = new(
 		@"\G(?:\s*\[[^\]]*\])*\s*(?:(?:public|internal|private|protected|required|virtual|override|static|readonly|new)\s+)*"
 		+ @"[\w.<>\[\]?, ]+?\s+(?<name>[A-Za-z_]\w*)\s*(?:\{|=|,|\)|;)");
 
-	// The declaration of a constant or a read-only field, read from the member's start to the site-error name in it.
-	private static readonly Regex NameConstantDeclaration = new(@"\b(?:const|readonly)\b[^;{(]*=");
+	// The declaration of a constant, a read-only field, a static expression-bodied property or an initialized
+	// auto-property, read from the member's start to the site-error name in it.
+	private static readonly Regex NameConstantDeclaration = new(
+		@"\b(?:const|readonly)\b[^;{(]*=|\bstatic\b[^;{(]*=>|\{\s*get;\s*(?:init;\s*)?\}\s*=");
 
 	// Every member of clio that reads a site's error text DIRECTLY, how many reads it holds, and how that text is
 	// wired. A read in a member that is not listed here - or one more read in a listed member - fails
@@ -459,159 +466,160 @@ public sealed class SiteTextWiringTests {
 	// clio's own result types also use) is not seen - those readers are in the A2 files named above.
 	private static readonly Dictionary<string, (int Count, string Wiring)> KnownSiteErrorReads = new(StringComparer.Ordinal) {
 		// Wired: the text reaches a caller only through an extractor this fixture checks.
-		["clio/Command/DataServiceBatchCommand.cs|ReadError"] = (2, "wired: DataServiceBatchCommand.ReadError"),
-		["clio/Command/PageSchemaMetadataHelper.cs|ParseSaveErrorMessage"] = (1, "wired: PageSchemaMetadataHelper.ParseSaveErrorMessage"),
-		["clio/Command/RuntimeVerification/RecordDeletionService.cs|ReadInnerMessage"] = (2, "wired: RecordDeletionService.ReadInnerMessage"),
-		["clio/Common/CreatioResponseError.cs|TryDetectBaseResponse"] = (6, "wired: CreatioResponseError.TryDetect"),
-		["clio/Common/CreatioResponseError.cs|TryDetectAspNetException"] = (2, "wired: CreatioResponseError.TryDetect"),
-		["clio/Common/DataServiceResponse.cs|ThrowIfUnsuccessful"] = (2, "wired: DataServiceResponse.ThrowIfUnsuccessful"),
-		["clio/Common/SiteResponse.cs|FindEnvelopeMessage"] = (4, "wired: SiteResponse.Carry"),
-		["clio/Common/SiteResponse.cs|FindEnvelopeCode"] = (2, "wired: SiteResponse.Carry"),
+				["clio/Command/DataServiceBatchCommand.cs|ReadError"] = (2, "wired: DataServiceBatchCommand.ReadError"),
+				["clio/Command/PageSchemaMetadataHelper.cs|ParseSaveErrorMessage"] = (1, "wired: PageSchemaMetadataHelper.ParseSaveErrorMessage"),
+				["clio/Command/RuntimeVerification/RecordDeletionService.cs|ReadInnerMessage"] = (2, "wired: RecordDeletionService.ReadInnerMessage"),
+				["clio/Common/CreatioResponseError.cs|TryDetectBaseResponse"] = (6, "wired: CreatioResponseError.TryDetect"),
+				["clio/Common/CreatioResponseError.cs|TryDetectAspNetException"] = (2, "wired: CreatioResponseError.TryDetect"),
+				["clio/Common/DataServiceResponse.cs|ThrowIfUnsuccessful"] = (2, "wired: DataServiceResponse.ThrowIfUnsuccessful"),
+				["clio/Common/SiteResponse.cs|FindEnvelopeMessage"] = (4, "wired: SiteResponse.Carry"),
+				["clio/Common/SiteResponse.cs|FindEnvelopeCode"] = (2, "wired: SiteResponse.Carry"),
 		// Not text: a site error name used only to recognize a shape; no site text is extracted.
-		["clio/Command/McpServer/Tools/ClioRunTool.cs|FailureFieldNames"] = (1, "not text: the failure field names of clio's own envelope"),
-		["clio/Common/ServerReadinessWaiter.cs|DataServiceAnswerMarkers"] = (1, "not text: markers that tell a DataService answer apart"),
-		["clio/Command/AddCustomLoggingCommand.cs|Execute"] = (1, "not text: clio's own logging configurator result"),
-		["clio/Command/AddItemCommand.cs|Execute"] = (1, "not text: a validation failure of clio's own options"),
-		["clio/Command/Command.cs|PrintErrors"] = (2, "not text: a validation failure of clio's own options"),
-		["clio/Command/CreateUiProjectCommand.cs|Execute"] = (1, "not text: a validation failure of clio's own options"),
-		["clio/Command/CreatioInstallCommand/CreatioInstallerService.cs|RestoreToLocalDb"] = (1, "not text: clio's own local database result"),
-		["clio/Command/CreatioInstallCommand/CreatioInstallerService.cs|TryDisableForcedPasswordReset"] = (1, "not text: clio's own local database result"),
-		["clio/Command/CreatioInstallCommand/CreatioInstallerService.cs|UpdateConnectionString"] = (2, "not text: clio's own local database result"),
-		["clio/Command/EnvironmentRuntimeDetectionService.cs|Describe"] = (1, "not text: clio's own probe result, an exception message"),
-		["clio/Command/ExternalLink.cs|PrintError"] = (2, "not text: a validation failure of clio's own options"),
-		["clio/Command/LinkCoreSrcCommand.cs|Execute"] = (1, "not text: a validation failure of clio's own options"),
-		["clio/Command/McpServer/Tools/ClioRunTool.cs|IsErrorFieldName"] = (1, "not text: reads the failure field-name set of clio's own envelope"),
-		["clio/Command/OpenAppCommand.cs|Execute"] = (1, "not text: clio's own browser launch result"),
-		["clio/Command/RegAppCommand.cs|Execute"] = (2, "not text: a validation failure of clio's own options"),
-		["clio/Command/RestoreDb.cs|RestoreToLocalServer"] = (1, "not text: clio's own local database result"),
-		["clio/Command/RingCommand.cs|Launch"] = (1, "not text: clio's own process launch result"),
-		["clio/Command/TurnFarmModeCommand.cs|PrintErrors"] = (2, "not text: a validation failure of clio's own options"),
-		["clio/Common/Assertions/LocalRedisAssertion.cs|ExecuteAsync"] = (2, "not text: clio's own local Redis discovery result"),
-		["clio/Common/BrowserSession/AuthenticatedBrowserLauncher.cs|LaunchAsync"] = (1, "not text: clio's own browser launch result"),
-		["clio/Common/ConsoleLogger.cs|PrintValidationFailureErrors"] = (2, "not text: a validation failure of clio's own options"),
-		["clio/Common/CreatioHostService.cs|StartInBackground"] = (1, "not text: clio's own process launch result"),
-		["clio/Common/Kubernetes/K8RedisAssertion.cs|ExecuteAsync"] = (1, "not text: clio's own Redis discovery result"),
-		["clio/Common/ServerReadinessWaiter.cs|IsGenuineAuthenticatedJsonAnswer"] = (1, "not text: reads the markers that tell a DataService answer apart"),
+		["clio/Command/McpServer/Tools/ClioRunTool.cs|FailureFieldNames"] = (1, "not text: name constant: the failure field names of clio's own envelope"),
+		["clio/Common/ServerReadinessWaiter.cs|DataServiceAnswerMarkers"] = (1, "not text: name constant: markers that tell a DataService answer apart"),
+		["clio/Command/AddCustomLoggingCommand.cs|Execute"] = (1, "not text: own CustomLoggingConfigurationResult: clio's logging configurator result"),
+		["clio/Command/AddItemCommand.cs|Execute"] = (1, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Command/Command.cs|PrintErrors"] = (2, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Command/CreateUiProjectCommand.cs|Execute"] = (1, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Command/CreatioInstallCommand/CreatioInstallerService.cs|RestoreToLocalDb"] = (1, "not text: own ConnectionTestResult: clio's local database connection test"),
+		["clio/Command/CreatioInstallCommand/CreatioInstallerService.cs|TryDisableForcedPasswordReset"] = (1, "not text: own PasswordResetScriptExecutionResult: clio's local database script"),
+		["clio/Command/CreatioInstallCommand/CreatioInstallerService.cs|UpdateConnectionString"] = (2, "not text: own RedisDatabaseSelectionResult: clio's local Redis discovery"),
+		["clio/Command/ExternalLink.cs|PrintError"] = (2, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Command/LinkCoreSrcCommand.cs|Execute"] = (1, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Command/McpServer/Tools/ClioRunTool.cs|IsErrorFieldName"] = (1, "not text: name constant: reads the failure field-name set of clio's own envelope"),
+		["clio/Command/OpenAppCommand.cs|Execute"] = (1, "not text: own ProcessLaunchResult: clio's browser launch"),
+		["clio/Command/RegAppCommand.cs|Execute"] = (2, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Command/RestoreDb.cs|RestoreToLocalServer"] = (1, "not text: own ConnectionTestResult: clio's local database connection test"),
+		["clio/Command/RingCommand.cs|Launch"] = (1, "not text: own ProcessLaunchResult: clio's process launch"),
+		["clio/Command/TurnFarmModeCommand.cs|PrintErrors"] = (2, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Common/Assertions/LocalRedisAssertion.cs|ExecuteAsync"] = (2, "not text: own RedisDatabaseSelectionResult, RedisAuthValidationResult: clio's local Redis discovery"),
+		["clio/Common/BrowserSession/AuthenticatedBrowserLauncher.cs|LaunchAsync"] = (1, "not text: own ProcessLaunchResult: clio's browser launch"),
+		["clio/Common/ConsoleLogger.cs|PrintValidationFailureErrors"] = (2, "not text: own ValidationFailure: a validation failure of clio's own options"),
+		["clio/Common/CreatioHostService.cs|StartInBackground"] = (1, "not text: own ProcessLaunchResult: clio's process launch"),
+		["clio/Common/Kubernetes/K8RedisAssertion.cs|ExecuteAsync"] = (1, "not text: own RedisDatabaseSelectionResult: clio's Redis discovery"),
+		["clio/Common/ServerReadinessWaiter.cs|IsGenuineAuthenticatedJsonAnswer"] = (1, "not text: name constant: reads the markers that tell a DataService answer apart"),
 		// KNOWN-UNWIRED, A2: the write-tool paths the stacked PR A2 wires.
-		["clio/Command/CompileBusinessProcessCommand.cs|Compile"] = (1, "A2"),
-		["clio/Command/CompileBusinessProcessCommand.cs|ReportFailure"] = (1, "A2"),
-		["clio/Command/CompileConfigurationCommand.cs|ProceedResponse"] = (1, "A2"),
-		["clio/Command/CreateDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "A2"),
-		["clio/Command/CreateDynamicCaseCommand.cs|Verdict"] = (4, "A2"),
-		["clio/Command/DescribeDynamicCaseCommand.cs|Verdict"] = (1, "A2"),
-		["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "A2"),
-		["clio/Command/DynamicCaseService.cs|Describe"] = (1, "A2"),
-		["clio/Command/DynamicCaseService.cs|FromServer"] = (1, "A2"),
-		["clio/Command/DynamicCaseService.cs|Modify"] = (1, "A2"),
-		["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "A2"),
-		["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "A2"),
-		["clio/Command/ModifyBusinessProcessCommand.cs|BuildFailureMessage"] = (1, "A2"),
-		["clio/Command/ModifyDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "A2"),
-		["clio/Command/ModifyDynamicCaseCommand.cs|Verdict"] = (4, "A2"),
-		["clio/Package/PackageBuilder.cs|ApplyVerdict"] = (1, "A2"),
-		["clio/Command/CreateBusinessProcessCommand.cs|ReadBuildProcessAnswer"] = (3, "A2"),
-		["clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs|EnsureSuccess"] = (2, "A2"),
-		["clio/Command/ModifyBusinessProcessCommand.cs|ModifyProcess"] = (2, "A2"),
-		["clio/Command/PageCreateOptions.cs|TryLoadTemplateLocalizableStrings"] = (1, "A2"),
-		["clio/Command/PageDesignerHierarchyClient.cs|GetDesignPackageUId"] = (1, "A2"),
-		["clio/Command/PageDesignerHierarchyClient.cs|GetParentSchemas"] = (1, "A2"),
-		["clio/Command/PageUpdateOptions.cs|TryGetSchema"] = (1, "A2"),
-		["clio/Command/SchemaTemplateCatalog.cs|LoadForSchemaType"] = (2, "A2"),
-		["clio/Package/BasePackageInstaller.cs|IsInvalidGZipArchiveFailure"] = (3, "A2"),
-		["clio/Package/BasePackageInstaller.cs|GetInvalidGZipArchiveMessage"] = (1, "A2"),
-		["clio/Package/InstallLogAnalyzer.cs|IsGenericInstallationFailure"] = (1, "A2"),
-		["clio/Package/InstallLogAnalyzer.cs|DescribeFailure"] = (2, "A2"),
-		["clio/Package/PackageBuildResult.cs|TryParseResponse"] = (1, "A2"),
-		["clio/Package/SelectQueryHelper.cs|ExecuteSelectQuery"] = (2, "A2"),
+				["clio/Command/CompileBusinessProcessCommand.cs|Compile"] = (1, "A2"),
+				["clio/Command/CompileBusinessProcessCommand.cs|ReportFailure"] = (1, "A2"),
+				["clio/Command/CompileConfigurationCommand.cs|ProceedResponse"] = (1, "A2"),
+				["clio/Command/CreateDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "A2"),
+				["clio/Command/CreateDynamicCaseCommand.cs|Verdict"] = (4, "A2"),
+				["clio/Command/DescribeDynamicCaseCommand.cs|Verdict"] = (1, "A2"),
+				["clio/Command/DynamicCasePageStep.cs|Plan"] = (2, "A2"),
+				["clio/Command/DynamicCaseService.cs|Describe"] = (1, "A2"),
+				["clio/Command/DynamicCaseService.cs|FromServer"] = (1, "A2"),
+				["clio/Command/DynamicCaseService.cs|Modify"] = (1, "A2"),
+				["clio/Command/DynamicCaseService.cs|PageInfo"] = (1, "A2"),
+				["clio/Command/DynamicCaseService.cs|PageRefusal"] = (1, "A2"),
+				["clio/Command/ModifyBusinessProcessCommand.cs|BuildFailureMessage"] = (1, "A2"),
+				["clio/Command/ModifyDynamicCaseCommand.cs|SaysNothingWasWritten"] = (1, "A2"),
+				["clio/Command/ModifyDynamicCaseCommand.cs|Verdict"] = (4, "A2"),
+				["clio/Package/PackageBuilder.cs|ApplyVerdict"] = (1, "A2"),
+				["clio/Command/CreateBusinessProcessCommand.cs|ReadBuildProcessAnswer"] = (3, "A2"),
+				["clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs|EnsureSuccess"] = (2, "A2"),
+				["clio/Command/ModifyBusinessProcessCommand.cs|ModifyProcess"] = (2, "A2"),
+				["clio/Command/PageCreateOptions.cs|TryLoadTemplateLocalizableStrings"] = (1, "A2"),
+				["clio/Command/PageDesignerHierarchyClient.cs|GetDesignPackageUId"] = (1, "A2"),
+				["clio/Command/PageDesignerHierarchyClient.cs|GetParentSchemas"] = (1, "A2"),
+				["clio/Command/PageUpdateOptions.cs|TryGetSchema"] = (1, "A2"),
+				["clio/Command/SchemaTemplateCatalog.cs|LoadForSchemaType"] = (2, "A2"),
+				["clio/Package/BasePackageInstaller.cs|IsInvalidGZipArchiveFailure"] = (3, "A2"),
+				["clio/Package/BasePackageInstaller.cs|GetInvalidGZipArchiveMessage"] = (1, "A2"),
+				["clio/Package/InstallLogAnalyzer.cs|IsGenericInstallationFailure"] = (1, "A2"),
+				["clio/Package/InstallLogAnalyzer.cs|DescribeFailure"] = (2, "A2"),
+				["clio/Package/PackageBuildResult.cs|TryParseResponse"] = (1, "A2"),
+				["clio/Package/SelectQueryHelper.cs|ExecuteSelectQuery"] = (2, "A2"),
 		// KNOWN-UNWIRED, follow-up: the envelope readers the follow-up after A2 wires. Their text passes Redact
 		// (directly, or through UntrustedText.Fenced / ForConsole / ServerReportedFailureText) and no site-only rule.
-		["clio/Command/FeatureStateService.cs|ThrowIfSaveFailed"] = (1, "follow-up"),
-		["clio/Command/ListUserTasksCommand.cs|GetUserTasks"] = (1, "follow-up"),
-		["clio/Command/ModifyProcessAsNewVersionCommand.cs|BuildFailureMessage"] = (1, "follow-up"),
-		["clio/Command/ProcessModel/IProcessDescriber.cs|Describe"] = (1, "follow-up"),
-		["clio/Command/SetActiveProcessVersionCommand.cs|BuildFailureMessage"] = (1, "follow-up"),
-		["clio/Command/SetFsmConfigCommand.cs|EnsurePlatformSupport"] = (1, "follow-up"),
-		["clio/Common/ClassifyingDataProvider.cs|BatchExecute"] = (1, "follow-up"),
-		["clio/Common/ClassifyingDataProvider.cs|ExecuteProcess"] = (1, "follow-up"),
-		["clio/Common/ClassifyingDataProvider.cs|GetDefaultValues"] = (1, "follow-up"),
-		["clio/Common/ClassifyingDataProvider.cs|GetItems"] = (1, "follow-up"),
-		["clio/Common/CreatioResponseError.cs|AppendInnerMessages"] = (1, "follow-up"),
-		["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|GetSchema"] = (1, "follow-up"),
-		["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|SaveSchema"] = (1, "follow-up"),
-		["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|BuildConfiguration"] = (1, "follow-up"),
-		["clio/Command/ApplicationCreateService.cs|ResolveRandomIconId"] = (1, "follow-up"),
-		["clio/Command/ApplicationCreateService.cs|BuildFailureMessage"] = (2, "follow-up"),
-		["clio/Command/ApplicationInfoService.cs|GetPrimaryPackage"] = (1, "follow-up"),
-		["clio/Command/ApplicationInfoService.cs|LoadEntityInfo"] = (2, "follow-up"),
-		["clio/Command/ApplicationListService.cs|GetApplicationsCore"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionCreateCommand.cs|ClassifyInsertResponse"] = (3, "follow-up"),
-		["clio/Command/ApplicationSectionCreateCommand.cs|SetIconBackground"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionCreateCommand.cs|ResolveRandomIconId"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionDeleteCommand.cs|GetSectionRecord"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionDeleteCommand.cs|DeleteWorkspaceSchema"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionDeleteCommand.cs|ExecuteDeleteQuery"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionGetListCommand.cs|GetAllSectionRecords"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionLocalization.cs|ReadLocalizations"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionLocalization.cs|FindBindingUId"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionUpdateCommand.cs|ExecuteSectionUpdate"] = (1, "follow-up"),
-		["clio/Command/ApplicationSectionUpdateCommand.cs|GetSectionRecord"] = (1, "follow-up"),
-		["clio/Command/CompileWorspaceCommand.cs|ApplyCreatioModel"] = (2, "follow-up"),
-		["clio/Command/CreateUserTaskCommand.cs|EnsureResponseSucceeded"] = (2, "follow-up"),
-		["clio/Command/DataServiceSelectResponse.cs|TryGetFailure"] = (3, "follow-up"),
-		["clio/Command/DeletePackageCommand.cs|ProceedResponse"] = (1, "follow-up"),
-		["clio/Command/DeleteSchemaCommand.cs|ReadFileDesignMode"] = (1, "follow-up"),
-		["clio/Command/DeleteSchemaCommand.cs|TryDeleteRemote"] = (1, "follow-up"),
-		["clio/Command/DeleteSchemaCommand.cs|EnsureDeleteSucceeded"] = (2, "follow-up"),
-		["clio/Command/EntityConnections/EntityConnectionsReader.cs|TryReadFromService"] = (1, "follow-up"),
-		["clio/Command/EnvironmentRuntimeDetectionService.cs|ValidateSelectQueryResponse"] = (1, "follow-up"),
-		["clio/Command/GenerateSourceCodeCommand.cs|ProceedResponse"] = (2, "follow-up"),
-		["clio/Command/IdentityProviderManagementCommand.cs|Post"] = (1, "follow-up"),
-		["clio/Command/LocalizePageCommand.cs|TryGetSchema"] = (1, "follow-up"),
-		["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|TryDataServiceFailure"] = (3, "follow-up"),
-		["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|ExtractErrorMessage"] = (3, "follow-up"),
-		["clio/Command/ModifyProcessAsNewVersionCommand.cs|ModifyAsNewVersion"] = (2, "follow-up"),
-		["clio/Command/NavigationCacheResetter.cs|ReadFailure"] = (1, "follow-up"),
-		["clio/Command/PackageCommand/LicenseResponseParser.cs|EnsureSuccess"] = (1, "follow-up"),
-		["clio/Command/PageListOptions.cs|ResolvePrimaryPackageName"] = (1, "follow-up"),
-		["clio/Command/RestoreFromPackageBackupCommand.cs|GetErrorMessage"] = (1, "follow-up"),
-		["clio/Command/RunProcessCommand.cs|AddLoggedError"] = (1, "follow-up"),
-		["clio/Command/RunProcessCommand.cs|BuildResponse"] = (1, "follow-up"),
-		["clio/Command/SchemaDesignerHelper.cs|LoadSchema"] = (1, "follow-up"),
-		["clio/Command/SchemaDesignerHelper.cs|CreateNewSchema"] = (1, "follow-up"),
-		["clio/Command/SchemaTransfer/SchemaTransferClient.cs|FindLayers"] = (1, "follow-up"),
-		["clio/Command/SchemaTransfer/SchemaTransferClient.cs|Export"] = (1, "follow-up"),
-		["clio/Command/SchemaTransfer/SchemaTransferClient.cs|Import"] = (1, "follow-up"),
-		["clio/Command/SequenceEnrollmentCommand.cs|ReadErrors"] = (1, "follow-up"),
-		["clio/Command/SetFileContentStorageConnectionStringCommand.cs|HandleResponse"] = (1, "follow-up"),
-		["clio/Command/SqlSchemaCreate.cs|ResolveDatabaseEngine"] = (1, "follow-up"),
-		["clio/Command/SqlSchemaInstall.cs|TryInstall"] = (1, "follow-up"),
-		["clio/Command/SysSettingsCommand.cs|TryCreateSysSetting"] = (1, "follow-up"),
-		["clio/Command/SysSettingsCommand.cs|ReportProviderFailure"] = (1, "follow-up"),
-		["clio/Command/Theming/ThemeServiceResponse.cs|TryGetFailure"] = (1, "follow-up"),
-		["clio/Command/Theming/UserThemeApplier.cs|TryUpdateProfileTheme"] = (1, "follow-up"),
-		["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|Read"] = (1, "follow-up"),
-		["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|CallMethod"] = (1, "follow-up"),
-		["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|EnsureSucceeded"] = (1, "follow-up"),
-		["clio/Common/ClassifyingDataProvider.cs|GenericMessage"] = (1, "follow-up"),
-		["clio/Common/ClassifyingDataProvider.cs|ConsoleGenericMessage"] = (1, "follow-up"),
-		["clio/Common/CreatioResponseError.cs|InnerErrorMemberNames"] = (2, "follow-up"),
-		["clio/Common/DataForge/DataForgeReadClient.cs|FindSimilarTables"] = (1, "follow-up"),
-		["clio/Common/DataForge/DataForgeReadClient.cs|FindSimilarLookups"] = (1, "follow-up"),
-		["clio/Common/DataForge/DataForgeReadClient.cs|GetTableRelationships"] = (1, "follow-up"),
-		["clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs|GetByName"] = (1, "follow-up"),
-		["clio/Common/ISysSettingsManager.cs|UpdateSysSetting"] = (1, "follow-up"),
-		["clio/Common/ObjectRights/RightManagementServiceClient.cs|SendSave"] = (1, "follow-up"),
-		["clio/Common/ObjectRights/RightManagementServiceClient.cs|TryFetchNode"] = (1, "follow-up"),
-		["clio/Common/RecordFileUploader.cs|ReadUploadResponse"] = (1, "follow-up"),
-		["clio/Common/SysImageUploader.cs|TryReadUploadError"] = (1, "follow-up"),
-		["clio/Package/BasePackageOperation.cs|ThrowsErrorIfUnsuccessfulResponseReceived"] = (1, "follow-up"),
-		["clio/Package/FileDesignModePackages.cs|TryGetIsFileDesignMode"] = (1, "follow-up"),
-		["clio/Package/FileDesignModePackages.cs|LoadPackagesToStorage"] = (4, "follow-up"),
-		["clio/Package/FileDesignModePackages.cs|SetFileDesignMode"] = (2, "follow-up"),
-		["clio/Package/PackageDependencyManager.cs|LoadPackageProperties"] = (1, "follow-up"),
-		["clio/Package/PackageDependencyManager.cs|BuildSaveErrorMessage"] = (1, "follow-up"),
-		["clio/Package/RemotePackageCreator.cs|SendCreateRequest"] = (1, "follow-up"),
-		["clio/Package/RemotePackageCreator.cs|ReadBack"] = (1, "follow-up"),
+				["clio/Command/FeatureStateService.cs|ThrowIfSaveFailed"] = (1, "follow-up"),
+		// ProbeAttempt.ErrorMessage carries the errorInfo text of ValidateSelectQueryResponse.
+		["clio/Command/EnvironmentRuntimeDetectionService.cs|Describe"] = (1, "follow-up"),
+				["clio/Command/ListUserTasksCommand.cs|GetUserTasks"] = (1, "follow-up"),
+				["clio/Command/ModifyProcessAsNewVersionCommand.cs|BuildFailureMessage"] = (1, "follow-up"),
+				["clio/Command/ProcessModel/IProcessDescriber.cs|Describe"] = (1, "follow-up"),
+				["clio/Command/SetActiveProcessVersionCommand.cs|BuildFailureMessage"] = (1, "follow-up"),
+				["clio/Command/SetFsmConfigCommand.cs|EnsurePlatformSupport"] = (1, "follow-up"),
+				["clio/Common/ClassifyingDataProvider.cs|BatchExecute"] = (1, "follow-up"),
+				["clio/Common/ClassifyingDataProvider.cs|ExecuteProcess"] = (1, "follow-up"),
+				["clio/Common/ClassifyingDataProvider.cs|GetDefaultValues"] = (1, "follow-up"),
+				["clio/Common/ClassifyingDataProvider.cs|GetItems"] = (1, "follow-up"),
+				["clio/Common/CreatioResponseError.cs|AppendInnerMessages"] = (1, "follow-up"),
+				["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|GetSchema"] = (1, "follow-up"),
+				["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|SaveSchema"] = (1, "follow-up"),
+				["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|BuildConfiguration"] = (1, "follow-up"),
+				["clio/Command/ApplicationCreateService.cs|ResolveRandomIconId"] = (1, "follow-up"),
+				["clio/Command/ApplicationCreateService.cs|BuildFailureMessage"] = (2, "follow-up"),
+				["clio/Command/ApplicationInfoService.cs|GetPrimaryPackage"] = (1, "follow-up"),
+				["clio/Command/ApplicationInfoService.cs|LoadEntityInfo"] = (2, "follow-up"),
+				["clio/Command/ApplicationListService.cs|GetApplicationsCore"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionCreateCommand.cs|ClassifyInsertResponse"] = (3, "follow-up"),
+				["clio/Command/ApplicationSectionCreateCommand.cs|SetIconBackground"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionCreateCommand.cs|ResolveRandomIconId"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionDeleteCommand.cs|GetSectionRecord"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionDeleteCommand.cs|DeleteWorkspaceSchema"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionDeleteCommand.cs|ExecuteDeleteQuery"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionGetListCommand.cs|GetAllSectionRecords"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionLocalization.cs|ReadLocalizations"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionLocalization.cs|FindBindingUId"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionUpdateCommand.cs|ExecuteSectionUpdate"] = (1, "follow-up"),
+				["clio/Command/ApplicationSectionUpdateCommand.cs|GetSectionRecord"] = (1, "follow-up"),
+				["clio/Command/CompileWorspaceCommand.cs|ApplyCreatioModel"] = (2, "follow-up"),
+				["clio/Command/CreateUserTaskCommand.cs|EnsureResponseSucceeded"] = (2, "follow-up"),
+				["clio/Command/DataServiceSelectResponse.cs|TryGetFailure"] = (3, "follow-up"),
+				["clio/Command/DeletePackageCommand.cs|ProceedResponse"] = (1, "follow-up"),
+				["clio/Command/DeleteSchemaCommand.cs|ReadFileDesignMode"] = (1, "follow-up"),
+				["clio/Command/DeleteSchemaCommand.cs|TryDeleteRemote"] = (1, "follow-up"),
+				["clio/Command/DeleteSchemaCommand.cs|EnsureDeleteSucceeded"] = (2, "follow-up"),
+				["clio/Command/EntityConnections/EntityConnectionsReader.cs|TryReadFromService"] = (1, "follow-up"),
+				["clio/Command/EnvironmentRuntimeDetectionService.cs|ValidateSelectQueryResponse"] = (1, "follow-up"),
+				["clio/Command/GenerateSourceCodeCommand.cs|ProceedResponse"] = (2, "follow-up"),
+				["clio/Command/IdentityProviderManagementCommand.cs|Post"] = (1, "follow-up"),
+				["clio/Command/LocalizePageCommand.cs|TryGetSchema"] = (1, "follow-up"),
+				["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|TryDataServiceFailure"] = (3, "follow-up"),
+				["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|ExtractErrorMessage"] = (3, "follow-up"),
+				["clio/Command/ModifyProcessAsNewVersionCommand.cs|ModifyAsNewVersion"] = (2, "follow-up"),
+				["clio/Command/NavigationCacheResetter.cs|ReadFailure"] = (1, "follow-up"),
+				["clio/Command/PackageCommand/LicenseResponseParser.cs|EnsureSuccess"] = (1, "follow-up"),
+				["clio/Command/PageListOptions.cs|ResolvePrimaryPackageName"] = (1, "follow-up"),
+				["clio/Command/RestoreFromPackageBackupCommand.cs|GetErrorMessage"] = (1, "follow-up"),
+				["clio/Command/RunProcessCommand.cs|AddLoggedError"] = (1, "follow-up"),
+				["clio/Command/RunProcessCommand.cs|BuildResponse"] = (1, "follow-up"),
+				["clio/Command/SchemaDesignerHelper.cs|LoadSchema"] = (1, "follow-up"),
+				["clio/Command/SchemaDesignerHelper.cs|CreateNewSchema"] = (1, "follow-up"),
+				["clio/Command/SchemaTransfer/SchemaTransferClient.cs|FindLayers"] = (1, "follow-up"),
+				["clio/Command/SchemaTransfer/SchemaTransferClient.cs|Export"] = (1, "follow-up"),
+				["clio/Command/SchemaTransfer/SchemaTransferClient.cs|Import"] = (1, "follow-up"),
+				["clio/Command/SequenceEnrollmentCommand.cs|ReadErrors"] = (1, "follow-up"),
+				["clio/Command/SetFileContentStorageConnectionStringCommand.cs|HandleResponse"] = (1, "follow-up"),
+				["clio/Command/SqlSchemaCreate.cs|ResolveDatabaseEngine"] = (1, "follow-up"),
+				["clio/Command/SqlSchemaInstall.cs|TryInstall"] = (1, "follow-up"),
+				["clio/Command/SysSettingsCommand.cs|TryCreateSysSetting"] = (1, "follow-up"),
+				["clio/Command/SysSettingsCommand.cs|ReportProviderFailure"] = (1, "follow-up"),
+				["clio/Command/Theming/ThemeServiceResponse.cs|TryGetFailure"] = (1, "follow-up"),
+				["clio/Command/Theming/UserThemeApplier.cs|TryUpdateProfileTheme"] = (1, "follow-up"),
+				["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|Read"] = (1, "follow-up"),
+				["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|CallMethod"] = (1, "follow-up"),
+				["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|EnsureSucceeded"] = (1, "follow-up"),
+				["clio/Common/ClassifyingDataProvider.cs|GenericMessage"] = (1, "follow-up"),
+				["clio/Common/ClassifyingDataProvider.cs|ConsoleGenericMessage"] = (1, "follow-up"),
+				["clio/Common/CreatioResponseError.cs|InnerErrorMemberNames"] = (2, "follow-up"),
+				["clio/Common/DataForge/DataForgeReadClient.cs|FindSimilarTables"] = (1, "follow-up"),
+				["clio/Common/DataForge/DataForgeReadClient.cs|FindSimilarLookups"] = (1, "follow-up"),
+				["clio/Common/DataForge/DataForgeReadClient.cs|GetTableRelationships"] = (1, "follow-up"),
+				["clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs|GetByName"] = (1, "follow-up"),
+				["clio/Common/ISysSettingsManager.cs|UpdateSysSetting"] = (1, "follow-up"),
+				["clio/Common/ObjectRights/RightManagementServiceClient.cs|SendSave"] = (1, "follow-up"),
+				["clio/Common/ObjectRights/RightManagementServiceClient.cs|TryFetchNode"] = (1, "follow-up"),
+				["clio/Common/RecordFileUploader.cs|ReadUploadResponse"] = (1, "follow-up"),
+				["clio/Common/SysImageUploader.cs|TryReadUploadError"] = (1, "follow-up"),
+				["clio/Package/BasePackageOperation.cs|ThrowsErrorIfUnsuccessfulResponseReceived"] = (1, "follow-up"),
+				["clio/Package/FileDesignModePackages.cs|TryGetIsFileDesignMode"] = (1, "follow-up"),
+				["clio/Package/FileDesignModePackages.cs|LoadPackagesToStorage"] = (4, "follow-up"),
+				["clio/Package/FileDesignModePackages.cs|SetFileDesignMode"] = (2, "follow-up"),
+				["clio/Package/PackageDependencyManager.cs|LoadPackageProperties"] = (1, "follow-up"),
+				["clio/Package/PackageDependencyManager.cs|BuildSaveErrorMessage"] = (1, "follow-up"),
+				["clio/Package/RemotePackageCreator.cs|SendCreateRequest"] = (1, "follow-up"),
+				["clio/Package/RemotePackageCreator.cs|ReadBack"] = (1, "follow-up"),
 	};
 
 	[Test]
@@ -712,6 +720,30 @@ public sealed class SiteTextWiringTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The sizes of the two lists, by wiring, as the reports state them: members and reads of "
+		+ "KnownSiteErrorReads, and call sites of KnownCallSites. A change to either list changes these numbers here.")]
+	public void SourceGuard_ListSizes_ShouldBeTheStatedOnes() {
+		// Arrange
+		static string Wiring(string wiring) => wiring.StartsWith("wired: ", StringComparison.Ordinal) ? "wired"
+			: wiring.StartsWith("not text: ", StringComparison.Ordinal) ? "not text" : wiring;
+
+		// Act
+		Dictionary<string, (int Members, int Reads)> reads = KnownSiteErrorReads.GroupBy(pair => Wiring(pair.Value.Wiring))
+			.ToDictionary(group => group.Key, group => (group.Count(), group.Sum(pair => pair.Value.Count)));
+		Dictionary<string, int> callSites = KnownCallSites.GroupBy(pair => pair.Value.Wiring)
+			.ToDictionary(group => group.Key, group => group.Count());
+
+		// Assert
+		reads.Should().BeEquivalentTo(new Dictionary<string, (int Members, int Reads)> {
+			["wired"] = (8, 21), ["not text"] = (23, 30), ["A2"] = (30, 46), ["follow-up"] = (88, 108)
+		}, because: "149 members and 205 reads are listed");
+		callSites.Should().BeEquivalentTo(new Dictionary<string, int> {
+			["central"] = 18, ["call site"] = 6, ["discarded"] = 3, ["follow-up"] = 1
+		}, because: "28 extractor call sites are listed");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Every entry of the direct-read list names a known wiring - an extractor this fixture checks, A2, "
 		+ "follow-up, or a reason it holds no text - and a read in one of the 15 A2 write-tool files is marked A2, "
 		+ "never follow-up.")]
@@ -785,18 +817,184 @@ public sealed class SiteTextWiringTests {
 		source.Code.Should().NotContain("RedactSiteText(", because: "a comment and a string are masked");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The direct-read scan sees the forms the round-3 review found it blind to: [DataMember(Name=…)], "
+		+ "[JsonProperty(\"…\", …)] and a multi-attribute list as decorations; nested, extended and switch property "
+		+ "patterns; and a name list held by an expression-bodied property.")]
+	public void SourceScan_ShouldSeeOtherDecorationFormsPatternsAndNameProperties() {
+		// Arrange
+		string dto = string.Join("\n",
+			"internal sealed class Answer {",
+			"	[DataMember(Name = \"errorInfo\")] public Info Failure { get; set; }",
+			"	[JsonProperty(\"errorMessage\", Required = Required.Always)] public string Reason { get; set; }",
+			"	[JsonPropertyName(\"responseStatus\"), JsonRequired] public Status State { get; set; }",
+			"}");
+		string reader = string.Join("\n",
+			"internal static class Reader {",
+			"	private static string[] Names => [\"innererror\"];",
+			"	internal static int Walk() => Names.Length;",
+			"	internal static string A(Answer answer) => answer.Failure.Message;",
+			"	internal static string B(Answer answer) => answer.Reason;",
+			"	internal static string C(Answer answer) => answer.State.Message;",
+			"	internal static bool Nested(object o) => o is { Body: { ErrorInfo: { } } };",
+			"	internal static bool Extended(object o) => o is { ErrorInfo.Message: not null };",
+			"	internal static string Switch(object o) => o switch { { ResponseStatus: null } => \"no status\", _ => \"x\" };",
+			"}");
+
+		// Act
+		Dictionary<string, int> found = DirectSiteErrorReads([
+			("Dto.cs", CSharpSource.Parse(dto)), ("Reader.cs", CSharpSource.Parse(reader))
+		]);
+
+		// Assert
+		found.Should().ContainKeys(["Reader.cs|Names", "Reader.cs|Walk", "Reader.cs|A", "Reader.cs|B", "Reader.cs|C",
+			"Reader.cs|Nested", "Reader.cs|Extended", "Reader.cs|Switch"],
+			because: "each of these reads a site's error text through a form the scan must see");
+		found.Keys.Should().NotContain(key => key.StartsWith("Dto.cs", StringComparison.Ordinal),
+			because: "a declaration is not a read");
+	}
+
+	// The types whose ErrorMessage a "not text" entry may read: clio's own result types, declared in clio without a
+	// site-error decoration (checked below), and FluentValidation's ValidationFailure, which carries clio's own
+	// option validators' messages.
+	private static readonly HashSet<string> ExternalOwnTypes = new(StringComparer.Ordinal) { "ValidationFailure" };
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every 'not text' entry says why in a form the test checks: a 'name constant' entry holds only a "
+		+ "site-error name inside a constant's declaration or references to one, and an 'own <Type>' entry reads "
+		+ "only .ErrorMessage of the types it names, each declared in clio with no site-error decoration (or "
+		+ "FluentValidation's ValidationFailure).")]
+	public void SourceGuard_ShouldProveEveryNotTextEntry() {
+		// Arrange
+		List<(string File, CSharpSource Source)> sources =
+			ClioSources().Select(file => (file, CSharpSource.Read(Path.Combine(RepositoryRoot, file)))).ToList();
+		Dictionary<string, (int Count, SortedSet<string> Kinds)> scanned = ScanDirectSiteErrorReads(sources);
+		Regex ownTypes = new(@"^own (?<types>[A-Za-z_]\w*(?:, [A-Za-z_]\w*)*): \S");
+
+		// Act
+		List<string> wrong = [];
+		foreach ((string key, (int _, string wiring)) in KnownSiteErrorReads.Where(pair => pair.Value.Wiring.StartsWith("not text: ", StringComparison.Ordinal))) {
+			string reason = wiring["not text: ".Length..];
+			SortedSet<string> kinds = scanned.TryGetValue(key, out (int Count, SortedSet<string> Kinds) entry) ? entry.Kinds : [];
+			Match own = ownTypes.Match(reason);
+			if (reason.StartsWith("name constant: ", StringComparison.Ordinal)) {
+				if (!kinds.IsSubsetOf(["constant", "constant-ref"])) {
+					wrong.Add($"{key}: a name constant entry also holds {string.Join(", ", kinds)}");
+				}
+			}
+			else if (own.Success) {
+				if (!kinds.IsSubsetOf(["member:ErrorMessage"])) {
+					wrong.Add($"{key}: an own-type entry also holds {string.Join(", ", kinds)}");
+				}
+				foreach (string type in own.Groups["types"].Value.Split(", ")) {
+					if (!ExternalOwnTypes.Contains(type) && !IsOwnUndecoratedResultType(sources, type)) {
+						wrong.Add($"{key}: {type} is not a clio type with an undecorated ErrorMessage");
+					}
+				}
+			}
+			else {
+				wrong.Add($"{key}: the reason \"{reason}\" is neither 'name constant: …' nor 'own <Type>: …'");
+			}
+		}
+
+		// Assert
+		wrong.Should().BeEmpty(because: "a 'not text' entry must prove, as far as a scan can, that it extracts no site text");
+	}
+
+	// Whether clio declares the type with an ErrorMessage member and no site-error JSON decoration in its declaration.
+	private static bool IsOwnUndecoratedResultType(IReadOnlyList<(string File, CSharpSource Source)> sources, string type) {
+		Regex declaration = new($@"\b(?:class|record|struct)\s+{Regex.Escape(type)}\b");
+		foreach ((string _, CSharpSource source) in sources) {
+			Match declared = declaration.Match(source.Code);
+			if (!declared.Success) {
+				continue;
+			}
+			Match next = Regex.Match(source.Code[(declared.Index + declared.Length)..], @"\b(?:class|record|struct)\s+[A-Z]\w*");
+			string body = next.Success
+				? source.CodeWithLiterals.Substring(declared.Index, declared.Length + next.Index)
+				: source.CodeWithLiterals[declared.Index..];
+			return body.Contains("ErrorMessage", StringComparison.Ordinal) && !SiteErrorNameDecoration.IsMatch(body);
+		}
+		return false;
+	}
+
+	// clio's own string literals the newer redaction rules could misread: a scheme word in any case, a written escape
+	// before a letter, or a bracket inside a path-like token (a drive, a UNC share or a path of two segments or more).
+	private static readonly Regex OwnTextOfInterest = new(
+		@"(?i:\b(?:basic|ntlm|negotiate|bearer)\b)|\\[rnt][A-Za-z]"
+		+ @"|(?:(?<![A-Za-z])[A-Za-z]:(?:\\|/(?!/))|\\\\[A-Za-z]|(?<![\w.:/])(?:~|\.{1,2})?/[A-Za-z][\w.\-]*/)[^\s""'<>|]*[()\[\]{}]",
+		RegexOptions.CultureInvariant);
+
+	// A regular expression pattern is no text clio writes, and the redactor never sees it.
+	private static readonly Regex RegexPatternLiteral = new(@"\(\?[:<=!]|\\[sdwbSDWB]|\[\^", RegexOptions.CultureInvariant);
+
+	// The literals of interest whose redaction is EXPECTED, keyed by a fragment of the literal, each with its reason.
+	private static readonly Dictionary<string, string> ExpectedOwnTextChanges = new(StringComparer.Ordinal) {
+	};
+
+	[Test]
+	[Category("Unit")]
+	[Description("An over-redaction corpus from clio's own text: every string literal in clio/ that holds a scheme "
+		+ "word, a written escape before a letter or a bracket inside a path-like token comes out of Redact and "
+		+ "RedactCredentials unchanged, apart from the named literals whose redaction is the point.")]
+	public void OwnText_ShouldComeOutUnchanged_FromRedactAndRedactCredentials() {
+		// Arrange
+		List<string> changed = [];
+		HashSet<string> expectedUsed = new(StringComparer.Ordinal);
+
+		// Act
+		foreach (string file in ClioSources()) {
+			foreach (string literal in CSharpSource.Read(Path.Combine(RepositoryRoot, file)).StringLiterals().Distinct()) {
+				if (!OwnTextOfInterest.IsMatch(literal) || RegexPatternLiteral.IsMatch(literal)) {
+					continue;
+				}
+				string expected = ExpectedOwnTextChanges.Keys.FirstOrDefault(fragment => literal.Contains(fragment, StringComparison.Ordinal));
+				if (expected is not null) {
+					expectedUsed.Add(expected);
+					continue;
+				}
+				string redact = SensitiveErrorTextRedactor.Redact(literal);
+				string console = SensitiveErrorTextRedactor.RedactCredentials(literal);
+				if (redact != literal) {
+					changed.Add($"{file}: Redact \"{literal}\" -> \"{redact}\"");
+				}
+				if (console != literal) {
+					changed.Add($"{file}: RedactCredentials \"{literal}\" -> \"{console}\"");
+				}
+			}
+		}
+
+		// Assert
+		changed.Should().BeEmpty(because: $"clio's own text must not lose words to the redactor; {changed.Count} changed:\n"
+			+ string.Join('\n', changed) + "\n");
+		ExpectedOwnTextChanges.Keys.Except(expectedUsed).Should().BeEmpty(because: "every expected change is one clio still makes");
+	}
+
 	private static Dictionary<string, int> FindDirectSiteErrorReads() =>
 		DirectSiteErrorReads(ClioSources().Select(file => (file, CSharpSource.Read(Path.Combine(RepositoryRoot, file)))).ToList());
 
-	// The direct reads of a site's error text in the given sources, counted by "file|member":
+	// The direct reads of a site's error text in the given sources, counted by "file|member". The forms, exactly:
 	//   - a site-error JSON name read as a literal (not on a [JsonPropertyName]/[JsonProperty]/[DataMember] line);
-	//   - a read of a member named ErrorInfo, ResponseStatus or ExceptionMessage, or of ANY member a source decorates
-	//     with one of the site-error JSON names, whatever its C# name ("[JsonPropertyName("errorMessage")] public
-	//     string ErrorMessage" makes every ".ErrorMessage" a read);
-	//   - one of those member names in a property pattern ("is { ErrorInfo: { } }"), not a named argument;
-	//   - a reference to a constant or a read-only field that holds a site-error name ("InnerErrorMemberNames");
+	//   - a read (a member access that is no call) of a member named ErrorInfo, ResponseStatus or ExceptionMessage, or
+	//     of ANY member a source decorates with one of the site-error JSON names, whatever its C# name - through
+	//     [JsonPropertyName("…")], [JsonProperty("…", …)] or [DataMember(Name = "…")], alone or in an attribute list
+	//     ("[JsonPropertyName("errorMessage")] public string ErrorMessage" makes every ".ErrorMessage" a read);
+	//   - one of those member names, alone or heading an extended pattern ("ErrorInfo.Message:"), right after a "{"
+	//     or a "," whose innermost open bracket is a "{", then ":" - a property pattern, nested or in a switch arm;
+	//     never a named argument;
+	//   - a reference to a constant, a read-only field, a static expression-bodied property or an initialized
+	//     auto-property that holds a site-error name ("InnerErrorMemberNames", "Names => ["innererror"]");
 	//   - ProcessDesignServerFault.ServerSaid and ServerReportedFailureText.Describe.
-	internal static Dictionary<string, int> DirectSiteErrorReads(IReadOnlyList<(string File, CSharpSource Source)> sources) {
+	internal static Dictionary<string, int> DirectSiteErrorReads(IReadOnlyList<(string File, CSharpSource Source)> sources) =>
+		ScanDirectSiteErrorReads(sources).ToDictionary(pair => pair.Key, pair => pair.Value.Count, StringComparer.Ordinal);
+
+	// The same scan, with the KINDS of read each member holds: "literal" (a site-error JSON name), "constant" (that
+	// name inside a constant's declaration), "constant-ref" (a reference to such a constant), "member:<Name>" (a read
+	// of that member), "pattern" (that name in a property pattern) and "helper" (ServerSaid, Describe).
+	internal static Dictionary<string, (int Count, SortedSet<string> Kinds)> ScanDirectSiteErrorReads(
+		IReadOnlyList<(string File, CSharpSource Source)> sources) {
 		HashSet<string> memberNames = new(StringComparer.Ordinal) { "ErrorInfo", "ResponseStatus", "ExceptionMessage" };
 		foreach ((string _, CSharpSource source) in sources) {
 			foreach (Match decoration in SiteErrorNameDecoration.Matches(source.CodeWithLiterals)) {
@@ -808,10 +1006,16 @@ public sealed class SiteTextWiringTests {
 		}
 		string names = string.Join('|', memberNames.OrderBy(name => name, StringComparer.Ordinal).Select(Regex.Escape));
 		// A member access that is no call ("new Clio.Common.ErrorMessage(…)" names a type), and a member name inside a
-		// property pattern - after "is", "and", "or", "not" or "case" and its "{" - never a named argument.
-		Regex memberRead = new($@"(?<=[\w)\]?!])\.(?:{names})\b(?!\s*\()");
-		Regex propertyPattern = new($@"(?<=\b(?:is|and|or|not|case)\s+(?:[\w.?<>]+\s*)?\{{(?:[^{{}};]*,)?\s*)(?:{names})\s*:(?!:)");
-		Dictionary<string, int> found = new(StringComparer.Ordinal);
+		// property pattern - right after a "{" or a "," whose innermost open bracket is a "{", followed by ":" or by
+		// ".Member…:" (an extended pattern) - so a nested pattern and a switch arm count, a named argument does not.
+		Regex memberRead = new($@"(?<=[\w)\]?!])\.(?<name>{names})\b(?!\s*\()");
+		Regex propertyPattern = new($@"(?<=[{{,]\s*)(?:{names})(?:\s*\.\s*[A-Za-z_]\w*)*\s*:(?!:)");
+		Dictionary<string, (int Count, SortedSet<string> Kinds)> found = new(StringComparer.Ordinal);
+		void Add(string key, string kind) {
+			(int Count, SortedSet<string> Kinds) entry = found.GetValueOrDefault(key, (0, new SortedSet<string>(StringComparer.Ordinal)));
+			entry.Kinds.Add(kind);
+			found[key] = (entry.Count + 1, entry.Kinds);
+		}
 		List<(string File, string Name, int Start, int End)> constants = [];
 		foreach ((string file, CSharpSource source) in sources) {
 			List<int> literals = SiteErrorNameLiteral.Matches(source.CodeWithLiterals)
@@ -819,17 +1023,22 @@ public sealed class SiteTextWiringTests {
 				.Select(match => match.Index).ToList();
 			foreach (int index in literals) {
 				(string name, int start, int end) = source.MemberSpanAt(index);
-				if (NameConstantDeclaration.IsMatch(source.Code[start..index]) && !constants.Any(entry => entry.File == file && entry.Name == name)) {
+				bool constant = NameConstantDeclaration.IsMatch(source.Code[start..index]);
+				if (constant && !constants.Any(entry => entry.File == file && entry.Name == name)) {
 					constants.Add((file, name, start, end));
 				}
+				Add($"{file}|{name}", constant ? "constant" : "literal");
 			}
-			IEnumerable<int> reads = literals
-				.Concat(memberRead.Matches(source.Code).Select(match => match.Index))
-				.Concat(propertyPattern.Matches(source.Code).Select(match => match.Index))
-				.Concat(SiteTextHelperCall.Matches(source.Code).Select(match => match.Index));
-			foreach (int index in reads) {
-				string key = $"{file}|{source.MemberAt(index)}";
-				found[key] = found.GetValueOrDefault(key) + 1;
+			foreach (Match read in memberRead.Matches(source.Code)) {
+				Add($"{file}|{source.MemberAt(read.Index)}", "member:" + read.Groups["name"].Value);
+			}
+			foreach (Match pattern in propertyPattern.Matches(source.Code)) {
+				if (InnermostOpenBracket(source.Code, pattern.Index) == '{') {
+					Add($"{file}|{source.MemberAt(pattern.Index)}", "pattern");
+				}
+			}
+			foreach (Match helper in SiteTextHelperCall.Matches(source.Code)) {
+				Add($"{file}|{source.MemberAt(helper.Index)}", "helper");
 			}
 		}
 		foreach ((string declaringFile, string constant, int start, int end) in constants) {
@@ -839,8 +1048,7 @@ public sealed class SiteTextWiringTests {
 					if (file == declaringFile && use.Index >= start && use.Index <= end) {
 						continue;
 					}
-					string key = $"{file}|{source.MemberAt(use.Index)}";
-					found[key] = found.GetValueOrDefault(key) + 1;
+					Add($"{file}|{source.MemberAt(use.Index)}", "constant-ref");
 				}
 			}
 		}
@@ -881,6 +1089,24 @@ public sealed class SiteTextWiringTests {
 			because: "a read through a constant, a pattern or a decorated member is a read of a site's error text");
 		found.Keys.Should().NotContain(key => key.StartsWith("Dto.cs", StringComparison.Ordinal),
 			because: "a declaration is not a read");
+	}
+
+	// The innermost bracket - "(", "[" or "{" - still open at index, or '\0'.
+	private static char InnermostOpenBracket(string code, int index) {
+		int depth = 0;
+		for (int at = index - 1; at >= 0; at--) {
+			char character = code[at];
+			if (character is ')' or ']' or '}') {
+				depth++;
+			}
+			else if (character is '(' or '[' or '{') {
+				if (depth == 0) {
+					return character;
+				}
+				depth--;
+			}
+		}
+		return '\0';
 	}
 
 	// Null when the call site is wired as its entry says, or what is wrong with it.
@@ -1015,6 +1241,8 @@ internal sealed class CSharpSource {
 	// Where each member's body brace opens, by member index: its header is the text before it.
 	private readonly List<int> bodyOpens = [];
 
+	private readonly List<(int Start, int End, char Kind, int Dollars)> literalSpans = [];
+
 	private CSharpSource(string text, string code, string codeWithLiterals) {
 		Text = text;
 		Code = code;
@@ -1039,8 +1267,16 @@ internal sealed class CSharpSource {
 		char[] code = text.ToCharArray();
 		char[] literals = text.ToCharArray();
 		int index = 0;
-		ScanCode(text, code, literals, ref index, inHole: false);
-		return new CSharpSource(text, new string(code), new string(literals));
+		scannedLiterals = [];
+		try {
+			ScanCode(text, code, literals, ref index, inHole: false);
+			CSharpSource source = new(text, new string(code), new string(literals));
+			source.literalSpans.AddRange(scannedLiterals);
+			return source;
+		}
+		finally {
+			scannedLiterals = null;
+		}
 	}
 
 	/// <summary>The 1-based line of <paramref name="index"/>.</summary>
@@ -1174,13 +1410,108 @@ internal sealed class CSharpSource {
 		bool raw = !verbatim && quotes >= 3;
 		int open = raw ? quotes : 1;
 		index = cursor + open;
+		int contentStart = index;
+		int contentEnd;
 		if (raw) {
 			ScanRaw(text, code, literals, ref index, open, dollars);
+			contentEnd = Math.Max(contentStart, index - open);
 		}
 		else {
 			ScanQuoted(text, code, literals, ref index, verbatim, dollars > 0);
+			contentEnd = index > contentStart && text[index - 1] == '"' ? index - 1 : index;
 		}
+		scannedLiterals?.Add((contentStart, contentEnd, raw ? 'R' : verbatim ? 'v' : 'r', dollars));
 		return true;
+	}
+
+	// The string literals of the file being parsed, collected by TryScanString.
+	[ThreadStatic]
+	private static List<(int Start, int End, char Kind, int Dollars)> scannedLiterals;
+
+	/// <summary>The run-time value of every string literal in the file: escapes resolved, an interpolation hole
+	/// written as "x".</summary>
+	public IEnumerable<string> StringLiterals() => literalSpans.Select(span => LiteralValue(CodeWithLiterals, span));
+
+	private static string LiteralValue(string text, (int Start, int End, char Kind, int Dollars) span) {
+		string content = text[span.Start..span.End];
+		StringBuilder value = new(content.Length);
+		for (int index = 0; index < content.Length; index++) {
+			char character = content[index];
+			if (span.Dollars > 0 && character == '{') {
+				int run = 0;
+				while (index + run < content.Length && content[index + run] == '{') {
+					run++;
+				}
+				int holeOpen = span.Kind == 'R' ? span.Dollars : 1;
+				if (span.Kind != 'R' && run >= 2) {
+					value.Append('{');
+					index++;
+					continue;
+				}
+				if (run >= holeOpen) {
+					value.Append('{', run - holeOpen).Append('x');
+					int depth = 0;
+					int at = index + run;
+					for (; at < content.Length; at++) {
+						if (content[at] == '{') {
+							depth++;
+						}
+						else if (content[at] == '}') {
+							if (depth == 0) {
+								break;
+							}
+							depth--;
+						}
+					}
+					while (at + 1 < content.Length && content[at + 1] == '}' && holeOpen > 1) {
+						at++;
+						holeOpen--;
+					}
+					index = at;
+					continue;
+				}
+			}
+			if (span.Dollars > 0 && span.Kind != 'R' && character == '}' && index + 1 < content.Length && content[index + 1] == '}') {
+				value.Append('}');
+				index++;
+				continue;
+			}
+			if (span.Kind == 'v' && character == '"' && index + 1 < content.Length && content[index + 1] == '"') {
+				value.Append('"');
+				index++;
+				continue;
+			}
+			if (span.Kind == 'r' && character == '\\' && index + 1 < content.Length) {
+				char escaped = content[++index];
+				switch (escaped) {
+					case 'n': value.Append('\n'); break;
+					case 'r': value.Append('\r'); break;
+					case 't': value.Append('\t'); break;
+					case '0': value.Append('\0'); break;
+					case 'a': value.Append('\a'); break;
+					case 'b': value.Append('\b'); break;
+					case 'f': value.Append('\f'); break;
+					case 'v': value.Append('\v'); break;
+					case 'e': value.Append('\u001B'); break;
+					case 'u' when index + 4 < content.Length:
+						value.Append((char)Convert.ToInt32(content.Substring(index + 1, 4), 16));
+						index += 4;
+						break;
+					case 'x':
+						int digits = 0;
+						while (digits < 4 && index + 1 + digits < content.Length && Uri.IsHexDigit(content[index + 1 + digits])) {
+							digits++;
+						}
+						value.Append(digits == 0 ? 'x' : (char)Convert.ToInt32(content.Substring(index + 1, digits), 16));
+						index += digits;
+						break;
+					default: value.Append(escaped); break;
+				}
+				continue;
+			}
+			value.Append(character);
+		}
+		return value.ToString();
 	}
 
 	private static void ScanQuoted(string text, char[] code, char[] literals, ref int index, bool verbatim, bool interpolated) {
