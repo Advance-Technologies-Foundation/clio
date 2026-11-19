@@ -6,13 +6,13 @@
       "A": "clio already removed what the host removes; the marker wording may differ.",
       "B": "the host removes it and clio did not; closed by the site-text redaction plan, rule per kind.",
       "C": "the host keeps it on purpose (the site's reason, prose, a code); clio must keep it too.",
-      "D": "the host removes it as a documented trade of its own; clio keeps the site's words."
+      "D": "the host removes it - a documented trade of its own, or a shape clio declines by choice (plan rules 7 and 8, analysis kind 10) - and clio keeps the site's words."
     },
     "entries": {
       "redact": "SensitiveErrorTextRedactor.Redact must satisfy the row, and so must RedactSiteText.",
       "site": "RedactSiteText must satisfy the row; Redact must still keep every mustStay fragment."
     },
-    "fields": "mustGo: fragments that must not appear in the output. mustStay: fragments that must appear. hostOutput: the host lane's own result, for reference only. pending: asserted in a later PR."
+    "fields": "mustGo: the secret core that must not appear in the output (a host, a user, a token, a password, a stack frame line), not a phrase around it, so a partial redaction cannot pass. mustStay: the phrases that carry the site's reason and must appear verbatim, cut where clio's placeholders sit (a whole input when clio keeps all of it), never stop-words alone. hostOutput: the host lane's own result, for reference only. pending: asserted in a later PR (its mustStay are the host's content words)."
   },
   "rows": [
     {
@@ -26,13 +26,12 @@
       "input": "See https://brightwater.creatio.example/0/odata/Contact?$filter=Name eq 1 for more",
       "hostOutput": "See [redacted-uri] eq 1 for more",
       "mustGo": [
-        "https://brightwater.creatio.example/0/odata/Contact?$filter=Name"
+        "brightwater.creatio.example",
+        "odata/Contact"
       ],
       "mustStay": [
         "See",
-        "eq",
-        "for",
-        "more"
+        "eq 1 for more"
       ],
       "note": "Host name moved under the reserved .example suffix: the host lane's input used a real public suffix, which this file never holds. The redaction it tests is the same."
     },
@@ -47,13 +46,12 @@
       "input": "Cannot load file:///C:/inetpub/x.dll or sftp://files.example.com/a",
       "hostOutput": "Cannot load [redacted-uri] or [redacted-uri]",
       "mustGo": [
-        "file:///C:/inetpub/x.dll",
-        "sftp://files.example.com/a"
+        "inetpub",
+        "x.dll",
+        "files.example.com"
       ],
       "mustStay": [
-        "Cannot",
-        "load",
-        "or"
+        "Cannot load"
       ]
     },
     {
@@ -67,12 +65,13 @@
       "input": "Could not write C:\\inetpub\\wwwroot\\Creatio\\Terrasoft.WebApp\\conf\\x.config.",
       "hostOutput": "Could not write [redacted-path]",
       "mustGo": [
-        "C:\\inetpub\\wwwroot\\Creatio\\Terrasoft.WebApp\\conf\\x.config"
+        "inetpub",
+        "wwwroot",
+        "Terrasoft.WebApp",
+        "x.config"
       ],
       "mustStay": [
-        "Could",
-        "not",
-        "write"
+        "Could not write"
       ]
     },
     {
@@ -87,12 +86,12 @@
       "input": "Missing C:\\Program Files\\Creatio\\app.dll now",
       "hostOutput": "Missing [redacted-path] [redacted-path] now",
       "mustGo": [
-        "C:\\Program",
-        "Files\\Creatio\\app.dll"
+        "Program",
+        "Files",
+        "app.dll"
       ],
       "mustStay": [
-        "Missing",
-        "now"
+        "Missing"
       ]
     },
     {
@@ -106,14 +105,15 @@
       "input": "Share \\\\fs01\\creatio$\\pkg is down, D:/data/x.mdf too",
       "hostOutput": "Share [redacted-path] is down, [redacted-path] too",
       "mustGo": [
-        "\\\\fs01\\creatio$\\pkg",
-        "D:/data/x.mdf"
+        "fs01",
+        "creatio$",
+        "pkg",
+        "D:/",
+        "x.mdf"
       ],
       "mustStay": [
         "Share",
-        "is",
-        "down",
-        "too"
+        "is down"
       ]
     },
     {
@@ -127,12 +127,12 @@
       "input": "Cannot open /opt/creatio/Terrasoft.WebHost.dll (/var/log/x)",
       "hostOutput": "Cannot open [redacted-path] ([redacted-path])",
       "mustGo": [
-        "/opt/creatio/Terrasoft.WebHost.dll",
-        "/var/log/x"
+        "/opt/",
+        "Terrasoft.WebHost.dll",
+        "/var/log"
       ],
       "mustStay": [
-        "Cannot",
-        "open"
+        "Cannot open"
       ]
     },
     {
@@ -147,15 +147,7 @@
       "hostOutput": "Use one and/or the other, 50 / 60 done",
       "mustGo": [],
       "mustStay": [
-        "Use",
-        "one",
-        "and",
-        "or",
-        "the",
-        "other",
-        "50",
-        "60",
-        "done"
+        "Use one and/or the other, 50 / 60 done"
       ]
     },
     {
@@ -169,14 +161,14 @@
       "input": "User jane.doe+crm@brightwater.example.com already exists, admin@localhost too",
       "hostOutput": "User [redacted-email] already exists, [redacted-email] too",
       "mustGo": [
-        "jane.doe+crm@brightwater.example.com",
-        "admin@localhost"
+        "jane.doe+crm",
+        "brightwater.example.com",
+        "admin",
+        "localhost"
       ],
       "mustStay": [
         "User",
-        "already",
-        "exists",
-        "too"
+        "already exists"
       ]
     },
     {
@@ -191,9 +183,7 @@
       "hostOutput": "Mention @Supervisor stays",
       "mustGo": [],
       "mustStay": [
-        "Mention",
-        "Supervisor",
-        "stays"
+        "Mention @Supervisor stays"
       ]
     },
     {
@@ -209,19 +199,17 @@
       "hostOutput": "Login failed: Password=[redacted]; pwd=[redacted]; Server=[redacted]; User Id=[redacted]; uid=[redacted]",
       "mustGo": [
         "hunter2",
-        "'p w",
-        "db01,1433",
-        "Id=sa",
-        "id=sa"
+        "='p",
+        "w'",
+        "db01",
+        "1433",
+        "sa"
       ],
       "mustStay": [
-        "Login",
-        "failed",
-        "Password",
+        "Login failed: Password",
         "pwd",
         "Server",
-        "User",
-        "Id",
+        "User Id",
         "uid"
       ]
     },
@@ -236,15 +224,14 @@
       "input": "Data Source=tcp:db.local;Initial Catalog=Creatio_Prod;Database = \"Bw Prod\"",
       "hostOutput": "Data Source=[redacted];Initial Catalog=[redacted];Database = [redacted]",
       "mustGo": [
-        "tcp:db.local",
+        "db.local",
         "Creatio_Prod",
-        "Bw Prod"
+        "Bw",
+        "Prod"
       ],
       "mustStay": [
-        "Data",
-        "Source",
-        "Initial",
-        "Catalog",
+        "Data Source",
+        "Initial Catalog",
         "Database"
       ]
     },
@@ -268,11 +255,11 @@
       ],
       "mustStay": [
         "client_secret",
-        "api_key",
-        "ApiKey",
-        "token",
-        "secret",
-        "key"
+        "&api_key",
+        "&ApiKey",
+        "&token",
+        "&secret",
+        "&key"
       ]
     },
     {
@@ -287,10 +274,7 @@
       "hostOutput": "Name=Brightwater; Keyboard=US",
       "mustGo": [],
       "mustStay": [
-        "Name",
-        "Brightwater",
-        "Keyboard",
-        "US"
+        "Name=Brightwater; Keyboard=US"
       ]
     },
     {
@@ -308,10 +292,8 @@
         "=a=b"
       ],
       "mustStay": [
-        "filter",
-        "Password",
-        "and",
-        "token"
+        "filter=Password",
+        "and token"
       ]
     },
     {
@@ -328,8 +310,7 @@
         "abcdefgh.ijklmnop-qrstuv"
       ],
       "mustStay": [
-        "Authorization",
-        "Bearer",
+        "Authorization: Bearer",
         "rejected"
       ]
     },
@@ -347,10 +328,7 @@
       "hostOutput": "The bearer token expired",
       "mustGo": [],
       "mustStay": [
-        "The",
-        "bearer",
-        "token",
-        "expired"
+        "The bearer token expired"
       ]
     },
     {
@@ -364,12 +342,13 @@
       "input": "Token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk was refused",
       "hostOutput": "Token [redacted-token] was refused",
       "mustGo": [
-        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        "eyJhbGciOiJIUzI1NiJ9",
+        "eyJzdWIiOiJ4In0",
+        "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
       ],
       "mustStay": [
         "Token",
-        "was",
-        "refused"
+        "was refused"
       ]
     },
     {
@@ -384,14 +363,15 @@
       "input": "Cannot reach db01.internal:1433, 10.0.0.5:5432 or localhost:5000",
       "hostOutput": "Cannot reach [redacted-host], [redacted-host] or [redacted-host]",
       "mustGo": [
-        "db01.internal:1433",
-        "10.0.0.5:5432",
-        "localhost:5000"
+        "db01.internal",
+        "1433",
+        "10.0.0.5",
+        "5432",
+        "localhost",
+        "5000"
       ],
       "mustStay": [
-        "Cannot",
-        "reach",
-        "or"
+        "Cannot reach"
       ]
     },
     {
@@ -406,12 +386,7 @@
       "hostOutput": "Locked at 10:45 by Supervisor",
       "mustGo": [],
       "mustStay": [
-        "Locked",
-        "at",
-        "10",
-        "45",
-        "by",
-        "Supervisor"
+        "Locked at 10:45 by Supervisor"
       ]
     },
     {
@@ -485,12 +460,7 @@
       "hostOutput": "Please select a value from the list",
       "mustGo": [],
       "mustStay": [
-        "Please",
-        "select",
-        "value",
-        "from",
-        "the",
-        "list"
+        "Please select a value from the list"
       ]
     },
     {
@@ -507,11 +477,7 @@
       "hostOutput": "UPDATE failed for the record",
       "mustGo": [],
       "mustStay": [
-        "UPDATE",
-        "failed",
-        "for",
-        "the",
-        "record"
+        "UPDATE failed for the record"
       ]
     },
     {
@@ -529,17 +495,8 @@
         "Creatio_Prod"
       ],
       "mustStay": [
-        "The",
-        "DELETE",
-        "statement",
-        "conflicted",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "Contact"
+        "The DELETE statement conflicted. The conflict occurred in database \"",
+        "\", table \"dbo.Contact\"."
       ]
     },
     {
@@ -557,13 +514,8 @@
         "bw_crm"
       ],
       "mustStay": [
-        "Cannot",
-        "open",
-        "database",
-        "requested",
-        "by",
-        "the",
-        "login"
+        "Cannot open database '",
+        "' requested by the login"
       ]
     },
     {
@@ -581,8 +533,7 @@
       ],
       "mustStay": [
         "Database",
-        "is",
-        "offline"
+        "is offline"
       ]
     },
     {
@@ -601,8 +552,7 @@
       ],
       "mustStay": [
         "Key",
-        "is",
-        "invalid"
+        "is invalid"
       ]
     },
     {
@@ -621,8 +571,7 @@
       ],
       "mustStay": [
         "Hash",
-        "stays",
-        "out"
+        "stays out"
       ]
     },
     {
@@ -637,14 +586,7 @@
       "hostOutput": "Record 3f2a9c1b-7d4e-4a5b-9c8d-0e1f2a3b4c5d is locked",
       "mustGo": [],
       "mustStay": [
-        "Record",
-        "3f2a9c1b",
-        "7d4e",
-        "4a5b",
-        "9c8d",
-        "0e1f2a3b4c5d",
-        "is",
-        "locked"
+        "Record 3f2a9c1b-7d4e-4a5b-9c8d-0e1f2a3b4c5d is locked"
       ]
     },
     {
@@ -653,18 +595,16 @@
         31
       ],
       "testLine": 513,
-      "class": "B",
+      "class": "D",
       "kind": "key-run",
-      "entry": "site",
+      "entry": "redact",
       "input": "Record 3f2a9c1b7d4e4a5b9c8d0e1f2a3b4c5d is locked",
       "hostOutput": "Record [redacted-key] is locked",
       "mustGo": [],
       "mustStay": [
-        "Record",
-        "is",
-        "locked"
+        "Record 3f2a9c1b7d4e4a5b9c8d0e1f2a3b4c5d is locked"
       ],
-      "note": "Left by choice (plan rule 7): a run with no secret noun before it is a record id or a value, not a key."
+      "note": "The host lane removes a 32-hex run anywhere; clio keeps it by choice (plan rule 7): with no secret noun before it, it is a record id or a value, not a key."
     },
     {
       "id": "case-032",
@@ -678,9 +618,7 @@
       "hostOutput": "Value a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a here",
       "mustGo": [],
       "mustStay": [
-        "Value",
-        "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
-        "here"
+        "Value a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a here"
       ]
     },
     {
@@ -695,9 +633,7 @@
       "hostOutput": "Value AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA here",
       "mustGo": [],
       "mustStay": [
-        "Value",
-        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "here"
+        "Value AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA here"
       ]
     },
     {
@@ -712,9 +648,7 @@
       "hostOutput": "Value 1111111111111111111111111111111111111111 here",
       "mustGo": [],
       "mustStay": [
-        "Value",
-        "1111111111111111111111111111111111111111",
-        "here"
+        "Value 1111111111111111111111111111111111111111 here"
       ]
     },
     {
@@ -732,9 +666,7 @@
         "Xk3_9fJ2-pQ_aB7cD_eF1gH2iJ3kL4mN5oP6qR7sT8"
       ],
       "mustStay": [
-        "Invalid",
-        "client",
-        "secret"
+        "Invalid client secret"
       ]
     },
     {
@@ -752,9 +684,7 @@
         "q8Zr_3kLmN0pQ7sT_vW2xY4zA6bC8dE0fG1hI3jK5lM"
       ],
       "mustStay": [
-        "Invalid",
-        "refresh",
-        "token"
+        "Invalid refresh token"
       ]
     },
     {
@@ -770,10 +700,7 @@
       "hostOutput": "Schema is locked: UsrPropertyManagement_v2kq9xt_ListPage",
       "mustGo": [],
       "mustStay": [
-        "Schema",
-        "is",
-        "locked",
-        "UsrPropertyManagement_v2kq9xt_ListPage"
+        "Schema is locked: UsrPropertyManagement_v2kq9xt_ListPage"
       ]
     },
     {
@@ -788,10 +715,7 @@
       "hostOutput": "Schema is locked: UsrCrtLeadOppMgmtApp_ap1nu1n_FormPage",
       "mustGo": [],
       "mustStay": [
-        "Schema",
-        "is",
-        "locked",
-        "UsrCrtLeadOppMgmtApp_ap1nu1n_FormPage"
+        "Schema is locked: UsrCrtLeadOppMgmtApp_ap1nu1n_FormPage"
       ]
     },
     {
@@ -800,17 +724,16 @@
         39
       ],
       "testLine": 527,
-      "class": "B",
+      "class": "D",
       "kind": "key-run",
-      "entry": "site",
+      "entry": "redact",
       "input": "Value usrPropertyManagement_v2kq9xt_ListPage1 here",
       "hostOutput": "Value [redacted-key] here",
       "mustGo": [],
       "mustStay": [
-        "Value",
-        "here"
+        "Value usrPropertyManagement_v2kq9xt_ListPage1 here"
       ],
-      "note": "Left by choice (plan rule 7): a run with no secret noun before it."
+      "note": "The host lane removes a long app-code run; clio keeps it by choice (plan rule 7): with no secret noun before it, it is an app code."
     },
     {
       "id": "case-040",
@@ -818,17 +741,16 @@
         40
       ],
       "testLine": 528,
-      "class": "B",
+      "class": "D",
       "kind": "key-run",
-      "entry": "site",
+      "entry": "redact",
       "input": "Value UsrApp_a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1 here",
       "hostOutput": "Value [redacted-key] here",
       "mustGo": [],
       "mustStay": [
-        "Value",
-        "here"
+        "Value UsrApp_a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1 here"
       ],
-      "note": "Left by choice (plan rule 7): a run with no secret noun before it."
+      "note": "The host lane removes a long app-code run; clio keeps it by choice (plan rule 7): with no secret noun before it, it is an app code."
     },
     {
       "id": "case-041",
@@ -842,11 +764,11 @@
       "input": "Access denied\\r\\n   at Terrasoft.Core.Entities.Entity.Save()\\r\\n   at Terrasoft.Web.Services.DataService.Insert()",
       "hostOutput": "Access denied",
       "mustGo": [
-        "\\r\\n   at Terrasoft.Core.Entities.Entity.Save()\\r\\n   at Terrasoft.Web.Services.DataService.Insert"
+        "at Terrasoft.Core.Entities.Entity.Save()",
+        "at Terrasoft.Web.Services.DataService.Insert()"
       ],
       "mustStay": [
-        "Access",
-        "denied"
+        "Access denied"
       ]
     },
     {
@@ -861,11 +783,10 @@
       "input": "Access denied\\n   at Terrasoft.Core.Entities.Entity.Save()",
       "hostOutput": "Access denied",
       "mustGo": [
-        "\\n   at Terrasoft.Core.Entities.Entity.Save"
+        "at Terrasoft.Core.Entities.Entity.Save()"
       ],
       "mustStay": [
-        "Access",
-        "denied"
+        "Access denied"
       ]
     },
     {
@@ -879,12 +800,11 @@
       "input": "Could not write C:\\inetpub\\x.config",
       "hostOutput": "Could not write [redacted-path]",
       "mustGo": [
-        "C:\\inetpub\\x.config"
+        "inetpub",
+        "x.config"
       ],
       "mustStay": [
-        "Could",
-        "not",
-        "write"
+        "Could not write"
       ]
     },
     {
@@ -899,13 +819,11 @@
       "input": "Login failed for user 'CORP\\nadmin'.",
       "hostOutput": "Login failed for user '[redacted]'.",
       "mustGo": [
-        "CORP\\nadmin"
+        "CORP",
+        "nadmin"
       ],
       "mustStay": [
-        "Login",
-        "failed",
-        "for",
-        "user"
+        "Login failed for user '"
       ]
     },
     {
@@ -920,16 +838,12 @@
       "input": "Cannot open server 'SQL01\\nsqlexpress' requested by the login.",
       "hostOutput": "Cannot open server [redacted-path] requested by the login.",
       "mustGo": [
-        "SQL01\\nsqlexpress"
+        "SQL01",
+        "sqlexpress"
       ],
       "mustStay": [
-        "Cannot",
-        "open",
-        "server",
-        "requested",
-        "by",
-        "the",
-        "login"
+        "Cannot open server '",
+        "' requested by the login."
       ]
     },
     {
@@ -943,15 +857,14 @@
       "input": "Access to the path 'C:\\inetpub\\wwwroot\\creatio\\Terrasoft.WebApp\\net\\x.dll' is denied.",
       "hostOutput": "Access to the path [redacted-path] is denied.",
       "mustGo": [
-        "C:\\inetpub\\wwwroot\\creatio\\Terrasoft.WebApp\\net\\x.dll"
+        "inetpub",
+        "wwwroot",
+        "Terrasoft.WebApp",
+        "x.dll"
       ],
       "mustStay": [
-        "Access",
-        "to",
-        "the",
-        "path",
-        "is",
-        "denied"
+        "Access to the path '",
+        "' is denied."
       ]
     },
     {
@@ -966,11 +879,10 @@
       "input": "Access denied\\n\\n   at Terrasoft.Core",
       "hostOutput": "Access denied",
       "mustGo": [
-        "\\n\\n   at Terrasoft.Core"
+        "at Terrasoft.Core"
       ],
       "mustStay": [
-        "Access",
-        "denied"
+        "Access denied"
       ]
     },
     {
@@ -979,16 +891,15 @@
         48
       ],
       "testLine": 544,
-      "class": "A",
+      "class": "D",
       "entry": "redact",
       "input": "Access denied\\n",
       "hostOutput": "Access denied",
       "mustGo": [],
       "mustStay": [
-        "Access",
-        "denied"
+        "Access denied\\n"
       ],
-      "note": "The trailing \"\\n\" written as text is formatting, not text of the site; no rule cuts a break that nothing follows."
+      "note": "The host lane drops the trailing \"\\n\" written as text; clio keeps it: it is formatting, and no rule cuts a break that nothing follows."
     },
     {
       "id": "case-049",
@@ -1009,9 +920,7 @@
       ],
       "mustStay": [
         "Host",
-        "Port",
-        "5432",
-        "Database",
+        "Port=5432;Database",
         "Username",
         "Password"
       ]
@@ -1034,10 +943,8 @@
         "hunter2"
       ],
       "mustStay": [
-        "Connection",
-        "failed",
-        "Address",
-        "Network",
+        "Connection failed: Address",
+        "Network Address",
         "User",
         "Pass"
       ]
@@ -1059,9 +966,7 @@
         "abc123"
       ],
       "mustStay": [
-        "Invalid",
-        "credentials",
-        "passphrase",
+        "Invalid credentials. passphrase",
         "pw",
         "credential"
       ]
@@ -1097,7 +1002,7 @@
         "hunter2"
       ],
       "mustStay": [
-        "Password"
+        "{\"Password\":\""
       ]
     },
     {
@@ -1114,8 +1019,7 @@
         "s3cr3tValue!"
       ],
       "mustStay": [
-        "Client",
-        "secret",
+        "Client secret",
         "expired"
       ]
     },
@@ -1140,11 +1044,9 @@
       "mustStay": [
         "DbLogin",
         "Credentials",
-        "smtp",
-        "host",
+        "smtp-host",
         "db_user",
-        "my",
-        "passcode"
+        "my-passcode"
       ]
     },
     {
@@ -1159,15 +1061,7 @@
       "hostOutput": "Name: Brightwater; \"Status\":\"Locked\"; password-reset=on; Column:UsrStatus",
       "mustGo": [],
       "mustStay": [
-        "Name",
-        "Brightwater",
-        "Status",
-        "Locked",
-        "password",
-        "reset",
-        "on",
-        "Column",
-        "UsrStatus"
+        "Name: Brightwater; \"Status\":\"Locked\"; password-reset=on; Column:UsrStatus"
       ]
     },
     {
@@ -1204,7 +1098,7 @@
         "hunter2"
       ],
       "mustStay": [
-        "Password"
+        "{'Password'"
       ]
     },
     {
@@ -1223,8 +1117,7 @@
         "rd=x"
       ],
       "mustStay": [
-        "User",
-        "Name",
+        "User Name",
         "Password"
       ]
     },
@@ -1245,8 +1138,7 @@
       ],
       "mustStay": [
         "Addr",
-        "Initial",
-        "Catalog"
+        "Initial Catalog"
       ]
     },
     {
@@ -1262,7 +1154,8 @@
       "hostOutput": "Server=[redacted];Password=[redacted];",
       "mustGo": [
         "db01",
-        "p@ss w0rd"
+        "p@ss",
+        "w0rd"
       ],
       "mustStay": [
         "Server",
@@ -1281,15 +1174,15 @@
       "input": "Data Source=my server;User Id=my user;Password=x y",
       "hostOutput": "Data Source=[redacted];User Id=[redacted];Password=[redacted]",
       "mustGo": [
-        "my server",
-        "my user",
-        "=x y"
+        "my",
+        "server",
+        "user",
+        "=x",
+        " y"
       ],
       "mustStay": [
-        "Data",
-        "Source",
-        "User",
-        "Id",
+        "Data Source",
+        "User Id",
         "Password"
       ]
     },
@@ -1304,10 +1197,10 @@
       "input": "access_token: Bearer abcdefgh12345 rejected",
       "hostOutput": "access_token: [redacted] rejected",
       "mustGo": [
-        "Bearer abcdefgh12345"
+        "abcdefgh12345"
       ],
       "mustStay": [
-        "access_token",
+        "access_token: Bearer",
         "rejected"
       ]
     },
@@ -1323,10 +1216,10 @@
       "input": "password=Basic dXNlcjpw rejected",
       "hostOutput": "password=[redacted] rejected",
       "mustGo": [
-        "Basic dXNlcjpw"
+        "dXNlcjpw"
       ],
       "mustStay": [
-        "password",
+        "password=Basic",
         "rejected"
       ]
     },
@@ -1344,8 +1237,7 @@
         "abcdefgh12345"
       ],
       "mustStay": [
-        "token",
-        "Bearer"
+        "token: Bearer"
       ]
     },
     {
@@ -1359,10 +1251,11 @@
       "input": "{\"password\":\"a\\\"b c\"}",
       "hostOutput": "{\"password\":[redacted]}",
       "mustGo": [
-        "a\\\"b c"
+        "a\\\"b",
+        "b c"
       ],
       "mustStay": [
-        "password"
+        "{\"password\":\""
       ]
     },
     {
@@ -1377,16 +1270,14 @@
       "input": "Cannot reach localhost:5000 or smtp-host:25 as DbUser:sa",
       "hostOutput": "Cannot reach [redacted-host] or [redacted-host] as DbUser:sa",
       "mustGo": [
-        "localhost:5000",
-        "smtp-host:25"
+        "localhost",
+        "5000",
+        "smtp-host",
+        "25"
       ],
       "mustStay": [
-        "Cannot",
-        "reach",
-        "or",
-        "as",
-        "DbUser",
-        "sa"
+        "Cannot reach",
+        "as DbUser:sa"
       ]
     },
     {
@@ -1401,18 +1292,7 @@
       "hostOutput": "An item with the same key has already been added. Key: UsrStatus",
       "mustGo": [],
       "mustStay": [
-        "An",
-        "item",
-        "with",
-        "the",
-        "same",
-        "key",
-        "has",
-        "already",
-        "been",
-        "added",
-        "Key",
-        "UsrStatus"
+        "An item with the same key has already been added. Key: UsrStatus"
       ]
     },
     {
@@ -1427,12 +1307,7 @@
       "hostOutput": "Item with key: UsrOrder_FormPage already exists",
       "mustGo": [],
       "mustStay": [
-        "Item",
-        "with",
-        "key",
-        "UsrOrder_FormPage",
-        "already",
-        "exists"
+        "Item with key: UsrOrder_FormPage already exists"
       ]
     },
     {
@@ -1447,12 +1322,7 @@
       "hostOutput": "The specified user: is not valid",
       "mustGo": [],
       "mustStay": [
-        "The",
-        "specified",
-        "user",
-        "is",
-        "not",
-        "valid"
+        "The specified user: is not valid"
       ]
     },
     {
@@ -1467,12 +1337,7 @@
       "hostOutput": "Access denied for role \"Sales managers\"",
       "mustGo": [],
       "mustStay": [
-        "Access",
-        "denied",
-        "for",
-        "role",
-        "Sales",
-        "managers"
+        "Access denied for role \"Sales managers\""
       ]
     },
     {
@@ -1487,12 +1352,7 @@
       "hostOutput": "Record is locked by user \"Supervisor\"",
       "mustGo": [],
       "mustStay": [
-        "Record",
-        "is",
-        "locked",
-        "by",
-        "user",
-        "Supervisor"
+        "Record is locked by user \"Supervisor\""
       ]
     },
     {
@@ -1510,9 +1370,7 @@
         "hunter2"
       ],
       "mustStay": [
-        "ConnectionStrings",
-        "db",
-        "Server",
+        "{\"ConnectionStrings\":{\"db\":\"Server",
         "Password"
       ]
     },
@@ -1528,10 +1386,7 @@
       "hostOutput": "password_reset=on; PasswordExpired=true",
       "mustGo": [],
       "mustStay": [
-        "password_reset",
-        "on",
-        "PasswordExpired",
-        "true"
+        "password_reset=on; PasswordExpired=true"
       ]
     },
     {
@@ -1546,12 +1401,7 @@
       "hostOutput": "Error at 10:45:30:123",
       "mustGo": [],
       "mustStay": [
-        "Error",
-        "at",
-        "10",
-        "45",
-        "30",
-        "123"
+        "Error at 10:45:30:123"
       ]
     },
     {
@@ -1566,13 +1416,7 @@
       "hostOutput": "Error at 2026-11-19T10:45:30Z",
       "mustGo": [],
       "mustStay": [
-        "Error",
-        "at",
-        "2026",
-        "11",
-        "19T10",
-        "45",
-        "30Z"
+        "Error at 2026-11-19T10:45:30Z"
       ]
     },
     {
@@ -1588,10 +1432,7 @@
       "hostOutput": "Basic auth-enabled endpoint",
       "mustGo": [],
       "mustStay": [
-        "Basic",
-        "auth",
-        "enabled",
-        "endpoint"
+        "Basic auth-enabled endpoint"
       ]
     },
     {
@@ -1608,11 +1449,7 @@
       "hostOutput": "Bearer token-based access denied",
       "mustGo": [],
       "mustStay": [
-        "Bearer",
-        "token",
-        "based",
-        "access",
-        "denied"
+        "Bearer token-based access denied"
       ]
     },
     {
@@ -1678,16 +1515,10 @@
         "e \"creatio"
       ],
       "mustStay": [
-        "no",
-        "pg_hba",
-        "conf",
-        "entry",
-        "for",
-        "host",
-        "user",
-        "database",
-        "SSL",
-        "off"
+        "no pg_hba.conf entry for host \"",
+        "\", user \"",
+        "\", database \"",
+        "\", SSL off"
       ]
     },
     {
@@ -1705,10 +1536,7 @@
         "creatio_admin"
       ],
       "mustStay": [
-        "permission",
-        "denied",
-        "for",
-        "role"
+        "permission denied for role \""
       ]
     },
     {
@@ -1745,10 +1573,7 @@
         "bpm_app"
       ],
       "mustStay": [
-        "Login",
-        "failed",
-        "for",
-        "user"
+        "Login failed for user '"
       ]
     },
     {
@@ -1766,11 +1591,7 @@
         "creatio"
       ],
       "mustStay": [
-        "password",
-        "authentication",
-        "failed",
-        "for",
-        "user"
+        "password authentication failed for user \""
       ]
     },
     {
@@ -1789,20 +1610,9 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "server",
-        "principal",
-        "is",
-        "not",
-        "able",
-        "to",
-        "access",
-        "the",
-        "database",
-        "under",
-        "current",
-        "security",
-        "context"
+        "The server principal \"",
+        "\" is not able to access the database \"",
+        "\" under the current security context."
       ]
     },
     {
@@ -1820,10 +1630,8 @@
         "creatio_ro"
       ],
       "mustStay": [
-        "role",
-        "does",
-        "not",
-        "exist"
+        "role \"",
+        "\" does not exist"
       ]
     },
     {
@@ -1838,12 +1646,7 @@
       "hostOutput": "Schema is locked by user 'Supervisor'",
       "mustGo": [],
       "mustStay": [
-        "Schema",
-        "is",
-        "locked",
-        "by",
-        "user",
-        "Supervisor"
+        "Schema is locked by user 'Supervisor'"
       ]
     },
     {
@@ -1858,12 +1661,7 @@
       "hostOutput": "Schema is locked by user \"Supervisor\"",
       "mustGo": [],
       "mustStay": [
-        "Schema",
-        "is",
-        "locked",
-        "by",
-        "user",
-        "Supervisor"
+        "Schema is locked by user \"Supervisor\""
       ]
     },
     {
@@ -1881,10 +1679,8 @@
         "U3VwZXJ2aXNvcjpTdXBlcnZpc29y"
       ],
       "mustStay": [
-        "Authorization",
-        "Basic",
-        "was",
-        "rejected"
+        "Authorization: Basic",
+        "was rejected"
       ]
     },
     {
@@ -1902,9 +1698,7 @@
         "TlRMTVNTUAABAAAAB4IIogAAAAAAAAAAAAAAAAAAAAAGAbEdAAAADw=="
       ],
       "mustStay": [
-        "WWW",
-        "Authenticate",
-        "NTLM",
+        "WWW-Authenticate: NTLM",
         "refused"
       ]
     },
@@ -1920,13 +1714,14 @@
       "input": "Authorization: Digest username=\"Supervisor\", realm=\"creatio\", nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\", uri=\"/0/rest\", response=\"6629fae49393a05397450978507c4ef1\" was rejected",
       "hostOutput": "Authorization: Digest [redacted] was rejected",
       "mustGo": [
-        "username=\"Supervisor\", realm=\"creatio\", nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\", uri=\"/0/rest\", response=\"6629fae49393a05397450978507c4ef1"
+        "Supervisor",
+        "dcd98b7102dd2f0e8b11d0f600bfb0c093",
+        "/0/rest",
+        "6629fae49393a05397450978507c4ef1"
       ],
       "mustStay": [
-        "Authorization",
-        "Digest",
-        "was",
-        "rejected"
+        "Authorization: Digest",
+        "was rejected"
       ]
     },
     {
@@ -1941,15 +1736,7 @@
       "hostOutput": "Basic authentication is disabled; NTLM negotiation failed; Digest authentication is off",
       "mustGo": [],
       "mustStay": [
-        "Basic",
-        "authentication",
-        "is",
-        "disabled",
-        "NTLM",
-        "negotiation",
-        "failed",
-        "Digest",
-        "off"
+        "Basic authentication is disabled; NTLM negotiation failed; Digest authentication is off"
       ]
     },
     {
@@ -1967,9 +1754,7 @@
         "10.0.3.17"
       ],
       "mustStay": [
-        "Failed",
-        "to",
-        "connect"
+        "Failed to connect to"
       ]
     },
     {
@@ -1987,11 +1772,8 @@
         "2001:db8:85a3::8a2e:370:7334"
       ],
       "mustStay": [
-        "Failed",
-        "to",
-        "connect",
-        "port",
-        "5432"
+        "Failed to connect to",
+        "port 5432"
       ]
     },
     {
@@ -2006,14 +1788,15 @@
       "input": "Connect [2001:db8::1]:5432, [::1], fe80::1%eth0 or ::ffff:10.0.0.1.",
       "hostOutput": "Connect [redacted-host], [redacted-host], [redacted-host] or [redacted-host].",
       "mustGo": [
-        "2001:db8::1]:5432",
-        "[::1",
-        "fe80::1%eth0",
+        "2001:db8::1",
+        "5432",
+        "::1",
+        "fe80::1",
+        "eth0",
         "ffff:10.0.0.1"
       ],
       "mustStay": [
-        "Connect",
-        "or"
+        "Connect"
       ]
     },
     {
@@ -2028,14 +1811,12 @@
       "input": "Bound to [2001:db8::1]:54321 and 2001:db8:: too",
       "hostOutput": "Bound to [redacted-host] and [redacted-host] too",
       "mustGo": [
-        "2001:db8::1]:54321",
-        " 2001:db8"
+        "2001:db8::1",
+        "54321",
+        "2001:db8::"
       ],
       "mustStay": [
-        "Bound",
-        "to",
-        "and",
-        "too"
+        "Bound to"
       ]
     },
     {
@@ -2050,14 +1831,7 @@
       "hostOutput": "Locked at 10:45:30 :: version 1.2.3.4.5, build 8.1.5.2176",
       "mustGo": [],
       "mustStay": [
-        "Locked",
-        "at",
-        "10",
-        "45",
-        "30",
-        "version",
-        "build",
-        "2176"
+        "Locked at 10:45:30 :: version 1.2.3.4.5, build 8.1.5.2176"
       ]
     },
     {
@@ -2072,12 +1846,7 @@
       "hostOutput": "At 12:30:45: done; [1:2], abcde:1:2:3",
       "mustGo": [],
       "mustStay": [
-        "At",
-        "12",
-        "30",
-        "45",
-        "done",
-        "abcde"
+        "At 12:30:45: done; [1:2], abcde:1:2:3"
       ]
     },
     {
@@ -2288,12 +2057,7 @@
       "hostOutput": "Update the page and try again",
       "mustGo": [],
       "mustStay": [
-        "Update",
-        "the",
-        "page",
-        "and",
-        "try",
-        "again"
+        "Update the page and try again"
       ]
     },
     {
@@ -2308,12 +2072,7 @@
       "hostOutput": "Please select one from the list",
       "mustGo": [],
       "mustStay": [
-        "Please",
-        "select",
-        "one",
-        "from",
-        "the",
-        "list"
+        "Please select one from the list"
       ]
     },
     {
@@ -2328,11 +2087,7 @@
       "hostOutput": "Update the set of filters",
       "mustGo": [],
       "mustStay": [
-        "Update",
-        "the",
-        "set",
-        "of",
-        "filters"
+        "Update the set of filters"
       ]
     },
     {
@@ -2347,12 +2102,7 @@
       "hostOutput": "Cannot insert into a read-only collection",
       "mustGo": [],
       "mustStay": [
-        "Cannot",
-        "insert",
-        "into",
-        "read",
-        "only",
-        "collection"
+        "Cannot insert into a read-only collection"
       ]
     },
     {
@@ -2367,11 +2117,7 @@
       "hostOutput": "Delete from this list first",
       "mustGo": [],
       "mustStay": [
-        "Delete",
-        "from",
-        "this",
-        "list",
-        "first"
+        "Delete from this list first"
       ]
     },
     {
@@ -2389,25 +2135,8 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "INSERT",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "FOREIGN",
-        "KEY",
-        "constraint",
-        "FK_Contact_Account",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "Account",
-        "column",
-        "Id"
+        "The INSERT statement conflicted with the FOREIGN KEY constraint \"FK_Contact_Account\". The conflict occurred in database \"",
+        "\", table \"dbo.Account\", column 'Id'."
       ]
     },
     {
@@ -2422,18 +2151,7 @@
       "hostOutput": "update or delete on table \"UsrOrder\" violates foreign key constraint \"fk_usrinvoice_usrorder\" on table \"UsrInvoice\"",
       "mustGo": [],
       "mustStay": [
-        "update",
-        "or",
-        "delete",
-        "on",
-        "table",
-        "UsrOrder",
-        "violates",
-        "foreign",
-        "key",
-        "constraint",
-        "fk_usrinvoice_usrorder",
-        "UsrInvoice"
+        "update or delete on table \"UsrOrder\" violates foreign key constraint \"fk_usrinvoice_usrorder\" on table \"UsrInvoice\""
       ]
     },
     {
@@ -2448,12 +2166,7 @@
       "hostOutput": "ERROR: cannot delete from view \"VwContact\"",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "delete",
-        "from",
-        "view",
-        "VwContact"
+        "ERROR: cannot delete from view \"VwContact\""
       ]
     },
     {
@@ -2468,12 +2181,7 @@
       "hostOutput": "ERROR: cannot insert into view \"VwContact\"",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "insert",
-        "into",
-        "view",
-        "VwContact"
+        "ERROR: cannot insert into view \"VwContact\""
       ]
     },
     {
@@ -2488,24 +2196,7 @@
       "hostOutput": "ERROR: cannot delete from view \"VwContact\" DETAIL: Views that do not select from a single table or view are not automatically updatable.",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "delete",
-        "from",
-        "view",
-        "VwContact",
-        "DETAIL",
-        "Views",
-        "that",
-        "do",
-        "not",
-        "select",
-        "single",
-        "table",
-        "or",
-        "are",
-        "automatically",
-        "updatable"
+        "ERROR: cannot delete from view \"VwContact\" DETAIL: Views that do not select from a single table or view are not automatically updatable."
       ]
     },
     {
@@ -2520,15 +2211,7 @@
       "hostOutput": "ERROR: cannot insert into column \"Id\" of view \"VwContact\"",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "insert",
-        "into",
-        "column",
-        "Id",
-        "of",
-        "view",
-        "VwContact"
+        "ERROR: cannot insert into column \"Id\" of view \"VwContact\""
       ]
     },
     {
@@ -2543,22 +2226,7 @@
       "hostOutput": "ERROR: cannot delete from table \"UsrOrder\" because it does not have a replica identity and publishes deletes",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "delete",
-        "from",
-        "table",
-        "UsrOrder",
-        "because",
-        "it",
-        "does",
-        "not",
-        "have",
-        "replica",
-        "identity",
-        "and",
-        "publishes",
-        "deletes"
+        "ERROR: cannot delete from table \"UsrOrder\" because it does not have a replica identity and publishes deletes"
       ]
     },
     {
@@ -2573,12 +2241,7 @@
       "hostOutput": "ERROR: cannot insert into foreign table \"x\"",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "insert",
-        "into",
-        "foreign",
-        "table"
+        "ERROR: cannot insert into foreign table \"x\""
       ]
     },
     {
@@ -2593,17 +2256,7 @@
       "hostOutput": "Import failed: could not insert into Accounts, the record is a duplicate",
       "mustGo": [],
       "mustStay": [
-        "Import",
-        "failed",
-        "could",
-        "not",
-        "insert",
-        "into",
-        "Accounts",
-        "the",
-        "record",
-        "is",
-        "duplicate"
+        "Import failed: could not insert into Accounts, the record is a duplicate"
       ]
     },
     {
@@ -2618,16 +2271,7 @@
       "hostOutput": "Cannot delete from Contacts section: the record is in use",
       "mustGo": [],
       "mustStay": [
-        "Cannot",
-        "delete",
-        "from",
-        "Contacts",
-        "section",
-        "the",
-        "record",
-        "is",
-        "in",
-        "use"
+        "Cannot delete from Contacts section: the record is in use"
       ]
     },
     {
@@ -2642,12 +2286,7 @@
       "hostOutput": "Delete from history is not allowed",
       "mustGo": [],
       "mustStay": [
-        "Delete",
-        "from",
-        "history",
-        "is",
-        "not",
-        "allowed"
+        "Delete from history is not allowed"
       ]
     },
     {
@@ -2784,26 +2423,8 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "DELETE",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "SAME",
-        "TABLE",
-        "REFERENCE",
-        "constraint",
-        "FK_Contact_Parent",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "Contact",
-        "column",
-        "ParentId"
+        "The DELETE statement conflicted with the SAME TABLE REFERENCE constraint \"FK_Contact_Parent\". The conflict occurred in database \"",
+        "\", table \"dbo.Contact\", column 'ParentId'."
       ]
     },
     {
@@ -2821,25 +2442,8 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "ALTER",
-        "TABLE",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "CHECK",
-        "constraint",
-        "CK_UsrOrder_Amount",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "UsrOrder",
-        "column",
-        "Amount"
+        "The ALTER TABLE statement conflicted with the CHECK constraint \"CK_UsrOrder_Amount\". The conflict occurred in database \"",
+        "\", table \"dbo.UsrOrder\", column 'Amount'."
       ]
     },
     {
@@ -2857,12 +2461,7 @@
         "Creatio"
       ],
       "mustStay": [
-        "CREATE",
-        "TABLE",
-        "permission",
-        "denied",
-        "in",
-        "database"
+        "CREATE TABLE permission denied in database '"
       ]
     },
     {
@@ -2880,25 +2479,8 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "INSERT",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "FOREIGN",
-        "KEY",
-        "constraint",
-        "FK_x",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "Activity",
-        "column",
-        "From"
+        "The INSERT statement conflicted with the FOREIGN KEY constraint \"FK_x\". The conflict occurred in database \"",
+        "\", table \"dbo.Activity\", column 'From'."
       ]
     },
     {
@@ -2916,27 +2498,8 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "INSERT",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "FOREIGN",
-        "KEY",
-        "SAME",
-        "TABLE",
-        "constraint",
-        "FK_x",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "Activity",
-        "column",
-        "From"
+        "The INSERT statement conflicted with the FOREIGN KEY SAME TABLE constraint \"FK_x\". The conflict occurred in database \"",
+        "\", table \"dbo.Activity\", column 'From'."
       ]
     },
     {
@@ -2954,24 +2517,8 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "UPDATE",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "CHECK",
-        "constraint",
-        "FK_x",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "Activity",
-        "column",
-        "From"
+        "The UPDATE statement conflicted with the CHECK constraint \"FK_x\". The conflict occurred in database \"",
+        "\", table \"dbo.Activity\", column 'From'."
       ]
     },
     {
@@ -2989,24 +2536,8 @@
         "Creatio"
       ],
       "mustStay": [
-        "The",
-        "DELETE",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "REFERENCE",
-        "constraint",
-        "FK_x",
-        "conflict",
-        "occurred",
-        "in",
-        "database",
-        "table",
-        "dbo",
-        "Activity",
-        "column",
-        "From"
+        "The DELETE statement conflicted with the REFERENCE constraint \"FK_x\". The conflict occurred in database \"",
+        "\", table \"dbo.Activity\", column 'From'."
       ]
     },
     {
@@ -3041,7 +2572,6 @@
         "INSERT INTO Contact VALUES ('Jane Doe"
       ],
       "mustStay": [
-        "The",
         "INSERT",
         "statement",
         "failed"
@@ -3060,17 +2590,7 @@
       "hostOutput": "The update statement conflicted with the CHECK constraint \"CK_UsrOrder_Amount\" for @Amount = 5",
       "mustGo": [],
       "mustStay": [
-        "The",
-        "update",
-        "statement",
-        "conflicted",
-        "with",
-        "the",
-        "CHECK",
-        "constraint",
-        "CK_UsrOrder_Amount",
-        "for",
-        "Amount"
+        "The update statement conflicted with the CHECK constraint \"CK_UsrOrder_Amount\" for @Amount = 5"
       ]
     },
     {
@@ -3085,16 +2605,7 @@
       "hostOutput": "The exec permission was denied on the object 'tsp_UpdateContact' (@Name = N'x')",
       "mustGo": [],
       "mustStay": [
-        "The",
-        "exec",
-        "permission",
-        "was",
-        "denied",
-        "on",
-        "the",
-        "object",
-        "tsp_UpdateContact",
-        "Name"
+        "The exec permission was denied on the object 'tsp_UpdateContact' (@Name = N'x')"
       ]
     },
     {
@@ -3177,15 +2688,7 @@
       "hostOutput": "ERROR: cannot execute CREATE TABLE in a read-only transaction",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "execute",
-        "CREATE",
-        "TABLE",
-        "in",
-        "read",
-        "only",
-        "transaction"
+        "ERROR: cannot execute CREATE TABLE in a read-only transaction"
       ]
     },
     {
@@ -3200,15 +2703,7 @@
       "hostOutput": "ERROR: cannot execute SELECT INTO in a read-only transaction",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "execute",
-        "SELECT",
-        "INTO",
-        "in",
-        "read",
-        "only",
-        "transaction"
+        "ERROR: cannot execute SELECT INTO in a read-only transaction"
       ]
     },
     {
@@ -3223,13 +2718,7 @@
       "hostOutput": "ERROR: cannot execute DROP TABLE during recovery",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "execute",
-        "DROP",
-        "TABLE",
-        "during",
-        "recovery"
+        "ERROR: cannot execute DROP TABLE during recovery"
       ]
     },
     {
@@ -3244,17 +2733,7 @@
       "hostOutput": "INSERT failed because the following SET options have incorrect settings: 'QUOTED_IDENTIFIER'.",
       "mustGo": [],
       "mustStay": [
-        "INSERT",
-        "failed",
-        "because",
-        "the",
-        "following",
-        "SET",
-        "options",
-        "have",
-        "incorrect",
-        "settings",
-        "QUOTED_IDENTIFIER"
+        "INSERT failed because the following SET options have incorrect settings: 'QUOTED_IDENTIFIER'."
       ]
     },
     {
@@ -3269,18 +2748,7 @@
       "hostOutput": "CREATE INDEX failed because the following SET options have incorrect settings: 'ARITHABORT'.",
       "mustGo": [],
       "mustStay": [
-        "CREATE",
-        "INDEX",
-        "failed",
-        "because",
-        "the",
-        "following",
-        "SET",
-        "options",
-        "have",
-        "incorrect",
-        "settings",
-        "ARITHABORT"
+        "CREATE INDEX failed because the following SET options have incorrect settings: 'ARITHABORT'."
       ]
     },
     {
@@ -3295,19 +2763,7 @@
       "hostOutput": "ALTER TABLE ALTER COLUMN Name failed because one or more objects access this column.",
       "mustGo": [],
       "mustStay": [
-        "ALTER",
-        "TABLE",
-        "COLUMN",
-        "Name",
-        "failed",
-        "because",
-        "one",
-        "or",
-        "more",
-        "objects",
-        "access",
-        "this",
-        "column"
+        "ALTER TABLE ALTER COLUMN Name failed because one or more objects access this column."
       ]
     },
     {
@@ -3322,26 +2778,7 @@
       "hostOutput": "The object 'DF_Contact_Name' is dependent on column 'Name'. ALTER TABLE DROP COLUMN Name failed because one or more objects access this column.",
       "mustGo": [],
       "mustStay": [
-        "The",
-        "object",
-        "DF_Contact_Name",
-        "is",
-        "dependent",
-        "on",
-        "column",
-        "Name",
-        "ALTER",
-        "TABLE",
-        "DROP",
-        "COLUMN",
-        "failed",
-        "because",
-        "one",
-        "or",
-        "more",
-        "objects",
-        "access",
-        "this"
+        "The object 'DF_Contact_Name' is dependent on column 'Name'. ALTER TABLE DROP COLUMN Name failed because one or more objects access this column."
       ]
     },
     {
@@ -3356,19 +2793,7 @@
       "hostOutput": "ALTER TABLE ALTER COLUMN failed because column 'UsrX' does not exist in table 'Contact'.",
       "mustGo": [],
       "mustStay": [
-        "ALTER",
-        "TABLE",
-        "COLUMN",
-        "failed",
-        "because",
-        "column",
-        "UsrX",
-        "does",
-        "not",
-        "exist",
-        "in",
-        "table",
-        "Contact"
+        "ALTER TABLE ALTER COLUMN failed because column 'UsrX' does not exist in table 'Contact'."
       ]
     },
     {
@@ -3383,20 +2808,7 @@
       "hostOutput": "ALTER TABLE DROP COLUMN failed because column 'UsrX' does not exist in table 'Contact'.",
       "mustGo": [],
       "mustStay": [
-        "ALTER",
-        "TABLE",
-        "DROP",
-        "COLUMN",
-        "failed",
-        "because",
-        "column",
-        "UsrX",
-        "does",
-        "not",
-        "exist",
-        "in",
-        "table",
-        "Contact"
+        "ALTER TABLE DROP COLUMN failed because column 'UsrX' does not exist in table 'Contact'."
       ]
     },
     {
@@ -3435,7 +2847,6 @@
       ],
       "mustStay": [
         "Failed",
-        "to",
         "execute"
       ],
       "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
@@ -3469,37 +2880,7 @@
       "hostOutput": "ALTER TABLE only allows columns to be added that can contain nulls, or have a DEFAULT definition specified. Column 'UsrX' cannot be added to non-empty table 'Contact' because it does not satisfy these conditions.",
       "mustGo": [],
       "mustStay": [
-        "ALTER",
-        "TABLE",
-        "only",
-        "allows",
-        "columns",
-        "to",
-        "be",
-        "added",
-        "that",
-        "can",
-        "contain",
-        "nulls",
-        "or",
-        "have",
-        "DEFAULT",
-        "definition",
-        "specified",
-        "Column",
-        "UsrX",
-        "cannot",
-        "non",
-        "empty",
-        "table",
-        "Contact",
-        "because",
-        "it",
-        "does",
-        "not",
-        "satisfy",
-        "these",
-        "conditions"
+        "ALTER TABLE only allows columns to be added that can contain nulls, or have a DEFAULT definition specified. Column 'UsrX' cannot be added to non-empty table 'Contact' because it does not satisfy these conditions."
       ]
     },
     {
@@ -3514,22 +2895,7 @@
       "hostOutput": "ERROR: cannot ALTER TABLE \"Contact\" because it is being used by active queries in this session",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "ALTER",
-        "TABLE",
-        "Contact",
-        "because",
-        "it",
-        "is",
-        "being",
-        "used",
-        "by",
-        "active",
-        "queries",
-        "in",
-        "this",
-        "session"
+        "ERROR: cannot ALTER TABLE \"Contact\" because it is being used by active queries in this session"
       ]
     },
     {
@@ -3544,17 +2910,7 @@
       "hostOutput": "ERROR: cannot DROP TABLE \"Contact\" because it has pending trigger events",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "DROP",
-        "TABLE",
-        "Contact",
-        "because",
-        "it",
-        "has",
-        "pending",
-        "trigger",
-        "events"
+        "ERROR: cannot DROP TABLE \"Contact\" because it has pending trigger events"
       ]
     },
     {
@@ -3569,15 +2925,7 @@
       "hostOutput": "ERROR: Cannot execute CREATE TABLE in a read-only transaction",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "Cannot",
-        "execute",
-        "CREATE",
-        "TABLE",
-        "in",
-        "read",
-        "only",
-        "transaction"
+        "ERROR: Cannot execute CREATE TABLE in a read-only transaction"
       ]
     },
     {
@@ -3592,16 +2940,7 @@
       "hostOutput": "ERROR: cannot execute CREATE TABLE AS in a read-only transaction",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "execute",
-        "CREATE",
-        "TABLE",
-        "AS",
-        "in",
-        "read",
-        "only",
-        "transaction"
+        "ERROR: cannot execute CREATE TABLE AS in a read-only transaction"
       ]
     },
     {
@@ -3616,15 +2955,7 @@
       "hostOutput": "ERROR: cannot execute CREATE TABLE within security-restricted operation",
       "mustGo": [],
       "mustStay": [
-        "ERROR",
-        "cannot",
-        "execute",
-        "CREATE",
-        "TABLE",
-        "within",
-        "security",
-        "restricted",
-        "operation"
+        "ERROR: cannot execute CREATE TABLE within security-restricted operation"
       ]
     },
     {
@@ -3761,17 +3092,7 @@
       "hostOutput": "UPDATE failed: Object reference not set to an instance of an object.",
       "mustGo": [],
       "mustStay": [
-        "UPDATE",
-        "failed",
-        "Object",
-        "reference",
-        "not",
-        "set",
-        "to",
-        "an",
-        "instance",
-        "of",
-        "object"
+        "UPDATE failed: Object reference not set to an instance of an object."
       ]
     },
     {
@@ -3786,18 +3107,7 @@
       "hostOutput": "The UPDATE operation is not allowed: field \"Status\" is set to read-only",
       "mustGo": [],
       "mustStay": [
-        "The",
-        "UPDATE",
-        "operation",
-        "is",
-        "not",
-        "allowed",
-        "field",
-        "Status",
-        "set",
-        "to",
-        "read",
-        "only"
+        "The UPDATE operation is not allowed: field \"Status\" is set to read-only"
       ]
     },
     {
@@ -3812,15 +3122,7 @@
       "hostOutput": "Operation DELETE is not allowed where the record is locked",
       "mustGo": [],
       "mustStay": [
-        "Operation",
-        "DELETE",
-        "is",
-        "not",
-        "allowed",
-        "where",
-        "the",
-        "record",
-        "locked"
+        "Operation DELETE is not allowed where the record is locked"
       ]
     },
     {
@@ -3838,11 +3140,8 @@
         "10.0.0.5"
       ],
       "mustStay": [
-        "DELETE",
-        "request",
-        "from",
-        "was",
-        "refused"
+        "DELETE request from",
+        "was refused"
       ]
     },
     {
@@ -4061,13 +3360,7 @@
       "hostOutput": "DELETE request from this page was refused",
       "mustGo": [],
       "mustStay": [
-        "DELETE",
-        "request",
-        "from",
-        "this",
-        "page",
-        "was",
-        "refused"
+        "DELETE request from this page was refused"
       ]
     },
     {
@@ -4083,13 +3376,7 @@
       "hostOutput": "DELETE is not allowed from this page",
       "mustGo": [],
       "mustStay": [
-        "DELETE",
-        "is",
-        "not",
-        "allowed",
-        "from",
-        "this",
-        "page"
+        "DELETE is not allowed from this page"
       ]
     },
     {
@@ -4189,11 +3476,7 @@
       "hostOutput": "DROP table is not allowed",
       "mustGo": [],
       "mustStay": [
-        "DROP",
-        "table",
-        "is",
-        "not",
-        "allowed"
+        "DROP table is not allowed"
       ]
     },
     {
@@ -4208,12 +3491,7 @@
       "hostOutput": "CREATE table from the template failed",
       "mustGo": [],
       "mustStay": [
-        "CREATE",
-        "table",
-        "from",
-        "the",
-        "template",
-        "failed"
+        "CREATE table from the template failed"
       ]
     },
     {
@@ -4228,13 +3506,7 @@
       "hostOutput": "ALTER table settings from the System designer",
       "mustGo": [],
       "mustStay": [
-        "ALTER",
-        "table",
-        "settings",
-        "from",
-        "the",
-        "System",
-        "designer"
+        "ALTER table settings from the System designer"
       ]
     },
     {
@@ -4249,10 +3521,7 @@
       "hostOutput": "MERGE into account failed",
       "mustGo": [],
       "mustStay": [
-        "MERGE",
-        "into",
-        "account",
-        "failed"
+        "MERGE into account failed"
       ]
     },
     {
@@ -4267,18 +3536,7 @@
       "hostOutput": "UPDATE Contact failed: Object reference not set to an instance of an object.",
       "mustGo": [],
       "mustStay": [
-        "UPDATE",
-        "Contact",
-        "failed",
-        "Object",
-        "reference",
-        "not",
-        "set",
-        "to",
-        "an",
-        "instance",
-        "of",
-        "object"
+        "UPDATE Contact failed: Object reference not set to an instance of an object."
       ]
     },
     {
@@ -4293,15 +3551,7 @@
       "hostOutput": "SELECT Contact failed. Please select a value from the list",
       "mustGo": [],
       "mustStay": [
-        "SELECT",
-        "Contact",
-        "failed",
-        "Please",
-        "select",
-        "value",
-        "from",
-        "the",
-        "list"
+        "SELECT Contact failed. Please select a value from the list"
       ]
     },
     {
@@ -4316,17 +3566,7 @@
       "hostOutput": "INSERT Activity failed: the value from the field \"Owner\" is not set",
       "mustGo": [],
       "mustStay": [
-        "INSERT",
-        "Activity",
-        "failed",
-        "the",
-        "value",
-        "from",
-        "field",
-        "Owner",
-        "is",
-        "not",
-        "set"
+        "INSERT Activity failed: the value from the field \"Owner\" is not set"
       ]
     },
     {
@@ -4511,11 +3751,7 @@
       "hostOutput": "Please select one from these.",
       "mustGo": [],
       "mustStay": [
-        "Please",
-        "select",
-        "one",
-        "from",
-        "these"
+        "Please select one from these."
       ]
     },
     {
@@ -4530,9 +3766,7 @@
       "hostOutput": "Delete from this.",
       "mustGo": [],
       "mustStay": [
-        "Delete",
-        "from",
-        "this"
+        "Delete from this."
       ]
     },
     {
@@ -4547,9 +3781,7 @@
       "hostOutput": "Cannot insert into a.",
       "mustGo": [],
       "mustStay": [
-        "Cannot",
-        "insert",
-        "into"
+        "Cannot insert into a."
       ]
     },
     {
@@ -4564,11 +3796,7 @@
       "hostOutput": "Select one from [the list]",
       "mustGo": [],
       "mustStay": [
-        "Select",
-        "one",
-        "from",
-        "the",
-        "list"
+        "Select one from [the list]"
       ]
     },
     {
@@ -4583,10 +3811,7 @@
       "hostOutput": "Select one from them",
       "mustGo": [],
       "mustStay": [
-        "Select",
-        "one",
-        "from",
-        "them"
+        "Select one from them"
       ]
     },
     {
@@ -4601,10 +3826,7 @@
       "hostOutput": "Select all from here",
       "mustGo": [],
       "mustStay": [
-        "Select",
-        "all",
-        "from",
-        "here"
+        "Select all from here"
       ]
     },
     {
@@ -4619,11 +3841,7 @@
       "hostOutput": "Unable to update data set",
       "mustGo": [],
       "mustStay": [
-        "Unable",
-        "to",
-        "update",
-        "data",
-        "set"
+        "Unable to update data set"
       ]
     },
     {
@@ -4638,14 +3856,7 @@
       "hostOutput": "Can't update record set because it is locked",
       "mustGo": [],
       "mustStay": [
-        "Can",
-        "update",
-        "record",
-        "set",
-        "because",
-        "it",
-        "is",
-        "locked"
+        "Can't update record set because it is locked"
       ]
     },
     {
@@ -4663,8 +3874,7 @@
         "update Contact set Name = 1"
       ],
       "mustStay": [
-        "Unable",
-        "to"
+        "Unable"
       ],
       "pending": "PR B (plan rule 9, SQL text): mustGo is asserted once rule 9 lands; mustStay is asserted now."
     },
@@ -4776,16 +3986,16 @@
         232
       ],
       "testLine": 868,
-      "class": "B",
+      "class": "D",
       "kind": "email",
       "entry": "redact",
       "input": "Update jane@x = y",
       "hostOutput": "Update [redacted-email] = y",
       "mustGo": [],
       "mustStay": [
-        "Update"
+        "Update jane@x = y"
       ],
-      "note": "No change proposed (analysis kind 10): accepting a one-letter host would also take short text that is no address."
+      "note": "The host lane removes \"jane@x\"; clio keeps it by choice (analysis kind 10): accepting a one-letter host would also take short text that is no address."
     },
     {
       "id": "case-233",
@@ -4799,13 +4009,7 @@
       "hostOutput": "Please select distinct values from the list",
       "mustGo": [],
       "mustStay": [
-        "Please",
-        "select",
-        "distinct",
-        "values",
-        "from",
-        "the",
-        "list"
+        "Please select distinct values from the list"
       ]
     },
     {
@@ -4822,8 +4026,7 @@
         "X7q2"
       ],
       "mustStay": [
-        "Authorization",
-        "Bearer"
+        "Authorization: Bearer"
       ]
     },
     {
@@ -4859,9 +4062,7 @@
         "YIIGhg=="
       ],
       "mustStay": [
-        "WWW",
-        "Authenticate",
-        "Negotiate",
+        "WWW-Authenticate: Negotiate",
         "refused"
       ]
     },
@@ -4880,8 +4081,7 @@
         "TlRM"
       ],
       "mustStay": [
-        "Rejected",
-        "NTLM"
+        "Rejected NTLM"
       ]
     },
     {
@@ -4896,7 +4096,7 @@
       "input": "password=Negotiate YII rejected",
       "hostOutput": "password=[redacted] rejected",
       "mustGo": [
-        "Negotiate YII"
+        "YII"
       ],
       "mustStay": [
         "password",
@@ -4916,9 +4116,7 @@
       "hostOutput": "Invalid Bearer token.",
       "mustGo": [],
       "mustStay": [
-        "Invalid",
-        "Bearer",
-        "token"
+        "Invalid Bearer token."
       ]
     },
     {
@@ -4933,13 +4131,7 @@
       "hostOutput": "Basic authentication is disabled; NTLM negotiation failed",
       "mustGo": [],
       "mustStay": [
-        "Basic",
-        "authentication",
-        "is",
-        "disabled",
-        "NTLM",
-        "negotiation",
-        "failed"
+        "Basic authentication is disabled; NTLM negotiation failed"
       ]
     },
     {
@@ -4954,8 +4146,7 @@
       "hostOutput": "Negotiate failed",
       "mustGo": [],
       "mustStay": [
-        "Negotiate",
-        "failed"
+        "Negotiate failed"
       ]
     },
     {
@@ -4970,13 +4161,7 @@
       "hostOutput": "Could not negotiate TLS 1.2 with the server",
       "mustGo": [],
       "mustStay": [
-        "Could",
-        "not",
-        "negotiate",
-        "TLS",
-        "with",
-        "the",
-        "server"
+        "Could not negotiate TLS 1.2 with the server"
       ]
     },
     {
@@ -4991,10 +4176,7 @@
       "hostOutput": "Failed to negotiate SSL",
       "mustGo": [],
       "mustStay": [
-        "Failed",
-        "to",
-        "negotiate",
-        "SSL"
+        "Failed to negotiate SSL"
       ]
     },
     {
@@ -5009,12 +4191,7 @@
       "hostOutput": "The client could not negotiate HTTP/2",
       "mustGo": [],
       "mustStay": [
-        "The",
-        "client",
-        "could",
-        "not",
-        "negotiate",
-        "HTTP"
+        "The client could not negotiate HTTP/2"
       ]
     },
     {
@@ -5029,11 +4206,7 @@
       "hostOutput": "This is a basic CRM license",
       "mustGo": [],
       "mustStay": [
-        "This",
-        "is",
-        "basic",
-        "CRM",
-        "license"
+        "This is a basic CRM license"
       ]
     },
     {
@@ -5048,11 +4221,7 @@
       "hostOutput": "basic HTTP auth is off",
       "mustGo": [],
       "mustStay": [
-        "basic",
-        "HTTP",
-        "auth",
-        "is",
-        "off"
+        "basic HTTP auth is off"
       ]
     },
     {
@@ -5090,8 +4259,7 @@
         "X7q2"
       ],
       "mustStay": [
-        "Authorization",
-        "Bearer"
+        "Authorization: Bearer \""
       ]
     },
     {
@@ -5109,8 +4277,7 @@
         "X7q2"
       ],
       "mustStay": [
-        "Authorization",
-        "Bearer"
+        "Authorization: Bearer '"
       ]
     },
     {
@@ -5128,7 +4295,7 @@
         "dXM="
       ],
       "mustStay": [
-        "Basic"
+        "Basic '"
       ]
     },
     {
@@ -5143,11 +4310,7 @@
       "hostOutput": "WWW-Authenticate: Basic realm=\"Creatio\"",
       "mustGo": [],
       "mustStay": [
-        "WWW",
-        "Authenticate",
-        "Basic",
-        "realm",
-        "Creatio"
+        "WWW-Authenticate: Basic realm=\"Creatio\""
       ]
     },
     {
@@ -5163,18 +4326,7 @@
       "hostOutput": "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\", error_description=\"The access token expired\"",
       "mustGo": [],
       "mustStay": [
-        "WWW",
-        "Authenticate",
-        "Bearer",
-        "realm",
-        "api",
-        "error",
-        "invalid_token",
-        "error_description",
-        "The",
-        "access",
-        "token",
-        "expired"
+        "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\", error_description=\"The access token expired\""
       ]
     },
     {
@@ -5189,17 +4341,7 @@
       "hostOutput": "WWW-Authenticate: Digest realm=\"creatio\", qop=\"auth\", nonce=\"x7Kq2m\", opaque=\"9fQ2\"",
       "mustGo": [],
       "mustStay": [
-        "WWW",
-        "Authenticate",
-        "Digest",
-        "realm",
-        "creatio",
-        "qop",
-        "auth",
-        "nonce",
-        "x7Kq2m",
-        "opaque",
-        "9fQ2"
+        "WWW-Authenticate: Digest realm=\"creatio\", qop=\"auth\", nonce=\"x7Kq2m\", opaque=\"9fQ2\""
       ]
     },
     {
@@ -5216,7 +4358,7 @@
         "dXNlcjpwYXNz="
       ],
       "mustStay": [
-        "Authorization"
+        "{\"Authorization\":\""
       ],
       "note": "The JSON property rule replaces the whole credential-keyed value, scheme word included: stricter than the host."
     },
@@ -5232,11 +4374,13 @@
       "input": "Authorization: Digest username=\"Supervisor\", realm=\"creatio\", nonce=\"x7Kq2m\", uri=\"/0/rest\", response=\"9fQ2\" failed",
       "hostOutput": "Authorization: Digest [redacted] failed",
       "mustGo": [
-        "username=\"Supervisor\", realm=\"creatio\", nonce=\"x7Kq2m\", uri=\"/0/rest\", response=\"9fQ2"
+        "Supervisor",
+        "x7Kq2m",
+        "/0/rest",
+        "9fQ2"
       ],
       "mustStay": [
-        "Authorization",
-        "Digest",
+        "Authorization: Digest",
         "failed"
       ]
     },
@@ -5252,11 +4396,11 @@
       "input": "Authorization: Digest nonce=\"x7Kq2m\", cnonce=\"0a4f113b\"",
       "hostOutput": "Authorization: Digest [redacted]",
       "mustGo": [
-        "nonce=\"x7Kq2m\", cnonce=\"0a4f113b"
+        "x7Kq2m",
+        "0a4f113b"
       ],
       "mustStay": [
-        "Authorization",
-        "Digest"
+        "Authorization: Digest"
       ]
     },
     {
@@ -5271,11 +4415,11 @@
       "input": "Authorization: Digest realm=\"creatio\" , username=\"jdoe\", response=\"9fQ2x7Kq\" failed",
       "hostOutput": "Authorization: Digest [redacted] failed",
       "mustGo": [
-        "realm=\"creatio\" , username=\"jdoe\", response=\"9fQ2x7Kq"
+        "jdoe",
+        "9fQ2x7Kq"
       ],
       "mustStay": [
-        "Authorization",
-        "Digest",
+        "Authorization: Digest",
         "failed"
       ]
     },
@@ -5291,11 +4435,11 @@
       "input": "Authorization: Digest username=\"jdoe\" , realm=\"creatio\" ,response=\"9fQ2x7Kq\"",
       "hostOutput": "Authorization: Digest [redacted]",
       "mustGo": [
-        "username=\"jdoe\" , realm=\"creatio\" ,response=\"9fQ2x7Kq"
+        "jdoe",
+        "9fQ2x7Kq"
       ],
       "mustStay": [
-        "Authorization",
-        "Digest"
+        "Authorization: Digest"
       ]
     },
     {
@@ -5310,15 +4454,7 @@
       "hostOutput": "WWW-Authenticate: Digest realm=\"creatio\" , qop=\"auth\" , nonce=\"x7Kq2m\"",
       "mustGo": [],
       "mustStay": [
-        "WWW",
-        "Authenticate",
-        "Digest",
-        "realm",
-        "creatio",
-        "qop",
-        "auth",
-        "nonce",
-        "x7Kq2m"
+        "WWW-Authenticate: Digest realm=\"creatio\" , qop=\"auth\" , nonce=\"x7Kq2m\""
       ]
     },
     {
@@ -5335,8 +4471,7 @@
         "amRvZTpwNHNz"
       ],
       "mustStay": [
-        "headers",
-        "authorization"
+        "{\"headers\":{\"authorization\":\""
       ],
       "note": "The JSON property rule replaces the whole credential-keyed value, scheme word included: stricter than the host."
     },
@@ -5354,8 +4489,7 @@
         "abc123"
       ],
       "mustStay": [
-        "Authorization",
-        "bearer"
+        "Authorization: bearer"
       ]
     },
     {
@@ -5373,8 +4507,7 @@
         "TlRMTVNTUAAB"
       ],
       "mustStay": [
-        "Authorization",
-        "ntlm"
+        "Authorization: ntlm"
       ]
     },
     {
@@ -5392,8 +4525,7 @@
         "YIIGhgYGKwYBBQUCoIIGejCCBnag"
       ],
       "mustStay": [
-        "Authorization",
-        "negotiate"
+        "Authorization: negotiate"
       ]
     },
     {
@@ -5411,8 +4543,7 @@
         "YIIGhgYGKwYBBQUCoIIGejCCBnag"
       ],
       "mustStay": [
-        "Authorization",
-        "Negotiate"
+        "Authorization: Negotiate"
       ]
     },
     {
@@ -5431,8 +4562,7 @@
         "x7q2Abc9dEf0"
       ],
       "mustStay": [
-        "Authorization",
-        "Ntlm",
+        "Authorization: Ntlm",
         "bEARER"
       ]
     },
@@ -5465,10 +4595,7 @@
       "hostOutput": "Could not negotiate TLS 1.2",
       "mustGo": [],
       "mustStay": [
-        "Could",
-        "not",
-        "negotiate",
-        "TLS"
+        "Could not negotiate TLS 1.2"
       ]
     },
     {
@@ -5483,11 +4610,7 @@
       "hostOutput": "basic HTTP authentication is disabled",
       "mustGo": [],
       "mustStay": [
-        "basic",
-        "HTTP",
-        "authentication",
-        "is",
-        "disabled"
+        "basic HTTP authentication is disabled"
       ]
     },
     {
@@ -5502,8 +4625,7 @@
       "hostOutput": "basic SSO",
       "mustGo": [],
       "mustStay": [
-        "basic",
-        "SSO"
+        "basic SSO"
       ]
     },
     {
@@ -5518,10 +4640,7 @@
       "hostOutput": "Could not negotiate HTTP/1.1",
       "mustGo": [],
       "mustStay": [
-        "Could",
-        "not",
-        "negotiate",
-        "HTTP"
+        "Could not negotiate HTTP/1.1"
       ]
     },
     {
@@ -5538,8 +4657,7 @@
         "ABCDEFGH"
       ],
       "mustStay": [
-        "Authorization",
-        "bearer"
+        "Authorization: bearer"
       ]
     },
     {
@@ -5555,11 +4673,7 @@
       "hostOutput": "BASIC [redacted] authentication is disabled",
       "mustGo": [],
       "mustStay": [
-        "BASIC",
-        "HTTP",
-        "authentication",
-        "is",
-        "disabled"
+        "BASIC HTTP authentication is disabled"
       ]
     },
     {
@@ -5575,9 +4689,7 @@
       "hostOutput": "a basic [redacted] flow",
       "mustGo": [],
       "mustStay": [
-        "basic",
-        "OAuth",
-        "flow"
+        "a basic OAuth flow"
       ]
     },
     {
@@ -5591,7 +4703,8 @@
       "input": "Path=C:\\Secrets\\db.config",
       "hostOutput": "Path=[redacted-path]",
       "mustGo": [
-        "C:\\Secrets\\db.config"
+        "Secrets",
+        "db.config"
       ],
       "mustStay": [
         "Path"
@@ -5611,9 +4724,7 @@
         "C:\\x\\y"
       ],
       "mustStay": [
-        "Cannot",
-        "read",
-        "path"
+        "Cannot read path=\""
       ]
     },
     {
@@ -5631,8 +4742,7 @@
         "D:/x/y"
       ],
       "mustStay": [
-        "Cannot",
-        "read"
+        "Cannot read \""
       ]
     },
     {
@@ -5646,10 +4756,11 @@
       "input": "file|D:\\data\\x.txt",
       "hostOutput": "file|[redacted-path]",
       "mustGo": [
-        "D:\\data\\x.txt"
+        "data",
+        "x.txt"
       ],
       "mustStay": [
-        "file"
+        "file|"
       ]
     },
     {
@@ -5664,7 +4775,8 @@
       "input": "Path=C:/Secrets/db.config",
       "hostOutput": "Path=[redacted-path]",
       "mustGo": [
-        "C:/Secrets/db.config"
+        "Secrets",
+        "db.config"
       ],
       "mustStay": [
         "Path"
@@ -5682,16 +4794,15 @@
       "input": "Instance='SQL01\\SQLEXPRESS' is down; see (C:\\x\\y.dll) or x,E:\\q",
       "hostOutput": "Instance=[redacted-path] is down; see ([redacted-path]) or x,[redacted-path]",
       "mustGo": [
-        "SQL01\\SQLEXPRESS",
-        "C:\\x\\y.dll",
+        "SQL01",
+        "SQLEXPRESS",
+        "y.dll",
         "E:\\q"
       ],
       "mustStay": [
-        "Instance",
-        "is",
-        "down",
-        "see",
-        "or"
+        "Instance='",
+        "' is down; see (",
+        ") or x"
       ]
     },
     {
@@ -5705,12 +4816,13 @@
       "input": "see <C:\\Users\\jdoe\\secret.txt> or x.D:\\y",
       "hostOutput": "see <[redacted-path]> or x.[redacted-path]",
       "mustGo": [
-        "C:\\Users\\jdoe\\secret.txt",
+        "jdoe",
+        "secret.txt",
         "D:\\y"
       ],
       "mustStay": [
-        "see",
-        "or"
+        "see <",
+        "> or x."
       ]
     },
     {
@@ -5728,9 +4840,7 @@
         "/etc/x"
       ],
       "mustStay": [
-        "Cannot",
-        "read",
-        "or"
+        "Cannot read <"
       ]
     },
     {
@@ -5745,7 +4855,8 @@
       "input": "(SQL01\\SQLEXPRESS)",
       "hostOutput": "([redacted-path])",
       "mustGo": [
-        "SQL01\\SQLEXPRESS"
+        "SQL01",
+        "SQLEXPRESS"
       ],
       "mustStay": []
     },
@@ -5761,11 +4872,7 @@
       "hostOutput": "Status:500 at Line:42",
       "mustGo": [],
       "mustStay": [
-        "Status",
-        "500",
-        "at",
-        "Line",
-        "42"
+        "Status:500 at Line:42"
       ]
     },
     {
@@ -5779,11 +4886,11 @@
       "input": "Cannot read `/etc/creatio/appsettings.json`",
       "hostOutput": "Cannot read `[redacted-path]",
       "mustGo": [
-        "/etc/creatio/appsettings.json"
+        "/etc/",
+        "appsettings.json"
       ],
       "mustStay": [
-        "Cannot",
-        "read"
+        "Cannot read `"
       ]
     },
     {
@@ -5798,13 +4905,12 @@
       "input": "Cannot read ~/creatio/ConnectionStrings.config or ./Terrasoft.WebApp/ConnectionStrings.config",
       "hostOutput": "Cannot read [redacted-path] or [redacted-path]",
       "mustGo": [
-        "~/creatio/ConnectionStrings.config",
-        "./Terrasoft.WebApp/ConnectionStrings.config"
+        "~/creatio",
+        "ConnectionStrings.config",
+        "Terrasoft.WebApp"
       ],
       "mustStay": [
-        "Cannot",
-        "read",
-        "or"
+        "Cannot read"
       ]
     },
     {
@@ -5819,13 +4925,12 @@
       "input": "Error in |/var/lib/creatio/x and ../conf/x.config",
       "hostOutput": "Error in |[redacted-path] and [redacted-path]",
       "mustGo": [
-        "/var/lib/creatio/x",
-        "../conf/x.config"
+        "/var/lib",
+        "../conf",
+        "x.config"
       ],
       "mustStay": [
-        "Error",
-        "in",
-        "and"
+        "Error in |"
       ]
     },
     {
@@ -5840,13 +4945,7 @@
       "hostOutput": "Status:500 at Line:42, Column:12",
       "mustGo": [],
       "mustStay": [
-        "Status",
-        "500",
-        "at",
-        "Line",
-        "42",
-        "Column",
-        "12"
+        "Status:500 at Line:42, Column:12"
       ]
     },
     {
@@ -5861,11 +4960,11 @@
       "input": "Cannot reach SQLPROD01:1433",
       "hostOutput": "Cannot reach [redacted-host]",
       "mustGo": [
-        "SQLPROD01:1433"
+        "SQLPROD01",
+        "1433"
       ],
       "mustStay": [
-        "Cannot",
-        "reach"
+        "Cannot reach"
       ]
     },
     {
@@ -5883,18 +4982,8 @@
         "redis:6379"
       ],
       "mustStay": [
-        "It",
-        "was",
-        "not",
-        "possible",
-        "to",
-        "connect",
-        "the",
-        "redis",
-        "server",
-        "UnableToConnect",
-        "on",
-        "Interactive"
+        "It was not possible to connect to the redis server(s). UnableToConnect on",
+        "/Interactive"
       ]
     },
     {
@@ -5909,14 +4998,11 @@
       "input": "No connection could be made: postgres:5432",
       "hostOutput": "No connection could be made: [redacted-host]",
       "mustGo": [
-        "postgres:5432"
+        "postgres",
+        "5432"
       ],
       "mustStay": [
-        "No",
-        "connection",
-        "could",
-        "be",
-        "made"
+        "No connection could be made"
       ]
     },
     {
@@ -5931,12 +5017,11 @@
       "input": "timeout connecting to postgres-primary:5432",
       "hostOutput": "timeout connecting to [redacted-host]",
       "mustGo": [
-        "postgres-primary:5432"
+        "postgres-primary",
+        "5432"
       ],
       "mustStay": [
-        "timeout",
-        "connecting",
-        "to"
+        "timeout connecting to"
       ]
     },
     {
@@ -5951,11 +5036,11 @@
       "input": "Cannot reach DBSERVER:1433",
       "hostOutput": "Cannot reach [redacted-host]",
       "mustGo": [
-        "DBSERVER:1433"
+        "DBSERVER",
+        "1433"
       ],
       "mustStay": [
-        "Cannot",
-        "reach"
+        "Cannot reach"
       ]
     },
     {
@@ -5971,12 +5056,7 @@
       "hostOutput": "Error in UsrOrderPage.js:42:13",
       "mustGo": [],
       "mustStay": [
-        "Error",
-        "in",
-        "UsrOrderPage",
-        "js",
-        "42",
-        "13"
+        "Error in UsrOrderPage.js:42:13"
       ]
     },
     {
@@ -5993,8 +5073,7 @@
         "/opt/creatio/x"
       ],
       "mustStay": [
-        "error",
-        "in"
+        "</b>error in <"
       ]
     },
     {
@@ -6031,8 +5110,7 @@
         "hunter2"
       ],
       "mustStay": [
-        "conn",
-        "Server",
+        "conn='Server",
         "Password"
       ]
     },
@@ -6052,16 +5130,7 @@
         "id=x"
       ],
       "mustStay": [
-        "Guid",
-        "3f2a9c1b",
-        "7d4e",
-        "4a5b",
-        "9c8d",
-        "0e1f2a3b4c5d",
-        "parentGuid",
-        "7e1f2a3b",
-        "4c5d",
-        "db_uid",
+        "Guid=3f2a9c1b-7d4e-4a5b-9c8d-0e1f2a3b4c5d; parentGuid=7e1f2a3b-4c5d-4a5b-9c8d-0e1f2a3b4c5d; db_uid",
         "UserUid"
       ]
     },
@@ -6080,9 +5149,7 @@
         "sk_test_Rw7Zq2LmXv9TbN"
       ],
       "mustStay": [
-        "Invalid",
-        "API",
-        "key"
+        "Invalid API key"
       ]
     },
     {
@@ -6100,9 +5167,7 @@
         "sk_test_qZXrbLwYvH"
       ],
       "mustStay": [
-        "Invalid",
-        "API",
-        "key"
+        "Invalid API key"
       ]
     },
     {
@@ -6119,8 +5184,7 @@
         "x7Kq2mVb9Lp"
       ],
       "mustStay": [
-        "Invalid",
-        "token"
+        "Invalid token"
       ]
     },
     {
@@ -6137,8 +5201,7 @@
         "4c9e1a7f0b3d8e2a"
       ],
       "mustStay": [
-        "Access",
-        "token"
+        "Access token"
       ]
     },
     {
@@ -6156,8 +5219,7 @@
         "m4tQz8Rv!k"
       ],
       "mustStay": [
-        "Secret",
-        "key"
+        "Secret key"
       ]
     },
     {
@@ -6174,8 +5236,7 @@
         "t2NcY8wQhL5pZ0d"
       ],
       "mustStay": [
-        "Refresh",
-        "token"
+        "Refresh token"
       ]
     },
     {
@@ -6193,8 +5254,7 @@
         "abcdefghXYZ"
       ],
       "mustStay": [
-        "API",
-        "key"
+        "API key"
       ]
     },
     {
@@ -6214,8 +5274,7 @@
       ],
       "mustStay": [
         "key",
-        "and",
-        "token"
+        "and token"
       ]
     },
     {
@@ -6231,12 +5290,7 @@
       "hostOutput": "Key: UsrStatus; key: UsrOrder_FormPage; token: expired; key:UsrStatus",
       "mustGo": [],
       "mustStay": [
-        "Key",
-        "UsrStatus",
-        "key",
-        "UsrOrder_FormPage",
-        "token",
-        "expired"
+        "Key: UsrStatus; key: UsrOrder_FormPage; token: expired; key:UsrStatus"
       ]
     },
     {
@@ -6253,8 +5307,7 @@
         "x7Kq2mVb9Lp"
       ],
       "mustStay": [
-        "token",
-        "Bearer"
+        "token: Bearer"
       ]
     },
     {
@@ -6331,8 +5384,8 @@
         "m\":\"hunter2"
       ],
       "mustStay": [
-        "newPassword",
-        "passwordConfirm"
+        "{\"newPassword\":\"",
+        "\",\"passwordConfirm\":\""
       ]
     },
     {
@@ -6354,8 +5407,7 @@
       "mustStay": [
         "PassPhrase_backup",
         "dbpassword_old",
-        "passcode",
-        "retry"
+        "passcode-retry"
       ]
     },
     {
@@ -6370,13 +5422,7 @@
       "hostOutput": "password_reset=on; PasswordExpired=true; PasswordHash=x1; BypassCache=true",
       "mustGo": [],
       "mustStay": [
-        "password_reset",
-        "on",
-        "PasswordExpired",
-        "true",
-        "PasswordHash",
-        "x1",
-        "BypassCache"
+        "password_reset=on; PasswordExpired=true; PasswordHash=x1; BypassCache=true"
       ]
     },
     {
@@ -6394,8 +5440,7 @@
         "hunter2"
       ],
       "mustStay": [
-        "Data",
-        "Source",
+        "Data Source",
         "Password"
       ]
     },
@@ -6424,19 +5469,18 @@
         320
       ],
       "testLine": 1020,
-      "class": "B",
-      "kind": "sign-in",
-      "entry": "site",
+      "class": "A",
+      "entry": "redact",
       "input": "{\"password\":\"abc\\\", \"user\":\"sa\"}",
       "hostOutput": "{\"password\":[redacted], \"user\":[redacted]}",
       "mustGo": [
         "abc\\"
       ],
       "mustStay": [
-        "password",
-        "user"
+        "{\"password\":\"",
+        "\"user\":\"sa\"}"
       ],
-      "note": "The \"user\" value is a JSON-shape artifact of the input (analysis kind 3): only the password goes."
+      "note": "Master's JSON credential rule already removes the password (the escaped quote is read as part of the value), so this row is A for what clio removes; the \"user\" value is a JSON-shape artifact of the input (analysis kind 3) and stays."
     },
     {
       "id": "case-321",
@@ -6452,7 +5496,7 @@
         "C:\\x\\"
       ],
       "mustStay": [
-        "Password"
+        "{\"Password\":\""
       ]
     },
     {
@@ -6467,7 +5511,8 @@
       "input": "password=\"he said \\\"no\\\"\" end",
       "hostOutput": "password=[redacted] end",
       "mustGo": [
-        "he said \\\"no\\"
+        "he said",
+        "no"
       ],
       "mustStay": [
         "password",
@@ -6486,7 +5531,8 @@
       "input": "password='it\\'s' end",
       "hostOutput": "password=[redacted] end",
       "mustGo": [
-        "it\\'s"
+        "it",
+        "s'"
       ],
       "mustStay": [
         "password",
@@ -6526,12 +5572,7 @@
         "creatio"
       ],
       "mustStay": [
-        "FATAL",
-        "too",
-        "many",
-        "connections",
-        "for",
-        "role"
+        "FATAL: too many connections for role \""
       ]
     },
     {
@@ -6549,14 +5590,8 @@
         "creatio"
       ],
       "mustStay": [
-        "FATAL",
-        "role",
-        "is",
-        "not",
-        "permitted",
-        "to",
-        "log",
-        "in"
+        "FATAL: role \"",
+        "\" is not permitted to log in"
       ]
     },
     {
@@ -6574,11 +5609,7 @@
         "creatio_owner"
       ],
       "mustStay": [
-        "must",
-        "be",
-        "member",
-        "of",
-        "role"
+        "must be member of role \""
       ]
     },
     {
@@ -6596,11 +5627,7 @@
         "creatio_admin"
       ],
       "mustStay": [
-        "permission",
-        "denied",
-        "to",
-        "set",
-        "role"
+        "permission denied to set role \""
       ]
     },
     {
@@ -6615,14 +5642,7 @@
       "hostOutput": "User is not a member of role \"Sales managers\"",
       "mustGo": [],
       "mustStay": [
-        "User",
-        "is",
-        "not",
-        "member",
-        "of",
-        "role",
-        "Sales",
-        "managers"
+        "User is not a member of role \"Sales managers\""
       ]
     },
     {
@@ -6637,14 +5657,7 @@
       "hostOutput": "Cannot set role \"Sales managers\" for this user",
       "mustGo": [],
       "mustStay": [
-        "Cannot",
-        "set",
-        "role",
-        "Sales",
-        "managers",
-        "for",
-        "this",
-        "user"
+        "Cannot set role \"Sales managers\" for this user"
       ]
     },
     {
@@ -6659,15 +5672,7 @@
       "hostOutput": "role \"Sales managers\" is not permitted to read Orders",
       "mustGo": [],
       "mustStay": [
-        "role",
-        "Sales",
-        "managers",
-        "is",
-        "not",
-        "permitted",
-        "to",
-        "read",
-        "Orders"
+        "role \"Sales managers\" is not permitted to read Orders"
       ]
     },
     {
@@ -6685,9 +5690,7 @@
         "!Passw0rd"
       ],
       "mustStay": [
-        "Login",
-        "failed",
-        "password"
+        "Login failed: password"
       ]
     },
     {
@@ -6702,16 +5705,7 @@
       "hostOutput": "Access denied for role \"Sales managers\"; the role \"Sales managers\" is not active",
       "mustGo": [],
       "mustStay": [
-        "Access",
-        "denied",
-        "for",
-        "role",
-        "Sales",
-        "managers",
-        "the",
-        "is",
-        "not",
-        "active"
+        "Access denied for role \"Sales managers\"; the role \"Sales managers\" is not active"
       ]
     },
     {
@@ -6720,20 +5714,16 @@
         334
       ],
       "testLine": 1044,
-      "class": "B",
+      "class": "D",
       "kind": "stack",
-      "entry": "site",
+      "entry": "redact",
       "input": "Value cannot be null.\\r\\nParameter name: password",
       "hostOutput": "Value cannot be null.",
       "mustGo": [],
       "mustStay": [
-        "Value",
-        "cannot",
-        "be",
-        "null",
-        "Parameter name: password"
+        "Value cannot be null.\\r\\nParameter name: password"
       ],
-      "note": "The parameter name is the reason (plan: \"Not the host's first-line cut\"); it must stay."
+      "note": "The host lane keeps the first line only; clio keeps the parameter name by choice (plan rule 8, \"not the host's first-line cut\"): it is the reason."
     },
     {
       "id": "case-335",
@@ -6741,16 +5731,16 @@
         335
       ],
       "testLine": 1044,
-      "class": "B",
+      "class": "D",
       "kind": "stack",
-      "entry": "site",
+      "entry": "redact",
       "input": "Error\\n<x",
       "hostOutput": "Error",
       "mustGo": [],
       "mustStay": [
-        "Error"
+        "Error\\n<x"
       ],
-      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+      "note": "A synthetic probe of the host lane's escape parser, which cuts here; clio cuts only before a stack frame or a page (plan rule 8)."
     },
     {
       "id": "case-336",
@@ -6758,16 +5748,16 @@
         336
       ],
       "testLine": 1044,
-      "class": "B",
+      "class": "D",
       "kind": "stack",
-      "entry": "site",
+      "entry": "redact",
       "input": "Error\\n>x",
       "hostOutput": "Error",
       "mustGo": [],
       "mustStay": [
-        "Error"
+        "Error\\n>x"
       ],
-      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+      "note": "A synthetic probe of the host lane's escape parser, which cuts here; clio cuts only before a stack frame or a page (plan rule 8)."
     },
     {
       "id": "case-337",
@@ -6775,16 +5765,16 @@
         337
       ],
       "testLine": 1044,
-      "class": "B",
+      "class": "D",
       "kind": "stack",
-      "entry": "site",
+      "entry": "redact",
       "input": "Error\\n\"x",
       "hostOutput": "Error",
       "mustGo": [],
       "mustStay": [
-        "Error"
+        "Error\\n\"x"
       ],
-      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+      "note": "A synthetic probe of the host lane's escape parser, which cuts here; clio cuts only before a stack frame or a page (plan rule 8)."
     },
     {
       "id": "case-338",
@@ -6792,16 +5782,16 @@
         338
       ],
       "testLine": 1044,
-      "class": "B",
+      "class": "D",
       "kind": "stack",
-      "entry": "site",
+      "entry": "redact",
       "input": "Error\\n|x",
       "hostOutput": "Error",
       "mustGo": [],
       "mustStay": [
-        "Error"
+        "Error\\n|x"
       ],
-      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+      "note": "A synthetic probe of the host lane's escape parser, which cuts here; clio cuts only before a stack frame or a page (plan rule 8)."
     },
     {
       "id": "case-339",
@@ -6809,16 +5799,16 @@
         339
       ],
       "testLine": 1044,
-      "class": "B",
+      "class": "D",
       "kind": "stack",
-      "entry": "site",
+      "entry": "redact",
       "input": "Error\\n?x",
       "hostOutput": "Error",
       "mustGo": [],
       "mustStay": [
-        "Error"
+        "Error\\n?x"
       ],
-      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+      "note": "A synthetic probe of the host lane's escape parser, which cuts here; clio cuts only before a stack frame or a page (plan rule 8)."
     },
     {
       "id": "case-340",
@@ -6826,16 +5816,16 @@
         340
       ],
       "testLine": 1044,
-      "class": "B",
+      "class": "D",
       "kind": "stack",
-      "entry": "site",
+      "entry": "redact",
       "input": "Error\\n*x",
       "hostOutput": "Error",
       "mustGo": [],
       "mustStay": [
-        "Error"
+        "Error\\n*x"
       ],
-      "note": "Synthetic probe of the host lane's escape parser; clio cuts only before a stack frame or a page (plan rule 8)."
+      "note": "A synthetic probe of the host lane's escape parser, which cuts here; clio cuts only before a stack frame or a page (plan rule 8)."
     },
     {
       "id": "case-341",
@@ -6849,7 +5839,8 @@
       "input": "Error\\n<!DOCTYPE html><html><head><title>500</title></head>",
       "hostOutput": "Error",
       "mustGo": [
-        "\\n<!DOCTYPE html><html><head><title>500</title></head"
+        "<!DOCTYPE html>",
+        "<title>500</title>"
       ],
       "mustStay": [
         "Error"
@@ -6868,15 +5859,7 @@
       "hostOutput": "Cannot insert duplicate key row with unique index [redacted-key].",
       "mustGo": [],
       "mustStay": [
-        "Cannot",
-        "insert",
-        "duplicate",
-        "key",
-        "row",
-        "with",
-        "unique",
-        "index",
-        "IX_UsrOrder_UsrNumber2_CreatedOn"
+        "Cannot insert duplicate key row with unique index IX_UsrOrder_UsrNumber2_CreatedOn."
       ]
     },
     {
@@ -6892,10 +5875,7 @@
       "hostOutput": "violates unique constraint \"[redacted-key]\"",
       "mustGo": [],
       "mustStay": [
-        "violates",
-        "unique",
-        "constraint",
-        "usrorder_usrnumber2_createdon_key"
+        "violates unique constraint \"usrorder_usrnumber2_createdon_key\""
       ]
     },
     {
@@ -6911,10 +5891,7 @@
       "hostOutput": "[redacted-sql]",
       "mustGo": [],
       "mustStay": [
-        "Select",
-        "Contact",
-        "from",
-        "Settings"
+        "Select Contact from Settings"
       ]
     },
     {
@@ -6930,11 +5907,7 @@
       "hostOutput": "You cannot [redacted-sql]",
       "mustGo": [],
       "mustStay": [
-        "You",
-        "cannot",
-        "delete",
-        "from",
-        "Settings"
+        "You cannot delete from Settings"
       ]
     },
     {
@@ -6950,12 +5923,7 @@
       "hostOutput": "Cannot [redacted-sql]",
       "mustGo": [],
       "mustStay": [
-        "Cannot",
-        "DELETE",
-        "Contact",
-        "from",
-        "this",
-        "page"
+        "Cannot DELETE Contact from this page"
       ]
     },
     {
@@ -6971,12 +5939,7 @@
       "hostOutput": "insert Contact (Name) values ('Jane Doe')",
       "mustGo": [],
       "mustStay": [
-        "insert",
-        "Contact",
-        "Name",
-        "values",
-        "Jane",
-        "Doe"
+        "insert Contact (Name) values ('Jane Doe')"
       ]
     },
     {
@@ -6992,12 +5955,7 @@
       "hostOutput": "delete Contact where Name = 'Jane Doe'",
       "mustGo": [],
       "mustStay": [
-        "delete",
-        "Contact",
-        "where",
-        "Name",
-        "Jane",
-        "Doe"
+        "delete Contact where Name = 'Jane Doe'"
       ]
     },
     {
@@ -7013,9 +5971,7 @@
       "hostOutput": "update Contact set",
       "mustGo": [],
       "mustStay": [
-        "update",
-        "Contact",
-        "set"
+        "update Contact set"
       ]
     },
     {
@@ -7031,19 +5987,7 @@
       "hostOutput": "Error in [redacted-sql]",
       "mustGo": [],
       "mustStay": [
-        "Error",
-        "in",
-        "INSERT",
-        "Activity",
-        "Object",
-        "reference",
-        "not",
-        "set",
-        "to",
-        "an",
-        "instance",
-        "of",
-        "object"
+        "Error in INSERT Activity: Object reference not set to an instance of an object."
       ]
     },
     {
@@ -7059,14 +6003,7 @@
       "hostOutput": "[redacted-sql]",
       "mustGo": [],
       "mustStay": [
-        "CREATE",
-        "TABLE",
-        "AS",
-        "specifies",
-        "too",
-        "many",
-        "column",
-        "names"
+        "CREATE TABLE AS specifies too many column names"
       ]
     },
     {
@@ -7082,12 +6019,7 @@
       "hostOutput": "SELECT Name failed, Phone from Contact",
       "mustGo": [],
       "mustStay": [
-        "SELECT",
-        "Name",
-        "failed",
-        "Phone",
-        "from",
-        "Contact"
+        "SELECT Name failed, Phone from Contact"
       ]
     },
     {
@@ -7103,13 +6035,7 @@
       "hostOutput": "Basic [redacted] is off; NTLM [redacted] is required",
       "mustGo": [],
       "mustStay": [
-        "Basic",
-        "HTTP",
-        "is",
-        "off",
-        "NTLM",
-        "v2",
-        "required"
+        "Basic HTTP is off; NTLM v2 is required"
       ]
     },
     {
@@ -7125,11 +6051,7 @@
       "hostOutput": "Basic [redacted] authentication is disabled",
       "mustGo": [],
       "mustStay": [
-        "Basic",
-        "HTTP",
-        "authentication",
-        "is",
-        "disabled"
+        "Basic HTTP authentication is disabled"
       ]
     },
     {
@@ -7145,10 +6067,7 @@
       "hostOutput": "Could not negotiate [redacted]",
       "mustGo": [],
       "mustStay": [
-        "Could",
-        "not",
-        "negotiate",
-        "TLSv1"
+        "Could not negotiate TLSv1.2"
       ]
     },
     {
@@ -7164,9 +6083,7 @@
       "hostOutput": "a basic [redacted] setup",
       "mustGo": [],
       "mustStay": [
-        "basic",
-        "2FA",
-        "setup"
+        "a basic 2FA setup"
       ]
     },
     {
@@ -7182,7 +6099,7 @@
       "hostOutput": "bearer ABCD",
       "mustGo": [],
       "mustStay": [
-        "bearer"
+        "bearer ABCD"
       ],
       "note": "Host trade: the host keeps \"ABCD\"; clio may keep it or be stricter."
     }

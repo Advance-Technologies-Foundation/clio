@@ -21,14 +21,18 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 /// <summary>
-/// Requirement (b) of the site-text redaction plan: every path that carries text a Creatio SITE wrote to a caller
-/// goes through <see cref="SensitiveErrorTextRedactor.RedactSiteText"/>, and clio's own text does not.
+/// Requirement (b) of the site-text redaction plan: the paths wired in this change carry the text a Creatio SITE
+/// wrote to a caller only through <see cref="SensitiveErrorTextRedactor.RedactSiteText"/>, clio's own text does
+/// not take it, and every reader of a site's error text that is NOT wired yet is listed by file and member.
 /// </summary>
 /// <remarks>
-/// Each path is driven with one marker that only RedactSiteText removes - a sign-in name in SQL Server's own
+/// Each wired path is driven with one marker that only RedactSiteText removes - a sign-in name in SQL Server's own
 /// phrase - and the test asserts the marker never reaches what the caller reads. Once rule 9 (PR B) lands, a SQL
 /// fragment can serve as a second marker. <see cref="SourceGuard_ShouldKnowEverySiteTextExtractorCallSite"/>
-/// fails when a new call site of a site-text extractor appears without a case here.
+/// fails when a new call site of a site-text extractor appears without a case here, and
+/// <see cref="SourceGuard_ShouldKnowEveryDirectReadOfASitesErrorText"/> when a new direct read of a site's error
+/// text appears that is neither wired nor in the known-unwired list (follow-up, for the remaining envelope
+/// readers). The write-tool paths (A2) are wired; their cases are in <c>SiteTextWritePathWiringTests</c>.
 /// </remarks>
 [TestFixture]
 [Property("Module", "Common")]
@@ -122,6 +126,42 @@ public sealed class SiteTextWiringTests {
 		error.Should().NotContain(Marker).And.NotContain("Terrasoft.Core",
 			because: "the preview is the site's text, cut before its stack trace");
 		error.Should().Contain("Response: Login failed for user '[redacted]'.", because: "the reason stays in the preview");
+	}
+
+	[TestCase("rejected eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJpbnZlbnRlZCJ9.aW52ZW50ZWRzaWduYXR1cmU", "eyJ",
+		TestName = "NonJsonPreview_JwtAcrossTheCut")]
+	[TestCase("Login failed for user 'zq_invented_login'.", "zq_", TestName = "NonJsonPreview_SignInNameAcrossTheCut")]
+	[Category("Unit")]
+	[Description("The non-JSON preview is redacted BEFORE it is cut to 500 characters: a JWT or a quoted sign-in name "
+		+ "that crosses the cut goes whole instead of leaving the half before the cut, which matched no rule.")]
+	public void NonJsonPreview_ShouldRedactBeforeTheCut_WhenASecretCrossesIt(string secretText, string fragment) {
+		// Arrange
+		string body = new string('x', 494 - secretText.IndexOf(fragment, StringComparison.Ordinal)) + " " + secretText;
+
+		// Act
+		string error = CreatioResponseError.DescribeNonJsonResponse(body);
+
+		// Assert
+		error.Should().NotContain(fragment, because: "no part of the secret may survive the preview's cut");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A refused delete's inner message is not cut before the redaction either: a sign-in name after a long "
+		+ "URI, crossing the old 500-character cut, goes whole.")]
+	public void RecordDeletionInnerMessage_ShouldRedactBeforeAnyCut_WhenASecretCrossesTheOldCut() {
+		// Arrange
+		string message = "See https://" + new string('a', 450) + ".invalid/x Login failed for user 'zq_invented_login'.";
+		string body = JsonSerializer.Serialize(new {
+			error = new { message = "An error has occurred.", innererror = new { message } }
+		});
+
+		// Act
+		string inner = RecordDeletionService.ReadInnerMessage(body);
+
+		// Assert
+		inner.Should().NotContain("zq_", because: "the name crossed the old cut and must still go");
+		inner.Should().Contain("Login failed for user '[redacted]'", because: "the reason stays");
 	}
 
 	[Test]
@@ -286,10 +326,11 @@ public sealed class SiteTextWiringTests {
 	// that appears in clio without an entry here fails SourceGuard_ShouldKnowEverySiteTextExtractorCallSite: add
 	// it with a wiring case in this fixture (or in the fixture of the tool it belongs to) before adding it here.
 	//   "central": the extractor itself applies the site entry point (asserted by CentralExtractors below);
-	//   "call site": the caller must apply RedactSiteText to what it extracted (asserted next to the call);
-	//   "discarded": the extracted text is thrown away and reaches no caller;
-	//   "rendered": the extractor returns the site's text raw inside a record, and only the members listed in
-	//   CentralExtractors turn it into text - so a new call site must route its record through one of them.
+	//   "call site": the caller must pass what it extracted to RedactSiteText and nowhere else (asserted by
+	//                SourceGuard_ShouldSeeTheExtractedTextFlowOnlyIntoRedactSiteText_AtEveryCallSite);
+	//   "discarded": the extracted text is thrown away (an "out _" discard) and reaches no caller;
+	//   "follow-up": KNOWN-UNWIRED - the text reaches a caller through Redact only, and the follow-up after A2 wires
+	//                it (see KnownSiteErrorReads for what that means).
 	private static readonly Dictionary<string, (int Count, string Wiring)> KnownCallSites = new(StringComparer.Ordinal) {
 		["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (2, "central"),
 		["SiteResponse.FromRefusal|clio/Command/McpServer/Tools/ODataUpdateTool.cs"] = (1, "central"),
@@ -302,6 +343,11 @@ public sealed class SiteTextWiringTests {
 		["CreatioResponseError.TryDetect|clio/Command/McpServer/Tools/ODataKeyedWrite.cs"] = (1, "call site"),
 		["CreatioResponseError.TryDetect|clio/Command/RuntimeVerification/TriggerSmokeRunner.cs"] = (1, "call site"),
 		["CreatioResponseError.TryDetect|clio/Query/DataServiceQuery.cs"] = (1, "discarded"),
+		// TryClassify's server detail goes to odata-read's debug channel through UntrustedText.Fenced (Redact).
+		["CreatioResponseError.TryClassify|clio/Command/McpServer/Tools/ODataReadTool.cs"] = (1, "follow-up"),
+		["CreatioResponseError.TryClassify|clio/Command/McpServer/Tools/ODataFileContract.cs"] = (1, "discarded"),
+		// The overload that returns no text at all, only whether the body is an error.
+		["CreatioResponseError.TryClassify|clio/Command/CompileBusinessProcessCommand.cs"] = (1, "discarded"),
 		["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataCreateTool.cs"] = (1, "central"),
 		["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataFieldValidation.cs"] = (3, "central"),
 		["CreatioResponseError.DescribeNonJsonResponse|clio/Command/McpServer/Tools/ODataKeyedWrite.cs"] = (1, "central"),
@@ -316,8 +362,8 @@ public sealed class SiteTextWiringTests {
 		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbCommand.cs"] = (5, "central"),
 		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/DataBindingDbLocalizer.cs"] = (2, "central"),
 		["DataServiceResponse.ThrowIfUnsuccessful|clio/Command/PackageDataBindingWriter.cs"] = (2, "central"),
-		// The write paths (PR A2): update-page, sync-pages, create-page, the entity-schema designer tools, SelectQuery,
-		// package installation and compilation, and the business-process tools.
+		// The write-tool paths (A2): update-page, sync-pages, create-page, SelectQuery, package installation and the
+		// business-process tools.
 		["PageSchemaMetadataHelper.DescribeRefusal|clio/Command/PageDesignerHierarchyClient.cs"] = (2, "central"),
 		["PageSchemaMetadataHelper.DescribeRefusal|clio/Command/SchemaTemplateCatalog.cs"] = (1, "central"),
 		["SelectQueryHelper.DescribeServerFailure|clio/Command/ApplicationInfoService.cs"] = (1, "central"),
@@ -327,17 +373,13 @@ public sealed class SiteTextWiringTests {
 		["ProcessDesignServerFault.ReadServerText|clio/Command/CreateBusinessProcessCommand.cs"] = (1, "central"),
 		["ProcessDesignServerFault.ReadServerText|clio/Command/ModifyBusinessProcessCommand.cs"] = (1, "central"),
 		["ProcessDesignServerFault.ReadServerText|clio/Command/ModifyProcessAsNewVersionCommand.cs"] = (1, "central"),
-		["PackageBuildResultParser.TryParseResponse|clio/Command/CompileConfigurationCommand.cs"] = (1, "rendered"),
-		["PackageBuildResultParser.TryParseResponse|clio/Package/PackageBuilder.cs"] = (2, "rendered"),
-		["PackageBuildResultParser.ParseHistoryDiagnostics|clio/Command/CompileConfigurationCommand.cs"] = (1, "rendered"),
-		["PackageBuildResultParser.ParseHistoryDiagnostics|clio/Common/CompilationHistoryReader.cs"] = (1, "rendered"),
-		["PackageBuildResultParser.ParseHistoryDiagnostics|clio/Package/PackageBuilder.cs"] = (1, "rendered"),
 	};
 
-	// The extractors and the call shape of each, as grep would find it.
+	// The extractors and the call shape of each, as found in clio's CODE (never in a comment or a string).
 	private static readonly (string Name, Regex Call)[] Extractors = [
 		("SiteResponse.FromRefusal", new Regex(@"\bSiteResponse\.FromRefusal\(")),
 		("CreatioResponseError.TryDetect", new Regex(@"\bCreatioResponseError\.TryDetect\(")),
+		("CreatioResponseError.TryClassify", new Regex(@"\bCreatioResponseError\.TryClassify\(")),
 		("CreatioResponseError.DescribeNonJsonResponse", new Regex(@"(?<!static string )\bDescribeNonJsonResponse\(")),
 		("RecordDeletionService.ReadInnerMessage", new Regex(@"(?<!static string )\bReadInnerMessage\(")),
 		("PageSchemaMetadataHelper.ParseSaveErrorMessage", new Regex(@"(?<!static string )\bParseSaveErrorMessage\(")),
@@ -346,9 +388,6 @@ public sealed class SiteTextWiringTests {
 		("SelectQueryHelper.DescribeServerFailure", new Regex(@"(?<!static string )\bDescribeServerFailure\(")),
 		("InstallLogAnalyzer.DescribeFailure", new Regex(@"\bInstallLogAnalyzer\.DescribeFailure\(")),
 		("ProcessDesignServerFault.ReadServerText", new Regex(@"\bProcessDesignServerFault\.ReadServerText\(")),
-		("PackageBuildResultParser.TryParseResponse", new Regex(@"\bPackageBuildResultParser\.TryParseResponse\(")),
-		("PackageBuildResultParser.ParseHistoryDiagnostics",
-			new Regex(@"\bPackageBuildResultParser\.ParseHistoryDiagnostics\(")),
 	];
 
 	// Where each "central" extractor - and the two fenced item paths - applies the site entry point: the file, the
@@ -371,7 +410,8 @@ public sealed class SiteTextWiringTests {
 			"UntrustedText.FencedSiteText("),
 		("clio/Command/McpServer/Tools/CompileOperationRegistry.cs", "private static IReadOnlyList<string> BuildMessageTail(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
-		// The write paths (PR A2).
+		// The write-tool paths (A2). A member with several site-text parts is listed once per part, so reverting any
+		// one of them fails here.
 		("clio/Command/PageSchemaMetadataHelper.cs", "internal static string DescribeRefusal(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/PageUpdateOptions.cs", "private bool TryGetSchema(", "SensitiveErrorTextRedactor.RedactSiteText("),
@@ -379,7 +419,7 @@ public sealed class SiteTextWiringTests {
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/SchemaTemplateCatalog.cs", "private static string BuildNonJsonErrorMessage(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
-		("clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs", "private static TResponse EnsureSuccess<",
+		("clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs", "private static TResponse EnsureSuccess<TResponse>(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/SelectQueryHelper.cs", "internal static string DescribeServerFailure(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
@@ -393,13 +433,18 @@ public sealed class SiteTextWiringTests {
 			"SiteText(diagnostic.errorText)"),
 		("clio/Command/CompileConfigurationCommand.cs", "internal static string FormatHistoryDiagnostics(",
 			"diagnostic.WithSiteTextRedacted()"),
+		("clio/Command/CompileConfigurationCommand.cs", "internal static string FormatHistoryDiagnostics(",
+			"SiteText(errorsWarnings)"),
 		("clio/Command/CompileConfigurationCommand.cs", "private static string SiteText(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/PackageBuildResult.cs", "private static string Site(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "diagnostic.WithSiteTextRedacted()"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(rawHistoryErrors)"),
 		("clio/Package/PackageBuilder.cs", "private void Fail(", "SensitiveErrorTextRedactor.RedactSiteText(errorMessage)"),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(compilationErrorLine)"),
 		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(message)"),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(errorCode)"),
+		("clio/Package/InstallLogAnalyzer.cs", "public static string DescribeFailure(", "SiteText(logTail)"),
 		("clio/Package/InstallLogAnalyzer.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Package/BasePackageInstaller.cs", "private static string GetInvalidGZipArchiveMessage(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
@@ -407,14 +452,19 @@ public sealed class SiteTextWiringTests {
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/CreateBusinessProcessCommand.cs", "private static CreateBusinessProcessResult ReadBuildProcessAnswer(",
 			"SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage)"),
+		("clio/Command/CreateBusinessProcessCommand.cs", "private static CreateBusinessProcessResult ReadBuildProcessAnswer(",
+			"SensitiveErrorTextRedactor.RedactSiteText(string.Join(\" \", result.Warnings))"),
 		("clio/Command/ModifyBusinessProcessCommand.cs", "private static string BuildFailureMessage(",
 			"SensitiveErrorTextRedactor.RedactSiteText(result.ErrorMessage)"),
+		("clio/Command/ModifyBusinessProcessCommand.cs", "private static string BuildFailureMessage(",
+			"SensitiveErrorTextRedactor.RedactSiteText(string.Join(\" \", result.Warnings))"),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private void ReportFailure(", "UntrustedText.FencedSiteText("),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private static string ServerName(", "UntrustedText.FencedSiteText("),
 	];
 
-	// Members that read only site text: the general entry points (Redact, the plain fence) must not come back into
-	// them, because a stdio log is not redacted again and only RedactSiteText takes the site-only shapes.
+	// Members that read only site text: the general entry points (Redact, the plain fence, the console renderings)
+	// must not come back into them, because a stdio log is not redacted again and only RedactSiteText takes the
+	// site-only shapes.
 	private static readonly (string File, string Member)[] SiteOnlyMembers = [
 		("clio/Command/PageSchemaMetadataHelper.cs", "internal static string DescribeRefusal("),
 		("clio/Command/SchemaTemplateCatalog.cs", "private static string BuildNonJsonErrorMessage("),
@@ -427,9 +477,161 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/CompileBusinessProcessCommand.cs", "private static string ServerName("),
 	];
 
+	// The general entry points a site-only member must not call.
+	private static readonly string[] GeneralRedactionCalls = [
+		"SensitiveErrorTextRedactor.Redact(", "UntrustedText.Fenced(", "RedactUntrustedOrNull(", "UntrustedText.Scrub(",
+		"UntrustedText.ForConsole(", "RedactForConsoleOrNull("
+	];
+
+	// The calls that apply the site entry point; a "call site" extraction must reach a caller only inside one.
+	private static readonly Regex SiteEntryCall = new(
+		@"\b(?:SensitiveErrorTextRedactor\.(?:RedactSiteText|RedactUntrustedSiteTextOrNull)|UntrustedText\.FencedSiteText)\(");
+
+	// The variable an extractor call writes its text to: the last "out" argument of the call.
+	private static readonly Regex OutArgument = new(@"\bout\s+(?:[\w.?<>\[\]]+\s+)?(?<name>[A-Za-z_]\w*)\s*$");
+
+	// DIRECT READS OF A SITE'S ERROR TEXT, outside the extractors above: the JSON names a Creatio site writes its
+	// error text under (errorInfo, responseStatus, ExceptionMessage, errorMessage, OData's innererror) read as a
+	// literal, the deserialized members that hold it (.ErrorInfo, .ResponseStatus, .ExceptionMessage), and the two
+	// helpers that put a site's text into a message (ProcessDesignServerFault.ServerSaid,
+	// ServerReportedFailureText.Describe). A [JsonPropertyName]/[JsonProperty]/[DataMember] declaration is not a read.
+	private static readonly Regex SiteErrorNameLiteral = new(
+		@"""(?:errorInfo|ErrorInfo|responseStatus|ResponseStatus|exceptionMessage|ExceptionMessage|errorMessage|ErrorMessage"
+		+ @"|innererror|internalexception)""");
+
+	private static readonly Regex SiteErrorMemberRead = new(@"(?<=[\w)\]?!])\.(?:ErrorInfo|ResponseStatus|ExceptionMessage)\b");
+
+	private static readonly Regex SiteTextHelperCall = new(
+		@"(?<!\bstring\s+)\bServerSaid\(|\bServerReportedFailureText\.Describe\(");
+
+	private static readonly Regex PropertyNameDeclaration = new(@"\b(?:JsonPropertyName|JsonProperty|DataMember)\(");
+
+	// Every member of clio that reads a site's error text DIRECTLY, how many reads it holds, and how that text is
+	// wired. A read in a member that is not listed here - or one more read in a listed member - fails
+	// SourceGuard_ShouldKnowEveryDirectReadOfASitesErrorText: wire it through RedactSiteText and list it as wired,
+	// or, only if the change that wires it is already agreed, list it as known-unwired with that change.
+	//   "wired: <extractor>": the text reaches a caller only through an extractor this fixture already checks -
+	//                         a CentralExtractors member or a KnownCallSites extractor named after the colon;
+	//   "follow-up": KNOWN-UNWIRED, an envelope reader the follow-up after A2 wires. Until then its text passes
+	//                Redact (or Fenced/ForConsole, which use Redact) only - the site-only rules do not run on it;
+	//   "not text: <why>": the name only recognizes a shape - a set of field names, a marker - and no site text
+	//                      is extracted.
+	// The known-unwired entries, with the follow-up TryClassify call site in KnownCallSites, are the exact list of
+	// the readers of these shapes that still skip RedactSiteText. The write-tool files A2 wired (WritePathFiles in
+	// SourceGuard_ShouldClassifyEveryDirectReadAsWiredOrKnownUnwired) may hold no known-unwired entry at all. The scan
+	// sees the shapes above only: a site's text read through a DTO member of another name (the BuildProcess and
+	// package-build answers' ".ErrorMessage", which clio's own result types also use) is not seen - those readers are
+	// in the write-tool files, each with a behaviour case in SiteTextWritePathWiringTests.
+	private static readonly Dictionary<string, (int Count, string Wiring)> KnownSiteErrorReads = new(StringComparer.Ordinal) {
+		// Wired: the text reaches a caller only through an extractor this fixture checks.
+		["clio/Command/DataServiceBatchCommand.cs|ReadError"] = (2, "wired: DataServiceBatchCommand.ReadError"),
+		["clio/Command/PageSchemaMetadataHelper.cs|ParseSaveErrorMessage"] = (1, "wired: PageSchemaMetadataHelper.ParseSaveErrorMessage"),
+		["clio/Command/PageSchemaMetadataHelper.cs|DescribeRefusal"] = (1, "wired: PageSchemaMetadataHelper.DescribeRefusal"),
+		["clio/Command/RuntimeVerification/RecordDeletionService.cs|ReadInnerMessage"] = (2, "wired: RecordDeletionService.ReadInnerMessage"),
+		["clio/Common/CreatioResponseError.cs|TryDetectBaseResponse"] = (6, "wired: CreatioResponseError.TryDetect"),
+		["clio/Common/CreatioResponseError.cs|TryDetectAspNetException"] = (2, "wired: CreatioResponseError.TryDetect"),
+		["clio/Common/DataServiceResponse.cs|ThrowIfUnsuccessful"] = (2, "wired: DataServiceResponse.ThrowIfUnsuccessful"),
+		["clio/Common/SiteResponse.cs|FindEnvelopeMessage"] = (4, "wired: SiteResponse.Carry"),
+		["clio/Common/SiteResponse.cs|FindEnvelopeCode"] = (2, "wired: SiteResponse.Carry"),
+		// Not text: a site error name used only to recognize a shape; no site text is extracted.
+		["clio/Command/McpServer/Tools/ClioRunTool.cs|FailureFieldNames"] = (1, "not text: the failure field names of clio's own envelope"),
+		["clio/Common/ServerReadinessWaiter.cs|DataServiceAnswerMarkers"] = (1, "not text: markers that tell a DataService answer apart"),
+		// Wired by A2: the write-tool paths.
+		["clio/Command/CreateBusinessProcessCommand.cs|ReadBuildProcessAnswer"] = (2, "wired: ProcessDesignServerFault.ReadServerText"),
+		["clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs|EnsureSuccess"] = (2, "wired: RemoteEntitySchemaDesignerClient.EnsureSuccess"),
+		["clio/Command/ModifyBusinessProcessCommand.cs|ModifyProcess"] = (2, "wired: ProcessDesignServerFault.ReadServerText"),
+		["clio/Command/PageCreateOptions.cs|TryLoadTemplateLocalizableStrings"] = (1, "wired: PageCreateOptions.TryLoadTemplateLocalizableStrings"),
+		["clio/Command/PageUpdateOptions.cs|TryGetSchema"] = (1, "wired: PageUpdateOptions.TryGetSchema"),
+		["clio/Package/BasePackageInstaller.cs|GetInvalidGZipArchiveMessage"] = (1, "wired: BasePackageInstaller.GetInvalidGZipArchiveMessage"),
+		["clio/Package/InstallLogAnalyzer.cs|DescribeFailure"] = (2, "wired: InstallLogAnalyzer.DescribeFailure"),
+		["clio/Package/PackageBuildResult.cs|TryParseResponse"] = (1, "wired: PackageBuilder.Fail"),
+		["clio/Package/SelectQueryHelper.cs|ExecuteSelectQuery"] = (2, "wired: SelectQueryHelper.DescribeServerFailure"),
+		// Not text, A2 files: the site's error fields only decide what the failure is; no text of theirs is extracted.
+		["clio/Package/BasePackageInstaller.cs|IsInvalidGZipArchiveFailure"] = (3, "not text: looks for the invalid-archive type name"),
+		["clio/Package/InstallLogAnalyzer.cs|IsGenericInstallationFailure"] = (1, "not text: compares with the generic failure message"),
+		// KNOWN-UNWIRED, follow-up: the envelope readers the follow-up after A2 wires. Their text passes Redact
+		// (directly, or through UntrustedText.Fenced / ForConsole / ServerReportedFailureText) and no site-only rule.
+		["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|GetSchema"] = (1, "follow-up"),
+		["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|SaveSchema"] = (1, "follow-up"),
+		["clio/Command/AddonSchemaDesigner/AddonSchemaDesignerClient.cs|BuildConfiguration"] = (1, "follow-up"),
+		["clio/Command/ApplicationCreateService.cs|ResolveRandomIconId"] = (1, "follow-up"),
+		["clio/Command/ApplicationCreateService.cs|BuildFailureMessage"] = (2, "follow-up"),
+		["clio/Command/ApplicationInfoService.cs|GetPrimaryPackage"] = (1, "follow-up"),
+		["clio/Command/ApplicationInfoService.cs|LoadEntityInfo"] = (2, "follow-up"),
+		["clio/Command/ApplicationListService.cs|GetApplicationsCore"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionCreateCommand.cs|ClassifyInsertResponse"] = (3, "follow-up"),
+		["clio/Command/ApplicationSectionCreateCommand.cs|SetIconBackground"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionCreateCommand.cs|ResolveRandomIconId"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionDeleteCommand.cs|GetSectionRecord"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionDeleteCommand.cs|DeleteWorkspaceSchema"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionDeleteCommand.cs|ExecuteDeleteQuery"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionGetListCommand.cs|GetAllSectionRecords"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionLocalization.cs|ReadLocalizations"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionLocalization.cs|FindBindingUId"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionUpdateCommand.cs|ExecuteSectionUpdate"] = (1, "follow-up"),
+		["clio/Command/ApplicationSectionUpdateCommand.cs|GetSectionRecord"] = (1, "follow-up"),
+		["clio/Command/CompileWorspaceCommand.cs|ApplyCreatioModel"] = (2, "follow-up"),
+		["clio/Command/CreateUserTaskCommand.cs|EnsureResponseSucceeded"] = (2, "follow-up"),
+		["clio/Command/DataServiceSelectResponse.cs|TryGetFailure"] = (3, "follow-up"),
+		["clio/Command/DeletePackageCommand.cs|ProceedResponse"] = (1, "follow-up"),
+		["clio/Command/DeleteSchemaCommand.cs|ReadFileDesignMode"] = (1, "follow-up"),
+		["clio/Command/DeleteSchemaCommand.cs|TryDeleteRemote"] = (1, "follow-up"),
+		["clio/Command/DeleteSchemaCommand.cs|EnsureDeleteSucceeded"] = (2, "follow-up"),
+		["clio/Command/EntityConnections/EntityConnectionsReader.cs|TryReadFromService"] = (1, "follow-up"),
+		["clio/Command/EnvironmentRuntimeDetectionService.cs|ValidateSelectQueryResponse"] = (1, "follow-up"),
+		["clio/Command/GenerateSourceCodeCommand.cs|ProceedResponse"] = (2, "follow-up"),
+		["clio/Command/IdentityProviderManagementCommand.cs|Post"] = (1, "follow-up"),
+		["clio/Command/LocalizePageCommand.cs|TryGetSchema"] = (1, "follow-up"),
+		["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|TryDataServiceFailure"] = (3, "follow-up"),
+		["clio/Command/McpServer/Tools/ExecuteEsqTool.cs|ExtractErrorMessage"] = (3, "follow-up"),
+		["clio/Command/ModifyProcessAsNewVersionCommand.cs|ModifyAsNewVersion"] = (2, "follow-up"),
+		["clio/Command/NavigationCacheResetter.cs|ReadFailure"] = (1, "follow-up"),
+		["clio/Command/PackageCommand/LicenseResponseParser.cs|EnsureSuccess"] = (1, "follow-up"),
+		["clio/Command/PageListOptions.cs|ResolvePrimaryPackageName"] = (1, "follow-up"),
+		["clio/Command/RestoreFromPackageBackupCommand.cs|GetErrorMessage"] = (1, "follow-up"),
+		["clio/Command/RunProcessCommand.cs|AddLoggedError"] = (1, "follow-up"),
+		["clio/Command/RunProcessCommand.cs|BuildResponse"] = (1, "follow-up"),
+		["clio/Command/SchemaDesignerHelper.cs|LoadSchema"] = (1, "follow-up"),
+		["clio/Command/SchemaDesignerHelper.cs|CreateNewSchema"] = (1, "follow-up"),
+		["clio/Command/SchemaTransfer/SchemaTransferClient.cs|FindLayers"] = (1, "follow-up"),
+		["clio/Command/SchemaTransfer/SchemaTransferClient.cs|Export"] = (1, "follow-up"),
+		["clio/Command/SchemaTransfer/SchemaTransferClient.cs|Import"] = (1, "follow-up"),
+		["clio/Command/SequenceEnrollmentCommand.cs|ReadErrors"] = (1, "follow-up"),
+		["clio/Command/SetFileContentStorageConnectionStringCommand.cs|HandleResponse"] = (1, "follow-up"),
+		["clio/Command/SqlSchemaCreate.cs|ResolveDatabaseEngine"] = (1, "follow-up"),
+		["clio/Command/SqlSchemaInstall.cs|TryInstall"] = (1, "follow-up"),
+		["clio/Command/SysSettingsCommand.cs|TryCreateSysSetting"] = (1, "follow-up"),
+		["clio/Command/SysSettingsCommand.cs|ReportProviderFailure"] = (1, "follow-up"),
+		["clio/Command/Theming/ThemeServiceResponse.cs|TryGetFailure"] = (1, "follow-up"),
+		["clio/Command/Theming/UserThemeApplier.cs|TryUpdateProfileTheme"] = (1, "follow-up"),
+		["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|Read"] = (1, "follow-up"),
+		["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|CallMethod"] = (1, "follow-up"),
+		["clio/Command/WebServiceDesigner/WebServiceDesignerClient.cs|EnsureSucceeded"] = (1, "follow-up"),
+		["clio/Common/ClassifyingDataProvider.cs|GenericMessage"] = (1, "follow-up"),
+		["clio/Common/ClassifyingDataProvider.cs|ConsoleGenericMessage"] = (1, "follow-up"),
+		["clio/Common/CreatioResponseError.cs|InnerErrorMemberNames"] = (2, "follow-up"),
+		["clio/Common/DataForge/DataForgeReadClient.cs|FindSimilarTables"] = (1, "follow-up"),
+		["clio/Common/DataForge/DataForgeReadClient.cs|FindSimilarLookups"] = (1, "follow-up"),
+		["clio/Common/DataForge/DataForgeReadClient.cs|GetTableRelationships"] = (1, "follow-up"),
+		["clio/Common/EntitySchema/RuntimeEntitySchemaReader.cs|GetByName"] = (1, "follow-up"),
+		["clio/Common/ISysSettingsManager.cs|UpdateSysSetting"] = (1, "follow-up"),
+		["clio/Common/ObjectRights/RightManagementServiceClient.cs|SendSave"] = (1, "follow-up"),
+		["clio/Common/ObjectRights/RightManagementServiceClient.cs|TryFetchNode"] = (1, "follow-up"),
+		["clio/Common/RecordFileUploader.cs|ReadUploadResponse"] = (1, "follow-up"),
+		["clio/Common/SysImageUploader.cs|TryReadUploadError"] = (1, "follow-up"),
+		["clio/Package/BasePackageOperation.cs|ThrowsErrorIfUnsuccessfulResponseReceived"] = (1, "follow-up"),
+		["clio/Package/FileDesignModePackages.cs|TryGetIsFileDesignMode"] = (1, "follow-up"),
+		["clio/Package/FileDesignModePackages.cs|LoadPackagesToStorage"] = (4, "follow-up"),
+		["clio/Package/FileDesignModePackages.cs|SetFileDesignMode"] = (2, "follow-up"),
+		["clio/Package/PackageDependencyManager.cs|LoadPackageProperties"] = (1, "follow-up"),
+		["clio/Package/PackageDependencyManager.cs|BuildSaveErrorMessage"] = (1, "follow-up"),
+		["clio/Package/RemotePackageCreator.cs|SendCreateRequest"] = (1, "follow-up"),
+		["clio/Package/RemotePackageCreator.cs|ReadBack"] = (1, "follow-up"),
+	};
+
 	[Test]
 	[Category("Unit")]
-	[Description("A grep over clio's sources finds exactly the known call sites of the site-text extractors: a new one "
+	[Description("A scan of clio's code finds exactly the known call sites of the site-text extractors: a new one "
 		+ "fails here until it has a wiring case and an entry in KnownCallSites.")]
 	public void SourceGuard_ShouldKnowEverySiteTextExtractorCallSite() {
 		// Arrange
@@ -437,9 +639,9 @@ public sealed class SiteTextWiringTests {
 
 		// Act
 		foreach (string file in ClioSources()) {
-			string[] lines = File.ReadAllLines(Path.Combine(RepositoryRoot, file));
+			CSharpSource source = CSharpSource.Read(Path.Combine(RepositoryRoot, file));
 			foreach ((string name, Regex call) in Extractors) {
-				int count = lines.Count(line => !IsComment(line) && call.IsMatch(line));
+				int count = call.Matches(source.Code).Count;
 				if (count > 0) {
 					found[$"{name}|{file}"] = count;
 				}
@@ -454,33 +656,30 @@ public sealed class SiteTextWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Every 'call site' extractor use applies RedactSiteText to what it extracted within a few lines, and "
-		+ "every 'discarded' use really discards the text.")]
-	public void SourceGuard_ShouldFindRedactSiteTextNextToEveryCallSiteExtraction() {
+	[Description("At every 'call site' extractor use, the variable the call writes the site's text to is read only "
+		+ "inside a RedactSiteText (or fenced site rendering) argument, and at least once; every 'discarded' use writes "
+		+ "to a discard.")]
+	public void SourceGuard_ShouldSeeTheExtractedTextFlowOnlyIntoRedactSiteText_AtEveryCallSite() {
 		// Arrange
 		List<string> unwired = [];
 
 		// Act
-		foreach ((string key, (int _, string wiring)) in KnownCallSites.Where(pair => pair.Value.Wiring is "call site" or "discarded")) {
+		foreach ((string key, (int _, string wiring)) in KnownCallSites
+				.Where(pair => pair.Value.Wiring is "call site" or "discarded")) {
 			string[] parts = key.Split('|');
 			Regex call = Extractors.Single(extractor => extractor.Name == parts[0]).Call;
-			string[] lines = File.ReadAllLines(Path.Combine(RepositoryRoot, parts[1]));
-			for (int index = 0; index < lines.Length; index++) {
-				if (IsComment(lines[index]) || !call.IsMatch(lines[index])) {
-					continue;
-				}
-				string window = string.Join('\n', lines.Skip(index).Take(30));
-				bool ok = wiring == "discarded"
-					? window.Contains("out string _)", StringComparison.Ordinal)
-					: window.Contains("SensitiveErrorTextRedactor.RedactSiteText(", StringComparison.Ordinal);
-				if (!ok) {
-					unwired.Add($"{parts[1]}:{index + 1} ({wiring})");
+			CSharpSource source = CSharpSource.Read(Path.Combine(RepositoryRoot, parts[1]));
+			foreach (Match match in call.Matches(source.Code)) {
+				string problem = CheckCallSite(source, match, wiring);
+				if (problem is not null) {
+					unwired.Add($"{parts[1]}:{source.LineOf(match.Index)} ({wiring}): {problem}");
 				}
 			}
 		}
 
 		// Assert
-		unwired.Should().BeEmpty(because: "the server text CreatioResponseError.TryDetect extracts is the site's own");
+		unwired.Should().BeEmpty(because: "the server text CreatioResponseError.TryDetect extracts is the site's own, "
+			+ "so the variable it lands in may reach the caller only through RedactSiteText");
 	}
 
 	[Test]
@@ -492,9 +691,9 @@ public sealed class SiteTextWiringTests {
 
 		// Act
 		foreach ((string file, string member, string call) in CentralExtractors) {
-			string source = File.ReadAllText(Path.Combine(RepositoryRoot, file));
-			int start = source.IndexOf(member, StringComparison.Ordinal);
-			string body = start < 0 ? string.Empty : MemberBody(source, start);
+			CSharpSource source = CSharpSource.Read(Path.Combine(RepositoryRoot, file));
+			(string Name, int Start, int End)? span = source.MemberDeclaredBy(member);
+			string body = span is null ? string.Empty : source.Code[span.Value.Start..(span.Value.End + 1)];
 			if (!body.Contains(call, StringComparison.Ordinal)) {
 				unwired.Add($"{file}: {member} lacks {call}");
 			}
@@ -506,22 +705,23 @@ public sealed class SiteTextWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A member that reads only site text never falls back to the general entry points (Redact, the plain "
-		+ "fence): only RedactSiteText takes the sign-in names, server instances and stack traces a site writes.")]
+	[Description("A member that reads only site text never falls back to a general entry point (Redact, the plain "
+		+ "fence, the console renderings): only RedactSiteText takes the sign-in names, server instances and stack "
+		+ "traces a site writes.")]
 	public void SourceGuard_ShouldFindNoGeneralRedactionInsideASiteOnlyMember() {
 		// Arrange
-		string[] general = ["SensitiveErrorTextRedactor.Redact(", "UntrustedText.Fenced(", "RedactUntrustedOrNull("];
 		List<string> regressed = [];
 
 		// Act
 		foreach ((string file, string member) in SiteOnlyMembers) {
-			string source = File.ReadAllText(Path.Combine(RepositoryRoot, file));
-			int start = source.IndexOf(member, StringComparison.Ordinal);
-			string body = start < 0 ? string.Empty : MemberBody(source, start);
-			if (start < 0) {
+			CSharpSource source = CSharpSource.Read(Path.Combine(RepositoryRoot, file));
+			(string Name, int Start, int End)? span = source.MemberDeclaredBy(member);
+			if (span is null) {
 				regressed.Add($"{file}: {member} not found");
+				continue;
 			}
-			regressed.AddRange(general.Where(call => body.Contains(call, StringComparison.Ordinal))
+			string body = source.Code[span.Value.Start..(span.Value.End + 1)];
+			regressed.AddRange(GeneralRedactionCalls.Where(call => body.Contains(call, StringComparison.Ordinal))
 				.Select(call => $"{file}: {member} calls {call}"));
 		}
 
@@ -529,35 +729,174 @@ public sealed class SiteTextWiringTests {
 		regressed.Should().BeEmpty(because: "the site's text takes the site-text redaction, once, where it is read");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A scan of clio's code finds exactly the known DIRECT reads of a site's error text - errorInfo, "
+		+ "responseStatus, ExceptionMessage, errorMessage and innererror reads, ServerSaid and "
+		+ "ServerReportedFailureText.Describe - each listed as wired, as not text, or as known-unwired follow-up: a new read "
+		+ "fails here until it is wired through RedactSiteText or listed.")]
+	public void SourceGuard_ShouldKnowEveryDirectReadOfASitesErrorText() {
+		// Arrange
+		Dictionary<string, int> found = FindDirectSiteErrorReads();
+
+		// Act
+		string[] missing = found.Where(pair => !KnownSiteErrorReads.TryGetValue(pair.Key, out (int Count, string _) known)
+				|| known.Count != pair.Value)
+			.Select(pair => $"[\"{pair.Key}\"] = ({pair.Value}, \"...\"),").ToArray();
+		string[] stale = KnownSiteErrorReads.Keys.Where(key => !found.ContainsKey(key)).ToArray();
+
+		// Assert
+		missing.Should().BeEmpty(because: "a direct read of a site's error text must be wired through RedactSiteText "
+			+ "or listed in KnownSiteErrorReads with the change that wires it; found:\n" + string.Join('\n', missing));
+		stale.Should().BeEmpty(because: "an entry whose reads are gone must leave the list, so it stays exact");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every entry of the direct-read list names a known wiring - an extractor this fixture checks, "
+		+ "follow-up, or a reason it holds no text - and a read in one of the write-tool files A2 wired is never "
+		+ "known-unwired: there is no 'A2' wiring any more.")]
+	public void SourceGuard_ShouldClassifyEveryDirectReadAsWiredOrKnownUnwired() {
+		// Arrange
+		HashSet<string> extractors = Extractors.Select(extractor => extractor.Name)
+			.Concat(CentralExtractors.Select(central => $"{Path.GetFileNameWithoutExtension(central.File)}.{MemberName(central.Member)}"))
+			.ToHashSet(StringComparer.Ordinal);
+		string[] writePathFiles = [
+			"PageDesignerHierarchyClient", "PageUpdateOptions", "PageCreateOptions", "SchemaTemplateCatalog",
+			"RemoteEntitySchemaDesignerClient", "SelectQueryHelper", "CompileConfigurationCommand", "PackageBuildResult",
+			"PackageBuilder", "InstallLogAnalyzer", "BasePackageInstaller", "CreateBusinessProcessCommand",
+			"ModifyBusinessProcessCommand", "ProcessDesignServerFault", "CompileBusinessProcessCommand"
+		];
+
+		// Act
+		List<string> wrong = [];
+		foreach ((string key, (int _, string wiring)) in KnownSiteErrorReads) {
+			string file = Path.GetFileNameWithoutExtension(key.Split('|')[0]);
+			bool isWritePathFile = writePathFiles.Contains(file, StringComparer.Ordinal);
+			bool ok = wiring switch {
+				"follow-up" => !isWritePathFile,
+				_ when wiring.StartsWith("not text: ", StringComparison.Ordinal) => wiring.Length > "not text: ".Length,
+				_ => wiring.StartsWith("wired: ", StringComparison.Ordinal) && extractors.Contains(wiring["wired: ".Length..])
+			};
+			if (!ok) {
+				wrong.Add($"{key}: {wiring}");
+			}
+		}
+
+		// Assert
+		wrong.Should().BeEmpty(because: "each read is either wired through a checked extractor or known-unwired with "
+			+ "the change that wires it");
+	}
+
+	[TestCase("\n", TestName = "SourceScan_LfLineEndings")]
+	[TestCase("\r\n", TestName = "SourceScan_CrlfLineEndings")]
+	[Category("Unit")]
+	[Description("The guards' source reader ends an expression-bodied member at its semicolon and a block member at its "
+		+ "brace on any line ending, attributes a read to the member it is written in, and never sees a call in a "
+		+ "comment or a string.")]
+	public void SourceScan_ShouldReadMembersWhole_OnAnyLineEnding(string lineEnding) {
+		// Arrange
+		string text = string.Join(lineEnding,
+			"namespace X;",
+			"internal static class C {",
+			"	internal static string A(string x) =>",
+			"		Wrap(x);",
+			"	// SensitiveErrorTextRedactor.RedactSiteText( in a comment",
+			"	internal static string B() => \"SensitiveErrorTextRedactor.RedactSiteText( in a string { \";",
+			"	private static (int A, string B) D(string s) { return (1, $\"{s.Length}\"); }",
+			"	private static readonly string[] E = [\"errorInfo\"];",
+			"}",
+			"");
+
+		// Act
+		CSharpSource source = CSharpSource.Parse(text);
+		(string Name, int Start, int End)? a = source.MemberDeclaredBy("internal static string A(");
+
+		// Assert
+		a.Should().NotBeNull();
+		source.Code[a.Value.Start..(a.Value.End + 1)].Should().Contain("Wrap(x);").And.NotContain("B()",
+			because: "an expression-bodied member ends at its own semicolon, not at the end of the file");
+		source.MemberAt(source.Code.IndexOf("return", StringComparison.Ordinal)).Should().Be("D",
+			because: "a tuple return type is not the member's name");
+		source.MemberAt(source.CodeWithLiterals.IndexOf("errorInfo", StringComparison.Ordinal)).Should().Be("E");
+		source.Code.Should().NotContain("RedactSiteText(", because: "a comment and a string are masked");
+	}
+
+	private static Dictionary<string, int> FindDirectSiteErrorReads() {
+		Dictionary<string, int> found = new(StringComparer.Ordinal);
+		foreach (string file in ClioSources()) {
+			CSharpSource source = CSharpSource.Read(Path.Combine(RepositoryRoot, file));
+			IEnumerable<int> reads = SiteErrorNameLiteral.Matches(source.CodeWithLiterals)
+				.Where(match => !PropertyNameDeclaration.IsMatch(LineAt(source.Code, match.Index)))
+				.Select(match => match.Index)
+				.Concat(SiteErrorMemberRead.Matches(source.Code).Select(match => match.Index))
+				.Concat(SiteTextHelperCall.Matches(source.Code).Select(match => match.Index));
+			foreach (int index in reads) {
+				string key = $"{file}|{source.MemberAt(index)}";
+				found[key] = found.GetValueOrDefault(key) + 1;
+			}
+		}
+		return found;
+	}
+
+	// Null when the call site is wired as its entry says, or what is wrong with it.
+	private static string CheckCallSite(CSharpSource source, Match match, string wiring) {
+		int open = match.Index + match.Length - 1;
+		int close = ClosingParenthesis(source.Code, open);
+		string arguments = source.Code[(open + 1)..close];
+		string lastArgument = arguments[(arguments.LastIndexOf(',') + 1)..];
+		Match output = OutArgument.Match(lastArgument);
+		if (!output.Success) {
+			return "the call writes its text to no out variable the guard can follow";
+		}
+		string name = output.Groups["name"].Value;
+		if (wiring == "discarded") {
+			return name == "_" ? null : $"the text lands in '{name}', not in a discard";
+		}
+		if (name == "_") {
+			return "the text is discarded, so the entry should say 'discarded'";
+		}
+		(string _, int _, int end) = source.MemberSpanAt(match.Index);
+		List<(int Start, int End)> siteArguments = SiteEntryCall.Matches(source.Code[..(end + 1)])
+			.Where(entry => entry.Index > close)
+			.Select(entry => (entry.Index + entry.Length, ClosingParenthesis(source.Code, entry.Index + entry.Length - 1)))
+			.ToList();
+		Regex reference = new($@"(?<!\bout\s+(?:(?:string\??|var)\s+)?)(?<![\w.]){Regex.Escape(name)}\b");
+		List<int> uses = reference.Matches(source.Code[..(end + 1)]).Select(use => use.Index).Where(at => at > close).ToList();
+		if (uses.Count == 0) {
+			return $"'{name}' is never read after the call";
+		}
+		int[] outside = uses.Where(at => !siteArguments.Any(span => span.Start <= at && at < span.End)).ToArray();
+		return outside.Length == 0
+			? null
+			: $"'{name}' is read outside RedactSiteText at line(s) {string.Join(", ", outside.Select(source.LineOf))}";
+	}
+
+	private static int ClosingParenthesis(string code, int open) {
+		int depth = 0;
+		for (int index = open; index < code.Length; index++) {
+			depth += code[index] switch { '(' => 1, ')' => -1, _ => 0 };
+			if (depth == 0) {
+				return index;
+			}
+		}
+		return code.Length - 1;
+	}
+
+	private static string LineAt(string text, int index) {
+		int start = text.LastIndexOf('\n', Math.Max(0, index - 1)) + 1;
+		int end = text.IndexOf('\n', index);
+		return text[start..(end < 0 ? text.Length : end)];
+	}
+
+	private static string MemberName(string signature) =>
+		Regex.Match(signature, @"([A-Za-z_]\w*)\s*(?:<[^(]*>)?\s*\(").Groups[1].Value;
+
 	private static IEnumerable<string> ClioSources() =>
 		Directory.EnumerateFiles(Path.Combine(RepositoryRoot, "clio"), "*.cs", SearchOption.AllDirectories)
 			.Select(path => Path.GetRelativePath(RepositoryRoot, path).Replace('\\', '/'))
 			.Where(path => !path.Contains("/obj/", StringComparison.Ordinal) && !path.Contains("/bin/", StringComparison.Ordinal))
 			.OrderBy(path => path, StringComparer.Ordinal);
-
-	private static bool IsComment(string line) => line.TrimStart().StartsWith("//", StringComparison.Ordinal);
-
-	// The member's text from its signature to the end of its body (or of its expression body), by brace counting.
-	private static string MemberBody(string source, int start) {
-		int open = source.IndexOf('{', start);
-		int arrow = source.IndexOf("=>", start, StringComparison.Ordinal);
-		if (arrow >= 0 && (open < 0 || arrow < open)) {
-			// A checkout with Windows line ends ends the statement with ";\r\n".
-			int end = new[] {
-					source.IndexOf(";\n", arrow, StringComparison.Ordinal),
-					source.IndexOf(";\r\n", arrow, StringComparison.Ordinal)
-				}.Where(index => index >= 0).DefaultIfEmpty(source.Length).Min();
-			return source[start..end];
-		}
-		int depth = 0;
-		for (int index = open; index < source.Length; index++) {
-			depth += source[index] switch { '{' => 1, '}' => -1, _ => 0 };
-			if (depth == 0) {
-				return source[start..(index + 1)];
-			}
-		}
-		return source[start..];
-	}
 
 	#endregion
 }
@@ -609,5 +948,403 @@ public sealed class SiteTextBatchWiringTests : BaseCommandTests<DataServiceBatch
 			because: "the item error is the site's text, and its reason stays");
 		JsonSerializer.Serialize(result).Should().NotContain(SiteTextWiringTests.Marker,
 			because: "neither the item error nor its diagnostic may carry the login");
+	}
+}
+
+/// <summary>
+/// A small reader of clio's C# sources for the site-text source guards: line endings normalized, comments and the
+/// contents of string and char literals masked, and the member that holds a position found by brace structure.
+/// </summary>
+/// <remarks>
+/// Not a compiler: it knows comments, preprocessor lines, char literals, regular, verbatim and raw strings with
+/// their interpolation holes, and braces. That is what the guards need - a call or a read is found only in code,
+/// never in a comment or a string, a member body is read whole on any line ending, and a read is attributed to the
+/// member it is written in.
+/// </remarks>
+internal sealed class CSharpSource {
+
+	private static readonly Regex TypeKeyword = new(@"\b(?:class|struct|interface|record|enum|namespace|extension)\b");
+	private static readonly Regex TrailingIdentifier = new(@"([A-Za-z_][A-Za-z0-9_]*)\s*$");
+
+	private readonly List<(string Name, int Start, int End)> members = [];
+
+	// Where each member's body brace opens, by member index: its header is the text before it.
+	private readonly List<int> bodyOpens = [];
+
+	private CSharpSource(string text, string code, string codeWithLiterals) {
+		Text = text;
+		Code = code;
+		CodeWithLiterals = codeWithLiterals;
+		FindMembers();
+	}
+
+	/// <summary>The file's text with every line ending written as "\n".</summary>
+	public string Text { get; }
+
+	/// <summary><see cref="Text"/> with comments, preprocessor lines and literal contents replaced by spaces; the
+	/// delimiters and the code inside interpolation holes stay.</summary>
+	public string Code { get; }
+
+	/// <summary><see cref="Text"/> with comments and preprocessor lines replaced by spaces; literals stay.</summary>
+	public string CodeWithLiterals { get; }
+
+	public static CSharpSource Read(string path) => Parse(File.ReadAllText(path));
+
+	public static CSharpSource Parse(string raw) {
+		string text = raw.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+		char[] code = text.ToCharArray();
+		char[] literals = text.ToCharArray();
+		int index = 0;
+		ScanCode(text, code, literals, ref index, inHole: false);
+		return new CSharpSource(text, new string(code), new string(literals));
+	}
+
+	/// <summary>The 1-based line of <paramref name="index"/>.</summary>
+	public int LineOf(int index) => Text.AsSpan(0, index).Count('\n') + 1;
+
+	/// <summary>The member that holds <paramref name="index"/>, or "(type level)".</summary>
+	public string MemberAt(int index) => MemberSpanAt(index).Name;
+
+	/// <summary>The member that holds <paramref name="index"/>: its name, and its text from the declaration to the
+	/// closing brace or semicolon.</summary>
+	public (string Name, int Start, int End) MemberSpanAt(int index) {
+		foreach ((string name, int start, int end) in members) {
+			if (start <= index && index <= end) {
+				return (name, start, end);
+			}
+		}
+		return ("(type level)", index, index);
+	}
+
+	/// <summary>The span of the first member whose declaration contains <paramref name="signature"/>.</summary>
+	public (string Name, int Start, int End)? MemberDeclaredBy(string signature) {
+		int at = Code.IndexOf(signature, StringComparison.Ordinal);
+		return at < 0 ? null : MemberSpanAt(at);
+	}
+
+	private static char Peek(string text, int index) => index < text.Length ? text[index] : '\0';
+
+	private static void Blank(char[] view, int index) {
+		if (view[index] != '\n') {
+			view[index] = ' ';
+		}
+	}
+
+	// Code until the end, or - inside an interpolation hole - until the brace that closes the hole.
+	private static void ScanCode(string text, char[] code, char[] literals, ref int index, bool inHole) {
+		int depth = 0;
+		bool lineStart = true;
+		while (index < text.Length) {
+			char character = text[index];
+			if (character == '\n') {
+				lineStart = true;
+				index++;
+				continue;
+			}
+			if (lineStart && character == '#' && !inHole) {
+				for (; index < text.Length && text[index] != '\n'; index++) {
+					Blank(code, index);
+					Blank(literals, index);
+				}
+				continue;
+			}
+			if (!char.IsWhiteSpace(character)) {
+				lineStart = false;
+			}
+			if (character == '/' && Peek(text, index + 1) == '/') {
+				for (; index < text.Length && text[index] != '\n'; index++) {
+					Blank(code, index);
+					Blank(literals, index);
+				}
+				continue;
+			}
+			if (character == '/' && Peek(text, index + 1) == '*') {
+				int end = text.IndexOf("*/", index + 2, StringComparison.Ordinal);
+				end = end < 0 ? text.Length : end + 2;
+				for (; index < end; index++) {
+					Blank(code, index);
+					Blank(literals, index);
+				}
+				continue;
+			}
+			if (character == '\'') {
+				ScanChar(text, code, ref index);
+				continue;
+			}
+			if (TryScanString(text, code, literals, ref index)) {
+				continue;
+			}
+			if (inHole && character == '{') {
+				depth++;
+			}
+			else if (inHole && character == '}') {
+				if (depth == 0) {
+					return;
+				}
+				depth--;
+			}
+			index++;
+		}
+	}
+
+	private static void ScanChar(string text, char[] code, ref int index) {
+		int end = index + 1;
+		if (Peek(text, end) == '\\') {
+			end += 2;
+		}
+		else {
+			end++;
+		}
+		while (end < text.Length && text[end] != '\'' && text[end] != '\n') {
+			end++;
+		}
+		for (int content = index + 1; content < end && content < text.Length; content++) {
+			Blank(code, content);
+		}
+		index = Math.Min(end + 1, text.Length);
+	}
+
+	private static bool TryScanString(string text, char[] code, char[] literals, ref int index) {
+		int cursor = index;
+		int dollars = 0;
+		bool verbatim = false;
+		while (Peek(text, cursor) == '$') {
+			dollars++;
+			cursor++;
+		}
+		if (Peek(text, cursor) == '@') {
+			verbatim = true;
+			cursor++;
+			while (Peek(text, cursor) == '$') {
+				dollars++;
+				cursor++;
+			}
+		}
+		if (Peek(text, cursor) != '"') {
+			return false;
+		}
+		int quotes = 0;
+		while (Peek(text, cursor + quotes) == '"') {
+			quotes++;
+		}
+		bool raw = !verbatim && quotes >= 3;
+		int open = raw ? quotes : 1;
+		index = cursor + open;
+		if (raw) {
+			ScanRaw(text, code, literals, ref index, open, dollars);
+		}
+		else {
+			ScanQuoted(text, code, literals, ref index, verbatim, dollars > 0);
+		}
+		return true;
+	}
+
+	private static void ScanQuoted(string text, char[] code, char[] literals, ref int index, bool verbatim, bool interpolated) {
+		while (index < text.Length) {
+			char character = text[index];
+			if (!verbatim && character == '\\') {
+				Blank(code, index);
+				if (index + 1 < text.Length) {
+					Blank(code, index + 1);
+				}
+				index += 2;
+				continue;
+			}
+			if (character == '"') {
+				if (verbatim && Peek(text, index + 1) == '"') {
+					Blank(code, index);
+					Blank(code, index + 1);
+					index += 2;
+					continue;
+				}
+				index++;
+				return;
+			}
+			if (!verbatim && character == '\n') {
+				return;
+			}
+			if (interpolated && (character == '{' || character == '}') && Peek(text, index + 1) == character) {
+				Blank(code, index);
+				Blank(code, index + 1);
+				index += 2;
+				continue;
+			}
+			if (interpolated && character == '{') {
+				index++;
+				ScanCode(text, code, literals, ref index, inHole: true);
+				index++;
+				continue;
+			}
+			Blank(code, index);
+			index++;
+		}
+	}
+
+	private static void ScanRaw(string text, char[] code, char[] literals, ref int index, int quotes, int dollars) {
+		string closing = new('"', quotes);
+		while (index < text.Length) {
+			if (string.CompareOrdinal(text, index, closing, 0, quotes) == 0) {
+				index += quotes;
+				while (Peek(text, index) == '"') {
+					index++;
+				}
+				return;
+			}
+			if (dollars > 0 && text[index] == '{') {
+				int run = 0;
+				while (Peek(text, index + run) == '{') {
+					run++;
+				}
+				if (run >= dollars) {
+					for (int content = 0; content < run - dollars; content++) {
+						Blank(code, index + content);
+					}
+					index += run;
+					ScanCode(text, code, literals, ref index, inHole: true);
+					for (int brace = 0; brace < dollars && Peek(text, index) == '}'; brace++) {
+						index++;
+					}
+					continue;
+				}
+			}
+			Blank(code, index);
+			index++;
+		}
+	}
+
+	private enum ScopeKind { Type, Member, Block }
+
+	// Scopes by brace structure over the masked code: a brace whose parent is a type opens a type (when its header
+	// names one) or a member; any other brace is a block of the member around it. A member whose header assigns or
+	// has an arrow ("X => new() { … };", "X = new() { … };") ends at the semicolon after its braces.
+	private void FindMembers() {
+		Stack<(ScopeKind Kind, int Member)> scopes = new();
+		int statementStart = 0;
+		int continuing = -1;
+		for (int index = 0; index < Code.Length; index++) {
+			char character = Code[index];
+			bool typeLevel = scopes.Count == 0 || scopes.Peek().Kind == ScopeKind.Type;
+			if (character == '{') {
+				if (!typeLevel) {
+					scopes.Push((ScopeKind.Block, scopes.Peek().Member));
+				}
+				else if (continuing >= 0) {
+					scopes.Push((ScopeKind.Block, continuing));
+				}
+				else if (IsTypeHeader(Code[statementStart..index])) {
+					scopes.Push((ScopeKind.Type, -1));
+					statementStart = index + 1;
+				}
+				else {
+					members.Add((MemberName(Code[statementStart..index]), statementStart, int.MaxValue));
+					bodyOpens.Add(index);
+					scopes.Push((ScopeKind.Member, members.Count - 1));
+				}
+			}
+			else if (character == '}' && scopes.Count > 0) {
+				(ScopeKind kind, int member) = scopes.Pop();
+				if (kind == ScopeKind.Type) {
+					statementStart = index + 1;
+					continuing = -1;
+				}
+				else if (kind == ScopeKind.Member) {
+					(string name, int start, int _) = members[member];
+					if (AssignsOrArrows(Code[start..bodyOpens[member]])) {
+						continuing = member;
+					}
+					else {
+						members[member] = (name, start, index);
+						statementStart = index + 1;
+					}
+				}
+			}
+			else if (character == ';' && typeLevel) {
+				if (continuing >= 0) {
+					members[continuing] = (members[continuing].Name, members[continuing].Start, index);
+					continuing = -1;
+				}
+				else {
+					string header = Code[statementStart..index];
+					string name = MemberName(header);
+					if (IsTypeHeader(header) || header.TrimStart().StartsWith("using ", StringComparison.Ordinal)) {
+						// a file-scoped namespace, a using directive or a positional record
+					}
+					else if (name.Length > 0) {
+						members.Add((name, statementStart, index));
+						bodyOpens.Add(index);
+					}
+					else if (members.Count > 0 && members[^1].End < index) {
+						members[^1] = (members[^1].Name, members[^1].Start, index);
+					}
+				}
+				statementStart = index + 1;
+			}
+		}
+	}
+
+	private static string WithoutAttributes(string header) {
+		string rest = header.TrimStart();
+		while (rest.StartsWith('[')) {
+			int depth = 0;
+			int end = 0;
+			for (; end < rest.Length; end++) {
+				depth += rest[end] switch { '[' => 1, ']' => -1, _ => 0 };
+				if (depth == 0) {
+					break;
+				}
+			}
+			rest = rest[Math.Min(end + 1, rest.Length)..].TrimStart();
+		}
+		return rest;
+	}
+
+	private static bool IsTypeHeader(string header) {
+		string declaration = WithoutAttributes(header);
+		int paren = declaration.IndexOf('(');
+		return TypeKeyword.IsMatch(paren < 0 ? declaration : declaration[..paren]);
+	}
+
+	// The first parameter-list "(", "=>" or lone "=" outside brackets, or -1. A parameter list's "(" follows the
+	// name (or its generic arguments) directly; a tuple return type's "(" follows a space and is skipped.
+	private static int FirstTopLevelCut(string declaration, bool parenthesisToo) {
+		int depth = 0;
+		for (int index = 0; index < declaration.Length; index++) {
+			char character = declaration[index];
+			if (character == '(' && depth == 0 && parenthesisToo && index > 0
+				&& (char.IsLetterOrDigit(declaration[index - 1]) || declaration[index - 1] is '_' or '>')) {
+				return index;
+			}
+			depth += character switch { '(' or '[' => 1, ')' or ']' => -1, _ => 0 };
+			if (depth != 0 || character != '=') {
+				continue;
+			}
+			char before = index > 0 ? declaration[index - 1] : ' ';
+			char after = Peek(declaration, index + 1);
+			if (after == '>' || (after != '=' && before is not ('=' or '!' or '<' or '>'))) {
+				return index;
+			}
+			index++;
+		}
+		return -1;
+	}
+
+	private static bool AssignsOrArrows(string header) => FirstTopLevelCut(WithoutAttributes(header), parenthesisToo: false) >= 0;
+
+	private static string MemberName(string header) {
+		string declaration = WithoutAttributes(header);
+		int cut = FirstTopLevelCut(declaration, parenthesisToo: true);
+		string before = (cut < 0 ? declaration : declaration[..cut]).TrimEnd();
+		if (before.EndsWith('>')) {
+			int depth = 0;
+			for (int index = before.Length - 1; index >= 0; index--) {
+				depth += before[index] switch { '>' => 1, '<' => -1, _ => 0 };
+				if (depth == 0) {
+					before = before[..index].TrimEnd();
+					break;
+				}
+			}
+		}
+		Match name = TrailingIdentifier.Match(before);
+		return name.Success ? name.Groups[1].Value : string.Empty;
 	}
 }

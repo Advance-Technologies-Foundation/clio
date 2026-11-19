@@ -20,8 +20,10 @@ public sealed class SiteTextRedactionFixtureSafetyTests {
 	// The placeholders the host lane's cases use that a shape check would otherwise flag, each one invented or a
 	// published protocol example. A new value may join this list only when it is as obviously not real.
 	private static readonly string[] AllowedPlaceholders = [
-		// A JWT whose payload is {"sub":"x"}: the host lane's stub.
+		// A JWT whose payload is {"sub":"x"}: the host lane's stub, and its signature segment alone, which the row's
+		// mustGo names as one of the three cores.
 		"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+		"dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
 		// Descending hex and a dash-less GUID stub.
 		"3f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a",
 		"3f2a9c1b7d4e4a5b9c8d0e1f2a3b4c5d",
@@ -47,11 +49,23 @@ public sealed class SiteTextRedactionFixtureSafetyTests {
 		@"(?:^|\.)(?:example(?:\.com|\.org|\.net)?|invalid|test|localhost|local|internal)$",
 		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-	// Top-level domains a real host is most often under; a dotted lower-case name ending in one is a real place.
+	// Top-level domains a real host is most often under; a dotted name ending in one, in any letter case, is a real
+	// place ("Tenant.Creatio.COM" is as real as "tenant.creatio.com").
 	private static readonly Regex RealSuffixHost = new(
-		@"\b(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+(?:com|net|org|io|ai|dev|app|cloud|co|info|biz|me|tech|online|site|"
-		+ @"xyz|uk|de|fr|ua|ru|eu|us|nl|pl|it|es|ca|au|ch|se|no|jp|cn|br|in)\b",
+		@"\b(?:[a-z0-9](?:[a-z0-9\-]*[a-z0-9])?\.)+(?:com|net|org|gov|edu|io|ai|dev|app|cloud|co|info|biz|me|tech|online|"
+		+ @"site|xyz|uk|de|fr|ge|ua|ru|eu|us|nl|pl|it|es|ca|au|ch|se|no|jp|cn|br|in)\b",
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+	// A dotted quad, not inside a longer dotted run ("1.2.3.4.5") and not after a version word ("version 8.1.0.5",
+	// "Version=8.1.0.5"), whose octets are all 255 or less: an IPv4 address. Only the private, loopback, link-local
+	// and documentation ranges (RFC 1918, RFC 3927, RFC 5737) may appear; any other is a real, public address.
+	private static readonly Regex DottedQuad = new(
+		@"(?<![\d.])(?<a>\d{1,3})\.(?<b>\d{1,3})\.(?<c>\d{1,3})\.(?<d>\d{1,3})(?!\d|\.\d)",
 		RegexOptions.CultureInvariant);
+
+	private static readonly Regex VersionWordBefore = new(
+		@"\b(?:version|ver|build|release|creatio|clio|cliogate|package|v)[ \t]*[=:]?[ \t]*$",
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
 	private static readonly (string Shape, Regex Pattern)[] SecretShapes = [
 		("a JWT with a real-length signature", new Regex(@"eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]*\.[A-Za-z0-9_\-]{16,}")),
@@ -114,8 +128,8 @@ public sealed class SiteTextRedactionFixtureSafetyTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("No host in the fixture is under a real public suffix, and no e-mail address is outside example.com "
-		+ "or the reserved names, except the listed placeholders.")]
+	[Description("No host in the fixture is under a real public suffix in any letter case, no e-mail address is outside "
+		+ "example.com or the reserved names, and no IPv4 address is public, except the listed placeholders.")]
 	public void Fixture_ShouldHoldNoRealPlace() {
 		// Arrange
 		List<string> texts = FixtureStrings();
@@ -132,6 +146,7 @@ public sealed class SiteTextRedactionFixtureSafetyTests {
 			findings.AddRange(RealSuffixHost.Matches(text).Select(match => match.Value)
 				.Where(host => !AllowedDomain.IsMatch(host))
 				.Select(host => $"a host under a real suffix: {host}"));
+			findings.AddRange(PublicIpv4Addresses(text).Select(address => $"a public IPv4 address: {address}"));
 		}
 
 		// Assert
@@ -155,7 +170,12 @@ public sealed class SiteTextRedactionFixtureSafetyTests {
 	}
 
 	[TestCase("https://tenant.creatio.com/0/odata", TestName = "Scan_FlagsARealUriHost")]
+	[TestCase("Cannot reach Tenant.Creatio.COM", TestName = "Scan_FlagsARealHostInCapitals")]
+	[TestCase("Cannot reach portal.city.gov.ge", TestName = "Scan_FlagsARealGovernmentHost")]
+	[TestCase("Cannot reach crm.university.edu", TestName = "Scan_FlagsARealEducationHost")]
 	[TestCase("jane.doe@contoso.com", TestName = "Scan_FlagsARealEmailDomain")]
+	[TestCase("Failed to connect to 8.8.4.4", TestName = "Scan_FlagsAPublicIpv4Address")]
+	[TestCase("Failed to connect to 203.0.114.7", TestName = "Scan_FlagsAnAddressJustOutsideDocumentation")]
 	[Category("Unit")]
 	[Description("The place scan catches a real host and a real e-mail domain.")]
 	public void PlaceScan_ShouldFlagARealPlace(string text) {
@@ -163,10 +183,50 @@ public sealed class SiteTextRedactionFixtureSafetyTests {
 
 		// Act
 		bool flagged = RealSuffixHost.IsMatch(text)
-			|| Email.Matches(text).Any(match => !AllowedDomain.IsMatch(match.Value[(match.Value.IndexOf('@') + 1)..]));
+			|| Email.Matches(text).Any(match => !AllowedDomain.IsMatch(match.Value[(match.Value.IndexOf('@') + 1)..]))
+			|| PublicIpv4Addresses(text).Any();
 
 		// Assert
 		flagged.Should().BeTrue(because: "a real place must never pass the fixture scan");
+	}
+
+	[TestCase("Failed to connect to 10.0.3.17, 172.20.1.5, 192.168.1.10, 127.0.0.1 or 169.254.10.1",
+		TestName = "Scan_AllowsPrivateAddresses")]
+	[TestCase("Failed to connect to 192.0.2.10, 198.51.100.7 or 203.0.113.250", TestName = "Scan_AllowsDocumentationAddresses")]
+	[TestCase("Requires version 8.1.0.5, Version=8.1.0.5, cliogate 2.0.0.32 and build 1.2.3.4.5 or 8.1.5.2176",
+		TestName = "Scan_AllowsVersionNumbers")]
+	[Category("Unit")]
+	[Description("The IPv4 scan flags only a public address: private, loopback, link-local and documentation "
+		+ "addresses, a version after a version word and a longer dotted run pass.")]
+	public void PlaceScan_ShouldAllowAnInventedAddressOrAVersion(string text) {
+		// Arrange
+
+		// Act
+		string[] addresses = PublicIpv4Addresses(text).ToArray();
+
+		// Assert
+		addresses.Should().BeEmpty(because: "none of these is a real, public address");
+	}
+
+	// The public IPv4 addresses in text: a dotted quad outside the ranges a fixture may use.
+	private static IEnumerable<string> PublicIpv4Addresses(string text) {
+		foreach (Match match in DottedQuad.Matches(text)) {
+			int[] octets = [.. new[] { "a", "b", "c", "d" }.Select(group => int.Parse(match.Groups[group].Value))];
+			int from = Math.Max(0, match.Index - 24);
+			if (octets.Any(octet => octet > 255) || VersionWordBefore.IsMatch(text[from..match.Index])) {
+				continue;
+			}
+			bool allowed = octets[0] is 10 or 127 or 0
+				|| (octets[0] == 172 && octets[1] is >= 16 and <= 31)
+				|| (octets[0] == 192 && octets[1] == 168)
+				|| (octets[0] == 169 && octets[1] == 254)
+				|| (octets[0] == 192 && octets[1] == 0 && octets[2] == 2)
+				|| (octets[0] == 198 && octets[1] == 51 && octets[2] == 100)
+				|| (octets[0] == 203 && octets[1] == 0 && octets[2] == 113);
+			if (!allowed) {
+				yield return match.Value;
+			}
+		}
 	}
 
 	private static List<string> FixtureStrings() {

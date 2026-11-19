@@ -1,5 +1,5 @@
 ---
-description: SensitiveErrorTextRedactor has two entry points - Redact for any text (envelopes, logs, CLI, MCP errors) and RedactSiteText for text a Creatio site wrote; the site-only rules (sign-in and database phrases, server instances, relative paths, key runs, the stack-trace cut) must never move into Redact, every site-text extractor must call RedactSiteText, and both fail closed as one unit on a regex timeout
+description: SensitiveErrorTextRedactor has two entry points - Redact for any text (envelopes, logs, CLI, MCP errors) and RedactSiteText for text a Creatio site wrote; the site-only rules (sign-in and database phrases, server instances, relative paths, key runs, the stack-trace cut) must never move into Redact; the paths wired so far (the write-tool paths included) are named here, the readers not yet wired are listed by file and member in SiteTextWiringTests' known-unwired list (follow-up), a new reader must call RedactSiteText, and both entry points fail closed as one unit on a regex timeout
 applies-to:
   - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/Common/SiteResponse.cs
@@ -58,15 +58,27 @@ needs a host token and a further backslash after it and may not follow another b
 escaped backslash pair are taken whole; and a backslash right before a quote ends a path, so no path match
 takes half of an escape. Every new Redact rule shares the same escape-aware start (`EscapeAwareStartPrefix`).
 
-**Where RedactSiteText is called** - at the point site text is read, never later: `SiteResponse.Carry`
+**Where RedactSiteText is called** - at the point site text is read, never later. Wired so far: `SiteResponse.Carry`
 (message and code, after clamping the input to 8x the 2,000-character cap), the `CreatioResponseError.TryDetect`
 callers (odata-create, `ODataKeyedWrite` for odata-update and odata-delete, field validation, trigger smoke,
 email templates, branding), the non-JSON preview inside `DescribeNonJsonResponse`, `ParseSaveErrorMessage`,
 `DataServiceResponse.ThrowIfUnsuccessful`, and compile-status's diagnostics and message tail. The fenced form
 `RedactUntrustedSiteTextOrNull` (`UntrustedText.FencedSiteText`) serves batch item errors,
 `DataWriteDiagnostic.message` and the refused delete's inner message. `SiteTextWiringTests` drives each path
-with a marker only `RedactSiteText` removes, and its source guard greps clio for every call of those
-extractors: a new call site fails the build until it has a wiring case and an entry in `KnownCallSites`.
+with a marker only `RedactSiteText` removes. Its source guard reads clio's code with comments and strings masked
+and on any line ending: every call of those extractors must be in `KnownCallSites`, and at a "call site" entry the
+variable the extractor writes to may be read only inside a `RedactSiteText` argument.
+
+**Not every reader is wired yet** - the same guard finds every DIRECT read of a site's error text (the
+`errorInfo`, `responseStatus`, `ExceptionMessage`, `errorMessage` and `innererror` names, the `.ErrorInfo`,
+`.ResponseStatus` and `.ExceptionMessage` members, `ProcessDesignServerFault.ServerSaid` and
+`ServerReportedFailureText.Describe`) and holds each one, by file and member, in `KnownSiteErrorReads`: wired
+through a checked extractor, "not text" when the name only classifies a failure, or KNOWN-UNWIRED "follow-up"
+for the remaining envelope readers, whose text passes `Redact` only until then (odata-read's `TryClassify` debug
+detail is the follow-up entry in `KnownCallSites`). The write-tool files are wired and may hold no follow-up entry.
+A new reader, or one more read in a listed member, fails the build. The scan sees those shapes only; a site's text
+read through a DTO member of another name (`.ErrorMessage` of the BuildProcess and package-build answers) is in
+the write-tool files, each with a behaviour case.
 
 **The write paths** - the same rule, at the point each write tool reads the site's text: the designer and
 template refusals (`PageSchemaMetadataHelper.DescribeRefusal`, used by `PageDesignerHierarchyClient` and
@@ -82,7 +94,7 @@ redaction at the read is the only one a stdio caller gets; `SiteTextWritePathWir
 both the result and the log. `DescribeRefusal` reads only `errorInfo`'s code and message: the whole `errorInfo` used
 to be copied, so its `stackTrace` reached update-page's `error`. A compile diagnostic is redacted where it is
 rendered (`PackageBuildDiagnostic.WithSiteTextRedacted`), not in the parser, because compile-status already fences
-the history diagnostics it renders - the guard lists such parser calls as `rendered`. `ReadServerText` redacts
+the history diagnostics it renders. `ReadServerText` redacts
 before its cap; the WCF prefix `IsUnreadableRequest` looks for is prose no rule takes. Out of this rule by decision:
 the raw streamed installation log (`BasePackageInstaller.ListenForLogs`), a separate finding.
 
@@ -95,10 +107,19 @@ dotted run proves it without the seam.
 **What must never go** - the site's reason: a database's own refusal sentence, column, table, constraint and
 index names, CRM role words (`Access denied for role "Sales managers"`, `locked by user "Supervisor"`), the
 words around a scheme (`The bearer token expired`, `WWW-Authenticate: Bearer realm=…`, `NTLM v2`, `basic
-OAuth`), and `file.js:42:13`. `clio.tests/Common/Fixtures/site-text-redaction-cases.json` pins 350 invented
-inputs from the Accelerator host lane (class C rows must stay, class D are the host's own over-redaction
-trades clio does not copy); its rule-9 SQL rows wait for PR B, and its header and safety test forbid any real
-host, login, password, key or token.
+OAuth`, `negotiate TLS1.2`, `basic 8.1.0.5`), a version after a version word (`Version=10.0.0.0`), a count line
+(`Failed:22`, `Total:443`), and `file.js:42:13`. `clio.tests/Common/Fixtures/site-text-redaction-cases.json` pins
+350 invented inputs from the Accelerator host lane: A 46 and B 167 rows name the secret core that must go, C 112
+rows must stay, and D 25 rows are what the host removes and clio keeps (its documented trades, and the 12 rows
+clio declines by choice); every mustStay is the phrase that carries the reason. Its rule-9 SQL rows wait for PR B,
+and its header and safety test forbid any real host, login, password, key, token or public IPv4 address.
+
+**What a scheme credential is** - the WHOLE run after Basic, NTLM, Negotiate or Bearer that the old
+`\bBearer\s+[^\s,;"']+` rule removed, so nothing it removed survives (a test runs master's Bearer cases through
+every entry point). The run takes a backslash only as a whole JSON escape unit and may be quoted with `"`, `'`,
+`\"`, `\u0022` or `\u0027`; what stays after a scheme word is a CLOSED list of prose words (an open "any lower-case
+word" guard kept `Bearer secrettokenvalue`), an acronym with or without a version, a version, a factor word or a
+CamelCase identifier. Every endpoint placeholder is `[redacted-uri]`, the one master already wrote for host:port.
 
 **What breaks if you ignore it** - a site rule moved into Redact corrupts clio-run envelopes and clio's own
 messages; a new extractor that calls Redact instead leaks the database login, the server name or the stack

@@ -25,10 +25,13 @@ namespace Clio.Common;
 internal static partial class SensitiveErrorTextRedactor {
 	private const int RegexTimeoutMilliseconds = 1_000;
 
+	// ONE placeholder for every endpoint shape - a URI, a dotted or single-label host:port, an IPv6 address and a
+	// private IPv4 address. "[redacted-uri]" is the one master already wrote for host:port (HostPortRegex), and
+	// callers and tests read it; a second placeholder for the same kind of value ("[redacted-host]") would make
+	// every reader handle two spellings of one thing.
 	private const string RedactedUri = "[redacted-uri]";
 	private const string RedactedPath = "[redacted-path]";
 	private const string RedactedValue = "[redacted]";
-	private const string RedactedHost = "[redacted-host]";
 
 	// Where a match of the newer host, scheme and path rules may begin, so that none of them can start INSIDE a
 	// JSON escape of an already-serialized envelope (ClioRunTool.RedactSerializedText) and leave a lone backslash
@@ -70,10 +73,12 @@ internal static partial class SensitiveErrorTextRedactor {
 	private static partial Regex UriRegex();
 
 	// Windows drive-rooted (C:\…) and UNC (\\host\share\…) absolute paths.
-	// A closing bracket ends the path (")", "}" and "]"): a site writes "see (C:\x\y.dll)" and "{/etc/x}", and a
-	// tail that took the bracket left the reader "([redacted-path]" with nothing to close it - the same defect
-	// UriRegex fixed for "(URL: …)". A directory whose own name ends in a bracket loses only that character, and
-	// the path before it is redacted either way.
+	// A closing bracket (")", "}" and "]") ends the path ONLY when no further path segment follows it: a site writes
+	// "see (C:\x\y.dll)" and "{/etc/x}", and a tail that took the bracket left the reader "([redacted-path]" with
+	// nothing to close it - the same defect UriRegex fixed for "(URL: …)". A bracket followed by a separator and a
+	// segment is part of a directory name ("C:\Users\jdoe(old)\secrets\db.config"), and the path runs on through
+	// it: stopping there left "[redacted-path])\secrets\db.config" with the rest of the path in the clear. The
+	// same continuation is in the drive-slash, POSIX and relative path rules.
 	//
 	// ESCAPE-AWARE, because Redact also runs over a serialized envelope (ClioRunTool.RedactSerializedText), where a
 	// site message that quotes its own JSON carries "run \"CanManageSolution\"" as run \\\u0022CanManageSolution\\\u0022
@@ -84,10 +89,11 @@ internal static partial class SensitiveErrorTextRedactor {
 	//     and a further backslash ("\\fs01\share", "\\\\fs01\\share"); an escaped quote is not a host;
 	//   - a drive takes "C:\" or its escaped spelling "C:\\" whole;
 	//   - in the tail an escaped backslash pair is one unit, and a single backslash right before a quote ends the
-	//     path - it escapes that quote - so the match can never take half of an escape and leave the JSON broken.
+	//     path - it escapes that quote - so the match can never take half of an escape and leave the JSON broken;
+	//   - a closing bracket is taken only when a backslash (one, or an escaped pair) and a segment character follow.
 	[GeneratedRegex(
 		@"(?:[A-Za-z]:(?:\\\\|\\(?!""))|(?<!\\)(?:\\\\){1,2}(?=[A-Za-z0-9_$][\w.$\-]*\\))"
-		+ @"(?:\\\\|\\(?![""\\])|[^\s""'<>|)}\]\\])*",
+		+ @"(?:\\\\|\\(?![""\\])|[^\s""'<>|)}\]\\]|[)}\]]+(?=(?:\\\\|\\)[^\s""'<>|)}\]\\]))*",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex WindowsPathRegex();
 
@@ -95,8 +101,10 @@ internal static partial class SensitiveErrorTextRedactor {
 	// configuration both accept and which WindowsPathRegex (backslash only) never matched: the site's "D:/x/y"
 	// shipped whole, and "D:/data/x.mdf" lost only its "/data/…" tail to PosixPathRegex, leaving "D:" behind.
 	// Not after a word character, so "file:///C:/…" (UriRegex's) and a "key:/…" pair are not read as a drive,
-	// and "C://" is left to UriRegex. The tail stops at a backslash so it cannot eat a JSON escape.
-	[GeneratedRegex(EscapeAwareStartPrefix + EscapeAwareStartSuffix + @"[A-Za-z]:/(?!/)[^\s""'<>|)}\]\\]*",
+	// and "C://" is left to UriRegex. The tail stops at a backslash so it cannot eat a JSON escape, and at a closing
+	// bracket unless a "/" and a segment follow it (see WindowsPathRegex).
+	[GeneratedRegex(EscapeAwareStartPrefix + EscapeAwareStartSuffix
+		+ @"[A-Za-z]:/(?!/)(?:[^\s""'<>|)}\]\\]|[)}\]]+(?=/[^\s""'<>|)}\]\\/]))*",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex DriveSlashPathRegex();
 
@@ -104,9 +112,14 @@ internal static partial class SensitiveErrorTextRedactor {
 	// generic URL fragments (e.g. "/rest/CreatioApiGateway/…", "/DataService/…") and prose are left
 	// intact. The root token must be followed by a path separator + at least one segment so a bare
 	// "/app" word boundary in prose is not mistaken for a path.
-	// A closing bracket ends the path, and a backslash right before a quote does too (it escapes that quote), for
-	// the reasons given on WindowsPathRegex.
-	[GeneratedRegex(@"/(?:Users|home|root|var|etc|opt|usr|tmp|private|mnt|srv|Library|Applications|System|app|data|config)(?:/(?:[^\s""'<>:)}\]\\]|\\(?!""))*)+", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	// A closing bracket ends the path unless a "/" and a segment follow it, for the reasons given on
+	// WindowsPathRegex. A backslash is taken in escaped units only: an escaped backslash pair ("\\") is one unit, and
+	// a single backslash right before a quote or another backslash ends the path. Reading "\\" one backslash at a
+	// time took the first half of the pair, so ".../var/www/app\\"" in an envelope became "[redacted-path]\"", an
+	// escaped quote that left the JSON string unterminated.
+	[GeneratedRegex(@"/(?:Users|home|root|var|etc|opt|usr|tmp|private|mnt|srv|Library|Applications|System|app|data|config)"
+		+ @"(?:/(?:[^\s""'<>:)}\]\\]|\\\\|\\(?![""\\])|[)}\]]+(?=/[^\s""'<>:)}\]\\/]))*)+",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex PosixPathRegex();
 
 	// key=value / key: value pairs whose key denotes a secret or a connection-string host/db; the
@@ -158,11 +171,16 @@ internal static partial class SensitiveErrorTextRedactor {
 	// in the clear, because the bare words behind \b cannot match inside a word. The prefixes and suffixes are
 	// ENUMERATED, not "any word before or after": a generic suffix takes "passwordHint" (kept by
 	// Redact_ShouldLeaveGluedJsonKey_Untouched) and "PasswordExpired", which are a form's own field names, not
-	// secrets. "pw" and "credential(s)" are secrets in any spelling, so they join the same set.
+	// secrets. "pw" is a secret in any spelling, so it joins the same set.
 	private const string PassWordKeys =
 		@"(?:(?:user|db|new|old|my|admin|app|smtp|proxy|current)[_-]?)?"
 		+ @"(?:password|passphrase|passcode|passwd|pass|pwd|pw)"
-		+ @"(?:[_-]?(?:confirmation|confirm|repeat|new|old|backup|retry))?|credentials?";
+		+ @"(?:[_-]?(?:confirmation|confirm|repeat|new|old|backup|retry))?";
+
+	// "credential(s)" is a key of its own, OUTSIDE CredentialSecretKeys: the JSON rule's compound wrapper would read
+	// clio's own read-only flag "constant-credentials-masked": true (WebServiceModels) as a credential and replace
+	// the boolean. The pair rule takes it in every spelling; the JSON rule takes only the bare key "credentials".
+	private const string CredentialWordKeys = @"credentials?";
 
 	private const string CredentialSecretKeys =
 		PassWordKeys + @"|secret|(?:access|refresh|id|auth|bearer|api|client|session|[xc]srf)?[_-]?token|"
@@ -209,8 +227,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	private const string SchemeWords = "Bearer|Basic|NTLM|Negotiate|Digest";
 
 	// The value of a credential pair, in the order the alternatives are tried:
-	//   1. a scheme word and an already-redacted credential, kept whole (group "kept");
-	//   2. a scheme word and the next token;
+	//   1. a scheme word and an already-redacted credential, kept whole (group "kept"), in any quote spelling
+	//      SchemeCredentialRegex keeps around it (none, ", ', \", ", ');
+	//   2. a scheme word and the next token, taking a backslash only as a whole escape unit (see 6);
 	//   3. a double- or single-quoted value that honours \" and \' escapes - EXCEPT where that quote is followed by
 	//      a space, ",", ";", "&", a closing bracket or the end, which is how a site writes a value ending in a
 	//      backslash ("Data Source=\"C:\data\"; Password=…"): there the backslash is literal and the quote closes.
@@ -220,24 +239,29 @@ internal static partial class SensitiveErrorTextRedactor {
 	//   5. a value quoted with escaped quotes (\"…\"), which is how a pair reads inside a JSON string written with
 	//      the relaxed encoder; it is taken whole, quotes included, so the string stays closed;
 	//   6. a bare value, which stops at "&" when a new "name=" follows ("client_secret=s3cr3t&api_key=abc" used
-	//      to lose all five key names into one placeholder), "&amp;" included, and never takes the backslash of an
-	//      escaped quote: taking it left that quote unescaped and closed the JSON string early.
+	//      to lose all five key names into one placeholder), "&amp;" included, and takes a backslash only in
+	//      escaped units: an escaped backslash pair ("\\") is one unit, and a single backslash right before a quote
+	//      or another backslash ends the value. Taking the backslash of an escaped quote left that quote unescaped
+	//      and closed the JSON string early; reading "\\" one backslash at a time took the first half of the pair,
+	//      so {"error":"password=abc\\"} became {"error":"password=[redacted]\"} - an unterminated string.
+	private const string PairValueBackslashUnit = @"\\\\|\\(?![""\\])";
+
 	private const string CredentialPairValue =
-		$@"(?<kept>(?:{SchemeWords})[ \t]+(?<sq>[""']?)\[redacted\]\k<sq>)"
-		+ $@"|(?:{SchemeWords})[ \t]+[^\s,;""']+"
+		$@"(?<kept>(?:{SchemeWords})[ \t]+(?<sq>\\u0022|\\u0027|\\""|[""']?)\[redacted\]\k<sq>)"
+		+ $@"|(?:{SchemeWords})[ \t]+(?:[^\s,;""'\\]|{PairValueBackslashUnit})+"
 		+ @"|""(?:[^""\\\r\n]|\\""(?![\s,;&)\]}]|\z)|\\[^""\r\n]|\\(?=""))*"""
 		+ @"|'(?:[^'\\\r\n]|\\'(?![\s,;&)\]}]|\z)|\\[^'\r\n]|\\(?='))*'"
 		+ @"|""[^""\r\n{}\[\]]+(?=[\r\n]|\z)"
 		+ @"|'[^'\r\n{}\[\]]+(?=[\r\n]|\z)"
 		+ @"|\\""(?:[^""\\\r\n]|\\[^""\r\n])*\\"""
-		+ @"|(?:[^\s,;""'&\\]|\\(?!"")|&(?!(?:amp;)?[A-Za-z_][\w.\-]*=))+";
+		+ $@"|(?:[^\s,;""'&\\]|{PairValueBackslashUnit}|&(?!(?:amp;)?[A-Za-z_][\w.\-]*=))+";
 
 	// A key may be written in single quotes, as a Python- or JavaScript-shaped dict does ({'Password': 'x'}); the
 	// pair rule could not reach it, because the key's closing quote sits where it needs its "=" or ":".
 	// A key right after a "\n", "\r" or "\t" escape counts as starting a word: in a serialized envelope a line
 	// break is written that way, and "\nPassword=hunter2" had no word boundary before the key, so it shipped.
 	[GeneratedRegex(
-		$@"(?<kq>')?(?:(?<=\\[nrt])|\b)(?<key>{CredentialSecretKeys}|{ConnectionStringPartKeys}|{PairOnlyKeys})\b(?(kq)')"
+		$@"(?<kq>')?(?:(?<=\\[nrt])|\b)(?<key>{CredentialSecretKeys}|{CredentialWordKeys}|{ConnectionStringPartKeys}|{PairOnlyKeys})\b(?(kq)')"
 		+ $@"(?<sep>\s*[=:]\s*)(?<value>{CredentialPairValue})",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialPairRegex();
@@ -247,9 +271,13 @@ internal static partial class SensitiveErrorTextRedactor {
 	// Only a list qualifies (RedactCredentialListPair checks it): the pair follows a ";", or the text starts with
 	// it and a "; name=" follows. A quoted value is left to CredentialPairRegex. On a serialized envelope the
 	// value cannot end inside an escape: it ends only before a ";" or the end of a line, never before a quote.
+	// The same value shape serves the site-only list rule (SiteKeyListPairRegex).
+	private const string ListPairValue =
+		@"(?<value>[^;\r\n""'\s](?:[^;\r\n""']*[^;\r\n""'\s])?)(?=[ \t]*(?:;|\r|\n|\z))";
+
 	[GeneratedRegex(
-		$@"(?<=(?:^|;)[ \t]*)(?<key>{CredentialSecretKeys}|{ConnectionStringPartKeys})\b(?<sep>[ \t]*=[ \t]*)"
-		+ @"(?<value>[^;\r\n""'\s](?:[^;\r\n""']*[^;\r\n""'\s])?)(?=[ \t]*(?:;|\r|\n|\z))",
+		$@"(?<=(?:^|;)[ \t]*)(?<key>{CredentialSecretKeys}|{CredentialWordKeys}|{ConnectionStringPartKeys})\b"
+		+ $@"(?<sep>[ \t]*=[ \t]*){ListPairValue}",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialListPairRegex();
 
@@ -261,30 +289,59 @@ internal static partial class SensitiveErrorTextRedactor {
 	// ("BEARER", "ntlm") and however short ("dXM=", "TlRM"); the scheme word and any quote around the credential
 	// stay. It replaces the earlier "\bBearer\s+[^\s,;\"']+" rule, which took the word after it whatever it was:
 	// "The bearer token expired" became "The [redacted] expired", and "WWW-Authenticate: Bearer realm=…" lost the
-	// challenge the reader needs. What is kept after a scheme word is decided by IsKeptAfterSchemeWord.
-	// The credential class is token68's, without a backslash, so the match cannot swallow a JSON escape; a
-	// trailing "." is sentence punctuation, not part of the credential.
+	// challenge the reader needs. What is kept after a scheme word is decided by KeptAfterSchemeWordRegex.
+	// The credential is the WHOLE run the old rule took ([^\s,;"']+), so no secret it removed survives: deciding on
+	// and replacing only a token68 prefix of that run shipped the rest ("Bearer x7Kq%2F9Lp…" kept "%2F9Lp…"). A
+	// backslash is taken only as a whole JSON escape unit - \uXXXX other than a quote, "\\", "\/" - so the match can
+	// neither swallow a JSON escape nor stop inside one, and the quote around the credential may be written ", ',
+	// \", " or ' (System.Text.Json's default encoder writes the last two). Trailing sentence punctuation
+	// is peeled off the run by RedactSchemeCredential and kept.
 	[GeneratedRegex(
 		EscapeAwareStartPrefix + @"\-" + EscapeAwareStartSuffix
-		+ @"(?<scheme>Bearer|Basic|NTLM|Negotiate)(?<gap>[ \t]+)(?<q>[""']?)"
-		+ @"(?<cred>[A-Za-z0-9._~+/=\-]*[A-Za-z0-9_~+/=\-])(?<close>\k<q>)?",
+		+ @"(?<scheme>Bearer|Basic|NTLM|Negotiate)(?<gap>[ \t]+)(?<q>\\u0022|\\u0027|\\""|[""'])?"
+		+ @"(?<cred>(?:[^\s,;""'\\]|\\u(?!00(?:22|27))[0-9A-Fa-f]{4}|\\[\\/])+)(?<close>\k<q>)?",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex SchemeCredentialRegex();
 
-	// The words a scheme is followed by in prose and in challenges, which stay (case-sensitive):
-	//   a prose word - lower case after the first letter ("token", "authentication") - or a word joined by "-" to
-	//   one of the adjective endings prose uses ("token-based", "auth-enabled"). Any "-"-joined word is NOT kept:
-	//   "secret-token", "wrong-key" and "stub-access-token" are exactly how a credential placeholder is written;
-	//   an acronym of 2-5 capitals, alone, with "/n.n", or with "vn.n" ("TLS", "HTTP/2", "HTTP/1.1", "TLSv1.2");
-	//   a version or factor word ("v2", "2FA"), and a word with one inner capital ("OAuth").
+	// The words a scheme is followed by in prose and in challenges, which stay:
+	//   a prose word from a CLOSED list - "token", "authentication", "negotiation", "failed", "is", … - in any letter
+	//   case, or such a word joined by "-" to one of the adjective endings prose uses ("token-based",
+	//   "auth-enabled"). The list is closed because any lower-case word is not a guard: "Bearer secrettokenvalue" is
+	//   a credential that reads like one word. "secret", "key" and "password" are not on it, nor is any other
+	//   "-"-joined word: "secret-token", "wrong-key" and "stub-access-token" are how a credential stub is written;
+	//   an acronym of 2-5 capitals, alone, with "/n.n", "vn" or a dotted version ("TLS", "HTTP/2", "HTTP/1.1",
+	//   "TLSv1.2", "TLS1.2", "NTLMv2");
+	//   a version ("v2", "8.1.0.5", "v8.1.0.5") or a factor word ("2FA");
+	//   a CamelCase identifier, which may end in digits ("OAuth", "UsrPage1").
 	// The host lane redacts the last three after a scheme; the site's sentence ("NTLM v2 is required", "a basic
-	// OAuth flow") is the reason, so clio keeps them. A credential that happens to have one of these shapes is
-	// short and word-like, which a real token68 credential is not.
+	// OAuth flow", "negotiate TLS1.2", "basic 8.1.0.5") is the reason, so clio keeps them. A credential that has
+	// one of these shapes is a word, a version or an identifier, which a real token68 credential is not: base64 and
+	// base64url runs mix digits into the middle and capitals at random.
+	private const string ProseWordsAfterScheme =
+		"token|tokens|auth|authentication|authenticated|authenticate|authorization|authorize|authorized|scheme|schemes"
+		+ "|header|headers|credential|credentials|realm|challenge|challenges|negotiation|negotiate|access|login|logon"
+		+ "|signin|mode|flow|flows|type|types|value|values|prefix|format|string|profile|profiles|client|clients"
+		+ "|request|requests|response|responses|session|sessions|user|users|jwt|jwts|material|transport|handler"
+		+ "|identity|principal|support|supported|required|requires|expected|missing|invalid|expired|expires|rejected"
+		+ "|refused|failed|failure|error|errors|denied|disabled|enabled|only|or|and|the|a|an|is|was|are|were|be|been"
+		+ "|not|no|with|without|for|to|from|of|on|in|at|by|over|via|as|must|should|may|can|cannot|will|has|have|had"
+		+ "|does|did|it|this|that|so|instead|before|after|also|if|when|but|then";
+
 	[GeneratedRegex(
-		@"^(?:[A-Za-z][a-z]{1,23}(?:-(?:based|enabled|disabled|only|protected|secured|style|like|type|related|specific|level|scoped|bound|aware))?|[A-Z]{2,5}(?:/\d(?:\.\d)?|v\d(?:\.\d)?)?|v\d(?:\.\d)?|\d[A-Z]{1,3}"
-		+ @"|[A-Z][a-z]*[A-Z][a-z]+)$",
+		$@"^(?:(?i:{ProseWordsAfterScheme})(?:-(?:based|enabled|disabled|only|protected|secured|style|like|type|related|specific|level|scoped|bound|aware))?"
+		+ @"|[A-Z]{2,5}(?:/\d(?:\.\d)?|v?\d+(?:\.\d+)+|v\d)?|v?\d+(?:\.\d+)+|v\d|\d[A-Z]{1,3}"
+		+ @"|[A-Z][a-z]*(?:[A-Z][a-z]+)+\d{0,4})$",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex KeptAfterSchemeWordRegex();
+
+	// Sentence punctuation that may close a credential run and is not part of it ("Invalid Bearer token.",
+	// "(Authorization: Bearer x7Kq)"), and one of clio's own placeholders, which a run may already be.
+	[GeneratedRegex(@"[.)\]}:!?]+$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex TrailingSentencePunctuationRegex();
+
+	// The run must be the placeholder alone: "[redacted]%2Fxyz" - a JWT cut at a "%" by JwtRegex - still goes whole.
+	[GeneratedRegex(@"^\[redacted(?:-[a-z]+)?\][.)\]}:!?]*$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex PlaceholderRunRegex();
 
 	// A challenge parameter after a scheme ("WWW-Authenticate: Bearer realm=\"api\", error=…") is not a
 	// credential: it is what the site asks for.
@@ -322,8 +379,10 @@ internal static partial class SensitiveErrorTextRedactor {
 	// over-redaction is accepted, because this class prefers over-redacting to leaking. camelCase and
 	// glued forms stay OUT, which is what keeps "passwordHint" and "tokenCount" untouched in JSON
 	// exactly as "passwordHint=x" is untouched in key=value form.
+	// "credentials" is taken bare only - see CredentialWordKeys.
 	private const string JsonCredentialKeyPattern =
-		$@"(?:[A-Za-z0-9]+[_.\-])*(?:{CredentialSecretKeys}|server|hostname|host|database)(?:[_.\-][A-Za-z0-9]+)*";
+		$@"(?:[A-Za-z0-9]+[_.\-])*(?:{CredentialSecretKeys}|server|hostname|host|database)(?:[_.\-][A-Za-z0-9]+)*"
+		+ $@"|{CredentialWordKeys}";
 
 	// The three spellings one JSON quote can take in text this rule runs over: a literal quote, the
 	// hand-written \" escape, and the \u0022 escape that System.Text.Json's DEFAULT encoder emits for a
@@ -437,8 +496,10 @@ internal static partial class SensitiveErrorTextRedactor {
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex PrivateIpv4Regex();
 
-	// The words that make a dotted quad a version rather than an address, read just before it.
-	[GeneratedRegex(@"(?:\b(?:version|ver|build|release|creatio|clio|cliogate|package|v))[ \t]*$",
+	// The words that make a dotted quad a version rather than an address, read just before it - followed by spaces,
+	// or by a "=" or ":" as an assembly name and a key list write them ("Version=10.0.0.0, Culture=neutral",
+	// "version: 10.0.0.5"). Without the separator an assembly-load error lost its version to the address rule.
+	[GeneratedRegex(@"(?:\b(?:version|ver|build|release|creatio|clio|cliogate|package|v))[ \t]*[=:]?[ \t]*$",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex VersionContextRegex();
 
@@ -578,8 +639,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	private static partial Regex SiteKeyPairRegex();
 
 	[GeneratedRegex(
-		$@"(?<=(?:^|;)[ \t]*)(?<key>{SiteKeys})\b(?<sep>[ \t]*=[ \t]*)"
-		+ @"(?<value>[^;\r\n""'\s](?:[^;\r\n""']*[^;\r\n""'\s])?)(?=[ \t]*(?:;|\r|\n|\z))",
+		$@"(?<=(?:^|;)[ \t]*)(?<key>{SiteKeys})\b(?<sep>[ \t]*=[ \t]*){ListPairValue}",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex SiteKeyListPairRegex();
 
@@ -594,15 +654,18 @@ internal static partial class SensitiveErrorTextRedactor {
 	// Rule 4: a Windows server instance or a DOMAIN\account - an identifier, then one or more "\identifier"
 	// segments ("SQL01\SQLEXPRESS", "CORP\jdoe", and the "Files\Creatio\app.dll" tail that WindowsPathRegex
 	// leaves of a path with a space). Never next to another backslash, and never across a "\r", "\n" or "\t"
-	// written as text, which is a line break of a body escaped twice ("null.\r\nParameter name: …"), not a path.
+	// written as text, which is a line break of a body escaped twice ("null.\r\nParameter name: …"), not a path -
+	// but only when no lower-case letter follows it: "SQL01\reporting", "CORP\nick" and "DOMAIN\tanya" are an
+	// instance and two accounts, and reading their first letter as an escape shipped all three.
 	[GeneratedRegex(
-		@"(?<![\w\\.$\-])[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?(?:\\(?![rnt])[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?)+(?!\w)",
+		@"(?<![\w\\.$\-])[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?(?:\\(?![rnt](?![a-z]))[A-Za-z0-9_$](?:[\w.$\-]*[\w$])?)+(?!\w)",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex WindowsInstanceRegex();
 
 	// Rule 6 (site part): a relative or home path at a word start ("~/creatio/…", "./Terrasoft.WebApp/…",
-	// "../conf/x.config"). Site-only: clio's own errors name relative paths the operator gave on purpose.
-	[GeneratedRegex(@"(?<![\w./~\\\-])(?:~|\.{1,2})/[^\s""'<>|)}\]]+",
+	// "../conf/x.config"). Site-only: clio's own errors name relative paths the operator gave on purpose. A closing
+	// bracket ends it unless a "/" and a segment follow (see WindowsPathRegex).
+	[GeneratedRegex(@"(?<![\w./~\\\-])(?:~|\.{1,2})/(?:[^\s""'<>|)}\]]|[)}\]]+(?=/[^\s""'<>|)}\]/]))+",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex RelativePathRegex();
 
@@ -864,8 +927,13 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// (<c>ClioRunTool.RedactSerializedText</c>), MCP errors, logs and CLI lines, where a rule that runs to the end
 	/// of a line, reads a backslash run as a path or takes a relative path would break JSON escapes, version
 	/// numbers and clio's own paths. Those rules live here, and this method is called only where the text is the
-	/// site's own: <see cref="SiteResponse"/>'s message and code, the OData server-error and non-JSON preview
-	/// paths, batch item errors, the designer and DataService error envelopes and the compile history.
+	/// site's own. It is wired at <see cref="SiteResponse"/>'s message and code, the OData server-error and non-JSON
+	/// preview paths, batch item errors, <c>DataWriteDiagnostic.message</c>, the designer and DataService error
+	/// envelopes that <c>PageSchemaMetadataHelper.ParseSaveErrorMessage</c> and
+	/// <c>DataServiceResponse.ThrowIfUnsuccessful</c> read, and compile-status's diagnostics and message tail. NOT
+	/// every reader of a site's error text is wired yet: the readers that still pass the site's words through
+	/// <see cref="Redact"/> only are listed, each with its file, member and the change that will wire it, in the
+	/// known-unwired list of <c>SiteTextWiringTests</c>, whose source guard fails the build on a new one.
 	/// </para>
 	/// <para>
 	/// It FAILS CLOSED as one unit: the cut, the whole <see cref="Redact"/> chain and every site rule run inside
@@ -939,7 +1007,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		string beforeIpv4 = result;
 		result = PrivateIpv4Regex().Replace(result, match => IsVersionContext(beforeIpv4, match)
 			? match.Value
-			: RedactedHost);
+			: RedactedUri);
 		// The forward-slash drive before the POSIX rule, which would otherwise take "/data/x.mdf" and leave "D:".
 		result = DriveSlashPathRegex().Replace(result, RedactedPath);
 		result = WindowsPathRegex().Replace(result, RedactedPath);
@@ -951,14 +1019,20 @@ internal static partial class SensitiveErrorTextRedactor {
 		return ApplyInjectedRule(RedactLastStage, result);
 	}
 
+	// The whole run decides and the whole run goes; only trailing sentence punctuation is peeled off and kept.
 	private static string RedactSchemeCredential(Match match) {
-		string credential = match.Groups["cred"].Value;
-		if (KeptAfterSchemeWordRegex().IsMatch(credential) || ChallengeParameterRegex().IsMatch(credential)) {
+		string run = match.Groups["cred"].Value;
+		if (PlaceholderRunRegex().IsMatch(run) || ChallengeParameterRegex().IsMatch(run)) {
 			return match.Value;
 		}
-		string quote = match.Groups["q"].Value;
-		return string.Concat(match.Groups["scheme"].Value, match.Groups["gap"].Value, quote, RedactedValue,
-			match.Groups["close"].Value);
+		Match punctuation = TrailingSentencePunctuationRegex().Match(run);
+		string trailing = punctuation.Success ? punctuation.Value : string.Empty;
+		string credential = run[..(run.Length - trailing.Length)];
+		if (credential.Length == 0 || KeptAfterSchemeWordRegex().IsMatch(credential)) {
+			return match.Value;
+		}
+		return string.Concat(match.Groups["scheme"].Value, match.Groups["gap"].Value, match.Groups["q"].Value,
+			RedactedValue, trailing, match.Groups["close"].Value);
 	}
 
 	private static string RedactDigestCredential(Match match) =>
@@ -968,7 +1042,7 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// A digit is required so that two hex WORDS around "::" ("Bad::Cafe") are not read as an address.
 	private static string RedactIpv6Address(Match match) =>
-		match.Value.Any(char.IsAsciiDigit) ? RedactedHost : match.Value;
+		match.Value.Any(char.IsAsciiDigit) ? RedactedUri : match.Value;
 
 	// The service ports a site's own refusal names its database, cache, mail or web server on.
 	private static readonly HashSet<int> WellKnownServicePorts = [
@@ -981,7 +1055,12 @@ internal static partial class SensitiveErrorTextRedactor {
 	private static readonly HashSet<string> NotHostLabels = new(StringComparer.OrdinalIgnoreCase) {
 		"timeout", "port", "attempt", "attempts", "retry", "retries", "line", "column", "col", "code", "error",
 		"status", "count", "index", "size", "limit", "offset", "page", "step", "version", "build", "delay",
-		"elapsed", "duration", "ms", "http", "https", "exit", "item", "row", "level", "id"
+		"elapsed", "duration", "ms", "http", "https", "exit", "item", "row", "level", "id",
+		// The words of a count or a test-run summary ("Failed:22", "Total:443", "Passed:421"): 22 and 443 are
+		// service ports, so without them a summary line read as hosts.
+		"total", "passed", "failed", "skipped", "succeeded", "success", "successes", "failure", "failures", "errors",
+		"warning", "warnings", "tests", "ignored", "inconclusive", "executed", "notexecuted", "pending", "completed",
+		"done", "ok"
 	};
 
 	// Whether "label:port" is a host and its port. localhost always is. A label that names a number in prose
@@ -994,7 +1073,7 @@ internal static partial class SensitiveErrorTextRedactor {
 			return match.Value;
 		}
 		if (label.Equals("localhost", StringComparison.OrdinalIgnoreCase)) {
-			return RedactedHost;
+			return RedactedUri;
 		}
 		if (NotHostLabels.Contains(label)) {
 			return match.Value;
@@ -1002,7 +1081,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		bool machineShaped = label.Any(char.IsAsciiDigit) || label.Contains('-')
 			|| (label.Length >= 3 && label.All(character => char.IsAsciiLetterUpper(character) || char.IsAsciiDigit(character)));
 		bool isHost = WellKnownServicePorts.Contains(port) || (port >= 1024 && machineShaped);
-		return isHost ? RedactedHost : match.Value;
+		return isHost ? RedactedUri : match.Value;
 	}
 
 	private static bool IsVersionContext(string text, Match match) {

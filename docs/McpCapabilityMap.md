@@ -342,21 +342,30 @@ Nothing in `site-response` is unredacted site text: `message` and `code` are sit
 number and `body` one of four fixed words. clio never copies `errorInfo.stackTrace`. A host that shows the
 text may apply its own redaction on top.
 
-The same site-text redaction covers the other fields that carry the site's own words: the OData server error
+The same site-text redaction covers these other fields that carry the site's own words: the OData server error
 in `error` of odata-create rows, odata-update and odata-delete; the up-to-500-character preview of a non-JSON
-body after `Response:`; batch item errors; `diagnostic.message`; the designer and DataService error envelopes
-that create-page, update-page, sync-pages and the DataService write tools put into `error`; and compile-status's
-compiler diagnostics and message tail. The write tools apply it where they read the site's text, so it covers
-their `error` and the `execution-log-messages` lines built from it alike: the page designer's hierarchy,
-design-package and schema refusals and the template catalog's (update-page, sync-pages, create-page - the site's
-`errorCode: message` only, never its `stackTrace`); the entity-schema designer's refusal (the entity-schema tools,
-create-lookup, sync-schemas, the data-binding-db tools); a SelectQuery failure and the preview of any non-JSON
-service body; the build verdict, diagnostics and history lines of compile-creatio and push-workspace; the
-installation failure line and the invalid-archive message; and the server's text in create-business-process,
-modify-business-process and compile-business-process (fenced there as site text). The raw streamed installation log
-is not covered. Everything else - clio's own error text, its own log lines, and the
-serialized envelope `clio-run` returns - passes the general redaction only, which never takes a relative path,
-a sign-in phrase, a version number or a JSON escape.
+body after `Response:` (redacted before it is cut to 500 characters); batch item errors; `diagnostic.message`;
+the designer and DataService error envelopes that create-page, update-page, sync-pages and the DataService write
+tools put into `error` through `ParseSaveErrorMessage` and `DataServiceResponse.ThrowIfUnsuccessful`; and
+compile-status's compiler diagnostics and message tail. The write tools apply it where they read the site's text,
+so it covers their `error` and the `execution-log-messages` lines built from it alike: the page designer's
+hierarchy, design-package and schema refusals and the template catalog's (update-page, sync-pages, create-page -
+the site's `errorCode: message` only, never its `stackTrace`); the entity-schema designer's refusal (the
+entity-schema tools, create-lookup, sync-schemas, the data-binding-db tools); a SelectQuery failure and the
+preview of any non-JSON service body; the build verdict, diagnostics and history lines of compile-creatio and
+push-workspace; the installation failure line and the invalid-archive message; and the server's text in
+create-business-process, modify-business-process and compile-business-process (fenced there as site text). The
+raw streamed installation log is not covered. **Not every field that carries a site's words is wired yet.** The
+remaining envelope readers (execute-esq's DataService failure, the web-service designer, sys-settings, the
+application, section and schema commands, odata-read's debug detail, and more) still pass the general redaction
+only. Each one is listed by file and member in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`,
+whose source guard fails the build on a new unlisted reader. clio's own error text, its log lines, and the
+serialized envelope `clio-run` returns pass the general redaction only by design. That redaction leaves relative
+paths and the database's sign-in phrases alone; keeps a four-part version unless it falls in a private address
+range with no version word before it (`version 10.0.0.1`, `Version=10.0.0.0` and `Creatio 8.1.0.5` stay, a bare
+`10.0.0.1` goes); and keeps a serialized envelope valid JSON for the escapes its tests cover (`\"`, `\u0022`, and
+an escaped backslash before the closing quote). Every redacted endpoint - a URI, a host and port, an IPv6 or a
+private IPv4 address - reads `[redacted-uri]`.
 
 **Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
 failure is clio's own (validation, a refused precondition). The field is optional, so a caller that ignores it

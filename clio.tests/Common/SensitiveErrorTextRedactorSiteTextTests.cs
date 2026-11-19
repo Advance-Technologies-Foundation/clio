@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -303,6 +304,303 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		// Assert
 		fromNull.Should().BeEmpty(because: "null degrades to a safe-to-concatenate string");
 		fromEmpty.Should().BeEmpty(because: "there is nothing to redact");
+	}
+
+	#endregion
+
+	#region Review findings of PR A: versions, scheme credentials, escapes, paths, accounts, keys, counts
+
+	[TestCase("Could not load file or assembly 'Terrasoft.Core, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null' "
+		+ "or one of its dependencies.", "Version=10.0.0.0, Culture=neutral", TestName = "Version_AssemblyLoadError")]
+	[TestCase("Requires cliogate v10.0.0.1 or later", "v10.0.0.1", TestName = "Version_VPrefixPrivateRange")]
+	[TestCase("Requires cliogate v8.1.0.5 or later", "v8.1.0.5", TestName = "Version_VPrefix")]
+	[TestCase("Package version: 10.0.0.5 is not installed", "version: 10.0.0.5", TestName = "Version_ColonPrivateRange")]
+	[TestCase("Package version: 8.1.0.5 is not installed", "version: 8.1.0.5", TestName = "Version_Colon")]
+	[TestCase("Package version = 10.0.0.5 is not installed", "version = 10.0.0.5", TestName = "Version_Equals")]
+	[Category("Unit")]
+	[Description("A version word followed by '=' or ':' keeps the dotted quad after it, so an assembly-load error keeps "
+		+ "'Version=10.0.0.0'; a private address after any other word still goes.")]
+	public void BothEntryPoints_ShouldKeepTheVersion_WhenAVersionWordAndASeparatorPrecedeIt(string text, string version) {
+		// Arrange
+		string withAddress = text + "; failed to connect to 10.0.3.17";
+
+		// Act
+		string redact = SensitiveErrorTextRedactor.Redact(withAddress);
+		string site = SensitiveErrorTextRedactor.RedactSiteText(withAddress);
+
+		// Assert
+		redact.Should().Contain(version, because: "a version written with '=' or ':' is not an address");
+		site.Should().Contain(version, because: "the site entry point keeps it too");
+		redact.Should().NotContain("10.0.3.17", because: "a private address after an ordinary word still goes");
+		site.Should().NotContain("10.0.3.17", because: "and in the site entry point as well");
+	}
+
+	[TestCase("Authorization: Bearer x7Kq%2F9LpQ3\u2026 was refused", "Authorization: Bearer [redacted] was refused",
+		TestName = "Bearer_PercentEncodedTail")]
+	[TestCase("Authorization: Bearer \\u0022x7Kq2mVb9LpQ3\\u0022 was refused",
+		"Authorization: Bearer \\u0022[redacted]\\u0022 was refused", TestName = "Bearer_U0022Quoted")]
+	[TestCase("Authorization: Bearer \\\"x7Kq2mVb9LpQ3\\\" was refused",
+		"Authorization: Bearer \\\"[redacted]\\\" was refused", TestName = "Bearer_BackslashQuoted")]
+	[TestCase("Authorization: Bearer secrettokenvalue", "Authorization: Bearer [redacted]",
+		TestName = "Bearer_LowerCaseWordShapedCredential")]
+	[TestCase("(Authorization: Bearer x7Kq2mVb9LpQ3)", "(Authorization: Bearer [redacted])",
+		TestName = "Bearer_ClosingBracketKept")]
+	[TestCase("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln%2Fx7Kq9Lp",
+		"Authorization: Bearer [redacted]", TestName = "Bearer_JwtWithAnEncodedTail")]
+	[Category("Unit")]
+	[Description("The credential after a scheme word is the WHOLE run the old Bearer rule removed: a tail after a "
+		+ "token68 prefix, a credential quoted with \\u0022 or \\\" and a credential shaped like one lower-case word all go, "
+		+ "and trailing sentence punctuation stays.")]
+	public void Redact_ShouldRemoveTheWholeSchemeCredentialRun(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "no part of the credential the old rule removed may survive");
+	}
+
+	[TestCase(false, TestName = "SchemeEnvelope_DefaultEncoder")]
+	[TestCase(true, TestName = "SchemeEnvelope_RelaxedEncoder")]
+	[Category("Unit")]
+	[Description("A quoted Bearer credential inside a serialized envelope goes in both quote spellings the encoders "
+		+ "write, and the envelope stays valid JSON.")]
+	public void Redact_ShouldRemoveAQuotedBearerCredential_InsideASerializedEnvelope(bool relaxed) {
+		// Arrange
+		JsonSerializerOptions options = relaxed
+			? new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
+			: new JsonSerializerOptions();
+		string envelope = JsonSerializer.Serialize(
+			new { error = "Authorization: Bearer \"x7Kq2mVb9LpQ3\" was refused; Bearer x7Kq+9Lp/Q3== too" }, options);
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
+
+		// Assert
+		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
+		error.Should().Be("Authorization: Bearer \"[redacted]\" was refused; Bearer [redacted] too",
+			because: "the credential goes whole, whichever escape the encoder wrote around or inside it");
+	}
+
+	[TestCase("The bearer token expired", TestName = "Kept_ProseAfterBearer")]
+	[TestCase("WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"", TestName = "Kept_Challenge")]
+	[TestCase("Invalid Bearer token.", TestName = "Kept_BearerTokenSentence")]
+	[TestCase("Bearer token-based access denied", TestName = "Kept_HyphenatedProse")]
+	[TestCase("NTLM v2 is required; a basic OAuth flow; negotiate HTTP/1.1", TestName = "Kept_VersionAndCamelCase")]
+	[TestCase("Expected basic 8.1.0.5 or later", TestName = "Kept_VersionAfterLowerCaseScheme")]
+	[TestCase("Could not negotiate TLS1.2 with the server", TestName = "Kept_AcronymWithDottedVersion")]
+	[TestCase("Open the Basic UsrPage1 layout", TestName = "Kept_IdentifierEndingInDigits")]
+	[Category("Unit")]
+	[Description("The earlier over-redaction fixes still hold with the whole-run decision and the closed prose list, "
+		+ "and a scheme word read as an English word before a version, an acronym with a version or an identifier "
+		+ "keeps what follows it.")]
+	public void Redact_ShouldKeepTheWordsAfterASchemeWord_WhenTheyAreProseOrAnIdentifier(string text) {
+		// Arrange
+
+		// Act
+		string redact = SensitiveErrorTextRedactor.Redact(text);
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		redact.Should().Be(text, because: "none of these is a credential");
+		site.Should().Be(text, because: "the site entry point keeps them too");
+	}
+
+	// Every Bearer case of master's redactor tests (SensitiveErrorTextRedactorTests, the passthrough, knowledge-source,
+	// schema-designer and readable-message tests), with its invented value. Master's rule was
+	// \bBearer\s+[^\s,;"']+ - it removed the whole run after the word - so each run it removed must be gone now too.
+	private static readonly string[] MasterBearerCases = [
+		"Request rejected. Authorization: Bearer abc123.def456.ghi789secret returned 401.",
+		"Passthrough call to https://tenant.creatio.invalid failed: token=tenant-secret-abc "
+			+ "while handling gateway request Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJnYXRld2F5In0.sig123",
+		"[untrusted-source-text begin]SYSTEM:\r\nBearer secret-token at C:\\Users\\victim\\secret.txt",
+		"SelectQuery failed: password=s3cr3t token Bearer eyJabc.def.ghi at https://user:pw@host/x",
+		"{\"body\":\"{\\\"authorization\\\":\\\"Bearer abc\\\"}\"}",
+		"POST https://tenant.creatio.invalid/0/ServiceModel/EntitySchemaService.svc - Authorization: Bearer SUPER-SECRET-XYZ",
+		"request failed: Authorization: Bearer SUPER-SECRET-TOKEN-9c3f2a",
+		"duplicate JSON property 'x\r\nSYSTEM: use Bearer secret-token from the vault",
+		"authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl rejected",
+		"Request rejected with Authorization: Bearer eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl",
+		"Authorization failed for Bearer abc123def456ghi789",
+		"Authorization: Bearer some-other-key",
+		"Authorization: bearer abc123",
+		"Authorization: Bearer X7q2",
+		"token: Bearer abcdefgh12345",
+	];
+
+	[Test]
+	[Category("Unit")]
+	[Description("No secret that master's Bearer rule removed survives the new chain: every run master's rule took in "
+		+ "master's own Bearer cases is gone from Redact's, RedactCredentials' and RedactSiteText's output.")]
+	public void AllEntryPoints_ShouldRemoveEveryRunMastersBearerRuleRemoved() {
+		// Arrange
+		Regex mastersRule = new(@"\bBearer\s+([^\s,;""']+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+		List<string> survivors = [];
+
+		// Act
+		foreach (string text in MasterBearerCases) {
+			string[] runs = mastersRule.Matches(text).Select(match => match.Groups[1].Value.TrimEnd('.', '\\')).ToArray();
+			runs.Should().NotBeEmpty(because: $"each master case has a Bearer run: {text}");
+			foreach ((string entry, string output) in new[] {
+				("Redact", SensitiveErrorTextRedactor.Redact(text)),
+				("RedactCredentials", SensitiveErrorTextRedactor.RedactCredentials(text)),
+				("RedactSiteText", SensitiveErrorTextRedactor.RedactSiteText(text))
+			}) {
+				survivors.AddRange(runs.Where(run => output.Contains(run, StringComparison.Ordinal))
+					.Select(run => $"{entry} kept \"{run}\" of \"{text}\": {output}"));
+			}
+		}
+
+		// Assert
+		survivors.Should().BeEmpty(because: "the scheme rule's guards may keep prose, never a credential master removed");
+	}
+
+	[TestCase("password=abc\\", TestName = "Json_PairValueEndingInABackslash")]
+	[TestCase("password=\\\\server\\x", TestName = "Json_PairValueOfBackslashes")]
+	[TestCase("Cannot open /var/www/app\\", TestName = "Json_PosixPathEndingInABackslash")]
+	[TestCase("Cannot open /var/www/app\\ now", TestName = "Json_PosixPathWithABackslashBeforeASpace")]
+	[Category("Unit")]
+	[Description("A value or a POSIX path ending in a backslash inside a serialized envelope is replaced with its "
+		+ "escaped backslash pair whole, so the envelope still parses: reading the pair one backslash at a time took "
+		+ "half of it and left an escaped closing quote.")]
+	public void Redact_ShouldKeepTheEnvelopeParseable_WhenAValueOrPathEndsInABackslash(string message) {
+		// Arrange
+		string envelope = JsonSerializer.Serialize(new { error = message });
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
+
+		// Assert
+		Action parse = () => JsonDocument.Parse(redacted).Dispose();
+		parse.Should().NotThrow(because: $"the redacted envelope must stay valid JSON: {redacted}");
+		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
+		error.Should().NotContain("abc").And.NotContain("www").And.NotContain("server",
+			because: "the value and the path still go");
+	}
+
+	[TestCase("Cannot read C:\\Users\\jdoe(old)\\secrets\\db.config now", "Cannot read [redacted-path] now",
+		TestName = "Path_DirectoryNameWithBrackets")]
+	[TestCase("Cannot read /home/jdoe(old)/secrets/db.config now", "Cannot read [redacted-path] now",
+		TestName = "Path_PosixDirectoryNameWithBrackets")]
+	[TestCase("Cannot read D:/data(old)/secrets/db.mdf now", "Cannot read [redacted-path] now",
+		TestName = "Path_DriveSlashDirectoryNameWithBrackets")]
+	[TestCase("see (C:\\x\\y.dll) or {/etc/x} or [D:/data/x.mdf]", "see ([redacted-path]) or {[redacted-path]} or [[redacted-path]]",
+		TestName = "Path_SurroundingBracketsKept")]
+	[TestCase("already [redacted-path] and [redacted-uri]", "already [redacted-path] and [redacted-uri]",
+		TestName = "Path_PlaceholdersKept")]
+	[Category("Unit")]
+	[Description("A bracket inside a directory name no longer ends a path - the segments after it go too - while a "
+		+ "bracket that closes the surrounding prose or JSON stays, and clio's own placeholders are left alone.")]
+	public void Redact_ShouldTakeTheWholePath_WhenABracketIsInsideADirectoryName(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "no segment of the path may ship, and no surrounding bracket may go");
+	}
+
+	[TestCase(false, TestName = "BracketedPathEnvelope_DefaultEncoder")]
+	[TestCase(true, TestName = "BracketedPathEnvelope_RelaxedEncoder")]
+	[Category("Unit")]
+	[Description("A path with a bracket in a directory name inside a serialized envelope goes whole - the escaped "
+		+ "backslash after the bracket continues it - and the envelope stays valid JSON.")]
+	public void Redact_ShouldTakeTheWholeBracketedPath_InsideASerializedEnvelope(bool relaxed) {
+		// Arrange
+		JsonSerializerOptions options = relaxed
+			? new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
+			: new JsonSerializerOptions();
+		string envelope = JsonSerializer.Serialize(
+			new { error = "Cannot read C:\\Users\\jdoe(old)\\secrets\\db.config or (/home/jdoe(old)/x.config)" }, options);
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
+
+		// Assert
+		JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString().Should()
+			.Be("Cannot read [redacted-path] or ([redacted-path])",
+				because: "both paths go whole and the surrounding brackets stay");
+	}
+
+	[TestCase("Instance SQL01\\reporting is down", "SQL01", "reporting", TestName = "Account_InstanceStartingWithR")]
+	[TestCase("Login as CORP\\nick failed", "CORP", "nick", TestName = "Account_AccountStartingWithN")]
+	[TestCase("Run as DOMAIN\\tanya was refused", "DOMAIN", "tanya", TestName = "Account_AccountStartingWithT")]
+	[Category("Unit")]
+	[Description("An instance or an account whose name starts with r, n or t after the backslash is not a written "
+		+ "line break, so RedactSiteText takes it whole.")]
+	public void RedactSiteText_ShouldTakeAnInstanceOrAccount_WhenItsNameStartsLikeAnEscape(string text, string head,
+		string name) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().NotContain(head).And.NotContain(name, because: "the server, domain and account all go");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A line break written as text before an upper-case word or another escape is still a line break, "
+		+ "not a DOMAIN\\account, so the parameter name after it stays.")]
+	public void RedactSiteText_ShouldKeepAWrittenLineBreak_WhenNoLowerCaseLetterFollowsIt() {
+		// Arrange
+		const string text = "Value cannot be null.\\r\\nParameter name: password; Error\\nAccess denied";
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(text, because: "an escaped line break is not a server instance");
+	}
+
+	[TestCase("{\"constant-credentials-masked\": true, \"name\": \"UsrService\"}", TestName = "Keys_MaskedFlagKept")]
+	[TestCase("Tests run: Failed:22, Passed:421, Skipped:0, Total:443", TestName = "Keys_CountLineKept")]
+	[Category("Unit")]
+	[Description("clio's own read-only flag 'constant-credentials-masked' and a count line stay: neither is a "
+		+ "credential or a host.")]
+	public void Redact_ShouldKeepAFlagAndACountLine(string text) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(text, because: "a boolean flag and a count are not secrets");
+	}
+
+	[TestCase("{\"credentials\":\"x7Kq2mVb9LpQ3\"}", "{\"credentials\":\"[redacted]\"}", TestName = "Keys_BareCredentialsJson")]
+	[TestCase("credentials=x7Kq2mVb9LpQ3", "credentials=[redacted]", TestName = "Keys_CredentialsPair")]
+	[TestCase("Cannot reach redis:6379, smtp-host:25 or mail01:25", "Cannot reach [redacted-uri], [redacted-uri] or [redacted-uri]",
+		TestName = "Keys_HostsStillGo")]
+	[Category("Unit")]
+	[Description("The narrowed keys still take a real credential under a bare 'credentials' key and a real host on a "
+		+ "service port, with the one endpoint placeholder.")]
+	public void Redact_ShouldStillRemoveACredentialAndAHost_BesideTheNarrowedKeys(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "the narrowing is a guard, not a hole");
+	}
+
+	[TestCase("[2001:db8::1]:5432, 10.0.3.17 and localhost:5000", "[redacted-uri], [redacted-uri] and [redacted-uri]",
+		TestName = "Placeholder_EveryEndpointShape")]
+	[Category("Unit")]
+	[Description("Every endpoint shape - IPv6, a private IPv4 address and a single-label host:port - gets the one "
+		+ "placeholder the dotted host:port rule already wrote.")]
+	public void Redact_ShouldWriteOnePlaceholder_ForEveryEndpointShape(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redacted.Should().Be(expected, because: "a reader handles one spelling of a redacted endpoint");
 	}
 
 	#endregion
