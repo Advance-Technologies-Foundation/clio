@@ -1121,8 +1121,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		result = EmailRegex().Replace(result, RedactedValue);
 		result = HostPortRegex().Replace(result, RedactedUri);
 		result = Ipv6Regex().Replace(result, RedactIpv6Address);
-		string labelled = result;
-		result = SingleLabelHostPortRegex().Replace(result, match => RedactSingleLabelHostPort(labelled, match));
+		CountLines countLines = new(result);
+		result = SingleLabelHostPortRegex().Replace(result, match => RedactSingleLabelHostPort(countLines, match));
 		string beforeIpv4 = result;
 		result = PrivateIpv4Regex().Replace(result, match => IsVersionContext(beforeIpv4, match)
 			? match.Value
@@ -1217,27 +1217,48 @@ internal static partial class SensitiveErrorTextRedactor {
 	[GeneratedRegex(@"\r\n|\n|\r|\\r\\n|\\n|\\r", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex LineBreakRegex();
 
-	// Whether the line around the match holds another count word with a number.
-	private static bool IsCountLine(string text, Match match) {
-		int start = 0;
-		int end = text.Length;
-		foreach (Match lineBreak in LineBreakRegex().Matches(text)) {
-			if (lineBreak.Index + lineBreak.Length <= match.Index) {
+	// The count lines of a text: the index where each line ends and whether it holds two or more count words with a
+	// number. Built ONCE per text, so many "word:port" matches cost one scan, not one scan each.
+	private sealed class CountLines {
+		private readonly List<(int End, bool Counts)> lines = [];
+
+		internal CountLines(string text) {
+			int start = 0;
+			foreach (Match lineBreak in LineBreakRegex().Matches(text)) {
+				Add(text, start, lineBreak.Index);
 				start = lineBreak.Index + lineBreak.Length;
 			}
-			else if (lineBreak.Index >= match.Index + match.Length) {
-				end = lineBreak.Index;
-				break;
-			}
+			Add(text, start, text.Length);
 		}
-		return CountWordRegex().Matches(text[start..end]).Count >= 2;
+
+		// The search stays inside the line, so a text of many lines is scanned once.
+		private void Add(string text, int start, int end) {
+			Match first = CountWordRegex().Match(text, start, end - start);
+			lines.Add((end, first.Success && first.NextMatch().Success));
+		}
+
+		// Whether the line that holds index is a count line.
+		internal bool AtCountLine(int index) {
+			int low = 0;
+			int high = lines.Count - 1;
+			while (low < high) {
+				int middle = (low + high) / 2;
+				if (lines[middle].End < index) {
+					low = middle + 1;
+				}
+				else {
+					high = middle;
+				}
+			}
+			return lines[low].Counts;
+		}
 	}
 
 	// Whether "label:port" is a host and its port. localhost always is. A label that names a number in prose
 	// ("Status:500", "line:42", "timeout:5000") never is. Otherwise a well-known service port makes it one
 	// ("redis:6379"), and any other port of 1024 or more does when the label looks like a machine name - a digit,
 	// a hyphen, or three or more capitals ("db01:2000", "SQLPROD01:1433", "DBSERVER:4000").
-	private static string RedactSingleLabelHostPort(string text, Match match) {
+	private static string RedactSingleLabelHostPort(CountLines countLines, Match match) {
 		string label = match.Groups["label"].Value;
 		if (!int.TryParse(match.Groups["port"].Value, out int port) || port is < 1 or > 65_535) {
 			return match.Value;
@@ -1248,7 +1269,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (NotHostLabels.Contains(label)) {
 			return match.Value;
 		}
-		if (CountLabels.Contains(label) && IsCountLine(text, match)) {
+		if (CountLabels.Contains(label) && countLines.AtCountLine(match.Index)) {
 			return match.Value;
 		}
 		bool machineShaped = label.Any(char.IsAsciiDigit) || label.Contains('-')
