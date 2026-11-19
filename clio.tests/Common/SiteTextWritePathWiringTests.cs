@@ -1429,21 +1429,6 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("compile-creatio names an environment verdict diagnostic whose path ends in a separator as "
-		+ "[redacted-path], not as an empty name ('in  at (12,3)').")]
-	public void ApplyEnvironmentVerdict_ShouldNotPrintAnEmptyFileName() {
-		// Arrange
-		PackageBuildDiagnostic diagnostic = new("CS0103", "x", @"C:\a\b\", 12, 3, false);
-
-		// Act
-		string rendered = diagnostic.WithSiteTextRedacted().ToString();
-
-		// Assert
-		rendered.Should().NotContain("in  at", because: "an empty name is not a file name");
-	}
-
-	[Test]
-	[Category("Unit")]
 	[Description("A layout refusal whose element names all redact to nothing gets no 'Affected elements' clause, "
 		+ "rather than one that lists nothing.")]
 	public void ElementsClause_ShouldBeOmitted_WhenEveryNameRedactsToNothing() {

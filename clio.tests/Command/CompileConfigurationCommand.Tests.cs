@@ -882,6 +882,26 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	}
 
 	[Test]
+	[Description("compile-creatio names an environment verdict diagnostic whose path ends in a separator as "
+		+ "[redacted-path], not as an empty name ('in  at (12,3)').")]
+	public void Execute_ShouldNotPrintAnEmptyFileName_OfAnEnvironmentVerdictDiagnostic() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse(
+			[new CreatioCompilationError(12, 3, "CS0103", "The name 'x' does not exist", false, @"C:\a\b\")], 1, false));
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteError("(CS0103) in [redacted-path] at (12,3): The name 'x' does not exist");
+	}
+
+	[Test]
 	[Description("compile-creatio's history line (LogRecord, written as each compilation-history row arrives) carries "
 		+ "the row's diagnostics redacted as site text and names their file.")]
 	public void Execute_ShouldRedactTheHistoryLine_AsSiteText() {
