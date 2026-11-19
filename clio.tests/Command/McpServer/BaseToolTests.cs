@@ -676,11 +676,259 @@ public sealed class BaseToolTests {
 			ResolveCommand<FakeVersionGatedCommand>(options);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("A failed command reports the site's refusal recorded during the call as site-response")]
+	public void InternalExecute_ShouldCarryTheSiteResponse_WhenTheCommandFailsAfterASiteRefusal() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		BaseToolHarness tool = new(new SiteRefusingCommand(exitCode: 1, throwAfterRefusal: false),
+			ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new BaseToolHarnessOptions("refused"));
+
+		// Assert
+		result.SiteResponse.Should().BeEquivalentTo(new SiteResponse(403, "No rights", "SecurityException",
+			SiteResponse.JsonBody), because: "the site's own answer to the failed call is reported as sent");
+		JsonSerializer.Serialize(result).Should().Contain(
+			"\"site-response\":{\"status\":403,\"message\":\"No rights\",\"code\":\"SecurityException\",\"body\":\"json\"}",
+			because: "callers read the field as site-response with status, message, code and body");
+		result.Diagnostic.SideEffect.Should().Be("unknown",
+			because: "a refusal recorded as an ordinary one never proves that nothing was applied");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A command that throws after a site refusal still reports the site's answer")]
+	public void InternalExecute_ShouldCarryTheSiteResponse_WhenTheCommandThrowsAfterASiteRefusal() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		BaseToolHarness tool = new(new SiteRefusingCommand(exitCode: 0, throwAfterRefusal: true),
+			ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new BaseToolHarnessOptions("refused-throw"));
+
+		// Assert
+		result.ExitCode.Should().Be(-1);
+		result.SiteResponse.Should().NotBeNull(because: "the exception envelope is a failed call too");
+		result.SiteResponse.Status.Should().Be(403);
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A command that recovered from a refusal and succeeded reports no site response")]
+	public void InternalExecute_ShouldNotCarryASiteResponse_WhenTheCommandSucceeds() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		BaseToolHarness tool = new(new SiteRefusingCommand(exitCode: 0, throwAfterRefusal: false),
+			ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new BaseToolHarnessOptions("recovered"));
+
+		// Assert
+		result.SiteResponse.Should().BeNull(because: "only a failed call carries site-response");
+		result.Diagnostic.Should().BeNull(because: "the diagnostic goes only beside a site response");
+		JsonSerializer.Serialize(result).Should().NotContain("site-response",
+			because: "callers that ignore the field see the envelope they saw before");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failure with no site refusal recorded (clio's own failure, or no HTTP answer) has no site response")]
+	public void InternalExecute_ShouldNotCarryASiteResponse_WhenNoRefusalWasRecorded() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		BaseToolHarness tool = new(new FakeBaseToolCommand(ConsoleLogger.Instance, exitCode: 1, messageToWrite: "x"),
+			ConsoleLogger.Instance);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new BaseToolHarnessOptions("own-failure"));
+
+		// Assert
+		result.SiteResponse.Should().BeNull();
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A refusal recorded in one call is not carried into the next call of the same tool")]
+	public void InternalExecute_ShouldStartEachCallWithAnEmptyCapture() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		BaseToolHarness refused = new(new SiteRefusingCommand(exitCode: 1, throwAfterRefusal: false),
+			ConsoleLogger.Instance);
+		BaseToolHarness ownFailure = new(new FakeBaseToolCommand(ConsoleLogger.Instance, exitCode: 1,
+			messageToWrite: "x"), ConsoleLogger.Instance);
+		refused.Execute(new BaseToolHarnessOptions("first"));
+
+		// Act
+		CommandExecutionResult second = ownFailure.Execute(new BaseToolHarnessOptions("second"));
+
+		// Assert
+		second.SiteResponse.Should().BeNull(because: "each call opens its own capture");
+		SiteResponseCapture.Current.Should().BeNull(because: "the call's capture is closed when it returns");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed typed result that carries site-response gets the refusal recorded during the call")]
+	public void ExecuteWithCleanLog_ShouldSetTheSiteResponse_WhenATypedResultReportsFailure() {
+		// Arrange
+		BaseToolHarness tool = new(null, ConsoleLogger.Instance);
+
+		// Act
+		CarrierResult failed = tool.ExecuteClean(() => {
+			SiteResponseCapture.RecordRefusal(new SiteHttpResponse(500, "<html>oops</html>"));
+			return new CarrierResult(failed: true);
+		});
+		CarrierResult succeeded = tool.ExecuteClean(() => {
+			SiteResponseCapture.RecordRefusal(new SiteHttpResponse(500, ""));
+			return new CarrierResult(failed: false);
+		});
+
+		// Assert
+		failed.SiteResponse.Should().BeEquivalentTo(new SiteResponse(500, null, null, SiteResponse.HtmlBody));
+		succeeded.SiteResponse.Should().BeNull(because: "a successful typed result carries no site response");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A typed result the tool already gave a site response keeps its own")]
+	public void ExecuteWithCleanLog_ShouldKeepTheResultsOwnSiteResponse() {
+		// Arrange
+		BaseToolHarness tool = new(null, ConsoleLogger.Instance);
+		SiteResponse own = new(409, "own", null, SiteResponse.JsonBody);
+
+		// Act
+		CarrierResult result = tool.ExecuteClean(() => {
+			SiteResponseCapture.RecordRefusal(new SiteHttpResponse(500, ""));
+			return new CarrierResult(failed: true) { SiteResponse = own };
+		});
+
+		// Assert
+		result.SiteResponse.Should().BeSameAs(own);
+	}
+
+	private sealed class CarrierResult(bool failed) : ISiteResponseCarrier {
+		public bool ReportsFailure => failed;
+		public SiteResponse SiteResponse { get; set; }
+		public DataWriteDiagnostic Diagnostic { get; set; }
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A tool that declares one write per call reports side-effect none when the site refused that write without processing it")]
+	public void InternalExecute_ShouldReportSideEffectNone_WhenTheDeclaredSoleWriteIsRefusedWithoutProcessing() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		SoleWriteToolHarness tool = SoleWriteTool(new SiteHttpResponse(413, "<html>Request Entity Too Large</html>"), attempts: 1);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions(), declared: true);
+
+		// Assert
+		result.SiteResponse.Status.Should().Be(413);
+		result.Diagnostic.SideEffect.Should().Be("none",
+			because: "the tool's only write was refused without being processed, so nothing was applied");
+		result.Diagnostic.RetryAdvice.Should().Be(DataWriteDiagnostic.RefusedWithoutProcessingAdvice);
+		JsonSerializer.Serialize(result).Should().Contain("\"diagnostic\":{").And.Contain("\"side-effect\":\"none\"",
+			because: "a host reads diagnostic.side-effect beside site-response");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[TestCase(413, 1, false, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenTheToolDoesNotDeclareASoleWrite")]
+	[TestCase(413, 3, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenTheWriteMayHaveBeenSentAgain")]
+	[TestCase(401, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA401Refused")]
+	[TestCase(403, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA403Refused")]
+	[TestCase(404, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA404Refused")]
+	[TestCase(409, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA409Refused")]
+	[TestCase(302, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenARedirectReachesTheCaller")]
+	[TestCase(500, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA500Answered")]
+	[TestCase(200, 1, true, TestName = "InternalExecute_ShouldReportSideEffectUnknown_WhenA200Answered")]
+	[Category("Unit")]
+	[Description("Without all three - the tool's declaration, one attempt, a status that refuses without processing - the side effect is unknown")]
+	public void InternalExecute_ShouldReportSideEffectUnknown_WhenTheRefusalProvesNothing(int status, int attempts,
+		bool declared) {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		SoleWriteToolHarness tool = SoleWriteTool(new SiteHttpResponse(status, ""), attempts);
+
+		// Act
+		CommandExecutionResult result = tool.Execute(new UngatedToolHarnessOptions(), declared);
+
+		// Assert
+		result.SiteResponse.Status.Should().Be(status);
+		result.Diagnostic.SideEffect.Should().Be("unknown");
+		result.Diagnostic.RetryAdvice.Should().Be(DataWriteDiagnostic.SiteRefusalUnknownAdvice);
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed typed result gets side-effect none only when the tool declared one write per call")]
+	public void ExecuteWithCleanLog_ShouldReportSideEffectNone_OnlyWhenTheToolDeclaresASoleWrite() {
+		// Arrange
+		BaseToolHarness tool = new(null, ConsoleLogger.Instance);
+		Func<CarrierResult> refusedSave = () => {
+			SiteResponseCapture.RecordRefusalOfSoleWrite(new SiteHttpResponse(413, ""), 1);
+			return new CarrierResult(failed: true);
+		};
+
+		// Act
+		CarrierResult declared = tool.ExecuteClean(refusedSave, soleWriteCall: true);
+		CarrierResult undeclared = tool.ExecuteClean(refusedSave);
+
+		// Assert
+		declared.Diagnostic.SideEffect.Should().Be("none");
+		undeclared.Diagnostic.SideEffect.Should().Be("unknown",
+			because: "a command reused inside a longer sequence may run after that tool wrote");
+	}
+
+	private static SoleWriteToolHarness SoleWriteTool(SiteHttpResponse answer, int attempts) {
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<SoleWriteRefusingCommand>(Arg.Any<EnvironmentOptions>())
+			.Returns(new SoleWriteRefusingCommand(answer, attempts));
+		return new SoleWriteToolHarness(ConsoleLogger.Instance, resolver);
+	}
+
+	private sealed class SoleWriteToolHarness(ILogger logger, IToolCommandResolver commandResolver)
+		: BaseTool<UngatedToolHarnessOptions>(command: null, logger, commandResolver) {
+		public CommandExecutionResult Execute(UngatedToolHarnessOptions options, bool declared) =>
+			InternalExecute<SoleWriteRefusingCommand>(options, soleWriteCall: declared);
+	}
+
+	private sealed class SoleWriteRefusingCommand(SiteHttpResponse answer, int attempts)
+		: Command<UngatedToolHarnessOptions> {
+		public override int Execute(UngatedToolHarnessOptions options) {
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, attempts);
+			return 1;
+		}
+	}
+
+	private sealed class SiteRefusingCommand(int exitCode, bool throwAfterRefusal) : Command<BaseToolHarnessOptions> {
+		public override int Execute(BaseToolHarnessOptions options) {
+			SiteResponseCapture.RecordRefusal(new SiteHttpResponse(403,
+				"{\"success\":false,\"errorInfo\":{\"errorCode\":\"SecurityException\",\"message\":\"No rights\"}}"));
+			if (throwAfterRefusal) {
+				throw new InvalidOperationException("No rights");
+			}
+			return exitCode;
+		}
+	}
+
 	private sealed class BaseToolHarness(Command<BaseToolHarnessOptions> command, ILogger logger)
 		: BaseTool<BaseToolHarnessOptions>(command, logger) {
 		public CommandExecutionResult Execute(BaseToolHarnessOptions options) => InternalExecute(options);
 
-		public TResponse ExecuteClean<TResponse>(Func<TResponse> executor) => ExecuteWithCleanLog(executor);
+		public TResponse ExecuteClean<TResponse>(Func<TResponse> executor, bool soleWriteCall = false) =>
+			ExecuteWithCleanLog(executor, soleWriteCall);
 	}
 
 	private sealed class FakeGatedCommand(ILogger logger, int exitCode, string messageToWrite)

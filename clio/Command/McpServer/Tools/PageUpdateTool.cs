@@ -149,7 +149,9 @@ public sealed class PageUpdateTool(
 			if (inner.Success && args.Verify == true)
 				TryVerifyPage(args, inner);
 			return inner;
-		});
+		// One update-page call sends one write, the save: the gates before it and the verification after a
+		// successful save only read.
+		}, soleWriteCall: true);
 		// A save REGISTERS keys, so any cached read of this schema is now stale. One update-page call
 		// makes at most one save, so nothing in THIS call reads it again - the drop keeps the rule stated
 		// in one place rather than making the two write tools differ on when a cache entry survives.

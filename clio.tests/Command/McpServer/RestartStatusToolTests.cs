@@ -106,7 +106,7 @@ public sealed class RestartStatusToolTests {
 	}
 
 	[Test]
-	[Description("ENG-102333: surfaces requestfailed for a restart whose request itself failed, so an agent that already got an in-progress answer learns that no restart happened.")]
+	[Description("ENG-102333: surfaces requestfailed for a restart whose request itself failed, so an agent that already got an in-progress answer learns that no restart is known to have happened.")]
 	public void GetStatus_Should_ReturnRequestFailed_WhenTheRestartRequestFailed() {
 		// Arrange
 		RestartOperationRegistry registry = new();

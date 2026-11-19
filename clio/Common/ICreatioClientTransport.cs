@@ -77,6 +77,10 @@ internal interface ICreatioClientTransport : IDisposable {
 	/// <inheritdoc cref="IApplicationClient.ExecuteDeleteRequest"/>
 	string ExecuteDeleteRequest(string url, string requestData, int requestTimeout, int maxAttempts, int delaySec);
 
+	/// <summary>Sends a DELETE and returns the whole response, status included.</summary>
+	Task<HttpResponseMessage> ExecuteDeleteRequestAsync(string url, string requestData, int requestTimeout,
+		int maxAttempts, int delaySec, CancellationToken cancellationToken);
+
 	/// <inheritdoc cref="IApplicationClient.ExecuteGetRequest"/>
 	string ExecuteGetRequest(string url, int requestTimeout, int maxAttempts, int delaySec);
 
@@ -86,6 +90,10 @@ internal interface ICreatioClientTransport : IDisposable {
 
 	/// <inheritdoc cref="IApplicationClient.ExecutePatchRequest"/>
 	string ExecutePatchRequest(string url, string requestData, int requestTimeout, int maxAttempts, int delaySec);
+
+	/// <summary>Sends a PATCH and returns the whole response, status included.</summary>
+	Task<HttpResponseMessage> ExecutePatchRequestAsync(string url, string requestData, int requestTimeout,
+		int maxAttempts, int delaySec, CancellationToken cancellationToken);
 
 	/// <inheritdoc cref="IApplicationClient.ExecutePostRequest(string,string,int,int,int)"/>
 	string ExecutePostRequest(string url, string requestData, int requestTimeout, int maxAttempts, int delaySec);

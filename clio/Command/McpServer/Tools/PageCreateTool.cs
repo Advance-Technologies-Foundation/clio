@@ -74,7 +74,9 @@ public sealed class PageCreateTool(
 					: response.Note + " " + CommandExecutionResult.CompileNotRequiredNote;
 			}
 			return response;
-		});
+		// One create-page call sends one write, the save: the template, catalog and hierarchy reads come before
+		// it, and the design-package read after it runs only when it succeeded.
+		}, soleWriteCall: true);
 	}
 }
 
