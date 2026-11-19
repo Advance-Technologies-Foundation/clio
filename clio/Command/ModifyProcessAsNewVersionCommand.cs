@@ -247,9 +247,10 @@ public sealed class ModifyProcessAsNewVersionService(
 			throw new InvalidOperationException(BuildFailureMessage(result));
 		}
 
+		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
 		return new ModifyProcessAsNewVersionResult(result.VersionName, result.VersionSchemaUId, result.Version,
-			result.IsActiveVersion, result.VersionRootSchemaUId, result.AppliedOperations, result.Warnings,
-			result.LayoutChange?.ElementsClause());
+			result.IsActiveVersion, result.VersionRootSchemaUId, result.AppliedOperations,
+			ProcessDesignServerFault.SiteWarningList(result.Warnings), result.LayoutChange?.ElementsClause());
 	}
 
 	// A failure that still names a version is NOT a failed create: the version exists and the platform offers no

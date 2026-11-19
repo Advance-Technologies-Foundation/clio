@@ -377,8 +377,9 @@ public sealed class ModifyBusinessProcessService(
 			throw new InvalidOperationException(BuildFailureMessage(result));
 		}
 
+		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
 		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
-			result.Warnings);
+			ProcessDesignServerFault.SiteWarningList(result.Warnings));
 	}
 
 	// Surfaced HERE or nowhere. The success record cannot carry a failure (it is only built on success), and the throw

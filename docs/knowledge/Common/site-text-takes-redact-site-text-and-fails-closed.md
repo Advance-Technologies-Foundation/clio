@@ -122,7 +122,8 @@ no reason: the caller says its own sentence. A save refusal's `addonsErrors` ite
 never its `stackTrace`. `ReadServerText` redacts before its cap; the WCF prefix `IsUnreadableRequest` looks for is
 prose no rule takes. The previews and quotes clamp their redaction input to 8x their cap with
 `SensitiveErrorTextRedactor.ClampAtBoundary`, the clamp the fenced rendering and `SiteResponse` use, so a token the
-clamp would cut in two is dropped rather than shown as a head the redactor cannot recognize. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
+clamp would cut in two is dropped rather than shown as a head the redactor cannot recognize. The process write
+commands' success-path warnings are logged each through `RedactSiteText` too. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
 and `ReportLocallyModifiedSchemas`' raw log lines), a separate finding.
 
 **Fail closed** - `RedactSiteText` runs the cut, the whole Redact chain and every site rule inside ONE

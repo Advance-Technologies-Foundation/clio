@@ -925,6 +925,83 @@ public sealed class SiteTextWritePathWiringTests {
 		line.Should().NotContainAny([Marker, "Terrasoft.Fixture"], because: "the server's text is redacted as site text");
 	}
 
+	[TestCase("create", TestName = "ProcessWriteSuccess_ShouldLogEachWarning_AsSiteText(create)")]
+	[TestCase("modify", TestName = "ProcessWriteSuccess_ShouldLogEachWarning_AsSiteText(modify)")]
+	[TestCase("new-version", TestName = "ProcessWriteSuccess_ShouldLogEachWarning_AsSiteText(new-version)")]
+	[TestCase("activate", TestName = "ProcessWriteSuccess_ShouldLogEachWarning_AsSiteText(activate)")]
+	[Category("Unit")]
+	[Description("A SUCCESSFUL process write (create, modify in place, as a new version, activate a version) carries the "
+		+ "server's warnings in its result and logs each as a warning line: each is redacted as site text on its own, "
+		+ "so a frame in one cannot cut the owed-compile warning after it.")]
+	public void ProcessWriteSuccess_ShouldLogEachWarning_AsSiteText(string write) {
+		// Arrange
+		string[] warnings = ["Warning " + SiteMessage + "\n   at Terrasoft.Fixture.Process.Save()", OwedCompileWarning];
+		const string uid = "99999999-9999-9999-9999-999999999999";
+		string body = write switch {
+			"create" => JsonSerializer.Serialize(new {
+				BuildProcessResult = new { success = true, schemaName = "UsrFixtureProcess", schemaUId = uid, warnings }
+			}),
+			"modify" => JsonSerializer.Serialize(new {
+				ModifyProcessResult = new {
+					success = true, schemaName = "UsrFixtureProcess", schemaUId = uid, appliedOperations = 1, warnings
+				}
+			}),
+			"new-version" => JsonSerializer.Serialize(new {
+				ModifyProcessAsNewVersionResult = new {
+					success = true, versionName = "UsrFixtureProcess_v2", versionSchemaUId = uid, appliedOperations = 1,
+					warnings
+				}
+			}),
+			_ => JsonSerializer.Serialize(new {
+				SetActiveProcessVersionResult = new {
+					success = true, activeVersionName = "UsrFixtureProcess_v2", activeVersionSchemaUId = uid, warnings
+				}
+			})
+		};
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient, IStatusPreservingApplicationClient>();
+		client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(body);
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(200, body));
+		(EnvironmentSettings environment, ISettingsRepository settings, IApplicationClientFactory factory) =
+			ProcessEnvironment(client);
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>(), environment)
+			.Returns("http://sandbox/0/rest/ProcessDesignService/Write");
+		ILogger logger = Substitute.For<ILogger>();
+		IProcessDescriber describer = Substitute.For<IProcessDescriber>();
+		const string operations = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"Amount\",\"type\":\"Integer\"}}]";
+
+		// Act
+		int exitCode = write switch {
+			"create" => new CreateBusinessProcessCommand(new CreateBusinessProcessService(settings, factory, urls,
+					Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>()), describer, logger)
+				.Execute(new CreateBusinessProcessOptions { Environment = Env, DescriptorJson = ProcessDescriptor }),
+			"modify" => new ModifyBusinessProcessCommand(new ModifyBusinessProcessService(settings, factory, urls,
+					Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>()), describer, logger)
+				.Execute(new ModifyBusinessProcessOptions {
+					Environment = Env, ProcessName = "UsrFixtureProcess", OperationsJson = operations
+				}),
+			"new-version" => new ModifyProcessAsNewVersionCommand(new ModifyProcessAsNewVersionService(settings, factory,
+					urls, Substitute.For<IProcessPageFactsChecker>(), Substitute.For<ILogger>()), describer, logger)
+				.Execute(new ModifyProcessAsNewVersionOptions {
+					Environment = Env, ProcessName = "UsrFixtureProcess", OperationsJson = operations
+				}),
+			_ => new SetActiveProcessVersionCommand(new SetActiveProcessVersionService(settings, factory, urls,
+					Substitute.For<ILogger>()), describer, logger)
+				.Execute(new SetActiveProcessVersionOptions { Environment = Env, VersionName = "UsrFixtureProcess_v2" })
+		};
+
+		// Assert
+		exitCode.Should().Be(0, because: "the server accepted the write");
+		logger.Received().WriteWarning("Warning " + RedactedReason);
+		logger.Received().WriteWarning(OwedCompileWarning);
+		foreach (string text in Logged(logger)) {
+			text.Should().NotContainAny([Marker, "Terrasoft.Fixture"],
+				because: "the warning lines are the site's text, and a stdio log is not redacted again");
+		}
+	}
+
 	#endregion
 
 	#region Dynamic cases (DynamicCaseService, BuildCaseClient)

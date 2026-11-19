@@ -119,8 +119,9 @@ public sealed class SetActiveProcessVersionService(
 			throw new InvalidOperationException(BuildFailureMessage(result));
 		}
 
+		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
 		return new SetActiveProcessVersionResult(result.ActiveVersionName, result.ActiveVersionSchemaUId,
-			result.DeactivationFailureCount, result.Warnings);
+			result.DeactivationFailureCount, ProcessDesignServerFault.SiteWarningList(result.Warnings));
 	}
 
 	// A failed activation must say WHICH version is actually active, because that is the whole point of the

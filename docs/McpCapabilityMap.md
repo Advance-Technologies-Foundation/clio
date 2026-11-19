@@ -356,7 +356,7 @@ preview of any non-JSON service body; the build verdict, diagnostics and history
 push-workspace (a reported file is named by its file name only, never its directories); the installation failure
 line and the invalid-archive message; the server's text in create-business-process, modify-business-process,
 modify-business-process-as-new-version, set-active-process-version and compile-business-process (fenced there as
-site text), its version and element names and each of its warnings; and the
+site text), its version and element names and each of its warnings, on failure and on success; and the
 dynamic-case tools' answer messages and quoted bodies. The raw streamed installation log is not covered. **Not
 every field that carries a site's words is wired yet.** The remaining envelope readers (execute-esq's DataService
 failure, the web-service designer, sys-settings, the ATF data provider, the application, section and schema

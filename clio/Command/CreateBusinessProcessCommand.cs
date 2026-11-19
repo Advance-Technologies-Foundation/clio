@@ -461,7 +461,9 @@ public sealed class CreateBusinessProcessService(
 				ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage, "BuildProcess failed.") + warnings);
 		}
 
-		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId, result.Warnings);
+		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
+		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId,
+			ProcessDesignServerFault.SiteWarningList(result.Warnings));
 	}
 
 	private static JsonObject ParseDescriptor(string descriptorJson) {

@@ -109,6 +109,19 @@ internal static class ProcessDesignServerFault {
 	}
 
 	/// <summary>
+	/// The server's warnings on a SUCCESSFUL write, each redacted as the site's text on its own; <see langword="null"/>
+	/// for none, as the answer had it.
+	/// </summary>
+	/// <remarks>
+	/// The write's result carries them to the tool, and every write command logs each one as a warning line, which a
+	/// stdio log does not redact again. A warning that redacts to nothing is dropped. A server notice keeps its own
+	/// opening words, which is what a caller matching a notice by its start reads.
+	/// </remarks>
+	/// <param name="warnings">The answer's <c>warnings</c>.</param>
+	internal static IReadOnlyList<string>? SiteWarningList(IReadOnlyList<string>? warnings) =>
+		warnings?.Select(SiteText).Where(warning => warning.Length > 0).ToList();
+
+	/// <summary>
 	/// A name or a sentence the server wrote into its answer (a version name, an element name), redacted as the
 	/// site's text and trimmed; empty for none.
 	/// </summary>
