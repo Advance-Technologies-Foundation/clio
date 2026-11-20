@@ -488,7 +488,45 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     <c>{"request":{...}}</c> (WCF <c>BodyStyle = Wrapped</c>) and the answer is wrapped under
 		///     <c>ModifyCaseResult</c>; <c>validateOnly: true</c> plans without writing.
 		/// </summary>
-		ModifyCase = 130
+		ModifyCase = 130,
+
+		/// <summary>
+		///     Reads the security-events state of one SSO provider, by code, from the SsoSecurityEvents package
+		///     (Creatio 10.2+). Answers with the feature off too (<c>reason</c> <c>FeatureOff</c>).
+		/// </summary>
+		SsoSecurityEventsGetProviderState = 131,
+
+		/// <summary>
+		///     Turns security events on for one SSO provider, by code, as an operation: the site's card then says
+		///     the change came from Creatio support. Creates or reconciles the provider's stream.
+		/// </summary>
+		SsoSecurityEventsEnableEvents = 132,
+
+		/// <summary>
+		///     Turns security events off for one SSO provider, by code, as an operation, and disables the site's own
+		///     stream at the provider.
+		/// </summary>
+		SsoSecurityEventsDisableEvents = 133,
+
+		/// <summary>
+		///     Asks the provider for a verification event and optionally waits for it on the server (at most 60 s).
+		/// </summary>
+		SsoSecurityEventsSendTestEvent = 134,
+
+		/// <summary>
+		///     Stores a new site address for one SSO provider and optionally moves the site's own stream to it.
+		/// </summary>
+		SsoSecurityEventsSetSiteAddress = 135,
+
+		/// <summary>
+		///     Creates an SSO provider, or updates an existing one in place (same row id), by code.
+		/// </summary>
+		SsoSecurityEventsUpsertProvider = 136,
+
+		/// <summary>
+		///     Removes an SSO provider by code: its own stream at the provider first, unless the call is local only.
+		/// </summary>
+		SsoSecurityEventsRemoveProvider = 137
 
 	}
 
@@ -594,6 +632,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.BuildCase, "/rest/ProcessDesignService/BuildCase"},
 		{KnownRoute.DescribeCase, "/rest/ProcessDesignService/DescribeCase"},
 		{KnownRoute.ModifyCase, "/rest/ProcessDesignService/ModifyCase"},
+		{KnownRoute.SsoSecurityEventsGetProviderState, "/rest/SsoSecurityEventsSettingsService/GetProviderState"},
+		{KnownRoute.SsoSecurityEventsEnableEvents, "/rest/SsoSecurityEventsSettingsService/EnableEvents"},
+		{KnownRoute.SsoSecurityEventsDisableEvents, "/rest/SsoSecurityEventsSettingsService/DisableEvents"},
+		{KnownRoute.SsoSecurityEventsSendTestEvent, "/rest/SsoSecurityEventsSettingsService/SendTestEvent"},
+		{KnownRoute.SsoSecurityEventsSetSiteAddress, "/rest/SsoSecurityEventsSettingsService/SetSiteAddress"},
+		{KnownRoute.SsoSecurityEventsUpsertProvider, "/rest/SsoSecurityEventsSettingsService/UpsertProvider"},
+		{KnownRoute.SsoSecurityEventsRemoveProvider, "/rest/SsoSecurityEventsSettingsService/RemoveProvider"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
 		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},

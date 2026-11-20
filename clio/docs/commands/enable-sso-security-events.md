@@ -1,0 +1,104 @@
+# enable-sso-security-events
+
+## Command Type
+
+    Identity commands
+
+## Name
+
+enable-sso-security-events - turn security events on for an SSO provider
+
+## Description
+
+Turns security events on for one SSO provider through EnableEvents. The site records the change as an operation: Step 3 of the provider card then shows "Enabled by Creatio support on {date} at {time}." The site checks the provider, stores the switch and creates or reconciles its own stream. Needs the site feature IdentitySecurityEvents (FeatureOff otherwise).
+
+Pass the site's public https address with --site-address: the provider delivers the events there and refuses a private or non-https address (SiteAddressRefused). Without it the stored address is kept; when none is stored the site uses the address the call came in on, and answers SiteAddressRequired for a localhost or private host.
+
+> **The settings service.** Every command of this family posts to one method of the site's settings service SsoSecurityEventsSettingsService (rest/SsoSecurityEventsSettingsService/<Method>, with the 0/ prefix on .NET Framework). The service comes with the SsoSecurityEvents package of Creatio 10.2 and later and needs the CanManageSso system operation. It answers every call with a reason code and never with a failure: the command prints the reason ("none" on success) and exits 0 whatever it is. It exits 1 only when the call itself failed: a refused option, no answer, an answer that is not the service's, or a site without the service (HTTP 404, reported as not supported). Read the reason before acting on the result.
+
+> **Platform routing.** The request goes to `0/rest/SsoSecurityEventsSettingsService/EnableEvents` on .NET Framework hosts and to `rest/SsoSecurityEventsSettingsService/EnableEvents` on .NET Core hosts; make sure the environment's runtime flag (`--IsNetCore`) matches the site.
+
+## Synopsis
+
+```bash
+enable-sso-security-events --code <code> [--site-address <url>] [options]
+```
+
+## Options
+
+```bash
+--code                              Code of the SSO provider (required)
+                                    Creatio ID is always identity-v3
+
+--site-address                      Public https address of the site the events are delivered to
+                                    Default: the stored address, else the address of the call
+
+--ssf-discovery-url                 SSF discovery URL of the provider
+                                    Default: <provider URL>/.well-known/ssf-configuration (always for Creatio ID)
+
+--confirm-other-host                Confirm an SSF discovery URL on another host than the provider
+                                    URL; the site then sends the provider's client secret to that host
+
+--format                            Output format: text (default) or json
+                                    Default: text
+
+--timeout                           Request timeout in milliseconds
+                                    Default: 100000
+
+--uri                   -u          Application uri
+
+--Password              -p          User password
+
+--Login                 -l          User login (administrator permission required)
+
+--Environment           -e          Environment name
+
+--Maintainer            -m          Maintainer name
+
+--clientId                          OAuth client id
+
+--clientSecret                      OAuth client secret
+```
+
+## Examples
+
+```bash
+# Turn events on for Creatio ID at the site's public address
+clio enable-sso-security-events -e demo-site --code identity-v3 \
+    --site-address https://demo-site.creatio.com
+```
+
+## Output
+
+Text output is one "name: value" line per member the site returned: reason, reasonDetail, oauthError, providerId, isCreated, testResult, streamDeleted, then the state the call left (providerExists, featureEnabled, enabled, siteAddress, siteStatus, streamStatus, lastError, lastTestResult, lastTestOn, changedByOperation, changedOn, isDisablePending). --format json prints the site's whole answer. No answer carries a secret. Text from the site is printed on one line, with anything that looks like a credential removed.
+
+    0       The site answered; read the printed reason code
+    1       The call failed: refused option, no or foreign answer, service not found (404)
+
+The reason codes are listed in [get-sso-security-events](get-sso-security-events.md#reason-codes).
+
+## Notes
+
+- The call is sent once and never retried or replayed. When it fails without an answer the command warns that the site may have applied it; run `get-sso-security-events` before repeating it.
+- Turn the site feature `IdentitySecurityEvents` on first; with it off the answer is `FeatureOff` and nothing changes.
+
+## Prerequisites
+
+- A Creatio 10.2+ site with the SsoSecurityEvents package, registered with clio (`clio reg-web-app ...`)
+- The authenticated user has the `CanManageSso` system operation right
+
+## Related commands
+
+- [`get-sso-security-events`](get-sso-security-events.md)
+- [`disable-sso-security-events`](disable-sso-security-events.md)
+- [`send-sso-security-test-event`](send-sso-security-test-event.md)
+- [`set-sso-security-events-address`](set-sso-security-events-address.md)
+- [`update-sso-provider`](update-sso-provider.md)
+- [`remove-sso-provider`](remove-sso-provider.md)
+- [`register-sso-provider`](register-sso-provider.md)
+
+## Reporting Bugs
+
+    https://github.com/Advance-Technologies-Foundation/clio
+
+- [Clio Command Reference](../../Commands.md#enable-sso-security-events)

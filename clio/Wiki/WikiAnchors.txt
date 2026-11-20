@@ -250,6 +250,13 @@ login:login,signin
 logout:logout,signout
 auth-status:auth-status,whoami
 register-sso-provider:register-sso-provider,sso-register-provider
+get-sso-security-events:get-sso-security-events
+enable-sso-security-events:enable-sso-security-events
+disable-sso-security-events:disable-sso-security-events
+send-sso-security-test-event:send-sso-security-test-event
+set-sso-security-events-address:set-sso-security-events-address
+update-sso-provider:update-sso-provider
+remove-sso-provider:remove-sso-provider
 manage-user:manage-user
 manage-role:manage-role
 manage-access:manage-access
