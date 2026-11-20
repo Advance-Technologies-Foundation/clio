@@ -96,6 +96,44 @@ public sealed class RedactorOptionBTests {
 		wrong.Should().BeEmpty(because: $"a stage after the chain may only replace spans; {wrong.Count} found:\n" + string.Join('\n', wrong.Take(20)));
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("EVERY PREFILTER IS EXACT: a rule skipped where the text lacks its literal (or its \"=\"/\":\") must match "
+		+ "nowhere such a text exists. Over the corpus sample, master's chain output and Redact's output, each as written and "
+		+ "upper-cased, every match of every prefiltered rule that has run lies in a text that meets its condition - an "
+		+ "IgnoreCase rule's literal is compared ignoring case (\"=[REDACTED]\" matches \"=[redacted]\").")]
+	public void EveryPrefilter_ShouldHoldWhereverItsRuleMatches() {
+		// Arrange
+		List<string> texts = [];
+		foreach (string text in Sample()) {
+			SensitiveErrorTextRedactor.RedactSiteText(text);
+			SensitiveErrorTextRedactor.RedactCredentials(text);
+			foreach (string variant in new[] { text, SensitiveErrorTextRedactor.MasterChain.Redact(text),
+					SensitiveErrorTextRedactor.MasterChain.RedactCredentials(text), SensitiveErrorTextRedactor.Redact(text) }) {
+				texts.Add(variant);
+				texts.Add(variant.ToUpperInvariant());
+			}
+		}
+		List<SensitiveErrorTextRedactor.PrefilteredRule> rules = [.. SensitiveErrorTextRedactor.Prefiltered.Values];
+		System.Collections.Concurrent.ConcurrentBag<string> wrong = [];
+
+		// Act
+		System.Threading.Tasks.Parallel.ForEach(texts, new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 4 }, text => {
+			foreach (SensitiveErrorTextRedactor.PrefilteredRule rule in rules) {
+				if (!rule.MayMatch(text) && rule.Rule.IsMatch(text)) {
+					wrong.Add($"{rule.Rule} matches \"{text}\" although its condition ({rule.Condition}) does not hold");
+				}
+			}
+		});
+		TestContext.Out.WriteLine($"{rules.Count} prefiltered rules over {texts.Count} texts");
+
+		// Assert
+		rules.Count.Should().Be(34, because: "every prefiltered call site has run and is checked: 41 call sites, 34 distinct "
+			+ "rule and condition pairs (Extra and ExtraCredentials share seven)");
+		wrong.Should().BeEmpty(because: $"a prefilter may only skip a rule that cannot match; {wrong.Count} found:\n"
+			+ string.Join('\n', wrong.Take(10)));
+	}
+
 	[TestCase("a [redacted-path] b", 0, 19, "[redacted]", "[redacted-path]", TestName = "Edit_KeepsAPlaceholderInsideTheSpan")]
 	[TestCase("x (old) y", 0, 9, "[redacted-path]", "[redacted-path]([redacted-path])[redacted-path]", TestName = "Edit_KeepsEveryBracket")]
 	[TestCase("see [redacted-uri]x", 8, 11, "[redacted]", "see [redacted-uri]", TestName = "Edit_WidensToAWholePlaceholder")]
@@ -275,8 +313,8 @@ public sealed class RedactorOptionBTests {
 		};
 
 		// Assert
-		output.Should().BeOneOf(["[redacted]", "[untrusted-source-text begin] [redacted] [untrusted-source-text end]"],
-			because: "a timeout fails the whole text closed");
+		output.Should().BeOneOf(["[redacted-timeout]", "[untrusted-source-text begin] [redacted-timeout] [untrusted-source-text end]"],
+			because: "a timeout fails the whole text closed, to the timeout placeholder");
 	}
 
 	#endregion
@@ -354,28 +392,42 @@ public sealed class RedactorOptionBTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The whole-call budget: a call that runs past it fails closed to the placeholder, whatever stage it is "
-		+ "in - plain C# in the edit function included, which no regex timeout stops.")]
-	public void EveryEntryPoint_ShouldFailClosed_WhenTheWholeCallRunsPastItsBudget() {
+	[Description("The work budget: a call that runs past it fails closed to [redacted-timeout] - not to the bare [redacted] "
+		+ "a value gets - whatever stage it is in, plain C# in the edit function included, which no regex timeout stops. The "
+		+ "fail-closed counter counts it, and it is logged once with the entry point and the input length, never the text.")]
+	public void EveryEntryPoint_ShouldFailClosedToTheTimeoutPlaceholder_WhenTheCallRunsPastItsWorkBudget() {
 		// Arrange
 		string text = string.Concat(Enumerable.Repeat("password=Basic X7q2 rejected; ", 20_000));
+		List<string> logged = [];
+		Action<string> log = SensitiveErrorTextRedactor.FailedClosedLog;
+		SensitiveErrorTextRedactor.FailedClosedLog = logged.Add;
+		long failedBefore = SensitiveErrorTextRedactor.FailedClosed;
 
 		// Act
 		string redact;
 		string site;
 		string fenced;
-		using (SensitiveErrorTextRedactor.InjectBudgetForTests(TimeSpan.Zero)) {
-			redact = SensitiveErrorTextRedactor.Redact(text);
-			site = SensitiveErrorTextRedactor.RedactSiteText(text);
-			fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
+		try {
+			using (SensitiveErrorTextRedactor.InjectWorkBudgetForTests(1)) {
+				redact = SensitiveErrorTextRedactor.Redact(text);
+				site = SensitiveErrorTextRedactor.RedactSiteText(text);
+				fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
+			}
 		}
+		finally {
+			SensitiveErrorTextRedactor.FailedClosedLog = log;
+		}
+		long failed = SensitiveErrorTextRedactor.FailedClosed - failedBefore;
 		string unbudgeted = SensitiveErrorTextRedactor.Redact(text);
 
 		// Assert
-		redact.Should().Be("[redacted]", because: "past its budget the call fails closed");
-		site.Should().Be("[redacted]");
-		fenced.Should().Be("[untrusted-source-text begin] [redacted] [untrusted-source-text end]");
-		unbudgeted.Should().NotBe("[redacted]", because: "the budget is reset after the call");
+		redact.Should().Be("[redacted-timeout]", because: "past its budget the call fails closed, visibly");
+		site.Should().Be("[redacted-timeout]");
+		fenced.Should().Be("[untrusted-source-text begin] [redacted-timeout] [untrusted-source-text end]");
+		failed.Should().Be(3, because: "each fail-closed call is counted");
+		logged.Should().HaveCount(3).And.AllSatisfy(line => line.Should().NotContain("X7q2", because: "the log never carries the text"));
+		logged[0].Should().Be($"clio redacted a text whole: Redact on {text.Length} characters stopped on its work budget.");
+		unbudgeted.Should().NotContain("[redacted-timeout]", because: "the injected budget ends with its scope");
 	}
 
 	#endregion

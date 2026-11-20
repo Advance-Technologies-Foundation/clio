@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using Clio.Common;
 using FluentAssertions;
@@ -8,78 +9,152 @@ using NUnit.Framework;
 namespace Clio.Tests.Common;
 
 /// <summary>
-/// The entry points at about 1 MB stay within a time close to master's. Measured on 20 Nov at 1.2 MB, master's Redact
-/// took 0.4-0.65 s and its fenced rendering 1-3 ms; this build's Redact 0.5-1.5 s, RedactSiteText 0.5-2.1 s and both
-/// fenced renderings at most 7 ms. Before B2 the edit function compared every edit with every placeholder, and
-/// "password=Basic X7q2 rejected; " repeated to 1.2 MB took 12.9 s (Redact) while the fenced rendering, with master's
-/// 2,400 bound gone, took 3.6 s at 600 KB.
+/// The entry points are linear, and the fenced renderings are bounded, proven WITHOUT THE CLOCK: the redactor counts its
+/// own work (<see cref="SensitiveErrorTextRedactor.Work"/>: every character a rule or a step of master's chain scans,
+/// every match, edit, placeholder found or examined, piece kept), and the tests compare the work of an input with the
+/// work of one twice as long. A shared CI runner cannot make that flake. One coarse clock check stays.
 /// </summary>
+/// <remarks>
+/// Measured on 20 Nov at 1.2 MB: master's Redact 0.4-0.7 s and its fenced rendering 1-3 ms; this build's Redact
+/// 0.5-1.6 s, RedactSiteText up to 2.2 s (JSON-escaped credentials), the fenced renderings at most 7 ms. Before B2 the
+/// edit function compared every edit with every placeholder (12.9 s on the first shape), and the fenced rendering, with
+/// master's 2,400 bound gone, took 3.6 s at 600 KB.
+/// </remarks>
 [TestFixture]
 [Property("Module", "Common")]
 public sealed class RedactorTimingTests {
 
-	private const int Length = 1_000_000;
-
-	private static string Repeat(string unit) {
-		StringBuilder text = new(Length + unit.Length);
-		while (text.Length < Length) {
+	private static string Repeat(string unit, int length) {
+		StringBuilder text = new(length + unit.Length);
+		while (text.Length < length) {
 			text.Append(unit);
 		}
-		return text.ToString(0, Length);
+		return text.ToString(0, length);
 	}
 
 	private static readonly string EscapedQuote = "\\" + "u0022";
 
-	private static readonly object[] Shapes = [
-		new object[] { "pairs", "password=Basic X7q2 rejected; " },
-		new object[] { "paths", "see C:\\x\\y (a) [b] {c} ..\\z\\w.config and /home/jdoe/x; " },
-		new object[] { "escaped-json", "{" + EscapedQuote + "password" + EscapedQuote + ":" + EscapedQuote + "hunter2" + EscapedQuote + ","
-			+ EscapedQuote + "x" + EscapedQuote + ":" + EscapedQuote + "\\\\\\\\SRV01\\\\share" + EscapedQuote + "} " },
-		new object[] { "site-page", "Login failed for user 'zq_login'. Data Source=.\\SQLEXPRESS;Initial Catalog=ZqDb <div>(a)</div> " }
+	internal static readonly string[] ShapeNames = ["pairs", "paths", "urls-emails", "escaped-json", "site-page", "brackets",
+		"placeholders", "pair-dense", "escapes"];
+
+	internal static string Shape(string name) => name switch {
+		"pairs" => "password=Basic X7q2 rejected; ",
+		"paths" => "see C:\\x\\y (a) [b] {c} ..\\z\\w.config and /home/jdoe/x; ",
+		"urls-emails" => "GET https://zq.example/a?b=1 from jdoe@zq.example at db01.internal:1433, ",
+		"escaped-json" => "{" + EscapedQuote + "password" + EscapedQuote + ":" + EscapedQuote + "hunter2" + EscapedQuote + ","
+			+ EscapedQuote + "x" + EscapedQuote + ":" + EscapedQuote + "\\\\\\\\SRV01\\\\share" + EscapedQuote + "} ",
+		"site-page" => "Login failed for user 'zq_login'. Data Source=.\\SQLEXPRESS;Initial Catalog=ZqDb <div>(a)</div> ",
+		"brackets" => "([{a}])[b](c){d}",
+		"placeholders" => "[redacted] [redacted-uri]x [redacted-path]/y ",
+		"pair-dense" => "a=1 b=2 password=x token=y ",
+		_ => "\\n\\t\\r" + EscapedQuote + "\\\\\\\""
+	};
+
+	private static readonly (string Name, Func<string, string> Run)[] Entries = [
+		("Redact", SensitiveErrorTextRedactor.Redact),
+		("RedactSiteText", SensitiveErrorTextRedactor.RedactSiteText),
+		("RedactCredentials", SensitiveErrorTextRedactor.RedactCredentials),
+		("RedactJsonCredentialProperties", SensitiveErrorTextRedactor.RedactJsonCredentialProperties)
 	];
 
-	private static (string Output, TimeSpan Elapsed) Time(Func<string, string> entry, string text) {
-		entry("warm up");
-		Stopwatch watch = Stopwatch.StartNew();
+	// The work one call does, and whether it failed closed.
+	private static (long Work, bool FailedClosed, string Output) Measure(Func<string, string> entry, string text) {
+		long work = SensitiveErrorTextRedactor.Work;
+		long failed = SensitiveErrorTextRedactor.FailedClosed;
 		string output = entry(text);
-		return (output, watch.Elapsed);
+		return (SensitiveErrorTextRedactor.Work - work, SensitiveErrorTextRedactor.FailedClosed != failed, output);
 	}
 
-	[TestCaseSource(nameof(Shapes))]
+	[TestCaseSource(nameof(ShapeNames))]
 	[Category("Unit")]
-	[Description("Redact and RedactSiteText over 1 MB finish within 3 s each (master: about 0.5 s), and do not fail closed "
-		+ "on the whole-call budget. The quadratic edit function took 12.9 s on the first shape.")]
-	public void RedactAndRedactSiteText_ShouldStayNearMastersTime_At1MB(string shape, string unit) {
+	[Description("LINEARITY without the clock: for every entry point, the work of a 200,000-character input is at most 2.2 "
+		+ "times the work of a 100,000-character one of the same shape, and neither fails closed. A quadratic step - the edit "
+		+ "function comparing every edit with every placeholder - doubles its share of the work twice over.")]
+	public void EveryEntryPoint_ShouldDoLinearWork(string shape) {
 		// Arrange
-		string text = Repeat(unit);
+		string single = Repeat(Shape(shape), 100_000);
+		string twice = Repeat(Shape(shape), 200_000);
 
 		// Act
-		(string redact, TimeSpan redactTime) = Time(SensitiveErrorTextRedactor.Redact, text);
-		(string site, TimeSpan siteTime) = Time(SensitiveErrorTextRedactor.RedactSiteText, text);
+		var measured = Entries.Select(entry => (entry.Name, Single: Measure(entry.Run, single), Twice: Measure(entry.Run, twice))).ToList();
+		TestContext.Out.WriteLine(string.Join("; ", measured.Select(entry =>
+			$"{entry.Name} {entry.Single.Work} -> {entry.Twice.Work} ({(double)entry.Twice.Work / entry.Single.Work:0.000})")));
 
 		// Assert
-		redact.Should().NotBe("[redacted]", because: $"Redact of the {shape} shape must finish, not fail closed");
-		site.Should().NotBe("[redacted]", because: $"RedactSiteText of the {shape} shape must finish, not fail closed");
-		redactTime.Should().BeLessThan(TimeSpan.FromSeconds(3), because: $"Redact of 1 MB ({shape}) stays near master's time");
-		siteTime.Should().BeLessThan(TimeSpan.FromSeconds(3), because: $"RedactSiteText of 1 MB ({shape}) stays near master's time");
+		foreach (var entry in measured) {
+			entry.Single.FailedClosed.Should().BeFalse(because: $"{entry.Name} of 100,000 characters ({shape}) must finish");
+			entry.Twice.FailedClosed.Should().BeFalse(because: $"{entry.Name} of 200,000 characters ({shape}) must finish");
+			((double)entry.Twice.Work).Should().BeLessThanOrEqualTo(2.2 * entry.Single.Work,
+				because: $"{entry.Name}'s work on the {shape} shape must grow linearly");
+		}
 	}
 
-	[TestCaseSource(nameof(Shapes))]
+	[TestCaseSource(nameof(ShapeNames))]
 	[Category("Unit")]
-	[Description("Both fenced renderings over 1 MB finish within 250 ms (master: 1-3 ms): they cut their input at "
-		+ "master's 2,400 before the chain, as master did.")]
-	public void FencedRenderings_ShouldStayNearMastersTime_At1MB(string shape, string unit) {
+	[Description("THE FENCE BOUND without the clock: both fenced renderings do exactly the same work for 1 MB as for 10 KB of "
+		+ "the same shape, because they cut their input at master's 2,400 before the chain.")]
+	public void FencedRenderings_ShouldDoTheSameWork_ForAnyInputPastTheirBound(string shape) {
 		// Arrange
-		string text = Repeat(unit);
+		string small = Repeat(Shape(shape), 10_000);
+		string large = Repeat(Shape(shape), 1_000_000);
+		Func<string, string> fenced = text => SensitiveErrorTextRedactor.RedactUntrustedOrNull(text);
+		Func<string, string> site = text => SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
 
 		// Act
-		(string fenced, TimeSpan fencedTime) = Time(value => SensitiveErrorTextRedactor.RedactUntrustedOrNull(value), text);
-		(string site, TimeSpan siteTime) = Time(value => SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(value), text);
+		long fencedSmall = Measure(fenced, small).Work;
+		long fencedLarge = Measure(fenced, large).Work;
+		long siteSmall = Measure(site, small).Work;
+		long siteLarge = Measure(site, large).Work;
 
 		// Assert
-		fenced.Should().NotBeNull();
-		site.Should().NotBeNull();
-		fencedTime.Should().BeLessThan(TimeSpan.FromMilliseconds(250), because: $"the fenced rendering of 1 MB ({shape}) is bounded as master's was");
-		siteTime.Should().BeLessThan(TimeSpan.FromMilliseconds(250), because: $"the fenced site rendering of 1 MB ({shape}) is bounded as master's was");
+		fencedLarge.Should().Be(fencedSmall, because: "the fenced rendering reads at most master's 2,400 characters");
+		siteLarge.Should().Be(siteSmall, because: "the fenced site rendering reads at most master's 2,400 characters");
+	}
+
+	[TestCase("pair-dense")]
+	[TestCase("escapes")]
+	[Category("Unit")]
+	[Description("THE WORK BUDGET is deterministic: a 5 MB legitimate input is redacted normally by Redact and "
+		+ "RedactSiteText - not failed closed - whatever the machine or its load, and its work stays well inside the budget "
+		+ "(WorkPerCharacter units per character). The two shapes are the one with the most work per character and the one whose 5 MB had failed "
+		+ "closed on a regex timeout before long inputs got a length-scaled match timeout.")]
+	public void A5MBInput_ShouldBeRedactedNormally_WhateverTheLoad(string shape) {
+		// Arrange
+		string text = Repeat(Shape(shape), 5_000_000);
+
+		// Act
+		(long redactWork, bool redactFailed, string redact) = Measure(SensitiveErrorTextRedactor.Redact, text);
+		(long siteWork, bool siteFailed, string site) = Measure(SensitiveErrorTextRedactor.RedactSiteText, text);
+
+		// Assert
+		redactFailed.Should().BeFalse(because: "a 5 MB answer is redacted, not failed closed");
+		siteFailed.Should().BeFalse(because: "a 5 MB answer is redacted, not failed closed");
+		redact.Should().NotContain(SensitiveErrorTextRedactor.RedactedTimeout);
+		site.Should().NotContain(SensitiveErrorTextRedactor.RedactedTimeout);
+		siteWork.Should().BeLessThan(SensitiveErrorTextRedactor.WorkPerCharacter * text.Length / 5,
+			because: "the budget keeps a wide margin over the work a legitimate shape does");
+		redactWork.Should().BeLessThan(SensitiveErrorTextRedactor.WorkPerCharacter * text.Length / 5);
+	}
+
+	[Test]
+	[NonParallelizable]
+	[Category("Unit")]
+	[Description("The one coarse clock check: RedactSiteText of 1 MB of the slowest shape (JSON-escaped credentials), "
+		+ "warmed up with the same shape, finishes within 8 s and does not fail closed. Linearity itself is proven by the "
+		+ "work counter, not here.")]
+	public void RedactSiteText_ShouldFinish1MBOfTheSlowestShape_WellWithinTheClock() {
+		// Arrange
+		string text = Repeat(Shape("escaped-json"), 1_000_000);
+		SensitiveErrorTextRedactor.RedactSiteText(Repeat(Shape("escaped-json"), 100_000));
+		Stopwatch watch = Stopwatch.StartNew();
+
+		// Act
+		(long _, bool failed, string output) = Measure(SensitiveErrorTextRedactor.RedactSiteText, text);
+		watch.Stop();
+
+		// Assert
+		failed.Should().BeFalse();
+		output.Should().NotContain(SensitiveErrorTextRedactor.RedactedTimeout);
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(8));
 	}
 }

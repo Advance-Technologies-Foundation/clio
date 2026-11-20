@@ -73,6 +73,7 @@ public sealed class RedactorSinkCompositionTests {
 
 		// Act
 		foreach (string text in set) {
+			long failedClosed = SensitiveErrorTextRedactor.FailedClosed;
 			string json = JsonSerializer.Serialize(new { success = false, errorInfo = new { message = text, errorCode = text } });
 			SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(500, json));
 			Check(response.Message == Cap(Site(text), SiteResponse.MaxMessageLength), "site-response.message", text, response.Message);
@@ -113,6 +114,8 @@ public sealed class RedactorSinkCompositionTests {
 			Check(inner == FencedSite(firstLine.Length > 500 ? firstLine[..500] : firstLine), "refused delete's inner message", text, inner);
 			CheckFenced(FencedSite(text), text, Site, "RedactUntrustedSiteTextOrNull");
 			CheckFenced(SensitiveErrorTextRedactor.RedactUntrustedOrNull(text), text, SensitiveErrorTextRedactor.Redact, "RedactUntrustedOrNull");
+			Check(SensitiveErrorTextRedactor.FailedClosed == failedClosed, "no redaction failed closed", text,
+				$"{SensitiveErrorTextRedactor.FailedClosed - failedClosed} fail-closed calls");
 		}
 
 		// Assert
@@ -177,6 +180,7 @@ public sealed class RedactorSinkCompositionTests {
 
 		// Act
 		foreach (string text in set) {
+			long failedClosed = SensitiveErrorTextRedactor.FailedClosed;
 			string body = ODataError(text);
 			string detected = Detected(body);
 			if (detected is null) {
@@ -197,6 +201,8 @@ public sealed class RedactorSinkCompositionTests {
 				thrown = exception.Message;
 			}
 			Check(thrown == expected, "EmailTemplateContentService.Read", text, thrown);
+			Check(SensitiveErrorTextRedactor.FailedClosed == failedClosed, "no redaction failed closed", text,
+				$"{SensitiveErrorTextRedactor.FailedClosed - failedClosed} fail-closed calls");
 		}
 		foreach (string text in set.Where((_, index) => index % 3 == 0)) {
 			string body = ODataError(text);

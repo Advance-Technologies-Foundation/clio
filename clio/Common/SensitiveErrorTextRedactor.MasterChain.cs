@@ -79,8 +79,12 @@ internal static partial class SensitiveErrorTextRedactor {
 		/// lists pins the calls, their order and their evaluators, and the output pin pins what the evaluators write.
 		/// </summary>
 		internal sealed record ChainStep(Regex Rule, string? Replacement, MatchEvaluator? Evaluator) {
-			/// <summary>The step over <paramref name="text"/>, as master's call wrote it.</summary>
-			public string Apply(string text) => Evaluator is null ? Rule.Replace(text, Replacement!) : Rule.Replace(text, Evaluator);
+			/// <summary>The step over <paramref name="text"/>, as master's call wrote it: master's rule, with the timeout a long
+			/// input gets (<see cref="ForLength"/>; master's own below <see cref="CharactersPerTimeoutSecond"/>).</summary>
+			public string Apply(string text) {
+				Regex rule = ForLength(Rule, text.Length);
+				return Evaluator is null ? rule.Replace(text, Replacement!) : rule.Replace(text, Evaluator);
+			}
 
 			/// <summary>What the step writes: the placeholder, or the evaluator's declaring type and name.</summary>
 			public string Writes => Evaluator is null ? Replacement! : "evaluator:" + Evaluator.Method.DeclaringType!.Name + "." + Evaluator.Method.Name;
@@ -131,11 +135,12 @@ internal static partial class SensitiveErrorTextRedactor {
 		/// <summary>Master's RedactCredentials body, without its guard.</summary>
 		internal static string RedactCredentials(string text) => Run(CredentialsSteps, text);
 
-		// The calls in order. Between two calls the whole-call budget is checked: master had no such check, and it changes
-		// nothing a call writes; past the budget the entry point fails closed.
+		// The calls in order. Each step counts the characters it scans as work, and the work budget is checked between two
+		// calls: master had no such check, and it changes nothing a call writes; past the budget the entry point fails closed.
 		private static string Run(IReadOnlyList<ChainStep> steps, string text) {
 			string result = text;
 			foreach (ChainStep step in steps) {
+				Work += result.Length;
 				CheckBudget();
 				result = step.Apply(result);
 			}

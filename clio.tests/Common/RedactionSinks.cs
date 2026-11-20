@@ -104,6 +104,17 @@ internal sealed class RedactionSinks {
 	/// the detected error.</summary>
 	internal string ODataErrorCallSite(string text) => SiteText(DetectedODataError(text));
 
+	/// <summary>
+	/// Branding's and email-template's OData error, as the caller returns it: master passed the detected text on raw
+	/// (<c>error = serverError</c>, <c>throw new InvalidOperationException(error)</c>) and the MCP layer redacted it; this
+	/// build redacts it as site text at the call site, and the MCP layer still redacts it. Read through that caller's
+	/// <c>Redact</c>, so the comparison with master is not vacuous.
+	/// </summary>
+	internal string RawODataErrorThroughTheCaller(string text) {
+		string detected = DetectedODataError(text);
+		return Redact(_siteBuild ? Text("RedactSiteText", detected) : detected);
+	}
+
 	/// <summary>odata-update and odata-delete with a key: <c>ODataKeyedWrite.ValidateWriteResponse</c>.</summary>
 	internal string KeyedWrite(string text) =>
 		(string)Call(Type("Clio.Command.McpServer.Tools.ODataKeyedWrite"), "ValidateWriteResponse", [typeof(string)],
@@ -203,6 +214,8 @@ internal sealed class RedactionSinks {
 		new('N', "non-JSON preview", (sinks, text) => sinks.NonJsonPreview(text)),
 		new('O', "OData error call sites (odata-create, field validation, trigger smoke)", (sinks, text) => sinks.ODataErrorCallSite(text)),
 		new('W', "keyed write (odata-update, odata-delete)", (sinks, text) => sinks.KeyedWrite(text)),
+		new('H', "Branding's OData error, through the caller's Redact", (sinks, text) => sinks.RawODataErrorThroughTheCaller(text)),
+		new('L', "email-template's OData error, through the caller's Redact", (sinks, text) => sinks.RawODataErrorThroughTheCaller(text)),
 		new('S', "DataService failure", (sinks, text) => sinks.DataServiceFailure(text)),
 		new('G', "designer save error", (sinks, text) => sinks.DesignerSaveError(text)),
 		new('B', "batch item error", (sinks, text) => sinks.BatchItemError(text), (sinks, text) => sinks.SiteText(FenceInput(text))),
@@ -228,11 +241,10 @@ internal sealed class RedactionSinks {
 			("RedactSiteText", 'R', (sinks, text) => sinks.SiteText(text)),
 			("RedactUntrustedSiteTextOrNull", 'F', (sinks, text) => sinks.FencedSiteText(text))];
 
-	/// <summary>The sinks master ran as the raw text, and this build redacts as site text; master removes nothing there.</summary>
-	internal static readonly string[] RawOnMaster = [
-		"Branding's OData error (BrandingBackgroundService.TryQuerySingleId)",
-		"email-template's OData error (EmailTemplateContentService)",
-		"DataServiceResponse.ThrowIfUnsuccessful's own message (read here with the MCP layer's Redact)",
-		"PageSchemaMetadataHelper.ParseSaveErrorMessage's own result (read here with its callers' Redact)"
-	];
+	/// <summary>
+	/// The sinks whose own output master left raw, each read through the caller's <c>Redact</c> as it reaches the MCP
+	/// result: the DataService failure (S), the designer's save error (G), Branding's (H) and email-template's (L) OData
+	/// error. None is compared vacuously.
+	/// </summary>
+	internal static readonly char[] ReadThroughTheCallersRedact = ['S', 'G', 'H', 'L'];
 }

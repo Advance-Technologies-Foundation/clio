@@ -18,7 +18,7 @@ namespace Clio.Tests.Common;
 [Property("Module", "Common")]
 public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
-	private const string TimeoutSentinel = "[redacted]";
+	private const string TimeoutSentinel = "[redacted-timeout]";
 
 	// A pattern that backtracks exponentially on the run of "a" CatastrophicTail holds (there is no "b" to end it),
 	// with a budget far below what that takes.
@@ -99,7 +99,7 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string result = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
 
 		// Assert
-		result.Should().Be("[untrusted-source-text begin] [redacted] [untrusted-source-text end]",
+		result.Should().Be("[untrusted-source-text begin] [redacted-timeout] [untrusted-source-text end]",
 			because: "the neutralized form must not carry any of the text the timed-out chain did not finish");
 	}
 

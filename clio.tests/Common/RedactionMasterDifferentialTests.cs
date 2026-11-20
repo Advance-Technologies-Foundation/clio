@@ -33,7 +33,8 @@ public sealed class RedactionMasterDifferentialTests {
 	// At most four workers, so the run stays one process's worth of load.
 	private static readonly ParallelOptions Workers = new() { MaxDegreeOfParallelism = 4 };
 
-	internal sealed record BaselineLine(string Hash, string RedactPin, string CredentialsPin, Dictionary<char, Dictionary<string, int>> Removed);
+	internal sealed record BaselineLine(string Hash, string RedactPin, string CredentialsPin, Dictionary<char, Dictionary<string, int>> Removed,
+		HashSet<char> Threw);
 
 	internal static Dictionary<string, BaselineLine> ReadBaseline(out string header) {
 		Dictionary<string, BaselineLine> lines = new(StringComparer.Ordinal);
@@ -47,13 +48,18 @@ public sealed class RedactionMasterDifferentialTests {
 			}
 			string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 			Dictionary<char, Dictionary<string, int>> removed = [];
+			HashSet<char> threw = [];
 			foreach (string entry in parts.Skip(4)) {
+				if (entry[0] == '!') {
+					threw.UnionWith(entry[2..]);
+					continue;
+				}
 				removed[entry[0]] = entry[2] == '^'
 					? removed[entry[3]]
 					: entry[2..].Split(',').Select(token => token.Split('*'))
 						.ToDictionary(pair => pair[0], pair => pair.Length > 1 ? int.Parse(pair[1]) : 1, StringComparer.Ordinal);
 			}
-			lines[parts[0]] = new BaselineLine(parts[1], parts[2][1..], parts[3][1..], removed);
+			lines[parts[0]] = new BaselineLine(parts[1], parts[2][1..], parts[3][1..], removed, threw);
 		}
 		header = headerText.ToString();
 		return lines;
@@ -89,14 +95,21 @@ public sealed class RedactionMasterDifferentialTests {
 		}
 	}
 
-	private static string Run(Func<RedactionSinks, string, string> sink, RedactionSinks sinks, string text) {
+	/// <summary>One sink call: its output, whether it threw, and whether a redaction inside it failed closed (the
+	/// redactor's <see cref="SensitiveErrorTextRedactor.FailedClosed"/> counter on this thread; on master's build, which has
+	/// no counter, never). A fail-closed output shows no token and a throw shows none either, so neither may pass silently.</summary>
+	internal static (string Output, bool Threw, bool FailedClosed) Call(Func<RedactionSinks, string, string> sink, RedactionSinks sinks, string text) {
+		long failed = SensitiveErrorTextRedactor.FailedClosed;
 		try {
-			return sink(sinks, text);
+			string output = sink(sinks, text);
+			return (output, false, SensitiveErrorTextRedactor.FailedClosed != failed);
 		}
 		catch (Exception exception) {
-			return "[threw " + exception.GetType().Name + "]";
+			return ("[threw " + exception.GetType().Name + "]", true, SensitiveErrorTextRedactor.FailedClosed != failed);
 		}
 	}
+
+	private static string Run(Func<RedactionSinks, string, string> sink, RedactionSinks sinks, string text) => Call(sink, sinks, text).Output;
 
 	[Test]
 	[Category("Unit")]
@@ -117,6 +130,8 @@ public sealed class RedactionMasterDifferentialTests {
 		List<(string Id, string Text)> corpus = RedactionDifferentialCorpus.Strings().ToList();
 		ConcurrentBag<string> drift = [];
 		ConcurrentBag<string> shown = [];
+		ConcurrentBag<string> failedClosed = [];
+		ConcurrentBag<string> throws = [];
 		ConcurrentDictionary<string, int> removedMore = new();
 		ConcurrentDictionary<string, byte> seen = new();
 
@@ -130,7 +145,13 @@ public sealed class RedactionMasterDifferentialTests {
 			seen[id] = 0;
 			foreach ((string name, char code, Func<RedactionSinks, string, string> run) in RedactionSinks.Compared) {
 				Dictionary<string, int> removed = line.Removed.GetValueOrDefault(code) ?? [];
-				string output = Run(run, sinks, text);
+				(string output, bool threw, bool failed) = Call(run, sinks, text);
+				if (failed) {
+					failedClosed.Add($"{name} failed closed on {id}: \"{text}\"");
+				}
+				if (threw != line.Threw.Contains(code)) {
+					throws.Add($"{name} {(threw ? "threw" : "did not throw")} on {id}, master {(line.Threw.Contains(code) ? "threw" : "did not")}: \"{text}\"");
+				}
 				foreach (string token in ShownAgain(text, removed, output, prose[name])) {
 					shown.Add($"{name} shows \"{token}\" of {id}: \"{text}\" -> \"{output}\"");
 				}
@@ -149,6 +170,9 @@ public sealed class RedactionMasterDifferentialTests {
 		seen.Count.Should().Be(corpus.Count, because: "every corpus string is compared");
 		baseline.Keys.Should().BeSubsetOf(seen.Keys, because: "every recorded string must have been seen");
 		corpus.Count.Should().Be(RedactionDifferentialCorpus.ExpectedCount, because: "the corpus has the stated size");
+		failedClosed.Should().BeEmpty(because: "a fail-closed output shows no token, so the comparison would pass vacuously; "
+			+ $"{failedClosed.Count} found:\n" + string.Join('\n', failedClosed.Take(20)));
+		throws.Should().BeEmpty(because: "a sink throws exactly where master's threw; " + string.Join('\n', throws.Take(20)));
 		shown.Should().BeEmpty(because: $"a token master hid must stay hidden at every sink, and option B trades none; "
 			+ $"{shown.Count} shown:\n" + string.Join('\n', shown.Take(40)));
 	}
@@ -211,8 +235,13 @@ public sealed class RedactionMasterDifferentialTests {
 			line.Append(id).Append(' ').Append(RedactionDifferentialCorpus.Hash(text))
 				.Append(" P").Append(Pin(sinks.Redact(text))).Append(" Q").Append(Pin(sinks.RedactCredentials(text)));
 			List<(char Code, string Encoded)> written = [];
+			StringBuilder threw = new();
 			foreach (RedactionSinks.Sink sink in RedactionSinks.All) {
-				Dictionary<string, int> removed = RemovedTokens(text, Run(sink.Run, sinks, text));
+				(string output, bool thrown, bool _) = Call(sink.Run, sinks, text);
+				if (thrown) {
+					threw.Append(sink.Code);
+				}
+				Dictionary<string, int> removed = RemovedTokens(text, output);
 				if (sink.Uncut is not null) {
 					removed = Both(removed, RemovedTokens(text, Run(sink.Uncut, sinks, text)));
 				}
@@ -225,6 +254,9 @@ public sealed class RedactionMasterDifferentialTests {
 				line.Append(' ').Append(sink.Code).Append('=').Append(same.Code != default ? "^" + same.Code : encoded);
 				written.Add((sink.Code, encoded));
 			}
+			if (threw.Length > 0) {
+				line.Append(" !=").Append(threw);
+			}
 			lines[index] = line.ToString();
 		});
 		using (GZipStream zip = new(File.Create(BaselinePath), CompressionLevel.SmallestSize))
@@ -235,7 +267,7 @@ public sealed class RedactionMasterDifferentialTests {
 			writer.WriteLine("# corpus RedactionDifferentialCorpus: fixture rows x 3 spellings + the edge strings + the shrinking-prefix strings + seeds "
 				+ $"{string.Join(',', RedactionDifferentialCorpus.Seeds)} x {RedactionDifferentialCorpus.StringsPerSeed}");
 			writer.WriteLine("# sinks RedactionSinks.All: " + string.Join("; ", RedactionSinks.All.Select(sink => $"{sink.Code}={sink.Name}")));
-			writer.WriteLine("# line: <id> <sha256-8 of input> P<pin of Redact> Q<pin of RedactCredentials> [<sink>=<token>[*count],... | <sink>=^<earlier sink with the same set>]");
+			writer.WriteLine("# line: <id> <sha256-8 of input> P<pin of Redact> Q<pin of RedactCredentials> [<sink>=<token>[*count],... | <sink>=^<earlier sink with the same set>] [!=<sinks that threw on master>]");
 			writer.WriteLine("# regenerate: RedactionMasterDifferentialTests.RegenerateMasterBaseline (README.md next to this file)");
 			foreach (string line in lines) {
 				writer.WriteLine(line);

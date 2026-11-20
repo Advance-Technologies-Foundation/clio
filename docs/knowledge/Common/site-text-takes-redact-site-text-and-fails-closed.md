@@ -64,11 +64,29 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
   value after master's `key=[redacted]` (`UnclosedValueAfterPairPlaceholderRegex`), a JSON credential property
   (`UnclosedJsonCredentialValueRegex`), a JWT with one or two of its segments (`PartialJwtAtTheEndRegex`), and, site
   only, the sign-in or database name of a database phrase (`UnclosedSignInOrDatabasePhraseRegex`: `for user 'zq inv`).
-- The whole-call budget: every entry point fails closed to `[redacted]` past 10 s, wherever it is - plain C# in the edit
-  function included, which no regex timeout stops (`EveryEntryPoint_ShouldFailClosed_WhenTheWholeCallRunsPastItsBudget`).
-  Rules skip a text that lacks a literal every match of theirs contains (`ApplyRule(text, need, …)`), which changes no
-  output. At 1.2 MB master's Redact takes 0.4-0.65 s and this one 0.5-1.6 s (RedactSiteText up to 2.2 s, on JSON-escaped
-  credentials); `RedactorTimingTests` bounds 1 MB at 3 s and the fenced renderings at 250 ms (master: 1-3 ms).
+- WORK, NOT THE CLOCK (B3): the redactor counts its own work per thread (`Work`: every character a rule or a step of
+  master's chain scans, every match, edit, placeholder found or examined in the edit function's binary search, and
+  piece kept). `RedactorTimingTests` proves linearity with it - the work of 200,000 characters is at most 2.2 times the
+  work of 100,000 of the same shape, for every entry point and nine shapes (measured 1.85-2.07) - and the fence bound:
+  both fenced renderings do exactly the same work for 1 MB as for 10 KB. One coarse clock check stays (1 MB of the
+  slowest shape under 8 s, `[NonParallelizable]`).
+- THE WORK BUDGET: an entry-point call fails closed past `WorkPerCharacter` (500) units per input character plus
+  `WorkConstant` (200,000) - ten times the worst shape measured (48.5 units per character, pair-dense text through
+  RedactSiteText). It does not depend on the machine or its load; a 60 s clock backstop stays only for a starved host.
+  A long input's rules - master's chain's and clio's - run with a match timeout of 1 s per 250,000 characters
+  (`ForLength`, power-of-two steps, never under the rule's own 1 s, never over 60 s): a rule that never matches scans the
+  whole text in one match attempt, and at 5 MB that attempt took up to 0.9 s here, so master's fixed 1 s failed a 5 MB
+  answer closed on a loaded host. Below 250,000 characters every rule keeps its own timeout, and no output changes.
+  `A5MBInput_ShouldBeRedactedNormally_WhateverTheLoad` proves 5 MB comes out redacted.
+- A FAIL-CLOSED RESULT IS VISIBLE: a regex timeout or a call past its budget returns `[redacted-timeout]`, not the
+  `[redacted]` a value gets (PlaceholderPieceRegex reads it, so later passes keep it), counts on `FailedClosed`, and is
+  logged once through `FailedClosedLog` (the console logger's warning) with the entry point and the input length,
+  never the text.
+- Rules skip a text that lacks a literal every match of theirs contains (`ApplyRule(text, need, …)`, `ApplyRuleWhen`);
+  an IgnoreCase rule's literal is compared ignoring case. Every prefiltered rule that runs is recorded (`Prefiltered`),
+  and `EveryPrefilter_ShouldHoldWhereverItsRuleMatches` proves each condition exact over the corpus, master's chain
+  output and Redact's output, as written and upper-cased. At 1.2 MB master's Redact takes 0.4-0.7 s and this one
+  0.5-1.6 s (RedactSiteText up to 2.2 s, on JSON-escaped credentials).
 - Each stage fails closed: an injected timeout before the chain, after it, after `Extra`, before or after `Site`, in the
   credentials or the JSON chain gives `[redacted]` (`EveryStage_ShouldFailClosed_WhenARuleTimesOut`).
 - Rules that read master's own placeholders, so what master's chain left half done goes (`AfterMasterPlaceholders`):
@@ -120,7 +138,10 @@ save error, the batch item error, compile-status' diagnostic and message tail, a
 DataWriteDiagnostic. No token master removed may show at any of them. A sink that cuts AFTER its chain (the fenced 300,
 site-response's cap) is held to what master's output and master's chain over the same uncut input both removed: a
 token only that cut dropped was cut, not redacted. The test asserts that all 13,389 strings were compared and that every
-baseline line was seen. Call sites inside an instance method that needs a client are read through their seam
+baseline line was seen, that no redaction inside a sink failed closed (a fail-closed output shows no token, so it would
+pass vacuously), and that a sink throws exactly where master's did (the baseline records master's throws; there are
+none). Branding's and email-template's OData error, which master passed on raw, are read through the caller's
+`Redact`, as the DataService failure and the designer's save error are, so no sink is compared vacuously. Call sites inside an instance method that needs a client are read through their seam
 (`TryDetect`) with the call site's expression, which the source guard pins; `RedactorSinkCompositionTests` drives
 odata-create, odata-field validation and email-template through their real code with a substitute client.
 
