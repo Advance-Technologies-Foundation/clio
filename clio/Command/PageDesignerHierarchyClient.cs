@@ -26,13 +26,8 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 		string responseJson = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
 		var response = JObject.Parse(responseJson);
 		if (!(response["success"]?.Value<bool>() ?? false)) {
-			string errorDetail = response["errorInfo"]?.ToString()
-				?? response["message"]?.ToString()
-				?? response["error"]?.ToString();
-			string message = string.IsNullOrWhiteSpace(errorDetail)
-				? "Failed to resolve design package"
-				: $"Failed to resolve design package: {errorDetail}";
-			throw new InvalidOperationException(message);
+			throw new InvalidOperationException(
+				WithReason("Failed to resolve design package", PageSchemaMetadataHelper.DescribeRefusal(response)));
 		}
 		string uId = response["uId"]?.ToString();
 		if (string.IsNullOrWhiteSpace(uId)) {
@@ -52,13 +47,8 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 		string responseJson = _applicationClient.ExecutePostRequest(designerUrl, request.ToString(Formatting.None));
 		var response = JObject.Parse(responseJson);
 		if (!(response["success"]?.Value<bool>() ?? false)) {
-			string errorDetail = response["errorInfo"]?.ToString()
-				?? response["message"]?.ToString()
-				?? response["error"]?.ToString();
-			string message = string.IsNullOrWhiteSpace(errorDetail)
-				? "Failed to load page schema hierarchy"
-				: $"Failed to load page schema hierarchy: {errorDetail}";
-			throw new InvalidOperationException(message);
+			throw new InvalidOperationException(
+				WithReason("Failed to load page schema hierarchy", PageSchemaMetadataHelper.DescribeRefusal(response)));
 		}
 
 		if (response["values"] is not JArray values) {
@@ -86,4 +76,9 @@ internal sealed class PageDesignerHierarchyClient : IPageDesignerHierarchyClient
 
 		return result;
 	}
+
+	// The refusal's reason is the site's text, read and redacted by PageSchemaMetadataHelper.DescribeRefusal - never the
+	// whole errorInfo, whose stackTrace is the server's frames and paths.
+	private static string WithReason(string failure, string reason) =>
+		reason is null ? failure : $"{failure}: {reason}";
 }

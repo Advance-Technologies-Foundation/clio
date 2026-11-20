@@ -347,13 +347,21 @@ in `error` of odata-create rows, odata-update and odata-delete; the up-to-500-ch
 body after `Response:` (redacted before it is cut to 500 characters); batch item errors; `diagnostic.message`;
 the designer and DataService error envelopes that create-page, update-page, sync-pages and the DataService write
 tools put into `error` through `ParseSaveErrorMessage` and `DataServiceResponse.ThrowIfUnsuccessful`; and
-compile-status's compiler diagnostics and message tail. **Not every field that carries a site's words is wired
-yet.** The other readers of a site's error text - the write tools' own designer and build paths (process
-design, compile, package build and install, the page designer hierarchy, the entity schema designer, dynamic case,
-SelectQuery failures) and the remaining envelope readers (execute-esq's DataService failure, the web-service
-designer, sys-settings, the ATF data provider, the application, section and schema commands, odata-read's debug
-detail, and more) - still pass the general redaction only. Each one is listed by file and member, with the change
-that wires it, in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`. Its source guard fails the
+compile-status's compiler diagnostics and message tail. The write tools apply it where they read the site's text,
+so it covers their `error` and the `execution-log-messages` lines built from it alike: the page designer's
+hierarchy, design-package and schema refusals and the template catalog's (update-page, sync-pages, create-page -
+the site's `errorCode: message` only, never its `stackTrace`); the entity-schema designer's refusal (the
+entity-schema tools, create-lookup, sync-schemas, the data-binding-db tools); a SelectQuery failure and the
+preview of any non-JSON service body; the build verdict, diagnostics and history lines of compile-creatio and
+push-workspace (a reported file is named by its file name only, never its directories); the installation failure
+line and the invalid-archive message; the server's text in create-business-process, modify-business-process,
+modify-business-process-as-new-version, set-active-process-version and compile-business-process (fenced there as
+site text), its version and element names and each of its warnings, on failure and on success; and the
+dynamic-case tools' answer messages, quoted bodies, page and dependency failures and each of their notes, warnings, leftovers, case names and captions (only the quoted site part, so clio's remedy and a `docs://` link in the same sentence stay); and compile-package's warning for a tolerated compilation-history poll round (fenced as site text) and its error when that poll gives up (only the quoted answer, so clio's sentences around it stay). A reported file is named only when its last segment is a plain file name; anything else reads `[redacted-path]`. The raw streamed installation log is not covered. **Not
+every field that carries a site's words is wired yet.** The remaining envelope readers (execute-esq's DataService
+failure, the web-service designer, sys-settings, the ATF data provider, the application, section and schema
+commands, odata-read's debug detail, and more) still pass the general redaction only. Each one is listed by file
+and member in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`. Its source guard fails the
 build on a new unlisted reader OF THE FORMS IT SCANS FOR:
 - the site-error JSON names written as literals;
 - reads of members named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage`, or decorated with a site-error JSON

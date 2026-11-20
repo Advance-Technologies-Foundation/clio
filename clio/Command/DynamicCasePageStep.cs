@@ -141,7 +141,9 @@ public sealed class DynamicCasePageStep(
 		if (!pageReader.TryGetPage(new PageGetOptions { SchemaName = pageSchemaName, Environment = environmentName },
 				out PageGetResponse page) || page?.Bundle is null) {
 			return Refused(DynamicCaseErrorCodes.RecordPageNotFound, pageSchemaName, resolution.ResolvedBy,
-				$"Record page '{pageSchemaName}' could not be read: {page?.Error ?? "no answer"}.");
+				// get-page's error quotes its readers; redacted where it is embedded, never the sentence around it.
+				$"Record page '{pageSchemaName}' could not be read: "
+				+ $"{(page?.Error is { } pageError ? SensitiveErrorTextRedactor.RedactSiteText(pageError) : "no answer")}.");
 		}
 		if (!string.Equals(page.Page?.SchemaType, PageSchemaType.Web.ToLabel(), StringComparison.OrdinalIgnoreCase)) {
 			return Refused(DynamicCaseErrorCodes.RecordPageNotFreedom, pageSchemaName, resolution.ResolvedBy,
@@ -240,8 +242,9 @@ public sealed class DynamicCasePageStep(
 			return new DynamicCasePageWrite(true, null, saved.Warnings?.ToList() ?? []);
 		} catch (Exception exception) {
 			// The case is already written at this point; a page failure is reported with the retry call rather than
-			// thrown, so it cannot turn a kept case into a call that reads as having changed nothing.
-			return new DynamicCasePageWrite(false, exception.Message, []);
+			// thrown, so it cannot turn a kept case into a call that reads as having changed nothing. The exception's
+			// text may be a reader's, so it is redacted here; update-page's own error above is redacted already.
+			return new DynamicCasePageWrite(false, SensitiveErrorTextRedactor.RedactSiteText(exception.Message), []);
 		}
 	}
 

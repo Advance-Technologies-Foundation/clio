@@ -186,16 +186,21 @@ public class CompilationHistoryPoller : ICompilationHistoryPoller {
 	/// <para>
 	/// <see cref="UntrustedText.Fenced"/> rather than <c>ForConsole</c>, which is what a logger line
 	/// elsewhere in <c>Clio.Common</c> uses (<c>SysSettingsManager</c>). This line is different: it is
-	/// written by a WARNING during <c>compile-creatio</c>, and <c>CompileCreatioTool</c> copies the
-	/// captured log messages into the MCP result through <c>McpPassthroughRedaction.SanitizeAndRedact</c>,
-	/// which scrubs secrets (and only on a passthrough request) but never fences. So without the fence
+	/// written as a WARNING on <c>PackageBuilder</c>'s poll thread (<c>compile-package</c>), and an MCP tool
+	/// returns the captured log messages through <c>McpPassthroughRedaction.SanitizeAndRedact</c>,
+	/// which scrubs secrets (and only on a passthrough request) but never fences. (<c>compile-creatio</c>
+	/// reads this poller only through <c>GetBaseline</c> and the activity watcher's <c>PollOnce</c>, which
+	/// writes no line; its baseline warning redacts as site text too.) So without the fence
 	/// here, server-authored prose - an outage is exactly when the answer is some gateway's or proxy's
 	/// own page - reaches an agent's context as if clio had written it. The fence costs a terminal reader
 	/// a marker; dropping it costs an agent the distinction between clio's words and the server's.
 	/// </para>
+	/// <para>The SITE fence (<see cref="UntrustedText.FencedSiteText"/>): the text is the ATF data provider's report
+	/// of the environment's answer, the same text compile-creatio's and compile-package's baseline warnings redact as
+	/// site text.</para>
 	/// </remarks>
 	private static string Describe(Exception exception) =>
-		UntrustedText.Fenced(exception.GetReadableMessageException()) ?? "no detail reported";
+		UntrustedText.FencedSiteText(exception.GetReadableMessageException()) ?? "no detail reported";
 
 	/// <summary>
 	/// Reports every record not seen before and returns the advanced baseline. A real Creatio

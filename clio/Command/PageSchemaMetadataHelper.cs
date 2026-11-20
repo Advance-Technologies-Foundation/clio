@@ -461,24 +461,91 @@ namespace Clio.Command {
 		/// caller (create-page, update-page, sync-pages, the schema designers) puts it into an exception or an
 		/// <c>error</c> that is only Redacted afterwards. <paramref name="defaultMessage"/> is clio's own sentence
 		/// and is returned as it is.
+		/// <para>Each item is redacted on its own, so a stack frame in one cannot cut the items after it, and an
+		/// <c>addonsErrors</c> item gives only its code and message: the whole item used to be copied, and the first
+		/// frame of its <c>stackTrace</c> survived the cut into the page write's error.</para>
 		/// </remarks>
 		internal static string ParseSaveErrorMessage(JObject saveResponse, string defaultMessage) {
+			static string Site(string text) =>
+				string.IsNullOrWhiteSpace(text) ? null : NullIfEmpty(SensitiveErrorTextRedactor.RedactSiteText(text).Trim());
+			static string JoinSite(IEnumerable<string> parts) =>
+				NullIfEmpty(string.Join("; ", parts.Select(Site).Where(part => part is not null)));
 			string errorMessage = null;
 			if (saveResponse["errorInfo"] is JObject errorInfo) {
-				string infoMessage = errorInfo["message"]?.ToString();
-				if (!string.IsNullOrWhiteSpace(infoMessage))
-					errorMessage = infoMessage;
+				errorMessage = Site(errorInfo["message"]?.ToString()) ?? errorMessage;
 			}
 			if (saveResponse["validationErrors"] is JArray validationErrors && validationErrors.Count > 0) {
-				System.Collections.Generic.IEnumerable<string> messages = validationErrors
-					.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString())
-					.Where(m => !string.IsNullOrWhiteSpace(m));
-				errorMessage = string.Join("; ", messages);
+				errorMessage = JoinSite(validationErrors.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString()))
+					?? errorMessage;
 			}
-			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0)
-				errorMessage = string.Join("; ", addonsErrors.Select(e => e.ToString()));
-			return errorMessage is null ? defaultMessage : SensitiveErrorTextRedactor.RedactSiteText(errorMessage);
+			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
+				errorMessage = NullIfEmpty(string.Join("; ", addonsErrors.Select(AddonErrorText).Where(part => part is not null)))
+					?? errorMessage;
+			}
+			return errorMessage ?? defaultMessage;
 		}
+
+		// An addonsErrors item's own words, redacted as the site's text: its code and message, from the item or its
+		// errorInfo - never its stack trace.
+		// errorInfo may be an object, a string or null: only an object has children to read, and a string is the message.
+		private static string AddonErrorText(JToken item) {
+			if (item is not JObject error) {
+				return SiteValue(item);
+			}
+			JToken info = error["errorInfo"];
+			JObject infoObject = info as JObject;
+			return JoinNonBlank(SiteValue(error["errorCode"] ?? error["code"] ?? infoObject?["errorCode"]),
+				SiteValue(error["message"] ?? infoObject?["message"] ?? (infoObject is null ? info : null)));
+		}
+
+		// A string value the site wrote, redacted as site text BEFORE it is trimmed (the cut keys on the line break before
+		// a stack frame); null when it is not a string or nothing of it survives.
+		private static string SiteValue(JToken token) =>
+			Text(token) is null ? null
+				: NullIfEmpty(SensitiveErrorTextRedactor.RedactSiteText(token.Value<string>()).Trim());
+
+		private static string NullIfEmpty(string text) => string.IsNullOrEmpty(text) ? null : text;
+
+		/// <summary>
+		/// A designer or template service's own reason for a refusal (<c>success:false</c>): <c>errorInfo</c>'s code
+		/// and message, or a top-level <c>message</c> or <c>error</c> text, redacted as the site's text;
+		/// <see langword="null"/> when the answer gives none, or nothing of it survives the redaction.
+		/// </summary>
+		/// <remarks>
+		/// The text is the site's, so it takes the site-text redaction here, where it is read: the page designer
+		/// hierarchy client (update-page, sync-pages, get-page) and the page template catalog (create-page) put it into
+		/// an exception message that reaches <c>error</c> and the log unchanged. Only the code and the human message are
+		/// read. The whole <c>errorInfo</c> object used to be copied, so its <c>stackTrace</c> - the server's frames,
+		/// assembly names and paths - reached the caller as JSON inside the message, and the escaped quotes of that JSON
+		/// cost the reason itself on the way through clio-run (<c>permissions to run [redacted-path]</c>, 19 Nov).
+		/// <para>The code and the message are redacted apart, and an empty result is no reason: a message that is only a
+		/// stack trace redacts to nothing, and the caller then says its own sentence instead of a dangling colon.</para>
+		/// </remarks>
+		/// <param name="response">The service's parsed answer.</param>
+		/// <returns>The redacted reason, or <see langword="null"/>.</returns>
+		internal static string DescribeRefusal(JObject response) =>
+			response["errorInfo"] switch {
+				JObject errorInfo => JoinNonBlank(SiteValue(errorInfo["errorCode"]), SiteValue(errorInfo["message"])),
+				JToken errorInfo => SiteValue(errorInfo),
+				null => null
+			}
+			?? SiteValue(response["message"])
+			?? SiteValue(response["error"])
+			?? SiteValue((response["error"] as JObject)?["message"]);
+
+		private static string JoinNonBlank(string code, string message) =>
+			(code, message) switch {
+				(null, null) => null,
+				(null, _) => message,
+				(_, null) => code,
+				_ => $"{code}: {message}"
+			};
+
+		// A string value only, trimmed: an object or an array is not a reason the site wrote for a person to read.
+		private static string Text(JToken token) =>
+			token is JValue { Type: JTokenType.String } value && !string.IsNullOrWhiteSpace(value.Value<string>())
+				? value.Value<string>().Trim()
+				: null;
 
 		/// <summary>
 		/// Queries a single <c>SysSchema</c> row by schema <c>UId</c> via the DataService SelectQuery endpoint.

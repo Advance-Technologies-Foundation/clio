@@ -377,8 +377,10 @@ public sealed class ModifyBusinessProcessService(
 			throw new InvalidOperationException(BuildFailureMessage(result));
 		}
 
-		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
-			result.Warnings);
+		// The warnings are the site's text, logged by the command one by one: redacted here, each on its own.
+		// The schema name is the site's text too, and the command's success line and the read-back use the result.
+		return new ModifyBusinessProcessResult(ProcessDesignServerFault.SiteNameOrNull(result.SchemaName), result.SchemaUId,
+			result.AppliedOperations, ProcessDesignServerFault.SiteWarningList(result.Warnings));
 	}
 
 	// Surfaced HERE or nowhere. The success record cannot carry a failure (it is only built on success), and the throw
@@ -386,8 +388,11 @@ public sealed class ModifyBusinessProcessService(
 	// client what the server split the field to stop them doing: bisecting the batch against a live environment.
 	// Appended rather than woven in because the server's own sentence is the primary message and several guards name
 	// neither endpoint.
+	//
+	// The server's sentence and its warnings are the site's text: they take the site-text redaction here, where they
+	// become the exception's message, the tool's error and the command's log line. clio's own sentences do not.
 	private static string BuildFailureMessage(ModifyProcessResultDto result) {
-		string message = result.ErrorMessage ?? "ModifyProcess failed.";
+		string message = ProcessDesignServerFault.SiteMessageOr(result.ErrorMessage, "ModifyProcess failed.");
 		if (result.FailedOperationIndex.HasValue) {
 			message += $" The operation at index {result.FailedOperationIndex.Value} is the one that refused.";
 		}
@@ -402,8 +407,8 @@ public sealed class ModifyBusinessProcessService(
 			// sentence and no way to tell the user WHICH parts of their diagram move.
 			message += saved ? result.LayoutChange.ElementsClause() : result.LayoutChange.RelaySentence();
 		}
-		if (saved && result.Warnings is { Count: > 0 }) {
-			message += " " + string.Join(" ", result.Warnings);
+		if (saved) {
+			message += ProcessDesignServerFault.SiteWarnings(result.Warnings);
 		}
 		return message;
 	}
@@ -530,7 +535,7 @@ public class ModifyBusinessProcessCommand(
 					out saved);
 			} catch (Exception verification) {
 				logger.WriteWarning(
-					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
+					$"The edit was applied, but verifying its configuration failed: {ProcessDesignServerFault.SiteText(verification.Message)}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
 			}
 			WarnOnParameterBindings(options, before, saved);
 			// The digest rides the SAME read-back as the guards (ENG-103023).
@@ -652,9 +657,9 @@ public class ModifyBusinessProcessCommand(
 		}
 		if (described.IsError) {
 			bool rights = BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
-				described.FirstError.Description);
+				ProcessDesignServerFault.SiteText(described.FirstError.Description));
 			bool labels = BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
-				described.FirstError.Description);
+				ProcessDesignServerFault.SiteText(described.FirstError.Description));
 			return rights || labels;
 		}
 

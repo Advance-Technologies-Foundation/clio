@@ -380,11 +380,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	// The compiler's text is authored by whoever wrote the code on the environment, so it is fenced as data; the
 	// file is cut to its NAME, because the environment's directory layout is not the agent's business.
 	internal static string RenderError(PackageBuildDiagnostic diagnostic) =>
-		UntrustedText.FencedSiteText(diagnostic.Format(static code => code, FileNameOnly));
-
-	// Not Path.GetFileName: the path is the ENVIRONMENT's, so a Windows path must lose its directories on a Linux host.
-	private static string FileNameOnly(string path) =>
-		string.IsNullOrWhiteSpace(path) ? path : path[(path.LastIndexOfAny(['/', '\\']) + 1)..];
+		UntrustedText.FencedSiteText(diagnostic.Format(static code => code, PackageBuildDiagnostic.SiteFileName));
 
 }
 

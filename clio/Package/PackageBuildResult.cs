@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Clio.Common;
 
 namespace Clio.Package;
 
@@ -42,6 +43,54 @@ public sealed record PackageBuildDiagnostic(string ErrorNumber, string ErrorText
 		string position = Line is { } line && Column is { } column ? $" at ({line},{column})" : string.Empty;
 		return $"{code} in {decorateFile(FileName)}{position}: {ErrorText}";
 	}
+
+	/// <summary>
+	/// The same diagnostic with every part the environment wrote - its code, its text and the file it names - passed
+	/// through the site-text redaction (<see cref="SensitiveErrorTextRedactor.RedactSiteText"/>), the file cut to its
+	/// NAME first.
+	/// </summary>
+	/// <returns>A redacted copy; the position is a number and stays.</returns>
+	/// <remarks>
+	/// For a log line or a message clio builds from the diagnostic: compile-creatio and push-workspace log it, and a
+	/// stdio log is not redacted again. Not applied by the parser, because compile-status already fences the history
+	/// diagnostics it renders with the site-text redaction, and a second pass there would be redaction twice.
+	/// <para>The file is named by <see cref="SiteFileName"/>: the redactor takes a whole absolute path
+	/// (<c>C:\inetpub\…\UsrClass.cs</c>, <c>/app/…/UsrClass.cs</c>) as <c>[redacted-path]</c> and a relative
+	/// <c>Terrasoft.Configuration\Pkg\…</c> one as a server instance, so the line stopped naming the file to fix. The
+	/// directories are the environment's layout and are not reported.</para>
+	/// </remarks>
+	internal PackageBuildDiagnostic WithSiteTextRedacted() =>
+		this with { ErrorNumber = Site(ErrorNumber), ErrorText = Site(ErrorText), FileName = SiteFileName(FileName) };
+
+	/// <summary>
+	/// The NAME of a file the ENVIRONMENT reported, without its directories, on either separator - or
+	/// <c>[redacted-path]</c> when the last segment is not a plain file name the site-text redaction leaves whole.
+	/// </summary>
+	/// <remarks>
+	/// Not <see cref="System.IO.Path.GetFileName(string)"/>: a Windows path must lose its directories on a Linux host
+	/// too. When in doubt the name goes: a path ending in a separator (<c>C:\a\b\</c>), a share (<c>\\fs01</c>,
+	/// whose last segment is a host), a URI, or a segment without an extension (<c>/app/Password=ab/cd</c>, a fragment
+	/// of a secret) is reported as <c>[redacted-path]</c>, never as its last segment.
+	/// </remarks>
+	/// <param name="path">The environment's path; blank is returned as it is.</param>
+	/// <returns>The file name, already redacted as site text.</returns>
+	internal static string SiteFileName(string path) {
+		if (string.IsNullOrWhiteSpace(path)) {
+			return path;
+		}
+		string name = path[(path.LastIndexOfAny(['/', '\\']) + 1)..];
+		bool plainFileName = PlainFileName.IsMatch(name) && !path.Contains("://", StringComparison.Ordinal)
+			&& string.Equals(SensitiveErrorTextRedactor.RedactSiteText(name), name, StringComparison.Ordinal);
+		return plainFileName ? name : RedactedPath;
+	}
+
+	private const string RedactedPath = "[redacted-path]";
+
+	// A file name: no separator, no drive or scheme colon, no '=' of a key pair, and an extension.
+	private static readonly System.Text.RegularExpressions.Regex PlainFileName = new(@"\A[^\s/\\:=@?*""<>|]+\.[A-Za-z0-9]{1,10}\z",
+		System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+	private static string Site(string text) => text is null ? null : SensitiveErrorTextRedactor.RedactSiteText(text);
 
 }
 

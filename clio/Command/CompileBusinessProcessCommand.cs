@@ -384,9 +384,10 @@ public class CompileBusinessProcessCommand(
 	}
 
 	// A process or package name the server echoes back: shown as it is when it has the shape of a schema or package
-	// code, and fenced otherwise, because the server authored it and the line reaches an agent.
+	// code, and fenced otherwise, because the server authored it and the line reaches an agent. The fence is the
+	// site-text one: the name is the site's text.
 	private static string ServerName(string? name) =>
-		name is not null && SchemaCode.IsMatch(name) ? name : UntrustedText.Fenced(name) ?? "(unnamed)";
+		name is not null && SchemaCode.IsMatch(name) ? name : UntrustedText.FencedSiteText(name) ?? "(unnamed)";
 
 	private static readonly Regex SchemaCode = new(@"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z",
 		RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
@@ -422,18 +423,19 @@ public class CompileBusinessProcessCommand(
 	// sanitized: the compile covers the whole package, so a message can be another author's #error text, and these
 	// lines reach an agent through the MCP result and the compile-status tail
 	// (docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md). clio's own words stay
-	// outside the fence.
+	// outside the fence. The fence is the SITE-text one (UntrustedText.FencedSiteText): every segment is the
+	// environment's text, and these log lines are not redacted again on stdio.
 	private void ReportFailure(CompileBusinessProcessResult result) {
 		logger.WriteError("CompileProcess failed: "
-			+ (UntrustedText.Fenced(result.ErrorMessage) ?? "the server reported no detail."));
+			+ (UntrustedText.FencedSiteText(result.ErrorMessage) ?? "the server reported no detail."));
 		List<CompileBusinessProcessError> listed = result.Errors.Take(MaxListedErrors).ToList();
 		foreach (CompileBusinessProcessError error in listed) {
 			string where = error.InThisProcess ? string.Empty : " [another schema of the package]";
 			// Two fences, because each is capped: one fence over the location and the message cut a long CS1503
 			// message short.
-			string location = UntrustedText.Fenced($"{error.FileName}({error.Line},{error.Column}): {error.Code}")
+			string location = UntrustedText.FencedSiteText($"{error.FileName}({error.Line},{error.Column}): {error.Code}")
 				?? "(no location)";
-			string message = UntrustedText.Fenced(error.Message) ?? "(no message)";
+			string message = UntrustedText.FencedSiteText(error.Message) ?? "(no message)";
 			logger.WriteError($"{location} {message}{where}");
 		}
 		int omitted = Math.Max(result.ErrorCount, result.Errors.Count) - listed.Count;

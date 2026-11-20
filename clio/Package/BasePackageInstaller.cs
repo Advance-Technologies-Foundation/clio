@@ -324,10 +324,14 @@
 			|| ContainsInvalidGZipArchiveException(response?.ErrorInfo?.StackTrace)
 			|| ContainsInvalidGZipArchiveException(installLog);
 
-		private static string GetInvalidGZipArchiveMessage(BaseResponse response, string installLog) =>
-			response?.ErrorInfo?.Message
-			?? GetInvalidGZipArchiveLogLine(installLog)
-			?? "The package archive is invalid or corrupted.";
+		// The service's message and the log line are the environment's text: they take the site-text redaction here,
+		// where they become the exception's message. clio's fallback sentence does not.
+		private static string GetInvalidGZipArchiveMessage(BaseResponse response, string installLog) {
+			string siteText = response?.ErrorInfo?.Message ?? GetInvalidGZipArchiveLogLine(installLog);
+			return siteText is null
+				? "The package archive is invalid or corrupted."
+				: SensitiveErrorTextRedactor.RedactSiteText(siteText);
+		}
 
 		private static string GetInvalidGZipArchiveLogLine(string installLog) {
 			if (string.IsNullOrWhiteSpace(installLog)) {

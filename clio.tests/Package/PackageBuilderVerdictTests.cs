@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
@@ -655,6 +656,149 @@ public sealed class PackageBuilderVerdictTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "a login page is not a build verdict");
+	}
+
+	// Every string the logger was handed: compile-creatio package and push-workspace return these lines, unredacted on
+	// stdio.
+	private string[] LoggedText() =>
+		_logger.ReceivedCalls().SelectMany(call => call.GetArguments()).OfType<string>().ToArray();
+
+	[Test]
+	[Description("compile-creatio package and push-workspace: a failure answer's diagnostics and errorInfo message "
+		+ "(PackageBuildResultParser.TryParseResponse, rendered by Fail) take the site-text redaction in the log lines "
+		+ "and in the exception's message.")]
+	public void Rebuild_ShouldRedactTheFailureAnswer_AsSiteText() {
+		// Arrange
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		_stand.AnswersAt(TimeSpan.Zero,
+				"{\"success\":false,\"buildResult\":1,\"errorInfo\":{\"message\":\"" + site + "\"},\"errors\":[{"
+				+ "\"errorNumber\":\"CS0246\",\"errorText\":\"" + site + "\",\"fileName\":\"UsrProbe.Custom.cs\","
+				+ "\"line\":5,\"column\":26,\"warning\":false}]}")
+			.WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "Creatio answered success:false")
+			.Which.Message.Should().Contain("Creatio reported: Login failed for user '[redacted]'.",
+				because: "the reason stays in the exception")
+			.And.NotContain(Clio.Tests.Common.SiteTextWiringTests.Marker, because: "the login goes");
+		_logger.Received(1).WriteError("(CS0246) in UsrProbe.Custom.cs at (5,26): Login failed for user '[redacted]'.");
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no log line may carry the login");
+	}
+
+	[Test]
+	[Description("A history error row whose payload is not in the expected shape is shown as it came (Fail's raw "
+		+ "history line), through the site-text redaction.")]
+	public void Rebuild_ShouldRedactTheRawHistoryPayload_AsSiteText() {
+		// Arrange
+		_stand.WritesRow(TimeSpan.Zero,
+			ErrorRow("Terrasoft.Configuration.Dev.csproj", Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"], Wait(seconds: 600));
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "the history row reported a failure");
+		_logger.Received().WriteError(Arg.Is<string>(message => message.Contains("Login failed for user '[redacted]'.")));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the raw history line is the environment's text");
+	}
+
+	// A file the environment reports under its full path: a Windows one, a POSIX one and a relative
+	// Terrasoft.Configuration one. Only the name may reach the line; the directories are the environment's layout.
+	private static readonly string[] EnvironmentFilePaths = [
+		@"C:\inetpub\wwwroot\creatio\Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs",
+		"/app/Terrasoft.Configuration/Pkg/UsrPkg/Files/cs/UsrClass.cs",
+		@"Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs"
+	];
+
+	[Test]
+	[Description("compile-creatio package and push-workspace name the file of a failure answer's diagnostic whatever "
+		+ "path the environment reported it under.")]
+	public void Rebuild_ShouldNameTheFile_OfAFailureDiagnostic([ValueSource(nameof(EnvironmentFilePaths))] string path) {
+		// Arrange
+		_stand.AnswersAt(TimeSpan.Zero, System.Text.Json.JsonSerializer.Serialize(new {
+				success = false, buildResult = 1,
+				errors = new[] { new { errorNumber = "CS0246", errorText = "EntitySchema not found", fileName = path,
+					line = 5, column = 26, warning = false } }
+			}))
+			.WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().Throw<PackageCompilationException>(because: "Creatio answered success:false");
+		_logger.Received(1).WriteError("(CS0246) in UsrClass.cs at (5,26): EntitySchema not found");
+	}
+
+	[Test]
+	[Description("compile-creatio package: a compilation-history baseline that cannot be read (the ATF data provider, a "
+		+ "follow-up reader) is reported with its text redacted as site text in the warning line.")]
+	public void Rebuild_ShouldRedactTheBaselineReadFailure_AsSiteText() {
+		// Arrange
+		_poller.GetBaseline().Returns(_ => throw new InvalidOperationException(Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		_stand.AnswersAt(TimeSpan.Zero, SucceededResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		try {
+			sut.Rebuild(["UsrPackage"]);
+		} catch (Exception) {
+			// Only the warning line is under test.
+		}
+
+		// Assert
+		_logger.Received().WriteWarning(Arg.Is<string>(line =>
+			line.StartsWith("Could not read the compilation history baseline: Login failed for user '[redacted]'.",
+				StringComparison.Ordinal)));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the warning line is the stdio caller's result");
+	}
+
+	[Test]
+	[Description("compile-package: a tolerated poll round's failure, which the real CompilationHistoryPoller reports "
+		+ "on PackageBuilder's poll thread, quotes the ATF data provider's text through the SITE fence, in the warning "
+		+ "line and in every other line the build writes, while the build itself still succeeds.")]
+	public void Rebuild_ShouldFenceAPollRoundFailure_AsSiteText() {
+		// Arrange
+		ATF.Repository.Providers.IDataProvider failing = Substitute.For<ATF.Repository.Providers.IDataProvider>();
+		failing.GetItems(Arg.Any<ATF.Repository.ISelectQuery>())
+			.Returns(_ => throw new InvalidOperationException(Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		ICancellableDelay oneRound = Substitute.For<ICancellableDelay>();
+		oneRound.WaitOrCancelled(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(true);
+		CompilationHistoryPoller rounds = new(failing, _logger, TimeProvider.System, oneRound);
+		_poller = Substitute.For<ICompilationHistoryPoller>();
+		_poller.GetBaseline().Returns(new CompilationHistory { CreatedOn = DateTime.UtcNow.AddMinutes(-1) });
+		_poller.When(value => value.Poll(Arg.Any<DateTime>(), Arg.Any<CancellationToken>(),
+				Arg.Any<Action<CompilationHistory>>()))
+			.Do(call => {
+				// One failing round of the real poller, then the simulated stand's history.
+				rounds.Poll(call.ArgAt<DateTime>(0), call.ArgAt<CancellationToken>(1),
+					call.ArgAt<Action<CompilationHistory>>(2));
+				_stand.Poll(call.ArgAt<Action<CompilationHistory>>(2), call.ArgAt<CancellationToken>(1));
+			});
+		// Answered a second in: the answer is due only once the poll thread attached, so after the real round.
+		_stand.AnswersAt(TimeSpan.FromSeconds(1), SucceededResponse).WritesRow(TimeSpan.Zero, SucceededRow());
+		PackageBuilder sut = CreateSut();
+
+		// Act
+		Action act = () => sut.Rebuild(["UsrPackage"]);
+
+		// Assert
+		act.Should().NotThrow(because: "one tolerated round does not end the build");
+		LoggedText().Should().Contain(line => line.StartsWith("Compilation polling round 1 failed", StringComparison.Ordinal)
+				&& line.Contains("Login failed for user '[redacted]'.", StringComparison.Ordinal)
+				&& line.Contains("untrusted-source-text", StringComparison.Ordinal),
+			because: "the round's warning quotes the provider's text through the site fence");
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the warning line is the stdio caller's result");
 	}
 
 	private const string SecondProjectError =

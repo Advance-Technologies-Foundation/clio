@@ -369,8 +369,12 @@ namespace Clio.Command {
 				url, request.ToString(Formatting.None));
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject schema) {
 				SiteResponseCapture.RecordRefusal(answer);
-				error = response["errorInfo"]?["message"]?.ToString()
-					?? $"Failed to load template schema '{templateUId}' resources";
+				// The designer's message is the site's text: redacted here, where it is read, because create-page puts
+				// it into error and its failure log line. clio's fallback is not.
+				string siteMessage = response["errorInfo"]?["message"]?.ToString();
+				error = string.IsNullOrWhiteSpace(siteMessage)
+					? $"Failed to load template schema '{templateUId}' resources"
+					: SensitiveErrorTextRedactor.RedactSiteText(siteMessage);
 				return false;
 			}
 			localizableStrings = schema["localizableStrings"] as JArray ?? new JArray();
