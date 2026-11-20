@@ -30,15 +30,197 @@ public sealed class DeleteSkillCommandDocTests : BaseCommandTests<DeleteSkillOpt
 [Category("Unit")]
 [Property("Module", "Command")]
 public sealed class SkillInstallServiceTests {
+	private const string ReleaseCommit = "6b296e3929701ac438af71302681bfa96002e78e";
+	private const string OlderCommit = "1111111111111111111111111111111111111111";
+
 	private IManagedSkillsManifestStore _manifestStore = null!;
 	private ManagedSkillsManifest _manifest = null!;
+	private IInstalledToolkitVersions _installedVersions = null!;
+	private IToolkitReleaseProbe _releaseProbe = null!;
+	private IToolkitOperationLock _operationLock = null!;
 
 	[SetUp]
 	public void SetUp() {
 		_manifest = new ManagedSkillsManifest();
 		_manifestStore = Substitute.For<IManagedSkillsManifestStore>();
 		_manifestStore.Read().Returns(_ => _manifest);
+		_installedVersions = Substitute.For<IInstalledToolkitVersions>();
+		_releaseProbe = Substitute.For<IToolkitReleaseProbe>();
+		_releaseProbe.ReadReleaseCommit().Returns(ReleaseCommit);
+		_operationLock = Substitute.For<IToolkitOperationLock>();
+		_operationLock.TryAcquire().Returns(_ => Substitute.For<IDisposable>());
 	}
+
+	[Test]
+	[Description("Update skips an agent whose own recorded commit equals the release commit, without dispatching or touching the manifest.")]
+	public void Update_ShouldReportUpToDate_WhenInstalledCommitEqualsRelease() {
+		// Arrange
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_installedVersions.ReadInstalledCommit("codex").Returns(ReleaseCommit);
+		SkillInstallService sut = CreateService(codex);
+
+		// Act
+		SkillCommandResult result = sut.Update(target: null, repo: null);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "an agent that is already current is not a failure");
+		result.Outcomes.Should().ContainSingle(outcome => outcome.Status == AgentOutcomeStatus.UpToDate,
+			because: "the agent should be reported as up to date");
+		result.Summary.Should().Contain("already up to date for: codex",
+			because: "the summary must not claim an update that did not happen");
+		codex.DidNotReceive().Update(Arg.Any<AgentOperationContext>());
+		_manifestStore.DidNotReceive().Save(Arg.Any<ManagedSkillsManifest>());
+	}
+
+	[Test]
+	[Description("Update reinstalls an agent whose recorded commit differs from the release commit.")]
+	public void Update_ShouldDispatch_WhenInstalledCommitDiffersFromRelease() {
+		// Arrange
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_installedVersions.ReadInstalledCommit("codex").Returns(OlderCommit);
+		SkillInstallService sut = CreateService(codex);
+
+		// Act
+		SkillCommandResult result = sut.Update(target: null, repo: null);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "the update succeeded");
+		codex.Received(1).Update(Arg.Any<AgentOperationContext>());
+	}
+
+	[Test]
+	[Description("Update falls back to a full update when the release commit cannot be determined.")]
+	public void Update_ShouldDispatch_WhenReleaseCommitIsUnknown() {
+		// Arrange
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_installedVersions.ReadInstalledCommit("codex").Returns(ReleaseCommit);
+		_releaseProbe.ReadReleaseCommit().Returns((string)null);
+		SkillInstallService sut = CreateService(codex);
+
+		// Act
+		sut.Update(target: null, repo: null);
+
+		// Assert
+		codex.Received(1).Update(Arg.Any<AgentOperationContext>());
+	}
+
+	[Test]
+	[Description("An agent that records no installed commit is updated without any remote query.")]
+	public void Update_ShouldDispatchWithoutQueryingRemote_WhenInstalledCommitIsUnknown() {
+		// Arrange
+		ICodingAgent cursor = StubAgent("cursor", detected: true);
+		_installedVersions.ReadInstalledCommit("cursor").Returns((string)null);
+		SkillInstallService sut = CreateService(cursor);
+
+		// Act
+		sut.Update(target: null, repo: null);
+
+		// Assert
+		cursor.Received(1).Update(Arg.Any<AgentOperationContext>());
+		_releaseProbe.DidNotReceive().ReadReleaseCommit();
+	}
+
+	[Test]
+	[Description("The release commit is queried once per update, however many agents are compared with it.")]
+	public void Update_ShouldQueryReleaseCommitOnce_ForSeveralAgents() {
+		// Arrange
+		ICodingAgent claude = StubAgent("claude", detected: true);
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_installedVersions.ReadInstalledCommit(Arg.Any<string>()).Returns(ReleaseCommit);
+		SkillInstallService sut = CreateService(claude, codex);
+
+		// Act
+		SkillCommandResult result = sut.Update(target: null, repo: null);
+
+		// Assert
+		_releaseProbe.Received(1).ReadReleaseCommit();
+		result.Summary.Should().Contain("claude, codex", because: "both agents are reported up to date");
+	}
+
+	[Test]
+	[Description("force reinstalls an agent that is already on the release commit, without any comparison.")]
+	public void Update_ShouldDispatch_WhenForced() {
+		// Arrange
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_installedVersions.ReadInstalledCommit("codex").Returns(ReleaseCommit);
+		SkillInstallService sut = CreateService(codex);
+
+		// Act
+		sut.Update(target: null, repo: null, force: true);
+
+		// Assert
+		codex.Received(1).Update(Arg.Any<AgentOperationContext>());
+		_releaseProbe.DidNotReceive().ReadReleaseCommit();
+	}
+
+	[Test]
+	[Description("A --repo override always updates, because only the default source has a release commit to compare with.")]
+	public void Update_ShouldDispatch_WhenRepositoryIsOverridden() {
+		// Arrange
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_installedVersions.ReadInstalledCommit("codex").Returns(ReleaseCommit);
+		SkillInstallService sut = CreateService(codex);
+
+		// Act
+		sut.Update(target: null, repo: "https://example.com/fork.git");
+
+		// Assert
+		codex.Received(1).Update(Arg.Any<AgentOperationContext>());
+		_releaseProbe.DidNotReceive().ReadReleaseCommit();
+	}
+
+	[Test]
+	[Description("Install never takes the up-to-date shortcut.")]
+	public void Install_ShouldNotCompareCommits() {
+		// Arrange
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_installedVersions.ReadInstalledCommit("codex").Returns(ReleaseCommit);
+		SkillInstallService sut = CreateService(codex);
+
+		// Act
+		sut.Install(target: null, repo: null);
+
+		// Assert
+		codex.Received(1).Install(Arg.Any<AgentOperationContext>());
+		_installedVersions.DidNotReceive().ReadInstalledCommit(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("A toolkit operation running in another clio process makes this one fail fast without touching any agent.")]
+	public void Update_ShouldFailWithoutDispatch_WhenAnotherOperationHoldsTheLock() {
+		// Arrange
+		ICodingAgent codex = StubAgent("codex", detected: true);
+		_operationLock.TryAcquire().Returns((IDisposable)null);
+		SkillInstallService sut = CreateService(codex);
+
+		// Act
+		SkillCommandResult result = sut.Update(target: null, repo: null);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "the operation did not run");
+		result.Summary.Should().Be(SkillInstallService.OperationInProgressMessage,
+			because: "the caller must learn why nothing happened");
+		codex.DidNotReceive().Update(Arg.Any<AgentOperationContext>());
+		codex.DidNotReceive().Detect();
+	}
+
+	[Test]
+	[Description("The lock is released when the operation ends.")]
+	public void Update_ShouldReleaseTheLock_WhenOperationEnds() {
+		// Arrange
+		IDisposable handle = Substitute.For<IDisposable>();
+		_operationLock.TryAcquire().Returns(handle);
+		SkillInstallService sut = CreateService(StubAgent("codex", detected: true));
+
+		// Act
+		sut.Update(target: null, repo: null);
+
+		// Assert
+		handle.Received(1).Dispose();
+	}
+
+	private SkillInstallService CreateService(params ICodingAgent[] agents) =>
+		new(agents, _manifestStore, _installedVersions, _releaseProbe, _operationLock);
 
 	[Test]
 	[Description("Install dispatches to every detected agent and records succeeded agents in the manifest.")]
@@ -46,7 +228,7 @@ public sealed class SkillInstallServiceTests {
 		// Arrange
 		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
 		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
-		SkillInstallService sut = new([claude, codex], _manifestStore);
+		SkillInstallService sut = CreateService(claude, codex);
 
 		// Act
 		SkillCommandResult result = sut.Install(target: null, repo: null);
@@ -64,7 +246,7 @@ public sealed class SkillInstallServiceTests {
 	public void Install_ShouldSkipUndetectedAgent_WhenHomeAbsent() {
 		// Arrange
 		ICodingAgent codex = StubAgent("codex", detected: false, AgentOutcome.Succeeded("codex", "ok"));
-		SkillInstallService sut = new([codex], _manifestStore);
+		SkillInstallService sut = CreateService(codex);
 
 		// Act
 		SkillCommandResult result = sut.Install(target: null, repo: null);
@@ -82,7 +264,7 @@ public sealed class SkillInstallServiceTests {
 		// Arrange
 		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
 		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Failed("codex", "boom"));
-		SkillInstallService sut = new([claude, codex], _manifestStore);
+		SkillInstallService sut = CreateService(claude, codex);
 
 		// Act
 		SkillCommandResult result = sut.Install(target: null, repo: null);
@@ -96,7 +278,7 @@ public sealed class SkillInstallServiceTests {
 	public void Install_ShouldRejectUnknownTarget_BeforeDispatch() {
 		// Arrange
 		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
-		SkillInstallService sut = new([codex], _manifestStore);
+		SkillInstallService sut = CreateService(codex);
 
 		// Act
 		SkillCommandResult result = sut.Install(target: "foobar", repo: null);
@@ -113,7 +295,7 @@ public sealed class SkillInstallServiceTests {
 		// Arrange
 		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
 		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
-		SkillInstallService sut = new([claude, codex], _manifestStore);
+		SkillInstallService sut = CreateService(claude, codex);
 
 		// Act
 		SkillCommandResult result = sut.Install(target: "codex", repo: null);
@@ -129,7 +311,7 @@ public sealed class SkillInstallServiceTests {
 	public void Update_ShouldDispatchUpdate_ToDetectedAgents() {
 		// Arrange
 		ICodingAgent claude = StubAgent("claude", detected: true, updateOutcome: AgentOutcome.Succeeded("claude", "ok"));
-		SkillInstallService sut = new([claude], _manifestStore);
+		SkillInstallService sut = CreateService(claude);
 
 		// Act
 		SkillCommandResult result = sut.Update(target: null, repo: null);
@@ -145,7 +327,7 @@ public sealed class SkillInstallServiceTests {
 		// Arrange
 		_manifest.Upsert("codex", "src", DateTimeOffset.UnixEpoch);
 		ICodingAgent codex = StubAgent("codex", detected: true, deleteOutcome: AgentOutcome.Succeeded("codex", "removed"));
-		SkillInstallService sut = new([codex], _manifestStore);
+		SkillInstallService sut = CreateService(codex);
 
 		// Act
 		SkillCommandResult result = sut.Delete(target: null);
@@ -162,7 +344,7 @@ public sealed class SkillInstallServiceTests {
 		// Arrange
 		ICodingAgent claude = StubAgent("claude", detected: true, AgentOutcome.Succeeded("claude", "ok"));
 		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Failed("codex", "boom"));
-		SkillInstallService sut = new([claude, codex], _manifestStore);
+		SkillInstallService sut = CreateService(claude, codex);
 
 		// Act
 		sut.Install(target: null, repo: null);
@@ -177,7 +359,7 @@ public sealed class SkillInstallServiceTests {
 	public void Install_ShouldNotSaveManifest_WhenAllAgentsSkipped() {
 		// Arrange
 		ICodingAgent codex = StubAgent("codex", detected: false, AgentOutcome.Succeeded("codex", "ok"));
-		SkillInstallService sut = new([codex], _manifestStore);
+		SkillInstallService sut = CreateService(codex);
 
 		// Act
 		sut.Install(target: null, repo: null);
@@ -191,7 +373,7 @@ public sealed class SkillInstallServiceTests {
 	public void Install_ShouldRejectUnsafeRepo_BeforeDispatch() {
 		// Arrange
 		ICodingAgent codex = StubAgent("codex", detected: true, AgentOutcome.Succeeded("codex", "ok"));
-		SkillInstallService sut = new([codex], _manifestStore);
+		SkillInstallService sut = CreateService(codex);
 
 		// Act
 		SkillCommandResult result = sut.Install(target: null, repo: "ext::sh -c calc");
@@ -274,6 +456,39 @@ public sealed class SkillCommandDeprecationTests {
 		// Assert
 		exitCode.Should().Be(0, because: "the command should return the service exit code");
 		_service.Received(1).Install("codex", "url");
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("update-toolkit forwards target, repo, and --force to the service and returns its exit code.")]
+	public void Update_ShouldForwardForce_AndReturnExitCode(bool force) {
+		// Arrange
+		_service.Update("codex", "url", force).Returns(new SkillCommandResult(0, Array.Empty<AgentOutcome>(), "done"));
+		UpdateSkillCommand command = new(_service, _logger);
+
+		// Act
+		int exitCode = command.Execute(new UpdateSkillOptions { Target = "codex", Repo = "url", Force = force });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the command should return the service exit code");
+		_service.Received(1).Update("codex", "url", force);
+	}
+
+	[Test]
+	[Description("update-toolkit reports up-to-date agents as information, not as errors.")]
+	public void Update_ShouldReportUpToDateAgentsAsInfo() {
+		// Arrange
+		_service.Update(null, null, false).Returns(new SkillCommandResult(0,
+			[AgentOutcome.UpToDate("codex", "Codex already has the latest toolkit")], "already up to date for: codex."));
+		UpdateSkillCommand command = new(_service, _logger);
+
+		// Act
+		int exitCode = command.Execute(new UpdateSkillOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "being up to date is a successful outcome");
+		_logger.Received(1).WriteInfo("Codex already has the latest toolkit");
+		_logger.DidNotReceiveWithAnyArgs().WriteError(default);
 	}
 
 	[Test]

@@ -16,6 +16,12 @@ runtime into `plugins/local/<plugin>/`.
 Codex and Claude CLI subprocesses inherit `CODEX_HOME` and `CLAUDE_CONFIG_DIR`;
 version inspection must honor these too or report a stale default installation.
 
+Only two agents record the installed COMMIT, which the update-toolkit up-to-date check compares with
+the release branch: Claude's registry entry carries `gitCommitSha`, and the Codex cache payload is a
+full git checkout whose `HEAD` is `ref: refs/heads/release` with the commit in a loose ref file
+(`packed-refs` after gc). Cursor's runtime copy and Copilot's install keep no git metadata. See
+`toolkit-update-skips-only-on-a-proven-commit-match.md`.
+
 Sources: local Claude installed registry; [Codex store implementation](https://github.com/openai/codex/blob/main/codex-rs/core-plugins/src/store.rs);
 [Copilot configuration directory reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference).
 

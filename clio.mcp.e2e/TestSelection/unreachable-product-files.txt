@@ -165,6 +165,7 @@ clio/Common/Skills/ICursorPluginRuntimeInstaller.cs
 clio/Common/Skills/ICursorRuleWriter.cs
 clio/Common/Skills/IJsonConfigEditor.cs
 clio/Common/Skills/JsonConfigEditor.cs
+clio/Common/Skills/ToolkitAutoUpdateLauncher.cs
 clio/Common/StringParser.cs
 clio/Common/UpdateCheckCache.cs
 clio/Common/WebServiceManager.cs

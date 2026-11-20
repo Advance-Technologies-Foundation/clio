@@ -79,6 +79,46 @@ public sealed class SkillManagementToolE2ETests : McpContractFixtureBase {
 		AssertToolCallFailed(actResult);
 	}
 
+	[TestCase(null)]
+	[TestCase(true)]
+	[AllureTag(UpdateSkillTool.ToolName)]
+	[Description("update-toolkit with no detected agents is a clean no-op that exits 0, with and without force.")]
+	[AllureName("Update Toolkit tool is a no-op when no agents are detected")]
+	public async Task UpdateSkill_ShouldSucceedAsNoOp_WhenNoAgentsDetected(bool? force) {
+		// Arrange
+		await using var context = Arrange();
+		Dictionary<string, object?> arguments = new();
+		if (force.HasValue) {
+			arguments["force"] = force.Value;
+		}
+
+		// Act
+		SkillManagementActResult actResult = await CallToolAsync(context, UpdateSkillTool.ToolName, arguments);
+
+		// Assert
+		AssertToolCallSucceeded(actResult);
+		AssertCommandExitCode(actResult, 0);
+	}
+
+	[Test]
+	[AllureTag(UpdateSkillTool.ToolName)]
+	[Description("update-toolkit rejects a non-boolean force argument instead of silently ignoring it.")]
+	[AllureName("Update Toolkit tool rejects a malformed force argument")]
+	public async Task UpdateSkill_ShouldFail_WhenForceIsNotBoolean() {
+		// Arrange
+		await using var context = Arrange();
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			UpdateSkillTool.ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?> { ["force"] = "yes please" } },
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().BeTrue(
+			because: $"a force value that is not a boolean must be refused. Content: {DescribeCallResult(callResult)}");
+	}
+
 	[Test]
 	[AllureTag(DeleteSkillTool.ToolName)]
 	[Description("delete-skill with no detected agents is an idempotent no-op that exits 0.")]
