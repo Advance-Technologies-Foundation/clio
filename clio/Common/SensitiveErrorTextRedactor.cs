@@ -668,10 +668,11 @@ internal static partial class SensitiveErrorTextRedactor {
 	// LINEAR (round B4): only the FIRST break of a run of breaks and blanks is tried. A later break of the same run looks
 	// at the same text after it, so it fails where the first fails and is never the leftmost success; trying each one
 	// read the run once per break, which took 8 s on 20,000 characters of written line breaks and spaces. A cheap look
-	// at the next character skips every position that is no break. The first match - all the cut reads - is the same
-	// (RedactorRegexAuditTests' differential).
+	// at the next characters skips every position that starts no break - a written "\t" included: B4's look admitted
+	// every backslash, so the look back reread a run of written tabs from each one (18 s on 80,000 characters). The first
+	// match - all the cut reads - is the same (RedactorRegexAuditTests' differential against the original).
 	[GeneratedRegex(
-		@"(?=[\r\n\\])(?<!(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?:[^\S\r\n]|\\t)*)"
+		@"(?=\r|\n|\\[rn])(?<!(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?:[^\S\r\n]|\\t)*)"
 		+ @"(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?=(?:\s|\\[rnt])*(?:at[ \t]+(?:[A-Za-z_][\w`]*(?:\.[\w`<>]+)+|\[redacted(?:-[a-z]+)?\])|---[ \t]*End[ \t]+of\b"
 		+ @"|<!DOCTYPE\b|<html\b))",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
@@ -981,7 +982,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		// "[UNTRUSTED-SOURCE-TEXT END]" through verbatim, and a reader that treats the delimiter
 		// case-insensitively would then read everything after it as server-authored.
 		flattened = ExecuteRegex("the fence words", flattened.Length,
-			() => Bounded(FenceTokenRegex(), flattened.Length).Replace(flattened, "(fence removed)"));
+			() => BoundedReplace(FenceTokenRegex(), flattened, _ => "(fence removed)"));
 		if (flattened.Length > UntrustedDiagnosticLimit) {
 			flattened = string.Concat(flattened.AsSpan(0, UntrustedDiagnosticLimit), "…");
 		}
@@ -1475,7 +1476,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		private void Build() {
 			built = true;
 			int start = 0;
-			foreach (Match lineBreak in Bounded(LineBreakRegex(), text.Length).Matches(text)) {
+			foreach (Match lineBreak in BoundedMatches(LineBreakRegex(), text)) {
 				Work++;
 				CheckBudget();
 				Add(text, start, lineBreak.Index);
@@ -1487,8 +1488,12 @@ internal static partial class SensitiveErrorTextRedactor {
 		// The search stays inside the line, so a text of many lines is scanned once.
 		private void Add(string text, int start, int end) {
 			Work += end - start;
-			Match first = Bounded(CountWordRegex(), end - start).Match(text, start, end - start);
-			lines.Add((end, first.Success && first.NextMatch().Success));
+			// The line on its own, as Match(text, start, length) read it: a second search on it is bounded like the first.
+			string line = text[start..end];
+			Match first = Bounded(CountWordRegex(), line.Length).Match(line);
+			bool second = first.Success
+				&& Bounded(CountWordRegex(), line.Length).Match(line, first.Index + first.Length + (first.Length == 0 ? 1 : 0)).Success;
+			lines.Add((end, second));
 		}
 
 		// Whether the line that holds index is a count line.
@@ -1688,7 +1693,7 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	private static string ApplyInjectedRule(string stage, string text) =>
 		injectedRule is not null && string.Equals(injectedStage, stage, StringComparison.Ordinal)
-			? injectedRule.Replace(text, "$0")
+			? BoundedReplace(injectedRule, text, match => match.Value)
 			: text;
 
 	private static void ClearInjectedRule() {
@@ -1871,7 +1876,7 @@ internal static partial class SensitiveErrorTextRedactor {
 			return text;
 		}
 		sorted.Sort(static (left, right) => left.Start != right.Start ? left.Start.CompareTo(right.Start) : right.Length.CompareTo(left.Length));
-		MatchCollection found = Bounded(PlaceholderPieceRegex(), text.Length).Matches(text);
+		List<Match> found = [.. BoundedMatches(PlaceholderPieceRegex(), text)];
 		Work += text.Length + sorted.Count + found.Count;
 		int[] placeholderStarts = new int[found.Count];
 		int[] placeholderEnds = new int[found.Count];
@@ -1945,7 +1950,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		int position = start;
 		bool afterPlaceholder = false;
 		int pieces = 0;
-		foreach (Match kept in Bounded(ProtectedPieceRegex(), end - start).Matches(text[start..end])) {
+		foreach (Match kept in BoundedMatches(ProtectedPieceRegex(), text[start..end])) {
 			Work++;
 			if ((++pieces & 1023) == 0) {
 				CheckBudget();
@@ -1969,12 +1974,44 @@ internal static partial class SensitiveErrorTextRedactor {
 		Work += text.Length;
 		CheckBudget();
 		List<SpanEdit> all = [];
-		foreach (Match match in Bounded(rule, text.Length).Matches(text)) {
+		foreach (Match match in BoundedMatches(rule, text)) {
 			Work++;
 			all.AddRange(edits(match));
 			CheckBudget();
 		}
 		return all.Count == 0 ? text : ApplyEdits(text, all);
+	}
+
+	/// <summary>
+	/// The matches of <paramref name="rule"/> over <paramref name="text"/>, in order, each found by its own run under the
+	/// per-call deadline (<see cref="Bounded"/> before every match). The same matches as <c>rule.Matches(text)</c>: each
+	/// search starts where the last match ended - one character later after an empty match, as Regex does - and a
+	/// lookbehind still sees the whole text.
+	/// </summary>
+	internal static IEnumerable<Match> BoundedMatches(Regex rule, string text) {
+		int start = 0;
+		while (start <= text.Length) {
+			Match match = Bounded(rule, text.Length).Match(text, start);
+			if (!match.Success) {
+				yield break;
+			}
+			yield return match;
+			start = match.Index + match.Length + (match.Length == 0 ? 1 : 0);
+		}
+	}
+
+	/// <summary><c>rule.Replace(text, evaluator)</c> over <see cref="BoundedMatches"/>, with a budget check after every
+	/// evaluator call: the same output, each match bounded by the time left.</summary>
+	internal static string BoundedReplace(Regex rule, string text, MatchEvaluator evaluator) {
+		StringBuilder? output = null;
+		int position = 0;
+		foreach (Match match in BoundedMatches(rule, text)) {
+			output ??= new StringBuilder(text.Length);
+			output.Append(text, position, match.Index - position).Append(evaluator(match));
+			position = match.Index + match.Length;
+			CheckBudget();
+		}
+		return output is null ? text : output.Append(text, position, text.Length - position).ToString();
 	}
 
 	// A rule that can match only where the text holds NEED, skipped where it does not. Exact: every match of the rule
@@ -2076,9 +2113,19 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// <see cref="CharactersPerTimeoutSecond"/> and one second per that many characters above it. So no single run can
 	/// outlast the backstop: the whole call ends within the backstop plus one small step. With under the smallest step
 	/// left, the call fails closed at once. The rebuilt rule has the generated one's pattern and options.
+	/// A rule run that finds several matches goes through <see cref="BoundedMatches"/> or <see cref="BoundedReplace"/>,
+	/// which bound EACH match by the time left when it starts: Regex.Matches and Regex.Replace restart one timeout per
+	/// match, so the last match before the deadline would otherwise get a whole step.
 	/// </summary>
 	internal static Regex Bounded(Regex rule, int length) {
 		int scaled = (int)rule.MatchTimeout.TotalMilliseconds;
+		if (scaled < TimeoutStepsMilliseconds[0]) {
+			// A rule whose own timeout is under the smallest step (a test's) keeps it while that much time is left.
+			if (wallDeadline != 0 && (wallDeadline - System.Diagnostics.Stopwatch.GetTimestamp()) * 1_000 / System.Diagnostics.Stopwatch.Frequency < scaled) {
+				throw new RedactionBudgetExceededException("clock backstop");
+			}
+			return rule;
+		}
 		if (length > CharactersPerTimeoutSecond) {
 			int seconds = 1;
 			while (seconds * (long)CharactersPerTimeoutSecond < length && seconds * 1_000 < TimeoutStepsMilliseconds[^1]) {

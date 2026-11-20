@@ -199,10 +199,17 @@ public sealed class RedactorRegexAuditTests {
 		siteTime.Should().BeLessThan(TimeSpan.FromSeconds(2), because: "RedactSiteText ends within the 1 s backstop plus one small step");
 	}
 
-	// The prefixes round B4 put in front of two quadratic patterns; what follows each is the pattern as it was.
-	internal const string CutPrefix = @"(?=[\r\n\\])(?<!(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?:[^\S\r\n]|\\t)*)";
+	// The prefixes put in front of two quadratic patterns (round B4; the cut's corrected in B5), and FROZEN copies of the
+	// patterns as they were before (aebbcb79b), which the differentials compare against.
+	internal const string CutPrefix = @"(?=\r|\n|\\[rn])(?<!(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?:[^\S\r\n]|\\t)*)";
+
+	internal const string CutOriginalPattern =
+		@"(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?=(?:\s|\\[rnt])*(?:at[ \t]+(?:[A-Za-z_][\w`]*(?:\.[\w`<>]+)+|\[redacted(?:-[a-z]+)?\])|---[ \t]*End[ \t]+of\b|<!DOCTYPE\b|<html\b))";
 
 	internal const string RunAfterPlaceholderPrefix = @"(?=\S)";
+
+	internal const string RunAfterPlaceholderOriginalPattern =
+		@"(?<=(?<![\w.\-])[\w.\-]*(?:(?:(?:user|db|new|old|my|admin|app|smtp|proxy|current|connection)[_-]?)?(?:password|passphrase|passcode|passwd|pass|pwd|pw)(?:[_-]?(?:confirmation|confirm|repeat|new|old|backup|retry))?|secret|(?:access|refresh|id|auth|bearer|api|client|session|[xc]srf)?[_-]?token|api[_-]?key|client[_-]?secret|client[_-]?id|private[_-]?key|access[_-]?key|connection ?string|authorization|auth|bearer|set-cookie|cookie|asp\.net_sessionid|aspxauth|bpmcsrf|jsessionid|phpsessid|session[_-]?id|[xc]srf[_-]?token|credentials?|data ?source|server|hostname|host|initial ?catalog|database|uid|user ?id)=\[redacted\][ \t]*)(?<q>\\u0022|\\u0027|\\""|&quot;|[""'])?(?<cred>(?:[^\s,;""'\\&]|\\\\|\\(?!u00(?:22|27)|[""'])|&amp;|&(?!quot;))+)(?<close>\k<q>)?";
 
 	// Strings built from the pieces each pattern reads, 1-12 pieces, from a fixed seed.
 	internal static IEnumerable<string> PieceStrings(string[] pieces, int count, int seed) {
@@ -217,7 +224,8 @@ public sealed class RedactorRegexAuditTests {
 		}
 	}
 
-	private static readonly string[] CutPieces = ["\r\n", "\n", "\r", "\\r\\n", "\\n", "\\r", "\\t", "\\R", " ", "  ", "\t",
+	private static readonly string[] CutPieces = ["\r\n", "\n", "\r", "\\r\\n", "\\n", "\\r", "\\t", "\\R", "\\N", "\\T",
+		"\\R\\N", "\\t\\t\\t", " ", "  ", "\t",
 		"\u00a0", "\u2028", "at X.Y()", "at [redacted]", "at [redacted-path]", "AT Clio.Tests", "--- End of stack", "<!DOCTYPE html>",
 		"<html>", "x", "\\", "\\\\", "A", "at", "at x", "Error."];
 
@@ -238,13 +246,14 @@ public sealed class RedactorRegexAuditTests {
 	[Description("SAME FIRST MATCH, linear: the cut's pattern tries only the first break of a run of breaks and blanks. Over "
 		+ "the corpus, master's chain output of it, and 5,000 strings built from breaks, written breaks, blanks, frames, page "
 		+ "starts and backslashes (CLIO_REGEX_DIFF_COUNT for the full run), its first match - success, index and length, all "
-		+ "the cut reads - equals the original's. On 20,000 characters of written breaks and spaces it no longer reads the "
-		+ "run once per break.")]
+		+ "the cut reads - equals the FROZEN original's (aebbcb79b). On 20,000 characters of written breaks and spaces, and "
+		+ "on 80,000 of written tabs (which the B4 look reread from every backslash), it reads the run once.")]
 	public void StackOrPageBreakRegex_ShouldFindTheSameFirstBreak_AsTheQuadraticOriginal() {
 		// Arrange
 		Regex now = Own("StackOrPageBreakRegex");
 		now.ToString().Should().StartWith(CutPrefix);
-		Regex old = new(now.ToString()[CutPrefix.Length..], now.Options, TimeSpan.FromSeconds(10));
+		now.ToString().Should().Be(CutPrefix + CutOriginalPattern, because: "only the prefix is new");
+		Regex old = new(CutOriginalPattern, now.Options, TimeSpan.FromSeconds(10));
 		List<string> strings = [.. CorpusAsTheRulesSeeIt(), .. PieceStrings(CutPieces, GeneratedCount(), 20261120)];
 		string adversarial = string.Concat(Enumerable.Repeat("\\r\\n ", 4_000)) + "!";
 		Regex bounded = new(now.ToString(), now.Options, TimeSpan.FromMilliseconds(250));
@@ -270,6 +279,29 @@ public sealed class RedactorRegexAuditTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The cut reads a run of written tabs once: its first look admits a break only (a real CR or LF, or a "
+		+ "written \\r or \\n), so a written \\t - which the B4 look admitted at every backslash, rereading the run of "
+		+ "blanks from each (1.2 s on 20,000 characters, 18 s on 80,000) - is skipped at once. 80,000 characters of written "
+		+ "tabs are matched within 250 ms, and a site text with 8,000 of them is redacted, not failed closed.")]
+	public void StackOrPageBreakRegex_ShouldReadWrittenTabsOnce() {
+		// Arrange
+		Regex now = Own("StackOrPageBreakRegex");
+		Regex bounded = new(now.ToString(), now.Options, TimeSpan.FromMilliseconds(250));
+		string writtenTabs = "Login failed. Error " + string.Concat(Enumerable.Repeat("\\t", 40_000)) + " end";
+		long failed = SensitiveErrorTextRedactor.FailedClosed;
+
+		// Act
+		Action tabs = () => bounded.Match(writtenTabs);
+		string site = SensitiveErrorTextRedactor.RedactSiteText("Error " + string.Concat(Enumerable.Repeat("\\t", 8_000)) + " end");
+
+		// Assert
+		tabs.Should().NotThrow(because: "80,000 characters of written tabs are read once: a written \\t starts no break");
+		SensitiveErrorTextRedactor.FailedClosed.Should().Be(failed, because: "16,000 characters of written tabs are redacted, not failed closed");
+		site.Should().EndWith(" end");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("SAME MATCHES AND GROUPS, linear: the run after master's key=[redacted] starts with a look at the next "
 		+ "character before its look back. Over the corpus, master's chain output of it, and 5,000 strings built from pairs "
 		+ "with placeholders, blanks, quotes in every spelling, runs and backslashes (CLIO_REGEX_DIFF_COUNT for the full "
@@ -279,7 +311,8 @@ public sealed class RedactorRegexAuditTests {
 		// Arrange
 		Regex now = Own("CredentialRunAfterPairPlaceholderRegex");
 		now.ToString().Should().StartWith(RunAfterPlaceholderPrefix);
-		Regex old = new(now.ToString()[RunAfterPlaceholderPrefix.Length..], now.Options, TimeSpan.FromSeconds(10));
+		now.ToString().Should().Be(RunAfterPlaceholderPrefix + RunAfterPlaceholderOriginalPattern, because: "only the prefix is new");
+		Regex old = new(RunAfterPlaceholderOriginalPattern, now.Options, TimeSpan.FromSeconds(10));
 		List<string> strings = [.. CorpusAsTheRulesSeeIt(), .. PieceStrings(RunPieces, GeneratedCount(), 1990)];
 		string adversarial = "password=[redacted]" + new string(' ', 20_000) + "!";
 		Regex bounded = new(now.ToString(), now.Options, TimeSpan.FromMilliseconds(250));
@@ -304,6 +337,65 @@ public sealed class RedactorRegexAuditTests {
 
 		static string Describe(Match match) =>
 			$"{match.Index}+{match.Length} q={match.Groups["q"].Index}:{match.Groups["q"].Value} cred={match.Groups["cred"].Index}:{match.Groups["cred"].Value} close={match.Groups["close"].Value}";
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("L1, EACH MATCH GETS THE TIME LEFT: a rule with many matches, each slow (an injected rule whose first "
+		+ "alternative backtracks over twenty-one letters, about 300 ms, before the second one matches), cannot run past the backstop, "
+		+ "because every match is searched under the time left when it starts - Regex.Matches would restart one timeout "
+		+ "per match and let the last one take a whole step.")]
+	public void EveryMatch_ShouldGetOnlyTheTimeLeft_WhenARuleHasManySlowMatches() {
+		// Arrange
+		// Each match takes about 300 ms here, under the 500 ms step a 1 s backstop gives: a run bounded once would let
+		// the match that starts just before the deadline run its whole 300 ms past it. A ";" between two units keeps the
+		// first alternative's backtracking inside one unit.
+		Regex slow = new(@"(?:(\w+\s?)*!|a{21}y)", RegexOptions.None, TimeSpan.FromSeconds(30));
+		string text = string.Concat(Enumerable.Repeat(new string('a', 21) + "y;", 10)) + "Password=hunter2";
+		Stopwatch watch;
+		string redacted;
+		TimeSpan elapsed;
+		List<string> logged = [];
+
+		// Act
+		using (SensitiveErrorTextRedactor.InjectFailedClosedLogForTests(logged.Add))
+		using (SensitiveErrorTextRedactor.InjectRuleForTests(SensitiveErrorTextRedactor.RedactFirstStage, slow))
+		using (SensitiveErrorTextRedactor.InjectBackstopForTests(TimeSpan.FromSeconds(1))) {
+			watch = Stopwatch.StartNew();
+			redacted = SensitiveErrorTextRedactor.Redact(text);
+			elapsed = watch.Elapsed;
+		}
+		TestContext.Out.WriteLine($"10 slow matches under a 1 s backstop: {elapsed.TotalMilliseconds:0} ms, {redacted}, {string.Join(" | ", logged)}");
+
+		// Assert
+		redacted.Should().Be(SensitiveErrorTextRedactor.RedactedTimeout, because: "ten slow matches outlast a 1 s backstop");
+		logged.Should().ContainSingle();
+		elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1_100), because: "no match runs past the time the call has left");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("L2: CredentialShapeMasker.Mask runs its five rules (master's patterns) under the same per-call deadline. "
+		+ "Its pair rule reads '.password' repeated 2,000 times (18 KB) in super-linear time; under a 200 ms backstop the "
+		+ "call fails closed within the backstop, not after its rule's own 1 s.")]
+	public void CredentialShapeMasker_ShouldRunUnderTheCallsDeadline() {
+		// Arrange
+		string text = string.Concat(Enumerable.Repeat(".password", 2_000));
+		Stopwatch watch;
+		string masked;
+		TimeSpan elapsed;
+
+		// Act
+		using (SensitiveErrorTextRedactor.InjectBackstopForTests(TimeSpan.FromMilliseconds(200))) {
+			watch = Stopwatch.StartNew();
+			masked = CredentialShapeMasker.Mask(text);
+			elapsed = watch.Elapsed;
+		}
+		TestContext.Out.WriteLine($"Mask of 18 KB '.password' under a 200 ms backstop: {elapsed.TotalMilliseconds:0} ms");
+
+		// Assert
+		masked.Should().Be(SensitiveErrorTextRedactor.RedactedTimeout);
+		elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(700), because: "the masker's rules get the time the call has left");
 	}
 
 	private static IEnumerable<(string Name, Regex Rule)> AllRules() =>

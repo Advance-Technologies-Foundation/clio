@@ -78,14 +78,16 @@ internal static partial class CredentialShapeMasker {
 			return text;
 		}
 		return SensitiveErrorTextRedactor.ExecuteRegex(nameof(CredentialShapeMasker) + "." + nameof(Mask), text.Length, () => {
-			string result = BasicCredentialRegex().Replace(text, match => IsUserPassword(match.Groups["token"].Value)
+			// Each rule's matches run under the redactor's per-call deadline (BoundedReplace): the patterns are master's.
+			string result = SensitiveErrorTextRedactor.BoundedReplace(BasicCredentialRegex(), text, match => IsUserPassword(match.Groups["token"].Value)
 				? $"{match.Groups["scheme"].Value}{match.Groups["gap"].Value}{Redacted}"
 				: match.Value);
-			result = BearerTokenRegex().Replace(result, match => $"{match.Groups["scheme"].Value}{match.Groups["gap"].Value}{Redacted}");
-			result = JwtRegex().Replace(result, Redacted);
-			result = JsonSecretPropertyRegex().Replace(result,
+			result = SensitiveErrorTextRedactor.BoundedReplace(BearerTokenRegex(), result,
+				match => $"{match.Groups["scheme"].Value}{match.Groups["gap"].Value}{Redacted}");
+			result = SensitiveErrorTextRedactor.BoundedReplace(JwtRegex(), result, _ => Redacted);
+			result = SensitiveErrorTextRedactor.BoundedReplace(JsonSecretPropertyRegex(), result,
 				match => $"{match.Groups["head"].Value}{Redacted}{match.Groups["close"].Value}");
-			return SecretPairRegex().Replace(result, match => $"{match.Groups["head"].Value}{Redacted}");
+			return SensitiveErrorTextRedactor.BoundedReplace(SecretPairRegex(), result, match => $"{match.Groups["head"].Value}{Redacted}");
 		});
 	}
 

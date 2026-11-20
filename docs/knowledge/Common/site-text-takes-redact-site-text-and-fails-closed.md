@@ -78,6 +78,10 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
   `CountLines`, the count-word rule, the cut and the fence words - goes through `Bounded`, which gives it a match timeout
   of min(its scaled timeout, the time left before the call's 20 s clock backstop), stepped down to 62/125/250/500 ms or
   a doubling of 1 s; with under 62 ms left the call fails closed at once, and a budget check follows every evaluator.
+  A run with several matches goes through `BoundedMatches` / `BoundedReplace`, which re-bound EACH match by the time left
+  when it starts (B5): Regex.Matches and Regex.Replace restart one timeout per match, so the last match before the
+  deadline got a whole step (five matches under a 1 s timeout ran 2,049 ms). `CredentialShapeMasker.Mask` runs its five
+  rules (master's patterns) the same way.
   The scaled timeout is the rule's own 1 s below 250,000 characters and 1 s per 250,000 characters above it (to 16 s),
   because a rule that never matches scans the whole text in one attempt (5 MB took up to 0.9 s here, idle). So a call
   ends within the backstop plus one small step. THIS CHANGES HOW MASTER'S CHAIN RUNS: its patterns, options, calls and
@@ -86,15 +90,17 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
 - THE REGEX AUDIT (B4): every clio-own regex was run against adversarial 2,000-character inputs. `DottedTypeNameRegex`
   (option B's own) backtracked exponentially (`Aa` + capitals + `.x`, 45 characters past any timeout); it keeps its
   pattern and runs on `RegexOptions.NonBacktracking`, the same language by construction. The cut
-  (`StackOrPageBreakRegex`, 8 s on 20,000 characters of written breaks and spaces) tries only the first break of a run,
+  (`StackOrPageBreakRegex`, 8 s on 20,000 characters of written breaks and spaces) tries only the first break of a run
+  - its first look admits a break only (`(?=\r|\n|\\[rn])`; B4's `(?=[\r\n\\])` admitted every backslash of a written
+  `\t`, 18 s on 80,000 characters, fixed in B5) -
   and `CredentialRunAfterPairPlaceholderRegex` (2.8 s on 20,000 spaces) looks at the next character before it looks
   back; both keep their first match / their matches and groups, proven by a differential (`RedactorRegexAuditTests`).
   `HeaderPositionRegex` is quadratic too but only ever sees a 64-character window. Master's chain is not changed; its
   host:port rule's quadratic run on `a.a.a.` is bounded by the deadline.
 - A FAIL-CLOSED RESULT IS VISIBLE: a regex timeout or a call past its budget returns `[redacted-timeout]`, not the
   `[redacted]` a value gets (PlaceholderPieceRegex reads it, so later passes keep it), counts on `FailedClosed`, and is
-  logged once through `FailedClosedLog` (the console logger's warning) with the entry point and the input length,
-  never the text.
+  logged once through `DefaultFailedClosedLog` (the console logger's warning) with the entry point and the input
+  length, never the text; tests capture it per thread through `InjectFailedClosedLogForTests`.
 - Rules skip a text that lacks a literal every match of theirs contains (`ApplyRule(text, need, …)`, `ApplyRuleWhen`);
   an IgnoreCase rule's literal is compared ignoring case. Every prefiltered rule that runs is recorded (`Prefiltered`),
   and `EveryPrefilter_ShouldHoldWhereverItsRuleMatches` proves each condition exact over the corpus, master's chain
