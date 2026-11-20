@@ -267,7 +267,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The description says the one live effect a FAILED save can have on a family with timer starts (ENG-91849): the family's timer jobs are dropped and the active version's re-registered, so a timer with a past start may run once right away - while the tool stays Destructive = false, because that run belongs to an already-approved schedule.")]
+	[Description("The description says the one live effect a FAILED save can have on a family with timer starts (ENG-91849): the family's timer jobs are dropped and the active version's re-registered, so a timer with a past start may run once right away - while the tool stays Destructive = false: it is one extra run on a failure path, disclosed in the description.")]
 	public void ModifyProcessAsNewVersion_Description_ShouldStateTheFailedSaveTimerEffect() {
 		// Arrange
 		MethodInfo method = typeof(ModifyProcessAsNewVersionTool)
@@ -282,7 +282,7 @@ public class ModifyProcessAsNewVersionToolTests {
 		description.Should().Contain("may run once right away",
 			because: "a catch-up run of the running version is the consequence a caller has to be able to foresee");
 		method.GetCustomAttribute<McpServerToolAttribute>()!.Destructive.Should().BeFalse(
-			because: "the re-registration restores an approved schedule rather than adding one, so consent gating stays as it is");
+			because: "the extra run happens only on a failed save and is disclosed, so consent gating stays as it is");
 	}
 
 	[Test]

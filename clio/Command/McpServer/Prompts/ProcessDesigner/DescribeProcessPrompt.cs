@@ -93,8 +93,10 @@ public static class DescribeProcessPrompt {
 		   describe-only `storedCron` (the cron as stored), `designerKind` (the stored kind, only when the cron does
 		   not match it) and `scheduled`: `state` is `scheduled` with `nextFireTimeUtc`, or why the platform will not
 		   run it - `processDisabled`, `notActiveVersion` (with the active version's next run), `staleTrigger` (a
-		   re-save fixes it), `noJob` or `schedulerUnavailable`. Report a timer that is saved but not scheduled; it
-		   never fires and nothing else says so. A message start has no `buildType`: it is read-only here.
+		   re-save fixes it), `noJob` or `schedulerUnavailable`. Report a timer that is saved but not scheduled, by
+		   its state: under `processDisabled` or `noJob` it never fires; under `staleTrigger` the stored trigger still
+		   fires on its old schedule until a re-save; under `notActiveVersion` the active version runs its own timer.
+		   A message start has no `buildType`: it is read-only here.
 		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
 		   `email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each
 		   row attaches, and read its `issues`, which name a row that fails or surprises at run time.

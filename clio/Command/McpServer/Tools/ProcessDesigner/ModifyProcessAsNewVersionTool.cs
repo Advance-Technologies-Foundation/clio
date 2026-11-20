@@ -51,9 +51,10 @@ public class ModifyProcessAsNewVersionTool(
 	// version included, so the description tells the caller to put that to the user first - it changes what each
 	// run records, not which version runs. The other is a save that FAILS on a family with timer starts (ENG-91849):
 	// the platform drops the family's timer jobs and the package re-registers the ACTIVE version's, so its schedule
-	// is restored rather than changed, but a timer whose start lies in the past may fire one catch-up run. The
-	// annotation stays false: that run belongs to a schedule already approved and running, and flipping it would put
-	// every version write - a plain snapshot included - behind destructive consent. The description says it instead.
+	// is restored rather than changed, but a timer whose start lies in the past may fire one catch-up run. That is an
+	// extra run on a failure path, of a schedule already registered, and the description discloses it. The annotation
+	// stays false: flipping it would put every version write - a plain snapshot included - behind destructive
+	// consent for a run that happens only when the save fails.
 	[McpServerTool(Name = ModifyProcessAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Edit an existing Creatio business process and save the result as a NEW VERSION of it, leaving "

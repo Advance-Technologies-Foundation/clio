@@ -41,7 +41,7 @@ public static class ModifyBusinessProcessPrompt {
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
-		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`,
+		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setTimer`, `setElement`,
 		 `setFlowResults`, `setConnections`, `clearConnections`, or `setTracing`
 		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build,
 		 so an `addElement` for a Pre-configured page or an Open edit page uses `type:"preconfiguredPage"` /

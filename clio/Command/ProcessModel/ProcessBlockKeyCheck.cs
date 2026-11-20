@@ -663,10 +663,11 @@ internal static class ProcessBlockKeyCheck {
 			}
 		}
 
-		// The timer block (ENG-91849) is ONE object on the server's contract, 'weekday' one nested object, 'daysOfWeek' a
-		// list of strings, 'every', 'fromHour', 'toHour' and 'month' Int32 members (a quoted whole number reads too),
-		// 'dayOfMonth' a string member the host also reads from a whole number, and 'schedule', 'at', 'cron', 'start',
-		// 'end', 'timeZone' and 'workday' string members. None of the wrong shapes refused here is a key the contract
+		// The timer block (ENG-91849) is ONE object on the server's contract, 'weekday' one nested object of two string
+		// members ('position', 'day'), 'daysOfWeek' a list of strings, 'every', 'fromHour', 'toHour' and 'month' Int32
+		// members (a quoted number reads too), 'repeatOnMisfire' a Boolean? member, 'dayOfMonth' a string member the host
+		// also reads from any scalar, and 'schedule', 'at', 'cron', 'start', 'end', 'timeZone' and 'workday' string
+		// members. None of the wrong shapes refused here is a key the contract
 		// drops: the serializer fails to read the WHOLE request, which reaches the caller only as "could not read the
 		// request" - and the member names invite them ("weekday": "wed", "daysOfWeek": "mon", "at": ["08:00", "17:00"]).
 		// The one exception is a daysOfWeek entry that is not a string: the serializer reads it (2 as "2", null as null)
@@ -698,6 +699,13 @@ internal static class ProcessBlockKeyCheck {
 						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes ONE "
 							+ "object, for example \"weekday\": {\"position\": \"third\", \"day\": \"wed\"}.");
 						break;
+					case "weekday":
+						RefuseWeekdayMembers((JsonObject)member, where, memberPath);
+						break;
+					case "repeatOnMisfire" when !ReadsAsBoolean(member):
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes true or "
+							+ "false.");
+						break;
 					case "daysOfWeek" when member is not JsonArray:
 						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
 							+ "LIST of day names, for example \"daysOfWeek\": [\"mon\", \"fri\"].");
@@ -716,31 +724,66 @@ internal static class ProcessBlockKeyCheck {
 						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
 							+ "whole number.");
 						break;
-					case "dayOfMonth" when !ReadsAsInt32(member) && (member as JsonValue)?.GetValueKind()
-						!= JsonValueKind.String:
+					case "dayOfMonth" when member is JsonArray or JsonObject:
 						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
 							+ "day number (1..31) or \"last\".");
+						break;
+					case "dayOfMonth" when !ReadsAsInt32(member) && ((JsonValue)member).GetValueKind() != JsonValueKind.String:
+						// The host reads any scalar into this string member and then refuses it by its own day rule; refused
+						// here only to answer without the round trip.
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}: it takes a day number (1..31) or \"last\", "
+							+ "and the server refuses anything else.");
 						break;
 				}
 			}
 			return false;
 		}
 
-		// What the server's Int32 members read: a JSON number with no fraction that fits Int32, or a JSON string whose
-		// trimmed content is such a whole number ("9" and " 9" read as 9). A fraction (1.5, also 1e-1), a value beyond
-		// Int32, a boolean, or any other string ("abc", "1.5") fails the whole request.
+		// What the server's Int32 members read (DataContractJsonSerializer, measured on net472 and net8.0): a JSON number,
+		// or a JSON string holding one, whose value is whole and fits Int32 - 7, 7.0, 1e1, "5", " 5", "5.0" and "1e1" all
+		// read. A fraction (1.5, also 1e-1), a value beyond Int32, a boolean, or any other string ("abc") fails the whole
+		// request. One rule for both forms.
 		private static bool ReadsAsInt32(JsonNode value) {
 			if (value is not JsonValue scalar) {
 				return false;
 			}
+			string text = scalar.GetValueKind() switch {
+				JsonValueKind.Number => scalar.ToJsonString(),
+				JsonValueKind.String => scalar.GetValue<string>().Trim(),
+				_ => null
+			};
+			return text != null && decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+					out decimal parsed)
+				&& parsed == decimal.Truncate(parsed) && parsed >= int.MinValue && parsed <= int.MaxValue;
+		}
+
+		// What the server's Boolean? member reads (measured as above): true, false, a JSON number, and the strings "true"
+		// and "false" in lower case. "yes", "True", a list or an object fail the whole request.
+		private static bool ReadsAsBoolean(JsonNode value) {
+			if (value is not JsonValue scalar) {
+				return false;
+			}
 			return scalar.GetValueKind() switch {
-				JsonValueKind.Number => decimal.TryParse(scalar.ToJsonString(), NumberStyles.Float,
-						CultureInfo.InvariantCulture, out decimal parsed)
-					&& parsed == decimal.Truncate(parsed) && parsed >= int.MinValue && parsed <= int.MaxValue,
-				JsonValueKind.String => int.TryParse(scalar.GetValue<string>().Trim(), NumberStyles.Integer,
-					CultureInfo.InvariantCulture, out _),
+				JsonValueKind.True or JsonValueKind.False or JsonValueKind.Number => true,
+				JsonValueKind.String => scalar.GetValue<string>() is "true" or "false",
 				_ => false
 			};
+		}
+
+		// The two members of a 'weekday' object are strings; a list or an object in either fails the whole request.
+		private void RefuseWeekdayMembers(JsonObject weekday, string where, string path) {
+			List<KeyValuePair<string, JsonNode>> members;
+			try {
+				members = [.. weekday];
+			} catch (ArgumentException) {
+				return; // a repeated key, which the walk refuses with its path
+			}
+			foreach ((string key, JsonNode member) in members) {
+				if (key is "position" or "day" && member is JsonArray or JsonObject) {
+					RefuseShape($"{where}: '{path}.{key}' is {Echo(member)}, which the server cannot read: it takes ONE "
+						+ $"string, not {(member is JsonArray ? "a list" : "an object")}.");
+				}
+			}
 		}
 
 		// A caller's value echoed into a refusal, cut so a large one does not swamp the message.
