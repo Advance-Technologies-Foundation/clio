@@ -84,7 +84,7 @@ public sealed record ODataRowResult {
 
 	/// <summary>What the site itself answered to this failed write; see <see cref="Clio.Common.SiteResponse"/>.</summary>
 	[JsonPropertyName("site-response"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("What the Creatio site itself answered to the failed write: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
+	[Description("What the Creatio site itself answered to the failed write: status, and its own message and code when the body carries them. Absent on success (except a row clio read back by its sent Id and found created, which keeps the failed answer) and when no HTTP response exists.")]
 	public SiteResponse? SiteResponse { get; init; }
 
 	[JsonIgnore]
@@ -105,6 +105,21 @@ public sealed record ODataRowResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[Description("Primary key of the created record, when known.")]
 	public string? Id { get; init; }
+
+	/// <summary>
+	/// Gets the Id clio generated and sent with a row that had none, when the row's result is unknown
+	/// (<see cref="RecordCreated"/> is <see langword="null"/>).
+	/// </summary>
+	/// <remarks>
+	/// A re-send of the row with this Id should not create the record twice: if the earlier send was applied, Creatio
+	/// is expected to refuse the re-send as a duplicate key (not yet measured on a stand). A row clio found by reading the record back is a created row and
+	/// carries it as <see cref="Id"/> instead.
+	/// </remarks>
+	[JsonPropertyName("sent-id")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("The Id clio generated and sent with this row, present when record-created is null. Re-send the "
+		+ "row only with this Id: if the earlier send was applied, Creatio is expected to refuse it as a duplicate key.")]
+	public string? SentId { get; init; }
 
 	/// <summary>Gets the failure reason when the row was not inserted.</summary>
 	[JsonPropertyName("error")]
@@ -134,12 +149,14 @@ public sealed record ODataRowResult {
 	public bool? RecordCreated { get; init; }
 
 	/// <summary>
-	/// Gets the agent-actionable next step, set when <see cref="RecordCreated"/> is unknown or when Creatio
-	/// rejected the row before writing it.
+	/// Gets the agent-actionable next step, set when <see cref="RecordCreated"/> is unknown, when Creatio
+	/// rejected the row before writing it, or when clio read a row whose request failed back by its sent Id and
+	/// found it created.
 	/// </summary>
 	[JsonPropertyName("retry-guidance")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("Next step when record-created is null, or when Creatio rejected the row before writing it. "
-		+ "Never blind-retry an unknown row.")]
+	[Description("Next step when record-created is null, when Creatio rejected the row before writing it, or when "
+		+ "clio read a row whose request failed back by the Id it sent and found it created. Never blind-retry an "
+		+ "unknown row.")]
 	public string? RetryGuidance { get; init; }
 }
