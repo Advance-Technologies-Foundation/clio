@@ -1247,6 +1247,97 @@ public sealed class ServerProcessDescriberTests {
 			because: "a null block serializes away instead of appearing on every element of every other kind");
 	}
 
+	// A Timer start's block as the server describes it (ENG-91849): a third-Wednesday month schedule with a window, its
+	// stored cron and the scheduler state, with an undeclared key on the block, on the weekday and on the state.
+	private const string TimerBlock =
+		"{\"schedule\":\"month\",\"every\":1,\"at\":\"08:30\",\"weekday\":{\"position\":\"third\",\"day\":\"wed\",\"futureWeekdayFact\":1},"
+		+ "\"start\":\"2090-01-01T00:00:00\",\"end\":\"2091-01-01T00:00:00\",\"timeZone\":\"FLE Standard Time\","
+		+ "\"repeatOnMisfire\":false,\"storedCron\":\"0 30 8 ? 1/1 4#3 *\","
+		+ "\"scheduled\":{\"state\":\"scheduled\",\"nextFireTimeUtc\":\"2090-01-18T06:30:00Z\",\"futureStateFact\":\"x\"},"
+		+ "\"futureTimerFact\":{\"nested\":\"kept\"}}";
+
+	private static IApplicationClient ClientReportingTimer(string block) =>
+		ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000006\",\"name\":\"MonthlyTimer\","
+			+ "\"type\":\"ProcessSchemaStartTimerEvent\",\"buildType\":\"timerstart\","
+			+ $"\"timer\":{block},\"parameters\":[]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+
+	[Test]
+	[Description("Deserializes the timer member of a Timer start by name (TC-U-09): the schedule kind, the step, the time, the Nth weekday, the window, the zone, the misfire flag, the stored cron and the scheduler state with its next fire time - so the block reaches the caller instead of falling into the element's overflow bag.")]
+	public void Describe_ShouldReadTheTimerMember_WhenServerReportsIt() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingTimer(TimerBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedElement element = result.Value.Elements[0];
+		DescribedTimer timer = element.Timer;
+		timer.Should().NotBeNull(because: "a null here is the silent-drop signature of an undeclared block");
+		element.AdditionalData.Should().BeNull(because: "timer is a declared member, not element-level overflow");
+		timer.Schedule.Should().Be("month", because: "the schedule kind reads back");
+		timer.Every.Should().Be(1, because: "the month step reads back");
+		timer.At.Should().Be("08:30", because: "the time of day reads back");
+		timer.Weekday.Position.Should().Be("third", because: "the Nth weekday's position reads back");
+		timer.Weekday.Day.Should().Be("wed", because: "the Nth weekday's day reads back");
+		timer.Start.Should().Be("2090-01-01T00:00:00", because: "the window start reads back as wall clock");
+		timer.End.Should().Be("2091-01-01T00:00:00", because: "the window end reads back as wall clock");
+		timer.TimeZone.Should().Be("FLE Standard Time", because: "the zone reads back as its lookup Code");
+		timer.RepeatOnMisfire.Should().BeFalse(because: "the misfire flag reads back, false included");
+		timer.StoredCron.Should().Be("0 30 8 ? 1/1 4#3 *", because: "the stored cron is reported for every kind but once");
+		timer.Cron.Should().BeNull(because: "cron is emitted only for schedule: cron");
+		timer.Scheduled.State.Should().Be("scheduled", because: "the scheduler state reads back");
+		timer.Scheduled.NextFireTimeUtc.Should().Be("2090-01-18T06:30:00Z", because: "the next fire time reads back in UTC");
+	}
+
+	[Test]
+	[Description("Keeps every member the server reports inside the timer block but this model does not declare - on the block, on the weekday and on the scheduler state - in that type's own overflow bag, and forwards the block verbatim under the describe command's own options, so a newer CrtProcessBuilder field reaches the caller and no JsonPropertyName drifts from the server's DataMember unnoticed (TC-U-09).")]
+	public void Describe_ShouldKeepUnknownTimerMembers_InTheBag() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingTimer(TimerBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		JsonNode forwarded = JsonNode.Parse(JsonSerializer.Serialize(result.Value,
+			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["timer"];
+
+		// Assert
+		DescribedTimer timer = result.Value.Elements[0].Timer;
+		timer.AdditionalData.Should().ContainKey("futureTimerFact",
+			because: "an undeclared block member lands in the block's overflow bag");
+		timer.Weekday.AdditionalData.Should().ContainKey("futureWeekdayFact",
+			because: "an undeclared weekday member lands in the weekday's overflow bag");
+		timer.Scheduled.AdditionalData.Should().ContainKey("futureStateFact",
+			because: "an undeclared scheduler-state member lands in the state's overflow bag");
+		JsonNode.DeepEquals(forwarded, JsonNode.Parse(TimerBlock)).Should().BeTrue(
+			because: $"the block must reach the caller exactly as the server sent it, but came out as {forwarded?.ToJsonString()}");
+	}
+
+	[Test]
+	[Description("Leaves the timer member unset (null) on an element of another kind or from a server that predates the Timer start, so it serializes away rather than surfacing as an empty block (TC-U-09).")]
+	public void Describe_ShouldLeaveTheTimerMemberNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"Start1\","
+			+ "\"type\":\"ProcessSchemaStartEvent\",\"buildType\":\"startevent\",\"parameters\":[]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Elements[0].Timer.Should().BeNull(because: "an absent block must stay null");
+		JsonNode.Parse(reserialized)!["elements"]![0]!.AsObject().ContainsKey("timer").Should().BeFalse(
+			because: "a null block serializes away instead of appearing on every element of every other kind");
+	}
+
 	[Test]
 	[Description("Leaves the subProcess block and isRequired unset (null) when an older server omits them, so an element of another kind - and an older package - serialize away cleanly rather than surfacing an empty block.")]
 	public void Describe_ShouldLeaveTheSubProcessBlockNull_WhenServerOmitsIt() {

@@ -34,7 +34,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
 /// and it covers a host whose server check reports itself unavailable. Every caller requires the create/modify floor
-/// (1.6.6.186 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
+/// (1.6.6.187 today), which keeps out every older package; the floor compares numbers only, so it keeps out the other package line (1.6.3.x today)
 /// only while that line stamps lower numbers - should it ever stamp that floor or above without the ENG-95244 check, a
 /// replayed read-back member would be dropped there with no word from either side. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
 /// payloads.</para>
@@ -43,7 +43,7 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// here by a stale list. Fields <c>describe-business-process</c> reports but the write path does not take
 /// (<c>sourceSchemaUId</c>, <c>outputs</c>, <c>position</c>, ...) are DERIVED read-backs: a described block fed
 /// back keeps building. clio tolerates them and says nothing: the server they reach (every caller requires
-/// the create/modify floor, 1.6.6.186 today) ignores them and names them in its own "Read-only fields copied from describe were
+/// the create/modify floor, 1.6.6.187 today) ignores them and names them in its own "Read-only fields copied from describe were
 /// ignored" warning, which names them and, where it can, the key that changes each. A second warning from clio about
 /// the same fields only doubled the noise of a describe -> setElement round trip. The accepted cost: on a host whose
 /// server check reports itself unavailable, the server's warning says the request was not checked and may name none of
@@ -54,6 +54,7 @@ internal static class ProcessBlockKeyCheck {
 	private const int MaxReportedKeys = 8;
 	private const string Filter = "filter";
 	private const string Signal = "signal";
+	private const string Timer = "timer";
 	private const string Source = "source";
 	private const string ElementKey = "element";
 	private const string ElementUpdateKey = "elementUpdate";
@@ -169,6 +170,20 @@ internal static class ProcessBlockKeyCheck {
 
 	private static readonly KeySet SignalBlock = new("ProcessSignalDescriptor", Signal, "DescribeSignalInfo",
 		"entity on changedColumns", "entitySchemaUId");
+
+	// The Timer start's schedule (ENG-91849). Element-level like 'signal', not a configuration block: it is set on
+	// create and addElement and changed by its own setTimer operation, never through setElement. Describe reports the
+	// write members in their write shape plus three describe-only members - the cron as stored, the stored kind when
+	// the cron does not match it, and the live scheduler state - so a described block replays unchanged. clio checks
+	// keys only: the schedule rules (which fields each kind takes, the cron, the zone) are the server's.
+	private static readonly KeySet TimerBlock = new KeySet("ProcessTimerDescriptor", Timer, "DescribeTimerInfo",
+			"schedule every at fromHour toHour daysOfWeek dayOfMonth weekday workday month cron start end timeZone "
+				+ "repeatOnMisfire",
+			"storedCron designerKind scheduled",
+			PointerMap(
+				("cronExpression", "a Quartz cron is 'cron', with \"schedule\": \"cron\""),
+				("interval", "a repeat step is 'every', a calendar-aligned cron step rather than an interval")))
+		.With(new KeySet("ProcessTimerWeekdayDescriptor", "weekday", null, "position day"));
 
 	private static readonly KeySet ReadDataSort = new("ReadDataSortDescriptor", "sort", null, "column direction");
 
@@ -355,7 +370,8 @@ internal static class ProcessBlockKeyCheck {
 
 	/// <summary>An element of a create descriptor's <c>elements[]</c>, or of an <c>addElement</c> operation.</summary>
 	internal static readonly KeySet Element = WithBlocks(new KeySet("ProcessElementDescriptor", ElementKey,
-			"DescribeProcessElement", $"name type userTaskName caption {Signal} lane useBackgroundMode {Filter} {BlockKeys}",
+			"DescribeProcessElement",
+			$"name type userTaskName caption {Signal} {Timer} lane useBackgroundMode {Filter} {BlockKeys}",
 			"uid buildType managerItemUId position size filterDecodedCompletely deprecated writesConnectionsAtRuntime",
 			PointerMap(
 				("parameters", "an element's inputs are bound through the descriptor's top-level 'mappings' "
@@ -364,6 +380,7 @@ internal static class ProcessBlockKeyCheck {
 					+ "setConnections operation"),
 				("filters", "the element's record filter is the single element-level 'filter' block")))
 		.With(SignalBlock)
+		.With(TimerBlock)
 		.With(RecordFilter));
 
 	/// <summary>The <c>elementUpdate</c> of a <c>setElement</c> operation.</summary>
@@ -373,7 +390,9 @@ internal static class ProcessBlockKeyCheck {
 			(Filter, "a record filter is changed by its own operation: {\"op\":\"setFilter\",\"elementName\":...,"
 				+ "\"filter\":{...}}"),
 			(Signal, "a start signal is changed by its own operation: {\"op\":\"setSignal\",\"elementName\":...,"
-				+ "\"signal\":{...}}"))));
+				+ "\"signal\":{...}}"),
+			(Timer, "a timer start's schedule is changed by its own operation: {\"op\":\"setTimer\",\"elementName\":...,"
+				+ "\"timer\":{...}}"))));
 
 	private static KeySet WithBlocks(KeySet element) {
 		foreach (KeySet block in Blocks) {
@@ -406,7 +425,8 @@ internal static class ProcessBlockKeyCheck {
 
 	/// <summary>
 	/// Checks every element of a create descriptor (<c>elements[]</c>), or every element-configuring operation of a
-	/// modify operations array (<c>addElement</c>, <c>setElement</c>, <c>setFilter</c>, <c>setSignal</c>).
+	/// modify operations array (<c>addElement</c>, <c>setElement</c>, <c>setFilter</c>, <c>setSignal</c>,
+	/// <c>setTimer</c>).
 	/// </summary>
 	/// <param name="payload">A create descriptor object or a modify operations array.</param>
 	internal static ProcessBlockKeyCheckResult Check(JsonNode payload) {
@@ -481,6 +501,10 @@ internal static class ProcessBlockKeyCheck {
 		} else if (string.Equals(op, "setSignal", StringComparison.OrdinalIgnoreCase)
 			&& operation[Signal] is JsonObject signal) {
 			walk.Visit(signal, SignalBlock, where, Signal + ".", Placement.Nested);
+		} else if (string.Equals(op, "setTimer", StringComparison.OrdinalIgnoreCase)
+			&& !walk.RefusesTimerShape(operation[Timer], where, Timer)
+			&& operation[Timer] is JsonObject timer) {
+			walk.Visit(timer, TimerBlock, where, Timer + ".", Placement.Nested);
 		}
 	}
 
@@ -501,10 +525,10 @@ internal static class ProcessBlockKeyCheck {
 		/// <summary>A create element or an addElement element: element-level keys go on the element itself.</summary>
 		Element,
 
-		/// <summary>A setElement update: filter and signal have their own operations.</summary>
+		/// <summary>A setElement update: filter, signal and timer have their own operations.</summary>
 		Update,
 
-		/// <summary>A setFilter / setSignal payload: no element level to point at.</summary>
+		/// <summary>A setFilter / setSignal / setTimer payload: no element level to point at.</summary>
 		Nested
 
 	}
@@ -571,19 +595,30 @@ internal static class ProcessBlockKeyCheck {
 			}
 		}
 
+		// The block-specific shape checks that run before the generic walk: true when the block's value was refused
+		// and the walk must not descend into it.
+		private bool RefusesBlockShape(KeySet child, JsonNode value, string where, string path) {
+			if (child == EmailAttachment) {
+				return RefusesAttachmentsShape(value, where, path);
+			}
+			if (child == TimerBlock) {
+				return RefusesTimerShape(value, where, path);
+			}
+			if (child == WebServiceBlock && value is JsonObject webService) {
+				RefuseFractionalTimeout(webService, where, path);
+			} else if (child == ChatMessageBlock && value is JsonObject chatMessage) {
+				RefuseChatValueSourceShape(chatMessage, where, path);
+			}
+			return false;
+		}
+
 		private void VisitChild(string key, JsonNode value, KeySet set, string where, string prefix,
 				Placement placement, int depth) {
 			if (!set.Children.TryGetValue(key, out KeySet child)) {
 				return;
 			}
-			if (child == EmailAttachment && RefusesAttachmentsShape(value, where, prefix + key)) {
+			if (RefusesBlockShape(child, value, where, prefix + key)) {
 				return;
-			}
-			if (child == WebServiceBlock && value is JsonObject webService) {
-				RefuseFractionalTimeout(webService, where, prefix + key);
-			}
-			if (child == ChatMessageBlock && value is JsonObject chatMessage) {
-				RefuseChatValueSourceShape(chatMessage, where, prefix + key);
 			}
 			if (value is JsonObject nested) {
 				Visit(nested, child, where, $"{prefix}{key}.", placement, depth + 1);
@@ -625,6 +660,129 @@ internal static class ProcessBlockKeyCheck {
 							+ $"ONE channel. Send one value source, for example {example}."
 					: $"{where}: '{path}' is {Echo(value)}, which the server cannot read: it takes "
 						+ $"ONE value-source object, for example \"{member}\": {{\"value\": {Echo(value)}}}.");
+			}
+		}
+
+		// The timer block (ENG-91849) is ONE object on the server's contract, 'weekday' one nested object of two string
+		// members ('position', 'day'), 'daysOfWeek' a list of strings, 'every', 'fromHour', 'toHour' and 'month' Int32
+		// members (a quoted number reads too), 'repeatOnMisfire' a Boolean? member, 'dayOfMonth' a string member the host
+		// also reads from any scalar, and 'schedule', 'at', 'cron', 'start', 'end', 'timeZone' and 'workday' string
+		// members. None of the wrong shapes refused here is a key the contract
+		// drops: the serializer fails to read the WHOLE request, which reaches the caller only as "could not read the
+		// request" - and the member names invite them ("weekday": "wed", "daysOfWeek": "mon", "at": ["08:00", "17:00"]).
+		// The one exception is a daysOfWeek entry that is not a string: the serializer reads it (2 as "2", null as null)
+		// and the server refuses it by its own day-name rule, so clio refuses it only to answer without a round trip. A
+		// null member reads as absent and is left alone; the schedule rules themselves (which members each kind takes,
+		// ranges) stay the server's. Returns whether the value is not an object at all, so there is nothing to walk.
+		internal bool RefusesTimerShape(JsonNode value, string where, string path) {
+			if (value is null) {
+				return false;
+			}
+			if (value is not JsonObject timer) {
+				RefuseShape($"{where}: '{path}' is {Echo(value)}, which the server cannot read: it takes ONE timer object, "
+					+ "for example \"timer\": {\"schedule\": \"day\", \"at\": \"08:00\"}.");
+				return true;
+			}
+			List<KeyValuePair<string, JsonNode>> members;
+			try {
+				members = [.. timer];
+			} catch (ArgumentException) {
+				return false; // a repeated key, which the walk refuses with its path
+			}
+			foreach ((string key, JsonNode member) in members) {
+				if (member is null) {
+					continue;
+				}
+				string memberPath = $"{path}.{key}";
+				switch (key) {
+					case "weekday" when member is not JsonObject:
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes ONE "
+							+ "object, for example \"weekday\": {\"position\": \"third\", \"day\": \"wed\"}.");
+						break;
+					case "weekday":
+						RefuseWeekdayMembers((JsonObject)member, where, memberPath);
+						break;
+					case "repeatOnMisfire" when !ReadsAsBoolean(member):
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes true or "
+							+ "false.");
+						break;
+					case "daysOfWeek" when member is not JsonArray:
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
+							+ "LIST of day names, for example \"daysOfWeek\": [\"mon\", \"fri\"].");
+						break;
+					case "daysOfWeek" when ((JsonArray)member).Any(day => day is not JsonValue text
+						|| text.GetValueKind() != JsonValueKind.String):
+						RefuseShape($"{where}: every entry of '{memberPath}' is one day name as a string (\"sun\" ... "
+							+ "\"sat\"); the server refuses any other entry as an unknown day name.");
+						break;
+					case "schedule" or "at" or "cron" or "start" or "end" or "timeZone" or "workday"
+						when member is JsonArray or JsonObject:
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes "
+							+ $"ONE string, not {(member is JsonArray ? "a list" : "an object")}.");
+						break;
+					case "every" or "fromHour" or "toHour" or "month" when !ReadsAsInt32(member):
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
+							+ "whole number.");
+						break;
+					case "dayOfMonth" when member is JsonArray or JsonObject:
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}, which the server cannot read: it takes a "
+							+ "day number (1..31) or \"last\".");
+						break;
+					case "dayOfMonth" when !ReadsAsInt32(member) && ((JsonValue)member).GetValueKind() != JsonValueKind.String:
+						// The host reads any scalar into this string member and then refuses it by its own day rule; refused
+						// here only to answer without the round trip.
+						RefuseShape($"{where}: '{memberPath}' is {Echo(member)}: it takes a day number (1..31) or \"last\", "
+							+ "and the server refuses anything else.");
+						break;
+				}
+			}
+			return false;
+		}
+
+		// What the server's Int32 members read (DataContractJsonSerializer, measured on net472 and net8.0): a JSON number,
+		// or a JSON string holding one, whose value is whole and fits Int32 - 7, 7.0, 1e1, "5", " 5", "5.0" and "1e1" all
+		// read. A fraction (1.5, also 1e-1), a value beyond Int32, a boolean, or any other string ("abc") fails the whole
+		// request. One rule for both forms.
+		private static bool ReadsAsInt32(JsonNode value) {
+			if (value is not JsonValue scalar) {
+				return false;
+			}
+			string text = scalar.GetValueKind() switch {
+				JsonValueKind.Number => scalar.ToJsonString(),
+				JsonValueKind.String => scalar.GetValue<string>().Trim(),
+				_ => null
+			};
+			return text != null && decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture,
+					out decimal parsed)
+				&& parsed == decimal.Truncate(parsed) && parsed >= int.MinValue && parsed <= int.MaxValue;
+		}
+
+		// What the server's Boolean? member reads (measured as above): true, false, a JSON number, and the strings "true"
+		// and "false" in lower case. "yes", "True", a list or an object fail the whole request.
+		private static bool ReadsAsBoolean(JsonNode value) {
+			if (value is not JsonValue scalar) {
+				return false;
+			}
+			return scalar.GetValueKind() switch {
+				JsonValueKind.True or JsonValueKind.False or JsonValueKind.Number => true,
+				JsonValueKind.String => scalar.GetValue<string>() is "true" or "false",
+				_ => false
+			};
+		}
+
+		// The two members of a 'weekday' object are strings; a list or an object in either fails the whole request.
+		private void RefuseWeekdayMembers(JsonObject weekday, string where, string path) {
+			List<KeyValuePair<string, JsonNode>> members;
+			try {
+				members = [.. weekday];
+			} catch (ArgumentException) {
+				return; // a repeated key, which the walk refuses with its path
+			}
+			foreach ((string key, JsonNode member) in members) {
+				if (key is "position" or "day" && member is JsonArray or JsonObject) {
+					RefuseShape($"{where}: '{path}.{key}' is {Echo(member)}, which the server cannot read: it takes ONE "
+						+ $"string, not {(member is JsonArray ? "a list" : "an object")}.");
+				}
 			}
 		}
 
@@ -748,7 +906,7 @@ internal static class ProcessBlockKeyCheck {
 				return $" - '{key}' is set when the element is added; setElement does not change it (elementUpdate "
 					+ "carries useBackgroundMode and the configuration blocks only)";
 			}
-			// Only a configuration block's own level: the element's filter and signal are not "a block" a key can
+			// Only a configuration block's own level: the element's filter, signal and timer are not "a block" a key can
 			// be misplaced into (filter.filter must not be told to use the element-level filter it is already in).
 			if (depth != 1 || !Element.Declares(key) || !Blocks.Contains(set)) {
 				return string.Empty;

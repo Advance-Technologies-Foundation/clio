@@ -5248,3 +5248,103 @@ stories:
     test_plan: spec/test-plans/tp-data-binding-path-confinement.md
     depends_on: []
     blocks: []
+  # --- eng-91849-timer-start-element (ENG-91849 Timer start element (start by time / schedule)) - added 2026-11-18 ---
+  - id: story-eng-91849-timer-start-element-1
+    title: "Timer start element: rebundle CrtProcessBuilder and raise the floor"
+    feature: "eng-91849-timer-start-element"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-91849
+    file: spec/stories/story-eng-91849-timer-start-element-1.md
+    prd: spec/prd/spec-eng-91849-timer-start-element.md
+    adr: spec/adr/adr-eng-91849-timer-start-element.md
+    test_plan: spec/test-plans/tp-eng-91849-timer-start-element.md
+    depends_on: []
+    blocks:
+      - story-eng-91849-timer-start-element-2
+      - story-eng-91849-timer-start-element-3
+      - story-eng-91849-timer-start-element-4
+      - story-eng-91849-timer-start-element-5
+    note: >-
+      ENG-91849 Timer start element (start by time / schedule). Owner decisions Q1-Q13 on 2026-11-14
+      (Q10 no ceiling raise, Q11 off the digest card). The crt-process-builder and clio-knowledge sides are
+      dependencies in their own repositories, not stories here. The floor is the PR's final cut. Merge order
+      (human merges): package -> knowledge -> clio, after the TeamCity process-designer lane is green.
+  - id: story-eng-91849-timer-start-element-2
+    title: "Timer start element: timer block and setTimer in the key check"
+    feature: "eng-91849-timer-start-element"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-91849
+    file: spec/stories/story-eng-91849-timer-start-element-2.md
+    prd: spec/prd/spec-eng-91849-timer-start-element.md
+    adr: spec/adr/adr-eng-91849-timer-start-element.md
+    test_plan: spec/test-plans/tp-eng-91849-timer-start-element.md
+    depends_on:
+      - story-eng-91849-timer-start-element-1
+    blocks:
+      - story-eng-91849-timer-start-element-5
+  - id: story-eng-91849-timer-start-element-3
+    title: "Timer start element: describe, digest, data id and start detection"
+    feature: "eng-91849-timer-start-element"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-91849
+    file: spec/stories/story-eng-91849-timer-start-element-3.md
+    prd: spec/prd/spec-eng-91849-timer-start-element.md
+    adr: spec/adr/adr-eng-91849-timer-start-element.md
+    test_plan: spec/test-plans/tp-eng-91849-timer-start-element.md
+    depends_on:
+      - story-eng-91849-timer-start-element-1
+    blocks:
+      - story-eng-91849-timer-start-element-5
+  - id: story-eng-91849-timer-start-element-4
+    title: "Timer start element: tool texts within the payload budget"
+    feature: "eng-91849-timer-start-element"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-91849
+    file: spec/stories/story-eng-91849-timer-start-element-4.md
+    prd: spec/prd/spec-eng-91849-timer-start-element.md
+    adr: spec/adr/adr-eng-91849-timer-start-element.md
+    test_plan: spec/test-plans/tp-eng-91849-timer-start-element.md
+    depends_on:
+      - story-eng-91849-timer-start-element-1
+      - story-eng-91849-timer-start-element-6
+    blocks:
+      - story-eng-91849-timer-start-element-5
+  - id: story-eng-91849-timer-start-element-5
+    title: "Timer start element: e2e on a stand"
+    feature: "eng-91849-timer-start-element"
+    repo: "clio"
+    size: M
+    status: review
+    jira: ENG-91849
+    file: spec/stories/story-eng-91849-timer-start-element-5.md
+    prd: spec/prd/spec-eng-91849-timer-start-element.md
+    adr: spec/adr/adr-eng-91849-timer-start-element.md
+    test_plan: spec/test-plans/tp-eng-91849-timer-start-element.md
+    depends_on:
+      - story-eng-91849-timer-start-element-1
+      - story-eng-91849-timer-start-element-2
+      - story-eng-91849-timer-start-element-3
+      - story-eng-91849-timer-start-element-4
+    blocks: []
+  - id: story-eng-91849-timer-start-element-6
+    title: "Timer start element: knowledge re-pin, docs and change-summary statements"
+    feature: "eng-91849-timer-start-element"
+    repo: "clio"
+    size: S
+    status: review
+    jira: ENG-91849
+    file: spec/stories/story-eng-91849-timer-start-element-6.md
+    prd: spec/prd/spec-eng-91849-timer-start-element.md
+    adr: spec/adr/adr-eng-91849-timer-start-element.md
+    test_plan: spec/test-plans/tp-eng-91849-timer-start-element.md
+    depends_on: []
+    blocks:
+      - story-eng-91849-timer-start-element-4

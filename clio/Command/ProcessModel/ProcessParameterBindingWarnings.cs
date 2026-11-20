@@ -385,7 +385,7 @@ public static class ProcessParameterBindingWarnings {
 				// A described signal start with no signal block is a named signal, not a record one: the server leaves
 				// the block out then, and such a start is not on any object, so it can never be merged.
 				graph.AddElement(element?.Name, element?.Uid, element?.BuildType, element?.Signal?.Entity,
-					mergeable: element?.Signal is not null);
+					mergeable: element?.Signal is not null, runtimeType: element?.Type);
 				graph.AddFormulaWriter(element?.Name, element?.Formula?.Target?.ResultProcessParameter);
 			}
 			foreach (DescribedFlow flow in described.Flows ?? []) {
@@ -417,8 +417,11 @@ public static class ProcessParameterBindingWarnings {
 			return false;
 		}
 
-		// The build token and the describe buildType resolve through the same table the graph validator uses.
-		private void AddElement(string? name, string? uid, string? type, string? signalObject, bool mergeable = true) {
+		// The build token and the describe buildType resolve through the same table the graph validator uses. A described
+		// element with no buildType - a message start from CrtProcessBuilder 1.6.6.187 (ENG-91849, Q7), which the package
+		// reports read-only - falls back to its runtime class, so it still counts as a start.
+		private void AddElement(string? name, string? uid, string? type, string? signalObject, bool mergeable = true,
+				string? runtimeType = null) {
 			if (string.IsNullOrWhiteSpace(name)) {
 				return;
 			}
@@ -427,7 +430,9 @@ public static class ProcessParameterBindingWarnings {
 			if (!string.IsNullOrWhiteSpace(uid)) {
 				_uidToName[uid.Trim()] = trimmed;
 			}
-			ManagerMap.EventType kind = ManagerMap.ResolveDataId(type);
+			ManagerMap.EventType kind = string.IsNullOrWhiteSpace(type) && !string.IsNullOrWhiteSpace(runtimeType)
+				? ManagerMap.ResolveRuntimeType(runtimeType)
+				: ManagerMap.ResolveDataId(type);
 			if (ManagerMap.ResolveRole(kind) == ManagerMap.ProcessElementRole.Start) {
 				Starts.Add(trimmed);
 			}

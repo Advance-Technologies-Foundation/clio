@@ -971,6 +971,225 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
+	[Description("A timerStart element carrying a timer block - a structured kind with its nested weekday, and a cron kind with its window, zone and misfire flag - passes clean on a create element, an addElement element and a setTimer operation, so clio does not refuse the block before the server reads it (TC-U-02).")]
+	public void Check_Should_AcceptTheTimerBlock_OnEveryRoute() {
+		// Arrange
+		const string monthly = """
+			{ "schedule": "month", "every": 1, "at": "08:30", "weekday": { "position": "third", "day": "wed" },
+			  "start": "2090-01-01T00:00", "end": "2091-01-01T00:00", "timeZone": "FLE Standard Time",
+			  "repeatOnMisfire": false }
+			""";
+		const string other = """
+			{ "schedule": "cron", "cron": "0 15 10 ? * MON-FRI", "timeZone": "UTC" }
+			""";
+		string element = $$"""{ "name": "Timer1", "type": "timerStart", "timer": {{monthly}} }""";
+		string operations = $$"""
+			[ { "op": "addElement", "element": { "name": "Timer2", "type": "timerStart", "timer": {{other}} } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "week", "daysOfWeek": [ "mon", "fri" ], "at": "02:30" } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "end": null, "dayOfMonth": "last", "fromHour": 9, "toHour": 18, "workday": "first", "month": 3 } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "every key of the timer block and of its weekday is a server contract member");
+		modify.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "addElement and setTimer carry the same block, and clio checks keys only, never which kind takes which field");
+	}
+
+	[TestCase("cronExpression", "a Quartz cron is 'cron'")]
+	[TestCase("interval", "a repeat step is 'every'")]
+	[TestCase("timezone", "keys are case-sensitive: write 'timeZone'")]
+	[Description("An unknown key in the timer block is refused before sending, naming the element, the key path and the block's accepted keys, and pointing a common misspelling at the member that sets it (TC-U-03).")]
+	public void Check_Should_RefuseAnUnknownTimerKey_NamingItsPath(string key, string pointer) {
+		// Arrange
+		string element = $$"""{ "name": "Timer1", "type": "timerStart", "timer": { "schedule": "day", "{{key}}": "x" } }""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
+		result.Error.Should().Contain("'Timer1'", because: "the refusal names the element");
+		result.Error.Should().Contain($"'timer.{key}' is not a key of the 'timer' block",
+			because: "the refusal names the key path inside the block");
+		result.Error.Should().Contain(pointer, because: "the refusal points at the member the caller meant");
+		result.Error.Should().Contain("Accepted timer keys: schedule, every, at, fromHour, toHour, daysOfWeek, dayOfMonth, "
+			+ "weekday, workday, month, cron, start, end, timeZone, repeatOnMisfire",
+			because: "the refusal says what the block accepts");
+	}
+
+	[Test]
+	[Description("An unknown key inside timer.weekday is refused under the weekday's own label and accepted keys, on create and on setTimer (TC-U-04).")]
+	public void Check_Should_RefuseAnUnknownKeyInsideTheTimerWeekday() {
+		// Arrange
+		string element = """{ "name": "Timer1", "type": "timerStart", "timer": { "schedule": "month", "weekday": { "position": "first", "weekday": "mon" } } }""";
+		string operations = """[ { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "year", "month": 5, "weekday": { "nth": 2, "day": "sun" } } } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Error.Should().Contain("'timer.weekday.weekday' is not a key of the 'weekday' block",
+			because: "a weekday key is checked against the weekday's own set");
+		create.Error.Should().Contain("Accepted weekday keys: position, day", because: "the refusal names that set");
+		modify.Error.Should().Contain("operations[0] (setTimer 'Timer1'): 'timer.weekday.nth' is not a key of the 'weekday' block",
+			because: "a setTimer payload is walked into the nested weekday as well");
+	}
+
+	[Test]
+	[Description("A described timer block fed back unchanged keeps building: storedCron, designerKind and scheduled are describe-only, so they are listed as ignored read-backs, never refused, on addElement and on setTimer, and the scheduled object is not walked (TC-U-05).")]
+	public void Check_Should_TolerateTheReadBackFields_OfADescribedTimerBlock() {
+		// Arrange
+		const string described = """
+			{ "schedule": "cron", "cron": "0 0 8 ? * 2", "timeZone": "UTC", "repeatOnMisfire": false,
+			  "storedCron": "0 0 8 ? * 2", "designerKind": "week",
+			  "scheduled": { "state": "scheduled", "nextFireTimeUtc": "2090-01-02T08:00:00Z" } }
+			""";
+		string operations = $$"""
+			[ { "op": "addElement", "element": { "name": "Timer2", "type": "timerStart", "timer": {{described}} } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": {{described}} } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().BeNull(because: "the read-back members are derived on describe and harmless to ignore");
+		result.IgnoredReadBacks.Should().ContainSingle(because: "the ignored fields are listed in one summary line")
+			.Which.Should().Contain("element.timer.storedCron", because: "the stored cron is describe-only")
+			.And.Contain("element.timer.designerKind", because: "the stored kind is describe-only")
+			.And.Contain("timer.scheduled", because: "the scheduler state is describe-only")
+			.And.Contain("operations[1] (setTimer 'Timer1'): timer.storedCron",
+				because: "the setTimer route lists its own read-backs, not only the addElement ones")
+			.And.NotContain("scheduled.state", because: "a read-back object is tolerated whole, not walked");
+	}
+
+	[Test]
+	[Description("A setTimer operation's timer payload is walked, op case-insensitively, while its own op, elementName and timer keys pass; a setTimer without a timer object has nothing to walk and is left to the server (TC-U-06).")]
+	public void Check_Should_WalkTheSetTimerOp() {
+		// Arrange
+		string valid = """[ { "op": "setTimer", "elementName": "Timer1", "timer": { "timeZone": "UTC" } }, { "op": "setTimer", "elementName": "Timer1" } ]""";
+		string invalid = """[ { "op": "SETTIMER", "elementName": "Timer1", "timer": { "schedule": "day", "frequency": "daily" } } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult accepted = CheckOperations(valid);
+		ProcessBlockKeyCheckResult refused = CheckOperations(invalid);
+
+		// Assert
+		accepted.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "op, elementName and timer are the setTimer operation's keys and a lone timeZone is a declared member");
+		refused.Error.Should().Contain("operations[0] (SETTIMER 'Timer1'): 'timer.frequency' is not a key of the 'timer' block",
+			because: "the setTimer payload is checked like the create block, op case-insensitively");
+	}
+
+	[TestCase("""{ "timer": { "schedule": "day" } }""")]
+	[TestCase("""{ "useBackgroundMode": true, "timer": {} }""")]
+	[Description("setElement with a timer key is refused before sending and pointed at the setTimer operation, the way a setElement signal is pointed at setSignal - the server refuses it too, saying to use setTimer (TC-U-06).")]
+	public void Check_Should_PointSetElementTimerToSetTimer(string update) {
+		// Arrange
+		string operations = $$"""[ { "op": "setElement", "elementName": "Timer1", "elementUpdate": {{update}} } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().Contain("'elementUpdate.timer' is not a key of the 'elementUpdate' block",
+			because: "elementUpdate does not declare the timer block");
+		result.Error.Should().Contain("""{"op":"setTimer","elementName":...,"timer":{...}}""",
+			because: "the refusal names the operation that changes a timer start's schedule");
+	}
+
+	[TestCase("""[ { "schedule": "day" } ]""", "'timer' is [{\"schedule\":\"day\"}], which the server cannot read: it takes ONE timer object")]
+	[TestCase("\"day\"", "'timer' is \"day\", which the server cannot read: it takes ONE timer object")]
+	[TestCase("""{ "schedule": "month", "weekday": "wed" }""", "'timer.weekday' is \"wed\", which the server cannot read: it takes ONE object")]
+	[TestCase("""{ "schedule": "month", "weekday": [ { "position": "first", "day": "mon" } ] }""", "'timer.weekday' is [")]
+	[TestCase("""{ "schedule": "week", "daysOfWeek": "mon" }""", "'timer.daysOfWeek' is \"mon\", which the server cannot read: it takes a LIST of day names")]
+	[TestCase("""{ "schedule": "week", "daysOfWeek": [ "mon", 2 ] }""", "every entry of 'timer.daysOfWeek' is one day name as a string (\"sun\" ... \"sat\"); the server refuses any other entry as an unknown day name")]
+	[TestCase("""{ "schedule": "minute", "every": 1.5 }""", "'timer.every' is 1.5, which the server cannot read: it takes a whole number")]
+	[TestCase("""{ "schedule": "minute", "fromHour": "abc" }""", "'timer.fromHour' is \"abc\", which the server cannot read: it takes a whole number")]
+	[TestCase("""{ "schedule": "minute", "every": "1.5" }""", "'timer.every' is \"1.5\", which the server cannot read: it takes a whole number")]
+	[TestCase("""{ "schedule": "hour", "toHour": 1e10 }""", "'timer.toHour' is 1e10, which the server cannot read: it takes a whole number")]
+	[TestCase("""{ "schedule": "year", "month": true }""", "'timer.month' is true, which the server cannot read: it takes a whole number")]
+	[TestCase("""{ "schedule": "month", "dayOfMonth": 15.5 }""", "'timer.dayOfMonth' is 15.5: it takes a day number (1..31) or \"last\", and the server refuses anything else")]
+	[TestCase("""{ "schedule": "month", "dayOfMonth": true }""", "'timer.dayOfMonth' is true: it takes a day number (1..31) or \"last\", and the server refuses anything else")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "repeatOnMisfire": "yes" }""", "'timer.repeatOnMisfire' is \"yes\", which the server cannot read: it takes true or false")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "repeatOnMisfire": "True" }""", "'timer.repeatOnMisfire' is \"True\", which the server cannot read: it takes true or false")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "repeatOnMisfire": [ true ] }""", "'timer.repeatOnMisfire' is [true], which the server cannot read: it takes true or false")]
+	[TestCase("""{ "schedule": "month", "weekday": { "position": [ "third" ], "day": "wed" } }""", "'timer.weekday.position' is [\"third\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "month", "weekday": { "position": "third", "day": { "name": "wed" } } }""", "'timer.weekday.day' is {\"name\":\"wed\"}, which the server cannot read: it takes ONE string, not an object")]
+	[TestCase("""{ "schedule": "month", "dayOfMonth": [ 1, 15 ] }""", "'timer.dayOfMonth' is [1,15], which the server cannot read")]
+	[TestCase("""{ "schedule": "day", "at": [ "08:00", "17:00" ] }""", "'timer.at' is [\"08:00\",\"17:00\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "cron", "cron": { "expression": "0 0 8 * * ?" } }""", "'timer.cron' is {\"expression\":\"0 0 8 * * ?\"}, which the server cannot read: it takes ONE string, not an object")]
+	[TestCase("""{ "schedule": [ "day" ], "at": "08:00" }""", "'timer.schedule' is [\"day\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "start": [ "2026-01-01" ] }""", "'timer.start' is [\"2026-01-01\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "end": { "date": "2026-12-31" } }""", "'timer.end' is {\"date\":\"2026-12-31\"}, which the server cannot read: it takes ONE string, not an object")]
+	[TestCase("""{ "schedule": "day", "at": "08:00", "timeZone": [ "UTC" ] }""", "'timer.timeZone' is [\"UTC\"], which the server cannot read: it takes ONE string, not a list")]
+	[TestCase("""{ "schedule": "month", "workday": { "position": "first" } }""", "'timer.workday' is {\"position\":\"first\"}, which the server cannot read: it takes ONE string, not an object")]
+	[Description("A timer block of a shape the server's serializer cannot read - not one object, a scalar or list weekday or a list or object inside it, a daysOfWeek that is not a list of strings, an every/fromHour/toHour/month that is fractional, out of range, boolean or a string that is not a number, a repeatOnMisfire that is not a boolean, a number or \"true\"/\"false\", a list or object in a string member (schedule, at, cron, start, end, timeZone, workday) - is refused before sending with its path, instead of failing the whole request on the server; a dayOfMonth scalar that is neither a whole number nor a string is refused too, by the server's own rule.")]
+	public void Check_Should_RefuseATimerShapeTheServerCannotRead(string timerJson, string expected) {
+		// Arrange
+		string element = $$"""{ "name": "Timer1", "type": "timerStart", "timer": {{timerJson}} }""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
+		result.Error.Should().Contain(expected, because: "the refusal names the member, what was sent and the shape it takes");
+	}
+
+	[Test]
+	[Description("The setTimer route refuses the same timer shapes: a timer that is not an object, and a wrong-shaped member inside it, each named with the operation.")]
+	public void Check_Should_RefuseATimerShape_OnTheSetTimerOp() {
+		// Arrange
+		string operations = """
+			[ { "op": "setTimer", "elementName": "Timer1", "timer": [ { "schedule": "day" } ] },
+			  { "op": "setTimer", "elementName": "Timer2", "timer": { "schedule": "week", "daysOfWeek": "fri" } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().Contain("operations[0] (setTimer 'Timer1'): 'timer' is [",
+			because: "a list where the operation takes one timer object is refused with the operation named");
+		result.Error.Should().Contain("operations[1] (setTimer 'Timer2'): 'timer.daysOfWeek' is \"fri\"",
+			because: "a wrong-shaped member inside a setTimer timer is refused with its path");
+	}
+
+	[Test]
+	[Description("The shapes the server reads pass the shape guard (DataContractJsonSerializer, measured on net472 and net8.0): a whole-number or string dayOfMonth, whole-number every/fromHour/toHour/month also as a quoted number (\"5\", \"5.0\", \"1e1\", 9.0), a repeatOnMisfire boolean, number or \"true\"/\"false\", a weekday object, a daysOfWeek list of strings, string schedule members, and null members.")]
+	public void Check_Should_AcceptTheTimerShapesTheServerReads() {
+		// Arrange
+		string operations = """
+			[ { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "month", "dayOfMonth": 15, "every": 2 } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "month", "dayOfMonth": "last", "weekday": null } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "minute", "every": 5, "fromHour": 9, "toHour": 18 } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "minute", "every": "5", "fromHour": "9", "toHour": " 18 " } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "minute", "every": "5.0", "fromHour": 9.0, "toHour": "1e1" } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "day", "at": "08:00", "repeatOnMisfire": "false" } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "day", "at": "08:00", "repeatOnMisfire": 1 } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "year", "month": "3", "dayOfMonth": "1", "at": "08:00", "start": "2026-01-01", "end": null, "timeZone": "UTC" } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "cron", "cron": "0 0 8 * * ?" } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "year", "month": 3, "weekday": { "position": "first", "day": "mon" } } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": { "schedule": "week", "daysOfWeek": [ "mon" ], "every": null } },
+			  { "op": "setTimer", "elementName": "Timer1", "timer": null } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "every member has a shape the server's serializer reads, and the schedule rules are the server's");
+	}
+
+	[Test]
 	[Description("Every key set mirrors its server request contract in the bundled CrtProcessBuilder exactly, so a new server member is never refused here by a stale list and a key the server lacks is never accepted.")]
 	public void KeySets_Should_EqualTheMembersOfTheBundledServerContracts() {
 		// Arrange

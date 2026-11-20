@@ -51,11 +51,12 @@ public sealed class SendChatMessageElementToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 
 	/// <summary>
-	/// The CrtProcessBuilder the fixture runs against: the first cut that ships the <c>chatMessage</c> block. Below it
-	/// every case is Ignored, because an older package does not declare the block and refuses it as an unknown key.
-	/// Raise it when a case starts asserting newer package behaviour, not on every rebundle.
+	/// The CrtProcessBuilder the fixture runs against. The <c>chatMessage</c> block arrived in 1.6.6.186, but the pin is
+	/// the create/modify floor this clio enforces (1.6.6.187, the timer start): below it clio refuses create and modify,
+	/// so a lower pin would fail the cases instead of Ignoring them. Raise it with that floor or when a case starts
+	/// asserting newer package behaviour, not on every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.186";
+	private const string MinimumPackageVersion = "1.6.6.187";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send chat message element";
