@@ -72,15 +72,17 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>632e1f22</c>, the
-	/// restamp commit of branch <c>feature/ENG-91849-timer-start-element</c>, which carries <c>main</c> at 1.6.6.186
-	/// (<c>4287d9cb</c>, the cut master bundles before this one), so the cut carries everything 1.6.6.186 carries and
-	/// the Timer start element.
-	/// This cut is a HAND cut from the stamp commit: the package branch committed its own <c>set-pkg-version</c> stamp
-	/// and compile-marker restamp, so the script would refuse the equal version; the commit was exported with the two
-	/// <c>-c</c> flags and packed as it is (434 entries, every one byte-identical to that commit's blob, the
-	/// descriptor included).
-	/// 1.6.6.187 is the first number above every cut in both histories, and whichever package branch lands after this
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>417b27fa</c>, the
+	/// compile-marker restamp of the ENG-96034 QA-fixes branch, tagged <c>crtprocessbuilder-1.6.6.191</c>;
+	/// the stamp is its child <c>1de6806a</c>). The branch carries <c>main</c> at 1.6.6.187 (<c>ab6a3e29</c>, merged in as
+	/// <c>eea205dc</c>), so the cut carries everything 1.6.6.187 carries - the cut master bundles before this one - and
+	/// the Send chat message QA fixes.
+	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
+	/// marker, the script stamped the package descriptor to 1.6.6.191 and packed that commit with it overlaid (434
+	/// entries), and the stamp was committed after it as the child commit <c>1de6806a</c>. It supersedes the earlier cuts of
+	/// this work, 1.6.6.188 (<c>7510a0dd</c>), 1.6.6.189 (<c>ddba99a8</c>) and 1.6.6.190 (<c>1f5cc5a4</c>), which reached
+	/// only a test stand.
+	/// 1.6.6.191 is the first number above every cut in both histories, and whichever package branch lands after this
 	/// one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
@@ -94,27 +96,22 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.186, the cut master bundles (ENG-91849): the Timer start element - the
-	/// <c>timerStart</c> element type and its <c>timer</c> block (<c>ProcessTimerDescriptor</c> with the nested
-	/// <c>ProcessTimerWeekdayDescriptor</c>, read back as <c>DescribeTimerInfo</c> with the scheduler state
-	/// <c>DescribeTimerScheduleState</c>) on build and addElement, the <c>setTimer</c> operation, the refusal of
-	/// <c>timer</c> on setElement, the scheduler read in describe and the post-save notices, and the re-sync of the
-	/// active version's timers after a failed version save (only when the failed save actually removed jobs, and with
-	/// the enabled flag read right before the re-enable). The cut is the package's gate-1 restamp: the schedule gaps
-	/// gate 1 found are closed (a cron day-of-month <c>29W</c>..<c>31W</c> and any Quartz exception of the first-fire
-	/// search are refusals, a once timer with a stray cron describes as <c>once</c>, a trigger the scheduler does not
-	/// run reads as <c>staleTrigger</c>, <c>processDisabled</c> on a non-active version carries a <c>detail</c>, and a
-	/// finished once or expired timer's <c>noJob</c> notice says it is finished rather than asking for a re-save);
-	/// no wire name or shape moved from the first 1.6.6.187 cut. It also changes the describe of every message start: the
-	/// plain-start handler no longer claims triggered starts, so a message start reports no <c>buildType</c>. The service
-	/// surface is unchanged from 1.6.6.186 - 11 operations, 6 design-gate call sites and three case-gate call sites,
-	/// counted in the shipped archive by the guards below. The create, modify and modify-as-new-version floors move to
-	/// 1.6.6.187, because an older server refuses the new type, block and operation as undeclared keys; the dynamic-case
-	/// floors stay as master set them. What earlier cuts carried is in this file's git history.
+	/// <para>What this cut carries over 1.6.6.187, the cut master bundles (ENG-96034 QA): a <c>setElement</c> switch of a
+	/// stored custom Send chat message element to template mode clears <c>Message</c> from any source (a constant, a
+	/// process parameter, an element output or a formula; before, only a constant), and a dropped binding is named in a
+	/// notice (a process parameter by its code) that asks the agent to offer its removal; the switch is still refused while another element reads <c>Message</c>. The build notice for an empty
+	/// Lookup system setting in <c>from</c>/<c>to</c> now says the whole process stops and <c>ignoreErrors</c> does not
+	/// catch it, and names the Read data guard; a setting holding an all-zero id gets its own wording (the element fails,
+	/// which <c>ignoreErrors</c> catches when it is on), since only a setting with no value stops the process. No wire name or shape moved, and the service surface is unchanged from
+	/// 1.6.6.187 - 11 operations, 6 design-gate call sites and three case-gate call sites, counted in the shipped
+	/// archive by the guards below. The create, modify and modify-as-new-version floors stay at 1.6.6.187: clio neither
+	/// depends on nor advertises the new switch behaviour, and an older server keeps the binding without harm (template
+	/// mode never reads <c>Message</c>). What earlier cuts carried is in this file's git history.
 	/// </para>
 	/// <para>
-	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7256 passed, 0 failed,
-	/// on both <c>dev-nf</c> and <c>dev-n8</c>, on the producing commit itself.
+	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7266 passed, 0 failed, on
+	/// <c>dev-nf</c> on the producing commit (by the script) and on the fix commit before it. <c>dev-n8</c> was NOT run,
+	/// because the cutting host has no net-core reference set.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
@@ -196,7 +193,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"068B9DD7B26F688902CDBB4AAC8F74538DFC69276B8F8FA2B65F6780D01BAC25";
+		"624883F6FCFC1D4D8033DB5B30361EFFAA9C6A668E970949C91AD41CB35A05FF";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -224,7 +221,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.187";
+	private const string ExpectedArchiveVersion = "1.6.6.191";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -236,7 +233,8 @@ public class BundledProcessBuilderPackageTests {
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
 	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
-	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
+	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.188 (<c>7510a0dd</c>), 1.6.6.189 (<c>ddba99a8</c>) and 1.6.6.190 (<c>1f5cc5a4</c>),
+	/// which reached only a test stand, and 1.6.6.191 are script cuts naming the marker restamp. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
 	/// number from the package's restamp <c>632e1f22</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
 	/// the check of kept timers before a modify save or an activation, the gate-3 fixes and the core-reuse changes, stored dates read as the scheduler reads them and the fixes of their review, the leading-zero nW / L-nW refusal, and the second review round (the held-trigger kept-timer check, an echoed once start, the shifted year step); both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
 	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c>, <c>24e2dfbb</c>, <c>4f338365</c>, <c>1313a72c</c>, <c>6ed95468</c>, <c>41aa113f</c>, <c>13ab3dc4</c> and <c>e0e6d48c</c>, reached only the author's own test stands.
@@ -247,7 +245,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "632e1f2256ec640ebd6dc5ba2f72eae7966a8a5d";
+	private const string ExpectedProducingCommit = "417b27fa58f17b6e989fba5acbfe21675f379b38";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -273,7 +271,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795166058000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795183131000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -288,7 +286,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795166065000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795183072000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
