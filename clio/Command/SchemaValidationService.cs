@@ -11,7 +11,7 @@ using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 using Clio.Common;
 using McpServer.Resources;
 
-public static class SchemaValidationService
+public static partial class SchemaValidationService
 {
 	internal const string SchemaViewConfigDiff = "SCHEMA_VIEW_CONFIG_DIFF";
 	private const string SchemaViewModelConfigDiff = "SCHEMA_VIEW_MODEL_CONFIG_DIFF";
@@ -2341,9 +2341,10 @@ public static class SchemaValidationService
 	/// <summary>
 	/// Registry-driven validation of <c>crt.ChartWidget</c> inserts in the page's <c>viewConfigDiff</c>.
 	/// Walks <paramref name="typeDefinitions"/> (the merged per-component + document-level registry type
-	/// schemas) from <c>ChartWidgetConfig</c> down to each series' <c>data.providing</c> block and reports
-	/// required fields missing INSIDE that block — most importantly <c>aggregation.column</c>, whose
-	/// absence renders an empty chart. Cosmetic fields above the data block (color, formatting, legend,
+	/// schemas) from <c>ChartWidgetConfig</c> down to each series' <c>data.providing</c> block and reports, INSIDE
+	/// that block, missing required fields (most importantly <c>aggregation.column</c>, whose absence renders an
+	/// empty chart) and filter leaves whose discriminators name no known variant; inside a stored filter also
+	/// values outside a field's published <c>values</c> and primitive type mismatches. Cosmetic fields above the data block (color, formatting, legend,
 	/// title) are intentionally NOT checked, so the registry over-marking them required cannot false-positive.
 	/// <para>
 	/// Scope: only <c>operation:"insert"</c> entries are checked (a <c>merge</c> legitimately omits
@@ -2500,7 +2501,7 @@ public static class SchemaValidationService
 				if (report && required) {
 					result.Errors.Add(
 						$"{path}.{field.Name} is required by the component registry but is missing. " +
-						"Call get-guidance with name 'chart-widget' for the full contract.");
+						GuidanceHint($"{path}.{field.Name}"));
 				}
 				continue;
 			}
@@ -2528,21 +2529,21 @@ public static class SchemaValidationService
 			ValidateFieldsMap(value, shape, EmptyTypeSubstitution, typeDefinitions, path, result, report);
 			return;
 		}
+		if (report && IsInStoredFilter(path) && !ValueIsAllowed(value, fieldDefinition, path, result)) {
+			return;
+		}
 		if (!fieldDefinition.TryGetProperty("type", out JsonElement typeElement) ||
 		    typeElement.ValueKind != JsonValueKind.String) {
 			return;
 		}
 		string typeExpression = typeElement.GetString() ?? string.Empty;
-		// Array: validate each element against the item type.
+		// Record<string, T>: every entry is a T (an ESQ filter group's `items`).
+		if (string.Equals(typeExpression, "Record", StringComparison.Ordinal)) {
+			ValidateRecordEntries(value, fieldDefinition, typeDefinitions, path, result, report);
+			return;
+		}
 		if (string.Equals(typeExpression, "array", StringComparison.Ordinal)) {
-			if (value.ValueKind == JsonValueKind.Array &&
-			    fieldDefinition.TryGetProperty("items", out JsonElement items)) {
-				int index = 0;
-				foreach (JsonElement element in value.EnumerateArray()) {
-					RecurseIntoFieldValue(element, items, substitution, typeDefinitions, $"{path}[{index}]", result, report);
-					index++;
-				}
-			}
+			ValidateArrayElements(value, fieldDefinition, substitution, typeDefinitions, path, result, report);
 			return;
 		}
 		// An array item typed as a bare parameter carries no marker, so it still binds by name.
@@ -2550,22 +2551,57 @@ public static class SchemaValidationService
 		ValidateValueAgainstTypeExpression(value, typeExpression, typeDefinitions, path, result, report);
 	}
 
+	private static void ValidateRecordEntries(
+		JsonElement value, JsonElement fieldDefinition,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		if (value.ValueKind != JsonValueKind.Object ||
+		    !fieldDefinition.TryGetProperty("valueType", out JsonElement valueType) ||
+		    valueType.ValueKind != JsonValueKind.String) {
+			return;
+		}
+		foreach (JsonProperty entry in value.EnumerateObject()) {
+			ValidateValueAgainstTypeExpression(entry.Value, valueType.GetString() ?? string.Empty, typeDefinitions,
+				$"{path}.{entry.Name}", result, report);
+		}
+	}
+
+	private static void ValidateArrayElements(
+		JsonElement value, JsonElement fieldDefinition,
+		IReadOnlyDictionary<string, string> substitution,
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
+		string path, SchemaValidationResult result, bool report) {
+		if (value.ValueKind != JsonValueKind.Array || !fieldDefinition.TryGetProperty("items", out JsonElement items)) {
+			return;
+		}
+		int index = 0;
+		foreach (JsonElement element in value.EnumerateArray()) {
+			RecurseIntoFieldValue(element, items, substitution, typeDefinitions, $"{path}[{index}]", result, report);
+			index++;
+		}
+	}
+
 	private static void ValidateValueAgainstTypeExpression(
 		JsonElement value, string typeExpression,
 		IReadOnlyDictionary<string, JsonElement> typeDefinitions,
 		string path, SchemaValidationResult result, bool report) {
+		string resolved = ResolveTypeAliasExpression(typeExpression, typeDefinitions);
 		// Generic instantiation: WidgetDataConfig<WidgetDataProvidingConfig, ...>.
-		if (TryParseGenericType(typeExpression, out string genericName, out string[] genericArguments)) {
+		if (TryParseGenericType(resolved, out string genericName, out string[] genericArguments)) {
 			ValidateValueAgainstType(
 				value, genericName, BuildGenericSubstitution(genericName, genericArguments, typeDefinitions),
 				typeDefinitions, path, result, report);
 			return;
 		}
-		// Union ("A | B | C"): cannot pick a branch deterministically — stop rather than false-positive.
-		if (typeExpression.Contains('|')) {
+		if (SplitTopLevelUnion(resolved).Count > 1) {
+			ValidateValueAgainstUnion(value, resolved, typeDefinitions, path, result, report);
 			return;
 		}
-		ValidateValueAgainstType(value, typeExpression.Trim(), EmptyTypeSubstitution, typeDefinitions, path, result, report);
+		if (report && IsInStoredFilter(path) && !PrimitiveMatches(value, resolved)) {
+			result.Errors.Add($"{path} must be a {resolved}. {GuidanceHint(path)}");
+			return;
+		}
+		ValidateValueAgainstType(value, resolved, EmptyTypeSubstitution, typeDefinitions, path, result, report);
 	}
 
 	/// <summary>

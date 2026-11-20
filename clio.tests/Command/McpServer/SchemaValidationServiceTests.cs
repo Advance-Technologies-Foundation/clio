@@ -11491,6 +11491,416 @@ public sealed class SchemaValidationServiceTests
 		result.Errors.Should().BeEmpty();
 	}
 
+	// ENG-95270: mirrors the registry slice for the devkit ESQ filter classes (discriminators pinned to one
+	// value): `filters.filter`, its `items` union, two leaf and two expression variants.
+	private const string EsqFilterTypeDefinitionsJson =
+		"""
+		{
+		  "IESQFilter": { "type": "ɵCompareFilter | ɵIsNullFilter | IFilterGroup | ɵBaseFilter" },
+		  "IFilterGroup": { "fields": {
+		    "filterType": { "type": "number", "values": [6], "required": true },
+		    "items": { "type": "Record", "keyType": "string", "valueType": "IESQFilter", "required": true },
+		    "logicalOperation": { "type": "number", "values": [0, 1], "required": true }
+		  }},
+		  "ɵBaseFilter": { "fields": {
+		    "filterType": { "type": "number", "values": [0, 1, 2, 6], "required": true }
+		  }},
+		  "ɵCompareFilter": { "fields": {
+		    "filterType": { "type": "number", "values": [1], "required": true },
+		    "isAggregative": { "type": "boolean", "values": [false] },
+		    "comparisonType": { "type": "number", "values": [3, 4, 7], "required": true },
+		    "leftExpression": { "type": "ɵColumnExpression | ɵParameterExpression", "required": true },
+		    "rightExpression": { "type": "ɵColumnExpression | ɵParameterExpression", "required": true }
+		  }},
+		  "ɵIsNullFilter": { "fields": {
+		    "filterType": { "type": "number", "values": [2], "required": true },
+		    "comparisonType": { "type": "number", "values": [1, 2], "required": true },
+		    "leftExpression": { "type": "ɵColumnExpression | ɵParameterExpression", "required": true }
+		  }},
+		  "ɵColumnExpression": { "fields": {
+		    "expressionType": { "type": "number", "values": [0], "required": true },
+		    "columnPath": { "type": "string", "required": true }
+		  }},
+		  "ɵParameterExpression": { "fields": {
+		    "expressionType": { "type": "number", "values": [2], "required": true },
+		    "parameter": { "type": "object", "required": true, "shape": {
+		      "dataValueType": { "type": "number", "required": true }
+		    }}
+		  }}
+		}
+		""";
+
+	private static IReadOnlyDictionary<string, JsonElement> ChartTypeDefsWithEsqFilters(
+		string groupType = "IFilterGroup", string? esqFilterUnion = null,
+		Action<System.Text.Json.Nodes.JsonObject>? mutate = null) =>
+		ChartTypeDefs(typeDefinitions => {
+			var filters = (System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(EsqFilterTypeDefinitionsJson)!;
+			foreach (KeyValuePair<string, System.Text.Json.Nodes.JsonNode?> definition in filters.ToList()) {
+				filters.Remove(definition.Key);
+				typeDefinitions[definition.Key] = definition.Value;
+			}
+			if (esqFilterUnion is not null) {
+				typeDefinitions["IESQFilter"] = new System.Text.Json.Nodes.JsonObject { ["type"] = esqFilterUnion };
+			}
+			string filtersField = """{ "type": "object", "shape": { "filter": { "type": "__G__", "required": true } } }""".Replace("__G__", groupType);
+			foreach (string providingType in new[] { "WidgetDataProvidingConfig", "SeriesDataProvidingConfig" }) {
+				var providing = (System.Text.Json.Nodes.JsonObject)typeDefinitions[providingType]!["fields"]!;
+				providing["filters"] = System.Text.Json.Nodes.JsonNode.Parse(filtersField);
+			}
+			mutate?.Invoke(typeDefinitions);
+		});
+
+	private static string ChartBodyWithFilter(string filterGroupJson) =>
+		ChartPageBody("[" + DoughnutSeries(
+			"""{"attribute":"A","schemaName":"Account","aggregation":{"column":{"expression":{}}},"filters":{"filter":__F__}}"""
+				.Replace("__F__", filterGroupJson)) + "]");
+
+	private const string StoredFilterGroup =
+		"""
+		{"filterType":6,"logicalOperation":0,"isEnabled":true,"rootSchemaName":"Account","items":{
+		"name":{"filterType":1,"comparisonType":3,"isEnabled":true,"leftExpression":{"expressionType":0,"columnPath":"Name"},"rightExpression":{"expressionType":2,"parameter":{"dataValueType":1,"value":"Acme"}}},
+		"owner":{"filterType":2,"comparisonType":2,"isNull":false,"leftExpression":{"expressionType":0,"columnPath":"Owner"}}}}
+		""";
+
+	[Test]
+	[Description("ENG-95270: a stored ESQ filter whose every leaf and expression matches a published variant passes; the union branch is picked by its discriminators.")]
+	public void ValidateChartWidgetConfig_StoredEsqFilter_ReturnsValid() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup);
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.Errors.Should().BeEmpty(because: "both leaves name a published filter variant and carry everything it requires");
+		result.IsValid.Should().BeTrue(because: "the filter conforms to the published ESQ types");
+	}
+
+	[Test]
+	[Description("ENG-95270: a filter leaf missing a field its variant requires is reported with the exact path and the ESQ filter guidance.")]
+	public void ValidateChartWidgetConfig_FilterLeafMissingRequiredField_ReturnsInvalid() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup.Replace("{\"expressionType\":0,\"columnPath\":\"Name\"}", "{\"expressionType\":0}"));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "a column expression without columnPath cannot be run");
+		result.Errors.Should().ContainSingle(because: "only the one broken expression is reported")
+			.Which.Should().Contain("filters.filter.items.name.leftExpression.columnPath is required")
+			.And.Contain("esq-filters-frontend", because: "the agent is pointed at the filter contract, not the chart one");
+	}
+
+	[Test]
+	[Description("ENG-95270: a leaf whose discriminator names no published variant, and a comparison code outside the published values, are both reported.")]
+	public void ValidateChartWidgetConfig_FilterLeafWithUnknownVariantOrValue_ReturnsInvalid() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup
+			.Replace("{\"filterType\":1,\"comparisonType\":3,", "{\"filterType\":1,\"comparisonType\":42,")
+			.Replace("{\"filterType\":2,\"comparisonType\":2,", "{\"filterType\":9,\"comparisonType\":2,"));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "neither leaf can be run by the ESQ engine");
+		result.Errors.Should().Contain(e => e.Contains("items.name.comparisonType is 42"),
+			because: "42 is not a published comparison code");
+		result.Errors.Should().Contain(e => e.Contains("items.owner does not match any of") && e.Contains("filterType"),
+			because: "filterType 9 names no published filter variant");
+	}
+
+	[Test]
+	[Description("ENG-95270: an unknown variant is not an error while the union also holds an opaque branch that might accept it.")]
+	public void ValidateChartWidgetConfig_UnknownVariantNextToOpaqueBranch_StaysFailOpen() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup.Replace("{\"filterType\":2,", "{\"filterType\":9,"));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body,
+			ChartTypeDefsWithEsqFilters(esqFilterUnion: "ɵCompareFilter | ɵIsNullFilter | IFilterGroup | ɵSegmentFilter"));
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "ɵSegmentFilter has no published definition, so filterType 9 may be one of its kind");
+	}
+
+	[Test]
+	[Description("ENG-95270: a number stored as its string matches a numeric values list, and a leaf that omits an optional single-valued field still matches its variant.")]
+	public void ValidateChartWidgetConfig_NumericStringAndOmittedOptionalPinnedField_ReturnsValid() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup.Replace("\"comparisonType\":3,", "\"comparisonType\":\"3\","));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.Errors.Should().BeEmpty(because: "the runtime coerces \"3\" to 3, and the stored leaf may omit the optional isAggregative");
+	}
+
+	[Test]
+	[Description("ENG-95270 fail-open: a registry that still leaves the filter leaves opaque (pre-ENG-95270) does not turn a broken leaf into an error.")]
+	public void ValidateChartWidgetConfig_OpaqueFilterLeafTypes_StaysFailOpen() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup.Replace("{\"filterType\":1,", "{\"filterType\":9,"));
+		IReadOnlyDictionary<string, JsonElement> oldRegistry = ChartTypeDefs(typeDefinitions => {
+			foreach (string providingType in new[] { "WidgetDataProvidingConfig", "SeriesDataProvidingConfig" }) {
+				var providing = (System.Text.Json.Nodes.JsonObject)typeDefinitions[providingType]!["fields"]!;
+				providing["filters"] = System.Text.Json.Nodes.JsonNode.Parse(
+					"""
+					{ "type": "object", "shape": { "filter": { "type": "object", "required": true, "shape": {
+					  "items": { "type": "Record", "keyType": "string", "valueType": "ɵBaseFilter | ɵCompareFilter | IFilterGroup", "required": true }
+					}}}}
+					""");
+			}
+		});
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, oldRegistry);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "with no published variant definitions there is no discriminator to dispatch on, so the walk stops instead of guessing");
+	}
+
+	// Variants beside the base slice: an aggregative compare leaf (pins one more discriminator than ɵCompareFilter),
+	// an In leaf (pins as much as ɵCompareFilter but needs other fields), and two function expressions told apart
+	// by functionType.
+	private static void AddEsqFilterVariants(System.Text.Json.Nodes.JsonObject typeDefinitions) {
+		typeDefinitions["IESQFilter"] = new System.Text.Json.Nodes.JsonObject {
+			["type"] = "ɵCompareFilter | ɵAggregativeCompareFilter | ɵInFilter | ɵIsNullFilter | IFilterGroup | ɵBaseFilter"
+		};
+		typeDefinitions["ɵAggregativeCompareFilter"] = System.Text.Json.Nodes.JsonNode.Parse(
+			"""
+			{ "fields": {
+			  "filterType": { "type": "number", "values": [1], "required": true },
+			  "isAggregative": { "type": "boolean", "values": [true], "required": true },
+			  "aggregationType": { "type": "number", "required": true }
+			}}
+			""");
+		typeDefinitions["ɵInFilter"] = System.Text.Json.Nodes.JsonNode.Parse(
+			"""
+			{ "fields": {
+			  "filterType": { "type": "number", "values": [1], "required": true },
+			  "inMode": { "type": "number", "required": true },
+			  "rightExpressions": { "type": "array", "required": true, "items": { "type": "ɵParameterExpression" } }
+			}}
+			""");
+		typeDefinitions["ɵDatePartFunctionExpression"] = System.Text.Json.Nodes.JsonNode.Parse(
+			"""
+			{ "fields": {
+			  "expressionType": { "type": "number", "values": [1], "required": true },
+			  "functionType": { "type": "number", "values": [1], "required": true },
+			  "datePartType": { "type": "number", "required": true }
+			}}
+			""");
+		typeDefinitions["ɵAggregationFunctionExpression"] = System.Text.Json.Nodes.JsonNode.Parse(
+			"""
+			{ "fields": {
+			  "expressionType": { "type": "number", "values": [1], "required": true },
+			  "functionType": { "type": "number", "values": [2], "required": true },
+			  "aggregationType": { "type": "number", "required": true }
+			}}
+			""");
+		typeDefinitions["ɵCompareFilter"]!["fields"]!["leftExpression"]!["type"] =
+			"ɵColumnExpression | ɵParameterExpression | ɵDatePartFunctionExpression | ɵAggregationFunctionExpression";
+	}
+
+	private static string FilterWithNameLeaf(string nameLeafJson) =>
+		ChartBodyWithFilter(
+			"""{"filterType":6,"logicalOperation":0,"isEnabled":true,"rootSchemaName":"Account","items":{"name":__LEAF__}}"""
+				.Replace("__LEAF__", nameLeafJson));
+
+	[Test]
+	[Description("ENG-95270: a leaf matching two pinned variants is checked against the one that pins more discriminators.")]
+	public void ValidateChartWidgetConfig_LeafMatchingTwoVariants_IsCheckedAgainstTheMostSpecific() {
+		// Arrange
+		string body = FilterWithNameLeaf(
+			"""{"filterType":1,"isAggregative":true,"comparisonType":3,"leftExpression":{"expressionType":0,"columnPath":"Name"},"rightExpression":{"expressionType":2,"parameter":{"dataValueType":1}}}""");
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body,
+			ChartTypeDefsWithEsqFilters(mutate: AddEsqFilterVariants));
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "only the aggregative variant, which pins filterType and isAggregative, is checked")
+			.Which.Should().Contain("items.name.aggregationType is required",
+				because: "ɵCompareFilter, which pins filterType only, would instead reject isAggregative true");
+	}
+
+	[Test]
+	[Description("ENG-95270: among equally specific variants the leaf passes if any accepts it, and otherwise the variant with the fewest errors is reported.")]
+	[TestCase("""{"filterType":1,"comparisonType":3,"inMode":0,"leftExpression":{"expressionType":0,"columnPath":"Name"},"rightExpressions":[{"expressionType":2,"parameter":{"dataValueType":1}}]}""", null)]
+	[TestCase("""{"filterType":1,"comparisonType":3,"leftExpression":{"expressionType":0,"columnPath":"Name"}}""", "items.name.rightExpression is required")]
+	public void ValidateChartWidgetConfig_EquallySpecificVariants_AcceptAnyOrReportTheFewestErrors(string leaf, string? expectedError) {
+		// Arrange
+		string body = FilterWithNameLeaf(leaf);
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body,
+			ChartTypeDefsWithEsqFilters(mutate: AddEsqFilterVariants));
+
+		// Assert
+		if (expectedError is null) {
+			result.Errors.Should().BeEmpty(because: "ɵInFilter accepts the leaf even though ɵCompareFilter would not");
+		} else {
+			result.Errors.Should().ContainSingle(because: "ɵCompareFilter misses one field, ɵInFilter misses two")
+				.Which.Should().Contain(expectedError);
+		}
+	}
+
+	[Test]
+	[Description("ENG-95270: a leaf only the abstract base accepts (no published variant pins its filterType) is valid.")]
+	public void ValidateChartWidgetConfig_LeafOnlyTheAbstractBaseAccepts_ReturnsValid() {
+		// Arrange
+		string body = FilterWithNameLeaf("""{"filterType":0,"isEnabled":true}""");
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.Errors.Should().BeEmpty(because: "ɵBaseFilter lists filterType 0, so the leaf may be a variant the registry does not publish");
+	}
+
+	[Test]
+	[Description("ENG-95270: functionType picks the function-expression variant; one no variant pins is reported with functionType among the discriminators.")]
+	[TestCase("""{"expressionType":1,"functionType":1,"datePartType":3}""", null)]
+	[TestCase("""{"expressionType":1,"functionType":5}""", "items.name.leftExpression does not match any of")]
+	public void ValidateChartWidgetConfig_FunctionExpression_IsPickedByFunctionType(string leftExpression, string? expectedError) {
+		// Arrange
+		string body = FilterWithNameLeaf(
+			"""{"filterType":1,"comparisonType":3,"leftExpression":__L__,"rightExpression":{"expressionType":2,"parameter":{"dataValueType":1}}}"""
+				.Replace("__L__", leftExpression));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body,
+			ChartTypeDefsWithEsqFilters(mutate: AddEsqFilterVariants));
+
+		// Assert
+		if (expectedError is null) {
+			result.Errors.Should().BeEmpty(because: "functionType 1 names the date-part function, whose fields are all present");
+		} else {
+			result.Errors.Should().ContainSingle(because: "functionType 5 names no published function expression")
+				.Which.Should().Contain(expectedError).And.Contain("functionType");
+		}
+	}
+
+	[Test]
+	[Description("ENG-95270: inside a stored filter a value of the wrong primitive kind is reported; null, and a number stored as its string, are not.")]
+	public void ValidateChartWidgetConfig_PrimitiveKindInsideFilter_ReportsOnlyTheWrongKind() {
+		// Arrange
+		string body = FilterWithNameLeaf(
+			"""{"filterType":1,"comparisonType":3,"isAggregative":null,"leftExpression":{"expressionType":0,"columnPath":5},"rightExpression":{"expressionType":2,"parameter":{"dataValueType":"1"}}}""");
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "a null optional field and a numeric string are what stored filters hold")
+			.Which.Should().Contain("items.name.leftExpression.columnPath must be a string");
+	}
+
+	[Test]
+	[Description("ENG-95270: outside stored filters the data block keeps its pre-ENG-95270 checks: a binding or a literal of another kind, or a value outside a published list, is not reported.")]
+	public void ValidateChartWidgetConfig_ValuesOutsideStoredFilters_AreNotChecked() {
+		// Arrange
+		string body = ChartPageBody("[" + DoughnutSeries(
+			"""{"attribute":42,"schemaName":"Account","limit":"$PageLimit","kind":"other","aggregation":{"column":{"expression":{}}}}""") + "]");
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions = ChartTypeDefsWithEsqFilters(mutate: definitions => {
+			foreach (string providingType in new[] { "WidgetDataProvidingConfig", "SeriesDataProvidingConfig" }) {
+				var providing = (System.Text.Json.Nodes.JsonObject)definitions[providingType]!["fields"]!;
+				providing["limit"] = System.Text.Json.Nodes.JsonNode.Parse("""{ "type": "number" }""");
+				providing["kind"] = System.Text.Json.Nodes.JsonNode.Parse("""{ "type": "string", "values": ["series"] }""");
+			}
+		});
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, typeDefinitions);
+
+		// Assert
+		result.Errors.Should().BeEmpty(because: "bodies that passed before the filter contract must keep passing");
+	}
+
+	[Test]
+	[Description("ENG-95270: a scalar where a filter union expects an object is not dispatched, so it is not reported by this walk.")]
+	public void ValidateChartWidgetConfig_ScalarInUnionPosition_IsNotDispatched() {
+		// Arrange
+		string body = FilterWithNameLeaf("5");
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.Errors.Should().BeEmpty(because: "variants are told apart by their discriminator fields, which a scalar does not have");
+	}
+
+	[Test]
+	[Description("ENG-95270: a wrong value in an optional single-valued field is reported, and the field still does not decide the variant.")]
+	public void ValidateChartWidgetConfig_WrongValueInOptionalPinnedField_ReportsTheValueOnly() {
+		// Arrange
+		string body = ChartBodyWithFilter(StoredFilterGroup.Replace("{\"filterType\":1,\"comparisonType\":3,", "{\"filterType\":1,\"isAggregative\":true,\"comparisonType\":3,"));
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefsWithEsqFilters());
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the leaf is still ɵCompareFilter, only its isAggregative value is wrong")
+			.Which.Should().Contain("items.name.isAggregative is true, which is not one of [false]");
+	}
+
+	[Test]
+	[Description("ENG-95270: an array element is reported with its index; a Record, or an array, the walk cannot read is skipped instead of guessed.")]
+	[TestCase("indexed", "items.name.rightExpressions[1].parameter is required")]
+	[TestCase("arrayIsObject", null)]
+	[TestCase("arrayWithoutItems", null)]
+	[TestCase("recordWithoutValueType", null)]
+	[TestCase("recordIsString", null)]
+	public void ValidateChartWidgetConfig_ArrayAndRecordGuards(string shape, string? expectedError) {
+		// Arrange
+		string brokenElements = """[{"expressionType":2,"parameter":{"dataValueType":1}},{"expressionType":2}]""";
+		string inLeaf = """{"filterType":1,"inMode":0,"leftExpression":{"expressionType":0,"columnPath":"Name"},"rightExpressions":__R__}""";
+		string body = shape switch {
+			"arrayIsObject" => FilterWithNameLeaf(inLeaf.Replace("__R__", """{"0":{"expressionType":2}}""")),
+			"recordIsString" => ChartBodyWithFilter("""{"filterType":6,"logicalOperation":0,"items":"none"}"""),
+			"recordWithoutValueType" => FilterWithNameLeaf("""{"filterType":9}"""),
+			_ => FilterWithNameLeaf(inLeaf.Replace("__R__", brokenElements))
+		};
+		IReadOnlyDictionary<string, JsonElement> typeDefinitions = ChartTypeDefsWithEsqFilters(mutate: definitions => {
+			AddEsqFilterVariants(definitions);
+			if (shape == "arrayWithoutItems") {
+				((System.Text.Json.Nodes.JsonObject)definitions["ɵInFilter"]!["fields"]!["rightExpressions"]!).Remove("items");
+			}
+			if (shape == "recordWithoutValueType") {
+				((System.Text.Json.Nodes.JsonObject)definitions["IFilterGroup"]!["fields"]!["items"]!).Remove("valueType");
+			}
+		});
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, typeDefinitions);
+
+		// Assert
+		if (expectedError is null) {
+			result.Errors.Should().BeEmpty(because: "without an element or entry type there is nothing to check the value against");
+		} else {
+			result.Errors.Should().ContainSingle(because: "only the second element misses its parameter")
+				.Which.Should().Contain(expectedError);
+		}
+	}
+
+	[Test]
+	[Description("ENG-92174: an error in the second series names it by its index.")]
+	public void ValidateChartWidgetConfig_SecondSeriesBroken_NamesItsIndex() {
+		// Arrange
+		string body = ChartPageBody("[" + DoughnutSeries(ValidChartProviding) + "," +
+			DoughnutSeries("""{"attribute":"A","schemaName":"Account","aggregation":{"expression":{}}}""") + "]");
+
+		// Act
+		var result = SchemaValidationService.ValidateChartWidgetConfig(body, ChartTypeDefs());
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "only the second series misses aggregation.column")
+			.Which.Should().Contain("series[1]");
+	}
+
 	#endregion
 	#region ValidateAppendFragmentIsRecognizable
 
