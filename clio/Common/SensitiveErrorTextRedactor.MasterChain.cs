@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace Clio.Common;
@@ -10,8 +11,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// MASTER'S CHAIN, FROZEN: the patterns, options and call order of master <c>1915d7543</c>'s
 	/// <c>SensitiveErrorTextRedactor</c> (<c>clio/Common/SensitiveErrorTextRedactor.cs</c>), copied verbatim into members
 	/// of their own. Every entry point runs it first; what clio adds runs after it and may only replace spans of its output
-	/// (<see cref="ApplyEdits"/>). Do not edit a pattern here: <c>MasterChainHashTests</c> pins each pattern string, its
-	/// options and the order against constants recorded from master's build. A rule that should remove more belongs in
+	/// (<see cref="ApplyEdits"/>). Do not edit a pattern, a call or its order here: <c>MasterChainHashTests</c> pins each
+	/// pattern string, its options, the calls in order and what each writes, and an output pin recorded from master's build
+	/// checks what the chain returns for every corpus string. A rule that should remove more belongs in
 	/// <see cref="Extra"/>, <see cref="Site"/> or <see cref="ExtraCredentials"/>.
 	/// </summary>
 	internal static partial class MasterChain {
@@ -70,46 +72,78 @@ internal static partial class SensitiveErrorTextRedactor {
 			RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 		private static partial Regex EmailRegex();
 
-		/// <summary>Master's Redact chain, in master's order.</summary>
-		internal static IReadOnlyList<Regex> RedactOrder => [
-			JsonCredentialPropertyRegex(), UriRegex(), JwtRegex(), BearerTokenRegex(), EmailRegex(), HostPortRegex(),
-			WindowsPathRegex(), PosixPathRegex(), CredentialPairRegex()
+		/// <summary>
+		/// One call of master's chain: a rule and what master replaced each match with - a placeholder string, or a named
+		/// evaluator. The chains below ARE the calls: <see cref="Redact"/>, <see cref="RedactCredentials"/> and
+		/// <see cref="RedactJsonCredentialProperties"/> run their list in order and nothing else, so the hash over the
+		/// lists pins the calls, their order and their evaluators, and the output pin pins what the evaluators write.
+		/// </summary>
+		internal sealed record ChainStep(Regex Rule, string? Replacement, MatchEvaluator? Evaluator) {
+			/// <summary>The step over <paramref name="text"/>, as master's call wrote it.</summary>
+			public string Apply(string text) => Evaluator is null ? Rule.Replace(text, Replacement!) : Rule.Replace(text, Evaluator);
+
+			/// <summary>What the step writes: the placeholder, or the evaluator's declaring type and name.</summary>
+			public string Writes => Evaluator is null ? Replacement! : "evaluator:" + Evaluator.Method.DeclaringType!.Name + "." + Evaluator.Method.Name;
+		}
+
+		/// <summary>Master's Redact calls, in master's order.</summary>
+		internal static IReadOnlyList<ChainStep> RedactSteps { get; } = [
+			new(JsonCredentialPropertyRegex(), null, RedactJsonCredentialProperty),
+			new(UriRegex(), RedactedUri, null),
+			new(JwtRegex(), RedactedValue, null),
+			new(BearerTokenRegex(), RedactedValue, null),
+			new(EmailRegex(), RedactedValue, null),
+			new(HostPortRegex(), RedactedUri, null),
+			new(WindowsPathRegex(), RedactedPath, null),
+			new(PosixPathRegex(), RedactedPath, null),
+			new(CredentialPairRegex(), null, CredentialPairToPlaceholder)
 		];
 
-		/// <summary>Master's RedactCredentials chain, in master's order.</summary>
-		internal static IReadOnlyList<Regex> CredentialsOrder => [
-			JsonCredentialPropertyRegex(), UriRegex(), JwtRegex(), BearerTokenRegex(), CredentialPairRegex()
+		/// <summary>Master's RedactCredentials calls, in master's order.</summary>
+		internal static IReadOnlyList<ChainStep> CredentialsSteps { get; } = [
+			new(JsonCredentialPropertyRegex(), null, RedactJsonCredentialProperty),
+			new(UriRegex(), null, StripUriUserInfo),
+			new(JwtRegex(), RedactedValue, null),
+			new(BearerTokenRegex(), RedactedValue, null),
+			new(CredentialPairRegex(), null, CredentialPairToPlaceholder)
 		];
 
-		/// <summary>Master's RedactJsonCredentialProperties chain.</summary>
-		internal static IReadOnlyList<Regex> JsonOrder => [JsonCredentialPropertyRegex()];
+		/// <summary>Master's RedactJsonCredentialProperties call.</summary>
+		internal static IReadOnlyList<ChainStep> JsonSteps { get; } = [
+			new(JsonCredentialPropertyRegex(), null, RedactJsonCredentialProperty)
+		];
+
+		/// <summary>The rules of <see cref="RedactSteps"/>, in order: what the pattern hash recorded from master's build reads.</summary>
+		internal static IReadOnlyList<Regex> RedactOrder => [.. RedactSteps.Select(step => step.Rule)];
+
+		/// <summary>The rules of <see cref="CredentialsSteps"/>, in order.</summary>
+		internal static IReadOnlyList<Regex> CredentialsOrder => [.. CredentialsSteps.Select(step => step.Rule)];
+
+		/// <summary>The rule of <see cref="JsonSteps"/>.</summary>
+		internal static IReadOnlyList<Regex> JsonOrder => [.. JsonSteps.Select(step => step.Rule)];
 
 		/// <summary>Master's Redact body, without its guard: the caller's single guard covers the whole entry point.</summary>
-		internal static string Redact(string text) {
-			string result = JsonCredentialPropertyRegex().Replace(text, RedactJsonCredentialProperty);
-			result = UriRegex().Replace(result, RedactedUri);
-			result = JwtRegex().Replace(result, RedactedValue);
-			result = BearerTokenRegex().Replace(result, RedactedValue);
-			result = EmailRegex().Replace(result, RedactedValue);
-			result = HostPortRegex().Replace(result, RedactedUri);
-			result = WindowsPathRegex().Replace(result, RedactedPath);
-			result = PosixPathRegex().Replace(result, RedactedPath);
-			result = CredentialPairRegex().Replace(result, match => $"{match.Groups[1].Value}={RedactedValue}");
+		internal static string Redact(string text) => Run(RedactSteps, text);
+
+		/// <summary>Master's RedactJsonCredentialProperties body, without its guard.</summary>
+		internal static string RedactJsonCredentialProperties(string text) => Run(JsonSteps, text);
+
+		/// <summary>Master's RedactCredentials body, without its guard.</summary>
+		internal static string RedactCredentials(string text) => Run(CredentialsSteps, text);
+
+		// The calls in order. Between two calls the whole-call budget is checked: master had no such check, and it changes
+		// nothing a call writes; past the budget the entry point fails closed.
+		private static string Run(IReadOnlyList<ChainStep> steps, string text) {
+			string result = text;
+			foreach (ChainStep step in steps) {
+				CheckBudget();
+				result = step.Apply(result);
+			}
 			return result;
 		}
 
-		/// <summary>Master's RedactJsonCredentialProperties body, without its guard.</summary>
-		internal static string RedactJsonCredentialProperties(string text) =>
-			JsonCredentialPropertyRegex().Replace(text, RedactJsonCredentialProperty);
-
-		/// <summary>Master's RedactCredentials body, without its guard.</summary>
-		internal static string RedactCredentials(string text) {
-			string result = JsonCredentialPropertyRegex().Replace(text, RedactJsonCredentialProperty);
-			result = UriRegex().Replace(result, StripUriUserInfo);
-			result = JwtRegex().Replace(result, RedactedValue);
-			result = BearerTokenRegex().Replace(result, RedactedValue);
-			return CredentialPairRegex().Replace(result, match => $"{match.Groups[1].Value}={RedactedValue}");
-		}
+		// Master's pair evaluator: the key, "=" and the placeholder ("Password: x" became "Password=[redacted]").
+		private static string CredentialPairToPlaceholder(Match match) => $"{match.Groups[1].Value}={RedactedValue}";
 
 		private static string StripUriUserInfo(Match match) {
 			string value = match.Value;

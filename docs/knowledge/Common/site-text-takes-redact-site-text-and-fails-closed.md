@@ -7,7 +7,11 @@ applies-to:
   - clio.tests/Common/RedactorOptionBTests.cs
   - clio.tests/Common/RedactionMasterDifferentialTests.cs
   - clio.tests/Common/RedactionDifferentialCorpus.cs
-  - clio.tests/Common/Fixtures/redaction-master-baseline.txt
+  - clio.tests/Common/Fixtures/redaction-master-baseline.txt.gz
+  - clio.tests/Common/RedactionSinks.cs
+  - clio.tests/Common/RedactorSinkCompositionTests.cs
+  - clio.tests/Common/RedactorTimingTests.cs
+  - clio/Command/RuntimeVerification/RecordDeletionService.cs
   - clio/Common/SiteResponse.cs
   - clio/Common/UntrustedText.cs
   - clio/Common/CreatioResponseError.cs
@@ -29,18 +33,42 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
   `RedactCredentials(x) = ExtraCredentials(MasterChain.RedactCredentials(x))`;
   `RedactJsonCredentialProperties(x) = ExtraJson(MasterChain.RedactJsonCredentialProperties(x))`. `RedactAll`, the fenced
   and the console renderings run `Redact` or `RedactSiteText`.
-- `MasterChain` (`SensitiveErrorTextRedactor.MasterChain.cs`) holds master's patterns, options and call order verbatim,
-  in members of its own. `MasterChainHashTests` pins them against hashes recorded from master's build. Never edit a
-  pattern there: clio's rules are `Extra`, `Site` and `ExtraCredentials`, and they come back only where they remove more.
+- `MasterChain` (`SensitiveErrorTextRedactor.MasterChain.cs`) holds master's patterns, options and calls verbatim, in
+  members of its own. Its `Redact`, `RedactCredentials` and `RedactJsonCredentialProperties` run their step lists
+  (`RedactSteps`, `CredentialsSteps`, `JsonSteps`: a rule and the placeholder or named evaluator it writes) and nothing
+  else. `MasterChainHashTests` pins the patterns against hashes recorded from master's build, and the step lists -
+  calls, order, placeholders and evaluators - against recorded step hashes. The OUTPUT PIN
+  (`MasterChain_ShouldReproduceMastersOutput_ForEveryCorpusString`) checks the chain's output for each of the 13,389
+  corpus strings against master's build's, so an evaluator's body cannot change either. Never edit a pattern or a call
+  there: clio's rules are `Extra`, `Site` and `ExtraCredentials`, and they come back only where they remove more.
 - Every rule after the chain goes through ONE edit function, `ApplyEdits`. A rule returns (span, placeholder) edits and
   writes nothing else. Inside a replaced span a placeholder, a fence word and a bracket stay; an edit that cuts a
-  placeholder is widened to all of it; a run next to a kept placeholder needs no new one. `RedactorOptionBTests` proves,
-  over the corpus, that every run of letters or digits a stage writes outside a placeholder is a piece of its input.
+  placeholder is widened to all of it; overlapping edits are joined into one span; a run next to a kept placeholder
+  needs no new one. It is linear: the edits are sorted once and each widening is a binary search over the placeholders
+  (the first version compared every edit with every placeholder and took 12.9 s on 1.2 MB). `RedactorOptionBTests`
+  proves, over the whole corpus and on each stage's REAL input (Extra on master's chain, Site on Redact, ExtraCredentials
+  on master's credentials chain), that every run of letters or digits a stage writes outside a placeholder is a piece of
+  its input, and that its output is its input with spans replaced.
 - The site cut runs in `Site`, AFTER the chain, so master's quoted-value rule sees a value that crosses a stack frame.
-  The cut recognises a frame the chain already rewrote (`at [redacted-uri]`), and replaces the trace with the
-  placeholder, keeping its brackets.
-- Nothing is clamped before the chain: `SiteResponse` caps `RedactSiteText`'s output (as master capped `Redact`'s), the
-  non-JSON preview cuts it at 500, and the fenced rendering redacts the whole text before its 300.
+  The cut recognises a frame the chain already rewrote (`at [redacted-uri]`), and replaces the whole trace or page with
+  ONE placeholder (a collapsing edit): a 110 KB page no longer becomes 460 KB of `[redacted]([redacted]){…}` at the
+  sinks with no cap (the designer's save error, the DataService failure, email-template).
+- MASTER'S ORDER AT EVERY SINK: each sink cuts where master cut and nowhere else before the chain, and runs the site-text
+  redaction where master ran `Redact`. The fenced renderings cut their input at master's 2,400 before the chain and their
+  output at 300; the non-JSON preview cuts the body at master's 500 before the chain (`RedactSiteText(Truncate(body))`);
+  a refused delete's inner message is master's first line cut at 500, then the fenced rendering; `site-response` redacts
+  the whole value and caps after, as master's `Cap(Redact(value))`. A cut master did not have may run only after the
+  chain. Redacting first and cutting after let the text shrink and move a token from beyond master's cut into the
+  window (a 400-character URL, then `user@foo-…` across 500).
+- What a cut BEFORE the chain leaves open at the end of the text goes too, through rules that only replace: a quoted
+  value after master's `key=[redacted]` (`UnclosedValueAfterPairPlaceholderRegex`), a JSON credential property
+  (`UnclosedJsonCredentialValueRegex`), a JWT with one or two of its segments (`PartialJwtAtTheEndRegex`), and, site
+  only, the sign-in or database name of a database phrase (`UnclosedSignInOrDatabasePhraseRegex`: `for user 'zq inv`).
+- The whole-call budget: every entry point fails closed to `[redacted]` past 10 s, wherever it is - plain C# in the edit
+  function included, which no regex timeout stops (`EveryEntryPoint_ShouldFailClosed_WhenTheWholeCallRunsPastItsBudget`).
+  Rules skip a text that lacks a literal every match of theirs contains (`ApplyRule(text, need, …)`), which changes no
+  output. At 1.2 MB master's Redact takes 0.4-0.65 s and this one 0.5-1.6 s (RedactSiteText up to 2.2 s, on JSON-escaped
+  credentials); `RedactorTimingTests` bounds 1 MB at 3 s and the fenced renderings at 250 ms (master: 1-3 ms).
 - Each stage fails closed: an injected timeout before the chain, after it, after `Extra`, before or after `Site`, in the
   credentials or the JSON chain gives `[redacted]` (`EveryStage_ShouldFailClosed_WhenARuleTimesOut`).
 - Rules that read master's own placeholders, so what master's chain left half done goes (`AfterMasterPlaceholders`):
@@ -81,11 +109,20 @@ Over-matches these rules add: the connection part takes the rest of its line (`C
 goes whole); a glued address takes its word (`retry10.0.3.17` becomes `[redacted-uri]`); the drive tail takes `:line`
 in `D:/src/x.cs:line 42`.
 
-**Trades: none, by construction.** `RedactionMasterDifferentialTests` runs the corpus (the fixture in three spellings,
-the edge strings across every clamp and cut, and 3 x 4,000 seeded strings) through every entry point and every sink
-that carries a site's text, against `Fixtures/redaction-master-baseline.txt` recorded from master. No token master
-removed may show. A fenced rendering is held to what master's Redact and master's fenced rendering both removed, since
-a token master's 300-character cut dropped was cut, not redacted.
+**Trades: none, by construction.** `RedactionMasterDifferentialTests` runs the whole corpus - the fixture in three
+spellings, the edge strings across every clamp and cut, 252 strings whose prefix (a URL, a credential pair, a
+JSON-escaped password, a path) shrinks under redaction with a token across the 300, 500 or 2,400 cut, and 3 x 4,000
+seeded strings: 13,389 - through every entry point and every sink of `RedactionSinks.All`, against
+`Fixtures/redaction-master-baseline.txt.gz`. The baseline records master's REAL sink outputs, driven through master's
+own seams: Redact, RedactCredentials, RedactJsonCredentialProperties, both fenced renderings, site-response's message
+and code, the non-JSON preview, the OData error call sites, the keyed write, the DataService failure, the designer's
+save error, the batch item error, compile-status' diagnostic and message tail, a refused delete's inner message and
+DataWriteDiagnostic. No token master removed may show at any of them. A sink that cuts AFTER its chain (the fenced 300,
+site-response's cap) is held to what master's output and master's chain over the same uncut input both removed: a
+token only that cut dropped was cut, not redacted. The test asserts that all 13,389 strings were compared and that every
+baseline line was seen. Call sites inside an instance method that needs a client are read through their seam
+(`TryDetect`) with the call site's expression, which the source guard pins; `RedactorSinkCompositionTests` drives
+odata-create, odata-field validation and email-template through their real code with a substitute client.
 
 **Declared over-matches** - what master's chain removes that #1990's own rules kept. The fixture lists 32 rows in
 `overMatch` with `overMatchReason`, and asserts the fragments ABSENT:
@@ -189,7 +226,7 @@ and backslashes in linear time.
   escaped spelling `SQL01\\SQLEXPRESS` nor stops at an escape (`Contact\u0027s` loses `\u0027s`).
 
 **Where RedactSiteText is called** - at the point site text is read, never later. Wired so far: `SiteResponse.Carry`
-(message and code, after clamping the input to 8x the 2,000-character cap), the `CreatioResponseError.TryDetect`
+(message and code, capped after, as master capped them), the `CreatioResponseError.TryDetect`
 callers (odata-create, `ODataKeyedWrite` for odata-update and odata-delete, field validation, trigger smoke,
 email templates, branding), the non-JSON preview inside `DescribeNonJsonResponse`, `ParseSaveErrorMessage`,
 `DataServiceResponse.ThrowIfUnsuccessful`, and compile-status's diagnostics and message tail. The fenced form
@@ -359,9 +396,9 @@ with three changes, and none of them lets a credential character through:
   here", "Use NOTE.TXT\nthen run" becomes "Use [redacted] run"). The rule checks for the
   backslash and the escape first and only then looks back at the name, so a long run of capitals is read in linear
   time.
-- Every clamp before redaction (`ClampAtBoundary`) cuts back to a word boundary, drops the partial run and marks
-  the cut with " …". A cut inside an open quote goes back to before the quote, so "for user 'zq invented login'"
-  keeps nothing of the name.
+- No clamp of clio's own runs before redaction (option B, master's order). `ClampAtBoundary`, #1990's boundary clamp,
+  is gone: master's own cuts are plain cuts, and what they leave open at the end of the text goes through the
+  end-of-text rules above, so "for user 'zq invented login'" cut inside the name keeps nothing of it.
 - The JSON rule leaves exactly one credentials key alone: clio's own `constant-credentials-masked` flag, in that
   letter case and only with the value `true` or `false`. A string, a number or `null` under that key goes.
 

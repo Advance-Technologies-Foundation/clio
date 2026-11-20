@@ -138,8 +138,9 @@ public sealed class SiteTextWiringTests {
 		TestName = "NonJsonPreview_JwtAcrossTheCut")]
 	[TestCase("Login failed for user 'zq_invented_login'.", "zq_", TestName = "NonJsonPreview_SignInNameAcrossTheCut")]
 	[Category("Unit")]
-	[Description("The non-JSON preview is redacted BEFORE it is cut to 500 characters: a JWT or a quoted sign-in name "
-		+ "that crosses the cut goes whole instead of leaving the half before the cut, which matched no rule.")]
+	[Description("The non-JSON preview is cut to 500 characters BEFORE the redaction, as master cut it (option B). A JWT "
+		+ "or a quoted sign-in name that crosses the cut leaves its first half at the end of the cut text, where master's "
+		+ "chain matches nothing; clio's rules for a JWT and a name a cut left open take it.")]
 	public void NonJsonPreview_ShouldRedactBeforeTheCut_WhenASecretCrossesIt(string secretText, string fragment) {
 		// Arrange
 		string body = new string('x', 494 - secretText.IndexOf(fragment, StringComparison.Ordinal)) + " " + secretText;
@@ -153,8 +154,9 @@ public sealed class SiteTextWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A refused delete's inner message is not cut before the redaction either: a sign-in name after a long "
-		+ "URI, crossing the old 500-character cut, goes whole.")]
+	[Description("A refused delete's inner message keeps master's order: its first line, cut at 500, then the fenced site "
+		+ "rendering. A sign-in name after a long URI, crossing the 500 cut, goes: the rule for a name a cut left open takes "
+		+ "the half before the cut. The closing quote was cut with it.")]
 	public void RecordDeletionInnerMessage_ShouldRedactBeforeAnyCut_WhenASecretCrossesTheOldCut() {
 		// Arrange
 		string message = "See https://" + new string('a', 450) + ".invalid/x Login failed for user 'zq_invented_login'.";
@@ -167,7 +169,7 @@ public sealed class SiteTextWiringTests {
 
 		// Assert
 		inner.Should().NotContain("zq_", because: "the name crossed the old cut and must still go");
-		inner.Should().Contain("Login failed for user '[redacted]'", because: "the reason stays");
+		inner.Should().Contain("Login failed for user '[redacted]", because: "the reason stays");
 	}
 
 	[Test]

@@ -680,6 +680,16 @@ internal static partial class SensitiveErrorTextRedactor {
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex SignInOrDatabasePhraseRegex();
 
+	// The same phrase with a name that a cut left OPEN at the end of the text ("Login failed for user 'zq inv" before the
+	// preview's "..."): master's cut runs before the chain, and the half of the name before it goes too.
+	[GeneratedRegex(
+		@"(?<lead>\bfor[ \t]+user[ \t]+|,[ \t]*user[ \t]+|\bprincipal[ \t]+|\bpermission[ \t]+denied[ \t]+for[ \t]+role[ \t]+"
+		+ @"|\btoo[ \t]+many[ \t]+connections[ \t]+for[ \t]+role[ \t]+|\bmust[ \t]+be[ \t]+member[ \t]+of[ \t]+role[ \t]+"
+		+ @"|\bpermission[ \t]+denied[ \t]+to[ \t]+set[ \t]+role[ \t]+|\bdatabase[ \t]+|\b(?:open|access)[ \t]+server[ \t]+)"
+		+ @"(?<q>\\u0022|\\u0027|\\""|[""'])(?<name>[^""'\\\r\n]{1,256}?)(?=(?:\.\.\.)?\z)",
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
+	private static partial Regex UnclosedSignInOrDatabasePhraseRegex();
+
 	// PostgreSQL's role refusals that name the role BEFORE the reason.
 	[GeneratedRegex(
 		@"(?<lead>\brole[ \t]+)(?<q>\\u0022|\\u0027|\\""|[""'])(?<name>[^""'\\\r\n]{1,256}?)\k<q>"
@@ -938,14 +948,17 @@ internal static partial class SensitiveErrorTextRedactor {
 			return null;
 		}
 		text = UnwrapOuterFence(text);
-		// The input here is server-authored and arbitrarily large - a ResponseStatus.Message can be a whole page. A regex
-		// timeout no longer crashes the reporting path: every entry point fails closed to the placeholder (ExecuteRegex).
-		// NOT ANY MORE (option B, condition 3): the whole text goes through master's chain first and is clamped only
-		// after it. A clamp before the chain cut a value quoted with escaped quotes at an inner space and kept its first
-		// half, which the chain's quoted-value rule could no longer read. A text too large for the chain's budget fails
-		// closed to the placeholder, which is the safe direction.
+		// MASTER'S ORDER, master's bound (option B): the input is cut to UntrustedInputLimit BEFORE the chain, exactly as
+		// master cut it, so every sink sees what master's chain saw and Extra and Site only replace spans of master's
+		// result. The input is server-authored and arbitrarily large - a ResponseStatus.Message can be a whole page - and
+		// the bound keeps the chain's work small. A clamp master did not have may run only after the chain; a long
+		// quoted value master's cut leaves open is taken by Extra (UnclosedValueAfterPairPlaceholderRegex,
+		// UnclosedJsonCredentialValueRegex).
 		// The site variant cuts a stack trace or a page BEFORE the flattening, which would otherwise turn the line
 		// break the cut keys on into a space.
+		if (text.Length > UntrustedInputLimit) {
+			text = text[..UntrustedInputLimit];
+		}
 		string flattened = FlattenDisplayHostileRuns(siteText ? RedactSiteText(text) : Redact(text));
 		if (flattened.Length == 0) {
 			return null;
@@ -964,67 +977,6 @@ internal static partial class SensitiveErrorTextRedactor {
 		return fenced
 			? UntrustedDiagnosticPrefix + flattened + UntrustedDiagnosticSuffix
 			: flattened;
-	}
-
-	// The characters a clamp before redaction may cut at: whitespace and the delimiters that end a token, a quoted
-	// name or a path.
-	private static readonly char[] ClampBoundaries = [
-		' ', '\t', '\r', '\n', ',', ';', '"', '\'', '(', ')', '[', ']', '{', '}', '<', '>', '|'
-	];
-
-	/// <summary>
-	/// Clamps text that is about to be REDACTED to at most <paramref name="maxLength"/> characters, at the last
-	/// whitespace or delimiter, dropping the partial run after it.
-	/// </summary>
-	/// <remarks>
-	/// A clamp before redaction exists to bound the regex work, and a cut inside a token or a quoted name left its
-	/// first half - "…for user 'zq_inv", the first segments of a JWT - which no rule matches, so it reached the
-	/// caller. Cutting at a boundary keeps every run whole or drops it, and " …" marks the cut. A cut that falls
-	/// inside an open quote goes back to before that quote, because a quoted name may hold spaces
-	/// ("…for user 'zq invented login'" must not keep "'zq"). A text with no boundary at all within the bound is one
-	/// run, and becomes the placeholder.
-	/// </remarks>
-	/// <param name="text">The text to clamp.</param>
-	/// <param name="maxLength">The bound; the marker may add two characters.</param>
-	/// <returns>The text, or its longest prefix that ends at a boundary followed by the marker.</returns>
-	internal static string ClampAtBoundary(string text, int maxLength) {
-		if (string.IsNullOrEmpty(text) || text.Length <= maxLength) {
-			return text;
-		}
-		int cut = text.AsSpan(0, maxLength + 1).LastIndexOfAny(ClampBoundaries);
-		if (cut < 0) {
-			return RedactedValue + " \u2026";
-		}
-		string kept = text[..cut];
-		int openQuote = OpenQuoteAt(kept);
-		return (openQuote < 0 ? kept : kept[..openQuote]).TrimEnd() + " \u2026";
-	}
-
-	// How far back a quoted value may begin: a sign-in or database name is at most 256 characters.
-	private const int OpenQuoteWindow = 512;
-
-	// The index of the earliest quote in the last OpenQuoteWindow characters that opens a value (a ' or " after a
-	// non-letter) and is not closed after it (by the same quote before a non-letter), or -1. An apostrophe inside a
-	// word ("can't") opens nothing.
-	private static int OpenQuoteAt(string text) {
-		int open = -1;
-		char quote = '\0';
-		for (int index = Math.Max(0, text.Length - OpenQuoteWindow); index < text.Length; index++) {
-			char character = text[index];
-			if (character is not ('\'' or '"')) {
-				continue;
-			}
-			bool afterLetter = index > 0 && char.IsLetterOrDigit(text[index - 1]);
-			bool beforeLetter = index + 1 < text.Length && char.IsLetterOrDigit(text[index + 1]);
-			if (open < 0 && !afterLetter) {
-				open = index;
-				quote = character;
-			}
-			else if (open >= 0 && character == quote && !beforeLetter) {
-				open = -1;
-			}
-		}
-		return open;
 	}
 
 	/// <summary>
@@ -1186,49 +1138,56 @@ internal static partial class SensitiveErrorTextRedactor {
 	// What clio's Redact removes beyond master's chain. Each rule reads the CURRENT text and returns edits; a rule that
 	// master's chain already satisfied finds nothing left to do.
 	internal static string Extra(string text) {
-		string result = ApplyRule(text, JsonCredentialPropertyRegex(), JsonValueEdits);
-		result = ApplyRule(result, UriRegex(), match => Whole(match, RedactedUri));
-		result = ApplyRule(result, JwtRegex(), match => Whole(match, RedactedValue));
-		result = ApplyRule(result, BearerCredentialRegex(), BearerEdits);
-		result = ApplyRule(result, GluedBearerCredentialRegex(), match =>
+		string result = ApplyRule(text, ":", JsonCredentialPropertyRegex(), JsonValueEdits);
+		result = ApplyRule(result, "://", UriRegex(), match => Whole(match, RedactedUri));
+		result = ApplyRule(result, "eyJ", JwtRegex(), match => Whole(match, RedactedValue));
+		result = ApplyRule(result, "eyJ", PartialJwtAtTheEndRegex(), match => Whole(match, RedactedValue));
+		result = ApplyRule(result, "bearer", BearerCredentialRegex(), BearerEdits, StringComparison.OrdinalIgnoreCase);
+		result = ApplyRule(result, "Bearer", GluedBearerCredentialRegex(), match =>
 			ProseRunAfterPlaceholderRegex().IsMatch(SplitTrailingPunctuation(match.Groups["cred"].Value).Credential) ? NoEdit : BearerEdits(match));
 		string schemed = result;
 		result = ApplyRule(result, SchemeCredentialRegex(), match => SchemeEdits(schemed, match));
-		result = ApplyRule(result, DigestCredentialRegex(), DigestEdits);
-		result = ApplyRule(result, EmailRegex(), match => Whole(match, RedactedValue));
+		result = ApplyRule(result, "digest", DigestCredentialRegex(), DigestEdits, StringComparison.OrdinalIgnoreCase);
+		result = ApplyRule(result, "@", EmailRegex(), match => Whole(match, RedactedValue));
 		string beforeHostPort = result;
-		result = ApplyRule(result, HostPortRegex(), match => GluedWordEdits(beforeHostPort, match, RedactedUri));
-		result = ApplyRule(result, Ipv6Regex(), match => match.Value.Any(char.IsAsciiDigit) ? Whole(match, RedactedUri) : NoEdit);
-		CountLines countLines = new(result);
-		result = ApplyRule(result, SingleLabelHostPortRegex(),
-			match => IsSingleLabelHostPort(countLines, match) ? Whole(match, RedactedUri) : NoEdit);
+		result = ApplyRule(result, ":", HostPortRegex(), match => GluedWordEdits(beforeHostPort, match, RedactedUri));
+		result = ApplyRule(result, ":", Ipv6Regex(), match => match.Value.Any(char.IsAsciiDigit) ? Whole(match, RedactedUri) : NoEdit);
+		if (result.Contains(':')) {
+			CountLines countLines = new(result);
+			result = ApplyRule(result, SingleLabelHostPortRegex(),
+				match => IsSingleLabelHostPort(countLines, match) ? Whole(match, RedactedUri) : NoEdit);
+		}
 		string beforeIpv4 = result;
-		result = ApplyRule(result, PrivateIpv4Regex(), match => IsVersionContext(beforeIpv4, match) ? NoEdit : GluedWordEdits(beforeIpv4, match, RedactedUri));
-		result = ApplyRule(result, DriveSlashPathRegex(), match => Whole(match, RedactedPath));
-		result = ApplyRule(result, WindowsPathRegex(), match => Whole(match, RedactedPath));
-		result = ApplyRule(result, PosixPathRegex(), match => Whole(match, RedactedPath));
+		result = ApplyRule(result, ".", PrivateIpv4Regex(), match => IsVersionContext(beforeIpv4, match) ? NoEdit : GluedWordEdits(beforeIpv4, match, RedactedUri));
+		result = ApplyRule(result, ":/", DriveSlashPathRegex(), match => Whole(match, RedactedPath));
+		result = ApplyRule(result, "\\", WindowsPathRegex(), match => Whole(match, RedactedPath));
+		result = ApplyRule(result, "/", PosixPathRegex(), match => Whole(match, RedactedPath));
 		string listed = result;
-		result = ApplyRule(result, CredentialListPairRegex(), match => ListPairEdits(listed, match));
-		string paired = result;
-		result = ApplyRule(result, CredentialPairRegex(), match => PairEdits(paired, match));
+		result = ApplyRule(result, "=", CredentialListPairRegex(), match => ListPairEdits(listed, match));
+		if (HasPairSeparator(result)) {
+			string paired = result;
+			result = ApplyRule(result, CredentialPairRegex(), match => PairEdits(paired, match));
+		}
 		return AfterMasterPlaceholders(result);
 	}
 
 	// The rules that read master's own placeholders (see the three regexes below).
 	private static string AfterMasterPlaceholders(string text) {
-		string result = ApplyRule(text, QuotedValueAfterPairPlaceholderRegex(), match => Part(match.Groups["value"], RedactedValue));
-		result = ApplyRule(result, DigestListAfterPlaceholderRegex(),
+		string result = ApplyRule(text, "=[redacted]", QuotedValueAfterPairPlaceholderRegex(), match => Part(match.Groups["value"], RedactedValue));
+		result = ApplyRule(result, "=[redacted]", UnclosedValueAfterPairPlaceholderRegex(), match => Part(match.Groups["value"], RedactedValue));
+		result = ApplyRule(result, ":", UnclosedJsonCredentialValueRegex(), match => Part(match.Groups["value"], RedactedValue));
+		result = ApplyRule(result, "[redacted", DigestListAfterPlaceholderRegex(),
 			match => DigestClientParameterRegex().IsMatch(match.Groups["params"].Value) ? Part(match.Groups["params"], RedactedValue) : NoEdit);
-		result = ApplyRule(result, CredentialRunAfterPairPlaceholderRegex(), RunAfterPairPlaceholderEdits);
-		result = ApplyRule(result, ConnectionPartAfterPlaceholderRegex(), match => Part(match.Groups["value"], RedactedValue));
-		result = ApplyRule(result, TokenRunAfterPathPlaceholderRegex(), match =>
+		result = ApplyRule(result, "=[redacted]", CredentialRunAfterPairPlaceholderRegex(), RunAfterPairPlaceholderEdits);
+		result = ApplyRule(result, "=", ConnectionPartAfterPlaceholderRegex(), match => Part(match.Groups["value"], RedactedValue));
+		result = ApplyRule(result, "[redacted-path]", TokenRunAfterPathPlaceholderRegex(), match =>
 			match.Groups["token"].Length >= 12 && !VersionRunRegex().IsMatch(match.Groups["token"].Value)
 				&& !DottedTypeNameRegex().IsMatch(match.Groups["token"].Value)
 				? Part(match.Groups["run"], RedactedValue)
 				: NoEdit);
-		result = ApplyRule(result, DrivePlaceholderTailRegex(), match => Whole(match, RedactedPath));
-		result = ApplyRule(result, ServerGluedToPathPlaceholderRegex(), match => Whole(match, RedactedValue));
-		return ApplyRule(result, HostLabelBeforePairPlaceholderRegex(), match => Whole(match, RedactedUri));
+		result = ApplyRule(result, "[redacted-path]:", DrivePlaceholderTailRegex(), match => Whole(match, RedactedPath));
+		result = ApplyRule(result, "[redacted-path]", ServerGluedToPathPlaceholderRegex(), match => Whole(match, RedactedValue));
+		return ApplyRule(result, "=[redacted]", HostLabelBeforePairPlaceholderRegex(), match => Whole(match, RedactedUri));
 	}
 
 	// AFTER MASTER'S PAIR RULE. Master's pair rule takes only the first word after a credential key, so when that word
@@ -1287,6 +1246,31 @@ internal static partial class SensitiveErrorTextRedactor {
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex QuotedValueAfterPairPlaceholderRegex();
 
+	// A quoted value after master's "key=[redacted]" that a cut left OPEN: master's own cuts (2,400 before the fenced
+	// rendering, 500 before the non-JSON preview and the refused delete's inner message) cut a long quoted value before
+	// its closing quote, and master's pair rule then took only its first character. The rest goes, to the end of the
+	// text - where the cut is, before the preview's "..." - never across a JSON bracket or a line break. It starts on a
+	// character that can open a value, so a stray closing quote before a sentence ("password=[redacted]' end") is not one.
+	[GeneratedRegex(
+		$@"(?<=(?<![\w.\-])[\w.\-]*(?:{CredentialSecretKeys}|{CredentialWordKeys}|{ConnectionStringPartKeys})=\[redacted\])"
+		+ @"(?<open>""|')(?<value>(?:\[redacted(?:-[a-z]+)?\]|[^\s""'{}\[\]])(?:\[redacted(?:-[a-z]+)?\]|[^""'\r\n{}\[\]])*?)(?=(?:\.\.\.)?\z)",
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
+	private static partial Regex UnclosedValueAfterPairPlaceholderRegex();
+
+	// A JSON credential property whose string value a cut left OPEN at the end of the text, in any quote spelling
+	// ("{\u0022password\u0022:\u0022…" cut by master's clamp): master's JSON rule needs the closing quote, so none of its
+	// rules took the value. Only at the end of the text, where a cut leaves it.
+	[GeneratedRegex(
+		$@"(?<q>{JsonQuoteSpellings})(?<key>{JsonCredentialKeyPattern})\k<q>\s*:\s*\k<q>(?<value>{JsonStringContent})\z",
+		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
+	private static partial Regex UnclosedJsonCredentialValueRegex();
+
+	// A JWT that a cut left with one or two of its segments at the end of the text ("eyJhbGci…J9.eyJzdW" before the
+	// preview's "..."): master's JWT rule needs all three, so the first ones stayed.
+	[GeneratedRegex(@"(?:(?<=\\u[0-9A-Fa-f]{4})|(?<=\\[nrt])|\b)eyJ[A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+){0,2}\.?(?=(?:\.\.\.)?\z)",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex PartialJwtAtTheEndRegex();
+
 	// A Digest client list right after a placeholder: master's pair rule took "Digest" as the Authorization value and
 	// left "username=…, nonce=…, response=…" after it. It goes when it carries what a client sends.
 	[GeneratedRegex(
@@ -1343,19 +1327,22 @@ internal static partial class SensitiveErrorTextRedactor {
 		Match cut = StackOrPageBreakRegex().Match(result);
 		if (cut.Success) {
 			int from = cut.Index + cut.Length;
-			result = ApplyEdits(result, [new SpanEdit(from, result.Length - from, RedactedValue)]);
+			result = ApplyEdits(result, [new SpanEdit(from, result.Length - from, RedactedValue, Collapse: true)]);
 		}
 		result = ApplyRule(result, SignInOrDatabasePhraseRegex(), match => Part(match.Groups["name"], RedactedValue));
+		result = ApplyRule(result, UnclosedSignInOrDatabasePhraseRegex(), match => Part(match.Groups["name"], RedactedValue));
 		result = ApplyRule(result, RoleBeforeReasonRegex(), match => Part(match.Groups["name"], RedactedValue));
 		string listed = result;
-		result = ApplyRule(result, SiteKeyListPairRegex(), match => ListPairEdits(listed, match));
-		result = ApplyRule(result, SiteKeyPairRegex(), SiteKeyPairEdits);
-		result = ApplyRule(result, UidKeyPairRegex(), SiteKeyPairEdits);
+		result = ApplyRule(result, "=", SiteKeyListPairRegex(), match => ListPairEdits(listed, match));
+		if (HasPairSeparator(result)) {
+			result = ApplyRule(result, SiteKeyPairRegex(), SiteKeyPairEdits);
+			result = ApplyRule(result, UidKeyPairRegex(), SiteKeyPairEdits);
+		}
 		// The relative and drive-relative paths before the server instance, which reads a path's later segments as
 		// "SERVER\instance", and once more after it, for a path that starts right after the placeholder it wrote.
 		result = SitePaths(result);
-		result = ApplyRule(result, WindowsInstanceRegex(), match => Whole(match, RedactedValue));
-		result = ApplyRule(result, InstanceAfterPlaceholderRegex(), match => Part(match.Groups["instance"], RedactedValue));
+		result = ApplyRule(result, "\\", WindowsInstanceRegex(), match => Whole(match, RedactedValue));
+		result = ApplyRule(result, "\\", InstanceAfterPlaceholderRegex(), match => Part(match.Groups["instance"], RedactedValue));
 		result = SitePaths(result);
 		result = ApplyRule(result, KeyLikeRunRegex(), KeyLikeRunEdits);
 		return ApplyInjectedRule(SiteLastStage, result);
@@ -1382,8 +1369,8 @@ internal static partial class SensitiveErrorTextRedactor {
 	private static string SitePaths(string text) {
 		string result = ApplyRule(text, RelativePathRegex(), match => Whole(match, RedactedPath));
 		result = ApplyRule(result, RelativeBackslashPathRegex(), match => Whole(match, RedactedPath));
-		result = ApplyRule(result, DriveRelativePathRegex(), match => Whole(match, RedactedPath));
-		return ApplyRule(result, SlashTailAfterPathPlaceholderRegex(), match => Whole(match, RedactedPath));
+		result = ApplyRule(result, ":", DriveRelativePathRegex(), match => Whole(match, RedactedPath));
+		return ApplyRule(result, "[redacted-path]/", SlashTailAfterPathPlaceholderRegex(), match => Whole(match, RedactedPath));
 	}
 
 	// The run without its trailing sentence punctuation, and that punctuation, which stays.
@@ -1770,17 +1757,19 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// What clio's RedactCredentials removes beyond master's: the credential rules of Extra, and of a URI only its userinfo.
 	internal static string ExtraCredentials(string text) {
-		string result = ApplyRule(text, JsonCredentialPropertyRegex(), JsonValueEdits);
-		result = ApplyRule(result, UriRegex(), UserInfoEdits);
-		result = ApplyRule(result, JwtRegex(), match => Whole(match, RedactedValue));
-		result = ApplyRule(result, BearerCredentialRegex(), BearerEdits);
+		string result = ApplyRule(text, ":", JsonCredentialPropertyRegex(), JsonValueEdits);
+		result = ApplyRule(result, "://", UriRegex(), UserInfoEdits);
+		result = ApplyRule(result, "eyJ", JwtRegex(), match => Whole(match, RedactedValue));
+		result = ApplyRule(result, "bearer", BearerCredentialRegex(), BearerEdits, StringComparison.OrdinalIgnoreCase);
 		string schemed = result;
 		result = ApplyRule(result, SchemeCredentialRegex(), match => SchemeEdits(schemed, match));
-		result = ApplyRule(result, DigestCredentialRegex(), DigestEdits);
+		result = ApplyRule(result, "digest", DigestCredentialRegex(), DigestEdits, StringComparison.OrdinalIgnoreCase);
 		string listed = result;
-		result = ApplyRule(result, CredentialListPairRegex(), match => ListPairEdits(listed, match));
-		string paired = result;
-		result = ApplyRule(result, CredentialPairRegex(), match => PairEdits(paired, match));
+		result = ApplyRule(result, "=", CredentialListPairRegex(), match => ListPairEdits(listed, match));
+		if (HasPairSeparator(result)) {
+			string paired = result;
+			result = ApplyRule(result, CredentialPairRegex(), match => PairEdits(paired, match));
+		}
 		return AfterMasterPlaceholders(result);
 	}
 
@@ -1820,8 +1809,12 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	#region The one edit function
 
-	/// <summary>One edit: the span of <paramref name="Length"/> characters at <paramref name="Start"/> becomes the placeholder.</summary>
-	internal readonly record struct SpanEdit(int Start, int Length, string Placeholder);
+	/// <summary>
+	/// One edit: the span of <paramref name="Length"/> characters at <paramref name="Start"/> becomes the placeholder.
+	/// A <paramref name="Collapse"/> edit becomes ONE placeholder, brackets and placeholders inside it included: the site
+	/// cut's, whose tail is a stack trace or a page that only the placeholder may stand for.
+	/// </summary>
+	internal readonly record struct SpanEdit(int Start, int Length, string Placeholder, bool Collapse = false);
 
 	// What an edit never deletes: one of clio's placeholders, a fence word and a bracket. They stay in place, and every
 	// run of other characters between them becomes the placeholder.
@@ -1839,67 +1832,118 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// <remarks>
 	/// The output is the input's own pieces in their order, with a placeholder at every join: inside a replaced span a
 	/// placeholder, a fence word and a bracket stay, and every run between them becomes the placeholder; an edit that
-	/// starts or ends inside a placeholder is widened to the whole placeholder; an edit that overlaps an earlier one is
-	/// dropped. So no rule can delete a placeholder or a bracket, and every run of letters or digits in the output outside
-	/// a placeholder is a piece of the input.
+	/// starts or ends inside a placeholder is widened to the whole placeholder; edits that overlap are joined into one
+	/// span, which takes the placeholder of the edit that starts first. So no rule can delete a placeholder or a bracket,
+	/// and every run of letters or digits in the output outside a placeholder is a piece of the input. The one exception
+	/// is a <see cref="SpanEdit.Collapse"/> edit, which becomes a single placeholder.
+	/// Linear in the text and the edits: the edits are sorted once, the placeholders are found once in text order and
+	/// each widening is a binary search over them. It checks the whole-call budget (<see cref="CheckBudget"/>).
 	/// </remarks>
 	internal static string ApplyEdits(string text, IEnumerable<SpanEdit> edits) {
-		List<(int Start, int End)> placeholders = PlaceholderPieceRegex().Matches(text)
-			.Select(found => (found.Index, found.Index + found.Length)).ToList();
-		StringBuilder? output = null;
+		List<SpanEdit> sorted = edits.Where(edit => edit.Length > 0).ToList();
+		if (sorted.Count == 0) {
+			return text;
+		}
+		sorted.Sort(static (left, right) => left.Start != right.Start ? left.Start.CompareTo(right.Start) : right.Length.CompareTo(left.Length));
+		MatchCollection found = PlaceholderPieceRegex().Matches(text);
+		int[] placeholderStarts = new int[found.Count];
+		int[] placeholderEnds = new int[found.Count];
+		for (int index = 0; index < found.Count; index++) {
+			placeholderStarts[index] = found[index].Index;
+			placeholderEnds[index] = found[index].Index + found[index].Length;
+		}
+		StringBuilder output = new(text.Length);
 		int position = 0;
-		foreach (SpanEdit edit in edits.Where(edit => edit.Length > 0).OrderBy(edit => edit.Start)) {
-			int start = edit.Start;
-			int end = edit.Start + edit.Length;
-			foreach ((int placeholderStart, int placeholderEnd) in placeholders) {
-				if (placeholderStart < start && start < placeholderEnd) {
-					start = placeholderStart;
-				}
-				if (placeholderStart < end && end < placeholderEnd) {
-					end = placeholderEnd;
-				}
+		int current = 0;
+		while (current < sorted.Count) {
+			SpanEdit first = sorted[current];
+			int start = WidenToPlaceholder(first.Start, placeholderStarts, placeholderEnds, true);
+			int end = WidenToPlaceholder(first.Start + first.Length, placeholderStarts, placeholderEnds, false);
+			bool collapse = first.Collapse;
+			current++;
+			// Join every edit that starts inside the span so far (an overlap), however far it reaches.
+			while (current < sorted.Count && sorted[current].Start < end) {
+				int nextEnd = WidenToPlaceholder(sorted[current].Start + sorted[current].Length, placeholderStarts, placeholderEnds, false);
+				end = Math.Max(end, nextEnd);
+				collapse |= sorted[current].Collapse;
+				current++;
 			}
-			if (start < position) {
+			if ((current & 1023) == 0) {
+				CheckBudget();
+			}
+			start = Math.Max(start, position);
+			if (start >= end) {
 				continue;
 			}
-			output ??= new StringBuilder(text.Length);
 			output.Append(text, position, start - position);
-			AppendReplaced(output, text.Substring(start, end - start), edit.Placeholder);
+			if (collapse) {
+				output.Append(first.Placeholder);
+			}
+			else {
+				AppendReplaced(output, text, start, end, first.Placeholder);
+			}
 			position = end;
-		}
-		if (output is null) {
-			return text;
 		}
 		output.Append(text, position, text.Length - position);
 		return output.ToString();
 	}
 
+	// The position widened to the whole placeholder it falls strictly inside, if any: a start moves to the placeholder's
+	// start, an end to its end. The placeholders do not overlap and are in text order, so a binary search finds the one.
+	private static int WidenToPlaceholder(int at, int[] starts, int[] ends, bool isStart) {
+		int index = Array.BinarySearch(starts, at);
+		index = index >= 0 ? index - 1 : ~index - 1;
+		if (index < 0 || at >= ends[index] || at <= starts[index]) {
+			return at;
+		}
+		return isStart ? starts[index] : ends[index];
+	}
+
 	// A run next to a kept placeholder needs no placeholder of its own: the kept one already marks the join.
-	private static void AppendReplaced(StringBuilder output, string span, string placeholder) {
-		int position = 0;
+	private static void AppendReplaced(StringBuilder output, string text, int start, int end, string placeholder) {
+		int position = start;
 		bool afterPlaceholder = false;
-		foreach (Match kept in ProtectedPieceRegex().Matches(span)) {
+		int pieces = 0;
+		foreach (Match kept in ProtectedPieceRegex().Matches(text[start..end])) {
+			if ((++pieces & 1023) == 0) {
+				CheckBudget();
+			}
+			int keptAt = start + kept.Index;
 			bool keptIsPlaceholder = kept.Length > 1;
-			if (kept.Index > position && !afterPlaceholder && !keptIsPlaceholder) {
+			if (keptAt > position && !afterPlaceholder && !keptIsPlaceholder) {
 				output.Append(placeholder);
 			}
 			output.Append(kept.Value);
-			position = kept.Index + kept.Length;
+			position = keptAt + kept.Length;
 			afterPlaceholder = keptIsPlaceholder;
 		}
-		if (position < span.Length && !afterPlaceholder) {
+		if (position < end && !afterPlaceholder) {
 			output.Append(placeholder);
 		}
 	}
 
 	// A rule through the one edit function: every match of the rule over the CURRENT text gives its edits.
 	private static string ApplyRule(string text, Regex rule, Func<Match, IEnumerable<SpanEdit>> edits) {
+		CheckBudget();
 		List<SpanEdit> all = [];
+		int matches = 0;
 		foreach (Match match in rule.Matches(text)) {
+			if ((++matches & 255) == 0) {
+				CheckBudget();
+			}
 			all.AddRange(edits(match));
 		}
 		return all.Count == 0 ? text : ApplyEdits(text, all);
 	}
+
+	// A rule that can match only where the text holds NEED, skipped where it does not. Exact: every match of the rule
+	// contains NEED, so the output is the same; only a long text without it takes less time.
+	private static string ApplyRule(string text, string need, Regex rule, Func<Match, IEnumerable<SpanEdit>> edits,
+			StringComparison comparison = StringComparison.Ordinal) =>
+		text.Contains(need, comparison) ? ApplyRule(text, rule, edits) : text;
+
+	// A pair rule needs its "=" or ":".
+	private static bool HasPairSeparator(string text) => text.AsSpan().IndexOfAny('=', ':') >= 0;
 
 	private static IEnumerable<SpanEdit> Whole(Match match, string placeholder) => [new SpanEdit(match.Index, match.Length, placeholder)];
 
@@ -1910,12 +1954,71 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	#endregion
 
+	#region The whole-call budget
+
+	/// <summary>
+	/// The time one entry-point call may take, all of it: master's chain, Extra, Site and the edit function. Every regex
+	/// already has its own 1 s match timeout, but the edit function and the loops around the rules are plain C#, which
+	/// no regex timeout stops; past this budget the call fails closed to the placeholder, like a timeout.
+	/// </summary>
+	internal static readonly TimeSpan WholeCallBudget = TimeSpan.FromSeconds(10);
+
+	[ThreadStatic]
+	private static long budgetDeadline;
+
+	[ThreadStatic]
+	private static int budgetDepth;
+
+	[ThreadStatic]
+	private static TimeSpan? injectedBudget;
+
+	/// <summary>Raised when a call runs past <see cref="WholeCallBudget"/>; the outermost guard turns it into the placeholder.</summary>
+	internal sealed class RedactionBudgetExceededException() : Exception("The redaction ran past its whole-call budget.");
+
+	/// <summary>Throws <see cref="RedactionBudgetExceededException"/> when the current call is past its budget.</summary>
+	internal static void CheckBudget() {
+		if (budgetDeadline != 0 && System.Diagnostics.Stopwatch.GetTimestamp() > budgetDeadline) {
+			throw new RedactionBudgetExceededException();
+		}
+	}
+
+	/// <summary>Test seam: the next entry-point calls on this thread take <paramref name="budget"/> instead.</summary>
+	internal static IDisposable InjectBudgetForTests(TimeSpan budget) {
+		injectedBudget = budget;
+		return new InjectedBudgetScope();
+	}
+
+	private sealed class InjectedBudgetScope : IDisposable {
+		public void Dispose() => injectedBudget = null;
+	}
+
+	#endregion
+
+	/// <summary>
+	/// The guard of every entry point: a regex timeout anywhere, or a call past its whole-call budget, gives the
+	/// placeholder for the whole text. The outermost guard on a thread starts the budget; a nested one shares it, and a
+	/// budget overrun goes up to the outermost, so no partly redacted text comes out.
+	/// </summary>
 	internal static string ExecuteRegex(Func<string> operation) {
+		bool outermost = budgetDepth++ == 0;
+		if (outermost) {
+			TimeSpan budget = injectedBudget ?? WholeCallBudget;
+			budgetDeadline = System.Diagnostics.Stopwatch.GetTimestamp()
+				+ (long)(budget.TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
+		}
 		try {
 			return operation();
 		}
 		catch (RegexMatchTimeoutException) {
 			return RedactedValue;
+		}
+		catch (RedactionBudgetExceededException) when (outermost) {
+			return RedactedValue;
+		}
+		finally {
+			if (--budgetDepth == 0) {
+				budgetDeadline = 0;
+			}
 		}
 	}
 }

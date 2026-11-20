@@ -166,8 +166,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase(true, TestName = "EnvelopePaths_RelaxedEncoder")]
 	[Category("Unit")]
 	[Description("A real UNC path, a drive path and a quoted drive path ending in a backslash go inside a serialized "
-		+ "envelope. Option B: master's greedy path rule may take the escapes after a path, so the envelope is not "
-		+ "asserted to parse.")]
+		+ "envelope. Option B: with the default encoder the envelope stays valid JSON; with the relaxed encoder master's "
+		+ "greedy path rule takes the escaped quote after the drive path, and the envelope does not parse on master either.")]
 	public void Redact_ShouldStillRedactRealWindowsPaths_InsideASerializedEnvelope(bool relaxed) {
 		// Arrange
 		const string message = "Share \\\\fs01\\creatio$\\pkg is down; could not write C:\\inetpub\\x.config; "
@@ -185,6 +185,10 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 			.And.NotContain("inetpub", because: "the drive path must go").And.NotContain("data",
 				because: "the quoted drive path must go");
 		redacted.Should().Contain("is down", because: "the reason before the paths stays");
+		if (!relaxed) {
+			Action parse = () => JsonDocument.Parse(redacted).Dispose();
+			parse.Should().NotThrow(because: "with the default encoder master's chain leaves the envelope valid JSON, and so does option B");
+		}
 	}
 
 	[Test]
@@ -282,7 +286,7 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string result = SensitiveErrorTextRedactor.RedactSiteText(text);
 
 		// Assert
-		result.Should().Be("Value cannot be null.\\r\\nParameter name: password\nField \"Owner\" is required.\n[redacted]()",
+		result.Should().Be("Value cannot be null.\\r\\nParameter name: password\nField \"Owner\" is required.\n[redacted]",
 			because: "only the stack trace after the reason goes, replaced by the placeholder, its brackets kept");
 	}
 
@@ -354,8 +358,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase(true, TestName = "SchemeEnvelope_RelaxedEncoder")]
 	[Category("Unit")]
 	[Description("A quoted Bearer credential inside a serialized envelope goes in both quote spellings the encoders "
-		+ "write. Option B: master's Bearer and pair rules take the scheme word and may leave a bare quote, so the envelope "
-		+ "is not asserted to parse.")]
+		+ "write. Option B: with the default encoder the envelope stays valid JSON; with the relaxed encoder master's pair "
+		+ "rule takes the scheme word and leaves a bare quote, and the envelope does not parse on master either.")]
 	public void Redact_ShouldRemoveAQuotedBearerCredential_InsideASerializedEnvelope(bool relaxed) {
 		// Arrange
 		JsonSerializerOptions options = relaxed
@@ -370,6 +374,10 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		// Assert
 		redacted.Should().NotContain("x7Kq", because: "the credential goes whole, whichever escape the encoder wrote");
 		redacted.Should().Contain("was refused").And.Contain("too", because: "the words around it stay");
+		if (!relaxed) {
+			Action parse = () => JsonDocument.Parse(redacted).Dispose();
+			parse.Should().NotThrow(because: "with the default encoder master's chain leaves the envelope valid JSON, and so does option B");
+		}
 	}
 
 	[TestCase("NTLM v2 is required; a basic OAuth flow; negotiate HTTP/1.1", TestName = "Kept_VersionAndCamelCase")]
@@ -510,6 +518,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		// Assert
 		redacted.Should().NotContain("jdoe").And.NotContain("secrets").And.NotContain("db.config",
 			because: "both paths go whole; master's path rule also takes the closing bracket after the second");
+		Action parse = () => JsonDocument.Parse(redacted).Dispose();
+		parse.Should().NotThrow(because: "the envelope stays valid JSON with both encoders, as master's chain leaves it");
 	}
 
 	[TestCase("Instance SQL01\\reporting is down", "SQL01", "reporting", TestName = "Account_InstanceStartingWithR")]
@@ -815,11 +825,12 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The non-JSON preview's clamp before redaction cuts back to a word boundary, so a sign-in name that "
-		+ "crosses the 4,000-character clamp goes whole instead of leaving its first letters.")]
+	[Description("The non-JSON preview keeps master's 500-character cut BEFORE the redaction (option B, master's order). "
+		+ "A sign-in name that crosses it is cut, and the half before the cut goes too: the site rule for a name a cut left "
+		+ "open at the end of the text.")]
 	public void NonJsonPreview_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
 		// Arrange
-		string body = AcrossTheClamp(4_000);
+		string body = AcrossTheClamp(500);
 
 		// Act
 		string error = CreatioResponseError.DescribeNonJsonResponse(body);
@@ -830,7 +841,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The fenced site rendering's 2,400-character clamp before redaction cuts back to a word boundary too.")]
+	[Description("The fenced site rendering keeps master's 2,400-character cut before the redaction; the half of a name it "
+		+ "cuts goes too, as in the preview.")]
 	public void FencedSiteText_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
 		// Arrange
 		string text = AcrossTheClamp(2_400);
@@ -844,8 +856,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("site-response.message's clamp before redaction (eight times its 2,000-character cap) cuts back to a "
-		+ "word boundary too.")]
+	[Description("site-response.message has no cut before the redaction - master capped it after - so a name at 16,000 "
+		+ "characters is redacted whole, and the cap comes after.")]
 	public void SiteResponseMessage_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
 		// Arrange
 		string body = JsonSerializer.Serialize(new { errorInfo = new { message = AcrossTheClamp(16_000) } });
@@ -1018,11 +1030,14 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A clamp before redaction that falls inside an open quote cuts back to before the opening quote, so a "
+	[Description("A cut before the redaction that falls inside a quoted name with a space - master's 500 before the "
+		+ "preview, master's 2,400 before the fenced rendering - leaves it open, and the site rule for a name a cut left open "
+		+ "takes the half before the cut: a quoted name with a space is not split either. Was: ClampAtBoundary cut back to "
+		+ "before the opening quote. "
 		+ "quoted name with a space is not split either - in the non-JSON preview and in the fenced rendering.")]
 	public void Clamps_ShouldNotSplitAQuotedNameWithASpace() {
 		// Arrange
-		string preview = QuotedNameAcrossTheClamp(4_000);
+		string preview = QuotedNameAcrossTheClamp(500);
 		string fencedInput = QuotedNameAcrossTheClamp(2_400);
 
 		// Act
@@ -1424,7 +1439,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase(true, TestName = "BackslashEnvelope_RelaxedEncoder")]
 	[Category("Unit")]
 	[Description("Inside a serialized envelope, through RedactSiteText: every path shape loses every piece. Option B: "
-		+ "master's path rule may take the escapes after a path, so the envelope is not asserted to parse.")]
+		+ "with the default encoder the envelope stays valid JSON, as master's chain leaves it; with the relaxed encoder "
+		+ "master's path rule takes the escaped quote after a path, and the envelope does not parse on master either.")]
 	public void RedactSiteText_ShouldTakeEveryPathShape_InsideASerializedEnvelope(bool relaxed) {
 		// Arrange
 		const string message = LiveInsertRefusal + " now; also '..\\zq1\\zq2.config' and \"C:zq3\\zq4.config\" (.\\zq5\\zq6)\n"
@@ -1441,6 +1457,10 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		redacted.Should().NotContain("..").And.NotContain("Terrasoft").And.NotContain("Web.config").And.NotContain("zq",
 			because: "no piece of any path may survive");
 		redacted.Should().Contain("Insert refused. See [redacted-path]", because: "the reason before the paths stays");
+		if (!relaxed) {
+			Action parse = () => JsonDocument.Parse(redacted).Dispose();
+			parse.Should().NotThrow(because: "with the default encoder master's chain leaves the envelope valid JSON, and so does option B");
+		}
 	}
 
 	// The rules timed alone, by name.

@@ -29,6 +29,10 @@ internal static class RedactionDifferentialCorpus {
 	/// <summary>How many random strings each seed adds.</summary>
 	internal const int StringsPerSeed = 4_000;
 
+	/// <summary>How many strings the corpus holds: 350 fixture rows x 3 spellings, 87 edge strings, 252 shrinking-prefix
+	/// strings and 3 x 4,000 seeded ones.</summary>
+	internal const int ExpectedCount = 350 * 3 + 87 + 252 + 3 * StringsPerSeed;
+
 	private static readonly string[] Fragments = [
 		@"..\x\y.config", @".\conf\x.config", @"..\..\Terrasoft.Configuration\Web.config", @"../..\Terrasoft.Configuration/Web.config",
 		@".\conf/x.config", @"\\SRV01\share\Web.config", @"C:foo\bar.config", @"C:Web.config", @"C:\inetpub\wwwroot\x.config",
@@ -70,7 +74,42 @@ internal static class RedactionDifferentialCorpus {
 		yield return "Login failed for user 'zq_login'.\r\n   at System.Data.SqlClient.X.Y() --- End of stack trace";
 	}
 
-	/// <summary>Every corpus string with its stable id: "f:case-NNN:d|e|r" for a fixture row, "e:N" for an edge string,
+	// Tokens a prefix that shrinks under redaction (a URL, a credential pair, a JSON-escaped password, a path) can move
+	// across a cut: master cut BEFORE its chain at 500 and 2,400, and the fenced rendering cuts AFTER it at 300.
+	private static readonly string[] CrossingTokens = [
+		"user@foo-bar.example", "Login failed for user 'zq_login'", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ6cSJ9.c2lnbmF0dXJl",
+		"db01.internal:1433", "password=hunter2", "Bearer x7Kq2mVb9LpQ3", "\\\\" + "SRV01" + "\\" + "share" + "\\" + "Web.config"
+	];
+
+	private static readonly int[] CrossedCuts = [300, 500, 2_400];
+
+	private static string Filled(string head, char filler, int length) => head + new string(filler, Math.Max(1, length - head.Length));
+
+	// A prefix of the given length that redaction shortens.
+	private static string ShrinkingPrefix(string kind, int length) {
+		string quote = "\\" + "u0022";
+		return kind switch {
+			"url" => Filled("https://zq.example/", 'a', length),
+			"pair" => Filled("password=", 'p', length),
+			"json" => "{" + quote + "password" + quote + ":" + quote + new string('q', Math.Max(1, length - 35)) + quote + "}",
+			_ => Filled("C:" + "\\" + "data" + "\\", 'd', length)
+		};
+	}
+
+	/// <summary>The edge strings whose prefix shrinks under redaction, with a token straddling each cut.</summary>
+	internal static IEnumerable<string> ShrinkingPrefixStrings() {
+		foreach (int cut in CrossedCuts) {
+			foreach (string kind in new[] { "url", "pair", "json", "path" }) {
+				foreach (string token in CrossingTokens) {
+					foreach (int offset in new[] { 1, token.Length / 2, token.Length - 2 }) {
+						yield return ShrinkingPrefix(kind, cut - 1 - offset) + " " + token + " tail zqtail";
+					}
+				}
+			}
+		}
+	}
+
+	/// <summary>Every corpus string with its stable id: "f:case-NNN:d|e|r" for a fixture row, "e:N" for an edge string, "x:N" for a shrinking-prefix string,
 	/// "s:SEED:INDEX" for a random one.</summary>
 	internal static IEnumerable<(string Id, string Text)> Strings() {
 		foreach (SiteTextRedactionCase row in SiteTextRedactionFixtureTests.LoadRows()) {
@@ -81,6 +120,10 @@ internal static class RedactionDifferentialCorpus {
 		int edge = 0;
 		foreach (string text in EdgeStrings()) {
 			yield return ($"e:{edge++}", text);
+		}
+		int crossing = 0;
+		foreach (string text in ShrinkingPrefixStrings()) {
+			yield return ($"x:{crossing++}", text);
 		}
 		foreach (int seed in Seeds) {
 			Random random = new(seed);

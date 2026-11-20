@@ -57,33 +57,42 @@ public sealed class RedactorOptionBTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("PROPERTY: for every corpus input y and every stage E that runs after master's chain (Extra, Site, "
-		+ "ExtraCredentials, ExtraJson), every run of letters or digits in E(y) outside a placeholder is a substring of "
-		+ "y - a stage can only replace, never write text of its own.")]
+	[Description("PROPERTY, on each stage's REAL input over the whole corpus: Extra runs on MasterChain.Redact(y), Site on "
+		+ "Redact(y), ExtraCredentials on MasterChain.RedactCredentials(y) and ExtraJson on "
+		+ "MasterChain.RedactJsonCredentialProperties(y). For each, every run of letters or digits in its output outside a "
+		+ "placeholder is a substring of its input, and the output is its input with spans replaced by placeholders - a stage "
+		+ "can only replace, never write text of its own.")]
 	public void EveryStageAfterTheChain_ShouldOnlyReplaceSpans() {
 		// Arrange
-		(string Name, Func<string, string> Stage)[] stages = [
-			("Extra", SensitiveErrorTextRedactor.Extra), ("Site", SensitiveErrorTextRedactor.Site),
-			("ExtraCredentials", SensitiveErrorTextRedactor.ExtraCredentials), ("ExtraJson", SensitiveErrorTextRedactor.ExtraJson)
+		(string Name, Func<string, string> Input, Func<string, string> Stage)[] stages = [
+			("Extra", SensitiveErrorTextRedactor.MasterChain.Redact, SensitiveErrorTextRedactor.Extra),
+			("Site", SensitiveErrorTextRedactor.Redact, SensitiveErrorTextRedactor.Site),
+			("ExtraCredentials", SensitiveErrorTextRedactor.MasterChain.RedactCredentials, SensitiveErrorTextRedactor.ExtraCredentials),
+			("ExtraJson", SensitiveErrorTextRedactor.MasterChain.RedactJsonCredentialProperties, SensitiveErrorTextRedactor.ExtraJson)
 		];
-		List<string> wrong = [];
+		List<(string Id, string Text)> corpus = RedactionDifferentialCorpus.Strings().ToList();
+		System.Collections.Concurrent.ConcurrentBag<string> wrong = [];
+		int visited = 0;
 
 		// Act
-		foreach ((string _, string y) in RedactionDifferentialCorpus.Strings()) {
-			foreach ((string name, Func<string, string> stage) in stages) {
-				string output = SensitiveErrorTextRedactor.ExecuteRegex(() => stage(y));
+		System.Threading.Tasks.Parallel.ForEach(corpus, new System.Threading.Tasks.ParallelOptions { MaxDegreeOfParallelism = 4 }, entry => {
+			System.Threading.Interlocked.Increment(ref visited);
+			foreach ((string name, Func<string, string> input, Func<string, string> stage) in stages) {
+				string x = SensitiveErrorTextRedactor.ExecuteRegex(() => input(entry.Text));
+				string output = SensitiveErrorTextRedactor.ExecuteRegex(() => stage(x));
 				foreach (Match run in Run.Matches(Placeholder.Replace(output, " "))) {
-					if (!y.Contains(run.Value, StringComparison.Ordinal)) {
-						wrong.Add($"{name} wrote \"{run.Value}\" into \"{output}\" from \"{y}\"");
+					if (!x.Contains(run.Value, StringComparison.Ordinal)) {
+						wrong.Add($"{name} wrote \"{run.Value}\" into \"{output}\" from \"{x}\"");
 					}
 				}
-				if (!IsSpanReplacement(y, output)) {
-					wrong.Add($"{name} is no span replacement: \"{y}\" -> \"{output}\"");
+				if (!IsSpanReplacement(x, output)) {
+					wrong.Add($"{name} is no span replacement: \"{x}\" -> \"{output}\"");
 				}
 			}
-		}
+		});
 
 		// Assert
+		visited.Should().Be(RedactionDifferentialCorpus.ExpectedCount, because: "every corpus string is checked");
 		wrong.Should().BeEmpty(because: $"a stage after the chain may only replace spans; {wrong.Count} found:\n" + string.Join('\n', wrong.Take(20)));
 	}
 
@@ -105,6 +114,60 @@ public sealed class RedactorOptionBTests {
 		output.Should().Be(expected);
 	}
 
+	[TestCase("abcdef ghi", 0, 3, 2, 4, "[redacted] ghi", TestName = "Edits_OverlappingAreJoined")]
+	[TestCase("abc def ghi", 0, 3, 1, 9, "[redacted]i", TestName = "Edits_ContainedOneIsJoined")]
+	[TestCase("abc def ghi", 0, 3, 4, 3, "[redacted] [redacted-uri] ghi", TestName = "Edits_ApartStayApart")]
+	[Category("Unit")]
+	[Description("Edits that overlap are joined into one span - the earlier edit's placeholder, the union of both spans - "
+		+ "instead of the later one being dropped whole, which kept the part of it the earlier one did not reach.")]
+	public void ApplyEdits_ShouldJoinOverlappingEdits(string text, int firstStart, int firstLength, int secondStart,
+			int secondLength, string expected) {
+		// Arrange
+		SensitiveErrorTextRedactor.SpanEdit[] edits = [
+			new(firstStart, firstLength, "[redacted]"), new(secondStart, secondLength, "[redacted-uri]")
+		];
+
+		// Act
+		string output = SensitiveErrorTextRedactor.ApplyEdits(text, edits);
+
+		// Assert
+		output.Should().Be(expected);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A collapsing edit - the site cut's - becomes ONE placeholder, brackets and placeholders inside included.")]
+	public void ApplyEdits_ShouldCollapseTheCutsTail() {
+		// Arrange
+		const string text = "Denied.\n<html>(a) [redacted-uri] {b}</html>";
+
+		// Act
+		string output = SensitiveErrorTextRedactor.ApplyEdits(text, [new SensitiveErrorTextRedactor.SpanEdit(8, text.Length - 8, "[redacted]", Collapse: true)]);
+
+		// Assert
+		output.Should().Be("Denied.\n[redacted]");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The edit function is linear: 200,000 edits over a text with 100,000 placeholders take well under a "
+		+ "second. The loop that compared every edit with every placeholder took minutes here.")]
+	public void ApplyEdits_ShouldBeLinear_InTheEditsAndThePlaceholders() {
+		// Arrange
+		string text = string.Concat(Enumerable.Repeat("[redacted] ab ", 100_000));
+		SensitiveErrorTextRedactor.SpanEdit[] edits = [.. Enumerable.Range(0, 100_000)
+			.SelectMany(index => new SensitiveErrorTextRedactor.SpanEdit[] { new(index * 14 + 11, 2, "[redacted]"), new(index * 14 + 5, 2, "[redacted]") })];
+		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		string output = SensitiveErrorTextRedactor.ApplyEdits(text, edits);
+		watch.Stop();
+
+		// Assert
+		output.Should().NotContain("ab");
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2), because: "the edit function must stay linear");
+	}
+
 	#endregion
 
 	#region The shape: Redact = Extra(chain), RedactSiteText = Site(Redact), RedactCredentials = ExtraCredentials(chain)
@@ -114,8 +177,8 @@ public sealed class RedactorOptionBTests {
 	[Description("COMPOSITION at every entry point over the corpus sample: Redact is Extra applied to master's chain, "
 		+ "RedactSiteText is Site applied to Redact, RedactCredentials is ExtraCredentials applied to master's credentials "
 		+ "chain and RedactJsonCredentialProperties is ExtraJson applied to master's JSON rule - each a span replacement "
-		+ "of the stage before it. The fenced and console renderings carry Redact's or RedactSiteText's output, flattened "
-		+ "and cut.")]
+		+ "of the stage before it. The fenced and console renderings carry Redact's or RedactSiteText's output of master's "
+		+ "2,400-character cut, flattened and cut at 300.")]
 	public void EveryEntryPoint_ShouldBeTheFrozenChainThenSpanReplacements() {
 		// Arrange
 		List<string> wrong = [];
@@ -135,9 +198,11 @@ public sealed class RedactorOptionBTests {
 				&& IsSpanReplacement(credentialsChain, credentials), "RedactCredentials", text, credentials);
 			Check(json == SensitiveErrorTextRedactor.ExtraJson(jsonChain) && IsSpanReplacement(jsonChain, json),
 				"RedactJsonCredentialProperties", text, json);
-			CheckFenced(SensitiveErrorTextRedactor.RedactUntrustedOrNull(text), redact, "RedactUntrustedOrNull", text);
-			CheckFenced(SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text), site, "RedactUntrustedSiteTextOrNull", text);
-			CheckFenced(SensitiveErrorTextRedactor.RedactForConsoleOrNull(text), redact, "RedactForConsoleOrNull", text);
+			string cut = text.Length > 2_400 ? text[..2_400] : text;
+			CheckFenced(SensitiveErrorTextRedactor.RedactUntrustedOrNull(text), SensitiveErrorTextRedactor.Redact(cut), "RedactUntrustedOrNull", text);
+			CheckFenced(SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text), SensitiveErrorTextRedactor.RedactSiteText(cut),
+				"RedactUntrustedSiteTextOrNull", text);
+			CheckFenced(SensitiveErrorTextRedactor.RedactForConsoleOrNull(text), SensitiveErrorTextRedactor.Redact(cut), "RedactForConsoleOrNull", text);
 			Check(SensitiveErrorTextRedactor.RedactAll([text]).Single() == redact, "RedactAll", text, redact);
 		}
 
@@ -162,50 +227,7 @@ public sealed class RedactorOptionBTests {
 		}
 	}
 
-	private static readonly string[] CallSiteSamples = [
-		@"Insert refused. See ..\..\Terrasoft.Configuration\Web.config for the cause.",
-		"Login failed for user 'zq_login'. password=\"hunter2 x\" at db01.internal:1433 via redis:6379",
-		"Access denied\n   at Terrasoft.Core.Entities.Entity.Save() in C:\\src\\x.cs:line 4",
-		"Authorization: Bearer x7Kq2mVb9LpQ3 rejected; token: Basic X7q2Q; ConnectionPassword=hunter2",
-		"password=\"" + new string('a', 1990) + " hunter2\" end",
-	];
-
-	[TestCaseSource(nameof(CallSiteSamples))]
-	[Category("Unit")]
-	[Description("COMPOSITION at every wired call site (SiteTextWiringTests' 'wired:' readers and the fenced item paths): "
-		+ "each carries RedactSiteText's output of the site's text - redacted first, cut after - and that output is Site "
-		+ "applied to Redact, which is Extra applied to master's chain.")]
-	public void EveryWiredCallSite_ShouldCarryTheComposedSiteText(string text) {
-		// Arrange
-		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
-		string chain = SensitiveErrorTextRedactor.MasterChain.Redact(text);
-		string fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
-		string json = JsonSerializer.Serialize(new { success = false, errorInfo = new { message = text, errorCode = "x" } });
-
-		// Act
-		string message = SiteResponse.FromRefusal(new SiteHttpResponse(500, json)).Message;
-		string preview = CreatioResponseError.DescribeNonJsonResponse(text);
-		string keyed = ODataKeyedWrite.ValidateWriteResponse(JsonSerializer.Serialize(new { error = new { code = "", message = text } }));
-		string saved = PageSchemaMetadataHelper.ParseSaveErrorMessage(JObject.Parse(json), "Failed to save page schema");
-		Action service = () => DataServiceResponse.ThrowIfUnsuccessful(json, "Write");
-		string diagnostic = DataWriteDiagnostic.Create("insert", "Account", null, true, true, false, text).Message;
-		string inner = RecordDeletionService.ReadInnerMessage(JsonSerializer.Serialize(new {
-			error = new { message = "An error has occurred.", innererror = new { message = text } }
-		}));
-
-		// Assert
-		IsSpanReplacement(chain, SensitiveErrorTextRedactor.Redact(text)).Should().BeTrue(because: "Redact replaces spans of master's chain");
-		IsSpanReplacement(SensitiveErrorTextRedactor.Redact(text), site).Should().BeTrue(because: "Site replaces spans of Redact");
-		site.Should().StartWith(message.TrimEnd('\u2026'), because: "site-response.message is RedactSiteText's output, capped after");
-		preview.Should().Contain(" Response: " + (site.Length > 500 ? site[..500] + "..." : site),
-			because: "the non-JSON preview is RedactSiteText's output, cut after");
-		keyed.Should().StartWith(site, because: "the keyed write carries RedactSiteText's output of the OData message");
-		saved.Should().Be(site, because: "the designer's save error is RedactSiteText's output");
-		service.Should().Throw<InvalidOperationException>().Which.Message.Should().Be("Write failed: " + site);
-		diagnostic.Should().Be(fenced, because: "DataWriteDiagnostic.message is the fenced site rendering");
-		inner.Should().Be(SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(ProcessRunMonitor.FirstLine(text)),
-			because: "the refused delete's inner message is the fenced site rendering of its first line");
-	}
+	// The composition at every wired sink is RedactorSinkCompositionTests' (689 strings, every sink through its seam).
 
 	#endregion
 
@@ -282,12 +304,13 @@ public sealed class RedactorOptionBTests {
 	[TestCase("escaped-quotes", TestName = "Clamp_PasswordInEscapedQuotes")]
 	[TestCase("json-escaped", TestName = "Clamp_JsonEscapedPasswordProperty")]
 	[Category("Unit")]
-	[Description("Condition 3: nothing is clamped before master's chain. A password value of 21,000 characters crosses "
-		+ "every clamp #1990 had put before the chain - 16,000 at site-response.message, 4,000 at the non-JSON preview, "
-		+ "2,400 at the fenced rendering - and ClampAtBoundary's 512-character window after an opening quote, so a clamp "
-		+ "cuts it at an inner space. Redacted whole, it goes. Clamped first, master's quoted-value rules lose the closing "
-		+ "quote: the pair rule takes only the backslash of \\\" and the words stay.")]
-	public void EveryClampedSink_ShouldRedactBeforeItClamps(string shape) {
+	[Description("Condition 3 as master had it: each sink keeps master's cut where master had it - 2,400 before the fenced "
+		+ "rendering's chain, 500 before the non-JSON preview's, none before site-response's, which master capped after - "
+		+ "and adds no cut before the chain. A password value of 21,000 characters crosses every one. Master's cut leaves "
+		+ "it open, so master's quoted-value rules cannot close it and master keeps the words; Extra's rules for a value a "
+		+ "cut left open (after master's key=[redacted], and a JSON credential property) take them. site-response "
+		+ "redacts the whole value, then caps.")]
+	public void EveryCutSink_ShouldHideALongValue_ThatItsCutLeftOpen(string shape) {
 		// Arrange
 		string words = string.Join(' ', Enumerable.Repeat("zqword", 3000)) + " zqsecret";
 		string quote = "\\" + "u0022";
@@ -300,12 +323,59 @@ public sealed class RedactorOptionBTests {
 		string message = SiteResponse.FromRefusal(new SiteHttpResponse(500, json)).Message;
 		string preview = CreatioResponseError.DescribeNonJsonResponse(text);
 		string fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
+		string plainFenced = SensitiveErrorTextRedactor.RedactUntrustedOrNull(text);
 
 		// Assert
-		message.Should().NotContain("zqword", because: "site-response.message redacts the whole value before its cap");
-		preview.Should().NotContain("zqword", because: "the preview redacts the whole body before its cut");
-		fenced.Should().NotContain("zqword", because: "the fenced rendering redacts the whole text before its cut");
-		new[] { message, preview, fenced }.Should().AllSatisfy(sink => sink.Should().NotContain("zqsecret"));
+		new[] { message, preview, fenced, plainFenced }.Should().AllSatisfy(sink => {
+			sink.Should().NotContain("zqword", because: "no word of the long value may survive a cut");
+			sink.Should().NotContain("zqsecret");
+		});
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Condition 3: the cut runs where master ran it. The non-JSON preview cuts the body at 500 BEFORE the "
+		+ "redaction, so a 400-character URL that the redaction would shrink cannot move a token from beyond master's cut "
+		+ "into the preview; the fenced rendering cuts at 2,400 before it, so the same holds there.")]
+	public void CutsBeforeTheChain_ShouldStayWhereMasterHadThem() {
+		// Arrange
+		string url = "https://zq.example/" + new string('a', 381);
+		string body = url + " " + new string('x', 500 - url.Length - 1) + "TAIL zqbeyond";
+		string fencedText = url + " " + new string('x', 2_400 - url.Length - 1) + "TAIL zqbeyond";
+
+		// Act
+		string preview = CreatioResponseError.DescribeNonJsonResponse(body);
+		string fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(fencedText);
+
+		// Assert
+		preview.Should().NotContain("TAIL").And.NotContain("zqbeyond", because: "master cut the body at 500 before redacting");
+		fenced.Should().NotContain("zqbeyond", because: "master cut the fenced input at 2,400 before redacting");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The whole-call budget: a call that runs past it fails closed to the placeholder, whatever stage it is "
+		+ "in - plain C# in the edit function included, which no regex timeout stops.")]
+	public void EveryEntryPoint_ShouldFailClosed_WhenTheWholeCallRunsPastItsBudget() {
+		// Arrange
+		string text = string.Concat(Enumerable.Repeat("password=Basic X7q2 rejected; ", 20_000));
+
+		// Act
+		string redact;
+		string site;
+		string fenced;
+		using (SensitiveErrorTextRedactor.InjectBudgetForTests(TimeSpan.Zero)) {
+			redact = SensitiveErrorTextRedactor.Redact(text);
+			site = SensitiveErrorTextRedactor.RedactSiteText(text);
+			fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
+		}
+		string unbudgeted = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redact.Should().Be("[redacted]", because: "past its budget the call fails closed");
+		site.Should().Be("[redacted]");
+		fenced.Should().Be("[untrusted-source-text begin] [redacted] [untrusted-source-text end]");
+		unbudgeted.Should().NotBe("[redacted]", because: "the budget is reset after the call");
 	}
 
 	#endregion

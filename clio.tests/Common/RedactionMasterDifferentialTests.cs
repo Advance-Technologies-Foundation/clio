@@ -1,28 +1,26 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using Clio.Command;
-using Clio.Command.McpServer.Tools;
-using Clio.Command.RuntimeVerification;
+using System.Threading.Tasks;
 using Clio.Common;
-using Clio.Package;
 using FluentAssertions;
-using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 
 namespace Clio.Tests.Common;
 
 /// <summary>
 /// The redaction differential against MASTER, as a committed asset: every token of two or more letters or digits that
-/// master's redactor removed from a corpus string must not be visible in clio's output for that string, at any entry
-/// point and at any sink that carries a site's text. Master's removals are recorded once in
-/// <c>Fixtures/redaction-master-baseline.txt</c>, so the check runs without master's binary. Option B builds every entry
-/// point as master's frozen chain followed by span replacements, so the named trades are none: 0 by construction.
+/// master removed from a corpus string, at an entry point or at a sink that carries a site's text, must not be visible in
+/// this build's output of the same sink for that string. Master's real sink outputs are recorded once, through the same
+/// seams (<see cref="RedactionSinks"/>), in <c>Fixtures/redaction-master-baseline.txt.gz</c>, so the check runs without
+/// master's binary. The baseline also pins master's chain output for every string (<see cref="MasterChain_ShouldReproduceMastersOutput_ForEveryCorpusString"/>).
 /// </summary>
 [TestFixture]
 [Property("Module", "Common")]
@@ -30,71 +28,40 @@ public sealed class RedactionMasterDifferentialTests {
 
 	/// <summary>The recorded baseline, read from the source tree like the site-text fixture.</summary>
 	internal static readonly string BaselinePath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-		"..", "..", "..", "..", "clio.tests", "Common", "Fixtures", "redaction-master-baseline.txt"));
+		"..", "..", "..", "..", "clio.tests", "Common", "Fixtures", "redaction-master-baseline.txt.gz"));
 
-	// The master entry points, by the one-letter code the baseline file uses.
-	private static readonly (char Code, string Name)[] MasterEntries = [
-		('R', "Redact"), ('C', "RedactCredentials"), ('F', "RedactUntrustedOrNull")
-	];
+	// At most four workers, so the run stays one process's worth of load.
+	private static readonly ParallelOptions Workers = new() { MaxDegreeOfParallelism = 4 };
 
-	// Each clio entry point and the master entry point it is compared with. A fenced rendering is compared with what
-	// master's Redact AND master's fenced rendering removed: a token only master's 300-character cut dropped was never
-	// redacted, only cut.
-	private static readonly (string Name, Func<string, string> Run, string Master)[] ComparedEntries = [
-		("Redact", SensitiveErrorTextRedactor.Redact, "R"),
-		("RedactCredentials", SensitiveErrorTextRedactor.RedactCredentials, "C"),
-		("RedactSiteText", SensitiveErrorTextRedactor.RedactSiteText, "R"),
-		("RedactUntrustedOrNull", text => SensitiveErrorTextRedactor.RedactUntrustedOrNull(text) ?? string.Empty, "RF"),
-		("RedactUntrustedSiteTextOrNull", text => SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text) ?? string.Empty, "RF"),
-		("RedactForConsoleOrNull", text => SensitiveErrorTextRedactor.RedactForConsoleOrNull(text) ?? string.Empty, "RF"),
-	];
+	internal sealed record BaselineLine(string Hash, string RedactPin, string CredentialsPin, Dictionary<char, Dictionary<string, int>> Removed);
 
-	// The sinks that carry a site's text, each compared with master's Redact, which is what master's site sinks ran.
-	// A sink's own prose is subtracted: the tokens it writes for a text with no tokens.
-	private static readonly (string Name, Func<string, string> Run)[] ComparedSinks = [
-		("site-response.message", text => SiteResponse.FromRefusal(new SiteHttpResponse(500,
-			JsonSerializer.Serialize(new { errorInfo = new { message = text } }))).Message ?? string.Empty),
-		("non-JSON preview", CreatioResponseError.DescribeNonJsonResponse),
-		("keyed write", text => ODataKeyedWrite.ValidateWriteResponse(JsonSerializer.Serialize(new { error = new { code = "", message = text } })) ?? string.Empty),
-		("designer save error", text => PageSchemaMetadataHelper.ParseSaveErrorMessage(
-			JObject.Parse(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = text } })), "-")),
-		("DataService failure", text => {
-			try {
-				DataServiceResponse.ThrowIfUnsuccessful(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = text } }), "Write");
-				return string.Empty;
-			}
-			catch (InvalidOperationException exception) {
-				return exception.Message;
-			}
-		}),
-		("DataWriteDiagnostic.message", text => DataWriteDiagnostic.Create("insert", "Account", null, true, true, false, text).Message ?? string.Empty),
-		("refused delete's inner message", text => RecordDeletionService.ReadInnerMessage(JsonSerializer.Serialize(new {
-			error = new { message = "An error has occurred.", innererror = new { message = text } }
-		})) ?? string.Empty),
-		("compile-status diagnostic", text => CompileStatusTool.RenderError(new PackageBuildDiagnostic("CS0103", text, "x.cs", 1, 2, false))),
-	];
-
-	private sealed record BaselineLine(string Hash, Dictionary<char, Dictionary<string, int>> Removed);
-
-	private static Dictionary<string, BaselineLine> ReadBaseline(out string header) {
+	internal static Dictionary<string, BaselineLine> ReadBaseline(out string header) {
 		Dictionary<string, BaselineLine> lines = new(StringComparer.Ordinal);
 		StringBuilder headerText = new();
-		foreach (string line in File.ReadLines(BaselinePath)) {
+		using GZipStream unzip = new(File.OpenRead(BaselinePath), CompressionMode.Decompress);
+		using StreamReader reader = new(unzip, Encoding.UTF8);
+		while (reader.ReadLine() is { } line) {
 			if (line.StartsWith('#')) {
 				headerText.AppendLine(line);
 				continue;
 			}
 			string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 			Dictionary<char, Dictionary<string, int>> removed = [];
-			foreach (string entry in parts.Skip(2)) {
-				removed[entry[0]] = entry[2..].Split(',').Select(token => token.Split('*'))
-					.ToDictionary(pair => pair[0], pair => pair.Length > 1 ? int.Parse(pair[1]) : 1, StringComparer.Ordinal);
+			foreach (string entry in parts.Skip(4)) {
+				removed[entry[0]] = entry[2] == '^'
+					? removed[entry[3]]
+					: entry[2..].Split(',').Select(token => token.Split('*'))
+						.ToDictionary(pair => pair[0], pair => pair.Length > 1 ? int.Parse(pair[1]) : 1, StringComparer.Ordinal);
 			}
-			lines[parts[0]] = new BaselineLine(parts[1], removed);
+			lines[parts[0]] = new BaselineLine(parts[1], parts[2][1..], parts[3][1..], removed);
 		}
 		header = headerText.ToString();
 		return lines;
 	}
+
+	/// <summary>The first sixteen hex digits of the SHA-256 of a chain's output: the output pin.</summary>
+	internal static string Pin(string output) =>
+		Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(output ?? string.Empty)))[..16].ToLowerInvariant();
 
 	/// <summary>The tokens <paramref name="output"/> no longer holds of <paramref name="text"/>, with how many of each.</summary>
 	internal static Dictionary<string, int> RemovedTokens(string text, string output) {
@@ -104,16 +71,10 @@ public sealed class RedactionMasterDifferentialTests {
 			.ToDictionary(pair => pair.Key, pair => pair.Value - kept.GetValueOrDefault(pair.Key), StringComparer.Ordinal);
 	}
 
-	// What master removed for a compared entry: one baseline entry, or the smaller count of two.
-	private static Dictionary<string, int> MasterRemoved(BaselineLine line, string codes) {
-		Dictionary<string, int> first = line.Removed.GetValueOrDefault(codes[0]) ?? [];
-		if (codes.Length == 1) {
-			return first;
-		}
-		Dictionary<string, int> second = line.Removed.GetValueOrDefault(codes[1]) ?? [];
-		return first.Where(pair => second.ContainsKey(pair.Key))
+	// What both removed: the smaller count of each token in both.
+	private static Dictionary<string, int> Both(Dictionary<string, int> first, Dictionary<string, int> second) =>
+		first.Where(pair => second.ContainsKey(pair.Key))
 			.ToDictionary(pair => pair.Key, pair => Math.Min(pair.Value, second[pair.Key]), StringComparer.Ordinal);
-	}
 
 	/// <summary>Every token master removed that the output shows again, after the sink's own prose is subtracted.</summary>
 	internal static IEnumerable<string> ShownAgain(string text, Dictionary<string, int> masterRemoved, string output,
@@ -128,63 +89,108 @@ public sealed class RedactionMasterDifferentialTests {
 		}
 	}
 
+	private static string Run(Func<RedactionSinks, string, string> sink, RedactionSinks sinks, string text) {
+		try {
+			return sink(sinks, text);
+		}
+		catch (Exception exception) {
+			return "[threw " + exception.GetType().Name + "]";
+		}
+	}
+
 	[Test]
 	[Category("Unit")]
-	[Description("THE DIFFERENTIAL AGAINST MASTER: for every corpus string, no token of two or more letters or digits that "
-		+ "master's redactor removed is visible in clio's output - at every entry point, and at every sink that carries a "
-		+ "site's text, long values across each clamp and the cut cases included. Option B declares no trade; what clio "
-		+ "removes MORE is allowed and counted. A corpus string whose hash differs from the baseline's means the generator "
-		+ "changed: regenerate the baseline.")]
+	[Description("THE DIFFERENTIAL AGAINST MASTER: for every corpus string - the fixture in three spellings, the edge "
+		+ "strings across every clamp and cut, the strings whose prefix shrinks under redaction with a token across a cut, "
+		+ "and 3 x 4,000 seeded strings - no token of two or more letters or digits that master removed at an entry point "
+		+ "or at a site sink is visible in this build's output of the same sink: Redact, RedactCredentials, "
+		+ "RedactJsonCredentialProperties, both fenced renderings and the console one, site-response's message and code, "
+		+ "the non-JSON preview, the OData error call sites, the keyed write, the DataService failure, the designer's save "
+		+ "error, the batch item error, compile-status' diagnostic and message tail, a refused delete's inner message and "
+		+ "DataWriteDiagnostic. Option B declares no trade; what this build removes MORE is allowed and counted.")]
 	public void EveryEntryPointAndSink_ShouldShowNoTokenMasterRemoved() {
 		// Arrange
 		Dictionary<string, BaselineLine> baseline = ReadBaseline(out string header);
-		Dictionary<string, Dictionary<string, int>> sinkProse = ComparedSinks.ToDictionary(sink => sink.Name,
-			sink => RedactionDifferentialCorpus.Tokens(sink.Run("-")));
-		List<string> drift = [];
-		List<string> shown = [];
-		Dictionary<string, int> removedMore = ComparedEntries.Select(entry => entry.Name).ToDictionary(name => name, _ => 0);
+		RedactionSinks sinks = new(typeof(SensitiveErrorTextRedactor).Assembly);
+		Dictionary<string, Dictionary<string, int>> prose = RedactionSinks.Compared.ToDictionary(compared => compared.Name,
+			compared => RedactionDifferentialCorpus.Tokens(Run(compared.Run, sinks, "-")));
+		List<(string Id, string Text)> corpus = RedactionDifferentialCorpus.Strings().ToList();
+		ConcurrentBag<string> drift = [];
+		ConcurrentBag<string> shown = [];
+		ConcurrentDictionary<string, int> removedMore = new();
+		ConcurrentDictionary<string, byte> seen = new();
 
 		// Act
-		int index = 0;
-		foreach ((string id, string text) in RedactionDifferentialCorpus.Strings()) {
+		Parallel.ForEach(corpus, Workers, entry => {
+			(string id, string text) = entry;
 			if (!baseline.TryGetValue(id, out BaselineLine line) || line.Hash != RedactionDifferentialCorpus.Hash(text)) {
 				drift.Add(id);
-				continue;
+				return;
 			}
-			foreach ((string name, Func<string, string> run, string master) in ComparedEntries) {
-				Dictionary<string, int> removed = MasterRemoved(line, master);
-				string output = run(text);
-				shown.AddRange(ShownAgain(text, removed, output).Select(token => $"{name} shows \"{token}\" of {id}: \"{text}\" -> \"{output}\""));
-				if (RemovedTokens(text, output).Any(pair => pair.Value > removed.GetValueOrDefault(pair.Key))) {
-					removedMore[name]++;
+			seen[id] = 0;
+			foreach ((string name, char code, Func<RedactionSinks, string, string> run) in RedactionSinks.Compared) {
+				Dictionary<string, int> removed = line.Removed.GetValueOrDefault(code) ?? [];
+				string output = Run(run, sinks, text);
+				foreach (string token in ShownAgain(text, removed, output, prose[name])) {
+					shown.Add($"{name} shows \"{token}\" of {id}: \"{text}\" -> \"{output}\"");
+				}
+				if (RemovedTokens(text, output).Any(pair => pair.Value - (prose[name].GetValueOrDefault(pair.Key)) > removed.GetValueOrDefault(pair.Key))) {
+					removedMore.AddOrUpdate(name, 1, (_, count) => count + 1);
 				}
 			}
-			bool sinkSample = !id.StartsWith("s:", StringComparison.Ordinal) || index % 8 == 0;
-			index++;
-			if (!sinkSample || !line.Removed.TryGetValue('R', out Dictionary<string, int> masterRedact)) {
-				continue;
-			}
-			foreach ((string name, Func<string, string> run) in ComparedSinks) {
-				string output = run(text);
-				shown.AddRange(ShownAgain(text, masterRedact, output, sinkProse[name])
-					.Select(token => $"{name} shows \"{token}\" of {id}: \"{text}\" -> \"{output}\""));
-			}
-		}
-		TestContext.Out.WriteLine("Removes more than master (strings): " + string.Join(", ", removedMore.Select(pair => $"{pair.Key} {pair.Value}")));
+		});
+		TestContext.Out.WriteLine($"Strings visited: {seen.Count} of {corpus.Count}; baseline lines: {baseline.Count}");
+		TestContext.Out.WriteLine("Removes more than master (strings): " + string.Join(", ",
+			RedactionSinks.Compared.Select(compared => $"{compared.Name} {removedMore.GetValueOrDefault(compared.Name)}")));
 
 		// Assert
 		header.Should().Contain(MasterChainHashTests.MasterCommit, because: "the baseline names the master build it records");
 		drift.Should().BeEmpty(because: "the corpus generator must match the recorded baseline; regenerate it after a change");
-		shown.Should().BeEmpty(because: $"a token master hid must stay hidden, and option B trades none; {shown.Count} shown:\n"
-			+ string.Join('\n', shown.Take(40)));
+		seen.Count.Should().Be(corpus.Count, because: "every corpus string is compared");
+		baseline.Keys.Should().BeSubsetOf(seen.Keys, because: "every recorded string must have been seen");
+		corpus.Count.Should().Be(RedactionDifferentialCorpus.ExpectedCount, because: "the corpus has the stated size");
+		shown.Should().BeEmpty(because: $"a token master hid must stay hidden at every sink, and option B trades none; "
+			+ $"{shown.Count} shown:\n" + string.Join('\n', shown.Take(40)));
 	}
 
 	[Test]
-	[Explicit("Regenerates Fixtures/redaction-master-baseline.txt from a master build: set CLIO_MASTER_DLL to its clio.dll "
-		+ "and CLIO_MASTER_COMMIT to its full commit id.")]
 	[Category("Unit")]
-	[Description("Rebuilds the recorded master baseline: loads master's clio.dll into its own load context, runs its "
-		+ "Redact, RedactCredentials and RedactUntrustedOrNull over the corpus, and records the tokens each removed.")]
+	[Description("Condition 1, the OUTPUT PIN: for every corpus string, the frozen chain's Redact and RedactCredentials "
+		+ "return exactly what master's build returned (the 16-hex SHA-256 prefix recorded in the baseline). A changed "
+		+ "evaluator, a dropped or reordered call, or a pattern edit fails here even where the pattern hash cannot see it.")]
+	public void MasterChain_ShouldReproduceMastersOutput_ForEveryCorpusString() {
+		// Arrange
+		Dictionary<string, BaselineLine> baseline = ReadBaseline(out _);
+		List<(string Id, string Text)> corpus = RedactionDifferentialCorpus.Strings().ToList();
+		ConcurrentBag<string> differs = [];
+
+		// Act
+		Parallel.ForEach(corpus, Workers, entry => {
+			if (!baseline.TryGetValue(entry.Id, out BaselineLine line)) {
+				differs.Add(entry.Id + " has no baseline line");
+				return;
+			}
+			if (Pin(SensitiveErrorTextRedactor.ExecuteRegex(() => SensitiveErrorTextRedactor.MasterChain.Redact(entry.Text))) != line.RedactPin) {
+				differs.Add($"Redact of {entry.Id}: \"{entry.Text}\"");
+			}
+			if (Pin(SensitiveErrorTextRedactor.ExecuteRegex(() => SensitiveErrorTextRedactor.MasterChain.RedactCredentials(entry.Text))) != line.CredentialsPin) {
+				differs.Add($"RedactCredentials of {entry.Id}: \"{entry.Text}\"");
+			}
+		});
+
+		// Assert
+		differs.Should().BeEmpty(because: $"the frozen chain is master {MasterChainHashTests.MasterCommit}'s, output for "
+			+ $"output; {differs.Count} differ:\n" + string.Join('\n', differs.Take(20)));
+	}
+
+	[Test]
+	[Explicit("Regenerates Fixtures/redaction-master-baseline.txt.gz from a master build: set CLIO_MASTER_DLL to its "
+		+ "clio.dll and CLIO_MASTER_COMMIT to its full commit id.")]
+	[Category("Unit")]
+	[Description("Rebuilds the recorded master baseline: loads master's clio.dll into its own load context, runs every "
+		+ "sink of RedactionSinks.All through master's own seams over the corpus, and records, per sink, the tokens master's "
+		+ "output removed - for a sink that cuts after its chain, those its uncut companion removed too - and the output pins "
+		+ "of master's Redact and RedactCredentials.")]
 	public void RegenerateMasterBaseline() {
 		// Arrange
 		string dll = Environment.GetEnvironmentVariable("CLIO_MASTER_DLL");
@@ -192,32 +198,49 @@ public sealed class RedactionMasterDifferentialTests {
 		if (string.IsNullOrEmpty(dll) || string.IsNullOrEmpty(commit)) {
 			Assert.Ignore("set CLIO_MASTER_DLL and CLIO_MASTER_COMMIT");
 		}
-		Type master = new AssemblyLoadContext("master-redactor").LoadFromAssemblyPath(Path.GetFullPath(dll))
-			.GetType("Clio.Common.SensitiveErrorTextRedactor", throwOnError: true);
-		Dictionary<char, MethodInfo> entries = MasterEntries.ToDictionary(entry => entry.Code, entry =>
-			master.GetMethod(entry.Name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, [typeof(string)]));
-		StringBuilder file = new();
-		file.AppendLine("# Redaction differential baseline: the tokens MASTER's SensitiveErrorTextRedactor removed from each corpus string.");
-		file.AppendLine($"# master {commit}, clio Debug net10.0");
-		file.AppendLine("# corpus RedactionDifferentialCorpus: fixture rows x 3 spellings + the edge strings + seeds "
-			+ $"{string.Join(',', RedactionDifferentialCorpus.Seeds)} x {RedactionDifferentialCorpus.StringsPerSeed}");
-		file.AppendLine("# entries R=Redact C=RedactCredentials F=RedactUntrustedOrNull; line: <id> <sha256-8 of input> [<entry>=<token>[*count],...]");
-		file.AppendLine("# regenerate: RedactionMasterDifferentialTests.RegenerateMasterBaseline (README.md next to this file)");
+		Assembly master = new AssemblyLoadContext("master-redactor").LoadFromAssemblyPath(Path.GetFullPath(dll));
+		RedactionSinks sinks = new(master);
+		sinks.SiteBuild.Should().BeFalse(because: "the baseline is recorded from master's build");
+		List<(string Id, string Text)> corpus = RedactionDifferentialCorpus.Strings().ToList();
+		string[] lines = new string[corpus.Count];
 
 		// Act
-		foreach ((string id, string text) in RedactionDifferentialCorpus.Strings()) {
-			file.Append(id).Append(' ').Append(RedactionDifferentialCorpus.Hash(text));
-			foreach ((char code, MethodInfo method) in entries) {
-				Dictionary<string, int> removed = RemovedTokens(text, (string)method.Invoke(null, [text]) ?? string.Empty);
-				if (removed.Count > 0) {
-					file.Append(' ').Append(code).Append('=').AppendJoin(',',
-						removed.OrderBy(pair => pair.Key, StringComparer.Ordinal)
-							.Select(pair => pair.Value == 1 ? pair.Key : $"{pair.Key}*{pair.Value}"));
+		Parallel.For(0, corpus.Count, Workers, index => {
+			(string id, string text) = corpus[index];
+			StringBuilder line = new();
+			line.Append(id).Append(' ').Append(RedactionDifferentialCorpus.Hash(text))
+				.Append(" P").Append(Pin(sinks.Redact(text))).Append(" Q").Append(Pin(sinks.RedactCredentials(text)));
+			List<(char Code, string Encoded)> written = [];
+			foreach (RedactionSinks.Sink sink in RedactionSinks.All) {
+				Dictionary<string, int> removed = RemovedTokens(text, Run(sink.Run, sinks, text));
+				if (sink.Uncut is not null) {
+					removed = Both(removed, RemovedTokens(text, Run(sink.Uncut, sinks, text)));
 				}
+				if (removed.Count == 0) {
+					continue;
+				}
+				string encoded = string.Join(',', removed.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+					.Select(pair => pair.Value == 1 ? pair.Key : $"{pair.Key}*{pair.Value}"));
+				(char Code, string Encoded) same = written.FirstOrDefault(earlier => earlier.Encoded == encoded);
+				line.Append(' ').Append(sink.Code).Append('=').Append(same.Code != default ? "^" + same.Code : encoded);
+				written.Add((sink.Code, encoded));
 			}
-			file.Append('\n');
+			lines[index] = line.ToString();
+		});
+		using (GZipStream zip = new(File.Create(BaselinePath), CompressionLevel.SmallestSize))
+		using (StreamWriter writer = new(zip, new UTF8Encoding(false))) {
+			writer.NewLine = "\n";
+			writer.WriteLine("# Redaction differential baseline: per corpus string, the tokens MASTER's sinks removed, and pins of master's chain output.");
+			writer.WriteLine($"# master {commit}, clio Debug net10.0");
+			writer.WriteLine("# corpus RedactionDifferentialCorpus: fixture rows x 3 spellings + the edge strings + the shrinking-prefix strings + seeds "
+				+ $"{string.Join(',', RedactionDifferentialCorpus.Seeds)} x {RedactionDifferentialCorpus.StringsPerSeed}");
+			writer.WriteLine("# sinks RedactionSinks.All: " + string.Join("; ", RedactionSinks.All.Select(sink => $"{sink.Code}={sink.Name}")));
+			writer.WriteLine("# line: <id> <sha256-8 of input> P<pin of Redact> Q<pin of RedactCredentials> [<sink>=<token>[*count],... | <sink>=^<earlier sink with the same set>]");
+			writer.WriteLine("# regenerate: RedactionMasterDifferentialTests.RegenerateMasterBaseline (README.md next to this file)");
+			foreach (string line in lines) {
+				writer.WriteLine(line);
+			}
 		}
-		File.WriteAllText(BaselinePath, file.ToString());
 
 		// Assert
 		File.Exists(BaselinePath).Should().BeTrue();

@@ -126,16 +126,15 @@ internal static partial class CreatioResponseError {
 		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
 			? $" The server answered with an {MarkupStatusPhrase(statusCode)}."
 			: string.Empty;
-		// The preview is the site's own text, so it takes the site-text redaction: a stack trace or an HTML page
-		// after a line break goes, as do sign-in and server names. The callers still Redact the whole sentence.
-		// REDACTED FIRST, then cut to the preview length: cutting first split a token or a quoted name at the cut, and
-		// the half left before it matched no rule ("…for user 'inven" kept "inven", a JWT kept its first segments).
-		// Nothing is clamped before the redaction (option B, condition 3): the whole body goes through master's chain.
+		// MASTER'S ORDER (option B): the body is cut to the preview length FIRST, exactly where master cut it, and the
+		// callers Redact the whole sentence after, as on master. What clio adds is the site-text redaction of that
+		// preview, which runs on master's cut text: a stack trace or an HTML page after a line break goes, as do sign-in
+		// and server names, and nothing master's chain removed from the cut text can show again.
 		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: "
-			+ Truncate(SensitiveErrorTextRedactor.RedactSiteText(body));
+			+ SensitiveErrorTextRedactor.RedactSiteText(Truncate(body));
 	}
 
-	// The preview length of a non-JSON body, cut after the redaction.
+	// The preview length of a non-JSON body: master's cut, before any redaction.
 	private const int PreviewLength = 500;
 
 	/// <summary>

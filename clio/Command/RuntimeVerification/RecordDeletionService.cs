@@ -507,10 +507,11 @@ internal sealed class RecordDeletionService(
 			if (inner is null) {
 				return null;
 			}
-			// Not cut here: a cut before the redaction split a token or a quoted name, and the half before it matched
-			// no rule. The fenced rendering clamps its input itself - at a word boundary, BEFORE it redacts - and
-			// caps its output after.
-			return UntrustedText.FencedSiteText(ProcessRunMonitor.FirstLine(inner));
+			// MASTER'S ORDER (option B): the first line, cut to 500 characters, then the fenced rendering, exactly as
+			// master read it. FirstLine and the 500 cut run before the chain because master ran them there; the
+			// fenced site-text rendering then redacts that text with master's chain first and caps it at 300.
+			string firstLine = ProcessRunMonitor.FirstLine(inner);
+			return UntrustedText.FencedSiteText(firstLine.Length > 500 ? firstLine[..500] : firstLine);
 		}
 		catch (System.Text.Json.JsonException) {
 			return null;
