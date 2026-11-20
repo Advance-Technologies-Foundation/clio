@@ -180,9 +180,8 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 		});
 	}
 
-	// The longest preview of a non-JSON body, and how much more than that the redaction reads.
+	// The longest preview of a non-JSON body: master's 200.
 	private const int NonJsonPreviewLength = 200;
-	private const int NonJsonPreviewRedactionInputFactor = 8;
 
 	private static string BuildNonJsonErrorMessage(string url, string responseBody, Exception parseException) {
 		string trimmed = (responseBody ?? string.Empty).TrimStart();
@@ -195,18 +194,20 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 				+ "2) `IsNetCore` flag matches the target instance (omit for .NET Framework, add --IsNetCore for .NET Core); "
 				+ "3) the target Creatio version exposes `/rest/schema.template.api/templates` (Creatio 7.18+).";
 		}
-		// The preview is the site's text: redacted as such BEFORE the cap, so a token that straddles the cap is still
-		// recognized whole. The input is clamped first (ClampAtBoundary), so a page-sized body cannot time the chain out
-		// and lose the preview, and never inside a token.
-		string redacted = SensitiveErrorTextRedactor.RedactSiteText(SensitiveErrorTextRedactor.ClampAtBoundary(
-			responseBody, NonJsonPreviewLength * NonJsonPreviewRedactionInputFactor));
+		// The preview is the site's text, in master's order (option B): master's own 200-character cut runs first,
+		// exactly where master made it (never splitting a surrogate pair), then the site-text redaction, whose
+		// end-of-text rules take what the cut left open ("for user 'zq inv", a JWT's first segments). The "…" marker is
+		// appended after the redaction, so those rules read the cut's end as the end of the text. No clamp of clio's own
+		// runs before the chain.
 		string snippet;
-		if (string.IsNullOrWhiteSpace(redacted)) {
+		if (string.IsNullOrWhiteSpace(responseBody)) {
 			snippet = "<empty body>";
-		} else if (redacted.Length > NonJsonPreviewLength) {
-			snippet = TextUtilities.TruncateWithoutSplittingSurrogatePair(redacted, NonJsonPreviewLength) + "…";
 		} else {
-			snippet = redacted;
+			bool cut = responseBody.Length > NonJsonPreviewLength;
+			string redacted = SensitiveErrorTextRedactor.RedactSiteText(cut
+				? TextUtilities.TruncateWithoutSplittingSurrogatePair(responseBody, NonJsonPreviewLength)
+				: responseBody);
+			snippet = string.IsNullOrWhiteSpace(redacted) ? "<empty body>" : cut ? redacted + "…" : redacted;
 		}
 		return $"Page template catalog endpoint returned an unparseable response (URL: {url}). "
 			+ $"Parser error: {parseException.Message}. Response preview: {snippet}";

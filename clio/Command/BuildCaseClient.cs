@@ -191,15 +191,13 @@ public sealed class BuildCaseClient(
 		return false;
 	}
 
-	// A body the site answered with, quoted back: it is the site's text, so it takes the site-text redaction BEFORE
-	// the cap (a token straddling the cap is still recognized whole), on an input clamped as everywhere else. Every
+	// A body the site answered with, quoted back: it is the site's text, so it takes the site-text redaction, in
+	// master's order (option B): master quoted Cap(responseBody), so master's 400-character cap runs first, exactly where
+	// master made it, and RedactSiteText reads what master quoted, "..." included; its end-of-text rules take what the
+	// cap left open ("for user 'zq inv...", a JWT's first segments). No clamp of clio's own runs before the chain. Every
 	// dynamic-case tool quotes it into its error and its log line, beside ReadServerText's already redacted text.
 	private static string SiteDetail(string responseBody) =>
-		Cap(SensitiveErrorTextRedactor.RedactSiteText(SensitiveErrorTextRedactor.ClampAtBoundary(
-			(responseBody ?? string.Empty).Trim(), MaxDetailLength * RedactionInputFactor)));
-
-	// How much more of a body than MaxDetailLength the redaction reads.
-	private const int RedactionInputFactor = 8;
+		SensitiveErrorTextRedactor.RedactSiteText(Cap(responseBody)).Trim();
 
 	private static string Cap(string text) {
 		string trimmed = (text ?? string.Empty).Trim();

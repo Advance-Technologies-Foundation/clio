@@ -31,9 +31,11 @@ internal static class ProcessDesignServerFault {
 	/// <remarks>
 	/// The fault is the site's text, so it takes the site-text redaction here, where it is read: every caller quotes
 	/// it into an exception message that becomes the tool's error and its log line, and a stdio log is not redacted
-	/// again. The redaction runs BEFORE the cap, on an input clamped to a multiple of it, so a token straddling the cap
-	/// is still recognized whole and a page-sized fault cannot time the chain out. The WCF request-deserialization
-	/// prefix <see cref="IsUnreadableRequest"/> looks for is plain prose that no rule takes.
+	/// again. The redaction runs in master's order (option B): master's own 400-character cut first, exactly where master
+	/// made it (never splitting a surrogate pair), then <see cref="SensitiveErrorTextRedactor.RedactSiteText"/> over what
+	/// master returned, "..." included; its end-of-text rules take what the cut left open. No clamp of clio's own runs
+	/// before the chain. The WCF request-deserialization prefix <see cref="IsUnreadableRequest"/> looks for is plain prose
+	/// that no rule takes.
 	/// </remarks>
 	/// <param name="responseBody">The body the server answered.</param>
 	internal static string? ReadServerText(string? responseBody) {
@@ -45,21 +47,16 @@ internal static class ProcessDesignServerFault {
 			if (string.IsNullOrWhiteSpace(text)) {
 				return null;
 			}
-			text = SensitiveErrorTextRedactor.RedactSiteText(SensitiveErrorTextRedactor.ClampAtBoundary(
-				text.Trim(), MaxServerTextLength * RedactionInputFactor)).Trim();
-			if (text.Length == 0) {
-				return null;
-			}
-			return text.Length <= MaxServerTextLength
+			text = text.Trim();
+			string quoted = text.Length <= MaxServerTextLength
 				? text
 				: TextUtilities.TruncateWithoutSplittingSurrogatePair(text, MaxServerTextLength) + "...";
+			string redacted = SensitiveErrorTextRedactor.RedactSiteText(quoted).Trim();
+			return redacted.Length == 0 ? null : redacted;
 		} catch (JsonException) {
 			return null;
 		}
 	}
-
-	// How much more of the fault than MaxServerTextLength the redaction reads.
-	private const int RedactionInputFactor = 8;
 
 	/// <summary>
 	/// True when <paramref name="serverText"/> is WCF's request-deserialization failure. WCF answers it when it

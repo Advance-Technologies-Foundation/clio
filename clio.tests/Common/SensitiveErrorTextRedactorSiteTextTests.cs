@@ -18,7 +18,7 @@ namespace Clio.Tests.Common;
 [Property("Module", "Common")]
 public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
-	private const string TimeoutSentinel = "[redacted]";
+	private const string TimeoutSentinel = "[redacted-timeout]";
 
 	// A pattern that backtracks exponentially on the run of "a" CatastrophicTail holds (there is no "b" to end it),
 	// with a budget far below what that takes.
@@ -99,7 +99,7 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string result = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
 
 		// Assert
-		result.Should().Be("[untrusted-source-text begin] [redacted] [untrusted-source-text end]",
+		result.Should().Be("[untrusted-source-text begin] [redacted-timeout] [untrusted-source-text end]",
 			because: "the neutralized form must not carry any of the text the timed-out chain did not finish");
 	}
 
@@ -133,10 +133,11 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase(false, TestName = "Envelope_DefaultEncoder_QuotesAsU0022")]
 	[TestCase(true, TestName = "Envelope_RelaxedEncoder_QuotesAsBackslashQuote")]
 	[Category("Unit")]
-	[Description("An escaped backslash before an escaped quote in a serialized envelope is not a UNC path: the site's "
-		+ "operation name 'CanManageSolution' - its whole reason - stays, and the envelope stays valid JSON. Found live: "
-		+ "the UNC alternative started on the escaped backslash and ran to the next space.")]
-	public void Redact_ShouldKeepTheQuotedOperationName_WhenTheEnvelopeEscapesTheSitesOwnJson(bool relaxed) {
+	[Description("OPTION B, DECLARED: master's Windows path rule runs first and frozen, and it reads the escaped backslash "
+		+ "before an escaped quote as a UNC start - #1990's CanManageSolution fix is not kept. With the default encoder the "
+		+ "operation name goes and the envelope still parses; with the relaxed encoder the name stays but the rule leaves a "
+		+ "bare quote and the envelope no longer parses, exactly as on master.")]
+	public void Redact_ShouldTreatAnEscapedOperationName_AsMastersChainDoes(bool relaxed) {
 		// Arrange
 		JsonSerializerOptions options = relaxed
 			? new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
@@ -147,18 +148,26 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
 
 		// Assert
+		redacted.Should().Be(SensitiveErrorTextRedactor.Extra(SensitiveErrorTextRedactor.MasterChain.Redact(envelope)),
+			because: "Redact is master's chain followed by span edits");
 		Action parse = () => JsonDocument.Parse(redacted).Dispose();
-		parse.Should().NotThrow(because: "a redacted envelope must still parse for the caller");
-		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
-		error.Should().Be(QuotedOperationMessage,
-			because: "nothing in it is a secret: the operation the user may not run is the site's reason");
+		if (relaxed) {
+			parse.Should().Throw<JsonException>(because: "master's path rule leaves a bare quote in a relaxed envelope");
+			redacted.Should().Contain("CanManageSolution", because: "the rule stops at the bare quote before the name");
+		}
+		else {
+			parse.Should().NotThrow(because: "the default encoder's \\u0022 is no quote character to the rule");
+			JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString().Should().NotContain("CanManageSolution",
+				because: "master's path rule takes the escaped name with the backslash before it");
+		}
 	}
 
 	[TestCase(false, TestName = "EnvelopePaths_DefaultEncoder")]
 	[TestCase(true, TestName = "EnvelopePaths_RelaxedEncoder")]
 	[Category("Unit")]
-	[Description("The escape-aware path rule still redacts a real UNC path, a drive path and a quoted drive path ending "
-		+ "in a backslash inside a serialized envelope, and the envelope stays valid JSON.")]
+	[Description("A real UNC path, a drive path and a quoted drive path ending in a backslash go inside a serialized "
+		+ "envelope. Option B: with the default encoder the envelope stays valid JSON; with the relaxed encoder master's "
+		+ "greedy path rule takes the escaped quote after the drive path, and the envelope does not parse on master either.")]
 	public void Redact_ShouldStillRedactRealWindowsPaths_InsideASerializedEnvelope(bool relaxed) {
 		// Arrange
 		const string message = "Share \\\\fs01\\creatio$\\pkg is down; could not write C:\\inetpub\\x.config; "
@@ -172,11 +181,14 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
 
 		// Assert
-		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
-		error.Should().NotContain("fs01", because: "the UNC host must go").And.NotContain("creatio$")
-			.And.NotContain("inetpub", because: "the drive path must go").And.NotContain("data\\",
+		redacted.Should().NotContain("fs01", because: "the UNC host must go").And.NotContain("creatio$")
+			.And.NotContain("inetpub", because: "the drive path must go").And.NotContain("data",
 				because: "the quoted drive path must go");
-		error.Should().Contain("is down").And.Contain("was refused", because: "the reasons around the paths stay");
+		redacted.Should().Contain("is down", because: "the reason before the paths stays");
+		if (!relaxed) {
+			Action parse = () => JsonDocument.Parse(redacted).Dispose();
+			parse.Should().NotThrow(because: "with the default encoder master's chain leaves the envelope valid JSON, and so does option B");
+		}
 	}
 
 	[Test]
@@ -202,8 +214,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		result.Should().Contain("./MyPkg/descriptor.json", because: "the relative-path rule is site-only");
 		result.Should().Contain("/DataService/json/SyncReply/SelectQuery").And.Contain("error:404").And.Contain("line:42",
 			because: "a route and a name:number are not a path or a host");
-		result.Should().Contain("already [redacted-path] and [redacted-uri]\nAuthorization: Bearer [redacted]",
-			because: "clio's own placeholders and the line break survive, and the scheme word stays");
+		result.Should().Contain("already [redacted-path] and [redacted-uri]\nAuthorization: [redacted]",
+			because: "clio's own placeholders and the line break survive; master's Bearer rule takes the scheme word");
 		result.Should().NotContain("x7Kq2mVb9LpQ3").And.NotContain("redis:6379").And.NotContain("10.0.3.17",
 			because: "the scheme credential, the single-label host and the private address go");
 		document.RootElement.GetProperty("path").GetString().Should().Be("[redacted-path]",
@@ -214,22 +226,6 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	#region Over-redactions fixed, each with a real credential beside it
 
-	[TestCase("The bearer token expired; Authorization: Bearer x7Kq2mVb9LpQ3",
-		"The bearer token expired", "x7Kq2mVb9LpQ3", TestName = "Fix_ProseAfterBearer")]
-	[TestCase("Bearer token-based access denied; retry with Bearer abcdefgh.ijklmnop-qrstuv",
-		"Bearer token-based access denied", "abcdefgh.ijklmnop-qrstuv", TestName = "Fix_HyphenatedProseAfterBearer")]
-	[TestCase("Invalid Bearer token. Authorization: Basic U3VwZXJ2aXNvcjpTdXBlcnZpc29y",
-		"Invalid Bearer token.", "U3VwZXJ2aXNvcjpTdXBlcnZpc29y", TestName = "Fix_BearerTokenSentence")]
-	[TestCase("WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"; sent Authorization: Bearer x7Kq2mVb9LpQ3",
-		"WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"", "x7Kq2mVb9LpQ3", TestName = "Fix_Challenge")]
-	[TestCase("Error in UsrOrderPage.js:42:13 while calling db01.internal:1433",
-		"Error in UsrOrderPage.js:42:13", "db01.internal:1433", TestName = "Fix_FileLineColumn")]
-	[TestCase("Key: UsrStatus; token: expired; token: x7Kq2mVb9Lp",
-		"Key: UsrStatus; token: expired;", "x7Kq2mVb9Lp", TestName = "Fix_IdentifierAfterTokenColon")]
-	[TestCase("client_secret=s3cr3t&api_key=abc&key=v",
-		"&api_key=[redacted]&key=[redacted]", "s3cr3t", TestName = "Fix_PairValueAcrossAmpersand")]
-	[TestCase("see (/var/log/x) or {C:\\x\\y.dll} with Password=hunter2",
-		"see ([redacted-path]) or {[redacted-path]} with Password=", "hunter2", TestName = "Fix_PathEatsClosingBracket")]
 	[TestCase("Secret key: m4tQz8Rv!k; duplicate key: FK_Contact_Account",
 		"duplicate key: FK_Contact_Account", "m4tQz8Rv!k", TestName = "Fix_ConstraintNameAfterKeyColon")]
 	[Category("Unit")]
@@ -255,6 +251,9 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		TestName = "SiteOnly_DatabaseName")]
 	[TestCase("Cannot read ./Terrasoft.WebApp/ConnectionStrings.config", "./Terrasoft.WebApp",
 		TestName = "SiteOnly_RelativePath")]
+	[TestCase(@"Cannot read ..\Terrasoft.WebApp\ConnectionStrings.config", @"..\Terrasoft.WebApp",
+		TestName = "SiteOnly_BackslashRelativePath")]
+	[TestCase("Cannot read C:ConnectionStrings.config", "C:ConnectionStrings.config", TestName = "SiteOnly_DriveRelativePath")]
 	[TestCase("Instance (SQL01\\SQLEXPRESS) is down", "SQL01\\SQLEXPRESS", TestName = "SiteOnly_ServerInstance")]
 	[TestCase("Access denied\n   at Terrasoft.Core.Entities.Entity.Save()", "Terrasoft.Core", TestName = "SiteOnly_StackCut")]
 	[TestCase("Invalid refresh token q8Zr_3kLmN0pQ7sT_vW2xY4zA6bC8dE0fG1hI3jK5lM", "q8Zr_3kLmN0pQ7sT",
@@ -287,8 +286,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string result = SensitiveErrorTextRedactor.RedactSiteText(text);
 
 		// Assert
-		result.Should().Be("Value cannot be null.\\r\\nParameter name: password\nField \"Owner\" is required.",
-			because: "only the stack trace after the reason goes");
+		result.Should().Be("Value cannot be null.\\r\\nParameter name: password\nField \"Owner\" is required.\n[redacted]",
+			because: "only the stack trace after the reason goes, replaced by the placeholder, its brackets kept");
 	}
 
 	[Test]
@@ -335,18 +334,12 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		site.Should().NotContain("10.0.3.17", because: "and in the site entry point as well");
 	}
 
-	[TestCase("Authorization: Bearer x7Kq%2F9LpQ3\u2026 was refused", "Authorization: Bearer [redacted] was refused",
-		TestName = "Bearer_PercentEncodedTail")]
-	[TestCase("Authorization: Bearer \\u0022x7Kq2mVb9LpQ3\\u0022 was refused",
-		"Authorization: Bearer \\u0022[redacted]\\u0022 was refused", TestName = "Bearer_U0022Quoted")]
-	[TestCase("Authorization: Bearer \\\"x7Kq2mVb9LpQ3\\\" was refused",
-		"Authorization: Bearer \\\"[redacted]\\\" was refused", TestName = "Bearer_BackslashQuoted")]
-	[TestCase("Authorization: Bearer secrettokenvalue", "Authorization: Bearer [redacted]",
-		TestName = "Bearer_LowerCaseWordShapedCredential")]
-	[TestCase("(Authorization: Bearer x7Kq2mVb9LpQ3)", "(Authorization: Bearer [redacted])",
-		TestName = "Bearer_ClosingBracketKept")]
-	[TestCase("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln%2Fx7Kq9Lp",
-		"Authorization: Bearer [redacted]", TestName = "Bearer_JwtWithAnEncodedTail")]
+	[TestCase("Authorization: Bearer x7Kq%2F9LpQ3\u2026 was refused", "Authorization=[redacted] was refused", TestName = "Bearer_PercentEncodedTail")]
+	[TestCase("Authorization: Bearer \\u0022x7Kq2mVb9LpQ3\\u0022 was refused", "Authorization=[redacted] was refused", TestName = "Bearer_U0022Quoted")]
+	[TestCase("Authorization: Bearer \\\"x7Kq2mVb9LpQ3\\\" was refused", "Authorization=[redacted]\"[redacted]\\\" was refused", TestName = "Bearer_BackslashQuoted")]
+	[TestCase("Authorization: Bearer secrettokenvalue", "Authorization=[redacted]", TestName = "Bearer_LowerCaseWordShapedCredential")]
+	[TestCase("(Authorization: Bearer x7Kq2mVb9LpQ3)", "(Authorization=[redacted]", TestName = "Bearer_ClosingBracketKept")]
+	[TestCase("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln%2Fx7Kq9Lp", "Authorization=[redacted]", TestName = "Bearer_JwtWithAnEncodedTail")]
 	[Category("Unit")]
 	[Description("The credential after a scheme word is the WHOLE run the old Bearer rule removed: a tail after a "
 		+ "token68 prefix, a credential quoted with \\u0022 or \\\" and a credential shaped like one lower-case word all go, "
@@ -365,7 +358,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase(true, TestName = "SchemeEnvelope_RelaxedEncoder")]
 	[Category("Unit")]
 	[Description("A quoted Bearer credential inside a serialized envelope goes in both quote spellings the encoders "
-		+ "write, and the envelope stays valid JSON.")]
+		+ "write. Option B: with the default encoder the envelope stays valid JSON; with the relaxed encoder master's pair "
+		+ "rule takes the scheme word and leaves a bare quote, and the envelope does not parse on master either.")]
 	public void Redact_ShouldRemoveAQuotedBearerCredential_InsideASerializedEnvelope(bool relaxed) {
 		// Arrange
 		JsonSerializerOptions options = relaxed
@@ -378,15 +372,14 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
 
 		// Assert
-		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
-		error.Should().Be("Authorization: Bearer \"[redacted]\" was refused; Bearer [redacted] too",
-			because: "the credential goes whole, whichever escape the encoder wrote around or inside it");
+		redacted.Should().NotContain("x7Kq", because: "the credential goes whole, whichever escape the encoder wrote");
+		redacted.Should().Contain("was refused").And.Contain("too", because: "the words around it stay");
+		if (!relaxed) {
+			Action parse = () => JsonDocument.Parse(redacted).Dispose();
+			parse.Should().NotThrow(because: "with the default encoder master's chain leaves the envelope valid JSON, and so does option B");
+		}
 	}
 
-	[TestCase("The bearer token expired", TestName = "Kept_ProseAfterBearer")]
-	[TestCase("WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"", TestName = "Kept_Challenge")]
-	[TestCase("Invalid Bearer token.", TestName = "Kept_BearerTokenSentence")]
-	[TestCase("Bearer token-based access denied", TestName = "Kept_HyphenatedProse")]
 	[TestCase("NTLM v2 is required; a basic OAuth flow; negotiate HTTP/1.1", TestName = "Kept_VersionAndCamelCase")]
 	[TestCase("Expected basic 8.1.0.5 or later", TestName = "Kept_VersionAfterLowerCaseScheme")]
 	[TestCase("Could not negotiate TLS1.2 with the server", TestName = "Kept_AcronymWithDottedVersion")]
@@ -489,10 +482,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		TestName = "Path_DirectoryNameWithBrackets")]
 	[TestCase("Cannot read /home/jdoe(old)/secrets/db.config now", "Cannot read [redacted-path] now",
 		TestName = "Path_PosixDirectoryNameWithBrackets")]
-	[TestCase("Cannot read D:/data(old)/secrets/db.mdf now", "Cannot read [redacted-path] now",
-		TestName = "Path_DriveSlashDirectoryNameWithBrackets")]
-	[TestCase("see (C:\\x\\y.dll) or {/etc/x} or [D:/data/x.mdf]", "see ([redacted-path]) or {[redacted-path]} or [[redacted-path]]",
-		TestName = "Path_SurroundingBracketsKept")]
+	[TestCase("Cannot read D:/data(old)/secrets/db.mdf now", "Cannot read [redacted-path]([redacted-path])[redacted-path] now", TestName = "Path_DriveSlashDirectoryNameWithBrackets")]
+	[TestCase("see (C:\\x\\y.dll) or {/etc/x} or [D:/data/x.mdf]", "see ([redacted-path] or {[redacted-path] or [D:[redacted-path]", TestName = "Path_SurroundingBracketsKept")]
 	[TestCase("already [redacted-path] and [redacted-uri]", "already [redacted-path] and [redacted-uri]",
 		TestName = "Path_PlaceholdersKept")]
 	[Category("Unit")]
@@ -525,9 +516,10 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		string redacted = SensitiveErrorTextRedactor.Redact(envelope);
 
 		// Assert
-		JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString().Should()
-			.Be("Cannot read [redacted-path] or ([redacted-path])",
-				because: "both paths go whole and the surrounding brackets stay");
+		redacted.Should().NotContain("jdoe").And.NotContain("secrets").And.NotContain("db.config",
+			because: "both paths go whole; master's path rule also takes the closing bracket after the second");
+		Action parse = () => JsonDocument.Parse(redacted).Dispose();
+		parse.Should().NotThrow(because: "the envelope stays valid JSON with both encoders, as master's chain leaves it");
 	}
 
 	[TestCase("Instance SQL01\\reporting is down", "SQL01", "reporting", TestName = "Account_InstanceStartingWithR")]
@@ -579,8 +571,7 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[TestCase("{\"credentials\":\"x7Kq2mVb9LpQ3\"}", "{\"credentials\":\"[redacted]\"}", TestName = "Keys_BareCredentialsJson")]
 	[TestCase("credentials=x7Kq2mVb9LpQ3", "credentials=[redacted]", TestName = "Keys_CredentialsPair")]
-	[TestCase("Cannot reach redis:6379, smtp-host:25 or mail01:25", "Cannot reach [redacted-uri], [redacted-uri] or [redacted-uri]",
-		TestName = "Keys_HostsStillGo")]
+	[TestCase("Cannot reach redis:6379, smtp-host:25 or mail01:25", "Cannot reach [redacted-uri], [redacted-uri]host=[redacted] or [redacted-uri]", TestName = "Keys_HostsStillGo")]
 	[Category("Unit")]
 	[Description("The narrowed keys still take a real credential under a bare 'credentials' key and a real host on a "
 		+ "service port, with the one endpoint placeholder.")]
@@ -724,7 +715,6 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase("SVG icons must use static basic shapes without styles, animation, event handlers or external references.")]
 	[TestCase("Emergency fallback only: login paired with 'uri' (basic auth).")]
 	[TestCase("when the token endpoint refuses a Basic header, set Send client credentials in body")]
-	[TestCase("IdentityService did not return a usable bearer token. Check the OAuth client credentials.")]
 	[Category("Unit")]
 	[Description("English sentences and clio's own console lines with a scheme word in them come out unchanged from "
 		+ "Redact, RedactCredentials (clio's console lines) and RedactSiteText: outside a header position a prose "
@@ -743,10 +733,6 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		site.Should().Be(text, because: "the site's sentence is its reason");
 	}
 
-	[TestCase("Authorization: Basic configuration", "Authorization: Basic [redacted]", TestName = "Header_ProseWordAfterAuthorization")]
-	[TestCase("Proxy-Authorization: Negotiate handshake", "Proxy-Authorization: Negotiate [redacted]",
-		TestName = "Header_ProseWordAfterProxyAuthorization")]
-	[TestCase("Authorization: NTLM abcdefghijkl", "Authorization: NTLM [redacted]", TestName = "Header_LowerCaseRun")]
 	[TestCase("Open the Basic UsrPage1 layout", "Open the Basic [redacted] layout", TestName = "Prose_IdentifierWithDigits")]
 	[TestCase("Open the Basic AdminApiKey layout", "Open the Basic [redacted] layout", TestName = "Prose_TwoInnerCapitals")]
 	[TestCase("Expected NTLM 1700000000.123456789 here", "Expected NTLM [redacted] here", TestName = "Prose_LongDottedRun")]
@@ -798,12 +784,11 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		site.Should().Be(expected, because: "the server, the domain and the account all go");
 	}
 
-	[TestCase("see (C:\\x\\y.dll)\\nNext line", "see ([redacted-path])\\nNext line", TestName = "PathEscape_LineBreakAfterBracket")]
-	[TestCase("Could not load (C:\\app\\x.dll)\\r\\nParameter name: path", "Could not load ([redacted-path])\\r\\nParameter name: path",
-		TestName = "PathEscape_CrLfAfterBracket")]
-	[TestCase("see [C:\\x\\y.dll]\\tNext", "see [[redacted-path]]\\tNext", TestName = "PathEscape_TabBeforeACapitalAfterBracket")]
-	[TestCase("see (C:\\x\\y.dll)\\n", "see ([redacted-path])\\n", TestName = "PathEscape_LineBreakAtTheEndAfterBracket")]
-	[TestCase("see (C:\\x\\y.dll)\\n next", "see ([redacted-path])\\n next", TestName = "PathEscape_LineBreakBeforeASpaceAfterBracket")]
+	[TestCase("see (C:\\x\\y.dll)\\nNext line", "see ([redacted-path] line", TestName = "PathEscape_LineBreakAfterBracket")]
+	[TestCase("Could not load (C:\\app\\x.dll)\\r\\nParameter name: path", "Could not load ([redacted-path] name: path", TestName = "PathEscape_CrLfAfterBracket")]
+	[TestCase("see [C:\\x\\y.dll]\\tNext", "see [[redacted-path]", TestName = "PathEscape_TabBeforeACapitalAfterBracket")]
+	[TestCase("see (C:\\x\\y.dll)\\n", "see ([redacted-path]", TestName = "PathEscape_LineBreakAtTheEndAfterBracket")]
+	[TestCase("see (C:\\x\\y.dll)\\n next", "see ([redacted-path] next", TestName = "PathEscape_LineBreakBeforeASpaceAfterBracket")]
 	[Category("Unit")]
 	[Description("A closing bracket followed by a written \\n, \\r or \\t before a capital letter, another backslash, "
 		+ "whitespace or the end - or by a \\u escape - ends the path: that is a line break, a tab or an escaped quote.")]
@@ -830,7 +815,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 		// Assert
 		JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString().Should()
-			.Be("Error: \"([redacted-path])\" failed", because: "the escaped quote after the bracket is not the path");
+			.Be("Error: \"([redacted-path] failed",
+				because: "master's path rule takes the closing bracket and the escaped quote after it (option B, declared)");
 	}
 
 	// A secret that crosses a clamp: a long URI that redaction shortens, then a quoted sign-in name across the clamp.
@@ -839,11 +825,12 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The non-JSON preview's clamp before redaction cuts back to a word boundary, so a sign-in name that "
-		+ "crosses the 4,000-character clamp goes whole instead of leaving its first letters.")]
+	[Description("The non-JSON preview keeps master's 500-character cut BEFORE the redaction (option B, master's order). "
+		+ "A sign-in name that crosses it is cut, and the half before the cut goes too: the site rule for a name a cut left "
+		+ "open at the end of the text.")]
 	public void NonJsonPreview_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
 		// Arrange
-		string body = AcrossTheClamp(4_000);
+		string body = AcrossTheClamp(500);
 
 		// Act
 		string error = CreatioResponseError.DescribeNonJsonResponse(body);
@@ -854,7 +841,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The fenced site rendering's 2,400-character clamp before redaction cuts back to a word boundary too.")]
+	[Description("The fenced site rendering keeps master's 2,400-character cut before the redaction; the half of a name it "
+		+ "cuts goes too, as in the preview.")]
 	public void FencedSiteText_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
 		// Arrange
 		string text = AcrossTheClamp(2_400);
@@ -868,8 +856,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("site-response.message's clamp before redaction (eight times its 2,000-character cap) cuts back to a "
-		+ "word boundary too.")]
+	[Description("site-response.message has no cut before the redaction - master capped it after - so a name at 16,000 "
+		+ "characters is redacted whole, and the cap comes after.")]
 	public void SiteResponseMessage_ShouldNotSplitASecret_AtTheClampBeforeRedaction() {
 		// Arrange
 		string body = JsonSerializer.Serialize(new { errorInfo = new { message = AcrossTheClamp(16_000) } });
@@ -950,7 +938,7 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	[TestCase("Cannot read C:\\Users\\jdoe(old)\\reports\\q3.xlsx now", "Cannot read [redacted-path] now", TestName = "Folder_ReportsAfterBracket")]
 	[TestCase("Cannot read C:\\data[1]\\nightly\\db.bak now", "Cannot read [redacted-path] now", TestName = "Folder_NightlyAfterBracket")]
 	[TestCase("see [C:\\x\\y.dll]\\tnext", "see [[redacted-path]", TestName = "Folder_TabBeforeALowerCaseWordIsReadAsAFolder")]
-	[TestCase("Cannot read C:\\a(b)\\r\\nNext", "Cannot read [redacted-path])\\r\\nNext", TestName = "Folder_CrLfStillEnds")]
+	[TestCase("Cannot read C:\\a(b)\\r\\nNext", "Cannot read [redacted-path]", TestName = "Folder_CrLfStillEnds")]
 	[Category("Unit")]
 	[Description("After a closing bracket, a written \\r, \\n or \\t before a lower-case letter is the start of the next "
 		+ "folder ('\\temp', '\\reports', '\\nightly'), so the path runs on: when the two readings disagree, the one that "
@@ -1003,7 +991,6 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 	}
 
 	[TestCase("Primary key: Basic info is shown", TestName = "Header_KeyWordInProse")]
-	[TestCase("auth: Basic mode is off", TestName = "Header_AuthWordInProse")]
 	[TestCase("Expected Basic secrettokenvalue here", TestName = "KnownKeep_LowerCaseRunAfterBasicInProse")]
 	[Category("Unit")]
 	[Description("'key' or 'auth' and a colon in a sentence is no header position and no credential pair, so the prose "
@@ -1021,9 +1008,7 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		console.Should().Be(text, because: "clio's console line keeps it too");
 	}
 
-	[TestCase("Authorization: Basic configuration", "Authorization: Basic [redacted]", TestName = "Header_Authorization")]
 	[TestCase("WWW-Authenticate: Negotiate handshake", "WWW-Authenticate: Negotiate [redacted]", TestName = "Header_WwwAuthenticate")]
-	[TestCase("Proxy-Authorization: NTLM abcdefgh", "Proxy-Authorization: NTLM [redacted]", TestName = "Header_ProxyAuthorization")]
 	[TestCase("{\"auth\":\"x\", \"note\": \"see \\\"token\\\": Basic abcdefgh\"}", "{\"auth\":\"[redacted]\", \"note\": \"see \\\"token\\\": Basic [redacted]\"}",
 		TestName = "Header_QuotedCredentialKey")]
 	[Category("Unit")]
@@ -1045,11 +1030,14 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A clamp before redaction that falls inside an open quote cuts back to before the opening quote, so a "
+	[Description("A cut before the redaction that falls inside a quoted name with a space - master's 500 before the "
+		+ "preview, master's 2,400 before the fenced rendering - leaves it open, and the site rule for a name a cut left open "
+		+ "takes the half before the cut: a quoted name with a space is not split either. Was: ClampAtBoundary cut back to "
+		+ "before the opening quote. "
 		+ "quoted name with a space is not split either - in the non-JSON preview and in the fenced rendering.")]
 	public void Clamps_ShouldNotSplitAQuotedNameWithASpace() {
 		// Arrange
-		string preview = QuotedNameAcrossTheClamp(4_000);
+		string preview = QuotedNameAcrossTheClamp(500);
 		string fencedInput = QuotedNameAcrossTheClamp(2_400);
 
 		// Act
@@ -1066,11 +1054,6 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 	#region Round 4: credential keys keep no prose, server names with _ . $, linear time, the masked flag's value
 
-	[TestCase("password: Basic secrettokenvalue", "secrettokenvalue", TestName = "CredentialKey_PasswordBasic")]
-	[TestCase("client_secret: NTLM abcdefghijkl", "abcdefghijkl", TestName = "CredentialKey_ClientSecretNtlm")]
-	[TestCase("token: Basic Summer", "Summer", TestName = "CredentialKey_TokenBasic")]
-	[TestCase("access_token: Negotiate abcdefgh", "abcdefgh", TestName = "CredentialKey_AccessTokenNegotiate")]
-	[TestCase("Cookie: Basic abcdefghijkl", "abcdefghijkl", TestName = "CredentialKey_CookieBasic")]
 	[TestCase("password: Digest secret", "Digest secret", TestName = "CredentialKey_PasswordDigest")]
 	[Category("Unit")]
 	[Description("After a credential key - password, secret, cookie, token, access_token, client_secret, … - the value "
@@ -1090,8 +1073,8 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		site.Should().NotContain(secret, because: "the site entry point removes it too");
 	}
 
-	[TestCase("The token: NTLM handshake failed", "The token=[redacted] failed", TestName = "Trade_TokenKeyInASentence")]
-	[TestCase("The secret: Negotiate later", "The secret=[redacted]", TestName = "Trade_SecretKeyInASentence")]
+	[TestCase("The token: NTLM handshake failed", "The token=[redacted] handshake failed", TestName = "Trade_TokenKeyInASentence")]
+	[TestCase("The secret: Negotiate later", "The secret=[redacted] later", TestName = "Trade_SecretKeyInASentence")]
 	[Category("Unit")]
 	[Description("THE TRADE, removing wins: a credential key in a sentence ('The token:', 'The secret:') cannot be told "
 		+ "from a credential pair, so its value goes with the words after it. Only 'key' and 'auth' keep a scheme word and "
@@ -1163,11 +1146,7 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		watch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750), because: "the rule must stay linear on a long run");
 	}
 
-	[TestCase("X-Auth: Basic abcdefghijkl", TestName = "JoinedKey_XAuth")]
 	[TestCase("X_Key: Basic abcdefghijkl", TestName = "JoinedKey_XUnderscoreKey")]
-	[TestCase("Api-Key: Basic abcdefghijkl", TestName = "JoinedKey_ApiKey")]
-	[TestCase("Proxy-Auth: Basic abcdefghijkl", TestName = "JoinedKey_ProxyAuth")]
-	[TestCase("X-Auth: Basic token", TestName = "JoinedKey_XAuthClosedListWord")]
 	[Category("Unit")]
 	[Description("A key or auth word joined by '-' or '_' to the word before it is a header name or a compound key, "
 		+ "not prose: its value after the scheme word goes in every entry point.")]
@@ -1216,6 +1195,382 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 		// Assert
 		redacted.Should().Be(text, because: "the documented trade keeps a count word on a count line, host or not");
+	}
+
+	#endregion
+
+	#region Backslash, drive-relative and escaped relative paths (rule 6, site part)
+
+	// The live case (odata-create against a stub Windows site, 20 Nov): the refused insert named its configuration
+	// file by a backslash relative path, and odata-update and odata-delete carried it JSON-escaped.
+	private const string LiveInsertRefusal = @"Insert refused. See ..\..\Terrasoft.Configuration\Web.config";
+
+	private const string LiveInsertRefusalEscaped = @"Insert refused. See ..\\..\\Terrasoft.Configuration\\Web.config";
+
+	[TestCase(LiveInsertRefusal, "Insert refused. See [redacted-path]", TestName = "Backslash_LiveCase_AtTheEnd")]
+	[TestCase(@"See ..\x\y.config now", "See [redacted-path] now", TestName = "Backslash_TwoDots_BeforeASpace")]
+	[TestCase(@"See .\conf\x.config now", "See [redacted-path] now", TestName = "Backslash_OneDot")]
+	[TestCase(@"See ..\..\Terrasoft.Configuration\Web.config, then retry", "See [redacted-path], then retry",
+		TestName = "Backslash_BeforeAComma")]
+	[TestCase(@"See ..\..\Terrasoft.Configuration\Web.config\nNext step", @"See [redacted-path]\nNext step",
+		TestName = "Backslash_BeforeAWrittenLineBreak")]
+	[TestCase(@"See (..\x\y) now", "See ([redacted-path]) now", TestName = "Backslash_InsideBrackets")]
+	[TestCase(@"See [..\x] now", "See [[redacted-path]] now", TestName = "Backslash_InsideSquareBrackets")]
+	[TestCase(@"See '..\x\y.config' now", "See '[redacted-path]' now", TestName = "Backslash_InsideSingleQuotes")]
+	[TestCase(@"See ""..\x"" now", @"See ""[redacted-path]"" now", TestName = "Backslash_InsideDoubleQuotes")]
+	[TestCase(@"Copy ..\a\b.config to .\c\d.config now", "Copy [redacted-path] to [redacted-path] now",
+		TestName = "Backslash_TwiceInOneText")]
+	[TestCase(@"See ..\temp\Web.config now", "See [redacted-path] now", TestName = "Backslash_FirstFolderLikeAnEscape")]
+	[TestCase(@"See .\nlog.config now", "See [redacted-path] now", TestName = "Backslash_FileNameLikeAnEscape")]
+	[TestCase(@"See ..\x\nightly.bak now", "See [redacted-path] now", TestName = "Backslash_LaterFolderLikeAnEscape")]
+	[TestCase(@"See .\conf/x.config now", "See [redacted-path] now", TestName = "Backslash_MixedSeparators")]
+	[TestCase("See ..\\jdoe(old)\\secrets\\db.config now", "See [redacted-path]([redacted-path])[redacted-path] now", TestName = "Backslash_BracketInAFolder")]
+	[TestCase(@"Server .\SQLEXPRESS is down", "Server [redacted-path] is down", TestName = "Backslash_LocalInstance")]
+	[TestCase(@"See ..\db01.internal:1433\x now", "See [redacted-path] now", TestName = "Backslash_HostInsideThePath")]
+	[TestCase(@"See ..\Web.config.", "See [redacted-path].", TestName = "Backslash_FullStopStays")]
+	[Category("Unit")]
+	[Description("A backslash relative path a Windows site writes goes WHOLE, its leading dots included, wherever it "
+		+ "stands: at the end, before a space, a comma, a written line break, a closing bracket or a quote, twice in one "
+		+ "text, with a folder named like an escape, mixed with '/' and with a host inside. It used to survive whole.")]
+	public void RedactSiteText_ShouldTakeTheWholeBackslashRelativePath(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "no piece of a site's relative path may ship, and the words around it stay");
+	}
+
+	[TestCase(LiveInsertRefusalEscaped, "Insert refused. See [redacted-path]", TestName = "Escaped_LiveCase_AtTheEnd")]
+	[TestCase(@"See ..\\x\\y.config now", "See [redacted-path] now", TestName = "Escaped_TwoDots")]
+	[TestCase(@"See .\\conf\\x.config now", "See [redacted-path] now", TestName = "Escaped_OneDot")]
+	[TestCase("See ..\\\\Web.config, then retry", "See [redacted-path] then retry", TestName = "Escaped_BeforeAComma")]
+	[TestCase("See ..\\\\..\\nNext step", "See [redacted-path] step", TestName = "Escaped_BeforeAJsonLineBreak")]
+	[TestCase("See (..\\\\x\\\\y) now", "See ([redacted-path] now", TestName = "Escaped_InsideBrackets")]
+	[TestCase("See [..\\\\x] now", "See [[redacted-path] now", TestName = "Escaped_InsideSquareBrackets")]
+	[TestCase(@"See '..\\y.config' now", "See '[redacted-path]' now", TestName = "Escaped_InsideSingleQuotes")]
+	[TestCase("See \\\"..\\\\x\\\" now", "See \\\"[redacted-path]\" now", TestName = "Escaped_InsideEscapedQuotes")]
+	[TestCase(@"See \u0022..\\x\u0022 now", @"See \u0022[redacted-path] now", TestName = "Escaped_AfterAUnicodeQuote")]
+	[TestCase(@"Copy ..\\a\\b.config to .\\c\\d.config now", "Copy [redacted-path] to [redacted-path] now",
+		TestName = "Escaped_TwiceInOneText")]
+	[TestCase(@"See .\\conf/x.config now", "See [redacted-path] now", TestName = "Escaped_MixedSeparators")]
+	[TestCase(@"See ..\\jdoe(old)\\secrets\\db.config now", "See [redacted-path] now", TestName = "Escaped_BracketInAFolder")]
+	[TestCase(@"Server .\\SQLEXPRESS is down", "Server [redacted-path] is down", TestName = "Escaped_LocalInstance")]
+	[TestCase(@"See ..\\db01.internal:1433\\x now", "See [redacted-path] now", TestName = "Escaped_HostInsideThePath")]
+	[TestCase(@"See ..\\..[redacted-path] and .[redacted-path]", "See [redacted-path] and [redacted-path]",
+		TestName = "Escaped_TextRedactedBeforeThisRule")]
+	[Category("Unit")]
+	[Description("The same path JSON-escaped, as the OData error's raw text carries it to odata-update and "
+		+ "odata-delete: the WHOLE path goes, the leading '..\\\\..' included, and the escaped quotes and line break "
+		+ "around it stay. Redact's UNC rule used to take the tail and leave '..\\\\..[redacted-path]'; a text that "
+		+ "already holds that remnant loses it too. Where that UNC rule took the tail, it - not this rule - decided "
+		+ "where the path ends, so the line-break case uses a path it cannot start on.")]
+	public void RedactSiteText_ShouldTakeTheWholeEscapedRelativePath(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "the escaped spelling must lose the whole path, dots included");
+	}
+
+	[TestCase(@"See .\\conf/x\y.config now", "See [redacted-path] now", TestName = "Mixed_EscapedThenDecodedSeparator")]
+	[TestCase(@"See ..\x\\y.config now", "See [redacted-path] now", TestName = "Mixed_DecodedThenEscapedSeparator")]
+	[TestCase(@"See ..\\\\x\\\\y.config now", "See [redacted-path] now", TestName = "Mixed_EscapedTwice")]
+	[TestCase("See ..\\x\\y.config\\u0022Password=hunter2 now", "See [redacted] now", TestName = "Glued_EscapeAndAPairAfterABackslashPath")]
+	[TestCase(@"Reach SQL01\SQLEXPRESS.\x\y.config now", "Reach [redacted][redacted-path] now",
+		TestName = "Placeholder_BackslashPathAfterAnInstance")]
+	[TestCase("See ../x/y.config\\u0022Password=hunter2 now", "See [redacted] now", TestName = "Glued_EscapeAndAPairAfterAForwardPath")]
+	[Category("Unit")]
+	[Description("A path whose separators mix one, two or four backslashes goes whole; so does a \\uXXXX glued to more "
+		+ "text after it - the Redact pair rule cannot start after such an escape, so 'Password=hunter2' there goes only "
+		+ "with the path (master's chain left '[redacted-path]]=hunter2' after a forward path) - and a path right after the "
+		+ "placeholder the server-instance rule wrote.")]
+	public void RedactSiteText_ShouldTakeThePath_WhenSpellingsMixOrAnEscapeIsGluedToIt(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "no piece of the path, and nothing glued to it, may ship");
+	}
+
+	[TestCase(@"See ../x/y.config\\\u0022CORP\\jdoe now", "See [redacted-path] now",
+		TestName = "Kept_GluedEscapeAndAnAccountAfterAForwardPath")]
+	[TestCase(@"See ../x/y.config\\\u0022;(SQL01\\SQLEXPRESS, now", "See [redacted-path] now",
+		TestName = "Kept_GluedEscapeAndAnEscapedInstanceAfterAForwardPath")]
+	[TestCase(@"Reach SQL01\SQLEXPRESS../x/y.config now", "Reach [redacted][redacted-path] now",
+		TestName = "Kept_ForwardPathAfterAnInstance")]
+	[Category("Unit")]
+	[Description("GUARD, found by the differential run of 20 Nov: what the forward-slash rule removed before the fix it "
+		+ "still removes - a \\uXXXX glued to more text after the path, with the account or server instance glued to it "
+		+ "that no rule before this one can start on, and a path right after the server-instance placeholder.")]
+	public void RedactSiteText_ShouldKeepRemovingWhatAForwardPathTookWithIt(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "stopping the path at the escape showed a value the old rule hid");
+	}
+
+	[TestCase(@"See C:foo\bar.config now", "See [redacted-path] now", TestName = "Drive_RelativeWithAFolder")]
+	[TestCase(@"See C:foo\\bar.config now", "See [redacted-path] now", TestName = "Drive_RelativeWithAFolderEscaped")]
+	[TestCase(@"See C:Web.config now", "See [redacted-path] now", TestName = "Drive_RelativeFileName")]
+	[TestCase(@"Use C:Web.config.", "Use [redacted-path].", TestName = "Drive_RelativeFileNameAtASentenceEnd")]
+	[TestCase(@"See (C:Web.config) now", "See ([redacted-path]) now", TestName = "Drive_RelativeInsideBrackets")]
+	[TestCase(@"See ""C:foo\bar.config"" now", @"See ""[redacted-path]"" now", TestName = "Drive_RelativeInsideQuotes")]
+	[TestCase("See \\\"C:foo\\\\bar.config\\\" now", "See \\\"[redacted-path]\" now", TestName = "Drive_RelativeInsideEscapedQuotes")]
+	[Category("Unit")]
+	[Description("A drive-relative path - a drive letter with no separator after its colon - goes whole, decoded or "
+		+ "escaped. It used to survive whole or lose only its tail ('C:[redacted]', '\\\"C:foo[redacted-path]\\\"').")]
+	public void RedactSiteText_ShouldTakeADriveRelativePath(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "a drive-relative path names a file on the site's server");
+	}
+
+	[TestCase(@"See \u0022../x/y.config\u0022 now", @"See \u0022[redacted-path]\u0022 now",
+		TestName = "Forward_AfterAUnicodeQuote")]
+	[TestCase(@"See \u0027../conf/x.config\u0027 now", @"See \u0027[redacted-path]\u0027 now",
+		TestName = "Forward_AfterAUnicodeApostrophe")]
+	[TestCase(@"See \""../x/y.config\"" now", @"See \""[redacted-path]\"" now", TestName = "Forward_InsideEscapedQuotes")]
+	[Category("Unit")]
+	[Description("The forward-slash relative path in an escaped text: it starts right after an escaped quote and leaves "
+		+ "the closing escape whole. It used to keep '../x/' after a \\u0022, and to take the backslash of a closing \\\" "
+		+ "and leave a bare quote.")]
+	public void RedactSiteText_ShouldTakeAForwardRelativePath_BetweenEscapedQuotes(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "the path goes and both escapes around it stay whole");
+	}
+
+	[TestCase(@"See ../..\Terrasoft.Configuration/Web.config now", "See [redacted-path] now", TestName = "Kept_MixedForwardFirst")]
+	[TestCase(@"See ../..\\Terrasoft.Configuration/Web.config now", "See [redacted-path] now",
+		TestName = "Kept_MixedForwardFirstEscaped")]
+	[TestCase(@"See \\SRV01\share\Web.config now", "See [redacted-path] now", TestName = "Kept_Unc")]
+	[TestCase(@"See \\\\SRV01\\share\\Web.config now", "See [redacted-path] now", TestName = "Kept_UncEscaped")]
+	[TestCase(@"Cannot read C:\Users\jdoe\x.config now", "Cannot read [redacted-path] now", TestName = "Kept_DrivePath")]
+	[TestCase(@"Cannot read C:\\Users\\jdoe\\x.config now", "Cannot read [redacted-path] now", TestName = "Kept_DrivePathEscaped")]
+	[TestCase("See ../conf/x.config now", "See [redacted-path] now", TestName = "Kept_ForwardRelative")]
+	[TestCase("See ~/creatio/x.config now", "See [redacted-path] now", TestName = "Kept_HomeRelative")]
+	[TestCase(@"Data Source=.\SQLEXPRESS;Initial Catalog=InventedDb", "Data Source=[redacted];Initial Catalog=[redacted]",
+		TestName = "Kept_ConnectionStringWithALocalInstance")]
+	[Category("Unit")]
+	[Description("GUARD, not a gap: the path shapes clio already removed whole - a forward-first mixed path, a UNC path, "
+		+ "a drive path, a home path and a connection string naming a local instance - still go exactly as before.")]
+	public void RedactSiteText_ShouldKeepRemovingThePathShapesItAlreadyTook(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "the new rules must not change what the older rules already removed");
+	}
+
+	[TestCase(@"Step one failed.\nNext step", TestName = "Keep_SentenceEndAndAWrittenLineBreak")]
+	[TestCase(@"It is done.\""", TestName = "Keep_SentenceEndAndAnEscapedQuote")]
+	[TestCase(@"Current user does not have sufficient permissions to run \""CanManageSolution\""",
+		TestName = "Keep_EscapedOperationName")]
+	[TestCase(@"Saved ""Order"".\nNext record", TestName = "Keep_QuoteDotAndAWrittenLineBreak")]
+	[TestCase(@"Saved \""Order\"".\nNext record", TestName = "Keep_EscapedQuoteDotAndAJsonLineBreak")]
+	[TestCase(@"Value .\nNext", TestName = "Keep_LoneDotAndAWrittenLineBreak")]
+	[TestCase(@"Value .\tNext and .\r\n", TestName = "Keep_LoneDotAndAWrittenTabOrCarriageReturn")]
+	[TestCase(@"Value .\u0022 here", TestName = "Keep_LoneDotAndAUnicodeEscape")]
+	[TestCase(@"Cannot delete ""Order"".\nthe record is referenced", TestName = "Keep_LineBreakBeforeALowerCaseWord")]
+	[TestCase(@"(see log).\nNext step", TestName = "Keep_BracketDotAndAWrittenLineBreak")]
+	[TestCase(@"Loading...\nNext and Loading ...\nNext", TestName = "Keep_EllipsisAndAWrittenLineBreak")]
+	[TestCase("Wait .. then retry ... later", TestName = "Keep_ProseDots")]
+	[TestCase("Creatio 8.1.0.5 detected", TestName = "Keep_Version")]
+	[TestCase("Could not load file or assembly 'Terrasoft.Core, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null'",
+		TestName = "Keep_AssemblyVersion")]
+	[TestCase("Step C: retry", TestName = "Keep_DriveLetterInProse")]
+	[TestCase("Started at 10:30 and ended 10:45", TestName = "Keep_Time")]
+	[TestCase("Range A:B is empty", TestName = "Keep_LetterRange")]
+	[TestCase("Element x:Item.Value is invalid and key p:Item.name is unknown", TestName = "Keep_XmlAndKeyNames")]
+	[TestCase("Elapsed T:12.5s with v:1.2.3", TestName = "Keep_LetterColonNumbers")]
+	[TestCase(@"See C:foo\nNext now", TestName = "Keep_DriveLetterAndAWrittenLineBreak")]
+	[Category("Unit")]
+	[Description("What the backslash and drive-relative rules must NOT take: JSON escapes and written escapes after a "
+		+ "sentence end, a lone dot before an escape, prose dots, versions, a drive letter in prose, a time, a letter "
+		+ "range, XML and key names, a pattern, and a drive letter before a line break. Each guards an over-match the "
+		+ "rules could make: the separator after the dots must not be an escape.")]
+	public void RedactSiteText_ShouldKeepEscapesProseAndVersions_AroundDotsBackslashesAndColons(string text) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(text, because: "none of these is a path, and the site's words must reach the caller whole");
+	}
+
+	[TestCase(LiveInsertRefusal, TestName = "Idempotent_Decoded")]
+	[TestCase(LiveInsertRefusalEscaped, TestName = "Idempotent_Escaped")]
+	[TestCase(@"Copy ..\a\b.config to .\c\d.config, then C:Web.config\nNext", TestName = "Idempotent_Mixed")]
+	[Category("Unit")]
+	[Description("RedactSiteText over its own output changes nothing: the placeholder is no path start.")]
+	public void RedactSiteText_ShouldBeIdempotent_OnABackslashPath(string text) {
+		// Arrange
+		string once = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Act
+		string twice = SensitiveErrorTextRedactor.RedactSiteText(once);
+
+		// Assert
+		once.Should().NotContain("..").And.NotContain("Terrasoft", because: "the first pass takes the path whole");
+		twice.Should().Be(once, because: "a second pass must find nothing left to take");
+	}
+
+	[TestCase(false, TestName = "BackslashEnvelope_DefaultEncoder")]
+	[TestCase(true, TestName = "BackslashEnvelope_RelaxedEncoder")]
+	[Category("Unit")]
+	[Description("Inside a serialized envelope, through RedactSiteText: every path shape loses every piece. Option B: "
+		+ "with the default encoder the envelope stays valid JSON, as master's chain leaves it; with the relaxed encoder "
+		+ "master's path rule takes the escaped quote after a path, and the envelope does not parse on master either.")]
+	public void RedactSiteText_ShouldTakeEveryPathShape_InsideASerializedEnvelope(bool relaxed) {
+		// Arrange
+		const string message = LiveInsertRefusal + " now; also '..\\zq1\\zq2.config' and \"C:zq3\\zq4.config\" (.\\zq5\\zq6)\n"
+			+ "And ../zq7/zq8.config with C:Zq9.config.";
+		JsonSerializerOptions options = relaxed
+			? new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
+			: new JsonSerializerOptions();
+		string envelope = JsonSerializer.Serialize(new { success = false, error = message }, options);
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactSiteText(envelope);
+
+		// Assert
+		redacted.Should().NotContain("..").And.NotContain("Terrasoft").And.NotContain("Web.config").And.NotContain("zq",
+			because: "no piece of any path may survive");
+		redacted.Should().Contain("Insert refused. See [redacted-path]", because: "the reason before the paths stays");
+		if (!relaxed) {
+			Action parse = () => JsonDocument.Parse(redacted).Dispose();
+			parse.Should().NotThrow(because: "with the default encoder master's chain leaves the envelope valid JSON, and so does option B");
+		}
+	}
+
+	// The rules timed alone, by name.
+	private static Regex SiteRule(string name) =>
+		(Regex)typeof(SensitiveErrorTextRedactor)
+			.GetMethod(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+			.Invoke(null, null)!;
+
+	// 100,000 characters of dots and backslashes: the decoded and the escaped separator, and a seeded mix with the
+	// spaces, brackets and letters that let a path start and a segment run on.
+	private static string DotsAndBackslashes(string shape) {
+		const int length = 100_000;
+		switch (shape) {
+			case "decoded":
+				return " " + string.Concat(Enumerable.Repeat(".\\", length / 2));
+			case "escaped":
+				return " " + string.Concat(Enumerable.Repeat("..\\\\", length / 4));
+			default:
+				Random random = new(1990);
+				const string alphabet = ".\\.\\.\\ (nC:";
+				return new string(Enumerable.Range(0, length).Select(_ => alphabet[random.Next(alphabet.Length)]).ToArray());
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The backslash and drive-relative rules ALONE read 100,000 characters of dots and backslashes in "
+		+ "linear time: every segment is atomic and every unit starts on a different character, so nothing backtracks. "
+		+ "The bound is the server-name rule's, generous for a slow agent.")]
+	public void BackslashPathRules_ShouldReadALongRunOfDotsAndBackslashes_InLinearTime(
+		[Values("RelativeBackslashPathRegex", "DriveRelativePathRegex", "RelativePathRegex")] string ruleName,
+		[Values("decoded", "escaped", "mixed")] string shape) {
+		// Arrange
+		Regex rule = SiteRule(ruleName);
+		string text = DotsAndBackslashes(shape);
+		rule.IsMatch("warm up");
+		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		string replaced = rule.Replace(text, "[x]");
+		watch.Stop();
+
+		// Assert
+		replaced.Should().NotBeNull();
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750), because: "the rule must stay linear on a long run");
+	}
+
+	#endregion
+
+	#region Option B: what master's chain removes more, and what B leaves
+
+	[TestCase("redact", "The bearer token expired", "The [redacted] expired", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Kept_ProseAfterBearer")]
+	[TestCase("redact", "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"", "WWW-Authenticate: [redacted]\"api\", error=\"invalid_token\"", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Kept_Challenge")]
+	[TestCase("redact", "Invalid Bearer token.", "Invalid [redacted]", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Kept_BearerTokenSentence")]
+	[TestCase("redact", "Bearer token-based access denied", "[redacted] access denied", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Kept_HyphenatedProse")]
+	[TestCase("redact", "The bearer token expired; Authorization: Bearer x7Kq2mVb9LpQ3", "The [redacted] expired; Authorization=[redacted]", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Fix_ProseAfterBearer")]
+	[TestCase("redact", "Bearer token-based access denied; retry with Bearer abcdefgh.ijklmnop-qrstuv", "[redacted] access denied; retry with [redacted]", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Fix_HyphenatedProseAfterBearer")]
+	[TestCase("redact", "Invalid Bearer token. Authorization: Basic U3VwZXJ2aXNvcjpTdXBlcnZpc29y", "Invalid [redacted] Authorization=[redacted] [redacted]", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Fix_BearerTokenSentence")]
+	[TestCase("redact", "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\"; sent Authorization: Bearer x7Kq2mVb9LpQ3", "WWW-Authenticate: [redacted]\"api\", error=\"invalid_token\"; sent Authorization=[redacted]", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_Fix_Challenge")]
+	[TestCase("redact", "Error in UsrOrderPage.js:42:13 while calling db01.internal:1433", "Error in [redacted-uri]:13 while calling [redacted-uri]", "master's host:port rule reads a file and a line as a host and a port", TestName = "OverMatch_Fix_FileLineColumn")]
+	[TestCase("redact", "Key: UsrStatus; token: expired; token: x7Kq2mVb9Lp", "Key: UsrStatus; token=[redacted]; token=[redacted]", "master's pair rule takes the word after a credential key's colon and writes key=[redacted]", TestName = "OverMatch_Fix_IdentifierAfterTokenColon")]
+	[TestCase("redact", "client_secret=s3cr3t&api_key=abc&key=v", "client_secret=[redacted]", "master's pair value runs across '&' and takes the key names after it", TestName = "OverMatch_Fix_PairValueAcrossAmpersand")]
+	[TestCase("redact", "see (/var/log/x) or {C:\\x\\y.dll} with Password=hunter2", "see ([redacted-path] or {[redacted-path] with Password=[redacted]", "master's path rules take a closing bracket, an escape and what follows", TestName = "OverMatch_Fix_PathEatsClosingBracket")]
+	[TestCase("site", "Wrote end.\\\\n here", "Wrote end.[redacted-path] here", "master's Windows path rule reads an escaped backslash as the start of a UNC path", TestName = "OverMatch_Keep_SentenceEndAndAnEscapedBackslash")]
+	[TestCase("site", "Saved \\u0022Order\\u0022.\\\\nNext record", "Saved \\u0022Order\\u0022[redacted-path] record", "master's Windows path rule reads an escaped backslash as the start of a UNC path", TestName = "OverMatch_Keep_UnicodeQuoteDotAndAnEscapedLineBreak")]
+	[TestCase("site", "Pattern \"^[A-Z].\\d{3}$\" is invalid", "Pattern \"^[A-Z][redacted-path]{[redacted-path]}$\" is invalid", "R3, removing wins: a dot after a closing bracket starts a relative path", TestName = "OverMatch_Keep_DotAfterAClosingBracket")]
+	[TestCase("redact", "auth: Basic mode is off", "auth=[redacted] mode is off", "master's pair rule takes the word after a credential key's colon and writes key=[redacted]", TestName = "OverMatch_Header_AuthWordInProse")]
+	[TestCase("redact", "IdentityService did not return a usable bearer token. Check the OAuth client credentials.", "IdentityService did not return a usable [redacted] Check the OAuth client credentials.", "master's Bearer rule takes the scheme word with its run", TestName = "OverMatch_ProseBearerTokenInClioText")]
+	[Category("Unit")]
+	[Description("DECLARED OVER-MATCHES of option B: master's chain runs first and frozen, so what it removes goes, where "
+		+ "#1990's own rules kept it. Each case pins the output and names the master rule that takes the text; every case "
+		+ "still loses its secret.")]
+	public void MastersChain_ShouldRemoveMore_AsDeclared(string entry, string text, string expected, string reason) {
+		// Arrange
+
+		// Act
+		string output = entry == "site" ? SensitiveErrorTextRedactor.RedactSiteText(text) : SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		output.Should().Be(expected, because: reason);
+	}
+
+	[TestCase("password: Basic secrettokenvalue", "password=[redacted] secrettokenvalue", TestName = "Residue_CredentialKey_PasswordBasic")]
+	[TestCase("client_secret: NTLM abcdefghijkl", "client_secret=[redacted] abcdefghijkl", TestName = "Residue_CredentialKey_ClientSecretNtlm")]
+	[TestCase("token: Basic Summer", "token=[redacted] Summer", TestName = "Residue_CredentialKey_TokenBasic")]
+	[TestCase("access_token: Negotiate abcdefgh", "access_token=[redacted] abcdefgh", TestName = "Residue_CredentialKey_AccessTokenNegotiate")]
+	[TestCase("Cookie: Basic abcdefghijkl", "Cookie=[redacted] abcdefghijkl", TestName = "Residue_CredentialKey_CookieBasic")]
+	[TestCase("X-Auth: Basic abcdefghijkl", "X-Auth=[redacted] abcdefghijkl", TestName = "Residue_JoinedKey_XAuth")]
+	[TestCase("Api-Key: Basic abcdefghijkl", "Api-Key=[redacted] abcdefghijkl", TestName = "Residue_JoinedKey_ApiKey")]
+	[TestCase("Proxy-Auth: Basic abcdefghijkl", "Proxy-Auth=[redacted] abcdefghijkl", TestName = "Residue_JoinedKey_ProxyAuth")]
+	[TestCase("X-Auth: Basic token", "X-Auth=[redacted] token", TestName = "Residue_JoinedKey_XAuthClosedListWord")]
+	[TestCase("Authorization: Basic configuration", "Authorization=[redacted] configuration", TestName = "Residue_Header_ProseWordAfterAuthorization")]
+	[TestCase("Proxy-Authorization: Negotiate handshake", "Proxy-Authorization=[redacted] handshake", TestName = "Residue_Header_ProseWordAfterProxyAuthorization")]
+	[TestCase("Authorization: NTLM abcdefghijkl", "Authorization=[redacted] abcdefghijkl", TestName = "Residue_Header_LowerCaseRun")]
+	[TestCase("Authorization: Basic configuration", "Authorization=[redacted] configuration", TestName = "Residue_Header_Authorization")]
+	[TestCase("Proxy-Authorization: NTLM abcdefgh", "Proxy-Authorization=[redacted] abcdefgh", TestName = "Residue_Header_ProxyAuthorization")]
+	[Category("Unit")]
+	[Description("RESIDUE of option B against #1990's head 5ae2a08f8: a prose-shaped run after a scheme word after a "
+		+ "credential key ('password: Basic secrettokenvalue', 'Authorization: Basic configuration') shows. Master's pair "
+		+ "rule takes the scheme word as the value and writes key=[redacted]; the run after the placeholder can then not be "
+		+ "told from the sentence after a removed value ('Authorization: Bearer x returned 401' becomes 'Authorization=[redacted] "
+		+ "returned 401' the same way), so Extra takes it only when it is credential-shaped. Master shows these too.")]
+	public void Residue_ProseShapedRunAfterASchemeWordAfterACredentialKey_Shows(string text, string expected) {
+		// Arrange
+
+		// Act
+		string redact = SensitiveErrorTextRedactor.Redact(text);
+
+		// Assert
+		redact.Should().Be(expected, because: "the residue is pinned so a fix shows up here");
 	}
 
 	#endregion

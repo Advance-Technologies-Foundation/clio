@@ -272,19 +272,10 @@ public sealed record SiteResponse(
 	// site writes: sign-in and database names in the database's own phrases, server instances, relative paths, key
 	// runs after a secret noun, and the stack trace or page after the reason. Then the length cap: a result reaches
 	// a model transcript, so it must not carry more than the error text already does.
-	// The input is clamped first to a multiple of the cap, as RedactUntrustedOrNull does: a message the size of a
-	// page would otherwise run the whole rule chain over text the cap drops, and a regex timeout there fails the
-	// message closed - the reason would be lost with it. The clamp falls back to a word boundary
-	// (SensitiveErrorTextRedactor.ClampAtBoundary), so it cannot split a token or a quoted name in two.
+	// Redacted FIRST, then capped, as master's Cap(Redact(value)) (option B, condition 3): a clamp before the chain cut a
+	// value quoted with escaped quotes at an inner space and kept its first half.
 	private static string Carry(string value, int maxLength) =>
-		value is null
-			? null
-			: Cap(SensitiveErrorTextRedactor.RedactSiteText(
-				SensitiveErrorTextRedactor.ClampAtBoundary(value, maxLength * RedactionInputFactor)), maxLength);
-
-	// How much longer than the cap the text handed to the redaction may be: redaction shortens text far more
-	// often than it lengthens it, so nothing that could reach the capped result is lost.
-	private const int RedactionInputFactor = 8;
+		value is null ? null : Cap(SensitiveErrorTextRedactor.RedactSiteText(value), maxLength);
 
 	private static string Cap(string value, int maxLength) {
 		if (value is null || value.Length <= maxLength) {

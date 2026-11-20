@@ -139,8 +139,9 @@ public sealed class SiteTextWiringTests {
 		TestName = "NonJsonPreview_JwtAcrossTheCut")]
 	[TestCase("Login failed for user 'zq_invented_login'.", "zq_", TestName = "NonJsonPreview_SignInNameAcrossTheCut")]
 	[Category("Unit")]
-	[Description("The non-JSON preview is redacted BEFORE it is cut to 500 characters: a JWT or a quoted sign-in name "
-		+ "that crosses the cut goes whole instead of leaving the half before the cut, which matched no rule.")]
+	[Description("The non-JSON preview is cut to 500 characters BEFORE the redaction, as master cut it (option B). A JWT "
+		+ "or a quoted sign-in name that crosses the cut leaves its first half at the end of the cut text, where master's "
+		+ "chain matches nothing; clio's rules for a JWT and a name a cut left open take it.")]
 	public void NonJsonPreview_ShouldRedactBeforeTheCut_WhenASecretCrossesIt(string secretText, string fragment) {
 		// Arrange
 		string body = new string('x', 494 - secretText.IndexOf(fragment, StringComparison.Ordinal)) + " " + secretText;
@@ -154,8 +155,9 @@ public sealed class SiteTextWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A refused delete's inner message is not cut before the redaction either: a sign-in name after a long "
-		+ "URI, crossing the old 500-character cut, goes whole.")]
+	[Description("A refused delete's inner message keeps master's order: its first line, cut at 500, then the fenced site "
+		+ "rendering. A sign-in name after a long URI, crossing the 500 cut, goes: the rule for a name a cut left open takes "
+		+ "the half before the cut. The closing quote was cut with it.")]
 	public void RecordDeletionInnerMessage_ShouldRedactBeforeAnyCut_WhenASecretCrossesTheOldCut() {
 		// Arrange
 		string message = "See https://" + new string('a', 450) + ".invalid/x Login failed for user 'zq_invented_login'.";
@@ -168,7 +170,7 @@ public sealed class SiteTextWiringTests {
 
 		// Assert
 		inner.Should().NotContain("zq_", because: "the name crossed the old cut and must still go");
-		inner.Should().Contain("Login failed for user '[redacted]'", because: "the reason stays");
+		inner.Should().Contain("Login failed for user '[redacted]", because: "the reason stays");
 	}
 
 	[Test]
@@ -290,6 +292,192 @@ public sealed class SiteTextWiringTests {
 		finished.MessageTail.Should().ContainSingle().Which.Should().NotContain(Marker,
 			because: "the compile output tail quotes the site");
 	}
+
+	#region A site's backslash relative path at every sink
+
+	// odata-create's refused insert as a Windows site wrote it (live run, 20 Nov), with its path decoded, and with its
+	// path JSON-escaped: the spelling a site message that quotes its own JSON carries.
+	internal const string DecodedPathMessage = @"Insert refused. See ..\..\Terrasoft.Configuration\Web.config for the cause.";
+
+	internal const string EscapedPathMessage = @"Insert refused. See ..\\..\\Terrasoft.Configuration\\Web.config for the cause.";
+
+	internal static string PathMessage(bool escaped) => escaped ? EscapedPathMessage : DecodedPathMessage;
+
+	// An OData error whose message is a string (decoded), or whose only text is under innererror, which
+	// CreatioResponseError then reads as the error's raw JSON - the path arrives escaped (odata-update and odata-delete
+	// in the live run).
+	private static string ODataPathError(bool escaped) => escaped
+		? JsonSerializer.Serialize(new { error = new { code = "", innererror = new { message = DecodedPathMessage } } })
+		: JsonSerializer.Serialize(new { error = new { code = "", message = DecodedPathMessage } });
+
+	// What no sink may show of either spelling: the dots and a backslash, and every segment.
+	private static readonly string[] PathPieces = ["..\\", "Terrasoft", "Configuration", "Web.config"];
+
+	internal static void ShouldHoldNoPathPiece(string output, string sink) {
+		output.Should().NotBeNull(because: $"{sink} reports the refusal");
+		foreach (string piece in PathPieces) {
+			output.Should().NotContain(piece, because: $"{sink} carries the site's text, and no piece of its path may survive");
+		}
+		output.Should().Contain("Insert refused. See [redacted-path] for the cause",
+			because: $"{sink} keeps the site's reason and the words around the path");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("site-response.message and code: a backslash relative path, decoded or escaped, leaves no piece.")]
+	public void SiteResponse_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+		string body = JsonSerializer.Serialize(new { errorInfo = new { message = PathMessage(escaped), errorCode = PathMessage(escaped) } });
+
+		// Act
+		SiteResponse response = SiteResponse.FromRefusal(new SiteHttpResponse(500, body));
+
+		// Assert
+		ShouldHoldNoPathPiece(response.Message, "site-response.message");
+		ShouldHoldNoPathPiece(response.Code, "site-response.code");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("odata-update and odata-delete (ODataKeyedWrite): the OData error's message and its raw JSON, which "
+		+ "carries the path escaped, leave no piece of it - the live run kept '..\\\\..' of the escaped spelling.")]
+	public void KeyedWrite_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+
+		// Act
+		string error = ODataKeyedWrite.ValidateWriteResponse(ODataPathError(escaped));
+
+		// Assert
+		ShouldHoldNoPathPiece(error, "the keyed write's error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("odata-create: no field of the serialized result - error, site-response, diagnostic - holds a piece of "
+		+ "a backslash relative path, decoded (the live run kept it whole) or escaped.")]
+	public void ODataCreate_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient, IStatusPreservingApplicationClient>();
+		((IStatusPreservingApplicationClient)client)
+			.SendKeepingStatus(default, default, default, default, default, default, default)
+			.ReturnsForAnyArgs(new SiteHttpResponse(400, ODataPathError(escaped)));
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
+		urlBuilder.Build(Arg.Any<string>()).Returns("http://creatio.invalid/odata/Account");
+		MockFileSystem fileSystem = new();
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(),
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = JsonDocument.Parse("[{\"Name\":\"Acme\"}]").RootElement
+		});
+
+		// Assert
+		response.Failed.Should().Be(1, because: "the site refused the row");
+		ShouldHoldNoPathPiece(response.Results.Single().Error, "odata-create's row error");
+		string serialized = JsonSerializer.Serialize(response, new JsonSerializerOptions {
+			Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+		});
+		foreach (string piece in PathPieces) {
+			serialized.Should().NotContain(piece, because: "no field of the result may carry a piece of the site's path");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The non-JSON preview (DescribeNonJsonResponse) leaves no piece of a backslash relative path.")]
+	public void NonJsonPreview_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+
+		// Act
+		string error = CreatioResponseError.DescribeNonJsonResponse(PathMessage(escaped));
+
+		// Assert
+		ShouldHoldNoPathPiece(error, "the non-JSON preview");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A refused delete's fenced inner message (RecordDeletionService) leaves no piece of a backslash path.")]
+	public void RecordDeletionInnerMessage_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+		string body = JsonSerializer.Serialize(new {
+			error = new { message = "An error has occurred.", innererror = new { message = PathMessage(escaped) } }
+		});
+
+		// Act
+		string inner = RecordDeletionService.ReadInnerMessage(body);
+
+		// Assert
+		ShouldHoldNoPathPiece(inner, "the refused delete's inner message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("DataWriteDiagnostic.message (fenced site text) leaves no piece of a backslash relative path.")]
+	public void DataWriteDiagnostic_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+
+		// Act
+		DataWriteDiagnostic diagnostic = DataWriteDiagnostic.Create("insert", "Account", null, true, true, false,
+			PathMessage(escaped));
+
+		// Assert
+		ShouldHoldNoPathPiece(diagnostic.Message, "DataWriteDiagnostic.message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The DataService envelope's message (DataServiceResponse) leaves no piece of a backslash path.")]
+	public void DataServiceResponse_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+		string body = JsonSerializer.Serialize(new { success = false, errorInfo = new { message = PathMessage(escaped) } });
+
+		// Act
+		Action act = () => DataServiceResponse.ThrowIfUnsuccessful(body, "Write");
+
+		// Assert
+		ShouldHoldNoPathPiece(act.Should().Throw<InvalidOperationException>().Which.Message, "the DataService failure");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The designer's save error (ParseSaveErrorMessage) leaves no piece of a backslash relative path.")]
+	public void DesignerSaveError_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+		JObject failed = JObject.Parse(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = PathMessage(escaped) } }));
+
+		// Act
+		string error = PageSchemaMetadataHelper.ParseSaveErrorMessage(failed, "Failed to save page schema");
+
+		// Assert
+		ShouldHoldNoPathPiece(error, "the designer's save error");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("compile-status: the compiler's diagnostic and the message tail leave no piece of a backslash path.")]
+	public void CompileStatus_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+		PackageBuildDiagnostic diagnostic = new("CS0103", PathMessage(escaped), "C:\\inetpub\\x.cs", 1, 2, false);
+		CompileOperationRegistry registry = new();
+		CompileOperationRecord begun = registry.Begin("tenant", "dev", "UsrPkg");
+
+		// Act
+		string rendered = CompileStatusTool.RenderError(diagnostic);
+		CompileOperationRecord finished = registry.Finish(begun.OperationId, 1, [new ErrorMessage(PathMessage(escaped))]);
+
+		// Assert
+		ShouldHoldNoPathPiece(rendered, "compile-status's diagnostic");
+		ShouldHoldNoPathPiece(finished.MessageTail.Should().ContainSingle().Which, "compile-status's message tail");
+	}
+
+	#endregion
 
 	[Test]
 	[Category("Unit")]
@@ -469,8 +657,10 @@ public sealed class SiteTextWiringTests {
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? ReadServerText(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
+		// Master's order at the four quoted bodies (option B): master's own cut on the raw text before the chain where
+		// master quoted the raw text, and the whole body before the chain where master redacted it.
 		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string? ReadServerText(",
-			"SensitiveErrorTextRedactor.ClampAtBoundary("),
+			"SensitiveErrorTextRedactor.RedactSiteText(quoted)"),
 		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string SiteText(",
 			"SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/ProcessModel/ProcessDesignServerFault.cs", "internal static string SiteMessageOr(",
@@ -510,7 +700,7 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/SetActiveProcessVersionCommand.cs", "private static string BuildFailureMessage(",
 			"ProcessDesignServerFault.SiteWarnings(result.Warnings)"),
 		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SensitiveErrorTextRedactor.RedactSiteText("),
-		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SensitiveErrorTextRedactor.ClampAtBoundary("),
+		("clio/Command/BuildCaseClient.cs", "private static string SiteDetail(", "SensitiveErrorTextRedactor.RedactSiteText(Cap(responseBody))"),
 		("clio/Command/DynamicCaseService.cs", "private static string SiteText(", "SensitiveErrorTextRedactor.RedactSiteText("),
 		("clio/Command/DynamicCaseService.cs", "private static List<string> SiteList(", ".Select(SiteText)"),
 		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult TryAddDependencies(", "SiteText(exception.Message)"),
@@ -565,9 +755,9 @@ public sealed class SiteTextWiringTests {
 		("clio/Command/DynamicCaseService.cs", "public ModifyDynamicCaseResult Modify(", "SiteText(response.ErrorMessage)"),
 		("clio/Command/DynamicCaseService.cs", "private DynamicCaseResult FromServer(", "SiteText(response.ErrorMessage)"),
 		("clio/Command/SchemaTemplateCatalog.cs", "private static string BuildNonJsonErrorMessage(",
-			"SensitiveErrorTextRedactor.ClampAtBoundary("),
+			"TextUtilities.TruncateWithoutSplittingSurrogatePair(responseBody, NonJsonPreviewLength)"),
 		("clio/Package/ServiceResponseJsonGuard.cs", "private static string BuildResponsePreview(",
-			"SensitiveErrorTextRedactor.ClampAtBoundary("),
+			"SensitiveErrorTextRedactor.RedactSiteText(responseBody)"),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private void ReportFailure(", "UntrustedText.FencedSiteText("),
 		("clio/Command/CompileBusinessProcessCommand.cs", "private static string ServerName(", "UntrustedText.FencedSiteText("),
 	];
@@ -1272,10 +1462,13 @@ public sealed class SiteTextWiringTests {
 	}
 
 	// clio's own string literals the newer redaction rules could misread: a scheme word in any case, a written escape
-	// before a letter, or a bracket inside a path-like token (a drive, a UNC share or a path of two segments or more).
+	// before a letter, a bracket inside a path-like token (a drive, a UNC share or a path of two segments or more), or
+	// the start of a backslash relative path (".\x", "..\{0}") or of a drive-relative one ("C:x"), which only the
+	// site-text rules may take.
 	private static readonly Regex OwnTextOfInterest = new(
 		@"(?i:\b(?:basic|ntlm|negotiate|bearer)\b)|\\[rnt][A-Za-z]"
-		+ @"|(?:(?<![A-Za-z])[A-Za-z]:(?:\\|/(?!/))|\\\\[A-Za-z]|(?<![\w.:/])(?:~|\.{1,2})?/[A-Za-z][\w.\-]*/)[^\s""'<>|]*[()\[\]{}]",
+		+ @"|(?:(?<![A-Za-z])[A-Za-z]:(?:\\|/(?!/))|\\\\[A-Za-z]|(?<![\w.:/])(?:~|\.{1,2})?/[A-Za-z][\w.\-]*/)[^\s""'<>|]*[()\[\]{}]"
+		+ @"|(?<![\w./~\\\-])\.{1,2}\\[^\s""'<>|\\]|(?<![\w.:/@\\\-])[A-Za-z]:(?![\\/\s])[\w$\-.]+(?:\\|(?<=\.[a-z]+)\b)",
 		RegexOptions.CultureInvariant);
 
 	// A regular expression is no text clio writes, and the redactor never sees it: a literal is skipped only when it is
@@ -1284,13 +1477,18 @@ public sealed class SiteTextWiringTests {
 	// The literals of interest whose redaction is EXPECTED, keyed by a fragment of the literal, each with its reason.
 	private static readonly Dictionary<string, string> ExpectedOwnTextChanges = new(StringComparer.Ordinal) {
 		["C:\\Projects\\Workspaces\\newModule"] = "an example Windows path in a tool contract: Redact takes every Windows path, as master did",
+		// OPTION B: master's Bearer rule runs first and frozen, and it takes "bearer" with the word after it. clio's own
+		// sentences that say "a bearer token" lose those two words wherever they pass Redact (master
+		// did the same before #1990 reworded them).
+		["bearer token"] = "master's Bearer rule (frozen under option B) takes \"bearer token\"",
 	};
 
 	[Test]
 	[Category("Unit")]
 	[Description("An over-redaction corpus from clio's own text: every string literal in clio/ that holds a scheme "
-		+ "word, a written escape before a letter or a bracket inside a path-like token comes out of Redact and "
-		+ "RedactCredentials unchanged, apart from the named literals whose redaction is the point.")]
+		+ "word, a written escape before a letter, a bracket inside a path-like token or the start of a backslash or "
+		+ "drive-relative path comes out of Redact and RedactCredentials unchanged, apart from the named literals whose "
+		+ "redaction is the point.")]
 	public void OwnText_ShouldComeOutUnchanged_FromRedactAndRedactCredentials() {
 		// Arrange
 		List<string> changed = [];
@@ -1586,6 +1784,33 @@ public sealed class SiteTextBatchWiringTests : BaseCommandTests<DataServiceBatch
 			because: "the item error is the site's text, and its reason stays");
 		JsonSerializer.Serialize(result).Should().NotContain(SiteTextWiringTests.Marker,
 			because: "neither the item error nor its diagnostic may carry the login");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A batch item's error and its diagnostic leave no piece of a backslash relative path, decoded or escaped.")]
+	public void BatchItemError_ShouldCarryNoPieceOfABackslashPath([Values] bool escaped) {
+		// Arrange
+		DataServiceBatchOperation operation = new("update", "Contact", Guid.NewGuid(),
+			new() { ["Name"] = new(1, JsonSerializer.SerializeToElement("Synthetic")) });
+		_client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), 30000, 1, 1).Returns(call => {
+			using JsonDocument sent = JsonDocument.Parse(call.ArgAt<string>(1));
+			string queryId = sent.RootElement.GetProperty("items")[0].GetProperty("queryId").GetString();
+			return JsonSerializer.Serialize(new {
+				queryResults = new[] {
+					new { queryId, success = false, responseStatus = new { Message = SiteTextWiringTests.PathMessage(escaped) } }
+				}
+			});
+		});
+
+		// Act
+		DataServiceBatchResult result = _command.ExecuteBatch([operation]);
+
+		// Assert
+		SiteTextWiringTests.ShouldHoldNoPathPiece(result.Items.Should().ContainSingle().Which.Error, "the batch item's error");
+		JsonSerializer.Serialize(result, new JsonSerializerOptions {
+			Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+		}).Should().NotContain("Terrasoft", because: "the item's diagnostic may not carry the path either");
 	}
 }
 

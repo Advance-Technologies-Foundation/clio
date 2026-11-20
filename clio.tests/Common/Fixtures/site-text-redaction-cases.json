@@ -13,7 +13,7 @@
       "redact": "SensitiveErrorTextRedactor.Redact must satisfy the row, and so must RedactSiteText.",
       "site": "RedactSiteText must satisfy the row; Redact must still keep every mustStay fragment."
     },
-    "fields": "mustGo: the secret core that must not appear in the output (a host, a user, a token, a password, a stack frame line), not a phrase around it, so a partial redaction cannot pass. mustStay: the phrases that carry the site's reason and must appear verbatim, cut where clio's placeholders sit (a whole input when clio keeps all of it), never stop-words alone. hostOutput: the host lane's own result, for reference only. pending: asserted in a later PR (its mustStay are the host's content words)."
+    "fields": "mustGo: the secret core that must not appear in the output (a host, a user, a token, a password, a stack frame line), not a phrase around it, so a partial redaction cannot pass. mustStay: the phrases that carry the site's reason and must appear verbatim, cut where clio's placeholders sit (a whole input when clio keeps all of it), never stop-words alone. hostOutput: the host lane's own result, for reference only. pending: asserted in a later PR (its mustStay are the host's content words). overMatch (option B): mustStay fragments master's frozen chain removes (or, named so, one of clio's extra rules), each row with its overMatchReason; they are asserted ABSENT, so a change in master's chain shows up here."
   },
   "rows": [
     {
@@ -261,7 +261,15 @@
         "&token",
         "&secret",
         "&key"
-      ]
+      ],
+      "overMatch": [
+        "&api_key",
+        "&ApiKey",
+        "&token",
+        "&secret",
+        "&key"
+      ],
+      "overMatchReason": "master's pair value runs across '&' and takes the key names after it"
     },
     {
       "id": "case-013",
@@ -313,7 +321,11 @@
       "mustStay": [
         "Authorization: Bearer",
         "rejected"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-016",
@@ -330,7 +342,11 @@
       "mustGo": [],
       "mustStay": [
         "The bearer token expired"
-      ]
+      ],
+      "overMatch": [
+        "The bearer token expired"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-017",
@@ -1048,7 +1064,11 @@
         "smtp-host",
         "db_user",
         "my-passcode"
-      ]
+      ],
+      "overMatch": [
+        "smtp-host"
+      ],
+      "overMatchReason": "Extra: a label right before master's host=[redacted] is read as a host label"
     },
     {
       "id": "case-056",
@@ -1203,7 +1223,11 @@
       "mustStay": [
         "access_token: Bearer",
         "rejected"
-      ]
+      ],
+      "overMatch": [
+        "access_token: Bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-064",
@@ -1222,7 +1246,11 @@
       "mustStay": [
         "password=Basic",
         "rejected"
-      ]
+      ],
+      "overMatch": [
+        "password=Basic"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-065",
@@ -1239,7 +1267,11 @@
       ],
       "mustStay": [
         "token: Bearer"
-      ]
+      ],
+      "overMatch": [
+        "token: Bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-066",
@@ -1451,7 +1483,11 @@
       "mustGo": [],
       "mustStay": [
         "Bearer token-based access denied"
-      ]
+      ],
+      "overMatch": [
+        "Bearer token-based access denied"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-079",
@@ -1682,7 +1718,11 @@
       "mustStay": [
         "Authorization: Basic",
         "was rejected"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Basic"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-091",
@@ -1723,7 +1763,11 @@
       "mustStay": [
         "Authorization: Digest",
         "was rejected"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Digest"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-093",
@@ -4028,7 +4072,11 @@
       ],
       "mustStay": [
         "Authorization: Bearer"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-235",
@@ -4118,7 +4166,11 @@
       "mustGo": [],
       "mustStay": [
         "Invalid Bearer token."
-      ]
+      ],
+      "overMatch": [
+        "Invalid Bearer token."
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-241",
@@ -4243,7 +4295,11 @@
       "mustStay": [
         "BEARER",
         "NEGOTIATE"
-      ]
+      ],
+      "overMatch": [
+        "BEARER"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-251",
@@ -4261,7 +4317,11 @@
       ],
       "mustStay": [
         "Authorization: Bearer \""
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Bearer \""
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-252",
@@ -4279,7 +4339,11 @@
       ],
       "mustStay": [
         "Authorization: Bearer '"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Bearer '"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-253",
@@ -4328,7 +4392,11 @@
       "mustGo": [],
       "mustStay": [
         "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\", error_description=\"The access token expired\""
-      ]
+      ],
+      "overMatch": [
+        "WWW-Authenticate: Bearer realm=\"api\", error=\"invalid_token\", error_description=\"The access token expired\""
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-256",
@@ -4383,7 +4451,11 @@
       "mustStay": [
         "Authorization: Digest",
         "failed"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Digest"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-259",
@@ -4402,7 +4474,11 @@
       ],
       "mustStay": [
         "Authorization: Digest"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Digest"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-260",
@@ -4422,7 +4498,11 @@
       "mustStay": [
         "Authorization: Digest",
         "failed"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Digest"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-261",
@@ -4441,7 +4521,11 @@
       ],
       "mustStay": [
         "Authorization: Digest"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Digest"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-262",
@@ -4491,7 +4575,11 @@
       ],
       "mustStay": [
         "Authorization: bearer"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-265",
@@ -4509,7 +4597,11 @@
       ],
       "mustStay": [
         "Authorization: ntlm"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: ntlm"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-266",
@@ -4527,7 +4619,11 @@
       ],
       "mustStay": [
         "Authorization: negotiate"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: negotiate"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-267",
@@ -4545,7 +4641,11 @@
       ],
       "mustStay": [
         "Authorization: Negotiate"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Negotiate"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]"
     },
     {
       "id": "case-268",
@@ -4565,7 +4665,12 @@
       "mustStay": [
         "Authorization: Ntlm",
         "bEARER"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: Ntlm",
+        "bEARER"
+      ],
+      "overMatchReason": "master's pair rule takes the scheme word as the key's value and writes key=[redacted]; master's Bearer rule takes 'bEARER' with its credential"
     },
     {
       "id": "case-269",
@@ -4582,7 +4687,11 @@
       ],
       "mustStay": [
         "bearer"
-      ]
+      ],
+      "overMatch": [
+        "bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-270",
@@ -4659,7 +4768,11 @@
       ],
       "mustStay": [
         "Authorization: bearer"
-      ]
+      ],
+      "overMatch": [
+        "Authorization: bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-275",
@@ -4804,7 +4917,11 @@
         "Instance='",
         "' is down; see (",
         ") or x"
-      ]
+      ],
+      "overMatch": [
+        ") or x"
+      ],
+      "overMatchReason": "master's path rule takes the closing bracket after a path"
     },
     {
       "id": "case-283",
@@ -5058,7 +5175,11 @@
       "mustGo": [],
       "mustStay": [
         "Error in UsrOrderPage.js:42:13"
-      ]
+      ],
+      "overMatch": [
+        "Error in UsrOrderPage.js:42:13"
+      ],
+      "overMatchReason": "master's host:port rule reads a file and its line as a host and a port"
     },
     {
       "id": "case-298",
@@ -5292,7 +5413,11 @@
       "mustGo": [],
       "mustStay": [
         "Key: UsrStatus; key: UsrOrder_FormPage; token: expired; key:UsrStatus"
-      ]
+      ],
+      "overMatch": [
+        "Key: UsrStatus; key: UsrOrder_FormPage; token: expired; key:UsrStatus"
+      ],
+      "overMatchReason": "master's pair rule takes the identifier after 'token:'"
     },
     {
       "id": "case-311",
@@ -5309,7 +5434,11 @@
       ],
       "mustStay": [
         "token: Bearer"
-      ]
+      ],
+      "overMatch": [
+        "token: Bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     },
     {
       "id": "case-312",
@@ -6104,7 +6233,11 @@
       "mustStay": [
         "bearer"
       ],
-      "note": "Host trade: the host keeps \"ABCD\". By the header's definitions this is no C row - clio does not keep it - so it is E: master's Bearer rule removed every run after the word, and nothing it removed may survive, so clio removes \"ABCD\" and keeps the scheme word."
+      "note": "Host trade: the host keeps \"ABCD\". By the header's definitions this is no C row - clio does not keep it - so it is E: master's Bearer rule removed every run after the word, and nothing it removed may survive, so clio removes \"ABCD\" and keeps the scheme word.",
+      "overMatch": [
+        "bearer"
+      ],
+      "overMatchReason": "master's Bearer rule takes the scheme word with its credential"
     }
   ]
 }

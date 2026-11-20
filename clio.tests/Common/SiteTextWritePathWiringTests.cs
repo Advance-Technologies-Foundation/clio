@@ -43,6 +43,10 @@ public sealed class SiteTextWritePathWiringTests {
 	private const string Reason = "Login failed for user";
 	private const string RedactedReason = "Login failed for user '[redacted]'.";
 
+	// What the site cut leaves of a stack frame after the line break (option B): ONE placeholder, never nothing, because
+	// a rule after master's chain only replaces spans.
+	private const string RedactedFrame = "\n[redacted]";
+
 	private const string SelectQueryUrl = "http://test/DataService/json/SyncReply/SelectQuery";
 	private const string DesignPackageUrl = "http://test/ServiceModel/ApplicationPackagesService.svc/GetDesignPackageUId";
 	private const string ParentSchemasUrl = "http://test/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas";
@@ -238,9 +242,10 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("update-page: a design-package refusal whose message is only a stack trace (DescribeRefusal redacts it "
-		+ "to nothing) reads as clio's own sentence, not as a dangling 'Failed to resolve design package: '.")]
-	public void UpdatePage_ShouldSayItsOwnSentence_WhenTheRefusalRedactsToNothing() {
+	[Description("update-page: a design-package refusal whose message is only a stack trace (DescribeRefusal) quotes the "
+		+ "site cut's one placeholder - under option B the frame becomes [redacted], not nothing - never a dangling "
+		+ "'Failed to resolve design package: ' and never the frame.")]
+	public void UpdatePage_ShouldQuoteOnlyThePlaceholder_WhenTheRefusalIsOnlyAStackTrace() {
 		// Arrange
 		IApplicationClient client = UpdatePageSite(Refusal("\n   at Terrasoft.Fixture.Designer.Read()"),
 			HierarchyOf(DesignPackage), Refusal("unused"));
@@ -249,8 +254,8 @@ public sealed class SiteTextWritePathWiringTests {
 		(string error, List<string> _) = RunUpdatePage(client, () => UpdatePageOptions());
 
 		// Assert
-		error.Should().Be($"Failed to resolve design package for '{SchemaName}': Failed to resolve design package",
-			because: "a reason that redacts to nothing is no reason");
+		error.Should().Be($"Failed to resolve design package for '{SchemaName}': Failed to resolve design package: [redacted]",
+			because: "the frame is replaced by one placeholder, and no part of it is quoted");
 	}
 
 	[Test]
@@ -386,9 +391,9 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("create-page: a template catalog refusal whose message redacts to nothing (DescribeRefusal) reads as "
-		+ "clio's own sentence instead of an empty one.")]
-	public void CreatePage_ShouldSayItsOwnSentence_WhenTheCatalogRefusalRedactsToNothing() {
+	[Description("create-page: a template catalog refusal whose message is only a stack trace (DescribeRefusal) quotes "
+		+ "the site cut's one placeholder - under option B the frame becomes [redacted], not nothing - and never the frame.")]
+	public void CreatePage_ShouldQuoteOnlyThePlaceholder_WhenTheCatalogRefusalIsOnlyAStackTrace() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecuteGetRequest(Arg.Any<string>()).Returns(Refusal("\n   at Terrasoft.Fixture.Catalog.Read()"));
@@ -400,8 +405,8 @@ public sealed class SiteTextWritePathWiringTests {
 		command.TryCreatePage(CreatePageOptions(), out PageCreateResponse response);
 
 		// Assert
-		response.Error.Should().Be("Failed to resolve template catalog: Failed to load page template catalog",
-			because: "a reason that redacts to nothing is no reason");
+		response.Error.Should().Be("Failed to resolve template catalog: [redacted]",
+			because: "the frame is replaced by one placeholder, and no part of it is quoted");
 	}
 
 	#endregion
@@ -520,12 +525,12 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The non-JSON preview's redaction input is clamped (8x the 200-character preview) without cutting a "
-		+ "token in two: a token that straddles the clamp is dropped, not shown as a head the redactor cannot "
-		+ "recognize.")]
-	public void SelectQuery_ShouldNotShowATokenHead_WhenTheClampCutsTheToken() {
+	[Description("The non-JSON preview is redacted over the WHOLE body, with no clamp before the chain (option B, "
+		+ "master's order), and cut at 200 after it: a token far into a long body is redacted whole, never shown as a "
+		+ "head the redactor cannot recognize. (The clamp at 1,600 that this body crossed is gone.)")]
+	public void SelectQuery_ShouldNotShowATokenHead_WhenTheTokenIsFarIntoTheBody() {
 		// Arrange - a secret value the redaction shortens to a placeholder, so what follows it reaches the preview, and
-		// a token that starts just before the 1,600-character clamp.
+		// a token that starts where the removed 1,600-character clamp would have cut it.
 		string lead = "password=" + new string('k', 1600 - 9 - 1 - 30) + " ";
 		string body = lead + TokenHead + ".dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk tail";
 
@@ -998,7 +1003,7 @@ public sealed class SiteTextWritePathWiringTests {
 
 		// Assert
 		exitCode.Should().Be(0, because: "the server accepted the write");
-		logger.Received().WriteWarning("Warning " + RedactedReason);
+		logger.Received().WriteWarning("Warning " + RedactedReason + RedactedFrame);
 		logger.Received().WriteWarning(OwedCompileWarning);
 		foreach (string text in Logged(logger)) {
 			text.Should().NotContainAny([Marker, "Terrasoft.Fixture"],
@@ -1115,8 +1120,9 @@ public sealed class SiteTextWritePathWiringTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Every dynamic-case tool: a body the BuildCase/DescribeCase/ModifyCase route answers that is not the "
-		+ "envelope (BuildCaseClient's quoted detail) goes through RedactSiteText before its cap, in the result and in "
-		+ "the command's log lines - a non-JSON body, a JSON body that is not the envelope, and a bare fault string.")]
+		+ "envelope (BuildCaseClient's quoted detail) goes through RedactSiteText over master's 400-character cap, in the "
+		+ "result and in the command's log lines - a non-JSON body, a JSON body that is not the envelope, and a bare fault "
+		+ "string.")]
 	public void BuildCaseClient_ShouldRedactTheQuotedBody_InTheResultAndTheLog(
 		[Values("text", "json", "fault")] string shape) {
 		// Arrange
@@ -1288,7 +1294,7 @@ public sealed class SiteTextWritePathWiringTests {
 
 		// Assert
 		exitCode.Should().Be(1, because: "the build failed");
-		result.Leftovers.Should().Equal(["Item " + RedactedReason, "UsrOrderCase schema"],
+		result.Leftovers.Should().Equal(["Item " + RedactedReason + RedactedFrame, "UsrOrderCase schema"],
 			because: "each leftover is redacted on its own and the second survives the first one's frame");
 		result.Notes.Should().Contain("Second note", because: "a frame in one note does not cut the next");
 		result.Warnings.Should().Contain("Second warning", because: "a frame in one warning does not cut the next");
@@ -1429,9 +1435,9 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A layout refusal whose element names all redact to nothing gets no 'Affected elements' clause, "
-		+ "rather than one that lists nothing.")]
-	public void ElementsClause_ShouldBeOmitted_WhenEveryNameRedactsToNothing() {
+	[Description("A layout refusal whose only element name is a stack trace names the site cut's one placeholder - "
+		+ "under option B the frame becomes [redacted], not nothing - and never the frame.")]
+	public void ElementsClause_ShouldNameOnlyThePlaceholder_WhenTheNameIsOnlyAStackTrace() {
 		// Arrange
 		LayoutChangeRelay relay = new() { Elements = ["\n   at Terrasoft.Fixture.Layout.Move()"] };
 
@@ -1439,7 +1445,7 @@ public sealed class SiteTextWritePathWiringTests {
 		string clause = relay.ElementsClause();
 
 		// Assert
-		clause.Should().BeEmpty(because: "a clause that names nothing reads as a truncated message");
+		clause.Should().Be(" Affected elements: [redacted].", because: "the frame is replaced by one placeholder");
 	}
 
 	[TestCase("create", TestName = "ProcessWriteSuccess_ShouldRedactTheNames(create)")]

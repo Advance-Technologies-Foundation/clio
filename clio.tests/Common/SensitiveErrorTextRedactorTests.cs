@@ -529,7 +529,8 @@ public sealed class SensitiveErrorTextRedactorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Fails closed with a fixed sentinel when any redaction regex exhausts its budget.")]
+	[Description("Fails closed with a fixed sentinel when any redaction regex exhausts its budget. Option B: the sentinel "
+		+ "is [redacted-timeout], so a reader can tell a redaction that gave up from a redacted value.")]
 	public void ExecuteRegex_ShouldFailClosed_WhenRegexTimesOut() {
 		// Arrange
 		Func<string> timedOut = () => throw new System.Text.RegularExpressions.RegexMatchTimeoutException();
@@ -538,7 +539,7 @@ public sealed class SensitiveErrorTextRedactorTests {
 		string result = SensitiveErrorTextRedactor.ExecuteRegex(timedOut);
 
 		// Assert
-		result.Should().Be("[redacted]",
+		result.Should().Be("[redacted-timeout]",
 			because: "a timeout must reveal none of the attacker-controlled source text");
 	}
 
