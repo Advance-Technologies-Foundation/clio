@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.244",
-  "sequence": 1015244000,
+  "libraryVersion": "1.15.245",
+  "sequence": 1015245000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -167,6 +167,7 @@
     "creatio.process-sub-process-when",
     "creatio.process-task-category",
     "creatio.process-task-performer",
+    "creatio.process-timer-start",
     "creatio.process-tracing",
     "creatio.process-version-writes",
     "creatio.process-versions",
@@ -347,6 +348,7 @@
     "process-sub-process-when",
     "process-task-category",
     "process-task-performer",
+    "process-timer-start",
     "process-tracing",
     "process-version-writes",
     "process-versions",
