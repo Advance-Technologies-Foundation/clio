@@ -111,8 +111,12 @@ internal static class DataServiceResponse {
 				errorMessage = rsMessage.GetString() ?? errorMessage;
 			}
 
+			// The service's message is the site's own text: it takes the site-text redaction here, where it is
+			// read, because the exception's message travels on to callers that only Redact it. The guidance is
+			// chosen from the raw text and is clio's own sentence.
 			throw new InvalidOperationException(
-				$"{operationName} failed: {errorMessage}{BuildProtectedObjectGuidance(errorMessage)}");
+				$"{operationName} failed: {SensitiveErrorTextRedactor.RedactSiteText(errorMessage)}"
+				+ BuildProtectedObjectGuidance(errorMessage));
 		}
 	}
 

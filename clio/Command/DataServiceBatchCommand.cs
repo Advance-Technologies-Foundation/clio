@@ -289,11 +289,11 @@ public sealed class DataServiceBatchService(IApplicationClient client, IServiceU
 		if (match.TryGetProperty("responseStatus", out JsonElement status) && status.ValueKind == JsonValueKind.Object
 			&& (status.TryGetProperty("Message", out JsonElement message) || status.TryGetProperty("message", out message))
 			&& message.ValueKind == JsonValueKind.String) {
-			error = SensitiveErrorTextRedactor.RedactUntrustedOrNull(message.GetString());
+			error = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(message.GetString());
 		}
 		if (error is null && match.TryGetProperty("errorInfo", out JsonElement info) && info.ValueKind == JsonValueKind.Object
 			&& info.TryGetProperty("message", out JsonElement detail) && detail.ValueKind == JsonValueKind.String) {
-			error = SensitiveErrorTextRedactor.RedactUntrustedOrNull(detail.GetString());
+			error = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(detail.GetString());
 		}
 		return error;
 	}

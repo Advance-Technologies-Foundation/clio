@@ -530,7 +530,7 @@ public class RunProcessCommand(
 		// rather than reading the replacement as data.
 		if (masked.Count > 0) {
 			(response.Warnings ??= []).Add($"resultParameterValues {string.Join(", ", masked)} had text that looks "
-				+ "like a credential (an Authorization or Bearer value, a secret-named field or pair) replaced by "
+				+ "like a credential (an Authorization header, a bearer token, a secret-named field or pair) replaced by "
 				+ "[redacted]; the rest of each value is as the run returned it. The user can see the original in "
 				+ "Creatio's process log.");
 		}

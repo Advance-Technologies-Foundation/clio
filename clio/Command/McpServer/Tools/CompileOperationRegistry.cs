@@ -165,11 +165,17 @@ public sealed class CompileOperationRegistry : ICompileOperationRegistry {
 	// never land inside a string and orphan a value from its key. It was a plain missing-redaction gap, not
 	// a truncation one — and it is redacted BEFORE the tail is taken, following the rule story 21 produced:
 	// redact first, then transform.
+	//
+	// SITE-text redaction, not Redact: the tail is the compiler's and the build service's output - the
+	// environment's own text, quoting its paths, its server and sometimes its connection string - and the rules
+	// only a site's text may take (a server instance, a relative path, a stack trace after the reason) are safe
+	// on the few lines clio writes around them.
 	private static IReadOnlyList<string> BuildMessageTail(IReadOnlyList<LogMessage> messages) {
 		return messages is null
 			? []
-			: SensitiveErrorTextRedactor.RedactAll(
-				messages.TakeLast(MessageTailCap).Select(message => message.Value?.ToString() ?? string.Empty));
+			: messages.TakeLast(MessageTailCap)
+				.Select(message => SensitiveErrorTextRedactor.RedactSiteText(message.Value?.ToString() ?? string.Empty))
+				.ToList();
 	}
 
 }

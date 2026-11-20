@@ -126,8 +126,22 @@ internal static partial class CreatioResponseError {
 		string status = TryGetMarkupErrorStatusCode(body, out int statusCode)
 			? $" The server answered with an {MarkupStatusPhrase(statusCode)}."
 			: string.Empty;
-		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: {Truncate(body)}";
+		// The preview is the site's own text, so it takes the site-text redaction: a stack trace or an HTML page
+		// after a line break goes, as do sign-in and server names. The callers still Redact the whole sentence.
+		// REDACTED FIRST, then cut to the preview length: cutting first split a token or a quoted name at the cut, and
+		// the half left before it matched no rule ("…for user 'inven" kept "inven", a JWT kept its first segments).
+		// The text handed to the redaction is clamped to a multiple of the preview, as RedactUntrustedOrNull does, so
+		// a page-sized body does not run the chain over text the preview drops - at a word boundary, so the clamp
+		// cannot split a secret either.
+		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: "
+			+ Truncate(SensitiveErrorTextRedactor.RedactSiteText(
+				SensitiveErrorTextRedactor.ClampAtBoundary(body, PreviewLength * PreviewRedactionInputFactor)));
 	}
+
+	// The preview length of a non-JSON body, and how much longer the text handed to the redaction before the cut may
+	// be: redaction shortens text far more often than it lengthens it.
+	private const int PreviewLength = 500;
+	private const int PreviewRedactionInputFactor = 8;
 
 	/// <summary>
 	/// The one noun phrase every caller uses to name an error page by the status its title states, so
@@ -410,7 +424,7 @@ internal static partial class CreatioResponseError {
 		if (string.IsNullOrEmpty(value)) {
 			return "<empty>";
 		}
-		return value.Length > 500 ? value[..500] + "..." : value;
+		return value.Length > PreviewLength ? value[..PreviewLength] + "..." : value;
 	}
 
 	/// <summary>

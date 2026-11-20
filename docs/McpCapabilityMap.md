@@ -334,13 +334,42 @@ apart from clio's wording.
 | Member | Meaning |
 |---|---|
 | `status` | The HTTP status of that response, always present. A Creatio service often refuses with HTTP 200 and `success:false`; the status then reads 200, because that is what the site sent. |
-| `message` | The site's own message, only from a known JSON shape: `errorInfo.message`, OData `error.message` (or `error.message.value`), `responseStatus.Message`, `errorMessage`, or an ASP.NET fault's `Message` / `message` / `ExceptionMessage`; each also inside a WCF `<Method>Result` wrapper. It passes the same sensitive-text redaction as the `error` text beside it (URIs, paths, host:port, emails, credential and connection-string pairs become placeholders) and is capped at 2,000 characters with a trailing "…". Omitted for an HTML page, an empty body, plain text or an unknown JSON shape. |
+| `message` | The site's own message, only from a known JSON shape: `errorInfo.message`, OData `error.message` (or `error.message.value`), `responseStatus.Message`, `errorMessage`, or an ASP.NET fault's `Message` / `message` / `ExceptionMessage`; each also inside a WCF `<Method>Result` wrapper. It passes the SITE-text redaction (`SensitiveErrorTextRedactor.RedactSiteText`): everything the `error` text's redaction removes (URIs, paths, host:port, IPv6 and private IPv4 addresses, emails, scheme credentials after Basic/NTLM/Negotiate/Bearer/Digest, credential and connection-string pairs) plus what only a site writes - the sign-in name in a database's own phrase (`Login failed for user '…'`, PostgreSQL's role refusals), the database or server name (`database "…"`, `open server '…'`), connection-string sign-in and address keys, a Windows server instance (`SQL01\SQLEXPRESS`), a relative path (`./`, `../`, `~/`), a key-like run right after a secret noun, and a stack trace or HTML page after the reason. The site's reason stays: a database's own refusal sentence, column, table, constraint and index names, CRM role names and version numbers. A regex timeout anywhere in that chain replaces the whole message with `[redacted]`. It is then capped at 2,000 characters with a trailing "…". Omitted for an HTML page, an empty body, plain text or an unknown JSON shape. |
 | `code` | The site's own error code (`errorInfo.errorCode`, OData `error.code`, `responseStatus.ErrorCode`), when present; redacted like `message`. |
 | `body` | What KIND of body the site sent: one of the four words `json`, `html`, `text` or `empty`. It never holds the body itself, so no HTML page, stack trace or other unredacted text reaches the result through it. |
 
-Nothing in `site-response` is unredacted site text: `message` and `code` are redacted and capped, `status` is a
+Nothing in `site-response` is unredacted site text: `message` and `code` are site-text redacted and capped, `status` is a
 number and `body` one of four fixed words. clio never copies `errorInfo.stackTrace`. A host that shows the
 text may apply its own redaction on top.
+
+The same site-text redaction covers these other fields that carry the site's own words: the OData server error
+in `error` of odata-create rows, odata-update and odata-delete; the up-to-500-character preview of a non-JSON
+body after `Response:` (redacted before it is cut to 500 characters); batch item errors; `diagnostic.message`;
+the designer and DataService error envelopes that create-page, update-page, sync-pages and the DataService write
+tools put into `error` through `ParseSaveErrorMessage` and `DataServiceResponse.ThrowIfUnsuccessful`; and
+compile-status's compiler diagnostics and message tail. **Not every field that carries a site's words is wired
+yet.** The other readers of a site's error text - the write tools' own designer and build paths (process
+design, compile, package build and install, the page designer hierarchy, the entity schema designer, dynamic case,
+SelectQuery failures) and the remaining envelope readers (execute-esq's DataService failure, the web-service
+designer, sys-settings, the ATF data provider, the application, section and schema commands, odata-read's debug
+detail, and more) - still pass the general redaction only. Each one is listed by file and member, with the change
+that wires it, in the known-unwired list of `clio.tests/Common/SiteTextWiringTests.cs`. Its source guard fails the
+build on a new unlisted reader OF THE FORMS IT SCANS FOR:
+- the site-error JSON names written as literals;
+- reads of members named `ErrorInfo`, `ResponseStatus` or `ExceptionMessage`, or decorated with a site-error JSON
+  name through `[JsonPropertyName]`, `[JsonProperty]` or `[DataMember(Name=…)]` (which makes `.ErrorMessage` one);
+- those names in a property pattern right after `{` or `,`, nested, extended or in a switch arm;
+- constants and static or initialized properties that hold them.
+
+The scan is by name. It does not see a site's text read through a member of any other name, a property name built
+at run time, a JSON path, a name held in a local variable, reflection or `dynamic`
+(`docs/knowledge/Common/site-text-takes-redact-site-text-and-fails-closed.md`). clio's own error text, its log lines, and the serialized envelope `clio-run` returns pass the
+general redaction only by design. That redaction leaves relative paths and the database's sign-in phrases alone;
+keeps a four-part version unless it falls in a private address range with no version word before it
+(`version 10.0.0.1`, `Version=10.0.0.0` and `Creatio 8.1.0.5` stay, a bare `10.0.0.1` goes); and keeps a
+serialized envelope valid JSON for the escapes its tests cover (`\"`, `\u0022`, and an escaped backslash before
+the closing quote). Every redacted endpoint - a URI, a host and port, an IPv6 or a private IPv4 address - reads
+`[redacted-uri]`.
 
 **Absent** on success, when no HTTP response exists (timeout, DNS, TLS, connection refused), and when the
 failure is clio's own (validation, a refused precondition). The field is optional, so a caller that ignores it

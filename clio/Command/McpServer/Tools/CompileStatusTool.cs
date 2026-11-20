@@ -365,7 +365,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		projectName is null
 		|| (projectName.Length <= MaxPlatformProjectNameLength && IsMatch(PlatformProjectName, projectName))
 			? projectName
-			: UntrustedText.Fenced(projectName);
+			: UntrustedText.FencedSiteText(projectName);
 
 	// Both patterns are anchored and linear, so their timeout fires only on a starved thread; that must not turn a
 	// valid answer into a tool error, and the safe reading of "could not tell" is "not a match".
@@ -379,8 +379,8 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 
 	// The compiler's text is authored by whoever wrote the code on the environment, so it is fenced as data; the
 	// file is cut to its NAME, because the environment's directory layout is not the agent's business.
-	private static string RenderError(PackageBuildDiagnostic diagnostic) =>
-		UntrustedText.Fenced(diagnostic.Format(static code => code, FileNameOnly));
+	internal static string RenderError(PackageBuildDiagnostic diagnostic) =>
+		UntrustedText.FencedSiteText(diagnostic.Format(static code => code, FileNameOnly));
 
 	// Not Path.GetFileName: the path is the ENVIRONMENT's, so a Windows path must lose its directories on a Linux host.
 	private static string FileNameOnly(string path) =>

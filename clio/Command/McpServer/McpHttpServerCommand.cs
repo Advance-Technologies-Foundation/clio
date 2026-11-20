@@ -39,7 +39,7 @@ public class McpHttpServerCommandOptions : McpHostCommandOptions
 	[Option("platform-api-key", Required = false,
 		HelpText = "Non-OAuth dev/offline fallback for per-request credential passthrough. "
 			+ "Comma-separated platform API key(s) (here or via CLIO_MCP_HTTP_PLATFORM_API_KEY); "
-			+ "requests must present a matching 'Authorization: Bearer <key>'. IGNORED entirely "
+			+ "requests must present the key as the bearer token of their Authorization header. IGNORED entirely "
 			+ "when --auth-authority is configured -- standard OAuth authorization is then the only "
 			+ "front door (it cannot be combined with this key on the same Authorization header).")]
 	public string PlatformApiKey { get; set; }

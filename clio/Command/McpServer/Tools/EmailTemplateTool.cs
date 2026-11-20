@@ -576,7 +576,7 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		if (!string.IsNullOrWhiteSpace(response)) {
 			using JsonDocument document = JsonDocument.Parse(response);
 			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload, out string error)) {
-				throw new InvalidOperationException(error);
+				throw new InvalidOperationException(SensitiveErrorTextRedactor.RedactSiteText(error));
 			}
 		}
 	}
@@ -590,7 +590,7 @@ public sealed class EmailTemplateContentService(IToolCommandResolver commandReso
 		}
 		using JsonDocument document = JsonDocument.Parse(json);
 		if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload, out string error)) {
-			throw new InvalidOperationException(error);
+			throw new InvalidOperationException(SensitiveErrorTextRedactor.RedactSiteText(error));
 		}
 		if (!document.RootElement.TryGetProperty("value", out JsonElement value)
 				|| value.ValueKind != JsonValueKind.Array) {

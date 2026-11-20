@@ -332,7 +332,7 @@ internal static class ODataFieldValidation {
 		try {
 			using JsonDocument doc = JsonDocument.Parse(body);
 			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload, out string serverError)
-				? new EntityMetadata(false, [], [], SensitiveErrorTextRedactor.Redact(serverError), null)
+				? new EntityMetadata(false, [], [], SensitiveErrorTextRedactor.RedactSiteText(serverError), null)
 				: new EntityMetadata(false, [], [], null,
 					SensitiveErrorTextRedactor.Redact(CreatioResponseError.DescribeNonJsonResponse(body)));
 		} catch (JsonException) {
@@ -743,7 +743,7 @@ internal static class ODataFieldValidation {
 			// success. The absent-error branch used to return Succeeded: true, so a `{}` body (or any
 			// unrelated JSON object) confirmed the fields, sent the PATCH and recreated #1212.
 			return CreatioResponseError.TryDetect(doc.RootElement, CreatioResponseContext.ODataPayload, out string serverError)
-				? new ProbeResult(false, SensitiveErrorTextRedactor.Redact(serverError), null)
+				? new ProbeResult(false, SensitiveErrorTextRedactor.RedactSiteText(serverError), null)
 				: new ProbeResult(false, null, SensitiveErrorTextRedactor.Redact(unverifiedReason));
 		} catch (JsonException) {
 			//The body itself is never quoted: DescribeNonJsonResponse embeds a 500-character preview,

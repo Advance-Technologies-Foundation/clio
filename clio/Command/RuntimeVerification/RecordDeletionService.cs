@@ -507,8 +507,10 @@ internal sealed class RecordDeletionService(
 			if (inner is null) {
 				return null;
 			}
-			string firstLine = ProcessRunMonitor.FirstLine(inner);
-			return UntrustedText.Fenced(firstLine.Length > 500 ? firstLine[..500] : firstLine);
+			// Not cut here: a cut before the redaction split a token or a quoted name, and the half before it matched
+			// no rule. The fenced rendering clamps its input itself - at a word boundary, BEFORE it redacts - and
+			// caps its output after.
+			return UntrustedText.FencedSiteText(ProcessRunMonitor.FirstLine(inner));
 		}
 		catch (System.Text.Json.JsonException) {
 			return null;
