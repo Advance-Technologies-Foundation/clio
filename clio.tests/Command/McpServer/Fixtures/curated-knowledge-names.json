@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.236",
-  "sequence": 1015236000,
+  "libraryVersion": "1.15.244",
+  "sequence": 1015244000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -66,6 +66,7 @@
     "creatio.dashboard-rights",
     "creatio.dashboards",
     "creatio.data-bindings",
+    "creatio.data-bindings-details",
     "creatio.dataforge-orchestration",
     "creatio.dataservice.upsert",
     "creatio.db-view-entities",
@@ -246,6 +247,7 @@
     "dashboard-rights",
     "dashboards",
     "data-bindings",
+    "data-bindings-details",
     "dataforge-orchestration",
     "dataservice-upsert",
     "db-view-entities",
