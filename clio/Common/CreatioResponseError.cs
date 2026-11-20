@@ -130,18 +130,13 @@ internal static partial class CreatioResponseError {
 		// after a line break goes, as do sign-in and server names. The callers still Redact the whole sentence.
 		// REDACTED FIRST, then cut to the preview length: cutting first split a token or a quoted name at the cut, and
 		// the half left before it matched no rule ("…for user 'inven" kept "inven", a JWT kept its first segments).
-		// The text handed to the redaction is clamped to a multiple of the preview, as RedactUntrustedOrNull does, so
-		// a page-sized body does not run the chain over text the preview drops - at a word boundary, so the clamp
-		// cannot split a secret either.
+		// Nothing is clamped before the redaction (option B, condition 3): the whole body goes through master's chain.
 		return $"Creatio did not return a JSON response.{status} {NonJsonResponseHint} Response: "
-			+ Truncate(SensitiveErrorTextRedactor.RedactSiteText(
-				SensitiveErrorTextRedactor.ClampAtBoundary(body, PreviewLength * PreviewRedactionInputFactor)));
+			+ Truncate(SensitiveErrorTextRedactor.RedactSiteText(body));
 	}
 
-	// The preview length of a non-JSON body, and how much longer the text handed to the redaction before the cut may
-	// be: redaction shortens text far more often than it lengthens it.
+	// The preview length of a non-JSON body, cut after the redaction.
 	private const int PreviewLength = 500;
-	private const int PreviewRedactionInputFactor = 8;
 
 	/// <summary>
 	/// The one noun phrase every caller uses to name an error page by the status its title states, so

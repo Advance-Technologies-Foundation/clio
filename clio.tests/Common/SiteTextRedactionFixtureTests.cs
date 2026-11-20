@@ -41,6 +41,18 @@ public sealed record SiteTextRedactionCase {
 	/// <summary>Why the row's mustGo is not asserted yet, or <see langword="null"/>.</summary>
 	[JsonPropertyName("pending")] public string Pending { get; init; }
 
+	/// <summary>
+	/// Option B: the mustStay fragments master's frozen chain removes (or one of clio's extra rules, named so in the
+	/// reason). They are asserted ABSENT, so a change to what the chain removes shows up as a failing row.
+	/// </summary>
+	[JsonPropertyName("overMatch")] public string[] OverMatch { get; init; }
+
+	/// <summary>Which rule removes the row's <see cref="OverMatch"/> fragments.</summary>
+	[JsonPropertyName("overMatchReason")] public string OverMatchReason { get; init; }
+
+	/// <summary>The mustStay fragments that must stay: all of them but the declared over-matches.</summary>
+	internal IEnumerable<string> KeptMustStay => MustStay.Except(OverMatch ?? []);
+
 	/// <inheritdoc />
 	public override string ToString() => Id;
 }
@@ -91,7 +103,7 @@ public sealed class SiteTextRedactionFixtureTests {
 		string output = SensitiveErrorTextRedactor.RedactSiteText(input);
 
 		// Assert
-		Failures(output, row.MustGo, row.MustStay).Should().BeEmpty(
+		Failures(output, row.MustGo, row.KeptMustStay).Concat(OverMatchFailures(output, row)).Should().BeEmpty(
 			because: $"row {row.Id} ({row.Class}{(row.Kind is null ? "" : " " + row.Kind)}) gave \"{output}\" for \"{input}\"");
 	}
 
@@ -109,7 +121,7 @@ public sealed class SiteTextRedactionFixtureTests {
 		string output = SensitiveErrorTextRedactor.Redact(input);
 
 		// Assert
-		Failures(output, mustGo, row.MustStay).Should().BeEmpty(
+		Failures(output, mustGo, row.KeptMustStay).Concat(OverMatchFailures(output, row)).Should().BeEmpty(
 			because: $"row {row.Id} ({row.Class}, entry {row.Entry}) gave \"{output}\" for \"{input}\"");
 	}
 
@@ -193,6 +205,30 @@ public sealed class SiteTextRedactionFixtureTests {
 
 		// Assert
 		wrong.Should().BeEmpty(because: "each row must fail when its secret survives or its reason is lost");
+	}
+
+	// A declared over-match that no longer happens: master's chain or the named rule changed, so the row must change too.
+	private static IEnumerable<string> OverMatchFailures(string output, SiteTextRedactionCase row) =>
+		(row.OverMatch ?? []).Where(fragment => output.Contains(fragment, StringComparison.Ordinal))
+			.Select(fragment => $"declared over-match \"{fragment}\" ({row.OverMatchReason}) no longer happens");
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every declared over-match names its reason and is one of the row's mustStay fragments, so a row can "
+		+ "only give up a reason phrase that it states and explains.")]
+	public void Fixture_ShouldExplainEveryDeclaredOverMatch() {
+		// Arrange
+		IReadOnlyList<SiteTextRedactionCase> rows = LoadRows();
+
+		// Act
+		string[] wrong = rows.Where(row => row.OverMatch is { Length: > 0 }
+				&& (string.IsNullOrWhiteSpace(row.OverMatchReason) || row.OverMatch.Except(row.MustStay).Any()))
+			.Select(row => row.Id).ToArray();
+
+		// Assert
+		wrong.Should().BeEmpty(because: "an over-match is declared with its reason, fragment by mustStay fragment");
+		rows.Count(row => row.OverMatch is { Length: > 0 }).Should().Be(32,
+			because: "option B declares 32 rows: master's chain removes their reason phrase, or Extra does (case-055)");
 	}
 
 	private static List<string> Failures(string output, IEnumerable<string> mustGo, IEnumerable<string> mustStay) {

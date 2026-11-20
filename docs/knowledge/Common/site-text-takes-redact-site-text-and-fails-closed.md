@@ -1,7 +1,13 @@
 ---
-description: SensitiveErrorTextRedactor has two entry points - Redact for any text (envelopes, logs, CLI, MCP errors) and RedactSiteText for text a Creatio site wrote; the site-only rules (sign-in and database phrases, server instances, relative paths, key runs, the stack-trace cut) must never move into Redact; the paths wired so far are named here, the readers not yet wired are listed by file and member in SiteTextWiringTests' known-unwired list (A2, follow-up), a new reader must call RedactSiteText, and both entry points fail closed as one unit on a regex timeout
+description: OPTION B - every SensitiveErrorTextRedactor entry point runs master 1915d7543's frozen chain first (MasterChain, hash-pinned), then clio's Extra, Site and ExtraCredentials rules, which only replace spans through one edit function; trades are none, master's over-matches are declared; SensitiveErrorTextRedactor has two entry points - Redact for any text (envelopes, logs, CLI, MCP errors) and RedactSiteText for text a Creatio site wrote; the site-only rules (sign-in and database phrases, server instances, relative paths, key runs, the stack-trace cut) must never move into Redact; the paths wired so far are named here, the readers not yet wired are listed by file and member in SiteTextWiringTests' known-unwired list (A2, follow-up), a new reader must call RedactSiteText, and both entry points fail closed as one unit on a regex timeout
 applies-to:
   - clio/Common/SensitiveErrorTextRedactor.cs
+  - clio/Common/SensitiveErrorTextRedactor.MasterChain.cs
+  - clio.tests/Common/MasterChainHashTests.cs
+  - clio.tests/Common/RedactorOptionBTests.cs
+  - clio.tests/Common/RedactionMasterDifferentialTests.cs
+  - clio.tests/Common/RedactionDifferentialCorpus.cs
+  - clio.tests/Common/Fixtures/redaction-master-baseline.txt
   - clio/Common/SiteResponse.cs
   - clio/Common/UntrustedText.cs
   - clio/Common/CreatioResponseError.cs
@@ -16,6 +22,100 @@ applies-to:
   - clio.tests/Common/SensitiveErrorTextRedactorSiteTextTests.cs
 date: 2026-11-20
 ---
+
+**Option B: master's chain first, then span edits (20 Nov)** - every entry point is master `1915d7543`'s redactor,
+unchanged, followed by what clio adds, and the additions may only replace spans:
+- `Redact(x) = Extra(MasterChain.Redact(x))`; `RedactSiteText(x) = Site(Redact(x))`;
+  `RedactCredentials(x) = ExtraCredentials(MasterChain.RedactCredentials(x))`;
+  `RedactJsonCredentialProperties(x) = ExtraJson(MasterChain.RedactJsonCredentialProperties(x))`. `RedactAll`, the fenced
+  and the console renderings run `Redact` or `RedactSiteText`.
+- `MasterChain` (`SensitiveErrorTextRedactor.MasterChain.cs`) holds master's patterns, options and call order verbatim,
+  in members of its own. `MasterChainHashTests` pins them against hashes recorded from master's build. Never edit a
+  pattern there: clio's rules are `Extra`, `Site` and `ExtraCredentials`, and they come back only where they remove more.
+- Every rule after the chain goes through ONE edit function, `ApplyEdits`. A rule returns (span, placeholder) edits and
+  writes nothing else. Inside a replaced span a placeholder, a fence word and a bracket stay; an edit that cuts a
+  placeholder is widened to all of it; a run next to a kept placeholder needs no new one. `RedactorOptionBTests` proves,
+  over the corpus, that every run of letters or digits a stage writes outside a placeholder is a piece of its input.
+- The site cut runs in `Site`, AFTER the chain, so master's quoted-value rule sees a value that crosses a stack frame.
+  The cut recognises a frame the chain already rewrote (`at [redacted-uri]`), and replaces the trace with the
+  placeholder, keeping its brackets.
+- Nothing is clamped before the chain: `SiteResponse` caps `RedactSiteText`'s output (as master capped `Redact`'s), the
+  non-JSON preview cuts it at 500, and the fenced rendering redacts the whole text before its 300.
+- Each stage fails closed: an injected timeout before the chain, after it, after `Extra`, before or after `Site`, in the
+  credentials or the JSON chain gives `[redacted]` (`EveryStage_ShouldFailClosed_WhenARuleTimesOut`).
+- Rules that read master's own placeholders, so what master's chain left half done goes (`AfterMasterPlaceholders`):
+  a credential-shaped run after master's `key=[redacted]` (master's pair rule took the scheme word,
+  `Authorization: Basic X7q2` became `Authorization=[redacted] X7q2`), a quoted value after it, a Digest client list
+  after a placeholder, and a host label before `host=[redacted]`.
+
+**What #1990's heads hid and B brings back** - #1990's own chains (`5ae2a08f8`, `23f9d820f`) hid some secrets that
+master's chain now reaches first and leaves half done, mostly because master's UNC rule takes a `;` or an escaped line
+break into a path (`.\\SQLEXPRESS;Initial` and `\\nBearer` become `[redacted-path]`). `AfterMasterPlaceholders` and
+`Extra` read those placeholders, and every rule only replaces:
+- a connection-string part after a placeholder (`[redacted-path] Catalog=ZqDb`, `Source=`, `ID=`): the value goes to the
+  next `;` or the end of the line, as in a `;` list, or one run where a quote stops that;
+- a dotted token of 12 or more characters after `[redacted-path]`, to where master's Bearer value would end; a version
+  and a dotted .NET name (`System.IO.FileNotFoundException`) stay;
+- a server or domain name glued to `[redacted-path]` (`CORP[redacted-path]`, `\u0027SQL01[redacted-path]`);
+- a drive, `[redacted-path]` and what master's POSIX rule left after the `:` it stops at (`D:[redacted-path]:6379`,
+  `D:[redacted-path]:/Secrets/a`), as one path placeholder;
+- `Bearer` glued to the word before it (`NextBearer abcdefgh.ijklmnop`), when the run is credential-shaped;
+- a quoted value after `key=[redacted]` whose inner quote opens a name (`password=[redacted]"... for user "zq_user"`);
+- a credential run after `key=[redacted]` that reaches a placeholder, unless it is the next pair (`token=[redacted]`);
+- connection-string keys before that run (`Initial Catalog=[redacted] abcdefgh.ijklmnop`);
+- a private address glued to letters (`retry10.0.3.17`) and a host:port glued to a word (`db01.internal:1433Range`),
+  each with the glued letters, so a placeholder never splits one word into two;
+- site only: an instance name after the placeholder that took its server (`[redacted]\SQLEXPRESS`), the sign-in
+  phrase in `\u0022`, `\u0027` and `\"` quotes, a drive-relative path glued to `[redacted-path]` with dots or slashes
+  (`C:foo.bar[redacted-path]`, upper-case drive only), a forward-slash drive-relative path (`C:foo/bar.config`), a
+  forward-slash tail glued to `[redacted-path]`, and a first segment that starts like a written escape when it is glued
+  to `[redacted-path]` (`.\tlnL.x[redacted-path]`).
+Over 73,600 strings, B shows no secret-like token either head hid (0 at every entry point and both fenced renderings).
+Path fragments still shown (22 strings against `5ae2a08f8`, 9 against `23f9d820f`, all at `RedactSiteText`): a
+drive-relative path of ONE segment whose tail master's chain took (`C:I2Ni`, `C:WN)`; the rule needs a second segment or
+an extension so `Range A:B` and `Step C: retry` stay), and paths glued to a word or a time (`x:Item.ValueC:BE5q`,
+`10:30../GVM/x`, `UsrStatus./cLJ`), where no path rule may start.
+What B still shows that a head hid is prose, key names and SQL statement text: the fixture keeps `VALUES (N'Jane Doe', ...)`
+and `@Phone = N'+380...'` in `mustStay`, and the heads removed them only in the escaped spelling.
+Over-matches these rules add: the connection part takes the rest of its line (`Catalog=ZqDb Login failed for user ...`
+goes whole); a glued address takes its word (`retry10.0.3.17` becomes `[redacted-uri]`); the drive tail takes `:line`
+in `D:/src/x.cs:line 42`.
+
+**Trades: none, by construction.** `RedactionMasterDifferentialTests` runs the corpus (the fixture in three spellings,
+the edge strings across every clamp and cut, and 3 x 4,000 seeded strings) through every entry point and every sink
+that carries a site's text, against `Fixtures/redaction-master-baseline.txt` recorded from master. No token master
+removed may show. A fenced rendering is held to what master's Redact and master's fenced rendering both removed, since
+a token master's 300-character cut dropped was cut, not redacted.
+
+**Declared over-matches** - what master's chain removes that #1990's own rules kept. The fixture lists 32 rows in
+`overMatch` with `overMatchReason`, and asserts the fragments ABSENT:
+- master's Bearer rule takes the scheme word with its credential: `The bearer token expired` becomes
+  `The [redacted] expired`, likewise `Invalid Bearer token.`, `Bearer token-based access denied`,
+  `WWW-Authenticate: Bearer realm=…`, and the kept-side `Authorization: Bearer` of the A rows;
+- master's pair rule takes the scheme word as the value and writes `key=[redacted]`: `Authorization: Basic`,
+  `password=Basic`, `token: Bearer`, `Authorization: Digest`, `auth: Basic mode is off` (`auth=[redacted] mode is off`),
+  and the identifier after `token:` (`token: expired` becomes `token=[redacted]`);
+- master's pair value runs across `&` (`client_secret=s3cr3t&api_key=abc` keeps no key name);
+- master's host:port rule reads a file and its line as a host and a port (`UsrOrderPage.js:42:13` becomes
+  `[redacted-uri]:13`);
+- master's Windows path rule takes a closing bracket, an escape and what follows (`(C:\x\y.dll)` loses `)`;
+  `end.\\n` becomes `end.[redacted-path]`), and reads an escaped backslash before an escaped quote as a UNC start:
+  #1990's CanManageSolution fix does not hold. With the default encoder the operation name goes and the envelope
+  parses; with the relaxed encoder the name stays and the envelope no longer parses, as on master;
+- clio's own sentences with "bearer token" lose those two words wherever they pass `Redact` (the own-text corpus test
+  declares them);
+- R3, removing wins: a dot after a closing bracket starts a site path (`"^[A-Z].\d{3}$"` loses `.\d{3`).
+`MastersChain_ShouldRemoveMore_AsDeclared` pins each changed test case with its reason.
+
+**Residue against #1990's head** - a prose-shaped credential after a scheme word after a credential key shows:
+`password: Basic secrettokenvalue` gives `password=[redacted] secrettokenvalue`. Master's pair rule took the scheme
+word and left no trace of it, so the run cannot be told from the sentence after a removed value
+(`Authorization: Bearer x returned 401` gives `Authorization=[redacted] returned 401`); `Extra` takes the run only when it
+is credential-shaped (a digit, an inner capital, all capitals, `+ / = _`, or quoted). Master shows these too.
+`Residue_ProseShapedRunAfterASchemeWordAfterACredentialKey_Shows` pins them.
+
+The sections below describe the rules as Extra and Site rules; where they say a rule keeps a word that master's chain
+removes, the chain decides (see the over-matches above).
 
 **What is true** - the redactor has two entry points. `Redact` runs over ANY text: clio's own CLI lines and
 MCP errors, logs, and whole serialized JSON envelopes (`ClioRunTool.RedactSerializedText`). Its rules are only

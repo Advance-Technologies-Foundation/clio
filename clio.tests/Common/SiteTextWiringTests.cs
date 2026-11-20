@@ -1122,6 +1122,10 @@ public sealed class SiteTextWiringTests {
 	// The literals of interest whose redaction is EXPECTED, keyed by a fragment of the literal, each with its reason.
 	private static readonly Dictionary<string, string> ExpectedOwnTextChanges = new(StringComparer.Ordinal) {
 		["C:\\Projects\\Workspaces\\newModule"] = "an example Windows path in a tool contract: Redact takes every Windows path, as master did",
+		// OPTION B: master's Bearer rule runs first and frozen, and it takes "bearer" with the word after it. clio's own
+		// sentences that say "a bearer token" lose those two words wherever they pass Redact (master
+		// did the same before #1990 reworded them).
+		["bearer token"] = "master's Bearer rule (frozen under option B) takes \"bearer token\"",
 	};
 
 	[Test]
