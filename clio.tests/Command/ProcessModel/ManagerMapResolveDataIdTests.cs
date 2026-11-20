@@ -15,10 +15,13 @@ public sealed class ManagerMapResolveDataIdTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ResolveDataId maps every start-event data-id to its matching start EventType.")]
+	[Description("ResolveDataId maps every start-event data-id, and the Timer start's build token in both spellings (TC-U-01), to its matching start EventType - never Unknown, which validate-process-graph would report as an error on a graph the server builds.")]
 	[TestCase("startEvent", ManagerMap.EventType.StartEvent)]
 	[TestCase("startEventSignal", ManagerMap.EventType.StartSignalEvent)]
 	[TestCase("startEventTimer", ManagerMap.EventType.StartTimer)]
+	// The Timer start's build/describe token (ENG-91849): it does not begin with the designer's "startEvent" prefix.
+	[TestCase("timerStart", ManagerMap.EventType.StartTimer)]
+	[TestCase("timerstart", ManagerMap.EventType.StartTimer)]
 	[TestCase("startEventMessage", ManagerMap.EventType.StartMessageEvent)]
 	public void ResolveDataId_ShouldReturnStartEventType_WhenStartDataId(string dataId, ManagerMap.EventType expected) {
 		// Act
@@ -27,6 +30,25 @@ public sealed class ManagerMapResolveDataIdTests {
 		// Assert
 		actual.Should().Be(expected,
 			because: "start-event data-ids must classify as their concrete start EventType for rule R1");
+	}
+
+	[Category("Unit")]
+	[Description("ResolveRuntimeType maps the start-event runtime classes describe reports in 'type' to their start EventType, and anything else to Unknown, so an element described with no buildType - a message start from CrtProcessBuilder 1.6.6.187 - is still recognised as a start (TC-U-12).")]
+	[TestCase("ProcessSchemaStartEvent", ManagerMap.EventType.StartEvent)]
+	[TestCase("ProcessSchemaStartSignalEvent", ManagerMap.EventType.StartSignalEvent)]
+	[TestCase("ProcessSchemaStartTimerEvent", ManagerMap.EventType.StartTimer)]
+	[TestCase("ProcessSchemaStartMessageEvent", ManagerMap.EventType.StartMessageEvent)]
+	[TestCase("ProcessSchemaUserTask", ManagerMap.EventType.Unknown)]
+	[TestCase("ProcessSchemaIntermediateCatchMessageEvent", ManagerMap.EventType.Unknown)]
+	[TestCase(null, ManagerMap.EventType.Unknown)]
+	public void ResolveRuntimeType_ShouldReturnTheStartEventType_OnlyForStartClasses(string runtimeType,
+		ManagerMap.EventType expected) {
+		// Act
+		ManagerMap.EventType actual = ManagerMap.ResolveRuntimeType(runtimeType);
+
+		// Assert
+		actual.Should().Be(expected,
+			because: "only the start-event classes are mapped; the fallback must not turn another element into a start");
 	}
 
 	[Test]

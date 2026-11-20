@@ -731,7 +731,7 @@ public sealed class ToolContractShortFormTests {
 		string[] shaped = [.. ToolContractShortForm.ModifyOperationShape.Select(LeadingWireName)];
 
 		// Assert
-		accepted.Should().Contain("setTracing",
+		accepted.Should().Contain("setTimer",
 			because: "anti-vacuity: the server vocabulary was read, and it carries the newest operation");
 		shaped.Should().BeEquivalentTo(accepted,
 			because: "the short contract is how an agent learns the operations without a 33 KB detail=full read; "
@@ -758,7 +758,7 @@ public sealed class ToolContractShortFormTests {
 		];
 
 		// Assert
-		members.Should().Contain("enabled",
+		members.Should().Contain("timer",
 			because: "anti-vacuity: the operation descriptor was read, and it carries the newest operation's field");
 		shaped.Should().BeEquivalentTo(members,
 			because: "an operation field missing from the shape is one an agent can only find in detail=full, and a "
@@ -766,7 +766,7 @@ public sealed class ToolContractShortFormTests {
 	}
 
 	[TestCase("BuildProcessRequest", "isTracing")]
-	[TestCase("ProcessElementDescriptor", "chatMessage")]
+	[TestCase("ProcessElementDescriptor", "timer")]
 	[TestCase("ProcessFlowDescriptor", "results")]
 	[TestCase("ProcessParameterDescriptor", "mergeFrom")]
 	[TestCase("ProcessMappingDescriptor", "sourceColumn")]

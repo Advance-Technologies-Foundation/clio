@@ -267,6 +267,26 @@ public class ModifyProcessAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The description says the one live effect a FAILED save can have on a family with timer starts (ENG-91849): the family's timer jobs are dropped and the active version's re-registered, so a timer with a past start may run once right away - while the tool stays Destructive = false: it is one extra run on a failure path, disclosed in the description.")]
+	public void ModifyProcessAsNewVersion_Description_ShouldStateTheFailedSaveTimerEffect() {
+		// Arrange
+		MethodInfo method = typeof(ModifyProcessAsNewVersionTool)
+			.GetMethod(nameof(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersion))!;
+
+		// Act
+		string description = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("A save that FAILS on a family with timer starts drops the family's timer jobs",
+			because: "a failed save is the one path on which this non-destructive tool touches what the environment runs");
+		description.Should().Contain("may run once right away",
+			because: "a catch-up run of the running version is the consequence a caller has to be able to foresee");
+		method.GetCustomAttribute<McpServerToolAttribute>()!.Destructive.Should().BeFalse(
+			because: "the extra run happens only on a failed save and is disclosed, so consent gating stays as it is");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool routes through the ProcessDesignService entry the package actually exposes, with the leading slash its five siblings carry — a route that resolves to the wrong path fails at run time on a stand, which is the slowest possible place to find it.")]
 	public void ModifyProcessAsNewVersion_ShouldResolve_TheProcessDesignServiceRoute() {
 		// Arrange
@@ -313,7 +333,7 @@ public class ModifyProcessAsNewVersionToolTests {
 			because: "the contract must state the refusal before the server does");
 		description.Should().Contain("send it to modify-business-process",
 			because: "the refusal is only useful with the route that does switch tracing");
-		description.Should().Contain("CrtProcessBuilder 1.6.6.186 or newer",
+		description.Should().Contain("CrtProcessBuilder 1.6.6.187 or newer",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block, then by mergeFrom)");
 	}
 
