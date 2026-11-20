@@ -79,11 +79,16 @@ internal static partial class SensitiveErrorTextRedactor {
 		/// lists pins the calls, their order and their evaluators, and the output pin pins what the evaluators write.
 		/// </summary>
 		internal sealed record ChainStep(Regex Rule, string? Replacement, MatchEvaluator? Evaluator) {
-			/// <summary>The step over <paramref name="text"/>, as master's call wrote it: master's rule, with the timeout a long
-			/// input gets (<see cref="ForLength"/>; master's own below <see cref="CharactersPerTimeoutSecond"/>).</summary>
+			/// <summary>The step over <paramref name="text"/>, as master's call wrote it: master's rule, under the per-call deadline
+			/// (<see cref="Bounded"/>: master's own 1 s below <see cref="CharactersPerTimeoutSecond"/> while time is left), with a
+			/// budget check after every evaluator call.</summary>
 			public string Apply(string text) {
-				Regex rule = ForLength(Rule, text.Length);
-				return Evaluator is null ? rule.Replace(text, Replacement!) : rule.Replace(text, Evaluator);
+				Regex rule = Bounded(Rule, text.Length);
+				return Evaluator is null ? rule.Replace(text, Replacement!) : rule.Replace(text, match => {
+					string written = Evaluator(match);
+					CheckBudget();
+					return written;
+				});
 			}
 
 			/// <summary>What the step writes: the placeholder, or the evaluator's declaring type and name.</summary>

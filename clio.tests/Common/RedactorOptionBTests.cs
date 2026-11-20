@@ -399,23 +399,17 @@ public sealed class RedactorOptionBTests {
 		// Arrange
 		string text = string.Concat(Enumerable.Repeat("password=Basic X7q2 rejected; ", 20_000));
 		List<string> logged = [];
-		Action<string> log = SensitiveErrorTextRedactor.FailedClosedLog;
-		SensitiveErrorTextRedactor.FailedClosedLog = logged.Add;
 		long failedBefore = SensitiveErrorTextRedactor.FailedClosed;
 
 		// Act
 		string redact;
 		string site;
 		string fenced;
-		try {
-			using (SensitiveErrorTextRedactor.InjectWorkBudgetForTests(1)) {
-				redact = SensitiveErrorTextRedactor.Redact(text);
-				site = SensitiveErrorTextRedactor.RedactSiteText(text);
-				fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
-			}
-		}
-		finally {
-			SensitiveErrorTextRedactor.FailedClosedLog = log;
+		using (SensitiveErrorTextRedactor.InjectFailedClosedLogForTests(logged.Add))
+		using (SensitiveErrorTextRedactor.InjectWorkBudgetForTests(1)) {
+			redact = SensitiveErrorTextRedactor.Redact(text);
+			site = SensitiveErrorTextRedactor.RedactSiteText(text);
+			fenced = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
 		}
 		long failed = SensitiveErrorTextRedactor.FailedClosed - failedBefore;
 		string unbudgeted = SensitiveErrorTextRedactor.Redact(text);

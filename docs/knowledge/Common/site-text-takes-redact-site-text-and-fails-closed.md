@@ -72,12 +72,25 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
   slowest shape under 8 s, `[NonParallelizable]`).
 - THE WORK BUDGET: an entry-point call fails closed past `WorkPerCharacter` (500) units per input character plus
   `WorkConstant` (200,000) - ten times the worst shape measured (48.5 units per character, pair-dense text through
-  RedactSiteText). It does not depend on the machine or its load; a 60 s clock backstop stays only for a starved host.
-  A long input's rules - master's chain's and clio's - run with a match timeout of 1 s per 250,000 characters
-  (`ForLength`, power-of-two steps, never under the rule's own 1 s, never over 60 s): a rule that never matches scans the
-  whole text in one match attempt, and at 5 MB that attempt took up to 0.9 s here, so master's fixed 1 s failed a 5 MB
-  answer closed on a loaded host. Below 250,000 characters every rule keeps its own timeout, and no output changes.
-  `A5MBInput_ShouldBeRedactedNormally_WhateverTheLoad` proves 5 MB comes out redacted.
+  RedactSiteText). It counts rule passes x length, matches, edits, placeholders found, binary-search probes and pieces
+  kept, and its outcome for those is deterministic; it cannot see the time a regex spends backtracking inside itself.
+- THE PER-CALL DEADLINE (B4): every regex run - master's chain steps, clio's rules, every evaluator regex,
+  `CountLines`, the count-word rule, the cut and the fence words - goes through `Bounded`, which gives it a match timeout
+  of min(its scaled timeout, the time left before the call's 20 s clock backstop), stepped down to 62/125/250/500 ms or
+  a doubling of 1 s; with under 62 ms left the call fails closed at once, and a budget check follows every evaluator.
+  The scaled timeout is the rule's own 1 s below 250,000 characters and 1 s per 250,000 characters above it (to 16 s),
+  because a rule that never matches scans the whole text in one attempt (5 MB took up to 0.9 s here, idle). So a call
+  ends within the backstop plus one small step. THIS CHANGES HOW MASTER'S CHAIN RUNS: its patterns, options, calls and
+  outputs are master's wherever master completes, but its timeout is not master's fixed 1 s on a long input or near the
+  deadline, so where master failed closed this build may complete. 5 MB of the nine shapes takes 0.4-4.0 s.
+- THE REGEX AUDIT (B4): every clio-own regex was run against adversarial 2,000-character inputs. `DottedTypeNameRegex`
+  (option B's own) backtracked exponentially (`Aa` + capitals + `.x`, 45 characters past any timeout); it keeps its
+  pattern and runs on `RegexOptions.NonBacktracking`, the same language by construction. The cut
+  (`StackOrPageBreakRegex`, 8 s on 20,000 characters of written breaks and spaces) tries only the first break of a run,
+  and `CredentialRunAfterPairPlaceholderRegex` (2.8 s on 20,000 spaces) looks at the next character before it looks
+  back; both keep their first match / their matches and groups, proven by a differential (`RedactorRegexAuditTests`).
+  `HeaderPositionRegex` is quadratic too but only ever sees a 64-character window. Master's chain is not changed; its
+  host:port rule's quadratic run on `a.a.a.` is bounded by the deadline.
 - A FAIL-CLOSED RESULT IS VISIBLE: a regex timeout or a call past its budget returns `[redacted-timeout]`, not the
   `[redacted]` a value gets (PlaceholderPieceRegex reads it, so later passes keep it), counts on `FailedClosed`, and is
   logged once through `FailedClosedLog` (the console logger's warning) with the entry point and the input length,

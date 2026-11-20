@@ -115,10 +115,11 @@ public sealed class RedactorTimingTests {
 	[TestCase("escapes")]
 	[Category("Unit")]
 	[Description("THE WORK BUDGET is deterministic: a 5 MB legitimate input is redacted normally by Redact and "
-		+ "RedactSiteText - not failed closed - whatever the machine or its load, and its work stays well inside the budget "
+		+ "RedactSiteText - not failed closed - and its work stays well inside the budget. The time its regexes take is "
+		+ "bounded only by the clock backstop, which it stays well under "
 		+ "(WorkPerCharacter units per character). The two shapes are the one with the most work per character and the one whose 5 MB had failed "
 		+ "closed on a regex timeout before long inputs got a length-scaled match timeout.")]
-	public void A5MBInput_ShouldBeRedactedNormally_WhateverTheLoad(string shape) {
+	public void A5MBInput_ShouldBeRedactedNormally_WithinItsWorkBudget(string shape) {
 		// Arrange
 		string text = Repeat(Shape(shape), 5_000_000);
 

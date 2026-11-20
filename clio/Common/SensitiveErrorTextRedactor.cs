@@ -665,8 +665,14 @@ internal static partial class SensitiveErrorTextRedactor {
 	// "--- End of …" marker or an HTML document ends the site's message there. Only that break: the host lane
 	// keeps the first line only, which loses the reason in "Value cannot be null.\r\nParameter name: password"
 	// and in every later line of a multi-line Creatio validation message.
+	// LINEAR (round B4): only the FIRST break of a run of breaks and blanks is tried. A later break of the same run looks
+	// at the same text after it, so it fails where the first fails and is never the leftmost success; trying each one
+	// read the run once per break, which took 8 s on 20,000 characters of written line breaks and spaces. A cheap look
+	// at the next character skips every position that is no break. The first match - all the cut reads - is the same
+	// (RedactorRegexAuditTests' differential).
 	[GeneratedRegex(
-		@"(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?=(?:\s|\\[rnt])*(?:at[ \t]+(?:[A-Za-z_][\w`]*(?:\.[\w`<>]+)+|\[redacted(?:-[a-z]+)?\])|---[ \t]*End[ \t]+of\b"
+		@"(?=[\r\n\\])(?<!(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?:[^\S\r\n]|\\t)*)"
+		+ @"(?:\r\n|\n|\r|\\r\\n|\\n|\\r)(?=(?:\s|\\[rnt])*(?:at[ \t]+(?:[A-Za-z_][\w`]*(?:\.[\w`<>]+)+|\[redacted(?:-[a-z]+)?\])|---[ \t]*End[ \t]+of\b"
 		+ @"|<!DOCTYPE\b|<html\b))",
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex StackOrPageBreakRegex();
@@ -974,8 +980,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		// Case-INSENSITIVE and shape-based: an ordinal match on the exact lowercase token lets
 		// "[UNTRUSTED-SOURCE-TEXT END]" through verbatim, and a reader that treats the delimiter
 		// case-insensitively would then read everything after it as server-authored.
-		flattened = ExecuteRegex(
-			() => FenceTokenRegex().Replace(flattened, "(fence removed)"));
+		flattened = ExecuteRegex("the fence words", flattened.Length,
+			() => Bounded(FenceTokenRegex(), flattened.Length).Replace(flattened, "(fence removed)"));
 		if (flattened.Length > UntrustedDiagnosticLimit) {
 			flattened = string.Concat(flattened.AsSpan(0, UntrustedDiagnosticLimit), "…");
 		}
@@ -1149,7 +1155,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		result = ApplyRule(result, "eyJ", PartialJwtAtTheEndRegex(), match => Whole(match, RedactedValue));
 		result = ApplyRule(result, "bearer", BearerCredentialRegex(), BearerEdits, StringComparison.OrdinalIgnoreCase);
 		result = ApplyRule(result, "Bearer", GluedBearerCredentialRegex(), match =>
-			ProseRunAfterPlaceholderRegex().IsMatch(SplitTrailingPunctuation(match.Groups["cred"].Value).Credential) ? NoEdit : BearerEdits(match));
+			Bounded(ProseRunAfterPlaceholderRegex(), 0).IsMatch(SplitTrailingPunctuation(match.Groups["cred"].Value).Credential) ? NoEdit : BearerEdits(match));
 		string schemed = result;
 		result = ApplyRule(result, SchemeCredentialRegex(), match => SchemeEdits(schemed, match));
 		result = ApplyRule(result, "digest", DigestCredentialRegex(), DigestEdits, StringComparison.OrdinalIgnoreCase);
@@ -1180,14 +1186,14 @@ internal static partial class SensitiveErrorTextRedactor {
 			StringComparison.OrdinalIgnoreCase);
 		result = ApplyRule(result, ":", UnclosedJsonCredentialValueRegex(), match => Part(match.Groups["value"], RedactedValue));
 		result = ApplyRule(result, "[redacted", DigestListAfterPlaceholderRegex(),
-			match => DigestClientParameterRegex().IsMatch(match.Groups["params"].Value) ? Part(match.Groups["params"], RedactedValue) : NoEdit,
+			match => Bounded(DigestClientParameterRegex(), 0).IsMatch(match.Groups["params"].Value) ? Part(match.Groups["params"], RedactedValue) : NoEdit,
 			StringComparison.OrdinalIgnoreCase);
 		result = ApplyRule(result, "=[redacted]", CredentialRunAfterPairPlaceholderRegex(), RunAfterPairPlaceholderEdits,
 			StringComparison.OrdinalIgnoreCase);
 		result = ApplyRule(result, "=", ConnectionPartAfterPlaceholderRegex(), match => Part(match.Groups["value"], RedactedValue));
 		result = ApplyRule(result, "[redacted-path]", TokenRunAfterPathPlaceholderRegex(), match =>
-			match.Groups["token"].Length >= 12 && !VersionRunRegex().IsMatch(match.Groups["token"].Value)
-				&& !DottedTypeNameRegex().IsMatch(match.Groups["token"].Value)
+			match.Groups["token"].Length >= 12 && !Bounded(VersionRunRegex(), 0).IsMatch(match.Groups["token"].Value)
+				&& !Bounded(DottedTypeNameRegex(), 0).IsMatch(match.Groups["token"].Value)
 				? Part(match.Groups["run"], RedactedValue)
 				: NoEdit);
 		result = ApplyRule(result, "[redacted-path]:", DrivePlaceholderTailRegex(), match => Whole(match, RedactedPath));
@@ -1200,8 +1206,11 @@ internal static partial class SensitiveErrorTextRedactor {
 	// "Authorization=[redacted] X7q2", "password=Negotiate YII rejected" becomes "password=[redacted] YII rejected".
 	// The run there goes, unless it is a challenge parameter or one of the words a header position keeps
 	// (HeaderProseWordRegex: "rejected", "failed", "token", …). Its quotes stay.
+	// LINEAR (round B4): "(?=\S)" first, so a position inside a run of blanks - where no run can start - is skipped before
+	// the look back over the blanks; reading them back from every blank took 2.8 s on 20,000 spaces. Same matches, same
+	// groups (RedactorRegexAuditTests' differential).
 	[GeneratedRegex(
-		$@"(?<=(?<![\w.\-])[\w.\-]*(?:{CredentialSecretKeys}|{CredentialWordKeys}|{ConnectionStringPartKeys})=\[redacted\][ \t]*)"
+		$@"(?=\S)(?<=(?<![\w.\-])[\w.\-]*(?:{CredentialSecretKeys}|{CredentialWordKeys}|{ConnectionStringPartKeys})=\[redacted\][ \t]*)"
 		+ CredentialRunQuote + CredentialRun,
 		RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, RegexTimeoutMilliseconds)]
 	private static partial Regex CredentialRunAfterPairPlaceholderRegex();
@@ -1217,13 +1226,13 @@ internal static partial class SensitiveErrorTextRedactor {
 				return NoEdit;
 			}
 		}
-		if (run.Length == 0 || ChallengeParameterRegex().IsMatch(run) || NextPairRegex().IsMatch(run)) {
+		if (run.Length == 0 || Bounded(ChallengeParameterRegex(), 0).IsMatch(run) || Bounded(NextPairRegex(), 0).IsMatch(run)) {
 			return NoEdit;
 		}
 		(string credential, string _) = SplitTrailingPunctuation(run);
 		bool quoted = match.Groups["q"].Success && match.Groups["q"].Length > 0;
-		bool credentialShaped = quoted || !ProseRunAfterPlaceholderRegex().IsMatch(credential);
-		return credential.Length == 0 || HeaderProseWordRegex().IsMatch(credential) || !credentialShaped
+		bool credentialShaped = quoted || !Bounded(ProseRunAfterPlaceholderRegex(), 0).IsMatch(credential);
+		return credential.Length == 0 || Bounded(HeaderProseWordRegex(), 0).IsMatch(credential) || !credentialShaped
 			? NoEdit
 			: CredentialRunEdit(match, credential);
 	}
@@ -1306,7 +1315,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	private static partial Regex TokenRunAfterPathPlaceholderRegex();
 
 	[GeneratedRegex(@"^(?:[A-Z][a-z]+(?:[A-Z]+[a-z]*)*|[A-Z]{2})(?:\.(?:[A-Z][a-z]+(?:[A-Z]+[a-z]*)*|[A-Z]{2}))+$",
-		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+		RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, RegexTimeoutMilliseconds)]
 	private static partial Regex DottedTypeNameRegex();
 
 	// A drive, master's path placeholder and what master's POSIX rule left after the ":" it stops at: a port
@@ -1330,7 +1339,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	internal static string Site(string text) {
 		string result = ApplyInjectedRule(SiteFirstStage, text);
 		Work += result.Length;
-		Match cut = ForLength(StackOrPageBreakRegex(), result.Length).Match(result);
+		Match cut = Bounded(StackOrPageBreakRegex(), result.Length).Match(result);
 		if (cut.Success) {
 			int from = cut.Index + cut.Length;
 			result = ApplyEdits(result, [new SpanEdit(from, result.Length - from, RedactedValue, Collapse: true)]);
@@ -1379,7 +1388,7 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// The run without its trailing sentence punctuation, and that punctuation, which stays.
 	private static (string Credential, string Trailing) SplitTrailingPunctuation(string run) {
-		Match punctuation = TrailingSentencePunctuationRegex().Match(run);
+		Match punctuation = Bounded(TrailingSentencePunctuationRegex(), 0).Match(run);
 		string trailing = punctuation.Success ? punctuation.Value : string.Empty;
 		return (run[..(run.Length - trailing.Length)], trailing);
 	}
@@ -1391,30 +1400,30 @@ internal static partial class SensitiveErrorTextRedactor {
 	// The Bearer floor: the whole run goes, except a documented trade.
 	private static IEnumerable<SpanEdit> BearerEdits(Match match) {
 		string run = match.Groups["cred"].Value;
-		if (PlaceholderRunRegex().IsMatch(run) || ChallengeParameterRegex().IsMatch(run)) {
+		if (Bounded(PlaceholderRunRegex(), 0).IsMatch(run) || Bounded(ChallengeParameterRegex(), 0).IsMatch(run)) {
 			return NoEdit;
 		}
 		(string credential, string _) = SplitTrailingPunctuation(run);
-		return credential.Length == 0 || BearerTradeRegex().IsMatch(credential) ? NoEdit : CredentialRunEdit(match, credential);
+		return credential.Length == 0 || Bounded(BearerTradeRegex(), 0).IsMatch(credential) ? NoEdit : CredentialRunEdit(match, credential);
 	}
 
 	// Basic, NTLM and Negotiate: what stays depends on whether the word stands in a header position.
 	private static IEnumerable<SpanEdit> SchemeEdits(string text, Match match) {
 		string run = match.Groups["cred"].Value;
-		if (PlaceholderRunRegex().IsMatch(run) || ChallengeParameterRegex().IsMatch(run)) {
+		if (Bounded(PlaceholderRunRegex(), 0).IsMatch(run) || Bounded(ChallengeParameterRegex(), 0).IsMatch(run)) {
 			return NoEdit;
 		}
 		(string credential, string _) = SplitTrailingPunctuation(run);
 		int from = Math.Max(0, match.Index - 64);
-		bool headerPosition = HeaderPositionRegex().IsMatch(text.AsSpan(from, match.Index - from).ToString());
+		bool headerPosition = Bounded(HeaderPositionRegex(), 0).IsMatch(text.AsSpan(from, match.Index - from).ToString());
 		bool kept = credential.Length == 0 || (headerPosition
-			? HeaderProseWordRegex().IsMatch(credential)
-			: ProseAfterSchemeWordRegex().IsMatch(credential));
+			? Bounded(HeaderProseWordRegex(), 0).IsMatch(credential)
+			: Bounded(ProseAfterSchemeWordRegex(), 0).IsMatch(credential));
 		return kept ? NoEdit : CredentialRunEdit(match, credential);
 	}
 
 	private static IEnumerable<SpanEdit> DigestEdits(Match match) =>
-		DigestClientParameterRegex().IsMatch(match.Groups["params"].Value) ? Part(match.Groups["params"], RedactedValue) : NoEdit;
+		Bounded(DigestClientParameterRegex(), 0).IsMatch(match.Groups["params"].Value) ? Part(match.Groups["params"], RedactedValue) : NoEdit;
 
 	// A digit is required so that two hex WORDS around "::" ("Bad::Cafe") are not read as an address (see Extra).
 
@@ -1452,12 +1461,23 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// The count lines of a text: the index where each line ends and whether it holds two or more count words with a
 	// number. Built ONCE per text, so many "word:port" matches cost one scan, not one scan each.
+	// Built on its first question only (most texts have no single-label host:port), through the per-call deadline and
+	// with a budget check per line.
 	private sealed class CountLines {
 		private readonly List<(int End, bool Counts)> lines = [];
+		private readonly string text;
+		private bool built;
 
 		internal CountLines(string text) {
+			this.text = text;
+		}
+
+		private void Build() {
+			built = true;
 			int start = 0;
-			foreach (Match lineBreak in LineBreakRegex().Matches(text)) {
+			foreach (Match lineBreak in Bounded(LineBreakRegex(), text.Length).Matches(text)) {
+				Work++;
+				CheckBudget();
 				Add(text, start, lineBreak.Index);
 				start = lineBreak.Index + lineBreak.Length;
 			}
@@ -1466,12 +1486,16 @@ internal static partial class SensitiveErrorTextRedactor {
 
 		// The search stays inside the line, so a text of many lines is scanned once.
 		private void Add(string text, int start, int end) {
-			Match first = CountWordRegex().Match(text, start, end - start);
+			Work += end - start;
+			Match first = Bounded(CountWordRegex(), end - start).Match(text, start, end - start);
 			lines.Add((end, first.Success && first.NextMatch().Success));
 		}
 
 		// Whether the line that holds index is a count line.
 		internal bool AtCountLine(int index) {
+			if (!built) {
+				Build();
+			}
 			int low = 0;
 			int high = lines.Count - 1;
 			while (low < high) {
@@ -1542,14 +1566,14 @@ internal static partial class SensitiveErrorTextRedactor {
 			}
 		}
 		int from = Math.Max(0, match.Index - 24);
-		return VersionContextRegex().IsMatch(text.AsSpan(from, match.Index - from).ToString());
+		return Bounded(VersionContextRegex(), 0).IsMatch(text.AsSpan(from, match.Index - from).ToString());
 	}
 
 	// A ";"-list pair: the value goes to the next ";" when the pair follows a ";", or when the text starts with
 	// it and another "name=" follows; anything else is left for the ordinary pair rule.
 	private static IEnumerable<SpanEdit> ListPairEdits(string text, Match match) {
 		bool afterSeparator = text.AsSpan(0, match.Index).TrimEnd(" \t").EndsWith(";");
-		bool listFollows = !afterSeparator && ListContinuationRegex().IsMatch(text, match.Index + match.Length);
+		bool listFollows = !afterSeparator && Bounded(ListContinuationRegex(), 0).IsMatch(text, match.Index + match.Length);
 		return afterSeparator || listFollows ? Part(match.Groups["value"], RedactedValue) : NoEdit;
 	}
 
@@ -1559,8 +1583,8 @@ internal static partial class SensitiveErrorTextRedactor {
 		}
 		string key = match.Groups["key"].Value;
 		bool colon = match.Groups["sep"].Value.Contains(':');
-		if (colon && IdentifierValuedKeyRegex().IsMatch(key)
-			&& IdentifierPairValueRegex().IsMatch(match.Groups["value"].Value)) {
+		if (colon && Bounded(IdentifierValuedKeyRegex(), 0).IsMatch(key)
+			&& Bounded(IdentifierPairValueRegex(), 0).IsMatch(match.Groups["value"].Value)) {
 			return NoEdit;
 		}
 		// "key" or "auth" with a colon in a sentence, followed by a scheme word and a word the scheme rules keep there
@@ -1573,11 +1597,11 @@ internal static partial class SensitiveErrorTextRedactor {
 		// and the value goes.
 		int keyAt = match.Groups["key"].Index;
 		bool joined = keyAt > 0 && text[keyAt - 1] is '-' or '_';
-		if (colon && !match.Groups["kq"].Success && !joined && ProseKeyRegex().IsMatch(key)
-			&& SchemeWordAndKeptWordRegex().Match(match.Groups["value"].Value) is { Success: true } schemed
+		if (colon && !match.Groups["kq"].Success && !joined && Bounded(ProseKeyRegex(), 0).IsMatch(key)
+			&& Bounded(SchemeWordAndKeptWordRegex(), 0).Match(match.Groups["value"].Value) is { Success: true } schemed
 			&& (schemed.Groups["scheme"].Value.Equals("Bearer", StringComparison.OrdinalIgnoreCase)
-				? BearerTradeRegex().IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential)
-				: ProseAfterSchemeWordRegex().IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential))) {
+				? Bounded(BearerTradeRegex(), 0).IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential)
+				: Bounded(ProseAfterSchemeWordRegex(), 0).IsMatch(SplitTrailingPunctuation(schemed.Groups["word"].Value).Credential))) {
 			return NoEdit;
 		}
 		// Only the value goes: the key, its quotes and its separator stay as the text wrote them.
@@ -1605,7 +1629,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		string run = match.Groups["run"].Value;
 		bool hasDigit = run.Any(char.IsAsciiDigit);
 		bool hasLetter = run.Any(char.IsAsciiLetter);
-		if (!hasDigit || !hasLetter || GuidRegex().IsMatch(run) || IsAppCode(run)) {
+		if (!hasDigit || !hasLetter || Bounded(GuidRegex(), 0).IsMatch(run) || IsAppCode(run)) {
 			return NoEdit;
 		}
 		return Part(match.Groups["run"], RedactedValue);
@@ -1614,7 +1638,7 @@ internal static partial class SensitiveErrorTextRedactor {
 	// An app or schema code: a CamelCase first part and "_"-parts of 31 characters or fewer.
 	private static bool IsAppCode(string run) {
 		string[] parts = run.Split('_');
-		return parts.Length > 1 && AppCodeHeadRegex().IsMatch(parts[0]) && parts.All(part => part.Length <= 31);
+		return parts.Length > 1 && Bounded(AppCodeHeadRegex(), 0).IsMatch(parts[0]) && parts.All(part => part.Length <= 31);
 	}
 
 	#region Test seam: an injected rule that times out
@@ -1847,7 +1871,7 @@ internal static partial class SensitiveErrorTextRedactor {
 			return text;
 		}
 		sorted.Sort(static (left, right) => left.Start != right.Start ? left.Start.CompareTo(right.Start) : right.Length.CompareTo(left.Length));
-		MatchCollection found = ForLength(PlaceholderPieceRegex(), text.Length).Matches(text);
+		MatchCollection found = Bounded(PlaceholderPieceRegex(), text.Length).Matches(text);
 		Work += text.Length + sorted.Count + found.Count;
 		int[] placeholderStarts = new int[found.Count];
 		int[] placeholderEnds = new int[found.Count];
@@ -1921,7 +1945,7 @@ internal static partial class SensitiveErrorTextRedactor {
 		int position = start;
 		bool afterPlaceholder = false;
 		int pieces = 0;
-		foreach (Match kept in ForLength(ProtectedPieceRegex(), end - start).Matches(text[start..end])) {
+		foreach (Match kept in Bounded(ProtectedPieceRegex(), end - start).Matches(text[start..end])) {
 			Work++;
 			if ((++pieces & 1023) == 0) {
 				CheckBudget();
@@ -1945,13 +1969,10 @@ internal static partial class SensitiveErrorTextRedactor {
 		Work += text.Length;
 		CheckBudget();
 		List<SpanEdit> all = [];
-		int matches = 0;
-		foreach (Match match in ForLength(rule, text.Length).Matches(text)) {
+		foreach (Match match in Bounded(rule, text.Length).Matches(text)) {
 			Work++;
-			if ((++matches & 255) == 0) {
-				CheckBudget();
-			}
 			all.AddRange(edits(match));
+			CheckBudget();
 		}
 		return all.Count == 0 ? text : ApplyEdits(text, all);
 	}
@@ -2016,38 +2037,70 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	internal const long WorkConstant = 200_000;
 
-	/// <summary>A far backstop on the clock, for a host so starved that even linear work cannot finish.</summary>
-	internal static readonly TimeSpan WallClockBackstop = TimeSpan.FromSeconds(60);
+	/// <summary>A far backstop on the clock, for a host so starved that even linear work cannot finish, and for the time a
+	/// regex spends inside itself, which the work counter cannot see. Every regex run is bounded by the time it leaves
+	/// (<see cref="Bounded"/>), so a call ends within it plus one small step.</summary>
+	internal static readonly TimeSpan WallClockBackstop = TimeSpan.FromSeconds(20);
+
+	[ThreadStatic]
+	private static TimeSpan? injectedBackstop;
+
+	/// <summary>Test seam: the next entry-point calls on this thread get <paramref name="backstop"/> as their clock backstop.</summary>
+	internal static IDisposable InjectBackstopForTests(TimeSpan backstop) {
+		injectedBackstop = backstop;
+		return new InjectedBackstopScope();
+	}
+
+	private sealed class InjectedBackstopScope : IDisposable {
+		public void Dispose() => injectedBackstop = null;
+	}
 
 	/// <summary>
 	/// The input length one second of a rule's match timeout covers on a long input. A rule that never matches scans the
 	/// whole text in ONE match attempt, so master's fixed 1 s per attempt turned a long legitimate answer into a timeout on
 	/// a loaded host (5 MB took up to 0.9 s per attempt here, idle). For a text longer than this, every rule - master's
-	/// chain and clio's - runs with a timeout of one second per this many characters, in power-of-two steps, never under
-	/// its own and never over <see cref="WallClockBackstop"/>. Below it, every rule keeps its own timeout. The timeout
-	/// changes no output: only where an input would have failed closed.
+	/// chain and clio's - may run with a timeout of one second per this many characters, in power-of-two steps, never under
+	/// its own; below it, every rule keeps its own timeout.
 	/// </summary>
 	internal const int CharactersPerTimeoutSecond = 250_000;
 
-	private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string Pattern, RegexOptions Options, int Seconds), Regex>
-		LongInputRules = new();
+	// The match timeouts a run may get, in milliseconds: halves of a second near the deadline, doublings for a long input.
+	private static readonly int[] TimeoutStepsMilliseconds = [62, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000];
 
-	/// <summary>The rule to run over <paramref name="length"/> characters: itself, or the same pattern and options with the
-	/// timeout <see cref="CharactersPerTimeoutSecond"/> gives a long input.</summary>
-	internal static Regex ForLength(Regex rule, int length) {
-		if (length <= CharactersPerTimeoutSecond) {
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string Pattern, RegexOptions Options, int Milliseconds), Regex>
+		TimedRules = new();
+
+	/// <summary>
+	/// THE PER-CALL DEADLINE for every regex run: the rule with a match timeout of min(its scaled timeout, the time left
+	/// before the call's clock backstop), stepped down to one of the steps above. The scaled timeout is the rule's own below
+	/// <see cref="CharactersPerTimeoutSecond"/> and one second per that many characters above it. So no single run can
+	/// outlast the backstop: the whole call ends within the backstop plus one small step. With under the smallest step
+	/// left, the call fails closed at once. The rebuilt rule has the generated one's pattern and options.
+	/// </summary>
+	internal static Regex Bounded(Regex rule, int length) {
+		int scaled = (int)rule.MatchTimeout.TotalMilliseconds;
+		if (length > CharactersPerTimeoutSecond) {
+			int seconds = 1;
+			while (seconds * (long)CharactersPerTimeoutSecond < length && seconds * 1_000 < TimeoutStepsMilliseconds[^1]) {
+				seconds *= 2;
+			}
+			scaled = Math.Max(scaled, seconds * 1_000);
+		}
+		long limit = scaled;
+		if (wallDeadline != 0) {
+			long remaining = (wallDeadline - System.Diagnostics.Stopwatch.GetTimestamp()) * 1_000 / System.Diagnostics.Stopwatch.Frequency;
+			limit = Math.Min(limit, remaining);
+		}
+		if (limit < TimeoutStepsMilliseconds[0]) {
+			throw new RedactionBudgetExceededException("clock backstop");
+		}
+		int step = TimeoutStepsMilliseconds.Last(candidate => candidate <= limit);
+		if (step == (int)rule.MatchTimeout.TotalMilliseconds) {
 			return rule;
 		}
-		int seconds = 1;
-		while (seconds < WallClockBackstop.TotalSeconds && seconds * (long)CharactersPerTimeoutSecond < length) {
-			seconds *= 2;
-		}
-		seconds = (int)Math.Min(seconds, WallClockBackstop.TotalSeconds);
-		if (seconds <= rule.MatchTimeout.TotalSeconds) {
-			return rule;
-		}
-		return LongInputRules.GetOrAdd((rule.ToString(), rule.Options, seconds),
-			key => new Regex(key.Pattern, key.Options | RegexOptions.Compiled, TimeSpan.FromSeconds(key.Seconds)));
+		return TimedRules.GetOrAdd((rule.ToString(), rule.Options, step), key => new Regex(key.Pattern,
+			key.Milliseconds >= 2_000 && (key.Options & RegexOptions.NonBacktracking) == 0 ? key.Options | RegexOptions.Compiled : key.Options,
+			TimeSpan.FromMilliseconds(key.Milliseconds)));
 	}
 
 	[ThreadStatic]
@@ -2087,18 +2140,32 @@ internal static partial class SensitiveErrorTextRedactor {
 	}
 
 	/// <summary>Where a fail-closed result is logged: once, with the entry point and the input length, never the text.</summary>
-	internal static Action<string> FailedClosedLog = message => ConsoleLogger.Instance.WriteWarning(message);
+	private static readonly Action<string> DefaultFailedClosedLog = message => ConsoleLogger.Instance.WriteWarning(message);
+
+	[ThreadStatic]
+	private static Action<string>? failedClosedLogForTests;
+
+	/// <summary>Test seam, per thread: where this thread's fail-closed results are logged while the scope lasts.</summary>
+	internal static IDisposable InjectFailedClosedLogForTests(Action<string> log) {
+		failedClosedLogForTests = log;
+		return new InjectedLogScope();
+	}
+
+	private sealed class InjectedLogScope : IDisposable {
+		public void Dispose() => failedClosedLogForTests = null;
+	}
 
 	private static string FailClosed(string entryPoint, int inputLength, string reason) {
 		FailedClosed++;
-		FailedClosedLog?.Invoke($"clio redacted a text whole: {entryPoint} on {inputLength} characters stopped on its {reason}.");
+		(failedClosedLogForTests ?? DefaultFailedClosedLog).Invoke($"clio redacted a text whole: {entryPoint} on {inputLength} characters stopped on its {reason}.");
 		return RedactedTimeout;
 	}
 
 	#endregion
 
-	/// <summary>The guard of a nested or internal redaction, which shares the budget of the entry point around it.</summary>
-	internal static string ExecuteRegex(Func<string> operation) => ExecuteRegex("a redaction", -1, operation);
+	/// <summary>The guard of a nested or internal redaction, which shares the budget of the entry point around it; used as
+	/// the outer guard, it gets the constant part of the work budget and the clock backstop.</summary>
+	internal static string ExecuteRegex(Func<string> operation) => ExecuteRegex("a redaction", 0, operation);
 
 	/// <summary>
 	/// The guard of every entry point: a regex timeout anywhere, or a call past its work budget or the clock backstop,
@@ -2109,11 +2176,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	internal static string ExecuteRegex(string entryPoint, int inputLength, Func<string> operation) {
 		bool outermost = budgetDepth++ == 0;
 		if (outermost) {
-			workLimit = inputLength < 0 && injectedWorkBudget is null
-				? 0
-				: Work + (injectedWorkBudget ?? WorkPerCharacter * inputLength + WorkConstant);
+			workLimit = Work + (injectedWorkBudget ?? WorkPerCharacter * Math.Max(0, inputLength) + WorkConstant);
 			wallDeadline = System.Diagnostics.Stopwatch.GetTimestamp()
-				+ (long)(WallClockBackstop.TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
+				+ (long)((injectedBackstop ?? WallClockBackstop).TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
 		}
 		try {
 			return operation();

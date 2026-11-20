@@ -72,12 +72,12 @@ internal static partial class CredentialShapeMasker {
 
 	/// <summary>Replaces every credential recognisable by its shape.</summary>
 	/// <param name="text">The text; <see langword="null"/> or empty is returned as is.</param>
-	/// <returns>The text with each credential replaced by <c>[redacted]</c>; <c>[redacted]</c> whole on a timeout.</returns>
+	/// <returns>The text with each credential replaced by <c>[redacted]</c>; <c>[redacted-timeout]</c> whole on a timeout or past its budget.</returns>
 	public static string Mask(string text) {
 		if (string.IsNullOrEmpty(text)) {
 			return text;
 		}
-		return SensitiveErrorTextRedactor.ExecuteRegex(() => {
+		return SensitiveErrorTextRedactor.ExecuteRegex(nameof(CredentialShapeMasker) + "." + nameof(Mask), text.Length, () => {
 			string result = BasicCredentialRegex().Replace(text, match => IsUserPassword(match.Groups["token"].Value)
 				? $"{match.Groups["scheme"].Value}{match.Groups["gap"].Value}{Redacted}"
 				: match.Value);
