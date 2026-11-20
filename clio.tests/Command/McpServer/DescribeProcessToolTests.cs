@@ -188,7 +188,7 @@ public sealed class DescribeProcessToolTests {
 			because: "an agent told the graph is not the running one needs the field that addresses the one that is");
 		description.Description.Should().Contain("versionReadWarning",
 			because: "the description must name where the reason for absent version facts is reported");
-		description.Description.Should().Contain("never 'unversioned'",
+		description.Description.Should().Contain("never unversioned",
 			because: "reading absent version fields as 'this process has no versions' reproduces the ENG-94374 defect with the fields in place");
 		description.Description.Should().Contain("FAMILY state",
 			because: "a family entry's enabled flag is per-family, and an agent that reads it per-version reports the wrong thing");
@@ -479,6 +479,33 @@ public sealed class DescribeProcessToolTests {
 			because: "the prompt narrates the attachments the contract reports");
 		prompt.Should().Contain("`email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each",
 			because: "the prompt must match the contract on the describe-only members");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The describe contract names the timer block a timer start reads back with its describe-only storedCron, designerKind and scheduled, and the prompt explains the scheduler states, the startTimers summary list and the message start that reports no buildType (TC-U-15); the contract carries no schedule vocabulary (Q10).")]
+	public void DescribeProcess_ShouldDocumentTheTimerBlock_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert
+		toolText.Should().Contain("a timerStart timer block (storedCron, designerKind and scheduled, the scheduler state, are describe-only)",
+			because: "the contract names the block and its describe-only members");
+		prompt.Should().Contain("A `timerStart` element (the designer's \"Start timer\") carries its `timer` block",
+			because: "the prompt lists every configuration block the tool reports");
+		prompt.Should().Contain("`processDisabled`, `notActiveVersion`",
+			because: "the prompt names why the platform will not run a saved timer");
+		prompt.Should().Contain("start signals, start timers, parameters",
+			because: "the summary mode lists timer starts");
+		prompt.Should().Contain("A message start has no `buildType`: it is read-only here.",
+			because: "the message-start describe changed with this package (Q7)");
+		foreach (string member in new[] { "daysOfWeek", "repeatOnMisfire", "fromHour", "toHour", "dayOfMonth", "workday", "weekday" }) {
+			toolText.Should().NotContain(member,
+				because: "the contract names the block and its read-backs only; the schedule vocabulary is the guide's (Q10)");
+		}
 	}
 
 	[Test]

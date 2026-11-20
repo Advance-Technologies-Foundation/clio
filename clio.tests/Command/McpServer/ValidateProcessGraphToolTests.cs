@@ -684,6 +684,28 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The tool description - the ONE buildable-slice list - names timerStart as buildable, and both it and the prompt keep message starts and intermediate events, but no longer timer starts, in the not-buildable sentence (TC-U-16).")]
+	public void ValidateTool_ShouldNameTheTimerStartAsBuildable_WhenDescriptionIsRead() {
+		// Arrange
+		MethodInfo method = typeof(ValidateProcessGraphTool).GetMethod(nameof(ValidateProcessGraphTool.Validate));
+
+		// Act
+		string description = method!.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+		string prompt = Clio.Command.McpServer.Prompts.ProcessDesigner.ValidateProcessGraphPrompt.ProcessDesignGuidance();
+
+		// Assert
+		description.Should().Contain("build only startEvent/signalStart/timerStart/endEvent/",
+			because: "the canonical buildable list must carry every element type create-business-process builds");
+		description.Should().Contain("Still NOT buildable: inclusiveGateway, eventBasedGateway, message starts and intermediate events",
+			because: "timer starts left the not-buildable sentence; message starts and intermediate events stay");
+		prompt.Should().Contain("inclusiveGateway, eventBasedGateway, message starts and intermediate events;",
+			because: "the prompt's out-of-reach list moves with the tool's");
+		prompt.Should().NotContain("timer/message starts",
+			because: "a timer start is buildable now");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool description is the ONE buildable-slice list, so it names the Call web service element and the Send chat message element. Without them an agent planning either element reads the canonical list, finds it missing and tells the user the builder cannot create it.")]
 	public void ValidateTool_ShouldNameTheWebServiceAndChatElementsAsBuildable_WhenDescriptionIsRead() {
 		// Arrange

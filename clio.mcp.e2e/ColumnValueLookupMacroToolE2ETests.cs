@@ -35,8 +35,11 @@ public sealed class ColumnValueLookupMacroToolE2ETests {
 
 	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 
-	/// <summary>The first CrtProcessBuilder that stores column-value lookup macros in the designer's form.</summary>
-	private const string MinimumPackageVersion = "1.6.6.186";
+	/// <summary>
+	/// The create/modify floor this clio enforces (1.6.6.187, the timer start). The column-value lookup macros arrived in
+	/// 1.6.6.186, but clio refuses create on a stand below its floor, so a lower pin would fail instead of being Ignored.
+	/// </summary>
+	private const string MinimumPackageVersion = "1.6.6.187";
 
 	private const string Subject = "column-value lookup macro";
 

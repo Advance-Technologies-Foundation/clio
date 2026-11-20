@@ -14,7 +14,7 @@ date: 2026-11-13
 key at any level: nothing is saved, and the message names each such key's path with the key meant (or, with no near
 match, the keys valid there). Fields copied from describe are grouped once per place instead of listed as typos:
 - a field a write takes ELSEWHERE that carries a value (in a `setElement` elementUpdate an element's `filter` /
-  `signal` / `connections`; an element's `connections` on a build too; the flat approval fields; a process
+  `signal` / `timer` / `connections`; an element's `connections` on a build too; the flat approval fields; a process
   parameter's or collection item's `sourceElement` / `sourceElementParameter` / `sourceColumn`; an element's
   `parameters` with an item that carries a binding - outputs and unbound inputs are not) is REFUSED with where it is written (setFilter, setConnections,
   `approver.type`, a mapping with `targetProcessParameter` - dotted `Parameter.Item` for an item); sent as `null` or
@@ -27,7 +27,7 @@ Past the message's caps the rest is counted and the next attempt names it. clio 
 (modify also names the operation when every finding sits under one). clio's own pre-send `ProcessBlockKeyCheck`
 (ENG-103085) still runs first and is STRICTER for a whole element: element-level describe fields (`uid`, `position`,
 `buildType`...) in a `setElement` elementUpdate, and an element's `parameters` / `connections`, are refused before
-anything is sent ("Nothing was sent"), so only a described readData-family, webService or chatMessage block echoed back reaches
+anything is sent ("Nothing was sent"), so only a described readData-family, webService, chatMessage or timer block echoed back reaches
 the server's ignore-with-warning path; an email (`templateObject`, recipients' described fields), subProcess (`process`),
 openEditPage (`completionMode`) or fileProcessing (`files.sourceColumn`) block can carry describe fields clio refuses
 too. Two gaps remain: a key next to the `request` wrapper passes in silence, and on a host where the check reports
