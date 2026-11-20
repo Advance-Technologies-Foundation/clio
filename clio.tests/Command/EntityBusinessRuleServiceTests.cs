@@ -112,6 +112,103 @@ public sealed class EntityBusinessRuleServiceTests {
 			because: "the resolver-provided data value type must reach the persisted operand");
 	}
 
+	private const string RejectedProbe = """{"success":false,"errorInfo":{"message":"Column by path Status not found."}}""";
+	private const string AcceptedProbe = """{"success":true,"rows":[{"ProbeCount":3}]}""";
+
+	private (EntityBusinessRuleService Service, IApplicationClient Client) CreateServiceWithProbe(params string[] probeResponses) {
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("DataService/json/SyncReply/SelectQuery");
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(probeResponses[0], probeResponses.Skip(1).ToArray());
+		EntityBusinessRuleSchemaProvider schemaProvider = new(_entitySchemaDesignerClient);
+		EntityBusinessRuleService service = new(
+			new BusinessRulePackageResolver(_applicationPackageListProvider),
+			new EntityBusinessRuleAttributeProvider(schemaProvider),
+			new BusinessRuleAddonService(_addonSchemaDesignerClient),
+			_formulaValidationService,
+			new BusinessRuleValidator(_lookupReferenceValidator),
+			new StaticFilterContextFactory(schemaProvider, applicationClient, urls),
+			_sysSettingResolver);
+		return (service, applicationClient);
+	}
+
+	private static BusinessRule StaticFilterRule(string caption) =>
+		CreateRule(caption: caption, actions: [
+			new ApplyStaticFilterBusinessRuleAction("Owner", JsonSerializer.Deserialize<JsonElement>(
+				"""{"logicalOperation":"AND","filters":[{"columnPath":"Status","comparisonType":"START_WITH","value":"A"}]}"""))
+		]);
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270: a static filter the environment rejects fails the rule before anything is saved.")]
+	public void Create_Should_Not_Save_When_The_Environment_Rejects_The_Static_Filter() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(RejectedProbe);
+
+		// Act
+		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrOrder", StaticFilterRule("Owners starting with A")));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "a filter the server cannot run must not become a saved rule")
+			.Which.Message.Should().Contain("Nothing was saved", because: "the agent must know nothing was written");
+		_savedAddonSchema.Should().BeNull(because: "the probe runs before the add-on is saved");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270: an accepted static filter is saved and the result says how many lookup records it keeps.")]
+	public void Create_Should_Report_How_Many_Records_The_Static_Filter_Keeps() {
+		// Arrange
+		(EntityBusinessRuleService service, IApplicationClient client) = CreateServiceWithProbe(AcceptedProbe);
+
+		// Act
+		BusinessRuleCreateResult result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrOrder", StaticFilterRule("Owners starting with A")));
+
+		// Assert
+		result.FilterMatchCount.Should().Be(3, because: "the count lets the agent judge the filter's meaning without a second dialect");
+		_savedAddonSchema.Should().NotBeNull(because: "an accepted filter is written to the entity add-on");
+		client.Received(1).ExecutePostRequest(Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"filters\"") && body.Contains("Terrasoft.FilterGroup")),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270: in a batch, a rejected static filter fails only its own rule; the other rule is saved with its match count.")]
+	public void CreateBatch_Should_Isolate_A_Rejected_Static_Filter() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(RejectedProbe, AcceptedProbe);
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [StaticFilterRule("Rejected"), StaticFilterRule("Accepted")]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(request);
+
+		// Assert
+		results[0].Success.Should().BeFalse(because: "the server rejected the first rule's filter");
+		results[0].Error.Should().Contain("Nothing was saved", because: "the per-rule error carries the probe verdict");
+		results[1].Success.Should().BeTrue(because: "one rule's rejection never aborts the others");
+		results[1].FilterMatchCount.Should().Be(3, because: "the accepted rule reports what its filter keeps");
+		_savedAddonSchema.Should().NotBeNull(because: "the accepted rule is saved");
+		_savedAddonSchema!.MetaData.Should().Contain("Accepted", because: "the saved add-on holds the accepted rule")
+			.And.NotContain("\"Rejected\"", because: "the rejected rule never reaches the add-on");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270: a rule without apply-static-filter never sends the probe query.")]
+	public void Create_Should_Not_Probe_A_Rule_Without_A_Static_Filter() {
+		// Arrange
+		(EntityBusinessRuleService service, IApplicationClient client) = CreateServiceWithProbe(AcceptedProbe);
+
+		// Act
+		BusinessRuleCreateResult result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrOrder", CreateRule()));
+
+		// Assert
+		result.FilterMatchCount.Should().BeNull(because: "only a static-filter rule has a filter to count");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
 	[TestCase("", "UsrOrder", true, "package-name is required.")]
 	[TestCase("UsrPkg", "", true, "entity-schema-name is required.")]
 	[TestCase("UsrPkg", "UsrOrder", false, "rule is required.")]
