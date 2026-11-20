@@ -1259,8 +1259,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	// AFTER MASTER'S PAIR RULE. Master's pair rule takes only the first word after a credential key, so when that word
 	// is a scheme word the credential stands right after its placeholder: "Authorization: Basic X7q2" becomes
 	// "Authorization=[redacted] X7q2", "password=Negotiate YII rejected" becomes "password=[redacted] YII rejected".
-	// The run there goes, unless it is a challenge parameter or one of the words a header position keeps
-	// (HeaderProseWordRegex: "rejected", "failed", "token", …). Its quotes stay.
+	// The run there goes, unless it is a challenge parameter, one of the words a header position keeps
+	// (HeaderProseWordRegex: "rejected", "failed", "token", …), a prose-shaped word (ProseRunAfterPlaceholderRegex) or
+	// a bracket that opens the next part of the sentence (RunAfterPairPlaceholderEdits). Its quotes stay.
 	// LINEAR (round B4): "(?=\S)" first, so a position inside a run of blanks - where no run can start - is skipped before
 	// the look back over the blanks; reading them back from every blank took 2.8 s on 20,000 spaces. Same matches, same
 	// groups (RedactorRegexAuditTests' differential).
@@ -1272,8 +1273,16 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// A run that reaches a placeholder ("abcdefgh.ijklmnopC:/x[redacted-path]") is read up to it, unless what stands
 	// before the placeholder is the next pair's key ("token=[redacted]").
+	// A run that opens with a bracket - "(", "[" or "{" - is left as master leaves it. Most often it is the next part of
+	// the sentence: GetReadableMessageException's "(WebException: ProtocolError (HTTP 401 Unauthorized))" enrichment,
+	// which CI and electron's sign-in trigger read, a "[Tag]" or a JSON object. Master's pair rule took the value before
+	// it and kept the bracketed run ("password=[redacted] (WebException: …"), and so does this rule. A credential in
+	// brackets after a scheme word therefore shows, as on master (KNOWN RESIDUE, see ProseRunAfterPlaceholderRegex).
 	private static IEnumerable<SpanEdit> RunAfterPairPlaceholderEdits(Match match) {
 		string run = match.Groups["cred"].Value;
+		if (run.Length > 0 && run[0] is '(' or '[' or '{') {
+			return NoEdit;
+		}
 		int placeholder = run.IndexOf("[redacted", StringComparison.Ordinal);
 		if (placeholder >= 0) {
 			run = run[..placeholder];
@@ -1301,7 +1310,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	// the Bearer placeholder ("Authorization: Bearer x returned 401"), so the word stays. A run with a digit, an inner
 	// capital, an all-capitals run or "+", "/", "=", "_" is credential-shaped and goes. KNOWN RESIDUE: a prose-shaped
 	// credential after a scheme word after a credential key ("password: Basic secrettokenvalue") shows; master's chain
-	// keeps no trace of the scheme word it took, so the two cannot be told apart.
+	// keeps no trace of the scheme word it took, so the two cannot be told apart. So does a credential in brackets after
+	// a scheme word after a credential key: "token=Basic (dXNlcjpwYXNz)" gives "token=[redacted] (dXNlcjpwYXNz)" here
+	// and on master, because a run that opens with a bracket is left as master leaves it (RunAfterPairPlaceholderEdits).
 	[GeneratedRegex(@"^(?:[a-z]+|[A-Z][a-z]+|\d+(?:[.:]\d+)*)(?:-[A-Za-z][a-z]*)*$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex ProseRunAfterPlaceholderRegex();
 
