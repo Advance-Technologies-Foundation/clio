@@ -255,6 +255,9 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 		TestName = "SiteOnly_DatabaseName")]
 	[TestCase("Cannot read ./Terrasoft.WebApp/ConnectionStrings.config", "./Terrasoft.WebApp",
 		TestName = "SiteOnly_RelativePath")]
+	[TestCase(@"Cannot read ..\Terrasoft.WebApp\ConnectionStrings.config", @"..\Terrasoft.WebApp",
+		TestName = "SiteOnly_BackslashRelativePath")]
+	[TestCase("Cannot read C:ConnectionStrings.config", "C:ConnectionStrings.config", TestName = "SiteOnly_DriveRelativePath")]
 	[TestCase("Instance (SQL01\\SQLEXPRESS) is down", "SQL01\\SQLEXPRESS", TestName = "SiteOnly_ServerInstance")]
 	[TestCase("Access denied\n   at Terrasoft.Core.Entities.Entity.Save()", "Terrasoft.Core", TestName = "SiteOnly_StackCut")]
 	[TestCase("Invalid refresh token q8Zr_3kLmN0pQ7sT_vW2xY4zA6bC8dE0fG1hI3jK5lM", "q8Zr_3kLmN0pQ7sT",
@@ -1216,6 +1219,322 @@ public sealed class SensitiveErrorTextRedactorSiteTextTests {
 
 		// Assert
 		redacted.Should().Be(text, because: "the documented trade keeps a count word on a count line, host or not");
+	}
+
+	#endregion
+
+	#region Backslash, drive-relative and escaped relative paths (rule 6, site part)
+
+	// The live case (odata-create against a stub Windows site, 20 Nov): the refused insert named its configuration
+	// file by a backslash relative path, and odata-update and odata-delete carried it JSON-escaped.
+	private const string LiveInsertRefusal = @"Insert refused. See ..\..\Terrasoft.Configuration\Web.config";
+
+	private const string LiveInsertRefusalEscaped = @"Insert refused. See ..\\..\\Terrasoft.Configuration\\Web.config";
+
+	[TestCase(LiveInsertRefusal, "Insert refused. See [redacted-path]", TestName = "Backslash_LiveCase_AtTheEnd")]
+	[TestCase(@"See ..\x\y.config now", "See [redacted-path] now", TestName = "Backslash_TwoDots_BeforeASpace")]
+	[TestCase(@"See .\conf\x.config now", "See [redacted-path] now", TestName = "Backslash_OneDot")]
+	[TestCase(@"See ..\..\Terrasoft.Configuration\Web.config, then retry", "See [redacted-path], then retry",
+		TestName = "Backslash_BeforeAComma")]
+	[TestCase(@"See ..\..\Terrasoft.Configuration\Web.config\nNext step", @"See [redacted-path]\nNext step",
+		TestName = "Backslash_BeforeAWrittenLineBreak")]
+	[TestCase(@"See (..\x\y) now", "See ([redacted-path]) now", TestName = "Backslash_InsideBrackets")]
+	[TestCase(@"See [..\x] now", "See [[redacted-path]] now", TestName = "Backslash_InsideSquareBrackets")]
+	[TestCase(@"See '..\x\y.config' now", "See '[redacted-path]' now", TestName = "Backslash_InsideSingleQuotes")]
+	[TestCase(@"See ""..\x"" now", @"See ""[redacted-path]"" now", TestName = "Backslash_InsideDoubleQuotes")]
+	[TestCase(@"Copy ..\a\b.config to .\c\d.config now", "Copy [redacted-path] to [redacted-path] now",
+		TestName = "Backslash_TwiceInOneText")]
+	[TestCase(@"See ..\temp\Web.config now", "See [redacted-path] now", TestName = "Backslash_FirstFolderLikeAnEscape")]
+	[TestCase(@"See .\nlog.config now", "See [redacted-path] now", TestName = "Backslash_FileNameLikeAnEscape")]
+	[TestCase(@"See ..\x\nightly.bak now", "See [redacted-path] now", TestName = "Backslash_LaterFolderLikeAnEscape")]
+	[TestCase(@"See .\conf/x.config now", "See [redacted-path] now", TestName = "Backslash_MixedSeparators")]
+	[TestCase(@"See ..\jdoe(old)\secrets\db.config now", "See [redacted-path] now", TestName = "Backslash_BracketInAFolder")]
+	[TestCase(@"Server .\SQLEXPRESS is down", "Server [redacted-path] is down", TestName = "Backslash_LocalInstance")]
+	[TestCase(@"See ..\db01.internal:1433\x now", "See [redacted-path] now", TestName = "Backslash_HostInsideThePath")]
+	[TestCase(@"See ..\Web.config.", "See [redacted-path].", TestName = "Backslash_FullStopStays")]
+	[Category("Unit")]
+	[Description("A backslash relative path a Windows site writes goes WHOLE, its leading dots included, wherever it "
+		+ "stands: at the end, before a space, a comma, a written line break, a closing bracket or a quote, twice in one "
+		+ "text, with a folder named like an escape, mixed with '/' and with a host inside. It used to survive whole.")]
+	public void RedactSiteText_ShouldTakeTheWholeBackslashRelativePath(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "no piece of a site's relative path may ship, and the words around it stay");
+	}
+
+	[TestCase(LiveInsertRefusalEscaped, "Insert refused. See [redacted-path]", TestName = "Escaped_LiveCase_AtTheEnd")]
+	[TestCase(@"See ..\\x\\y.config now", "See [redacted-path] now", TestName = "Escaped_TwoDots")]
+	[TestCase(@"See .\\conf\\x.config now", "See [redacted-path] now", TestName = "Escaped_OneDot")]
+	[TestCase(@"See ..\\Web.config, then retry", "See [redacted-path], then retry", TestName = "Escaped_BeforeAComma")]
+	[TestCase(@"See ..\\..\nNext step", @"See [redacted-path]\nNext step", TestName = "Escaped_BeforeAJsonLineBreak")]
+	[TestCase(@"See (..\\x\\y) now", "See ([redacted-path]) now", TestName = "Escaped_InsideBrackets")]
+	[TestCase(@"See [..\\x] now", "See [[redacted-path]] now", TestName = "Escaped_InsideSquareBrackets")]
+	[TestCase(@"See '..\\y.config' now", "See '[redacted-path]' now", TestName = "Escaped_InsideSingleQuotes")]
+	[TestCase(@"See \""..\\x\"" now", @"See \""[redacted-path]\"" now", TestName = "Escaped_InsideEscapedQuotes")]
+	[TestCase(@"See \u0022..\\x\u0022 now", @"See \u0022[redacted-path] now", TestName = "Escaped_AfterAUnicodeQuote")]
+	[TestCase(@"Copy ..\\a\\b.config to .\\c\\d.config now", "Copy [redacted-path] to [redacted-path] now",
+		TestName = "Escaped_TwiceInOneText")]
+	[TestCase(@"See .\\conf/x.config now", "See [redacted-path] now", TestName = "Escaped_MixedSeparators")]
+	[TestCase(@"See ..\\jdoe(old)\\secrets\\db.config now", "See [redacted-path] now", TestName = "Escaped_BracketInAFolder")]
+	[TestCase(@"Server .\\SQLEXPRESS is down", "Server [redacted-path] is down", TestName = "Escaped_LocalInstance")]
+	[TestCase(@"See ..\\db01.internal:1433\\x now", "See [redacted-path] now", TestName = "Escaped_HostInsideThePath")]
+	[TestCase(@"See ..\\..[redacted-path] and .[redacted-path]", "See [redacted-path] and [redacted-path]",
+		TestName = "Escaped_TextRedactedBeforeThisRule")]
+	[Category("Unit")]
+	[Description("The same path JSON-escaped, as the OData error's raw text carries it to odata-update and "
+		+ "odata-delete: the WHOLE path goes, the leading '..\\\\..' included, and the escaped quotes and line break "
+		+ "around it stay. Redact's UNC rule used to take the tail and leave '..\\\\..[redacted-path]'; a text that "
+		+ "already holds that remnant loses it too. Where that UNC rule took the tail, it - not this rule - decided "
+		+ "where the path ends, so the line-break case uses a path it cannot start on.")]
+	public void RedactSiteText_ShouldTakeTheWholeEscapedRelativePath(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "the escaped spelling must lose the whole path, dots included");
+	}
+
+	[TestCase(@"See .\\conf/x\y.config now", "See [redacted-path] now", TestName = "Mixed_EscapedThenDecodedSeparator")]
+	[TestCase(@"See ..\x\\y.config now", "See [redacted-path] now", TestName = "Mixed_DecodedThenEscapedSeparator")]
+	[TestCase(@"See ..\\\\x\\\\y.config now", "See [redacted-path] now", TestName = "Mixed_EscapedTwice")]
+	[TestCase(@"See ..\x\y.config\u0022Password=hunter2 now", "See [redacted-path] now",
+		TestName = "Glued_EscapeAndAPairAfterABackslashPath")]
+	[TestCase(@"Reach SQL01\SQLEXPRESS.\x\y.config now", "Reach [redacted][redacted-path] now",
+		TestName = "Placeholder_BackslashPathAfterAnInstance")]
+	[TestCase(@"See ../x/y.config\u0022Password=hunter2 now", "See [redacted-path] now",
+		TestName = "Glued_EscapeAndAPairAfterAForwardPath")]
+	[Category("Unit")]
+	[Description("A path whose separators mix one, two or four backslashes goes whole; so does a \\uXXXX glued to more "
+		+ "text after it - the Redact pair rule cannot start after such an escape, so 'Password=hunter2' there goes only "
+		+ "with the path (master's chain left '[redacted-path]]=hunter2' after a forward path) - and a path right after the "
+		+ "placeholder the server-instance rule wrote.")]
+	public void RedactSiteText_ShouldTakeThePath_WhenSpellingsMixOrAnEscapeIsGluedToIt(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "no piece of the path, and nothing glued to it, may ship");
+	}
+
+	[TestCase(@"See ../x/y.config\\\u0022CORP\\jdoe now", "See [redacted-path] now",
+		TestName = "Kept_GluedEscapeAndAnAccountAfterAForwardPath")]
+	[TestCase(@"See ../x/y.config\\\u0022;(SQL01\\SQLEXPRESS, now", "See [redacted-path] now",
+		TestName = "Kept_GluedEscapeAndAnEscapedInstanceAfterAForwardPath")]
+	[TestCase(@"Reach SQL01\SQLEXPRESS../x/y.config now", "Reach [redacted][redacted-path] now",
+		TestName = "Kept_ForwardPathAfterAnInstance")]
+	[Category("Unit")]
+	[Description("GUARD, found by the differential run of 20 Nov: what the forward-slash rule removed before the fix it "
+		+ "still removes - a \\uXXXX glued to more text after the path, with the account or server instance glued to it "
+		+ "that no rule before this one can start on, and a path right after the server-instance placeholder.")]
+	public void RedactSiteText_ShouldKeepRemovingWhatAForwardPathTookWithIt(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "stopping the path at the escape showed a value the old rule hid");
+	}
+
+	[TestCase(@"See C:foo\bar.config now", "See [redacted-path] now", TestName = "Drive_RelativeWithAFolder")]
+	[TestCase(@"See C:foo\\bar.config now", "See [redacted-path] now", TestName = "Drive_RelativeWithAFolderEscaped")]
+	[TestCase(@"See C:Web.config now", "See [redacted-path] now", TestName = "Drive_RelativeFileName")]
+	[TestCase(@"Use C:Web.config.", "Use [redacted-path].", TestName = "Drive_RelativeFileNameAtASentenceEnd")]
+	[TestCase(@"See (C:Web.config) now", "See ([redacted-path]) now", TestName = "Drive_RelativeInsideBrackets")]
+	[TestCase(@"See ""C:foo\bar.config"" now", @"See ""[redacted-path]"" now", TestName = "Drive_RelativeInsideQuotes")]
+	[TestCase(@"See \""C:foo\\bar.config\"" now", @"See \""[redacted-path]\"" now",
+		TestName = "Drive_RelativeInsideEscapedQuotes")]
+	[Category("Unit")]
+	[Description("A drive-relative path - a drive letter with no separator after its colon - goes whole, decoded or "
+		+ "escaped. It used to survive whole or lose only its tail ('C:[redacted]', '\\\"C:foo[redacted-path]\\\"').")]
+	public void RedactSiteText_ShouldTakeADriveRelativePath(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "a drive-relative path names a file on the site's server");
+	}
+
+	[TestCase(@"See \u0022../x/y.config\u0022 now", @"See \u0022[redacted-path]\u0022 now",
+		TestName = "Forward_AfterAUnicodeQuote")]
+	[TestCase(@"See \u0027../conf/x.config\u0027 now", @"See \u0027[redacted-path]\u0027 now",
+		TestName = "Forward_AfterAUnicodeApostrophe")]
+	[TestCase(@"See \""../x/y.config\"" now", @"See \""[redacted-path]\"" now", TestName = "Forward_InsideEscapedQuotes")]
+	[Category("Unit")]
+	[Description("The forward-slash relative path in an escaped text: it starts right after an escaped quote and leaves "
+		+ "the closing escape whole. It used to keep '../x/' after a \\u0022, and to take the backslash of a closing \\\" "
+		+ "and leave a bare quote.")]
+	public void RedactSiteText_ShouldTakeAForwardRelativePath_BetweenEscapedQuotes(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "the path goes and both escapes around it stay whole");
+	}
+
+	[TestCase(@"See ../..\Terrasoft.Configuration/Web.config now", "See [redacted-path] now", TestName = "Kept_MixedForwardFirst")]
+	[TestCase(@"See ../..\\Terrasoft.Configuration/Web.config now", "See [redacted-path] now",
+		TestName = "Kept_MixedForwardFirstEscaped")]
+	[TestCase(@"See \\SRV01\share\Web.config now", "See [redacted-path] now", TestName = "Kept_Unc")]
+	[TestCase(@"See \\\\SRV01\\share\\Web.config now", "See [redacted-path] now", TestName = "Kept_UncEscaped")]
+	[TestCase(@"Cannot read C:\Users\jdoe\x.config now", "Cannot read [redacted-path] now", TestName = "Kept_DrivePath")]
+	[TestCase(@"Cannot read C:\\Users\\jdoe\\x.config now", "Cannot read [redacted-path] now", TestName = "Kept_DrivePathEscaped")]
+	[TestCase("See ../conf/x.config now", "See [redacted-path] now", TestName = "Kept_ForwardRelative")]
+	[TestCase("See ~/creatio/x.config now", "See [redacted-path] now", TestName = "Kept_HomeRelative")]
+	[TestCase(@"Data Source=.\SQLEXPRESS;Initial Catalog=InventedDb", "Data Source=[redacted];Initial Catalog=[redacted]",
+		TestName = "Kept_ConnectionStringWithALocalInstance")]
+	[Category("Unit")]
+	[Description("GUARD, not a gap: the path shapes clio already removed whole - a forward-first mixed path, a UNC path, "
+		+ "a drive path, a home path and a connection string naming a local instance - still go exactly as before.")]
+	public void RedactSiteText_ShouldKeepRemovingThePathShapesItAlreadyTook(string text, string expected) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(expected, because: "the new rules must not change what the older rules already removed");
+	}
+
+	[TestCase(@"Step one failed.\nNext step", TestName = "Keep_SentenceEndAndAWrittenLineBreak")]
+	[TestCase(@"It is done.\""", TestName = "Keep_SentenceEndAndAnEscapedQuote")]
+	[TestCase(@"Wrote end.\\n here", TestName = "Keep_SentenceEndAndAnEscapedBackslash")]
+	[TestCase(@"Current user does not have sufficient permissions to run \""CanManageSolution\""",
+		TestName = "Keep_EscapedOperationName")]
+	[TestCase(@"Saved ""Order"".\nNext record", TestName = "Keep_QuoteDotAndAWrittenLineBreak")]
+	[TestCase(@"Saved \""Order\"".\nNext record", TestName = "Keep_EscapedQuoteDotAndAJsonLineBreak")]
+	[TestCase(@"Saved \u0022Order\u0022.\\nNext record", TestName = "Keep_UnicodeQuoteDotAndAnEscapedLineBreak")]
+	[TestCase(@"Value .\nNext", TestName = "Keep_LoneDotAndAWrittenLineBreak")]
+	[TestCase(@"Value .\tNext and .\r\n", TestName = "Keep_LoneDotAndAWrittenTabOrCarriageReturn")]
+	[TestCase(@"Value .\u0022 here", TestName = "Keep_LoneDotAndAUnicodeEscape")]
+	[TestCase(@"Cannot delete ""Order"".\nthe record is referenced", TestName = "Keep_LineBreakBeforeALowerCaseWord")]
+	[TestCase(@"(see log).\nNext step", TestName = "Keep_BracketDotAndAWrittenLineBreak")]
+	[TestCase(@"Loading...\nNext and Loading ...\nNext", TestName = "Keep_EllipsisAndAWrittenLineBreak")]
+	[TestCase("Wait .. then retry ... later", TestName = "Keep_ProseDots")]
+	[TestCase("Creatio 8.1.0.5 detected", TestName = "Keep_Version")]
+	[TestCase("Could not load file or assembly 'Terrasoft.Core, Version=10.0.0.0, Culture=neutral, PublicKeyToken=null'",
+		TestName = "Keep_AssemblyVersion")]
+	[TestCase(@"Pattern ""^[A-Z].\d{3}$"" is invalid", TestName = "Keep_DotAfterAClosingBracket")]
+	[TestCase("Step C: retry", TestName = "Keep_DriveLetterInProse")]
+	[TestCase("Started at 10:30 and ended 10:45", TestName = "Keep_Time")]
+	[TestCase("Range A:B is empty", TestName = "Keep_LetterRange")]
+	[TestCase("Element x:Item.Value is invalid and key p:Item.name is unknown", TestName = "Keep_XmlAndKeyNames")]
+	[TestCase("Elapsed T:12.5s with v:1.2.3", TestName = "Keep_LetterColonNumbers")]
+	[TestCase(@"See C:foo\nNext now", TestName = "Keep_DriveLetterAndAWrittenLineBreak")]
+	[Category("Unit")]
+	[Description("What the backslash and drive-relative rules must NOT take: JSON escapes and written escapes after a "
+		+ "sentence end, a lone dot before an escape, prose dots, versions, a drive letter in prose, a time, a letter "
+		+ "range, XML and key names, a pattern, and a drive letter before a line break. Each guards an over-match the "
+		+ "rules could make: the separator after the dots must not be an escape.")]
+	public void RedactSiteText_ShouldKeepEscapesProseAndVersions_AroundDotsBackslashesAndColons(string text) {
+		// Arrange
+
+		// Act
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		site.Should().Be(text, because: "none of these is a path, and the site's words must reach the caller whole");
+	}
+
+	[TestCase(LiveInsertRefusal, TestName = "Idempotent_Decoded")]
+	[TestCase(LiveInsertRefusalEscaped, TestName = "Idempotent_Escaped")]
+	[TestCase(@"Copy ..\a\b.config to .\c\d.config, then C:Web.config\nNext", TestName = "Idempotent_Mixed")]
+	[Category("Unit")]
+	[Description("RedactSiteText over its own output changes nothing: the placeholder is no path start.")]
+	public void RedactSiteText_ShouldBeIdempotent_OnABackslashPath(string text) {
+		// Arrange
+		string once = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Act
+		string twice = SensitiveErrorTextRedactor.RedactSiteText(once);
+
+		// Assert
+		once.Should().NotContain("..").And.NotContain("Terrasoft", because: "the first pass takes the path whole");
+		twice.Should().Be(once, because: "a second pass must find nothing left to take");
+	}
+
+	[TestCase(false, TestName = "BackslashEnvelope_DefaultEncoder")]
+	[TestCase(true, TestName = "BackslashEnvelope_RelaxedEncoder")]
+	[Category("Unit")]
+	[Description("Inside a serialized envelope, through RedactSiteText: every path shape loses every piece, the escaped "
+		+ "quotes and line breaks around them stay, and the envelope still parses.")]
+	public void RedactSiteText_ShouldTakeEveryPathShape_InsideASerializedEnvelope(bool relaxed) {
+		// Arrange
+		const string message = LiveInsertRefusal + " now; also '..\\zq1\\zq2.config' and \"C:zq3\\zq4.config\" (.\\zq5\\zq6)\n"
+			+ "And ../zq7/zq8.config with C:Zq9.config.";
+		JsonSerializerOptions options = relaxed
+			? new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }
+			: new JsonSerializerOptions();
+		string envelope = JsonSerializer.Serialize(new { success = false, error = message }, options);
+
+		// Act
+		string redacted = SensitiveErrorTextRedactor.RedactSiteText(envelope);
+
+		// Assert
+		Action parse = () => JsonDocument.Parse(redacted).Dispose();
+		parse.Should().NotThrow(because: "the escapes around a path must survive whole");
+		string error = JsonDocument.Parse(redacted).RootElement.GetProperty("error").GetString();
+		error.Should().NotContain("..").And.NotContain("Terrasoft").And.NotContain("Web.config").And.NotContain("zq",
+			because: "no piece of any path may survive");
+		error.Should().StartWith("Insert refused. See [redacted-path] now; also ").And.Contain("\nAnd ")
+			.And.EndWith(" with [redacted-path].", because: "the words and the line break between the paths stay");
+	}
+
+	// The rules timed alone, by name.
+	private static Regex SiteRule(string name) =>
+		(Regex)typeof(SensitiveErrorTextRedactor)
+			.GetMethod(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+			.Invoke(null, null)!;
+
+	// 100,000 characters of dots and backslashes: the decoded and the escaped separator, and a seeded mix with the
+	// spaces, brackets and letters that let a path start and a segment run on.
+	private static string DotsAndBackslashes(string shape) {
+		const int length = 100_000;
+		switch (shape) {
+			case "decoded":
+				return " " + string.Concat(Enumerable.Repeat(".\\", length / 2));
+			case "escaped":
+				return " " + string.Concat(Enumerable.Repeat("..\\\\", length / 4));
+			default:
+				Random random = new(1990);
+				const string alphabet = ".\\.\\.\\ (nC:";
+				return new string(Enumerable.Range(0, length).Select(_ => alphabet[random.Next(alphabet.Length)]).ToArray());
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The backslash and drive-relative rules ALONE read 100,000 characters of dots and backslashes in "
+		+ "linear time: every segment is atomic and every unit starts on a different character, so nothing backtracks. "
+		+ "The bound is the server-name rule's, generous for a slow agent.")]
+	public void BackslashPathRules_ShouldReadALongRunOfDotsAndBackslashes_InLinearTime(
+		[Values("RelativeBackslashPathRegex", "DriveRelativePathRegex", "RelativePathRegex")] string ruleName,
+		[Values("decoded", "escaped", "mixed")] string shape) {
+		// Arrange
+		Regex rule = SiteRule(ruleName);
+		string text = DotsAndBackslashes(shape);
+		rule.IsMatch("warm up");
+		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		string replaced = rule.Replace(text, "[x]");
+		watch.Stop();
+
+		// Assert
+		replaced.Should().NotBeNull();
+		watch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750), because: "the rule must stay linear on a long run");
 	}
 
 	#endregion

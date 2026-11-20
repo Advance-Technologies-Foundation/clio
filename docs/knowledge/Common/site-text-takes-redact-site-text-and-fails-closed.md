@@ -13,7 +13,8 @@ applies-to:
   - clio/Command/McpServer/Tools/ODataCreateTool.cs
   - clio.tests/Common/SiteTextWiringTests.cs
   - clio.tests/Common/Fixtures/site-text-redaction-cases.json
-date: 2026-11-19
+  - clio.tests/Common/SensitiveErrorTextRedactorSiteTextTests.cs
+date: 2026-11-20
 ---
 
 **What is true** - the redactor has two entry points. `Redact` runs over ANY text: clio's own CLI lines and
@@ -24,7 +25,9 @@ paths, and credential pairs. `RedactSiteText` runs `Redact` plus the rules that 
 SITE wrote: the cut before a stack frame or an HTML page, the sign-in name in a database's own phrase
 (`Login failed for user '…'`, PostgreSQL's role refusals), `database "…"` and `open server '…'`, the
 connection-string sign-in and address keys and case-sensitive `…Uid` keys, a Windows server instance
-(`SQL01\SQLEXPRESS`), a relative path (`./`, `../`, `~/`), and a key-like run right after a secret noun.
+(`SQL01\SQLEXPRESS`), a relative path (`./`, `../`, `~/`, and the backslash forms `.\`, `..\` decoded or
+JSON-escaped as `.\\`, `..\\`), a drive-relative path (`C:foo\bar.config`, `C:Web.config`), and a key-like run
+right after a secret noun.
 
 **Why the site rules stay out of Redact** - each one breaks something Redact also handles. A rule that runs
 to the end of a line runs to the end of a serialized envelope, which has no real line break. A backslash-run
@@ -40,6 +43,50 @@ the whole reason - became `[redacted-path]` (found live through clio-run update-
 needs a host token and a further backslash after it and may not follow another backslash; a drive and an
 escaped backslash pair are taken whole; and a backslash right before a quote ends a path, so no path match
 takes half of an escape. Every new Redact rule shares the same escape-aware start (`EscapeAwareStartPrefix`).
+
+**Backslash and drive-relative paths** - a Windows site names a file by a backslash relative path
+(`See ..\..\Terrasoft.Configuration\Web.config`, found live through odata-create on 20 Nov), and odata-update and
+odata-delete carry it JSON-escaped when the OData error has no string `message` and its raw JSON is the text
+(`..\\..\\Terrasoft.Configuration\\Web.config`). The forward-slash rule never took either, and Redact's UNC arm took
+the escaped tail and left `..\\..[redacted-path]`. The site-only rules now take:
+- a backslash relative path, the WHOLE path with its leading dots. A separator is a run of one, two or four
+  backslashes - decoded, JSON-escaped or escaped twice - so a path that mixes them goes whole (`.\\conf/x\y.config`).
+  A `/` inside a segment is part of it (`.\conf/x.config`), and so is a placeholder Redact already wrote there
+  (`..\\..[redacted-path]`, `..\[redacted-uri]\x`);
+- a drive-relative path: a drive and segments behind a separator (`C:foo\bar.config`), a drive glued to a placeholder
+  (`C:foo[redacted-path]`), or an UPPER-CASE drive and a file name with a lower-case extension (`C:Web.config`);
+- the forward-slash relative path in an escaped text: it starts after `\u0022`, and its tail never takes the
+  backslash of `\"`, nor of a `\uXXXX` that closes the token, so the closing escape stays whole.
+
+A `\uXXXX` closes the token only before whitespace, a quote, `<`, `>`, `|`, a closing bracket or the end - where the
+forward-slash tail always ended. Glued to more text, the escape stays in the path: Redact's pair, URI and instance
+rules cannot start right after an escape, so stopping there showed `\u0022Password=hunter2`, `\u0022CORP\\jdoe` and
+`\u0022;(SQL01\\SQLEXPRESS` that the path used to take with it (the differential runs of 20 Nov); master's own chain left `[redacted-path]]=hunter2`
+of `../x/y.config\u0022Password=hunter2`, which now goes whole. The path rules run
+before the server-instance rule, which read a path's later segments as `SERVER\instance` and kept the host in
+`..\db01.internal:1433\x`, and once more after it, for a path right after the placeholder it wrote
+(`SQL01\SQLEXPRESS../x/y.config`). A path starts at a token start: not after a word character, a dot, `/`, `~`, `-`,
+a backslash or a CLOSING bracket (`"^[A-Z].\d{3}$"` is a pattern), but right after a complete `\uXXXX`, `\n`, `\r`
+or `\t` escape or a placeholder. A separator never starts a written escape: `\n`, `\r` or `\t` before anything but a
+lower-case letter, or a `\uXXXX` that closes the token; `\"` and `\\` never open a segment. So `failed.\nNext step`,
+`done.\"`, `end.\\n`, `run \"CanManageSolution\"`, `Saved "Order".\nNext record`, `Loading...\nNext`, `8.1.0.5`,
+`Version=10.0.0.0`, `Step C: retry`, `10:30`, `Range A:B`, `x:Item.Value` and `p:Item.name` stay. The first segment
+after the dots may start like an escape (`\n`, `\r`, `\t` and a lower-case letter) only with proof - another
+separator after it (`..\temp\Web.config`) or a lower-case file extension (`.\nlog.config`) - so
+`Cannot delete "Order".\nthe record is referenced` stays; a later segment needs no proof (`..\x\nightly.bak`).
+Every segment is atomic and its units start on different characters, so the rules read 100,000 characters of dots
+and backslashes in linear time.
+- KNOWN GAP: a single folder named like an escape, with no separator or extension after it (`..\reports`,
+  `.\temp`), stays.
+- KNOWN TRADE: an upper-case letter, a colon and a file name (`A:b.txt`) reads as a drive-relative path; in a
+  JSON-escaped text a `\n`, `\r` or `\t` and a lower-case word right after a path read as one more folder, and a
+  `\uXXXX` glued to text after a path goes with it.
+- REDACT, UNCHANGED: on the escaped spelling the UNC arm still decides where a path with a host-like first segment
+  ends, and its tail also takes a `,`, a `;`, a `\uXXXX` and a written or JSON `\n` with the word after it
+  (`..\\..\\x\\Web.config, then` loses the comma; `\u0027..\\x\\y.config\u0027` loses the closing escape).
+- FOUND, NOT FIXED HERE: Redact's pair rule and URI rule do not start right after a `\uXXXX` or `\n` escape
+  (`\u0022Password=hunter2` and `\nhttps://host/x` pass Redact whole), and the server-instance rule reads neither the
+  escaped spelling `SQL01\\SQLEXPRESS` nor stops at an escape (`Contact\u0027s` loses `\u0027s`).
 
 **Where RedactSiteText is called** - at the point site text is read, never later. Wired so far: `SiteResponse.Carry`
 (message and code, after clamping the input to 8x the 2,000-character cap), the `CreatioResponseError.TryDetect`
@@ -142,7 +189,9 @@ also stands elsewhere in the input, is not checked. The only runs exempt are thr
 So after Bearer nothing else stays, in any position: not a prose word, an acronym, a version or `2FA`. clio's own
 sentences say "token-based (Bearer) authentication" and "a bearer token" instead of putting another word after
 "bearer"; `OwnText_ShouldComeOutUnchanged_FromRedactAndRedactCredentials` holds them to it. That test checks every
-string literal in `clio/` with a scheme word, a written escape before a letter or a bracket in a path-like token. It
+string literal in `clio/` with a scheme word, a written escape before a letter, a bracket in a path-like token or the
+start of a backslash or drive-relative path (`..\{0}\{0}.csproj` in clio's project template, which only a site rule
+may take). It
 skips only literals that ARE regular expressions: an argument of a `Regex` call, of `[GeneratedRegex]` or of a helper
 whose name ends in `Regex`, and the constants those name. One expected change is named: an example Windows path in a
 tool contract. The run is master's

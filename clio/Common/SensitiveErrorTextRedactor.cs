@@ -727,9 +727,93 @@ internal static partial class SensitiveErrorTextRedactor {
 	// Rule 6 (site part): a relative or home path at a word start ("~/creatio/…", "./Terrasoft.WebApp/…",
 	// "../conf/x.config"). Site-only: clio's own errors name relative paths the operator gave on purpose. A closing
 	// bracket ends it unless a "/" and a segment follow (see WindowsPathRegex).
-	[GeneratedRegex(@"(?<![\w./~\\\-])(?:~|\.{1,2})/(?:[^\s""'<>|)}\]]|[)}\]]+(?=/[^\s""'<>|)}\]/]))+",
+	// ESCAPE-AWARE, as the backslash rule below, because the OData error's raw text reaches this rule JSON-escaped:
+	// it starts right after a complete \uXXXX, \n, \r or \t escape ("\u0022../x/y.config\u0022" kept "../x/"), and
+	// its tail takes a backslash only as an escaped pair or as a single backslash that starts no escaped quote, no
+	// escaped backslash and no \uXXXX that closes the token - before whitespace, a quote, "<", ">", "|", a closing
+	// bracket or the end, where the tail ended before ("\"../x/y.config\"" lost the backslash of its closing escape
+	// and left a bare quote behind). A \uXXXX glued to more text stays in the path, as it always did: the Redact rules before this one cannot
+	// start after such an escape, so stopping there showed "\u0022Password=hunter2", "\u0022CORP\\jdoe" and
+	// "\u0022;(SQL01\\SQLEXPRESS", which the path used to take with it (the differential runs of 20 Nov).
+	[GeneratedRegex(EscapeAwareStartPrefix + @"./~\-" + EscapeAwareStartSuffix
+		+ @"(?:~|\.{1,2})/(?:[^\s""'<>|)}\]\\]|\\\\|\\(?![""\\]|u[0-9A-Fa-f]{4}(?=[\s""'<>|)}\]]|\z))|[)}\]]+(?=/[^\s""'<>|)}\]/]))+",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex RelativePathRegex();
+
+	// What a backslash in a site's text starts when it is NO path separator: a written line break or tab before
+	// anything but a lower-case letter ("failed.\nNext step"), or a \uXXXX escape that closes the token, as
+	// RelativePathRegex reads one ("..\\x\u0022 now"). An escaped quote (\") and an escaped backslash pair need no
+	// arm of their own: a quote and a backslash are no path character, so a separator before them never finds the
+	// segment it needs.
+	private const string WrittenEscapeAfterBackslash = @"[nrt](?![a-z])|u[0-9A-Fa-f]{4}(?=[\s""'<>|)}\]]|\z)";
+
+	// A separator of the backslash and drive-relative rules: a run of backslashes - one (decoded), two (JSON-escaped:
+	// "..\\..\\Terrasoft.Configuration\\Web.config") or four (escaped twice) - that starts no written escape. Taken
+	// whole and at any count, because one path can mix them ("..\\bin/x\y" kept "\y" when the first separator
+	// decided the spelling) and the server-instance rule after this one cannot start after a backslash.
+	private const string SitePathSeparator = @"(?>\\+)(?!" + WrittenEscapeAfterBackslash + @")";
+
+	// One unit of a site path segment, for the backslash and drive-relative rules below:
+	//   - a placeholder Redact already wrote inside the path ("..\[redacted-uri]\x", and the "..\\..[redacted-path]"
+	//     that WindowsPathRegex's UNC arm leaves of an escaped "..\\..\\Terrasoft.Configuration\\Web.config");
+	//   - any character but whitespace, a quote, an angle bracket, "|", ",", ";", a backslash, a dot and a closing
+	//     bracket - a "/" included, so a mixed ".\conf/x.config" goes whole;
+	//   - a dot that does not end the path, so "See ..\Web.config." keeps its full stop;
+	//   - a closing bracket inside a folder name, only when a separator and a segment follow it (see WindowsPathRegex)
+	//     or the placeholder WindowsPathRegex left of the rest ("..\\jdoe(old)[redacted-path]").
+	// One unit cannot start where another does, so a run of them never backtracks.
+	private const string SitePathUnit =
+		@"(?:\[redacted(?:-[a-z]+)?\]|[^\s""'<>|,;.)}\]\\]|\.(?![\s""'<>|,;)}\]]|\z)"
+		+ @"|[)}\]]+(?=" + SitePathSeparator + @"[^\s""'<>|,;)}\]\\]|\[redacted-path\]))";
+
+	// A file name with a LOWER-CASE extension, as a file is named ("Web.config", "nlog.config", "db.bak"); a member or
+	// an XML name ("Item.Value") ends in a capital. Read backwards from the end of a name, so it cannot backtrack.
+	private const string LowerCaseExtensionEnd = @"(?<=\.[a-z][a-z0-9]{0,7})";
+
+	// The FIRST segment after the dots may start like a written escape - "\n", "\r" or "\t" and a lower-case letter -
+	// only when it is shown to be a path: another separator follows it ("..\temp\Web.config") or it is a file name
+	// (".\nlog.config"). "Cannot delete "Order".\nthe record is referenced" is a sentence end and a line break. Later
+	// segments need no such proof - the dots and a separator already made it a path, and when the two readings
+	// disagree the one that removes wins ("..\x\nightly"), as in WindowsPathRegex.
+	private const string FirstSegmentGuard =
+		@"(?![nrt](?![a-z][^\s""'<>|,;)}\]\\]*" + SitePathSeparator + @"[^\s""'<>|,;)}\]\\]|[a-z][\w$\-.]*"
+		+ LowerCaseExtensionEnd + @"(?![\w$\-]|\.[\w$\-])))";
+
+	// Where the backslash and drive-relative rules may start: the escape-aware start (see EscapeAwareStartPrefix), not
+	// after a word character, a dot, "/", "~", "-", a backslash or a CLOSING bracket ("^[A-Z].\d{3}$" is a pattern) -
+	// but right after one of clio's placeholders, which an earlier rule wrote over what stood before the path.
+	private const string SitePathStart =
+		@"(?<!\\u?[0-9A-Fa-f]{0,3})(?:(?<=\\u[0-9A-Fa-f]{4})|(?<=\\[nrt])|(?<=\[redacted(?:-[a-z]+)?\])"
+		+ @"|(?<![\w\\./~\-)}\]";
+
+	// Rule 6 (site part, backslash): a relative path a Windows site writes - "..\..\Terrasoft.Configuration\Web.config",
+	// ".\conf\x.config", ".\SQLEXPRESS" - decoded, or JSON-escaped as the OData error's raw text carries it
+	// ("..\\..\\Terrasoft.Configuration\\Web.config"). The WHOLE path goes, the leading dots included. On the escaped
+	// spelling WindowsPathRegex has already taken the tail as a UNC path and left "..\\..[redacted-path]" or
+	// ".[redacted-path]"; this rule takes the dots before that placeholder too. Site-only, like the forward-slash rule
+	// above: Redact runs over clio's own text, which names relative paths on purpose.
+	[GeneratedRegex(SitePathStart + @"]))"
+		+ @"\.{1,2}(?:\[redacted-path\]|" + SitePathSeparator + FirstSegmentGuard + @"(?>" + SitePathUnit + @"+))"
+		+ @"(?:" + SitePathSeparator + @"(?>" + SitePathUnit + @"+))*",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex RelativeBackslashPathRegex();
+
+	// Rule 6 (site part, drive-relative): a drive letter with no separator after its colon - "C:foo\bar.config",
+	// "C:Web.config", escaped "C:foo\\bar.config" - which WindowsPathRegex ("C:\") and DriveSlashPathRegex ("C:/")
+	// never matched. Only these shapes count, so "Step C: retry", "10:30", "Range A:B", "x:Item.Value" and
+	// "p:Item.name" stay:
+	//   - a drive, a segment and at least one more segment behind a separator;
+	//   - a drive and a segment glued to the placeholder WindowsPathRegex left of the rest ("C:foo[redacted-path]",
+	//     from an escaped "C:foo\\bar.config\u0022");
+	//   - an UPPER-CASE drive and a file name with a lower-case extension ("C:Web.config"); a lower-case letter before
+	//     a colon is far more often an XML prefix or a key ("x:Item.Value", "p:Item.name") than a drive.
+	// It starts like the backslash rule, and not after ":" or "@" either.
+	[GeneratedRegex(SitePathStart + @":@]))"
+		+ @"(?:[A-Za-z]:(?![\\/])(?:(?>" + SitePathUnit + @"+)(?:" + SitePathSeparator + @"(?>" + SitePathUnit + @"+))+"
+		+ @"|(?>[^\s""'<>|,;.)}\]\\\[]+)\[redacted-path\])"
+		+ @"|[A-Z]:(?>[\w$\-]+(?:\.[\w$\-]+)*)" + LowerCaseExtensionEnd + @")",
+		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
+	private static partial Regex DriveRelativePathRegex();
 
 	// Rule 7: a key-like run (32+ base64/base64url characters, a digit and a letter among them) ONLY right after
 	// a secret noun ("Key 3f9a…", "Invalid client secret Xk3_…", "Hash QUJD…=="). Not anywhere else: an index or
@@ -1090,11 +1174,23 @@ internal static partial class SensitiveErrorTextRedactor {
 			result = SiteKeyListPairRegex().Replace(result, match => RedactListPair(listed, match));
 			result = SiteKeyPairRegex().Replace(result, RedactSiteKeyPair);
 			result = UidKeyPairRegex().Replace(result, RedactSiteKeyPair);
+			// The relative and drive-relative paths before the server instance, which reads a path's later segments as
+			// "SERVER\instance" and takes an escaped quote with them: "..\db01.internal:1433\x" lost only "1433\x" and
+			// kept the host, and "\u0022../x/y.config\u0022" kept "../x/" and lost its closing quote. And once more after
+			// it, for a path that starts right after the placeholder it wrote ("SQL01\SQLEXPRESS../x/y.config").
+			result = RedactSitePaths(result);
 			result = WindowsInstanceRegex().Replace(result, RedactedValue);
-			result = RelativePathRegex().Replace(result, RedactedPath);
+			result = RedactSitePaths(result);
 			result = KeyLikeRunRegex().Replace(result, RedactKeyLikeRun);
 			return ApplyInjectedRule(SiteLastStage, result);
 		});
+	}
+
+	// Rule 6, site part: the forward-slash, backslash and drive-relative relative paths.
+	private static string RedactSitePaths(string text) {
+		string result = RelativePathRegex().Replace(text, RedactedPath);
+		result = RelativeBackslashPathRegex().Replace(result, RedactedPath);
+		return DriveRelativePathRegex().Replace(result, RedactedPath);
 	}
 
 	// The Redact chain itself, without its guard, so RedactSiteText can run it inside its own single guard.
