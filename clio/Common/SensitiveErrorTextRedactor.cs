@@ -1219,10 +1219,11 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// A run that reaches a placeholder ("abcdefgh.ijklmnopC:/x[redacted-path]") is read up to it, unless what stands
 	// before the placeholder is the next pair's key ("token=[redacted]").
-	// A run that opens with a bracket - "(", "[" or "{" - is never the credential: it is the next part of the sentence,
-	// such as GetReadableMessageException's "(WebException: ProtocolError (HTTP 401 Unauthorized))" enrichment, which CI
-	// and electron's sign-in trigger read, a "[Tag]" or a JSON object. Master's pair rule took the value before it and
-	// kept it ("password=[redacted] (WebException: …"), and so does this rule.
+	// A run that opens with a bracket - "(", "[" or "{" - is left as master leaves it. Most often it is the next part of
+	// the sentence: GetReadableMessageException's "(WebException: ProtocolError (HTTP 401 Unauthorized))" enrichment,
+	// which CI and electron's sign-in trigger read, a "[Tag]" or a JSON object. Master's pair rule took the value before
+	// it and kept the bracketed run ("password=[redacted] (WebException: …"), and so does this rule. A credential in
+	// brackets after a scheme word therefore shows, as on master (KNOWN RESIDUE, see ProseRunAfterPlaceholderRegex).
 	private static IEnumerable<SpanEdit> RunAfterPairPlaceholderEdits(Match match) {
 		string run = match.Groups["cred"].Value;
 		if (run.Length > 0 && run[0] is '(' or '[' or '{') {
@@ -1255,7 +1256,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	// the Bearer placeholder ("Authorization: Bearer x returned 401"), so the word stays. A run with a digit, an inner
 	// capital, an all-capitals run or "+", "/", "=", "_" is credential-shaped and goes. KNOWN RESIDUE: a prose-shaped
 	// credential after a scheme word after a credential key ("password: Basic secrettokenvalue") shows; master's chain
-	// keeps no trace of the scheme word it took, so the two cannot be told apart.
+	// keeps no trace of the scheme word it took, so the two cannot be told apart. So does a credential in brackets after
+	// a scheme word after a credential key: "token=Basic (dXNlcjpwYXNz)" gives "token=[redacted] (dXNlcjpwYXNz)" here
+	// and on master, because a run that opens with a bracket is left as master leaves it (RunAfterPairPlaceholderEdits).
 	[GeneratedRegex(@"^(?:[a-z]+|[A-Z][a-z]+|\d+(?:[.:]\d+)*)(?:-[A-Za-z][a-z]*)*$", RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex ProseRunAfterPlaceholderRegex();
 

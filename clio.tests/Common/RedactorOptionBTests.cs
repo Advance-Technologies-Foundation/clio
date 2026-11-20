@@ -329,19 +329,52 @@ public sealed class RedactorOptionBTests {
 	[TestCase("pwd=secret {x}", "pwd=[redacted] {x}", TestName = "PairThenBracket_Brace")]
 	[Category("Unit")]
 	[Description("A credential pair's value never continues across a space into an opening bracket - '(', '[' or '{'. "
-		+ "Master's pair rule took the value and kept the bracketed tail, and so does every entry point here: "
+		+ "Master's pair rule took the value and kept the bracketed tail, and so does every entry point here - Redact, "
+		+ "RedactSiteText, RedactCredentials and the three fenced and console renderings: "
 		+ "GetReadableMessageException's '(WebException: ProtocolError (HTTP 401 Unauthorized))' enrichment, which CI "
 		+ "and electron's sign-in trigger read, must survive a credential pair before it.")]
 	public void APairValue_ShouldNotContinueAcrossASpaceIntoABracket(string text, string expected) {
+		// Arrange
+		const string begin = "[untrusted-source-text begin] ";
+		const string end = " [untrusted-source-text end]";
+		string tail = text[text.IndexOfAny(['(', '[', '{'])..];
+
+		// Act
+		string master = SensitiveErrorTextRedactor.ExecuteRegex(() => SensitiveErrorTextRedactor.MasterChain.Redact(text));
+		string masterCredentials = SensitiveErrorTextRedactor.ExecuteRegex(() => SensitiveErrorTextRedactor.MasterChain.RedactCredentials(text));
+		string redact = SensitiveErrorTextRedactor.Redact(text);
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+		string credentials = SensitiveErrorTextRedactor.RedactCredentials(text);
+		string fenced = SensitiveErrorTextRedactor.RedactUntrustedOrNull(text);
+		string fencedSite = SensitiveErrorTextRedactor.RedactUntrustedSiteTextOrNull(text);
+		string console = SensitiveErrorTextRedactor.RedactForConsoleOrNull(text);
+
+		// Assert
+		master.Should().Be(expected, because: "this is master's output");
+		redact.Should().Be(expected, because: "Redact keeps the bracketed tail, as master does");
+		site.Should().Be(expected, because: "RedactSiteText keeps the bracketed tail too");
+		credentials.Should().Be(masterCredentials, because: "RedactCredentials gives master's credentials chain output")
+			.And.EndWith(tail, because: "the credentials chain keeps the bracketed tail");
+		fenced.Should().Be(begin + expected + end, because: "the fenced rendering fences Redact's output");
+		fencedSite.Should().Be(begin + expected + end, because: "the fenced site rendering fences RedactSiteText's output");
+		console.Should().Be(expected, because: "the console rendering is Redact's output, flattened");
+	}
+
+	[TestCase("token=Basic (dXNlcjpwYXNz)", "token=[redacted] (dXNlcjpwYXNz)", TestName = "Residue_BracketedCredentialAfterASchemeWordAfterACredentialKey_Shows")]
+	[Category("Unit")]
+	[Description("KNOWN RESIDUE: a credential in brackets after a scheme word after a credential key shows, here and on "
+		+ "master. Master's pair rule takes the scheme word as the value, and a run that opens with a bracket is left as "
+		+ "master leaves it. Pinned so that a narrower rule for bracket contents shows up here.")]
+	public void Residue_BracketedCredentialAfterASchemeWord_ShowsAsOnMaster(string text, string expected) {
 		// Act
 		string master = SensitiveErrorTextRedactor.ExecuteRegex(() => SensitiveErrorTextRedactor.MasterChain.Redact(text));
 		string redact = SensitiveErrorTextRedactor.Redact(text);
 		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
 
 		// Assert
-		master.Should().Be(expected, because: "this is master's output");
-		redact.Should().Be(expected, because: "Redact keeps the bracketed tail, as master does");
-		site.Should().Be(expected, because: "RedactSiteText keeps the bracketed tail too");
+		master.Should().Be(expected, because: "master shows the bracketed credential");
+		redact.Should().Be(expected, because: "Redact leaves the bracketed run as master leaves it");
+		site.Should().Be(expected, because: "RedactSiteText leaves it too");
 	}
 
 	#endregion

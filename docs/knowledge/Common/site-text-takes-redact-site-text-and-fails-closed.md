@@ -116,10 +116,11 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
 - Rules that read master's own placeholders, so what master's chain left half done goes (`AfterMasterPlaceholders`):
   a credential-shaped run after master's `key=[redacted]` (master's pair rule took the scheme word,
   `Authorization: Basic X7q2` became `Authorization=[redacted] X7q2`), a quoted value after it, a Digest client list
-  after a placeholder, and a host label before `host=[redacted]`. A run that opens with `(`, `[` or `{` is never
-  that credential. It is the next part of the sentence, and it stays as master keeps it: the
-  `(WebException: ProtocolError (HTTP 401 Unauthorized))` enrichment that CI and electron's sign-in trigger read, a
-  `[Tag]`, a JSON object (`APairValue_ShouldNotContinueAcrossASpaceIntoABracket`).
+  after a placeholder, and a host label before `host=[redacted]`. A run that opens with `(`, `[` or `{` is left as
+  master leaves it (`APairValue_ShouldNotContinueAcrossASpaceIntoABracket`). Most often it is the next part of the
+  sentence: the `(WebException: ProtocolError (HTTP 401 Unauthorized))` enrichment that CI and electron's sign-in
+  trigger read, a `[Tag]`, a JSON object. A credential in brackets after a scheme word therefore shows, as on master
+  (see the residue below).
 
 **What #1990's heads hid and B brings back** - #1990's own chains (`5ae2a08f8`, `23f9d820f`) hid some secrets that
 master's chain now reaches first and leaves half done, mostly because master's UNC rule takes a `;` or an escaped line
@@ -197,7 +198,10 @@ odata-create, odata-field validation and email-template through their real code 
 word and left no trace of it, so the run cannot be told from the sentence after a removed value
 (`Authorization: Bearer x returned 401` gives `Authorization=[redacted] returned 401`); `Extra` takes the run only when it
 is credential-shaped (a digit, an inner capital, all capitals, `+ / = _`, or quoted). Master shows these too.
-`Residue_ProseShapedRunAfterASchemeWordAfterACredentialKey_Shows` pins them.
+`Residue_ProseShapedRunAfterASchemeWordAfterACredentialKey_Shows` pins them. A credential in brackets after a scheme word
+after a credential key shows too: `token=Basic (dXNlcjpwYXNz)` gives `token=[redacted] (dXNlcjpwYXNz)`, here and on
+master, because a run that opens with a bracket is left as master leaves it
+(`Residue_BracketedCredentialAfterASchemeWordAfterACredentialKey_Shows`).
 
 The sections below describe the rules as Extra and Site rules; where they say a rule keeps a word that master's chain
 removes, the chain decides (see the over-matches above).
