@@ -82,6 +82,11 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
   when it starts (B5): Regex.Matches and Regex.Replace restart one timeout per match, so the last match before the
   deadline got a whole step (five matches under a 1 s timeout ran 2,049 ms). `CredentialShapeMasker.Mask` runs its five
   rules (master's patterns) the same way.
+  `BoundedMatches` refuses (throws at its first use) a right-to-left rule or a pattern with "\G", for which a fresh
+  `Match(text, start)` would not give Regex.Matches' matches; none run for many matches has either - only
+  `ListContinuationRegex` has "\G", and it is asked one `IsMatch(text, start)`. A rule with an infinite timeout runs as
+  master's 1 s, scaled and under the deadline, never unbounded. A rebuilt rule is cached per rule instance and step, by
+  reference (B6).
   The scaled timeout is the rule's own 1 s below 250,000 characters and 1 s per 250,000 characters above it (to 16 s),
   because a rule that never matches scans the whole text in one attempt (5 MB took up to 0.9 s here, idle). So a call
   ends within the backstop plus one small step. THIS CHANGES HOW MASTER'S CHAIN RUNS: its patterns, options, calls and

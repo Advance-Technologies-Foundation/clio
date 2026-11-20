@@ -1984,11 +1984,19 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	/// <summary>
 	/// The matches of <paramref name="rule"/> over <paramref name="text"/>, in order, each found by its own run under the
-	/// per-call deadline (<see cref="Bounded"/> before every match). The same matches as <c>rule.Matches(text)</c>: each
-	/// search starts where the last match ended - one character later after an empty match, as Regex does - and a
-	/// lookbehind still sees the whole text.
+	/// per-call deadline (<see cref="Bounded"/> before every match). The same matches as <c>rule.Matches(text)</c> for a
+	/// left-to-right rule without "\G" - <see cref="Bounded"/> refuses any other (<see cref="CanBeBounded"/>): each search
+	/// starts where the last match ended, one character later after an empty match as Regex does, and a lookbehind still
+	/// sees the whole text.
 	/// </summary>
 	internal static IEnumerable<Match> BoundedMatches(Regex rule, string text) {
+		if (!StepsOf(rule).CanRunManyMatches) {
+			throw new InvalidOperationException($"A bounded run of many matches cannot serve a right-to-left rule or a pattern with \\G: {rule}");
+		}
+		return BoundedMatchesOf(rule, text);
+	}
+
+	private static IEnumerable<Match> BoundedMatchesOf(Regex rule, string text) {
 		int start = 0;
 		while (start <= text.Length) {
 			Match match = Bounded(rule, text.Length).Match(text, start);
@@ -2104,8 +2112,41 @@ internal static partial class SensitiveErrorTextRedactor {
 	// The match timeouts a run may get, in milliseconds: halves of a second near the deadline, doublings for a long input.
 	private static readonly int[] TimeoutStepsMilliseconds = [62, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000];
 
-	private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string Pattern, RegexOptions Options, int Milliseconds), Regex>
-		TimedRules = new();
+	// The rules a run was rebuilt with, per rule INSTANCE (by reference) and per step: found by a reference lookup and an
+	// array index, never by hashing a pattern. The first use of a rule also checks that the bounded runs can serve it.
+	private sealed class RuleSteps(Regex rule) {
+		internal readonly Regex Rule = rule;
+		internal readonly Regex?[] ByStep = new Regex?[TimeoutStepsMilliseconds.Length];
+		internal readonly bool CanRunManyMatches = CanBeBounded(rule);
+	}
+
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Regex, RuleSteps> RuleStepCache = new();
+
+	/// <summary>
+	/// Whether <see cref="BoundedMatches"/> can give a rule's matches exactly as Regex.Matches would: not for a
+	/// right-to-left rule, whose next search goes the other way, and not for a pattern with "\G", which anchors at the end
+	/// of the previous match - a fresh Match(text, start) after an empty match places it one character on. No rule run for
+	/// many matches has either; one that does fails loudly at its first such run, rather than giving other matches. A
+	/// single match at a start position (<c>ListContinuationRegex</c>'s "\G" in <c>IsMatch(text, start)</c>) is exact and
+	/// stays allowed.
+	/// </summary>
+	internal static bool CanBeBounded(Regex rule) => !rule.RightToLeft && !HasStartAnchor(rule.ToString());
+
+	// "\G" as an escape: a backslash and a "G", the backslash not itself escaped.
+	private static bool HasStartAnchor(string pattern) {
+		for (int index = 0; index < pattern.Length - 1; index++) {
+			if (pattern[index] != '\\') {
+				continue;
+			}
+			if (pattern[index + 1] == 'G') {
+				return true;
+			}
+			index++;
+		}
+		return false;
+	}
+
+	private static RuleSteps StepsOf(Regex rule) => RuleStepCache.GetValue(rule, static candidate => new RuleSteps(candidate));
 
 	/// <summary>
 	/// THE PER-CALL DEADLINE for every regex run: the rule with a match timeout of min(its scaled timeout, the time left
@@ -2118,8 +2159,11 @@ internal static partial class SensitiveErrorTextRedactor {
 	/// match, so the last match before the deadline would otherwise get a whole step.
 	/// </summary>
 	internal static Regex Bounded(Regex rule, int length) {
-		int scaled = (int)rule.MatchTimeout.TotalMilliseconds;
-		if (scaled < TimeoutStepsMilliseconds[0]) {
+		RuleSteps steps = StepsOf(rule);
+		// An infinite timeout never runs unbounded: it is read as master's 1 s, scaled and under the deadline like it.
+		bool infinite = rule.MatchTimeout == Regex.InfiniteMatchTimeout;
+		int scaled = infinite ? RegexTimeoutMilliseconds : (int)rule.MatchTimeout.TotalMilliseconds;
+		if (!infinite && scaled < TimeoutStepsMilliseconds[0]) {
 			// A rule whose own timeout is under the smallest step (a test's) keeps it while that much time is left.
 			if (wallDeadline != 0 && (wallDeadline - System.Diagnostics.Stopwatch.GetTimestamp()) * 1_000 / System.Diagnostics.Stopwatch.Frequency < scaled) {
 				throw new RedactionBudgetExceededException("clock backstop");
@@ -2141,13 +2185,22 @@ internal static partial class SensitiveErrorTextRedactor {
 		if (limit < TimeoutStepsMilliseconds[0]) {
 			throw new RedactionBudgetExceededException("clock backstop");
 		}
-		int step = TimeoutStepsMilliseconds.Last(candidate => candidate <= limit);
-		if (step == (int)rule.MatchTimeout.TotalMilliseconds) {
+		int stepIndex = TimeoutStepsMilliseconds.Length - 1;
+		while (TimeoutStepsMilliseconds[stepIndex] > limit) {
+			stepIndex--;
+		}
+		int step = TimeoutStepsMilliseconds[stepIndex];
+		if (!infinite && step == (int)rule.MatchTimeout.TotalMilliseconds) {
 			return rule;
 		}
-		return TimedRules.GetOrAdd((rule.ToString(), rule.Options, step), key => new Regex(key.Pattern,
-			key.Milliseconds >= 2_000 && (key.Options & RegexOptions.NonBacktracking) == 0 ? key.Options | RegexOptions.Compiled : key.Options,
-			TimeSpan.FromMilliseconds(key.Milliseconds)));
+		Regex? rebuilt = steps.ByStep[stepIndex];
+		if (rebuilt is null) {
+			rebuilt = new Regex(rule.ToString(),
+				step >= 2_000 && (rule.Options & RegexOptions.NonBacktracking) == 0 ? rule.Options | RegexOptions.Compiled : rule.Options,
+				TimeSpan.FromMilliseconds(step));
+			rebuilt = System.Threading.Interlocked.CompareExchange(ref steps.ByStep[stepIndex], rebuilt, null) ?? rebuilt;
+		}
+		return rebuilt;
 	}
 
 	[ThreadStatic]

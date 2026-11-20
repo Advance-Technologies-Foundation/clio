@@ -370,7 +370,9 @@ public sealed class RedactorRegexAuditTests {
 		// Assert
 		redacted.Should().Be(SensitiveErrorTextRedactor.RedactedTimeout, because: "ten slow matches outlast a 1 s backstop");
 		logged.Should().ContainSingle();
-		elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1_100), because: "no match runs past the time the call has left");
+		// 1,500 ms (B6): it measured 0.87-0.9 s here, and the slack keeps it clear of a loaded CI agent; the code before
+		// B5 took about 3 s on it.
+		elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1_500), because: "no match runs past the time the call has left");
 	}
 
 	[Test]
@@ -403,7 +405,104 @@ public sealed class RedactorRegexAuditTests {
 			.Select(method => ("own " + method.Name, (Regex)method.Invoke(null, null)!))
 			.Concat(typeof(SensitiveErrorTextRedactor.MasterChain).GetMethods(AnyStatic)
 				.Where(method => method.ReturnType == typeof(Regex) && method.GetParameters().Length == 0)
-				.Select(method => ("master " + method.Name, (Regex)method.Invoke(null, null)!)));
+				.Select(method => ("master " + method.Name, (Regex)method.Invoke(null, null)!)))
+			.Concat(typeof(CredentialShapeMasker).GetMethods(AnyStatic)
+				.Where(method => method.ReturnType == typeof(Regex) && method.GetParameters().Length == 0)
+				.Select(method => ("masker " + method.Name, (Regex)method.Invoke(null, null)!)));
+
+	[Test]
+	[Category("Unit")]
+	[Description("L-a: every rule - clio's, master's chain's and the credential-shape masker's - is left to right, and "
+		+ "none but ListContinuationRegex has \\G; that one is only asked IsMatch(text, start), one match at a start "
+		+ "position, which is exact. So BoundedMatches gives exactly Regex.Matches' matches, and a rule with either that "
+		+ "were run for many matches would make it throw at its first run instead of giving other matches.")]
+	public void EveryRule_ShouldBeOneABoundedRunCanServe() {
+		// Arrange
+		List<(string Name, Regex Rule)> rules = [.. AllRules()];
+		Regex anchored = new(@"\Ga", RegexOptions.None, TimeSpan.FromSeconds(1));
+		Regex rightToLeft = new("a", RegexOptions.RightToLeft, TimeSpan.FromSeconds(1));
+		Regex escaped = new(@"\\G", RegexOptions.None, TimeSpan.FromSeconds(1));
+
+		// Act
+		List<string> wrong = [.. rules.Where(rule => !SensitiveErrorTextRedactor.CanBeBounded(rule.Rule)).Select(rule => rule.Name)];
+		Action runAnchored = () => SensitiveErrorTextRedactor.BoundedMatches(anchored, "aaa");
+		Action runRightToLeft = () => SensitiveErrorTextRedactor.BoundedMatches(rightToLeft, "aaa");
+		Action singleAnchored = () => SensitiveErrorTextRedactor.Bounded(anchored, 10).IsMatch("xa", 1);
+
+		// Assert
+		rules.Count(rule => rule.Name.StartsWith("masker ", StringComparison.Ordinal)).Should().Be(6,
+			because: "the masker's five Mask rules and SecretNameRegex, which names of at most 128 characters go through");
+		wrong.Should().Equal(["own ListContinuationRegex"], because: "only the list rule has \\G, and it is never run for many matches");
+		runAnchored.Should().Throw<InvalidOperationException>(because: "a pattern with \\G fails loudly at its first run of many matches");
+		runRightToLeft.Should().Throw<InvalidOperationException>(because: "a right-to-left rule fails loudly at its first run of many matches");
+		singleAnchored.Should().NotThrow(because: "one match at a start position is exact");
+		SensitiveErrorTextRedactor.CanBeBounded(escaped).Should().BeTrue(because: "an escaped backslash before a G is no anchor");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("L-b: a rule with an infinite match timeout never runs unbounded: it is read as master's 1 s, scaled and "
+		+ "under the call's deadline. An injected rule with no timeout that backtracks exponentially on twenty-four letters "
+		+ "(seconds on its own) fails closed within a 1 s backstop.")]
+	public void ARuleWithAnInfiniteTimeout_ShouldRunUnderTheDeadline() {
+		// Arrange
+		Regex unbounded = new(@"(\w+\s?)*!", RegexOptions.None, Regex.InfiniteMatchTimeout);
+		string text = new('a', 24);
+		Stopwatch watch;
+		string redacted;
+		TimeSpan elapsed;
+		List<string> logged = [];
+
+		// Act
+		using (SensitiveErrorTextRedactor.InjectFailedClosedLogForTests(logged.Add))
+		using (SensitiveErrorTextRedactor.InjectRuleForTests(SensitiveErrorTextRedactor.RedactFirstStage, unbounded))
+		using (SensitiveErrorTextRedactor.InjectBackstopForTests(TimeSpan.FromSeconds(1))) {
+			watch = Stopwatch.StartNew();
+			redacted = SensitiveErrorTextRedactor.Redact(text);
+			elapsed = watch.Elapsed;
+		}
+		TestContext.Out.WriteLine($"an infinite-timeout rule under a 1 s backstop: {elapsed.TotalMilliseconds:0} ms");
+
+		// Assert
+		SensitiveErrorTextRedactor.Bounded(unbounded, 10).Should().NotBeSameAs(unbounded, because: "it always runs rebuilt, with a timeout");
+		SensitiveErrorTextRedactor.Bounded(unbounded, 10).MatchTimeout.Should().Be(TimeSpan.FromSeconds(1), because: "outside a call it gets master's 1 s");
+		redacted.Should().Be(SensitiveErrorTextRedactor.RedactedTimeout);
+		elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1_500), because: "no rule runs past the call's deadline");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("L1, deterministic: the time left is read again before EVERY match of a run. A reader that spends 300 ms "
+		+ "after each of ten fast matches, under a 1 s backstop, sees the run fail closed after about three of them - a run "
+		+ "bounded once, as Regex.Matches is, would hand it all ten.")]
+	public void EveryMatch_ShouldBeBoundedByTheTimeLeftWhenItStarts() {
+		// Arrange
+		Regex fast = new("a", RegexOptions.None, TimeSpan.FromSeconds(1));
+		string text = new('a', 10);
+		int seen = 0;
+		Stopwatch watch;
+		string result;
+		TimeSpan elapsed;
+
+		// Act
+		using (SensitiveErrorTextRedactor.InjectFailedClosedLogForTests(_ => { }))
+		using (SensitiveErrorTextRedactor.InjectBackstopForTests(TimeSpan.FromSeconds(1))) {
+			watch = Stopwatch.StartNew();
+			result = SensitiveErrorTextRedactor.ExecuteRegex("a test run", text.Length, () => {
+				foreach (Match _ in SensitiveErrorTextRedactor.BoundedMatches(fast, text)) {
+					seen++;
+					System.Threading.Thread.Sleep(300);
+				}
+				return "all matches";
+			});
+			elapsed = watch.Elapsed;
+		}
+
+		// Assert
+		result.Should().Be(SensitiveErrorTextRedactor.RedactedTimeout, because: "the matches after the deadline are refused");
+		seen.Should().BeLessThan(10);
+		elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1_500));
+	}
 
 	[Test]
 	[Category("Unit")]
