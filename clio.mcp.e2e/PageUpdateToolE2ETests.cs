@@ -885,6 +885,60 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[TestCase("Name", false)]
+	[TestCase("NameTypo", true)]
+	[Description("ENG-95270: an update-page dry run checks the widget's stored ESQ filter against the environment's entity schemas over the real MCP transport. A filter on a column the widget's schema does not have is reported as a finding that would block the save; the same widget with an existing column produces no finding.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page dry run checks widget filters against the entity schema")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: submits, as a dry run, an indicator widget whose data.providing.filters.filter compares a Contact column, once with an existing column and once with a misspelled one, and asserts that only the misspelled one yields the 'Widget filter would block the save' warning naming the filter leaf.")]
+	public async Task PageUpdateTool_DryRun_Should_Check_Widget_Filters_Against_The_Entity_Schema(string columnPath, bool expectFinding) {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping the seeded-page widget-filter dry run.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		_seededPageLease = await SeededBlankPage.LeaseAsync(arrangeContext.Session, environmentName);
+		const string savePage = SeededBlankPage.SchemaName;
+		string widget = """
+			[{"operation":"insert","name":"UsrFilteredIndicator","parentName":"MainContainer","propertyName":"items","index":0,
+			  "values":{"type":"crt.IndicatorWidget","config":{"title":"$Resources.Strings.UsrFilteredIndicator_title","data":{"providing":{
+			    "attribute":"UsrFilteredIndicator_Data","schemaName":"Contact",
+			    "aggregation":{"column":{"orderDirection":0,"orderPosition":-1,"isVisible":true,
+			      "expression":{"expressionType":1,"functionType":2,"aggregationType":1,"aggregationEvalType":2,
+			        "functionArgument":{"expressionType":0,"columnPath":"Id"}}}},
+			    "filters":{"filter":{"filterType":6,"isEnabled":true,"logicalOperation":0,"rootSchemaName":"Contact","items":{
+			      "nameIsSet":{"filterType":2,"comparisonType":2,"isEnabled":true,"isNull":false,
+			        "leftExpression":{"expressionType":0,"columnPath":"__COLUMN__"}}}},"filterAttributes":[]}},
+			    "formatting":{"type":"number","decimalSeparator":".","decimalPrecision":0,"thousandSeparator":","}}}}}]
+			""".Replace("__COLUMN__", columnPath);
+		string body = SeededBlankPage.BuildBlankBody().Replace(
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/" + widget + "/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		string outputDir = Directory.CreateTempSubdirectory("clio-e2e-widget-filter-").FullName;
+		try {
+			// Act
+			PageUpdateResponse response = await UpdatePageAsync(arrangeContext, savePage, body, environmentName, outputDir,
+				resources: """{"UsrFilteredIndicator_title":"Contacts"}""", dryRun: true);
+
+			// Assert
+			response.Success.Should().BeTrue(because: $"a dry run reports instead of refusing. Error: {response.Error}");
+			IEnumerable<string> findings = (response.Warnings ?? []).Where(w => w.StartsWith("Widget filter would block the save"));
+			if (expectFinding) {
+				findings.Should().ContainSingle(
+						because: "a filter on a column Contact does not have breaks the widget at runtime, so the save would be refused")
+					.Which.Should().Contain("UsrFilteredIndicator.values.config.data.providing.filters.filter.items.nameIsSet.leftExpression.columnPath",
+						because: "the finding must name the exact filter leaf the agent has to fix");
+			} else {
+				findings.Should().BeEmpty(because: "Contact.Name exists, so the filter fits the schema");
+			}
+		} finally {
+			TryDeleteDirectory(outputDir);
+		}
+	}
+
 	[Test]
 	[Description("Reports readable failures when update-page is called with an invalid environment name.")]
 	[AllureTag(ToolName)]

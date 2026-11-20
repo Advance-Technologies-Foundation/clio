@@ -5,6 +5,7 @@
 	using System.Globalization;
 	using System.IO;
 	using System.Linq;
+	using Clio.Command.Filters;
 	using Clio.Command.McpServer;
 	using Clio.Common;
 	using CommandLine;
@@ -256,6 +257,7 @@
 		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
 		private readonly IPageUnresolvedMergeDetector? _unresolvedMergeDetector;
 		private readonly IPageLayerInspector? _pageLayerInspector;
+		private readonly IWidgetFilterValidator? _widgetFilterValidator;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -285,6 +287,7 @@
 		/// <param name="pageLayerInspector">Finds the page's replacing layers for the package-choice check
 		/// (<see cref="PageUpdateOptions.EnforcePackageChoice"/>). Optional only for hand-built test constructions;
 		/// DI always supplies it. Without it the check does not run.</param>
+		/// <param name="widgetFilterValidator">Optional: without it widget filters are not checked.</param>
 		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
@@ -297,7 +300,8 @@
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null,
 			Func<IJsonDiffApplier> viewConfigApplierFactory = null,
 			IPageUnresolvedMergeDetector? unresolvedMergeDetector = null,
-			IPageLayerInspector? pageLayerInspector = null) {
+			IPageLayerInspector? pageLayerInspector = null,
+			IWidgetFilterValidator? widgetFilterValidator = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
@@ -308,6 +312,7 @@
 			_persistedResourceKeyReader = persistedResourceKeyReader;
 			_unresolvedMergeDetector = unresolvedMergeDetector;
 			_pageLayerInspector = pageLayerInspector;
+			_widgetFilterValidator = widgetFilterValidator;
 		}
 
 		/// <summary>
@@ -401,7 +406,8 @@
 			IReadOnlyList<string> DowngradeWarnings,
 			IReadOnlyList<string> InertWarnings,
 			PageConfigMergeReport ConfigMergeReport,
-			PageUpdateResponse CaptionGateFailure);
+			PageUpdateResponse CaptionGateFailure,
+			PageWidgetFilterReport WidgetFilterReport);
 
 		/// <summary>
 		/// Resolves the write both paths would perform, WITHOUT saving anything. Read-only against the
@@ -427,14 +433,50 @@
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 			PageConfigMergeReport configMergeReport = DetectUnresolvedConfigMerges(bodyToWrite, context);
+			PageWidgetFilterReport widgetFilterReport = ValidateWidgetFilters(
+				options, context, bodyToWrite, schemaToSave["body"]?.ToString());
 			(List<string> registeredKeys, List<string> updatedKeys) = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
 				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context);
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys, updatedKeys,
-				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure);
+				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure, widgetFilterReport);
 			return true;
 		}
+
+		// ENG-95270: needs the environment, so it runs on the save path rather than in validate-page. A check that
+		// could not run is a warning, never the reason a save is refused.
+		private PageWidgetFilterReport ValidateWidgetFilters(
+			PageUpdateOptions options, EditableSchemaContext context, string bodyToWrite, string? persistedBody = null) {
+			if (!options.Validate || _widgetFilterValidator is null || context.SchemaType == PageSchemaType.Mobile
+				|| !Guid.TryParse(context.DesignPackageUId, out Guid packageUId)) {
+				return PageWidgetFilterReport.Empty;
+			}
+			try {
+				return _widgetFilterValidator.Validate(bodyToWrite, packageUId, persistedBody);
+			} catch (Exception ex) {
+				return new PageWidgetFilterReport([], [$"Widget filters were not checked against the entity schemas: {ex.Message}"]);
+			}
+		}
+
+		// Replace writes the caller's body as is, so the only input the save has beyond it is the stored body, which
+		// can only turn an error into a warning (a filter the page already holds). It is read only when there is an
+		// error to turn, so a clean dry run costs no schema read and still gives the save's verdict.
+		private PageWidgetFilterReport ValidateWidgetFiltersForReplaceDryRun(
+			PageUpdateOptions options, EditableSchemaContext context) {
+			PageWidgetFilterReport report = ValidateWidgetFilters(options, context, options.Body);
+			if (report.Errors.Count == 0
+				|| !TryLoadSchemaForSave(options.SchemaName, context, out JObject stored, out _)) {
+				return report;
+			}
+			return ValidateWidgetFilters(options, context, options.Body, stored["body"]?.ToString());
+		}
+
+		private static IReadOnlyList<string> WidgetFilterWarningsForDryRun(PageWidgetFilterReport report) =>
+			[
+				.. report.Errors.Select(error => $"Widget filter would block the save: {error}"),
+				.. report.Warnings
+			];
 
 		// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check does not) and on
 		// update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page can then
@@ -541,7 +583,8 @@
 					BuildDryRunWidgetCaptionWarnings(options, context.SchemaType, explicitResources,
 						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
 					PageInertOperationDetector.Detect(options.Body),
-					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)));
+					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)),
+					WidgetFilterWarningsForDryRun(ValidateWidgetFiltersForReplaceDryRun(options, context)));
 				return true;
 			}
 			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
@@ -566,7 +609,8 @@
 				prepared.DowngradeWarnings,
 				prepared.InertWarnings,
 				WithAppendModeHint(ConfigMergeWarningsForDryRun(prepared.ConfigMergeReport), options,
-					prepared.ConfigMergeReport.Errors.Count > 0));
+					prepared.ConfigMergeReport.Errors.Count > 0),
+				WidgetFilterWarningsForDryRun(prepared.WidgetFilterReport));
 			return true;
 		}
 
@@ -590,6 +634,16 @@
 				};
 				return false;
 			}
+			if (prepared.WidgetFilterReport.Errors.Count > 0) {
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = "Widget filter validation failed: " + string.Join(Environment.NewLine, prepared.WidgetFilterReport.Errors),
+					Warnings = CombineWarnings(
+						BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+						prepared.ConfigMergeReport.Warnings, prepared.WidgetFilterReport.Warnings)
+				};
+				return false;
+			}
 			if (!TrySaveSchema(prepared.Schema, options, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys, prepared.UpdatedKeys);
 			// The save reports the same projection: a caller who skipped the dry run has no other place to
@@ -598,6 +652,7 @@
 			response.Warnings = CombineWarnings(
 				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
 				prepared.ConfigMergeReport.Warnings,
+				prepared.WidgetFilterReport.Warnings,
 				explicitResources?.Count > 0 || prepared.RegisteredKeys?.Count > 0
 					? new List<string> { ResourceWorkspaceCaptureWarning } : null);
 			PopulatePostSaveChecksum(options, context, response);
