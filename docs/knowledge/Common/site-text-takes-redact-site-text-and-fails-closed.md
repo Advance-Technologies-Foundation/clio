@@ -116,7 +116,10 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
 - Rules that read master's own placeholders, so what master's chain left half done goes (`AfterMasterPlaceholders`):
   a credential-shaped run after master's `key=[redacted]` (master's pair rule took the scheme word,
   `Authorization: Basic X7q2` became `Authorization=[redacted] X7q2`), a quoted value after it, a Digest client list
-  after a placeholder, and a host label before `host=[redacted]`.
+  after a placeholder, and a host label before `host=[redacted]`. A run that opens with `(`, `[` or `{` is never
+  that credential. It is the next part of the sentence, and it stays as master keeps it: the
+  `(WebException: ProtocolError (HTTP 401 Unauthorized))` enrichment that CI and electron's sign-in trigger read, a
+  `[Tag]`, a JSON object (`APairValue_ShouldNotContinueAcrossASpaceIntoABracket`).
 
 **What #1990's heads hid and B brings back** - #1990's own chains (`5ae2a08f8`, `23f9d820f`) hid some secrets that
 master's chain now reaches first and leaves half done, mostly because master's UNC rule takes a `;` or an escaped line

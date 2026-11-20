@@ -1205,8 +1205,9 @@ internal static partial class SensitiveErrorTextRedactor {
 	// AFTER MASTER'S PAIR RULE. Master's pair rule takes only the first word after a credential key, so when that word
 	// is a scheme word the credential stands right after its placeholder: "Authorization: Basic X7q2" becomes
 	// "Authorization=[redacted] X7q2", "password=Negotiate YII rejected" becomes "password=[redacted] YII rejected".
-	// The run there goes, unless it is a challenge parameter or one of the words a header position keeps
-	// (HeaderProseWordRegex: "rejected", "failed", "token", …). Its quotes stay.
+	// The run there goes, unless it is a challenge parameter, one of the words a header position keeps
+	// (HeaderProseWordRegex: "rejected", "failed", "token", …), a prose-shaped word (ProseRunAfterPlaceholderRegex) or
+	// a bracket that opens the next part of the sentence (RunAfterPairPlaceholderEdits). Its quotes stay.
 	// LINEAR (round B4): "(?=\S)" first, so a position inside a run of blanks - where no run can start - is skipped before
 	// the look back over the blanks; reading them back from every blank took 2.8 s on 20,000 spaces. Same matches, same
 	// groups (RedactorRegexAuditTests' differential).
@@ -1218,8 +1219,15 @@ internal static partial class SensitiveErrorTextRedactor {
 
 	// A run that reaches a placeholder ("abcdefgh.ijklmnopC:/x[redacted-path]") is read up to it, unless what stands
 	// before the placeholder is the next pair's key ("token=[redacted]").
+	// A run that opens with a bracket - "(", "[" or "{" - is never the credential: it is the next part of the sentence,
+	// such as GetReadableMessageException's "(WebException: ProtocolError (HTTP 401 Unauthorized))" enrichment, which CI
+	// and electron's sign-in trigger read, a "[Tag]" or a JSON object. Master's pair rule took the value before it and
+	// kept it ("password=[redacted] (WebException: …"), and so does this rule.
 	private static IEnumerable<SpanEdit> RunAfterPairPlaceholderEdits(Match match) {
 		string run = match.Groups["cred"].Value;
+		if (run.Length > 0 && run[0] is '(' or '[' or '{') {
+			return NoEdit;
+		}
 		int placeholder = run.IndexOf("[redacted", StringComparison.Ordinal);
 		if (placeholder >= 0) {
 			run = run[..placeholder];

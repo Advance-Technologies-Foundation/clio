@@ -319,6 +319,33 @@ public sealed class RedactorOptionBTests {
 
 	#endregion
 
+	#region The run after master's pair placeholder
+
+	[TestCase("The remote server rejected password=s3cr3t (WebException: ProtocolError (HTTP 401 Unauthorized))",
+		"The remote server rejected password=[redacted] (WebException: ProtocolError (HTTP 401 Unauthorized))",
+		TestName = "PairThenBracket_WebExceptionEnrichment")]
+	[TestCase("password=x (Foo: bar)", "password=[redacted] (Foo: bar)", TestName = "PairThenBracket_Parenthesis")]
+	[TestCase("token=abc [Bar] baz", "token=[redacted] [Bar] baz", TestName = "PairThenBracket_SquareBracket")]
+	[TestCase("pwd=secret {x}", "pwd=[redacted] {x}", TestName = "PairThenBracket_Brace")]
+	[Category("Unit")]
+	[Description("A credential pair's value never continues across a space into an opening bracket - '(', '[' or '{'. "
+		+ "Master's pair rule took the value and kept the bracketed tail, and so does every entry point here: "
+		+ "GetReadableMessageException's '(WebException: ProtocolError (HTTP 401 Unauthorized))' enrichment, which CI "
+		+ "and electron's sign-in trigger read, must survive a credential pair before it.")]
+	public void APairValue_ShouldNotContinueAcrossASpaceIntoABracket(string text, string expected) {
+		// Act
+		string master = SensitiveErrorTextRedactor.ExecuteRegex(() => SensitiveErrorTextRedactor.MasterChain.Redact(text));
+		string redact = SensitiveErrorTextRedactor.Redact(text);
+		string site = SensitiveErrorTextRedactor.RedactSiteText(text);
+
+		// Assert
+		master.Should().Be(expected, because: "this is master's output");
+		redact.Should().Be(expected, because: "Redact keeps the bracketed tail, as master does");
+		site.Should().Be(expected, because: "RedactSiteText keeps the bracketed tail too");
+	}
+
+	#endregion
+
 	#region Conditions 2 and 3: the cut after the chain, no clamp before it
 
 	[TestCase("password=\"hunter2\n   at X.Y()\" rejected", "hunter2", TestName = "Cut_QuotedValueAcrossAStackFrame")]
