@@ -14,6 +14,9 @@ public sealed record DataWriteDiagnostic(
 	[property: JsonPropertyName("side-effect")] string SideEffect,
 	[property: JsonPropertyName("retry-advice")] string RetryAdvice,
 	[property: JsonPropertyName("message")] string Message) {
+	// The side effect and transport outcome a failed or unanswered write cannot rule out.
+	private const string Unknown = "unknown";
+
 	/// <summary>Builds bounded context from observed write boundaries, preserving uncertainty after submission.</summary>
 	/// <param name="operation">Write verb such as insert, update or delete.</param>
 	/// <param name="entity">Target entity name.</param>
@@ -28,10 +31,10 @@ public sealed record DataWriteDiagnostic(
 	public static DataWriteDiagnostic Create(string operation, string entity, int? itemIndex, bool attempted,
 		bool responseReceived, bool acknowledged, string message) {
 		string transport = (attempted, responseReceived) switch {
-			(false, _) => "not-attempted", (true, true) => "response-received", _ => "unknown"
+			(false, _) => "not-attempted", (true, true) => "response-received", _ => Unknown
 		};
 		string effect = (attempted, acknowledged) switch {
-			(false, _) => "not-attempted", (true, true) => "acknowledged", _ => "unknown"
+			(false, _) => "not-attempted", (true, true) => "acknowledged", _ => Unknown
 		};
 		string advice = effect switch {
 			"not-attempted" => "Correct the input or permissions before submitting.",
@@ -57,10 +60,45 @@ public sealed record DataWriteDiagnostic(
 	/// boundary keeps its own outcome.
 	/// </summary>
 	public DataWriteDiagnostic AsKnownNotApplied() =>
-		WriteAttempted && TransportOutcome == "response-received" && SideEffect == "unknown"
+		WriteAttempted && TransportOutcome == "response-received" && SideEffect == Unknown
 			? this with {
 				SideEffect = "none",
 				RetryAdvice = "The server rejected the write before applying it. Correct the input and resubmit."
 			}
 			: this;
+
+	/// <summary>Retry advice when the site refused the call's sole write without processing it.</summary>
+	public const string RefusedWithoutProcessingAdvice =
+		"The site refused the request without processing it, so nothing was applied. Fix what it refused - the "
+		+ "request's method, size, URL length or media type - before resubmitting.";
+
+	/// <summary>
+	/// Marks an attempted, answered, unacknowledged write as not applied because the site refused it without
+	/// processing it, and nothing the call sent before it could have written; see
+	/// <see cref="SiteResponseCapture.RecordRefusalOfSoleWrite"/>. Every other boundary keeps its own outcome.
+	/// </summary>
+	public DataWriteDiagnostic AsRefusedWithoutProcessing() =>
+		WriteAttempted && TransportOutcome == "response-received" && SideEffect == Unknown
+			? this with { SideEffect = "none", RetryAdvice = RefusedWithoutProcessingAdvice }
+			: this;
+
+	/// <summary>
+	/// The diagnostic that goes beside a <c>site-response</c> on a tool that has no data-write diagnostic of its
+	/// own: the request was sent and answered, and the side effect is <c>none</c> only when the refusal proves
+	/// it, otherwise <c>unknown</c>. Operation, entity and message are left empty: the tool's own result names
+	/// what failed and why.
+	/// </summary>
+	/// <param name="itemIndex">The item's index in a batch result, or <see langword="null"/>.</param>
+	/// <param name="nothingApplied">Whether the refusal proves the call (or the item) applied nothing.</param>
+	public static DataWriteDiagnostic ForSiteRefusal(int? itemIndex, bool nothingApplied) {
+		DataWriteDiagnostic answered = Create(null, null, itemIndex, true, true, false, null);
+		return nothingApplied
+			? answered.AsRefusedWithoutProcessing()
+			: answered with { RetryAdvice = SiteRefusalUnknownAdvice };
+	}
+
+	/// <summary>Retry advice when a site refusal does not prove that nothing was applied.</summary>
+	public const string SiteRefusalUnknownAdvice =
+		"The site's answer does not prove that nothing was applied: the call may have written before or despite "
+		+ "it. Read back what the call changes before deciding whether to resubmit; no automatic retry was made.";
 }

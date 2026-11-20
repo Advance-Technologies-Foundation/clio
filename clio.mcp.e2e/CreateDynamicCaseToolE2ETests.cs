@@ -270,6 +270,73 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
+	[Description("describe-dynamic-case answers records on every stage: the records that hold its value, finished cases included, a count from 0 up.")]
+	[AllureName("describe-dynamic-case counts the records per stage")]
+	public async Task DescribeDynamicCase_ShouldCountTheRecordsPerStage() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+
+			// Act
+			JsonObject described = await DescribeCaseAsync(context, created);
+
+			// Assert
+			described["stages"]!.AsArray().Should().OnlyContain(
+				stage => stage!["records"] != null && stage["records"]!.GetValue<int>() >= 0,
+				because: "every stage reports the records that hold its value, so a final stage records reached is not 0");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("A stage caption renames the stage's lookup value for every record, so without confirm-value-rename it is refused value-rename-confirmation-required; a caption that is another value's name is refused stage-value-ambiguous even with the flag. Nothing is written: the stage and its value keep their names.")]
+	[AllureName("modify-dynamic-case refuses a stage rename without the user's yes and to a taken name")]
+	public async Task ModifyDynamicCase_ShouldRefuseAStageRename_WithoutTheUsersYesOrToATakenName() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			JsonObject caseBlock = created["case"]!.AsObject();
+			List<string> stored = StageValues(caseBlock);
+			string first = stored[0];
+			string firstCaption = Text(StageOf(caseBlock, first), "caption")!;
+			string secondCaption = Text(StageOf(caseBlock, stored[1]), "caption")!;
+
+			// Act
+			CallToolResult unconfirmedCall = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithCaption(stored, first, firstCaption + " E2E")
+			});
+			CallToolResult takenCall = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithCaption(stored, first, secondCaption),
+				["confirm-value-rename"] = true
+			});
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(unconfirmedCall), CaseChangePackageVersion);
+			ShouldBeRefused(unconfirmedCall, "a value rename reaches every record, so the user agrees first");
+			Text(ResultOf(unconfirmedCall), "errorCode").Should().Be("value-rename-confirmation-required",
+				because: "the code names the yes that is missing");
+			ShouldBeRefused(takenCall, "two values would read the same on the bar");
+			Text(ResultOf(takenCall), "errorCode").Should().Be("stage-value-ambiguous",
+				because: "the name is another value's");
+			JsonObject after = await DescribeCaseAsync(context, created);
+			Text(StageOf(after, first), "caption").Should().Be(firstCaption, because: "a refusal writes nothing");
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
 	[Description("A modify-dynamic-case dry run that reorders the stages answers planned with the moves in the diff and writes nothing: the stored order is unchanged.")]
 	[AllureName("modify-dynamic-case plans a reorder and writes nothing")]
 	public async Task ModifyDynamicCase_ShouldPlanAReorder_AndWriteNothing_OnADryRun() {
@@ -625,6 +692,12 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			.Single(stage => Text(stage, "value") == value);
 
 	private static string[] SwapFirstTwo(List<string> values) => [values[1], values[0], .. values.Skip(2)];
+
+	/// <summary>The stored stages in order, the one named carrying a caption.</summary>
+	private static object[] WithCaption(List<string> values, string value, string caption) =>
+		[.. values.Select<string, object>(stored => stored == value
+			? new Dictionary<string, object?> { ["value"] = stored, ["caption"] = caption }
+			: stored)];
 
 	/// <summary>The result document: the one execution-log message that is a JSON object carrying an outcome.</summary>
 	private static JsonObject ResultOf(CallToolResult result) => ResultOf(result, "outcome");

@@ -761,7 +761,17 @@ public sealed class PageSyncTool(
 			validationResult = AppendPreSaveWarnings(validationResult, page, opOptions);
 			(string metaFilePath, bool refreshBaseline, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
-			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
+			PageUpdateResponse updateResponse;
+			// A capture of this page's own: the site's answer to one page must not be reported on another. A page
+			// gets one write, its save, as in update-page.
+			using (SiteResponseCapture.Scope pageSiteResponse = SiteResponseCapture.Begin(soleWriteCall: true)) {
+				opOptions.UpdateCommand.TryUpdatePage(updateOptions, out updateResponse);
+				(SiteResponse refusal, bool nothingApplied) = pageSiteResponse.LastRefusal;
+				if (refusal is not null && updateResponse is { Success: false, SiteResponse: null }) {
+					updateResponse.SiteResponse = refusal;
+					updateResponse.Diagnostic = DataWriteDiagnostic.ForSiteRefusal(null, nothingApplied);
+				}
+			}
 			string outcomeBaselineWarning = PageBaselineGuard.ForSaveOutcome(baselineWarning, updateOptions, updateResponse.Success);
 			if (outcomeBaselineWarning != null) {
 				validationResult = AppendCommandWarnings(validationResult, [outcomeBaselineWarning]);
@@ -779,6 +789,8 @@ public sealed class PageSyncTool(
 					Validation = AppendPersistedResourceKeyWarning(
 						validationResult, opOptions.EnvironmentName, page.SchemaName),
 					Error = updateResponse.Error,
+					SiteResponse = updateResponse.SiteResponse,
+					Diagnostic = updateResponse.Diagnostic,
 					Conflict = updateResponse.Conflict,
 					ConflictDetails = updateResponse.ConflictDetails,
 					ConflictCheck = updateResponse.ConflictCheck
@@ -1422,6 +1434,18 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
+
+	/// <summary>What the site itself answered to this page's failed save; see <see cref="Clio.Common.SiteResponse"/>.</summary>
+	[JsonPropertyName("site-response")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[System.ComponentModel.Description("What the Creatio site itself answered to this page's failed save: status, and its own message and code when the body carries them. Absent on success and when no HTTP response exists.")]
+	public SiteResponse SiteResponse { get; init; }
+
+	/// <summary>Beside <see cref="SiteResponse"/>: whether the refusal proves this page's save applied nothing.</summary>
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[System.ComponentModel.Description("Present beside site-response. side-effect is none only when the site refused this page's save without processing it (HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, not re-sent or redirected; never a 401 or 403); the save is the only write for a page, so nothing was applied to it. Otherwise unknown.")]
+	public DataWriteDiagnostic Diagnostic { get; init; }
 
 	[JsonPropertyName("resources-registered")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]

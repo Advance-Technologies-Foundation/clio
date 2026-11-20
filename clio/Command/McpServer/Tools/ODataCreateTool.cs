@@ -110,6 +110,10 @@ public sealed class ODataCreateTool(
 	private const string RejectedBeforeWriteGuidance =
 		"Not inserted: Creatio rejected the row before writing anything. Correct the row and re-send it.";
 
+	private const string RefusedWithoutProcessingGuidance =
+		"Not inserted: Creatio refused the request without processing it. Fix what it refused - the request's "
+		+ "method, size, URL length or media type - before re-sending the row.";
+
 	/// <summary>
 	/// <c>error.message</c> values Creatio answers when the OData body fails model binding: an unknown
 	/// property, a malformed GUID, or any value for a binary (Edm.Stream) column. ASP.NET Web API on .NET
@@ -217,7 +221,12 @@ public sealed class ODataCreateTool(
 	private static DataWriteDiagnostic CreateRowDiagnostic(string entity, ODataRowResult row) {
 		DataWriteDiagnostic diagnostic = DataWriteDiagnostic.Create("insert", entity, row.Index,
 			row.ResponseReceived || row.RecordCreated != false, row.ResponseReceived, row.Success, row.Error);
-		return row.RecordCreated == false ? diagnostic.AsKnownNotApplied() : diagnostic;
+		if (row.RecordCreated != false) {
+			return diagnostic;
+		}
+		return row.SiteResponse is { RefusedWithoutProcessing: true }
+			? diagnostic.AsRefusedWithoutProcessing()
+			: diagnostic.AsKnownNotApplied();
 	}
 
 	/// <summary>A single row object becomes a one-element array; anything else is left for the usual validation.</summary>
@@ -435,13 +444,16 @@ public sealed class ODataCreateTool(
 			// Declared a write: automatic re-authentication must never re-issue this POST, or a
 			// false-positive expired-session classification of the OData echo creates the record
 			// twice (GitHub #1313).
-			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), requestTimeoutMs);
+			SiteHttpResponse answer = SiteCall.NonReplayablePost(client, url, row.GetRawText(), requestTimeoutMs);
 			received = true;
-			ODataRowResult result = ParseCreated(responseJson, index) with { ResponseReceived = true };
+			ODataRowResult result = WithSiteAnswer(ParseCreated(answer.Body, index) with { ResponseReceived = true },
+				answer);
 			// Model binding names no column, so the type map is the only way to tell a binary column from an
 			// unknown property or a malformed value. The read is skipped when it does not fit in the batch
 			// budget: the row keeps the generic explanation instead of overshooting the deadline.
-			if (result.RecordCreated == false
+			// A refusal without processing is about the request's method, size, URL or media type, never a column, so
+			// it gets no column hint.
+			if (result.RecordCreated == false && !answer.IsRefusedWithoutProcessing
 				&& (propertyTypes.IsValueCreated || remainingBudgetMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs)) {
 				binaryColumns = FindBinaryColumns(row, propertyTypes.Value, BinaryEdmTypes);
 				if (binaryColumns.Count > 0) {
@@ -488,6 +500,46 @@ public sealed class ODataCreateTool(
 				&& types.TryGetValue(property.Name, out string type) && edmTypes.Contains(type))
 			.Select(property => property.Name)
 			.ToList();
+	}
+
+	/// <summary>
+	/// Applies the site's answer to a parsed row: an empty body reads as a created record, but with a failure
+	/// status the site said the create failed, and whether a row was written before it is not known. A failed
+	/// row then carries the answer as its site response.
+	/// </summary>
+	/// <remarks>
+	/// A row's POST is the only write for that row: it is sent once, never replayed, and nothing else is written
+	/// for the row. So when the answer shows the site refused it without processing it
+	/// (<see cref="SiteHttpResponse.IsRefusedWithoutProcessing"/>: a refusal status with a body that is no answer of
+	/// the application), the row is known not created.
+	/// </remarks>
+	private static ODataRowResult WithSiteAnswer(ODataRowResult parsed, SiteHttpResponse answer) {
+		if (answer.IsRefusedWithoutProcessing) {
+			return new ODataRowResult {
+				Index = parsed.Index,
+				Success = false,
+				ResponseReceived = true,
+				RecordCreated = false,
+				RetryGuidance = RefusedWithoutProcessingGuidance,
+				// Such a body - empty, a page, plain text - says nothing about the row; the site's own words, if any,
+				// are in the site response.
+				Error = $"Creatio refused the create with HTTP {answer.StatusCode} without processing it, so this row "
+					+ "was not created.",
+				SiteResponse = SiteResponse.FromRefusal(answer)
+			};
+		}
+		ODataRowResult result = parsed.Success && answer.IsKnownFailureStatus
+			? new ODataRowResult {
+				Index = parsed.Index,
+				Success = false,
+				ResponseReceived = true,
+				RecordCreated = null,
+				RetryGuidance = UnknownSideEffectGuidance,
+				Error = $"Creatio answered the create with HTTP {answer.StatusCode} and no recognized body, so it "
+					+ "was not confirmed. Read the records before re-sending this row."
+			}
+			: parsed;
+		return result.Success ? result : result with { SiteResponse = SiteResponse.FromRefusal(answer) };
 	}
 
 	private static ODataRowResult ParseCreated(string json, int index) {

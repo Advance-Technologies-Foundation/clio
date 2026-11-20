@@ -522,7 +522,7 @@ public sealed class RestartToolTests {
 
 		// Assert
 		notice.Should().Contain("restart-status", because: "the operation is tracked under the environment name");
-		notice.Should().Contain("requestfailed: no restart happened, so ask the user, then retry once",
+		notice.Should().Contain("requestfailed: no restart is known to have happened, so ask the user, then retry once",
 			because: "an agent must know what to do when restart-status says the request itself failed");
 	}
 

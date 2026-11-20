@@ -32,6 +32,8 @@ public static class ListUserTasksPrompt {
 		 each built as a `fileProcessing` element with its `fileProcessing` block (the group `attachments`, `report`
 		 or `files` selects the variant), because a generic `userTask` naming one carries no file source and is
 		 refused; and except `WebServiceUserTask` (Call web service), which is refused on a `userTask` - build a
-		 `webService` element with its `webService` block (a registered service and its method) instead.
+		 `webService` element with its `webService` block (a registered service and its method) instead; and except
+		 `SendChatMessageUserTask` (Send chat message), which is refused on a `userTask` - build a `sendChatMessage`
+		 element with its `chatMessage` block instead.
 		 """;
 }

@@ -433,6 +433,17 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-106247's approval outcome codes, whose wording added 5 bytes to create and 18 to modify: modify measured 35080,
 	// 8 bytes over. Paid by SWAP again: four em dashes in modify's formula and page clauses became ' - '. Re-measured by
 	// lowering the ceiling: create 35070, describe 35066, modify 35060 - 2, 6 and 12 bytes of headroom.
+	//
+	// ENG-96034 (2026-11-13, the Send chat message element) named, per owner decision Q10, only the type, the block and
+	// the guide pointer: create's type list ('|sendChatMessage'), its chatMessage? clause with the
+	// process-send-chat-message pointer and 'chatMessage, ' in its floor clause; modify's addElement and setElement
+	// lists, SendChatMessageUserTask among the generic-route refusals, the floor clause and the setElement pointer;
+	// describe's read-back clause with its pointer. Measured before paying: create 35225, describe 35211, modify 35197
+	// - 153, 139 and 125 bytes over. Paid by SWAP, no ceiling raise: thirty em dashes each in create and describe and
+	// twelve in modify became ' - ' (five bytes each); modify also lost the quotes of 'true' (three times, the
+	// literal a cleared condition is stored as) and of the setFlow field list (source, target, kind, condition,
+	// label), and create's clause its 'Send chat message; ' gloss. Re-measured by lowering the ceiling: create 35056,
+	// describe 35061, modify 35041 - 16, 11 and 31 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -470,6 +481,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// shape's element shape, which is never cut, is the sentence the process-data-source-filters guide's gate quotes
 	// ("any of several lookup records is ONE condition with values"). It adds 61 bytes and brings the bundle to 18914
 	// bytes - 86 under this guard.
+	//
+	// ENG-96034 (2026-11-13) re-measured by lowering this guard: "chatMessage (sendChatMessage)" in the create call
+	// shape's block list, which is never cut, brings the bundle to 18881 bytes - 119 under this guard. Its description
+	// text carries no safety marker, so no short form keeps it. Merged with the ENG-105557 follow-up above
+	// (2026-11-17) and re-measured the same way: 18942 bytes - 58 under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

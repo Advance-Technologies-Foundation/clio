@@ -141,7 +141,8 @@ public class DeleteDataBindingDbTool(
 			PackageName = args.PackageName,
 			BindingName = args.BindingName
 		};
-		return InternalExecute<DeleteDataBindingDbCommand>(options);
+		// One delete-data-binding-db call sends one write, the binding delete; everything before it reads.
+		return InternalExecute<DeleteDataBindingDbCommand>(options, soleWriteCall: true);
 	}
 }
 

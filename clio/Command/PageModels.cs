@@ -965,7 +965,29 @@ public sealed class PageAppendProjection {
 /// Represents the <c>update-page</c> response envelope.
 /// </summary>
 [DataContract]
-public sealed class PageUpdateResponse {
+public sealed class PageUpdateResponse : Clio.Common.ISiteResponseCarrier {
+
+	/// <summary>
+	/// What the Creatio site itself answered to the request that failed this call; see
+	/// <see cref="Clio.Common.SiteResponse"/>. Absent on success and when no HTTP response exists.
+	/// </summary>
+	[DataMember(Name = "site-response", EmitDefaultValue = false)]
+	[JsonProperty("site-response", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("site-response")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Clio.Common.SiteResponse SiteResponse { get; set; }
+
+	/// <summary>
+	/// Beside <see cref="SiteResponse"/>: whether the site's refusal proves the save applied nothing
+	/// (<c>side-effect</c> <c>none</c>) or not (<c>unknown</c>). Absent whenever <see cref="SiteResponse"/> is.
+	/// </summary>
+	[DataMember(Name = "diagnostic", EmitDefaultValue = false)]
+	[JsonProperty("diagnostic", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Clio.Common.DataWriteDiagnostic Diagnostic { get; set; }
+
+	bool Clio.Common.ISiteResponseCarrier.ReportsFailure => !Success;
 
 	/// <summary>
 	/// Marks a FAILED response as the outcome of a dry run, so it stays distinguishable from a failed real
@@ -1388,7 +1410,29 @@ public sealed class PageTemplateListResponse {
 /// Represents the <c>create-page</c> response envelope.
 /// </summary>
 [DataContract]
-public sealed class PageCreateResponse {
+public sealed class PageCreateResponse : Clio.Common.ISiteResponseCarrier {
+
+	/// <summary>
+	/// What the Creatio site itself answered to the request that failed this call; see
+	/// <see cref="Clio.Common.SiteResponse"/>. Absent on success and when no HTTP response exists.
+	/// </summary>
+	[DataMember(Name = "site-response", EmitDefaultValue = false)]
+	[JsonProperty("site-response", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("site-response")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Clio.Common.SiteResponse SiteResponse { get; set; }
+
+	/// <summary>
+	/// Beside <see cref="SiteResponse"/>: whether the site's refusal proves the save applied nothing
+	/// (<c>side-effect</c> <c>none</c>) or not (<c>unknown</c>). Absent whenever <see cref="SiteResponse"/> is.
+	/// </summary>
+	[DataMember(Name = "diagnostic", EmitDefaultValue = false)]
+	[JsonProperty("diagnostic", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("diagnostic")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public Clio.Common.DataWriteDiagnostic Diagnostic { get; set; }
+
+	bool Clio.Common.ISiteResponseCarrier.ReportsFailure => !Success;
 	[DataMember(Name = "success")]
 	[JsonProperty("success")]
 	[JsonPropertyName("success")]
