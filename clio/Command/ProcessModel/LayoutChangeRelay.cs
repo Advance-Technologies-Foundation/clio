@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
 
@@ -37,14 +38,16 @@ public sealed class LayoutChangeRelay {
 	/// reader looking for what was cut off.
 	/// <para>The names are the server's: each is redacted as the site's text, because the clause follows the
 	/// server's redacted sentence into the error and the log. A server that named elements whose names all redact to
-	/// nothing gets no clause either, for the same reason as an empty list.</para>
+	/// nothing, or to placeholders and punctuation only (<see cref="SensitiveErrorTextRedactor.IsPlaceholderOnly"/>), gets
+	/// no clause either, for the same reason as an empty list.</para>
 	/// </remarks>
 	/// <returns>The clause to append, already separated from what precedes it.</returns>
 	public string ElementsClause() {
 		if (Elements is not { Count: > 0 }) {
 			return string.Empty;
 		}
-		string[] names = Elements.Select(ProcessDesignServerFault.SiteText).Where(name => name.Length > 0).ToArray();
+		string[] names = Elements.Select(ProcessDesignServerFault.SiteText)
+			.Where(name => !SensitiveErrorTextRedactor.IsPlaceholderOnly(name)).ToArray();
 		bool allRedactedAway = names.Length == 0 && Elements.Any(name => !string.IsNullOrWhiteSpace(name));
 		return allRedactedAway ? string.Empty : $" Affected elements: {string.Join(", ", names)}.";
 	}

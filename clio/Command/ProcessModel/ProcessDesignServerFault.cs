@@ -78,7 +78,8 @@ internal static class ProcessDesignServerFault {
 
 	/// <summary>
 	/// The server's own sentence on a refused ProcessDesignService write (its <c>errorMessage</c>), redacted as the
-	/// site's text; <paramref name="fallback"/> - clio's own sentence, not redacted - when it sent none.
+	/// site's text; <paramref name="fallback"/> - clio's own sentence, not redacted - when it sent none, or one that
+	/// redacts to placeholders and punctuation only (<see cref="SensitiveErrorTextRedactor.IsPlaceholderOnly"/>).
 	/// </summary>
 	/// <remarks>
 	/// Every write path (create, modify in place, save as a new version, activate a version) throws this sentence,
@@ -88,7 +89,7 @@ internal static class ProcessDesignServerFault {
 	/// <param name="fallback">clio's sentence for a refusal without one.</param>
 	internal static string SiteMessageOr(string? errorMessage, string fallback) {
 		string redacted = SiteText(errorMessage);
-		return redacted.Length == 0 ? fallback : redacted;
+		return SensitiveErrorTextRedactor.IsPlaceholderOnly(redacted) ? fallback : redacted;
 	}
 
 	/// <summary>

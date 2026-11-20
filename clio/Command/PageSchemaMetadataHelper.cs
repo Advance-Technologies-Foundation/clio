@@ -500,9 +500,14 @@ namespace Clio.Command {
 
 		// A string value the site wrote, redacted as site text BEFORE it is trimmed (the cut keys on the line break before
 		// a stack frame); null when it is not a string or nothing of it survives.
+		// A value that redacts to nothing, or to placeholders and punctuation only, is no reason: the caller says its own
+		// sentence (SensitiveErrorTextRedactor.IsPlaceholderOnly).
 		private static string SiteValue(JToken token) =>
 			Text(token) is null ? null
-				: NullIfEmpty(SensitiveErrorTextRedactor.RedactSiteText(token.Value<string>()).Trim());
+				: NullIfPlaceholderOnly(SensitiveErrorTextRedactor.RedactSiteText(token.Value<string>()).Trim());
+
+		private static string NullIfPlaceholderOnly(string text) =>
+			SensitiveErrorTextRedactor.IsPlaceholderOnly(text) ? null : text;
 
 		private static string NullIfEmpty(string text) => string.IsNullOrEmpty(text) ? null : text;
 

@@ -242,10 +242,9 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("update-page: a design-package refusal whose message is only a stack trace (DescribeRefusal) quotes the "
-		+ "site cut's one placeholder - under option B the frame becomes [redacted], not nothing - never a dangling "
-		+ "'Failed to resolve design package: ' and never the frame.")]
-	public void UpdatePage_ShouldQuoteOnlyThePlaceholder_WhenTheRefusalIsOnlyAStackTrace() {
+	[Description("update-page: a design-package refusal whose message is only a stack trace (DescribeRefusal redacts it "
+		+ "to nothing) reads as clio's own sentence, not as a dangling 'Failed to resolve design package: '.")]
+	public void UpdatePage_ShouldSayItsOwnSentence_WhenTheRefusalRedactsToNothing() {
 		// Arrange
 		IApplicationClient client = UpdatePageSite(Refusal("\n   at Terrasoft.Fixture.Designer.Read()"),
 			HierarchyOf(DesignPackage), Refusal("unused"));
@@ -254,8 +253,8 @@ public sealed class SiteTextWritePathWiringTests {
 		(string error, List<string> _) = RunUpdatePage(client, () => UpdatePageOptions());
 
 		// Assert
-		error.Should().Be($"Failed to resolve design package for '{SchemaName}': Failed to resolve design package: [redacted]",
-			because: "the frame is replaced by one placeholder, and no part of it is quoted");
+		error.Should().Be($"Failed to resolve design package for '{SchemaName}': Failed to resolve design package",
+			because: "a reason that redacts to nothing is no reason");
 	}
 
 	[Test]
@@ -391,9 +390,9 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("create-page: a template catalog refusal whose message is only a stack trace (DescribeRefusal) quotes "
-		+ "the site cut's one placeholder - under option B the frame becomes [redacted], not nothing - and never the frame.")]
-	public void CreatePage_ShouldQuoteOnlyThePlaceholder_WhenTheCatalogRefusalIsOnlyAStackTrace() {
+	[Description("create-page: a template catalog refusal whose message redacts to nothing (DescribeRefusal) reads as "
+		+ "clio's own sentence instead of an empty one.")]
+	public void CreatePage_ShouldSayItsOwnSentence_WhenTheCatalogRefusalRedactsToNothing() {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecuteGetRequest(Arg.Any<string>()).Returns(Refusal("\n   at Terrasoft.Fixture.Catalog.Read()"));
@@ -405,8 +404,8 @@ public sealed class SiteTextWritePathWiringTests {
 		command.TryCreatePage(CreatePageOptions(), out PageCreateResponse response);
 
 		// Assert
-		response.Error.Should().Be("Failed to resolve template catalog: [redacted]",
-			because: "the frame is replaced by one placeholder, and no part of it is quoted");
+		response.Error.Should().Be("Failed to resolve template catalog: Failed to load page template catalog",
+			because: "a reason that redacts to nothing is no reason");
 	}
 
 	#endregion
@@ -1435,9 +1434,9 @@ public sealed class SiteTextWritePathWiringTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A layout refusal whose only element name is a stack trace names the site cut's one placeholder - "
-		+ "under option B the frame becomes [redacted], not nothing - and never the frame.")]
-	public void ElementsClause_ShouldNameOnlyThePlaceholder_WhenTheNameIsOnlyAStackTrace() {
+	[Description("A layout refusal whose element names all redact to nothing gets no 'Affected elements' clause, "
+		+ "rather than one that lists nothing.")]
+	public void ElementsClause_ShouldBeOmitted_WhenEveryNameRedactsToNothing() {
 		// Arrange
 		LayoutChangeRelay relay = new() { Elements = ["\n   at Terrasoft.Fixture.Layout.Move()"] };
 
@@ -1445,7 +1444,26 @@ public sealed class SiteTextWritePathWiringTests {
 		string clause = relay.ElementsClause();
 
 		// Assert
-		clause.Should().Be(" Affected elements: [redacted].", because: "the frame is replaced by one placeholder");
+		clause.Should().BeEmpty(because: "a clause that names nothing reads as a truncated message");
+	}
+
+	[TestCase("[redacted]", true, TestName = "IsPlaceholderOnly(a placeholder)")]
+	[TestCase("[redacted-path] [redacted-uri].", true, TestName = "IsPlaceholderOnly(placeholders and punctuation)")]
+	[TestCase(" -|;:,. [redacted-timeout] ", true, TestName = "IsPlaceholderOnly(punctuation around a placeholder)")]
+	[TestCase("", true, TestName = "IsPlaceholderOnly(empty)")]
+	[TestCase("Login failed for user '[redacted]'.", false, TestName = "IsPlaceholderOnly(a word)")]
+	[TestCase("404 [redacted]", false, TestName = "IsPlaceholderOnly(a digit)")]
+	[TestCase("[redactedx]", false, TestName = "IsPlaceholderOnly(a bracket that opens no placeholder)")]
+	[TestCase("[redacted", false, TestName = "IsPlaceholderOnly(an unclosed placeholder)")]
+	[Category("Unit")]
+	[Description("A redacted reason that is only placeholders, whitespace and punctuation is no reason: DescribeRefusal, "
+		+ "SiteMessageOr and ElementsClause treat it like an empty one. A word or a digit outside a placeholder is a reason.")]
+	public void IsPlaceholderOnly_ShouldReadOnlyPlaceholdersAndPunctuationAsNoReason(string text, bool expected) {
+		// Act
+		bool placeholderOnly = SensitiveErrorTextRedactor.IsPlaceholderOnly(text);
+
+		// Assert
+		placeholderOnly.Should().Be(expected, because: "only a letter or a digit outside a placeholder tells the author something");
 	}
 
 	[TestCase("create", TestName = "ProcessWriteSuccess_ShouldRedactTheNames(create)")]
