@@ -100,9 +100,10 @@ JSON format (`--json`) — unified envelope (default):
 
 On failure: `ok=false`, `data=null`, `error={ "code": "<stable-code>", "message": "..." }`.
 
-Each package's descriptor carries the stored `Type` (`0` ordinary, `1` assembly package) and
-`ProjectPath` (`Files/<Name>.csproj` for an assembly package, empty otherwise); `IsTypeKnown` is
-`false` when the environment does not store them and both are defaults.
+Each package's `Descriptor` carries the stored `Type` (`0` ordinary, `1` assembly package) and
+`ProjectPath` (`Files/<Name>.csproj` for an assembly package, empty otherwise). The package's
+`IsTypeKnown` (next to `Descriptor`) is `false` when the environment does not store them; both are
+then defaults.
 
 JSON format (`--json --legacy-form`) — legacy shape (deprecated):
 

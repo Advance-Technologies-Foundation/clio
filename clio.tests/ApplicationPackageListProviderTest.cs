@@ -74,7 +74,7 @@ internal class ApplicationPackageListProviderTest
 		// Arrange
 		string legacy = BuildSelectQueryResponse(("OldPkg", "00000000-0000-0000-0000-000000000003", "M", "1.0"));
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")))
-			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Column by path ProjectPath not found\"}}");
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Column by path Type not found in schema SysPackage.\"}}");
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")))
 			.Returns(legacy);
 
@@ -85,6 +85,39 @@ internal class ApplicationPackageListProviderTest
 		result.Should().ContainSingle("because the fallback read still returns the package list");
 		result[0].Descriptor.Name.Should().Be("OldPkg", "because the fallback read maps the base columns");
 		result[0].IsTypeKnown.Should().BeFalse("because an environment without the Type column cannot report it");
+	}
+
+	[Test]
+	[Description("GetPackages does not fall back when the first answer is not JSON, so a login or proxy page is never reported as an unknown package type")]
+	public void GetPackages_Throws_WhenTheTypedReadReturnsANonJsonPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")))
+			.Returns("<html><body>Bad gateway</body></html>");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")))
+			.Returns(BuildSelectQueryResponse(("OldPkg", "00000000-0000-0000-0000-000000000003", "M", "1.0")));
+
+		// Act
+		Action act = () => _sut.GetPackages().ToList();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>("because only a refusal naming a missing type column may degrade the read");
+	}
+
+	[Test]
+	[Description("GetPackages does not fall back on a refusal that names no package-type column")]
+	public void GetPackages_Throws_WhenTheRefusalIsNotAboutTheTypeColumns() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
+
+		// Act
+		Action act = () => _sut.GetPackages().ToList();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>("because an unrelated refusal must surface, not degrade the read")
+			.WithMessage("*Access denied*");
+		_applicationClient.Received().ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")));
 	}
 
 	[Test]

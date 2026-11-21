@@ -86,7 +86,8 @@ public class RemotePackageCreatorTests
 					AdditionalData = new Dictionary<string, JToken> {
 						["maintainer"] = "Customer",
 						["description"] = "desc",
-						["installType"] = installType
+						["installType"] = installType,
+						["type"] = 0
 					}
 				}
 			});
@@ -109,6 +110,7 @@ public class RemotePackageCreatorTests
 
 		// Assert
 		result.PackageName.Should().Be("UsrCalls", because: "the environment prefix is added when the name lacks it");
+		result.Type.Should().Be(0, because: "the stored package type is read back from the package properties");
 		_createUrl.Should().Be(CreateUrl, because: "a package without an application code is standalone");
 		JObject body = JObject.Parse(_createBody);
 		body["name"]!.Value<string>().Should().Be("UsrCalls", because: "the prefixed name is what the platform stores");

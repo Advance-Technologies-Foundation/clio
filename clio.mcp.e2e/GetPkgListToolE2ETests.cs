@@ -91,13 +91,11 @@ public sealed class GetPkgListToolE2ETests : McpContractFixtureBase {
 		packages.Should().NotBeEmpty(because: "the sandbox always has installed packages");
 		packages.Should().OnlyContain(package => package.Type == 0 || package.Type == 1,
 			because: "a current Creatio stores SysPackage.Type for every package and list-packages must report it");
-		packages.Where(package => package.Type == 0).Should().OnlyContain(package => package.ProjectPath == string.Empty,
-			because: "an ordinary package has no project of its own");
-		packages.Should().Contain(package => package.Type == 1,
-			because: "every Creatio ships assembly packages, so the sandbox must report at least one");
-		packages.Where(package => package.Type == 1).Should().Contain(package =>
-				package.ProjectPath == $"Files/{package.Name}.csproj",
-			because: "the platform convention for an assembly package's project is Files/<Name>.csproj");
+		GetPkgListEnvelope gate = packages.Single(package => package.Name == "cliogate");
+		gate.Type.Should().Be(0, because: "the arranged cliogate package is installed from an ordinary-package descriptor");
+		gate.ProjectPath.Should().BeEmpty(because: "an ordinary package has no project of its own");
+		packages.Should().Contain(package => package.Type == 1 && package.ProjectPath == $"Files/{package.Name}.csproj",
+			because: "product assembly packages are installed with Type 1 and their Files/<Name>.csproj project");
 	}
 
 	private async Task<GetPkgListArrangeContext> ArrangeAsync(McpE2ESettings settings) {

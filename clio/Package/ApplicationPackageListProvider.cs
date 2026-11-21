@@ -109,9 +109,23 @@ namespace Clio.Package
 				ProjectPath = row.ProjectPath ?? string.Empty
 			};
 			return new PackageInfo(descriptor, string.Empty, []) {
-				IsTypeKnown = row.Type.HasValue
+				IsTypeKnown = row.Type is (int)PackageType.General or (int)PackageType.Assembly
 			};
 		}
+
+		/// <summary>
+		/// Whether a refused package read names a missing package-type column: the platform answers an unknown column
+		/// with "Column by path &lt;column&gt; not found in schema SysPackage." (the column and schema names survive
+		/// localization). A non-JSON answer (login page, proxy error) is never such a refusal.
+		/// </summary>
+		private static bool IsMissingTypeColumnRefusal(InvalidOperationException exception) =>
+			exception is not NonJsonServiceResponseException
+			&& exception.Message.Contains("SysPackage", StringComparison.Ordinal)
+			&& (exception.Message.Contains("ProjectPath", StringComparison.Ordinal)
+				|| MissingTypeColumn.IsMatch(exception.Message));
+
+		private static readonly System.Text.RegularExpressions.Regex MissingTypeColumn =
+			new(@"\bType\b", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
 		private SysPackageSelectQueryResponseDto SelectPackages(
 				IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters, int requestTimeoutMs) {
@@ -119,10 +133,9 @@ namespace Clio.Package
 				return SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
 					_applicationClient, _serviceUrlBuilder, BuildSysPackageQuery(PackageTypeColumns, filters),
 					requestTimeoutMs);
-			} catch (InvalidOperationException) {
-				// A server that refuses the query (success:false) may predate the Type/ProjectPath columns: read
-				// the list without them rather than lose it. A real failure fails the second read the same way
-				// and surfaces from there.
+			} catch (InvalidOperationException exception) when (IsMissingTypeColumnRefusal(exception)) {
+				// The environment's SysPackage predates the Type/ProjectPath columns: read the list without them
+				// rather than lose it. Any other failure surfaces as it is.
 				return SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
 					_applicationClient, _serviceUrlBuilder, BuildSysPackageQuery(PackageColumns, filters),
 					requestTimeoutMs);
@@ -192,6 +205,7 @@ namespace Clio.Package
 			public string? Version { get; set; }
 
 			[JsonPropertyName("Type")]
+			[JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
 			public int? Type { get; set; }
 
 			[JsonPropertyName("ProjectPath")]

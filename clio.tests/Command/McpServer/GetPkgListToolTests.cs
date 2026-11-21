@@ -193,12 +193,7 @@ public sealed class GetPkgListToolTests {
 			Name = "OldPkg", PackageVersion = "1.0.0", Maintainer = "Customer", UId = Guid.NewGuid()
 		}, string.Empty, Array.Empty<string>()) { IsTypeKnown = false };
 		packageListProvider.GetPackages().Returns(new[] { assembly, unknown });
-		ILogger logger = Substitute.For<ILogger>();
-		GetPkgListCommand command = new(new EnvironmentSettings(), packageListProvider,
-			Substitute.For<IJsonResponseFormater>(), logger);
-		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
-		commandResolver.Resolve<GetPkgListCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
-		GetPkgListTool tool = new(command, logger, commandResolver);
+		GetPkgListTool tool = CreateTool(packageListProvider);
 
 		// Act
 		PackageListResponse result = tool.GetPkgList(new GetPkgListArgs("sandbox"));

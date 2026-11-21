@@ -74,7 +74,8 @@ NOTES
       editable package.
     - The package is created as an ordinary package (type 0, reported as
       'type' in the MCP result). An assembly package, with its own csproj,
-      comes from 'clio add-package' in a workspace.
+      comes from 'clio add-package' in a workspace; on Creatio 10.0.0.171 or
+      later it also needs a source-code schema to be compiled by the target.
 
 SEE ALSO
     add-package-dependency - Add one or more package dependencies to a package

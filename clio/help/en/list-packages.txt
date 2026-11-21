@@ -83,8 +83,9 @@ OUTPUT FORMAT
           "error": null
         }
         On failure: ok=false, data=null, error={ "code": "<stable-code>", "message": "..." }.
-        Each descriptor carries Type (0 ordinary, 1 assembly package) and ProjectPath;
-        IsTypeKnown is false when the environment does not store them.
+        Each Descriptor carries Type (0 ordinary, 1 assembly package) and ProjectPath;
+        the package's IsTypeKnown (next to Descriptor) is false when the environment
+        does not store them.
 
     JSON format (--json --legacy-form) — legacy shape (deprecated):
         { "value": [ ...packages... ], "success": true, "errorInfo": null }
