@@ -66,10 +66,13 @@ ALIASES
 
 OUTPUT FORMAT
     Table format (default):
-        Name                Version         Maintainer
-        ──────────────────────────────────────────────
-        PackageName1        1.0.0          Company
-        PackageName2        2.1.3          Developer
+        Name                Version         Maintainer     Type
+        ───────────────────────────────────────────────────────────
+        PackageName1        1.0.0          Company        General
+        PackageName2        2.1.3          Developer      Assembly
+        Type is the stored SysPackage.Type: General (ordinary package) or Assembly
+        (assembly package with its own Files/<Name>.csproj). Empty when the
+        environment does not store the package type.
 
     JSON format (--json flag) — unified envelope (default):
         {
@@ -80,6 +83,8 @@ OUTPUT FORMAT
           "error": null
         }
         On failure: ok=false, data=null, error={ "code": "<stable-code>", "message": "..." }.
+        Each descriptor carries Type (0 ordinary, 1 assembly package) and ProjectPath;
+        IsTypeKnown is false when the environment does not store them.
 
     JSON format (--json --legacy-form) — legacy shape (deprecated):
         { "value": [ ...packages... ], "success": true, "errorInfo": null }

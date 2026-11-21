@@ -77,10 +77,14 @@ clio list-packages -e MyEnvironment
 ## Output Format
 
 Table format (default):
-Name                Version         Maintainer
-──────────────────────────────────────────────
-PackageName1        1.0.0          Company
-PackageName2        2.1.3          Developer
+Name                Version         Maintainer     Type
+───────────────────────────────────────────────────────────
+PackageName1        1.0.0          Company        General
+PackageName2        2.1.3          Developer      Assembly
+
+`Type` is the stored `SysPackage.Type`: `General` for an ordinary package, `Assembly` for an assembly
+package (its own `Files/<Name>.csproj` and DLL). It is empty when the environment does not store the
+package type; clio then reads the list without it.
 
 JSON format (`--json`) — unified envelope (default):
 
@@ -96,6 +100,10 @@ JSON format (`--json`) — unified envelope (default):
 
 On failure: `ok=false`, `data=null`, `error={ "code": "<stable-code>", "message": "..." }`.
 
+Each package's descriptor carries the stored `Type` (`0` ordinary, `1` assembly package) and
+`ProjectPath` (`Files/<Name>.csproj` for an assembly package, empty otherwise); `IsTypeKnown` is
+`false` when the environment does not store them and both are defaults.
+
 JSON format (`--json --legacy-form`) — legacy shape (deprecated):
 
 ```json
@@ -105,6 +113,13 @@ JSON format (`--json --legacy-form`) — legacy shape (deprecated):
 > **Migration note:** the default `--json` shape changed from `{value,success,errorInfo}` to the
 > unified envelope `{schemaVersion,ok,command,data,error}`. Consumers not yet migrated can pass
 > `--legacy-form` to keep the old shape during the transition. The non-JSON (table) output is unchanged.
+
+## MCP
+
+The `list-packages` MCP tool returns, for each package, `name`, `version`, `maintainer`, `uId`,
+`type` (`0` ordinary, `1` assembly package) and `projectPath`. `type` and `projectPath` are omitted
+when the environment does not store the package type. Read them after installing an assembly package
+to confirm the descriptor's `Type` and `ProjectPath` were applied.
 
 ## Reporting Bugs
 

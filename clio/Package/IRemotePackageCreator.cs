@@ -43,6 +43,8 @@ public sealed record RemotePackageCreateRequest(
 /// environment but a later step failed (dependencies not applied, or the readback failed), and this text
 /// says which.
 /// </param>
+/// <param name="Type">Stored package type (<c>0</c> ordinary, <c>1</c> assembly package), or <see langword="null"/>
+/// when the readback did not report it.</param>
 public sealed record RemotePackageCreateResult(
 	Guid PackageUId,
 	string PackageName,
@@ -51,7 +53,8 @@ public sealed record RemotePackageCreateResult(
 	IReadOnlyList<string> Dependencies,
 	int? InstallType,
 	string ApplicationCode,
-	string IncompleteReason) {
+	string IncompleteReason,
+	int? Type = null) {
 
 	/// <summary>
 	/// Gets whether the stored package can receive design-time changes (<c>InstallType</c> is <c>0</c>).

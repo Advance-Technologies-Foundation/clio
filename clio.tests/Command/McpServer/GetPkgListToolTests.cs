@@ -179,6 +179,42 @@ public sealed class GetPkgListToolTests {
 		return new GetPkgListTool(command, logger, commandResolver);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Reports type and projectPath for each package, and omits both from the JSON when the environment does not store the package type.")]
+	public void GetPkgList_Should_Report_Type_And_ProjectPath_And_Omit_Them_When_Unknown() {
+		// Arrange
+		IApplicationPackageListProvider packageListProvider = Substitute.For<IApplicationPackageListProvider>();
+		PackageInfo assembly = new(new PackageDescriptor {
+			Name = "AsmPkg", PackageVersion = "1.0.0", Maintainer = "Customer", UId = Guid.NewGuid(),
+			Type = PackageType.Assembly, ProjectPath = "Files/AsmPkg.csproj"
+		}, string.Empty, Array.Empty<string>());
+		PackageInfo unknown = new(new PackageDescriptor {
+			Name = "OldPkg", PackageVersion = "1.0.0", Maintainer = "Customer", UId = Guid.NewGuid()
+		}, string.Empty, Array.Empty<string>()) { IsTypeKnown = false };
+		packageListProvider.GetPackages().Returns(new[] { assembly, unknown });
+		ILogger logger = Substitute.For<ILogger>();
+		GetPkgListCommand command = new(new EnvironmentSettings(), packageListProvider,
+			Substitute.For<IJsonResponseFormater>(), logger);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<GetPkgListCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
+		GetPkgListTool tool = new(command, logger, commandResolver);
+
+		// Act
+		PackageListResponse result = tool.GetPkgList(new GetPkgListArgs("sandbox"));
+		string json = System.Text.Json.JsonSerializer.Serialize(result.Packages);
+
+		// Assert
+		PackageListItemResult asm = result.Packages.Single(package => package.Name == "AsmPkg");
+		asm.Type.Should().Be(1, because: "an assembly package is reported as SysPackage.Type 1");
+		asm.ProjectPath.Should().Be("Files/AsmPkg.csproj", because: "the stored project path is reported as is");
+		PackageListItemResult old = result.Packages.Single(package => package.Name == "OldPkg");
+		old.Type.Should().BeNull(because: "a type the environment did not report must not be presented as ordinary");
+		json.Should().Contain("\"type\":1", because: "the known type is serialized");
+		json.Should().NotContain("\"type\":null", because: "an unknown type is omitted rather than sent as null");
+		json.Should().NotContain("\"projectPath\":null", because: "an unknown project path is omitted rather than sent as null");
+	}
+
 	private static PackageInfo CreatePackageInfo(string name, string version, string maintainer) {
 		PackageDescriptor descriptor = new() {
 			Name = name,
