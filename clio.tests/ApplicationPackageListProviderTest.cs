@@ -39,6 +39,88 @@ internal class ApplicationPackageListProviderTest
 	}
 
 	[Test]
+	[Description("GetPackages selects Type and ProjectPath and maps them onto the descriptor of an assembly package")]
+	public void GetPackages_MapsTypeAndProjectPath_WhenTheEnvironmentStoresThem() {
+		// Arrange
+		string response = JsonSerializer.Serialize(new {
+			success = true,
+			rows = new object[] {
+				new { Name = "UsrAsm", UId = "00000000-0000-0000-0000-000000000001", Maintainer = "Customer",
+					Version = "1.0.0", Type = 1, ProjectPath = "Files/UsrAsm.csproj" },
+				new { Name = "UsrPlain", UId = "00000000-0000-0000-0000-000000000002", Maintainer = "Customer",
+					Version = "1.0.0", Type = 0, ProjectPath = "" }
+			}
+		});
+		string requestBody = null;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => requestBody = body))
+			.Returns(response);
+
+		// Act
+		List<PackageInfo> result = _sut.GetPackages().ToList();
+
+		// Assert
+		requestBody.Should().Contain("\"ProjectPath\"", "because the read must select the stored project path");
+		requestBody.Should().Contain("\"Type\"", "because the read must select the stored package type");
+		result[0].Descriptor.Type.Should().Be(PackageType.Assembly, "because SysPackage.Type 1 is an assembly package");
+		result[0].Descriptor.ProjectPath.Should().Be("Files/UsrAsm.csproj", "because the stored project path is reported as is");
+		result[0].IsTypeKnown.Should().BeTrue("because the environment returned the Type column");
+		result[1].Descriptor.Type.Should().Be(PackageType.General, "because SysPackage.Type 0 is an ordinary package");
+		result[1].Descriptor.ProjectPath.Should().BeEmpty("because an ordinary package has no project");
+	}
+
+	[Test]
+	[Description("GetPackages falls back to the read without Type and ProjectPath when the environment refuses them, and reports the type as unknown")]
+	public void GetPackages_FallsBackAndReportsUnknownType_WhenTypeColumnsAreRefused() {
+		// Arrange
+		string legacy = BuildSelectQueryResponse(("OldPkg", "00000000-0000-0000-0000-000000000003", "M", "1.0"));
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")))
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Column by path Type not found in schema SysPackage.\"}}");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")))
+			.Returns(legacy);
+
+		// Act
+		List<PackageInfo> result = _sut.GetPackages().ToList();
+
+		// Assert
+		result.Should().ContainSingle("because the fallback read still returns the package list");
+		result[0].Descriptor.Name.Should().Be("OldPkg", "because the fallback read maps the base columns");
+		result[0].IsTypeKnown.Should().BeFalse("because an environment without the Type column cannot report it");
+	}
+
+	[Test]
+	[Description("GetPackages does not fall back when the first answer is not JSON, so a login or proxy page is never reported as an unknown package type")]
+	public void GetPackages_Throws_WhenTheTypedReadReturnsANonJsonPage() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")))
+			.Returns("<html><body>Bad gateway</body></html>");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")))
+			.Returns(BuildSelectQueryResponse(("OldPkg", "00000000-0000-0000-0000-000000000003", "M", "1.0")));
+
+		// Act
+		Action act = () => _sut.GetPackages().ToList();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>("because only a refusal naming a missing type column may degrade the read");
+	}
+
+	[Test]
+	[Description("GetPackages does not fall back on a refusal that names no package-type column")]
+	public void GetPackages_Throws_WhenTheRefusalIsNotAboutTheTypeColumns() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
+
+		// Act
+		Action act = () => _sut.GetPackages().ToList();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>("because an unrelated refusal must surface, not degrade the read")
+			.WithMessage("*Access denied*");
+		_applicationClient.Received().ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")));
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")));
+	}
+
+	[Test]
 	[Description("GetPackages returns empty list when SelectQuery returns no rows")]
 	public void GetPackages_ReturnsEmpty_WhenNoRows() {
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())

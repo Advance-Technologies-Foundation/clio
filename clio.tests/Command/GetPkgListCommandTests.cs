@@ -200,6 +200,32 @@ public class GetPkgListCommandTests {
 	}
 
 	[Test]
+	[Description("Execute non-JSON should render a Type column with Assembly for an assembly package and leave it empty when the type is unknown")]
+	public void Execute_ShouldRenderTypeColumn_WhenNonJson() {
+		// Arrange
+		var settings = new EnvironmentSettings { Uri = "https://example-host" };
+		var command = new GetPkgListCommand(settings, _packageListProvider, _jsonResponseFormater, _logger);
+		var assembly = new PackageInfo(
+			new Clio.Package.PackageDescriptor {
+				Name = "AsmPkg", PackageVersion = "1.0.0", Maintainer = "Acme",
+				Type = Clio.Package.PackageType.Assembly, ProjectPath = "Files/AsmPkg.csproj"
+			},
+			"path", new System.Collections.Generic.List<string>());
+		var unknown = new PackageInfo(
+			new Clio.Package.PackageDescriptor { Name = "OldPkg", PackageVersion = "1.0.0", Maintainer = "Acme" },
+			"path", new System.Collections.Generic.List<string>()) { IsTypeKnown = false };
+		_packageListProvider.GetPackages().Returns(new[] { assembly, unknown });
+
+		// Act
+		int result = command.Execute(new PkgListOptions());
+
+		// Assert
+		result.Should().Be(0, because: "listing succeeds");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(s =>
+			s != null && s.Contains("Type") && s.Contains("Assembly") && s.Contains("OldPkg") && !s.Contains("General")));
+	}
+
+	[Test]
 	[Description("Execute non-JSON should emit the exact 'Find N packages' summary line and no JSON — AC#3/C1 text-output regression guard for the changed json-branch")]
 	public void Execute_ShouldEmitExactSummaryLine_WhenNonJson() {
 		// Arrange

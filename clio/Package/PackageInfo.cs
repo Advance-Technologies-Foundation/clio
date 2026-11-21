@@ -33,6 +33,14 @@ namespace Clio
 		public IEnumerable<string> FilePaths { get; }
 		public string PackageDescriptorPath { get; }
 
+		/// <summary>
+		/// Gets whether <see cref="PackageDescriptor.Type"/> and <see cref="PackageDescriptor.ProjectPath"/> were
+		/// actually read. <see langword="false"/> for a package read from an environment whose <c>SysPackage</c> has no
+		/// <c>Type</c>/<c>ProjectPath</c> columns, or that stores a type value clio does not know; the descriptor then
+		/// holds the defaults.
+		/// </summary>
+		public bool IsTypeKnown { get; init; } = true;
+
 		#endregion
 
 	}
