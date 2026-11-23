@@ -46,6 +46,59 @@ public sealed class GetPkgListToolE2ETests : McpContractFixtureBase {
 		AssertStructuredPagesReturned(actResult);
 	}
 
+	[Test]
+	[Description("Starts the real clio MCP server and verifies every listed package carries its stored type and project path, with at least one assembly package whose project path is its csproj.")]
+	[AllureTag(ToolName)]
+	[AllureName("Get package list reports package type and project path")]
+	[AllureDescription("Pages through list-packages on the sandbox and checks that each package has type 0 or 1, that ordinary packages have an empty projectPath, and that the environment's assembly packages report Files/<Name>.csproj.")]
+	public async Task GetPkgList_ShouldReportTypeAndProjectPath_ForEveryPackage() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to install cliogate and run list-packages end-to-end tests.");
+		}
+
+		TestConfiguration.EnsureSandboxIsConfigured(settings);
+		await using GetPkgListArrangeContext arrangeContext = await ArrangeAsync(settings);
+
+		// Act
+		List<GetPkgListEnvelope> packages = await AllureApi.Step("Act by reading every list-packages page", async () => {
+			List<GetPkgListEnvelope> all = [];
+			int offset = 0;
+			while (true) {
+				CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+					ToolName,
+					new Dictionary<string, object?> {
+						["args"] = new Dictionary<string, object?> {
+							["environment-name"] = settings.Sandbox.EnvironmentName!,
+							["limit"] = 200,
+							["offset"] = offset
+						}
+					},
+					arrangeContext.CancellationTokenSource.Token);
+				callResult.IsError.Should().NotBeTrue(because: "every list-packages page should be returned for a valid sandbox environment");
+				GetPkgListResponseEnvelope page = GetPkgListResultParser.ExtractResponse(callResult);
+				all.AddRange(page.Packages);
+				if (!page.Truncated || page.Count == 0) {
+					return all;
+				}
+				offset += page.Count;
+			}
+		});
+
+		// Assert
+		packages.Should().NotBeEmpty(because: "the sandbox always has installed packages");
+		packages.Should().OnlyContain(package => package.Type == 0 || package.Type == 1,
+			because: "a current Creatio stores SysPackage.Type for every package and list-packages must report it");
+		GetPkgListEnvelope gate = packages.Single(package => package.Name == "cliogate");
+		gate.Type.Should().Be(0, because: "the arranged cliogate package is installed from an ordinary-package descriptor");
+		gate.ProjectPath.Should().BeEmpty(because: "an ordinary package has no project of its own");
+		packages.Where(package => package.Type == 1).Should().OnlyContain(
+			package => (package.ProjectPath ?? string.Empty).EndsWith(".csproj", StringComparison.OrdinalIgnoreCase),
+			because: "an assembly package's stored project path names its csproj");
+	}
+
 	private async Task<GetPkgListArrangeContext> ArrangeAsync(McpE2ESettings settings) {
 		return await AllureApi.Step("Arrange list-packages MCP session", async () => {
 			CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(5));

@@ -8,6 +8,7 @@ using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
@@ -1074,6 +1075,104 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 				error.Contains("'body'") && error.Contains("'body-file'"),
 			because: "the caller must be told both parameters that can carry the body");
 	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("ENG-92174: the registry-driven chart-widget check reaches each series' data block from registry metadata alone — the spawned clio reads a local registry fixture shaped like the regenerated one (runtime SeriesConfig, WidgetDataConfig typeParameters, typeParameter-marked fields) and rejects a chart whose aggregation lacks its column while accepting a complete one.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page checks a chart's data block through registry type-parameter metadata")]
+	[AllureDescription("Starts the real clio MCP server with CLIO_COMPONENT_REGISTRY_LOCAL_FILE pointing at a chart-path registry fixture, validates a crt.ChartWidget insert with and without aggregation.column, and verifies only the broken one is rejected.")]
+	public async Task PageValidateTool_ShouldCheckChartDataBlock_ThroughRegistryTypeParameters(bool missingColumn) {
+		// Arrange
+		string fixturePath = Path.Combine(Path.GetTempPath(), $"clio-e2e-chart-registry-{Guid.NewGuid():N}.json");
+		await File.WriteAllTextAsync(fixturePath, ChartRegistryFixtureJson);
+		string aggregation = missingColumn
+			? "{\"expression\":{}}"
+			: "{\"column\":{\"expression\":{\"expressionType\":1,\"aggregationType\":1}}}";
+		string viewConfigDiff =
+			"[{\"operation\":\"insert\",\"name\":\"TestChart\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"index\":0," +
+			"\"values\":{\"type\":\"crt.ChartWidget\",\"config\":{\"title\":\"#ResourceString(TestChart_title)#\",\"color\":\"dark-blue\"," +
+			"\"series\":[{\"type\":\"doughnut\",\"label\":\"#ResourceString(TestChart_series_label)#\",\"legend\":{\"enabled\":false}," +
+			"\"data\":{\"providing\":{\"attribute\":\"TestChart_SeriesData_e2e\",\"schemaName\":\"Account\",\"aggregation\":" +
+			aggregation + "}}}]}}}]";
+		string body = ValidPageBody.Replace(
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/" + viewConfigDiff + "/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		const string resources = "{\"TestChart_title\":\"Accounts\",\"TestChart_series_label\":\"Accounts\"}";
+		try {
+			McpE2ESettings settings = TestConfiguration.Load();
+			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+			settings.ProcessEnvironmentVariables["CLIO_COMPONENT_REGISTRY_LOCAL_FILE"] = fixturePath;
+			using CancellationTokenSource chartCts = new(TimeSpan.FromMinutes(3));
+			await using McpServerSession chartSession = await McpServerSession.StartAsync(settings, chartCts.Token);
+
+			// Act
+			PageValidateResponse response = await AllureApi.Step("Validate a chart insert through stdio MCP",
+				async () => await CallAsync(chartSession, chartCts.Token, body, resources));
+
+			// Assert
+			AllureApi.Step("Verify validity follows the data block", () =>
+				response.Valid.Should().Be(!missingColumn,
+					because: "only the chart whose aggregation lacks its required column is broken"));
+			if (missingColumn) {
+				AllureApi.Step("Verify the actionable chart error", () =>
+					response.Validation.Errors.Should().Contain(e => e.Contains("aggregation.column") && e.Contains("TestChart"),
+						because: "the error must name the chart and the missing aggregation.column"));
+			}
+		}
+		finally {
+			try {
+				File.Delete(fixturePath);
+			}
+			catch (IOException) {
+			}
+		}
+	}
+
+	private const string ChartRegistryFixtureJson = """
+		{
+		  "components": [
+		    { "componentType": "crt.ChartWidget", "description": "Chart widget.",
+		      "inputs": { "config": { "type": "ChartWidgetConfig" } },
+		      "references": { "typeDefinitions": {
+		        "ChartWidgetConfig": { "fields": {
+		          "title": { "type": "string", "required": true },
+		          "series": { "type": "array", "items": { "type": "SeriesConfig" }, "required": true }
+		        }}
+		      }}
+		    }
+		  ],
+		  "references": { "typeDefinitions": {
+		    "SeriesConfig": { "fields": {
+		      "type": { "type": "string", "required": true },
+		      "color": { "type": "string", "required": true },
+		      "data": { "type": "WidgetDataConfig<SeriesDataProvidingConfig<SeriesValueDataGroupingConfig>>", "required": true }
+		    }},
+		    "WidgetDataConfig": { "typeParameters": ["TProvidingConfig", "TFormat"], "fields": {
+		      "providing": { "type": "object", "required": true, "typeParameter": "TProvidingConfig", "shape": {
+		        "schemaName": { "type": "string", "required": true }
+		      }},
+		      "formatting": { "type": "object", "required": true, "typeParameter": "TFormat" }
+		    }},
+		    "SeriesDataProvidingConfig": { "typeParameters": ["TGroupingConfig"], "fields": {
+		      "attribute": { "type": "string", "required": true },
+		      "schemaName": { "type": "string", "required": true },
+		      "aggregation": { "type": "object", "required": true, "shape": {
+		        "column": { "type": "AggregationFunctionColumn", "required": true }
+		      }},
+		      "rowCount": { "type": "number", "required": true },
+		      "grouping": { "type": "object", "required": true, "typeParameter": "TGroupingConfig" }
+		    }},
+		    "WidgetDataProvidingConfig": { "fields": {
+		      "attribute": { "type": "string", "required": true },
+		      "schemaName": { "type": "string", "required": true },
+		      "aggregation": { "type": "object", "required": true, "shape": {
+		        "column": { "type": "AggregationFunctionColumn", "required": true }
+		      }}
+		    }}
+		  }}
+		}
+		""";
 
 	private static async Task<PageValidateResponse> CallAsync(
 		McpServerSession session,

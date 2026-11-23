@@ -547,6 +547,7 @@ internal static class ToolContractCatalog {
 	private const string ArrayType = "array";
 	private const string ResultsFieldName = "results";
 	private const string BindingNameFieldName = "binding-name";
+	private const string FromEnvironmentFieldName = "from-environment";
 	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
 	private const string BodyFileFieldName = "body-file";
@@ -640,6 +641,26 @@ internal static class ToolContractCatalog {
 	private const string PassthroughEnvironmentNameSuffix =
 		" Required on stdio / registered-environment transports; omit under credential passthrough — the X-Integration-Credentials header supplies the target tenant.";
 	private const string ErrorFieldName = "error";
+	private const string SiteResponseFieldName = "site-response";
+	private const string SiteResponseDescription =
+		"What the Creatio site itself sent back for the failed request: status (HTTP), message and code (the site's own, "
+		+ "from a known JSON shape, redacted like error, message capped at 2,000 characters) and body (only the KIND "
+		+ "of body: json|html|text|empty, never the body itself). Never clio's wording or a stack trace. Absent on success, when no HTTP response "
+		+ "exists and when the failure is clio's own.";
+	private const string SiteResponseShortDescription =
+		"Site answer to a failed save: status, message, code, body kind.";
+	private const string SiteRefusalDiagnosticDescription =
+		"Beside every site-response: the same object as the odata tools' diagnostic (operation, entity and message "
+		+ "null here). side-effect is none only when clio proves nothing was applied: the tool sends one write per "
+		+ "call, it went out once and was not re-sent or redirected, and the site refused it for the request's "
+		+ "shape - HTTP 405, 413, 414 or 415 with an empty, page or plain-text body. A 401 or 403 never proves it: "
+		+ "the HTTP client re-sends after a 401 without showing the first answer, and a gateway can answer 403 after "
+		+ "the write ran. Tools that can prove it: update-page, create-page, sync-pages per page, "
+		+ "create-business-process, delete-data-binding-db and compile-creatio. Everything else is unknown, the "
+		+ "restart tools included (they send with up to 3 attempts): read back before retrying. retry-advice says "
+		+ "what to do next.";
+	private const string SiteRefusalDiagnosticShortDescription =
+		"side-effect: none (save refused unprocessed) or unknown.";
 	private const string ExampleAccountSchemaName = "Account";
 	private const string ExampleContactSchemaName = "Contact";
 	private const string ExampleEnvironmentName = "local";
@@ -851,7 +872,7 @@ internal static class ToolContractCatalog {
 		+ "retry-guidance.";
 
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
-	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
+	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field. side-effect is none only when the write is known not applied: it was rejected before writing, or its one request (one PATCH; one POST per odata-create row; never a DELETE, which goes without a body the client can redirect unseen) was refused without processing (HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, not redirected; never a 401 or 403).";
 
 	private const string ODataReadErrorCodeFieldName = "error-code";
 
@@ -3091,6 +3112,7 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription),
 				Field("id", StringType, "GUID of the updated record."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that values was accepted as data; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
@@ -3145,12 +3167,13 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether every requested record is gone (dry-run: whether the plan was built)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription),
 				Field("id", StringType, "GUID of the deleted record (single id; absent on dry-run)."),
 				Field("explanation", StringType, "Why the record was not deleted; present on every refusal the server answered."),
 				Field("referencing", ArrayType, "Rows still referencing the record: {entity, column, ids, more, kind} with kind owned, linked or cascade."),
 				Field("cascade-deleted", ArrayType, "Owned rows deleted before the record ({entity, id})."),
 				Field("cascade-unconfirmed", ArrayType, "Owned rows whose DELETE got no answer: they may be gone; check with odata-read."),
-				Field(ResultsFieldName, ArrayType, "With ids: one {id, success, error, explanation, referencing, cascade-deleted} per id."),
+				Field(ResultsFieldName, ArrayType, "With ids: one {id, success, error, explanation, referencing, cascade-deleted, site-response, diagnostic} per id; an item's diagnostic side-effect is always unknown."),
 				Field("plan", ArrayType, "With dry-run: one {id, visible, referencing, cascade-would-delete, platform-cascade, cascade-refusal, blocked-because, complete} per id."),
 				Field("cascade-plan-hash", StringType, "With dry-run and cascade: pass it back with confirm to delete exactly this plan."),
 				Field("note", StringType, "With dry-run: rows hidden from the user by record-level rights are not seen by the check."),
@@ -4642,7 +4665,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field(ResultsFieldName, ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
+				Field(ResultsFieldName, ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `site-response` (on a failed item the site answered: status, and the site's own message and code) with `diagnostic` beside it (side-effect always unknown: an operation sends several writes and may be retried), `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
 				Field("resume-plan", ObjectType, "Present when the batch aborted before completing, and ALSO on a fully successful batch that deferred an inline seed (the deferred seed-data operations are carried in `operations`) — presence is not equivalent to failure. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — normally the failed operation followed by every not-run operation, echoed in re-submittable input shape. Exception: when the operation failed a FIELD-SHAPE check (an unbindable field name, an unbindable `type`, a missing `schema-name`, or a virtual `create-entity` carrying `seed-rows`) it is deliberately OMITTED from `operations`, because replaying it verbatim would just repeat the rejected payload; `instruction` then tells the caller to correct the field names first and resubmit it alongside the listed operations, and `operations` may be EMPTY when the shape-rejected operation was the last one and nothing was deferred — the plan is still emitted, because `failed-operation` and `not-run-operation-indexes` are what a recovering caller reads. Resubmit resume-plan.operations as a new sync-schemas call for the efficient path; resubmitting the whole batch verbatim is also safe for the convergent schema operations (they replay as already-satisfied/reconciled) but re-runs any seed-data, which is not replay-safe.")
 			),
 			CommonErrorContract,
@@ -4771,7 +4794,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every page operation succeeded."),
-				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `resources-registered` (new keys), `resources-updated` (existing keys whose en-US value changed), optional `page` metadata, optional `verified-body-file` when `verify=true`, and on a saved page a `digest` (validation, basis, components written, otherSections, checksum - the update-page digest) to confirm the save without get-page.")
+				Field(PagesFieldName, ArrayType, "Per-page results with `schema-name`, `success`, `body-length`, `validation`, `error`, `site-response` (on a failed item the site answered: status, and the site's own message and code) with `diagnostic` beside it (side-effect none only when the page's save was refused for its shape: HTTP 405, 413, 414 or 415 with an empty, page or plain-text body, not re-sent or redirected; never a 401 or 403), `resources-registered` (new keys), `resources-updated` (existing keys whose en-US value changed), optional `page` metadata, optional `verified-body-file` when `verify=true`, and on a saved page a `digest` (validation, basis, components written, otherSections, checksum - the update-page digest) to confirm the save without get-page.")
 			),
 			CommonErrorContract,
 			[],
@@ -4912,7 +4935,7 @@ internal static class ToolContractCatalog {
 				["MCP tool result isError == true"],
 				[
 					Field(PackagesFieldName, ArrayType,
-						"Packages in this page, each with name, version, maintainer, and uId."),
+						"Packages in this page, each with name, version, maintainer, uId, and - when the environment stores them - type (0 ordinary, 1 assembly package with its own csproj) and projectPath."),
 					Field(CountFieldName, NumberType, "Number of packages returned in this page."),
 					Field("total", NumberType, "Total packages matching the filter before paging."),
 					Field(OffsetFieldName, NumberType, "Applied zero-based offset."),
@@ -5466,18 +5489,19 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCreateDataBinding() {
 		return new ToolContractDefinition(
 			CreateDataBindingTool.CreateDataBindingToolName,
-			"Creates or regenerates a local package data binding from a built-in template or a runtime entity schema. For workflow selection, call get-guidance with name `data-bindings`.",
+			"Creates or regenerates a local package data binding from a built-in template or a runtime entity schema, or with `from-environment` writes one existing DB binding to disk exactly as the platform package export does (only that binding folder; no environment-wide export). For workflow selection, call get-guidance with name `data-bindings`.",
 			new ToolInputSchemaContract(
-				[PackageNameFieldName, SchemaNameFieldName, WorkspacePathFieldName],
+				[PackageNameFieldName, WorkspacePathFieldName],
 				[
-					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings because the MCP tool does not expose a uri fallback."),
+					Field(EnvironmentNameFieldName, StringType, "Registered clio environment name. Required when schema-name is not SysSettings, and always with from-environment, because the MCP tool does not expose a uri fallback."),
 						Field(PackageNameFieldName, StringType, DataBindingPackageNameDescription),
-						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings."),
+						Field(SchemaNameFieldName, StringType, "Entity schema name for the binding. The built-in offline template currently includes SysSettings. Required unless `from-environment` is true; with it, it must match the binding's schema, and it names the binding when `binding-name` is omitted."),
 						Field(WorkspacePathFieldName, StringType, DataBindingWorkspacePathDescription),
 						Field(BindingNameFieldName, StringType, "Optional binding folder name; defaults to the schema name. A plain folder name, without path separators or '..'."),
 						Field("install-type", NumberType, "Optional descriptor install type; defaults to 0."),
 						Field(ValuesFieldName, StringType, "Optional JSON object keyed by column name for the initial row."),
-						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files.")
+						Field("localizations", StringType, "Optional JSON object keyed by culture name (for example en-US) then column name. Localization-only columns are included in the descriptor without inventing base values. Input validation failures preserve existing binding files."),
+						Field(FromEnvironmentFieldName, BooleanType, "Optional. When true, writes the existing DB binding of `package-name` from `environment-name` to disk as the platform package export does: the DB binding UId, its columns, its stored rows and every culture's Localization file. The binding is `binding-name`, or `schema-name` when `binding-name` is omitted. Replaces only that binding folder. Requires `environment-name`; cannot be combined with `values` or `localizations`.")
 					],
 					Validators: [
 						new ToolContractValidator(
@@ -5488,6 +5512,26 @@ internal static class ToolContractCatalog {
 							EnvironmentNameFieldName
 						],
 						Context: "`environment-name` is required when `schema-name` is not `SysSettings` because this MCP tool only supports offline generation for built-in templates and does not expose `--uri`.",
+						Required: true),
+						new ToolContractValidator(
+							"require-schema-name-or-from-environment",
+							MissingRequiredParameterCode,
+						Fields: [
+							SchemaNameFieldName,
+							FromEnvironmentFieldName
+						],
+						Context: "`schema-name` is required unless `from-environment` is true.",
+						Required: true),
+						new ToolContractValidator(
+							"from-environment-requires-environment-and-binding",
+							MissingRequiredParameterCode,
+						Fields: [
+							FromEnvironmentFieldName,
+							EnvironmentNameFieldName,
+							BindingNameFieldName,
+							SchemaNameFieldName
+						],
+						Context: "`from-environment` reads the binding from the environment, so it requires `environment-name` and the binding: `binding-name`, or `schema-name` when the binding is named after its schema. It rejects `values` and `localizations`.",
 						Required: true)
 				]),
 			CommandExecutionOutput(),
@@ -5515,6 +5559,13 @@ internal static class ToolContractCatalog {
 						[PackageNameFieldName] = ExamplePackageName,
 						[SchemaNameFieldName] = ExampleTaskStatusSchemaName,
 						[WorkspacePathFieldName] = ExampleWorkspacePath
+					}),
+					Example("Write an existing DB binding to disk in file system mode", new Dictionary<string, object?> {
+						[EnvironmentNameFieldName] = ExampleEnvironmentName,
+						[PackageNameFieldName] = ExamplePackageName,
+						[BindingNameFieldName] = "UsrTaskStatus_Custom",
+						[WorkspacePathFieldName] = ExampleWorkspacePath,
+						[FromEnvironmentFieldName] = true
 					})
 				],
 			Flow(
@@ -6246,12 +6297,14 @@ internal static class ToolContractCatalog {
 				Field(CamelCaseSchemaNameFieldName, StringType, "Page schema name."),
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
-				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (the further-duplicate case in `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes (last spelling wins), data only, no warning; `viewConfigDiffApplied` = false: the web body lacks the SCHEMA_VIEW_CONFIG_DIFF marker pair, so the write discards what EVERY count describes - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation keeps your values. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). Handlers are NOT covered: the merge drops every current handler whose `request` your fragment carries (a `request` held twice keeps neither); check them yourself."),
+				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (see `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes, data only, no warning; `viewConfigDiffApplied` = false: the web body lacks the SCHEMA_VIEW_CONFIG_DIFF marker pair, so none is written - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation keeps your values. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). Handlers are NOT covered: the merge drops every current handler whose `request` your fragment carries (a `request` held twice keeps neither)."),
 				Field("resourcesRegistered", NumberType, "New resource keys this save added."),
 				Field("resourcesUpdated", NumberType, "Existing keys whose en-US value this save changed."),
 				Field("digest", ObjectType, "Real save: written `components`, `otherSections`, post-save `checksum`; confirm the save from it."),
-				Field(WarningsFieldName, ArrayType, "Advisory non-fatal warnings; omitted when there are none. When `success` is true the save already succeeded - never retry on a warning. A rejected save (`success: false`, see `error`) can carry warnings too, and nothing was written. On a dry run, the viewModelConfigDiff/modelConfigDiff merges the runtime throws on are listed here as warnings that say the merge \"breaks the page\": the real save of the same body is rejected, so fix them first. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), a viewModelConfigDiff/modelConfigDiff `merge` whose `path` does not exist in the config the parent schemas and earlier merges produce (saved, but the differ skips it, so it has no effect: merge into an existing parent instead), page-body lint findings, and the best-effort Designer Presence push."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription + " update-page also rejects a save, writing nothing, when a viewModelConfigDiff/modelConfigDiff `merge` would make the Creatio runtime throw so the page fails to build: a `path` that ends on a single value, a `path` whose first segment matches an element `_id` but whose rest does not exist under it, or a missing or null `values` on a target that exists. Each such merge is named here, one per line; fix or remove it and save again.")
+				Field(WarningsFieldName, ArrayType, "Advisory warnings, omitted when none. When `success` is true the save already succeeded - never retry on a warning. A rejected save (`success: false`, see `error`) can carry warnings too, and nothing was written. On a dry run, the viewModelConfigDiff/modelConfigDiff merges the runtime throws on are listed here as warnings that say the merge \"breaks the page\": the real save of the same body is rejected, so fix them first. Covers an operation the differ silently drops because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), a viewModelConfigDiff/modelConfigDiff `merge` whose `path` does not exist in the config the parent schemas and earlier merges produce (saved, but the differ skips it: merge into an existing parent instead), page-body lint findings, and the best-effort Designer Presence push."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " update-page also rejects a save, writing nothing, when a viewModelConfigDiff/modelConfigDiff `merge` would make the Creatio runtime throw: a `path` that ends on a single value, a `path` whose first segment matches an element `_id` but whose rest does not exist under it, or a missing or null `values` on a target that exists. Each such merge is named here, one per line."),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseShortDescription),
+				Field(DataWriteDiagnosticFieldName, ObjectType, SiteRefusalDiagnosticShortDescription)
 			),
 			CommonErrorContract,
 			[
@@ -7472,7 +7525,10 @@ internal static class ToolContractCatalog {
 			[
 				Field("exit-code", NumberType, "Process exit code."),
 				Field("execution-log-messages", ArrayType, "Structured log messages."),
-				Field("log-file-path", StringType, "Optional operation log path.")
+				Field("log-file-path", StringType, "Optional operation log path."),
+				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription + " Present on the failed result of a "
+					+ "write tool: entity schema, page, data-binding, install, compile, restart and process writes."),
+				Field(DataWriteDiagnosticFieldName, ObjectType, SiteRefusalDiagnosticDescription)
 			]);
 	}
 
@@ -7519,7 +7575,8 @@ internal static class ToolContractCatalog {
 					+ "wrong type, or any value for a binary column - and that row is reported as false with "
 					+ "diagnostic side-effect none. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
-					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
+					+ "duplicates it. A failed row the site answered also carries site-response. "
+					+ ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that payload was accepted as rows; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),

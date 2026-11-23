@@ -8,7 +8,9 @@ internal sealed record GetPkgListEnvelope(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("version")] string Version,
 	[property: JsonPropertyName("maintainer")] string Maintainer,
-	[property: JsonPropertyName("uId")] string UId);
+	[property: JsonPropertyName("uId")] string UId,
+	[property: JsonPropertyName("type")] int? Type = null,
+	[property: JsonPropertyName("projectPath")] string? ProjectPath = null);
 
 internal sealed record GetPkgListResponseEnvelope(
 	[property: JsonPropertyName("packages")] GetPkgListEnvelope[] Packages,

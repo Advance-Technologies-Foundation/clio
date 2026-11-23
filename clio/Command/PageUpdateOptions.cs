@@ -5,6 +5,7 @@
 	using System.Globalization;
 	using System.IO;
 	using System.Linq;
+	using Clio.Command.Filters;
 	using Clio.Command.McpServer;
 	using Clio.Common;
 	using CommandLine;
@@ -256,6 +257,7 @@
 		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
 		private readonly IPageUnresolvedMergeDetector? _unresolvedMergeDetector;
 		private readonly IPageLayerInspector? _pageLayerInspector;
+		private readonly IWidgetFilterValidator? _widgetFilterValidator;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -285,6 +287,7 @@
 		/// <param name="pageLayerInspector">Finds the page's replacing layers for the package-choice check
 		/// (<see cref="PageUpdateOptions.EnforcePackageChoice"/>). Optional only for hand-built test constructions;
 		/// DI always supplies it. Without it the check does not run.</param>
+		/// <param name="widgetFilterValidator">Optional: without it widget filters are not checked.</param>
 		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
@@ -297,7 +300,8 @@
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null,
 			Func<IJsonDiffApplier> viewConfigApplierFactory = null,
 			IPageUnresolvedMergeDetector? unresolvedMergeDetector = null,
-			IPageLayerInspector? pageLayerInspector = null) {
+			IPageLayerInspector? pageLayerInspector = null,
+			IWidgetFilterValidator? widgetFilterValidator = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
@@ -308,6 +312,7 @@
 			_persistedResourceKeyReader = persistedResourceKeyReader;
 			_unresolvedMergeDetector = unresolvedMergeDetector;
 			_pageLayerInspector = pageLayerInspector;
+			_widgetFilterValidator = widgetFilterValidator;
 		}
 
 		/// <summary>
@@ -401,7 +406,8 @@
 			IReadOnlyList<string> DowngradeWarnings,
 			IReadOnlyList<string> InertWarnings,
 			PageConfigMergeReport ConfigMergeReport,
-			PageUpdateResponse CaptionGateFailure);
+			PageUpdateResponse CaptionGateFailure,
+			PageWidgetFilterReport WidgetFilterReport);
 
 		/// <summary>
 		/// Resolves the write both paths would perform, WITHOUT saving anything. Read-only against the
@@ -427,14 +433,50 @@
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 			PageConfigMergeReport configMergeReport = DetectUnresolvedConfigMerges(bodyToWrite, context);
+			PageWidgetFilterReport widgetFilterReport = ValidateWidgetFilters(
+				options, context, bodyToWrite, schemaToSave["body"]?.ToString());
 			(List<string> registeredKeys, List<string> updatedKeys) = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
 				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context);
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys, updatedKeys,
-				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure);
+				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure, widgetFilterReport);
 			return true;
 		}
+
+		// ENG-95270: needs the environment, so it runs on the save path rather than in validate-page. A check that
+		// could not run is a warning, never the reason a save is refused.
+		private PageWidgetFilterReport ValidateWidgetFilters(
+			PageUpdateOptions options, EditableSchemaContext context, string bodyToWrite, string? persistedBody = null) {
+			if (!options.Validate || _widgetFilterValidator is null || context.SchemaType == PageSchemaType.Mobile
+				|| !Guid.TryParse(context.DesignPackageUId, out Guid packageUId)) {
+				return PageWidgetFilterReport.Empty;
+			}
+			try {
+				return _widgetFilterValidator.Validate(bodyToWrite, packageUId, persistedBody);
+			} catch (Exception ex) {
+				return new PageWidgetFilterReport([], [$"Widget filters were not checked against the entity schemas: {ex.Message}"]);
+			}
+		}
+
+		// Replace writes the caller's body as is, so the only input the save has beyond it is the stored body, which
+		// can only turn an error into a warning (a filter the page already holds). It is read only when there is an
+		// error to turn, so a clean dry run costs no schema read and still gives the save's verdict.
+		private PageWidgetFilterReport ValidateWidgetFiltersForReplaceDryRun(
+			PageUpdateOptions options, EditableSchemaContext context) {
+			PageWidgetFilterReport report = ValidateWidgetFilters(options, context, options.Body);
+			if (report.Errors.Count == 0
+				|| !TryLoadSchemaForSave(options.SchemaName, context, out JObject stored, out _)) {
+				return report;
+			}
+			return ValidateWidgetFilters(options, context, options.Body, stored["body"]?.ToString());
+		}
+
+		private static IReadOnlyList<string> WidgetFilterWarningsForDryRun(PageWidgetFilterReport report) =>
+			[
+				.. report.Errors.Select(error => $"Widget filter would block the save: {error}"),
+				.. report.Warnings
+			];
 
 		// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check does not) and on
 		// update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page can then
@@ -541,7 +583,8 @@
 					BuildDryRunWidgetCaptionWarnings(options, context.SchemaType, explicitResources,
 						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
 					PageInertOperationDetector.Detect(options.Body),
-					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)));
+					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)),
+					WidgetFilterWarningsForDryRun(ValidateWidgetFiltersForReplaceDryRun(options, context)));
 				return true;
 			}
 			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
@@ -566,7 +609,8 @@
 				prepared.DowngradeWarnings,
 				prepared.InertWarnings,
 				WithAppendModeHint(ConfigMergeWarningsForDryRun(prepared.ConfigMergeReport), options,
-					prepared.ConfigMergeReport.Errors.Count > 0));
+					prepared.ConfigMergeReport.Errors.Count > 0),
+				WidgetFilterWarningsForDryRun(prepared.WidgetFilterReport));
 			return true;
 		}
 
@@ -590,6 +634,16 @@
 				};
 				return false;
 			}
+			if (prepared.WidgetFilterReport.Errors.Count > 0) {
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = "Widget filter validation failed: " + string.Join(Environment.NewLine, prepared.WidgetFilterReport.Errors),
+					Warnings = CombineWarnings(
+						BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+						prepared.ConfigMergeReport.Warnings, prepared.WidgetFilterReport.Warnings)
+				};
+				return false;
+			}
 			if (!TrySaveSchema(prepared.Schema, options, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys, prepared.UpdatedKeys);
 			// The save reports the same projection: a caller who skipped the dry run has no other place to
@@ -598,6 +652,7 @@
 			response.Warnings = CombineWarnings(
 				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
 				prepared.ConfigMergeReport.Warnings,
+				prepared.WidgetFilterReport.Warnings,
 				explicitResources?.Count > 0 || prepared.RegisteredKeys?.Count > 0
 					? new List<string> { ResourceWorkspaceCaptureWarning } : null);
 			PopulatePostSaveChecksum(options, context, response);
@@ -680,7 +735,10 @@
 				// denied, a redirected target UId), TryGetSchema returns false with the server's own message,
 				// and discarding it through `out _` handed the caller back the misleading "resource 'X' is
 				// neither auto-provided ... nor registered" that issue #1320 opened with.
-				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError)) {
+				// recordRefusal: false - this read is advisory, and its refusal must not be reported as the
+				// site's answer to a later step that fails for another reason.
+				if (!TryGetSchema(context.TemplateSchemaUId, out JObject schema, out string schemaError,
+						recordRefusal: false)) {
 					return LogPersistedResourceKeyFailure(schemaError);
 				}
 				return PersistedResourceKeyRead.FromKeys(
@@ -1084,7 +1142,7 @@
 			IReadOnlyList<PageDesignerHierarchySchema> chain;
 			try {
 				chain = PageHierarchyChain.ReadFromRootVariant(_hierarchyClient, options.SchemaName,
-					context.RawSchemaUId, context.DesignPackageUId, context.ResolutionHierarchy);
+					context.ResolutionHierarchyAnchorUId, context.DesignPackageUId, context.ResolutionHierarchy);
 			} catch (Exception ex) {
 				// Fail closed: a chain read from a replacing variant can miss the very layer the check exists for.
 				response = new PageUpdateResponse {
@@ -1351,9 +1409,13 @@
 		private bool TryResolveEditableSchemaContext(string schemaName, string targetPackageUIdOverride, out EditableSchemaContext context, out PageUpdateResponse response) {
 			TargetPackageUIdOverride = targetPackageUIdOverride;
 			context = null;
-			(JToken metadata, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRow(_applicationClient, _serviceUrlBuilder, schemaName, ("UId", "UId"));
-			if (metadata == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
-			string rawSchemaUId = metadata["UId"]?.ToString();
+			// All variants in one query: the name alone can resolve to any replacing variant, and the root one
+			// (ExtendParent = false) is where the chain is read from, so it is read once per write.
+			(JArray variants, string queryError) = PageSchemaMetadataHelper.QuerySysSchemaRows(_applicationClient,
+				_serviceUrlBuilder, schemaName, PageSchemaMetadataHelper.AllRows, ("UId", "UId"),
+				(ClassicEntitySchemaQuery.ExtendParentColumn, ClassicEntitySchemaQuery.ExtendParentColumn));
+			if (variants == null) { response = new PageUpdateResponse { Success = false, Error = queryError }; return false; }
+			string rawSchemaUId = variants[0]["UId"]?.ToString();
 			if (string.IsNullOrWhiteSpace(rawSchemaUId)) { response = new PageUpdateResponse { Success = false, Error = $"Schema '{schemaName}' metadata is missing UId" }; return false; }
 			if (_hierarchyClient == null) {
 				context = new EditableSchemaContext {
@@ -1367,7 +1429,11 @@
 				return true;
 			}
 			if (!TryGetDesignPackageUId(rawSchemaUId, schemaName, out string designPackageUId, out response)) return false;
-			if (!TryGetHierarchy(rawSchemaUId, designPackageUId, schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out response)) return false;
+			// The design package above stays resolved from the lookup row, as before this change; only the chain
+			// read moves to the root. No row marked as the root: read from the lookup row, and the package-choice
+			// check re-reads from the root it finds in that chain, as before.
+			string hierarchyAnchorUId = PageHierarchyChain.FindRootVariantUId(variants) ?? rawSchemaUId;
+			if (!TryGetHierarchy(hierarchyAnchorUId, designPackageUId, schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out response)) return false;
 			PageDesignerHierarchySchema head = hierarchy[0];
 			PageSchemaType pageSchemaType = PageSchemaTypeExtensions.FromNumericValue(head.SchemaType);
 			string rootUId = PageHierarchyChain.FindRootSchemaUId(hierarchy, schemaName);
@@ -1403,6 +1469,7 @@
 				SchemaType = pageSchemaType,
                 ResolvedHierarchy = isCreateReplacing ? null : hierarchy,
 				ResolutionHierarchy = hierarchy,
+				ResolutionHierarchyAnchorUId = hierarchyAnchorUId,
 				RawSchemaUId = rawSchemaUId
 			};
 			response = null;
@@ -1427,9 +1494,9 @@
 			return false;
 		}
 
-		private bool TryGetHierarchy(string rawSchemaUId, string designPackageUId, string schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out PageUpdateResponse response) {
+		private bool TryGetHierarchy(string anchorSchemaUId, string designPackageUId, string schemaName, out IReadOnlyList<PageDesignerHierarchySchema> hierarchy, out PageUpdateResponse response) {
 			try {
-				hierarchy = _hierarchyClient.GetParentSchemas(rawSchemaUId, designPackageUId);
+				hierarchy = _hierarchyClient.GetParentSchemas(anchorSchemaUId, designPackageUId);
 			} catch (Exception ex) {
 				hierarchy = null;
 				response = new PageUpdateResponse { Success = false, Error = PageHierarchyRecoveryHint.Append($"Failed to load hierarchy for '{schemaName}': {ex.Message}") };
@@ -1459,8 +1526,16 @@
 			/// </summary>
 			public IReadOnlyList<PageDesignerHierarchySchema> ResolutionHierarchy { get; set; }
 
-			/// <summary>The UId the page name resolved to, the anchor the chain was read from.</summary>
+			/// <summary>
+			/// The UId the page name resolved to (any variant); the design package is resolved from it.
+			/// </summary>
 			public string RawSchemaUId { get; set; }
+
+			/// <summary>
+			/// The UId <see cref="ResolutionHierarchy"/> was read from: the root variant when the name lookup marked
+			/// one, else <see cref="RawSchemaUId"/>.
+			/// </summary>
+			public string ResolutionHierarchyAnchorUId { get; set; }
 			public string SchemaName { get; set; }
 			public string EditableSchemaUId { get; set; }
 			public string DesignPackageUId { get; set; }
@@ -1566,15 +1641,18 @@
 			return true;
 		}
 
-		private bool TryGetSchema(string schemaUId, out JObject schema, out string error) {
+		private bool TryGetSchema(string schemaUId, out JObject schema, out string error, bool recordRefusal = true) {
 			var request = new JObject {
 				["schemaUId"] = schemaUId,
 				["useFullHierarchy"] = false
 			};
 			string url = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema);
-			string json = _applicationClient.ExecutePostRequest(url, request.ToString(Formatting.None));
-			var response = JObject.Parse(json);
+			(JObject response, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(_applicationClient,
+				url, request.ToString(Formatting.None), recordRefusal);
 			if (!(response["success"]?.Value<bool>() ?? false) || response["schema"] is not JObject loaded) {
+				if (recordRefusal) {
+					SiteResponseCapture.RecordRefusal(answer);
+				}
 				schema = null;
 				error = response["errorInfo"]?["message"]?.ToString() ?? $"Failed to load schema '{schemaUId}'";
 				return false;
@@ -1629,14 +1707,18 @@
 		private bool TrySaveSchema(JObject schemaToSave, PageUpdateOptions options, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
 			options.SaveOutcomeUnknown = true;
-			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
-			var saveResponse = JObject.Parse(saveJson);
+			// The save is the only write an update-page call sends: everything before it reads, the cache reset
+			// and the checksum read run only after it succeeded, and a refused save ends the call. So its refusal
+			// is recorded as the refusal of the call's sole write.
+			(JObject saveResponse, SiteHttpResponse answer) = PageSchemaMetadataHelper.PostDesignerRequest(
+				_applicationClient, saveUrl, schemaToSave.ToString(Formatting.None), soleWrite: true);
 			options.SaveOutcomeUnknown = false;
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
 				TryResetScriptCache();
 				response = null;
 				return true;
 			}
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, PageSchemaMetadataHelper.DesignerRequestAttempts);
 			response = new PageUpdateResponse {
 				Success = false,
 				Error = BuildSaveErrorMessage(saveResponse)

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using Clio.Command;
 using Clio.Common;
@@ -197,6 +198,38 @@ public class GetPkgListCommandTests {
 		_logger.DidNotReceive().WriteLine(Arg.Is<string>(s => s != null && s.Contains("schemaVersion")));
 		_jsonResponseFormater.DidNotReceive().FormatEnvelope(Arg.Any<string>(),
 			Arg.Any<System.Collections.Generic.IEnumerable<PackageInfo>>());
+	}
+
+	[Test]
+	[Description("Execute non-JSON should render a Type column with Assembly for an assembly package and leave it empty when the type is unknown")]
+	public void Execute_ShouldRenderTypeColumn_WhenNonJson() {
+		// Arrange
+		var settings = new EnvironmentSettings { Uri = "https://example-host" };
+		var command = new GetPkgListCommand(settings, _packageListProvider, _jsonResponseFormater, _logger);
+		var assembly = new PackageInfo(
+			new Clio.Package.PackageDescriptor {
+				Name = "AsmPkg", PackageVersion = "1.0.0", Maintainer = "Acme",
+				Type = Clio.Package.PackageType.Assembly, ProjectPath = "Files/AsmPkg.csproj"
+			},
+			"path", new System.Collections.Generic.List<string>());
+		var unknown = new PackageInfo(
+			new Clio.Package.PackageDescriptor { Name = "OldPkg", PackageVersion = "1.0.0", Maintainer = "Acme" },
+			"path", new System.Collections.Generic.List<string>()) { IsTypeKnown = false };
+		_packageListProvider.GetPackages().Returns(new[] { assembly, unknown });
+
+		// Act
+		int result = command.Execute(new PkgListOptions());
+
+		// Assert
+		result.Should().Be(0, because: "listing succeeds");
+		string table = _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+			.Select(call => call.GetArguments()[0] as string)
+			.Single(text => text != null && text.Contains("AsmPkg"));
+		table.Should().Contain("Type", because: "the table has a Type column");
+		table.Should().Contain("Assembly", because: "an assembly package is shown as Assembly");
+		table.Should().Contain("OldPkg", because: "a package with an unknown type is still listed");
+		table.Should().NotContain("General", because: "an unknown type is shown empty, not as an ordinary package");
 	}
 
 	[Test]

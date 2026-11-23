@@ -178,6 +178,11 @@ internal sealed class CreatioClientTransport : ICreatioClientTransport {
 		Client.ExecuteDeleteRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
 
 	/// <inheritdoc />
+	public Task<HttpResponseMessage> ExecuteDeleteRequestAsync(string url, string requestData, int requestTimeout,
+		int maxAttempts, int delaySec, CancellationToken cancellationToken) =>
+		Client.ExecuteDeleteRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec, cancellationToken);
+
+	/// <inheritdoc />
 	public string ExecuteGetRequest(string url, int requestTimeout, int maxAttempts, int delaySec) =>
 		Client.ExecuteGetRequest(url, requestTimeout, maxAttempts, delaySec);
 
@@ -190,6 +195,11 @@ internal sealed class CreatioClientTransport : ICreatioClientTransport {
 	public string ExecutePatchRequest(string url, string requestData, int requestTimeout, int maxAttempts,
 		int delaySec) =>
 		Client.ExecutePatchRequest(url, requestData, requestTimeout, maxAttempts, delaySec);
+
+	/// <inheritdoc />
+	public Task<HttpResponseMessage> ExecutePatchRequestAsync(string url, string requestData, int requestTimeout,
+		int maxAttempts, int delaySec, CancellationToken cancellationToken) =>
+		Client.ExecutePatchRequestAsync(url, requestData, requestTimeout, maxAttempts, delaySec, cancellationToken);
 
 	/// <inheritdoc />
 	public string ExecutePostRequest(string url, string requestData, int requestTimeout, int maxAttempts,

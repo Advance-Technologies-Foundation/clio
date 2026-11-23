@@ -314,9 +314,13 @@ namespace Clio.Command;
 // cut (ENG-106378), never this work; 1.6.6.174 to 1.6.6.177 and 1.6.6.180 were cuts of this work that were never
 // released, and 1.6.6.178, 1.6.6.179 and 1.6.6.181 to 1.6.6.185 were cut on the dynamic-case branches; this cut
 // includes 1.6.6.185 (master bundles it).
+// Raised to 1.6.6.187 by ENG-91849 for the Timer start element: the `timerStart` element type, its `timer` block and the
+// `setTimer` operation. An older server from 1.6.6.136 refuses all three as undeclared keys, in a message that does not
+// say an update cures it; the literal turns that into the install hint before anything is sent. This cut includes
+// 1.6.6.186 (master bundles it).
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.186",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.187",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
@@ -394,7 +398,28 @@ public sealed class CreateBusinessProcessService(
 		string requestBody = new JsonObject { ["request"] = descriptor }.ToJsonString();
 		logger.WriteInfo($"Building process '{descriptor["name"]}' on '{environmentName}'...");
 
-		string responseBody = client.ExecutePostRequest(url, requestBody);
+		SiteHttpResponse answer = SiteCall.Post(client, url, requestBody, maxAttempts: BuildProcessAttempts);
+		if (answer.IsRefusedWithoutProcessing) {
+			// Before the envelope is parsed: such an answer has no envelope (its body is empty, a page or plain text),
+			// and a refusal status with no answer of the application proves BuildProcess did not run.
+			SiteResponseCapture.RecordRefusalOfSoleWrite(answer, BuildProcessAttempts);
+			throw new InvalidOperationException($"The environment refused BuildProcess without processing it (HTTP "
+				+ $"{answer.StatusCode}), so the process was NOT created. Check the request's method, size, URL and media type.");
+		}
+		try {
+			return ReadBuildProcessAnswer(answer.Body);
+		}
+		catch (InvalidOperationException) {
+			// Every refusal below is this answer failing the call, so it is what the tool reports as the site's.
+			SiteResponseCapture.RecordRefusal(answer);
+			throw;
+		}
+	}
+
+	// BuildProcess is sent once and never retried: a retry after a timeout could create the process twice.
+	private const int BuildProcessAttempts = 1;
+
+	private static CreateBusinessProcessResult ReadBuildProcessAnswer(string responseBody) {
 		// The response is parsed inside a try, for the reason ParseOperations just below parses the REQUEST inside
 		// one: a body that is not this envelope makes JsonSerializer throw a message built for a developer — a
 		// .NET type name and a byte offset — and this one reaches an agent, which cannot act on it. Worse, it

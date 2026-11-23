@@ -57,7 +57,8 @@ public interface IRecordDeletionService {
 /// <param name="ServerDetail">The server's inner message, fenced as untrusted text; often the real reason.</param>
 /// <param name="Attempted">Whether the request entered the transport.</param>
 /// <param name="Received">Whether a response came back.</param>
-public sealed record RecordDeleteOutcome(bool Success, string Error, string ServerDetail, bool Attempted, bool Received);
+public sealed record RecordDeleteOutcome(bool Success, string Error, string ServerDetail, bool Attempted, bool Received,
+	SiteResponse SiteResponse = null);
 
 /// <summary>Rows of one entity that reference a record through one lookup column.</summary>
 public sealed record ReferencingRows(
@@ -147,12 +148,13 @@ internal sealed class RecordDeletionService(
 		try {
 			string url = serviceUrlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id));
 			attempted = true;
-			string response = applicationClient.ExecuteDeleteRequest(url, string.Empty, Math.Max(1, timeoutMs));
+			SiteHttpResponse answer = SiteCall.Delete(applicationClient, url, string.Empty, Math.Max(1, timeoutMs));
 			received = true;
-			string error = ODataKeyedWrite.ValidateWriteResponse(response);
+			string error = ODataKeyedWrite.ValidateWriteResponse(answer);
 			return error is null
 				? new RecordDeleteOutcome(true, null, null, attempted, received)
-				: new RecordDeleteOutcome(false, error, ReadInnerMessage(response), attempted, received);
+				: new RecordDeleteOutcome(false, error, ReadInnerMessage(answer.Body), attempted, received,
+					SiteResponse.FromRefusal(answer));
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			return new RecordDeleteOutcome(false, SensitiveErrorTextRedactor.Redact(exception.Message), null, attempted,

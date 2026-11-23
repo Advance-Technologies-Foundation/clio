@@ -25,6 +25,10 @@ fixed after the fact, so the arm has to be in the clio release that precedes it.
 never the alias (`ElementTypes.ProcessFile`, package source). The three data-ids (`ObjectFileProcessingUserTask`,
 `ProcessFileProcessingUserTask`, `ReportFileProcessingUserTask`) end in the suffix and need no entry.
 
+ENG-91849 added `"timerstart"`, the Timer start's build token (CrtProcessBuilder 1.6.6.187), to the
+`starteventtimer` arm: every start token is an exact match (no prefix or suffix arm covers starts, `signalstart` has
+its own entry too), so a start token the table does not list resolves to `Unknown`.
+
 **Why it is this way** — two vocabularies meet here. The canvas emits camelCase data-ids; create,
 modify and `describe`'s `buildType` use lowercase collapsed tokens. `ResolveDataId` is deliberately
 the one place that accepts both, so the validate → build → describe loop round-trips whichever

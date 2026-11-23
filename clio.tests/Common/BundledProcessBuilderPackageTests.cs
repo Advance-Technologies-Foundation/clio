@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using Clio.Project.NuGet;
 using FluentAssertions;
@@ -70,19 +72,15 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>58abfb5b</c>,
-	/// tagged <c>crtprocessbuilder-1.6.6.186</c>; the stamp is its child <c>fc736c90</c>): branch
-	/// <c>feature/ENG-96034-send-chat-message</c> with <c>main</c> merged in at 1.6.6.185 (<c>4f8fc389</c>), so the cut
-	/// carries everything 1.6.6.185 carries - the cut master bundles before this one, from producing commit
-	/// <c>34e0204b</c>, whose package sources differ from main's <c>31cf9f09</c> only by <c>descriptor.json</c> - and the
-	/// Send chat message element.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>a9afdfae</c>, the
+	/// compile-marker restamp on top of <c>main</c> <c>8a4a02c9</c>, tagged <c>crtprocessbuilder-1.6.6.192</c>;
+	/// the stamp is its child <c>e8f23840</c>). <c>main</c> there carries the 1.6.6.191 cut master bundles before this one
+	/// and the ProcessBuildHandler refactor of ENG-106980, so the cut carries everything 1.6.6.191 carries and that refactor.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit carries the restamped compile
-	/// marker, the script stamped the package descriptor to 1.6.6.186 and packed that commit with it overlaid (407
-	/// entries), and the stamp was committed after it as the child commit <c>fc736c90</c>.
-	/// 1.6.6.186 is the first number above every cut in both histories (1.6.6.174 to 1.6.6.177 and 1.6.6.180 were earlier
-	/// cuts of the chat work, superseded before release; 1.6.6.178, 1.6.6.179 and 1.6.6.181 to 1.6.6.185 were cut on the
-	/// dynamic-case branches), and whichever
-	/// package branch lands after this one restamps above it.
+	/// marker, the script stamped the package descriptor to 1.6.6.192 and packed that commit with it overlaid (453
+	/// entries), and the stamp was committed after it as the child commit <c>e8f23840</c>.
+	/// 1.6.6.192 is the first number above every cut in both histories, and whichever package branch lands after this
+	/// one restamps above it.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -95,25 +93,20 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.185, the cut master bundles (ENG-96034): the Send chat message element -
-	/// the <c>sendChatMessage</c> element type and its <c>chatMessage</c> block (<c>SendChatMessageDescriptor</c>, read
-	/// back as <c>DescribeSendChatMessageInfo</c>) on build, addElement and setElement, the refusal of the generic userTask
-	/// route naming <c>SendChatMessageUserTask</c>, and the raw-mapping guard on the block-owned chat parameters. It also
-	/// changes stored values beyond the chat element: a <c>[#Lookup…#]</c> macro accepted in column values is stored
-	/// canonical (the name or replacing-schema segment becomes the object's root schema UId, lower case, with a "stored
-	/// as" notice) on <c>changeData.values</c>, <c>addData.values</c>, <c>openEditPage.defaultValues</c> and
-	/// <c>chatMessage.columnValues</c>, and describe reads that canonical text back. The service surface is unchanged from
-	/// 1.6.6.185 - 11 operations, 6 design-gate call sites and three case-gate call sites, counted in the shipped archive
-	/// by the guards below (the entries were not re-audited against the producing commit for this cut). The create,
-	/// modify and modify-as-new-version floors move to 1.6.6.186, because an older server refuses the new type and block
-	/// as undeclared keys; the dynamic-case floors stay as master set them (<c>create-dynamic-case</c> 1.6.6.179, the case
-	/// describe and modify tools 1.6.6.185). What 1.6.6.185 itself carried (records per stage, the stage value rename,
-	/// every confirmation asked once) and what earlier cuts carried is in this file's git history.
+	/// <para>What this cut carries over 1.6.6.191, the cut master bundles: the build path of <c>BuildProcess</c> is
+	/// refactored with NO behaviour change - <c>ProcessBuildHandler</c> keeps the gate, the request checks, the draft,
+	/// the save and the post-save notices, and the steps between the draft and the save run in a build pipeline, two
+	/// content services and a registry of element-block adapters. The order of the passes, every refusal, every notice
+	/// and the response are pinned by the package's characterization test. No wire name or shape moved, and the service
+	/// surface is unchanged from 1.6.6.191 - 11 operations, 6 design-gate call sites and three case-gate call sites,
+	/// counted in the shipped archive by the guards below. No floor moves: clio neither depends on nor advertises
+	/// anything new. What earlier cuts carried is in this file's git history.
 	/// </para>
 	/// <para>
-	/// The package suite ran on the sources of this cut, not carried over from a previous one: 6761 passed, 0 failed, on
-	/// the merge commit <c>4f8fc389</c>, which differs from the producing commit only by the compile-marker stamp.
-	/// <c>dev-n8</c> was NOT run, because the cutting host has no net-core reference set.
+	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7310 passed, 0 failed, on
+	/// <c>dev-nf</c> on the producing commit (by the script). <c>dev-n8</c> ran by hand on the same source tree - the
+	/// refactor's last commit, which the producing commit carries unchanged apart from the compile-marker stamp: 7310
+	/// passed, 0 failed.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
@@ -195,7 +188,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"DC6403C0C0679E42DD71A9D73474E2AC2EC68D6E1C00D3DA18A56A9D6E421056";
+		"03617C50B17B82CC9E4A10C89585B3476ECFDDE9B1373C1D2D49F729EC684D44";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -223,7 +216,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.186";
+	private const string ExpectedArchiveVersion = "1.6.6.192";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -235,7 +228,11 @@ public class BundledProcessBuilderPackageTests {
 	/// carries the pinned version and stamp. 1.6.6.162 and 1.6.6.165 are script cuts: each names the marker-restamp
 	/// commit, and the version and stamp come from the descriptor restamp the script wrote, committed right after.
 	/// 1.6.6.171 is a hand cut from the stamp commit again, and 1.6.6.172, 1.6.6.173, 1.6.6.179, 1.6.6.180, 1.6.6.184,
-	/// 1.6.6.185 and 1.6.6.186 are script cuts.
+	/// 1.6.6.185 and 1.6.6.186 are script cuts. 1.6.6.188 (<c>7510a0dd</c>), 1.6.6.189 (<c>ddba99a8</c>) and 1.6.6.190 (<c>1f5cc5a4</c>),
+	/// which reached only a test stand, 1.6.6.191 and 1.6.6.192 are script cuts naming the marker restamp. 1.6.6.187 is a hand cut from the stamp commit, re-cut at the same
+	/// number from the package's restamp <c>632e1f22</c> (after the gate-1 fixes, the noJob and misfire follow-ups,
+	/// the check of kept timers before a modify save or an activation, the gate-3 fixes and the core-reuse changes, stored dates read as the scheduler reads them and the fixes of their review, the leading-zero nW / L-nW refusal, and the second review round (the held-trigger kept-timer check, an echoed once start, the shifted year step); both <c>ModifiedOnUtc</c> values moved). The earlier cuts,
+	/// <c>50784731</c>, <c>b282c77d</c>, <c>a1b02353</c>, <c>7c14a526</c>, <c>24e2dfbb</c>, <c>4f338365</c>, <c>1313a72c</c>, <c>6ed95468</c>, <c>41aa113f</c>, <c>13ab3dc4</c> and <c>e0e6d48c</c>, reached only the author's own test stands.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -243,7 +240,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "58abfb5bbf0eb776c3de12733f4e6d1340a90384";
+	private const string ExpectedProducingCommit = "a9afdfaec03bd8a35ac1557a069a3f08bef2474c";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -269,7 +266,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794936864000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795436028000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -284,7 +281,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794936769000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795435838000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
@@ -1802,6 +1799,59 @@ public class BundledProcessBuilderPackageTests {
 				because: $"DescribedChatMessage reads '{member}'");
 		}
 	}
+
+	[Test]
+	[Description("clio checks the timer block's keys and walks setTimer before sending them, TYPES the describe block with its scheduler state, and its create, modify and modify-as-new-version floors are a version number only: a later cut from a package tree that lacks the Timer start sources would satisfy that number while refusing the block. This probes the archive for every timer wire name clio sends, each on its NAMED type, and holds the describe DTOs' own JSON names equal to the server's DataMember names (TC-U-20).")]
+	public void BundledArchive_ShouldDeclareTheTimerStartWireNamesClioReads() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+		string[] writeMembers = [
+			"schedule", "every", "at", "fromHour", "toHour", "daysOfWeek", "dayOfMonth", "weekday", "workday", "month",
+			"cron", "start", "end", "timeZone", "repeatOnMisfire"
+		];
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "ProcessElementDescriptor", "timer").Should().BeTrue(
+			because: "create-business-process and addElement send the block on this member");
+		DeclaresMemberOn(archive, "ProcessOperationDescriptor", "timer").Should().BeTrue(
+			because: "setTimer sends the block on this member");
+		DeclaresMemberOn(archive, "ProcessElementUpdateDescriptor", "timer").Should().BeFalse(
+			because: "setElement does not carry the block; clio points a setElement timer to setTimer");
+		archive.Should().Contain("SetTimer = \"setTimer\"",
+			because: "the operation token clio walks and advertises must be the one the package dispatches");
+		archive.Should().Contain("TimerStart = \"timerstart\"",
+			because: "ManagerMap resolves this build token, and the contracts advertise it as timerStart");
+		DeclaresMemberOn(archive, "DescribeProcessElement", "timer").Should().BeTrue(
+			because: "DescribedElement.Timer reads the block off this member");
+		foreach (string member in writeMembers) {
+			DeclaresMemberOn(archive, "ProcessTimerDescriptor", member).Should().BeTrue(
+				because: $"the timer key set sends '{member}'");
+		}
+		foreach (string member in new[] { "position", "day" }) {
+			DeclaresMemberOn(archive, "ProcessTimerWeekdayDescriptor", member).Should().BeTrue(
+				because: $"the timer weekday key set sends '{member}'");
+		}
+		// The describe DTOs are read off their own [JsonPropertyName]s, not a hand copy: a misspelt name would push the
+		// value into the overflow bag, where it still round-trips to the caller while the typed property - which
+		// ProcessDigest reads - stays null, and nothing else would notice.
+		JsonWireNames<DescribedTimer>().Should().BeEquivalentTo(
+			BundledProcessBuilderSource.DataMemberNames(archive, "DescribeTimerInfo"),
+			because: "DescribedTimer declares exactly the members the server's DescribeTimerInfo emits");
+		JsonWireNames<DescribedTimerWeekday>().Should().BeEquivalentTo(
+			BundledProcessBuilderSource.DataMemberNames(archive, "ProcessTimerWeekdayDescriptor"),
+			because: "DescribedTimerWeekday declares exactly the members of the weekday describe emits");
+		JsonWireNames<DescribedTimerSchedule>().Should().BeEquivalentTo(
+			BundledProcessBuilderSource.DataMemberNames(archive, "DescribeTimerScheduleState"),
+			because: "DescribedTimerSchedule declares exactly the members the server's scheduler state emits");
+		JsonWireNames<DescribedTimer>().Should().Contain(writeMembers,
+			because: "every write member reads back in its write shape");
+	}
+
+	// The [JsonPropertyName] of every property of a describe DTO; the [JsonExtensionData] bag has none.
+	private static IReadOnlyList<string> JsonWireNames<T>() =>
+		[.. typeof(T).GetProperties()
+			.Select(property => property.GetCustomAttribute<System.Text.Json.Serialization.JsonPropertyNameAttribute>()?.Name)
+			.Where(name => name is not null)];
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector

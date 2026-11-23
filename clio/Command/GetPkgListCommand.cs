@@ -88,20 +88,25 @@ namespace Clio.Command
 
 		#region Methods: Private
 
-		private static string[] CreateRow(string nameColumn, string versionColumn, string maintainerColumn) {
-			return new[] { nameColumn, versionColumn, maintainerColumn };
+		private static string[] CreateRow(string nameColumn, string versionColumn, string maintainerColumn,
+				string typeColumn) {
+			return new[] { nameColumn, versionColumn, maintainerColumn, typeColumn };
 		}
 
 		private static string[] CreateEmptyRow() {
-			return CreateRow(string.Empty, string.Empty, string.Empty);
+			return CreateRow(string.Empty, string.Empty, string.Empty, string.Empty);
 		}
+
+		private static string FormatType(PackageInfo package) =>
+			package.IsTypeKnown ? package.Descriptor.Type.ToString() : string.Empty;
 
 		private void PrintPackageList(IEnumerable<PackageInfo> packages) {
 			IList<string[]> table = new List<string[]>();
-			table.Add(CreateRow("Name", "Version", "Maintainer"));
+			table.Add(CreateRow("Name", "Version", "Maintainer", "Type"));
 			table.Add(CreateEmptyRow());
 			foreach (PackageInfo pkg in packages) {
-				table.Add(CreateRow(pkg.Descriptor.Name, pkg.Descriptor.PackageVersion, pkg.Descriptor.Maintainer));
+				table.Add(CreateRow(pkg.Descriptor.Name, pkg.Descriptor.PackageVersion, pkg.Descriptor.Maintainer,
+					FormatType(pkg)));
 			}
 			_logger.WriteLine();
 			_logger.WriteInfo(TextUtilities.ConvertTableToString(table));

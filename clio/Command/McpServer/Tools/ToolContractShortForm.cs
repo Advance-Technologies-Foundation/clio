@@ -93,7 +93,7 @@ internal static class ToolContractShortForm {
 	/// beside it, since that pairing is what a caller cannot guess.
 	/// </summary>
 	internal static readonly IReadOnlyList<string> CreateElementBlockShape = [
-		"signal (signalStart)", "readData", "changeData", "addData", "deleteData", "accessRights (changeAccessRights)",
+		"signal (signalStart)", "timer (timerStart)", "readData", "changeData", "addData", "deleteData", "accessRights (changeAccessRights)",
 		"email (sendEmail)", "performer (performTask)", "approval", "openEditPage", "preconfiguredPage",
 		"formula (formulaTask)", "subProcess", "scriptTask", "fileProcessing", "webService",
 		"chatMessage (sendChatMessage)"
@@ -141,6 +141,7 @@ internal static class ToolContractShortForm {
 		"setFilter {elementName, filter}",
 		"clearFilter {elementName}",
 		"setSignal {elementName, signal}",
+		"setTimer {elementName, timer}",
 		"setElement {elementName, elementUpdate}",
 		"setConnections {elementName, connections}",
 		"clearConnections {elementName, connections}",

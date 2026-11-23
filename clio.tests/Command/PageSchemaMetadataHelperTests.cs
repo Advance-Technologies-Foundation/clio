@@ -148,4 +148,39 @@ public sealed class PageSchemaMetadataHelperTests
 		row.Should().BeNull(because: "a failed query cannot yield a row");
 		error.Should().Be("Failed to query schema metadata", because: "the caller needs a stable error message to degrade gracefully");
 	}
+
+	[Test]
+	[Description("QuerySysSchemaRow asks for one row and returns the first one, so get-page and get-page-hierarchy keep reading a single name-lookup row (ENG-106817).")]
+	public void QuerySysSchemaRow_ShouldAskForOneRowAndReturnTheFirst_WhenRowsComeBack() {
+		// Arrange
+		string capturedRequest = null;
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Do<string>(r => capturedRequest = r))
+			.Returns("""{"success": true, "rows": [{"UId": "first"}, {"UId": "second"}]}""");
+
+		// Act
+		(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+			_applicationClient, _serviceUrlBuilder, "UsrPage", ("UId", "UId"));
+
+		// Assert
+		error.Should().BeNull(because: "a query that returns rows must not produce an error");
+		row["UId"]?.ToString().Should().Be("first", because: "the single-row lookup returns the first row it gets");
+		JObject.Parse(capturedRequest)["rowCount"]?.Value<int>().Should().Be(1,
+			because: "the single-row lookup must keep asking the server for one row only");
+	}
+
+	[Test]
+	[Description("QuerySysSchemaRow returns no row and a not-found error naming the schema when no row comes back.")]
+	public void QuerySysSchemaRow_ShouldReturnNotFound_WhenNoRowComesBack() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns("""{"success": true, "rows": []}""");
+
+		// Act
+		(JToken row, string error) = PageSchemaMetadataHelper.QuerySysSchemaRow(
+			_applicationClient, _serviceUrlBuilder, "UsrPage", ("UId", "UId"));
+
+		// Assert
+		row.Should().BeNull(because: "no row exists for the requested name");
+		error.Should().Be("Schema 'UsrPage' not found", because: "the caller reports which page name was not found");
+	}
 }
