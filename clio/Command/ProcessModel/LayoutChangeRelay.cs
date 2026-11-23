@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
+using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
 
@@ -35,12 +36,21 @@ public sealed class LayoutChangeRelay {
 	/// <remarks>
 	/// Omitted rather than left empty, because "Affected elements: ." reads as a truncated message and sends a
 	/// reader looking for what was cut off.
+	/// <para>The names are the server's: each is redacted as the site's text, because the clause follows the
+	/// server's redacted sentence into the error and the log. A server that named elements whose names all redact to
+	/// nothing, or to placeholders and punctuation only (<see cref="SensitiveErrorTextRedactor.IsPlaceholderOnly"/>), gets
+	/// no clause either, for the same reason as an empty list.</para>
 	/// </remarks>
 	/// <returns>The clause to append, already separated from what precedes it.</returns>
-	public string ElementsClause() =>
-		Elements is { Count: > 0 }
-			? $" Affected elements: {string.Join(", ", Elements.Where(name => !string.IsNullOrWhiteSpace(name)))}."
-			: string.Empty;
+	public string ElementsClause() {
+		if (Elements is not { Count: > 0 }) {
+			return string.Empty;
+		}
+		string[] names = Elements.Select(ProcessDesignServerFault.SiteText)
+			.Where(name => !SensitiveErrorTextRedactor.IsPlaceholderOnly(name)).ToArray();
+		bool allRedactedAway = names.Length == 0 && Elements.Any(name => !string.IsNullOrWhiteSpace(name));
+		return allRedactedAway ? string.Empty : $" Affected elements: {string.Join(", ", names)}.";
+	}
 
 	/// <summary>
 	/// What clio adds to the server's own sentence when it relays an in-place layout refusal: the elements, and

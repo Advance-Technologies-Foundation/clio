@@ -358,18 +358,20 @@
 		/// </summary>
 		private void Fail(string packageName, int? buildResult, IEnumerable<PackageBuildDiagnostic> diagnostics,
 			string errorMessage, string rawHistoryErrors) {
+			// Everything the environment wrote - the diagnostics, the raw history payload and the build's message - takes
+			// the site-text redaction here, where it becomes a log line or the exception's message: compile-creatio and
+			// push-workspace return both, and a stdio log is not redacted again.
 			List<PackageBuildDiagnostic> errors = diagnostics.Where(diagnostic => !diagnostic.IsWarning).ToList();
 			foreach (PackageBuildDiagnostic diagnostic in errors) {
-				_logger.WriteError(diagnostic.ToString());
+				_logger.WriteError(diagnostic.WithSiteTextRedacted().ToString());
 			}
 			if (errors.Count == 0 && !string.IsNullOrWhiteSpace(rawHistoryErrors)) {
 				// The history payload was not in the expected shape; show it as it came rather than lose it.
-				_logger.WriteError(rawHistoryErrors);
+				_logger.WriteError(SensitiveErrorTextRedactor.RedactSiteText(rawHistoryErrors));
 			}
 			string resultPart = buildResult is { } value ? $" (build result {value})" : string.Empty;
-			string messagePart = string.IsNullOrWhiteSpace(errorMessage)
-				? string.Empty
-				: $" Creatio reported: {errorMessage.Trim().TrimEnd('.')}.";
+			string reported = SensitiveErrorTextRedactor.RedactSiteText(errorMessage).Trim().TrimEnd('.');
+			string messagePart = reported.Length == 0 ? string.Empty : $" Creatio reported: {reported}.";
 			throw new PackageCompilationException(
 				$"Package compilation failed for '{packageName}'{resultPart}.{messagePart} The new code was not "
 				+ "loaded: the environment keeps running the previous build until the errors are fixed and the "
@@ -441,7 +443,8 @@
 				//terminal has no reader and makes an ordinary platform failure read as clio malfunctioning.
 				//The extension picks the carrier's ConsoleMessage instead (PR #1374 review).
 				_logger.WriteWarning(
-					$"Could not read the compilation history baseline: {exception.GetReadableMessageException()}");
+					$"Could not read the compilation history baseline: "
+					+ SensitiveErrorTextRedactor.RedactSiteText(exception.GetReadableMessageException()));
 				return null;
 			}
 		}
@@ -570,8 +573,54 @@
 				return;
 			}
 			endMonitoring();
-			throw new InvalidOperationException("Package compilation could not be monitored", pollFault);
+			throw new InvalidOperationException("Package compilation could not be monitored",
+				WithSiteRedactedServerText(pollFault));
 		}
+
+		/// <summary>
+		/// The poll fault with the environment's text in it site-redacted, and clio's own sentences kept.
+		/// </summary>
+		/// <remarks>
+		/// The poller's give-up chains the ATF data provider's failure (<see cref="DataProviderFailureException"/>, from
+		/// <c>ClassifyingDataProvider</c>, a follow-up reader). Its message and its console text end with the quote of the
+		/// environment's answer through the general redaction only (<see cref="ServerReportedFailureText"/>), so a
+		/// database sign-in in that answer reached compile-package's error line. The chain is rebuilt with only that
+		/// quote site-redacted: the give-up's elapsed time and window and the failed read's operation stay as written.
+		/// A failure whose text does not end with the quote holds no server text there (a non-JSON page, a missing
+		/// response) and keeps it; its server excerpt, shown at debug, is site-redacted either way.
+		/// </remarks>
+		/// <param name="fault">The exception the poll thread ended with.</param>
+		/// <returns>The rebuilt chain, or <paramref name="fault"/> when it carries no data provider failure.</returns>
+		internal static Exception WithSiteRedactedServerText(Exception fault) {
+			List<Exception> links = [];
+			for (Exception link = fault; link is not null; link = link.InnerException) {
+				links.Add(link);
+				if (link is DataProviderFailureException) {
+					break;
+				}
+			}
+			if (links[^1] is not DataProviderFailureException { ServerDetail: { } detail } carrier) {
+				return fault;
+			}
+			string siteDetail = SensitiveErrorTextRedactor.RedactSiteText(detail);
+			Exception rebuilt = new DataProviderFailureException(
+				SiteQuoted(carrier.Message, UntrustedText.Fenced(detail), UntrustedText.FencedSiteText(detail)),
+				carrier.InnerException, siteDetail) {
+				ConsoleMessage = SiteQuoted(carrier.ConsoleMessage, UntrustedText.ForConsole(detail),
+					UntrustedText.ForConsole(siteDetail))
+			};
+			for (int index = links.Count - 2; index >= 0; index--) {
+				rebuilt = new InvalidOperationException(links[index].Message, rebuilt);
+			}
+			return rebuilt;
+		}
+
+		// The composed text ends with the quote of the server's detail: only that end is swapped for its site-redacted
+		// form, so the sentence before it is never redacted a second time.
+		private static string SiteQuoted(string composed, string quoted, string siteQuoted) =>
+			quoted is not null && composed.EndsWith(quoted, StringComparison.Ordinal)
+				? composed[..^quoted.Length] + (siteQuoted ?? "[redacted]")
+				: composed;
 
 		/// <summary>
 		/// Ends a compile that ran out of budget: as a failure when the history already showed a compile

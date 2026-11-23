@@ -1654,7 +1654,12 @@
 					SiteResponseCapture.RecordRefusal(answer);
 				}
 				schema = null;
-				error = response["errorInfo"]?["message"]?.ToString() ?? $"Failed to load schema '{schemaUId}'";
+				// The designer's message is the site's text: redacted here, where it is read, because update-page puts
+				// it into error and the persisted-key rescue into a warning and a log line. clio's fallback is not.
+				string siteMessage = response["errorInfo"]?["message"]?.ToString();
+				error = string.IsNullOrWhiteSpace(siteMessage)
+					? $"Failed to load schema '{schemaUId}'"
+					: SensitiveErrorTextRedactor.RedactSiteText(siteMessage);
 				return false;
 			}
 			schema = loaded;

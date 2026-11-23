@@ -152,20 +152,20 @@ public sealed class BuildCaseClient(
 		try {
 			root = JsonNode.Parse(responseBody);
 		} catch (JsonException) {
-			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, Cap(responseBody));
+			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, SiteDetail(responseBody));
 		}
 		if (root is not JsonObject envelope || envelope[envelopeName] is not JsonObject result) {
 			string serverText = ProcessDesignServerFault.ReadServerText(responseBody);
 			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null,
-				serverText ?? Cap(responseBody));
+				serverText ?? SiteDetail(responseBody));
 		}
 		try {
 			TResponse response = result.Deserialize<TResponse>(JsonOptions);
 			return response is null
-				? new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, Cap(responseBody))
+				? new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, SiteDetail(responseBody))
 				: new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.Envelope, response, null);
 		} catch (JsonException) {
-			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, Cap(responseBody));
+			return new DynamicCaseReply<TResponse>(DynamicCaseReplyKind.NotAnEnvelope, null, SiteDetail(responseBody));
 		}
 	}
 
@@ -190,6 +190,14 @@ public sealed class BuildCaseClient(
 		}
 		return false;
 	}
+
+	// A body the site answered with, quoted back: it is the site's text, so it takes the site-text redaction, in
+	// master's order (option B): master quoted Cap(responseBody), so master's 400-character cap runs first, exactly where
+	// master made it, and RedactSiteText reads what master quoted, "..." included; its end-of-text rules take what the
+	// cap left open ("for user 'zq inv...", a JWT's first segments). No clamp of clio's own runs before the chain. Every
+	// dynamic-case tool quotes it into its error and its log line, beside ReadServerText's already redacted text.
+	private static string SiteDetail(string responseBody) =>
+		SensitiveErrorTextRedactor.RedactSiteText(Cap(responseBody)).Trim();
 
 	private static string Cap(string text) {
 		string trimmed = (text ?? string.Empty).Trim();

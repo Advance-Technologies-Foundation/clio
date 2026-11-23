@@ -1,5 +1,5 @@
 ---
-description: OPTION B - every SensitiveErrorTextRedactor entry point runs master 1915d7543's frozen chain first (MasterChain, hash-pinned), then clio's Extra, Site and ExtraCredentials rules, which only replace spans through one edit function; trades are none, master's over-matches are declared; SensitiveErrorTextRedactor has two entry points - Redact for any text (envelopes, logs, CLI, MCP errors) and RedactSiteText for text a Creatio site wrote; the site-only rules (sign-in and database phrases, server instances, relative paths, key runs, the stack-trace cut) must never move into Redact; the paths wired so far are named here, the readers not yet wired are listed by file and member in SiteTextWiringTests' known-unwired list (A2, follow-up), a new reader must call RedactSiteText, and both entry points fail closed as one unit on a regex timeout
+description: OPTION B - every SensitiveErrorTextRedactor entry point runs master 1915d7543's frozen chain first (MasterChain, hash-pinned), then clio's Extra, Site and ExtraCredentials rules, which only replace spans through one edit function; trades are none, master's over-matches are declared; SensitiveErrorTextRedactor has two entry points - Redact for any text (envelopes, logs, CLI, MCP errors) and RedactSiteText for text a Creatio site wrote; the site-only rules (sign-in and database phrases, server instances, relative paths, key runs, the stack-trace cut) must never move into Redact; the paths wired so far (the write-tool paths included) are named here, the readers not yet wired are listed by file and member in SiteTextWiringTests' known-unwired list (follow-up), a new reader must call RedactSiteText, and both entry points fail closed as one unit on a regex timeout
 applies-to:
   - clio/Common/SensitiveErrorTextRedactor.cs
   - clio/Common/SensitiveErrorTextRedactor.MasterChain.cs
@@ -21,7 +21,34 @@ applies-to:
   - clio/Command/PageSchemaMetadataHelper.cs
   - clio/Command/McpServer/Tools/ODataKeyedWrite.cs
   - clio/Command/McpServer/Tools/ODataCreateTool.cs
+  - clio/Command/PageDesignerHierarchyClient.cs
+  - clio/Command/PageUpdateOptions.cs
+  - clio/Command/PageCreateOptions.cs
+  - clio/Command/SchemaTemplateCatalog.cs
+  - clio/Command/EntitySchemaDesigner/RemoteEntitySchemaDesignerClient.cs
+  - clio/Package/SelectQueryHelper.cs
+  - clio/Package/ServiceResponseJsonGuard.cs
+  - clio/Command/CompileConfigurationCommand.cs
+  - clio/Package/PackageBuildResult.cs
+  - clio/Package/PackageBuilder.cs
+  - clio/Package/InstallLogAnalyzer.cs
+  - clio/Package/BasePackageInstaller.cs
+  - clio/Command/CreateBusinessProcessCommand.cs
+  - clio/Command/ModifyBusinessProcessCommand.cs
+  - clio/Command/ProcessModel/ProcessDesignServerFault.cs
+  - clio/Command/CompileBusinessProcessCommand.cs
+  - clio/Command/ModifyProcessAsNewVersionCommand.cs
+  - clio/Command/SetActiveProcessVersionCommand.cs
+  - clio/Command/ProcessModel/LayoutChangeRelay.cs
+  - clio/Command/BuildCaseClient.cs
+  - clio/Command/DynamicCaseService.cs
+  - clio/Command/DynamicCasePageStep.cs
+  - clio/Command/DynamicCaseRecordPageResolver.cs
+  - clio/Common/CompilationHistoryPoller.cs
+  - clio/Command/ProcessModel/ProcessWriteDigest.cs
+  - clio/Command/McpServer/Tools/CompileStatusTool.cs
   - clio.tests/Common/SiteTextWiringTests.cs
+  - clio.tests/Common/SiteTextWritePathWiringTests.cs
   - clio.tests/Common/Fixtures/site-text-redaction-cases.json
   - clio.tests/Common/SensitiveErrorTextRedactorSiteTextTests.cs
 date: 2026-11-20
@@ -38,7 +65,7 @@ unchanged, followed by what clio adds, and the additions may only replace spans:
   (`RedactSteps`, `CredentialsSteps`, `JsonSteps`: a rule and the placeholder or named evaluator it writes) and nothing
   else. `MasterChainHashTests` pins the patterns against hashes recorded from master's build, and the step lists -
   calls, order, placeholders and evaluators - against recorded step hashes. The OUTPUT PIN
-  (`MasterChain_ShouldReproduceMastersOutput_ForEveryCorpusString`) checks the chain's output for each of the 13,389
+  (`MasterChain_ShouldReproduceMastersOutput_ForEveryCorpusString`) checks the chain's output for each of the 13,597
   corpus strings against master's build's, so an evaluator's body cannot change either. Never edit a pattern or a call
   there: clio's rules are `Extra`, `Site` and `ExtraCredentials`, and they come back only where they remove more.
 - Every rule after the chain goes through ONE edit function, `ApplyEdits`. A rule returns (span, placeholder) edits and
@@ -156,20 +183,24 @@ goes whole); a glued address takes its word (`retry10.0.3.17` becomes `[redacted
 in `D:/src/x.cs:line 42`.
 
 **Trades: none, by construction.** `RedactionMasterDifferentialTests` runs the whole corpus - the fixture in three
-spellings, the edge strings across every clamp and cut, 252 strings whose prefix (a URL, a credential pair, a
-JSON-escaped password, a path) shrinks under redaction with a token across the 300, 500 or 2,400 cut, and 3 x 4,000
-seeded strings: 13,389 - through every entry point and every sink of `RedactionSinks.All`, against
+spellings, the edge strings across every clamp and cut, 420 strings whose prefix (a URL, a credential pair, a
+JSON-escaped password, a path) shrinks under redaction with a token across the 200, 300, 400, 500 or 2,400 cut, and
+3 x 4,000 seeded strings: 13,597 - through every entry point and every sink of `RedactionSinks.All`, against
 `Fixtures/redaction-master-baseline.txt.gz`. The baseline records master's REAL sink outputs, driven through master's
 own seams: Redact, RedactCredentials, RedactJsonCredentialProperties, both fenced renderings, site-response's message
 and code, the non-JSON preview, the OData error call sites, the keyed write, the DataService failure, the designer's
-save error, the batch item error, compile-status' diagnostic and message tail, a refused delete's inner message and
-DataWriteDiagnostic. No token master removed may show at any of them. A sink that cuts AFTER its chain (the fenced 300,
-site-response's cap) is held to what master's output and master's chain over the same uncut input both removed: a
-token only that cut dropped was cut, not redacted. The test asserts that all 13,389 strings were compared and that every
+save error, the batch item error, compile-status' diagnostic and message tail, a refused delete's inner message,
+DataWriteDiagnostic, and the write paths' quotes (ServiceResponseJsonGuard's preview, the dynamic-case detail,
+`ReadServerText` and the page template catalog's preview). No token master removed may show at any of them. A sink
+that cuts AFTER its chain (the fenced 300, site-response's cap, the guard preview's 200) is held to what master's output and master's chain over the same uncut input both removed: a
+token only that cut dropped was cut, not redacted. The test asserts that all 13,597 strings were compared and that every
 baseline line was seen, that no redaction inside a sink failed closed (a fail-closed output shows no token, so it would
 pass vacuously), and that a sink throws exactly where master's did (the baseline records master's throws; there are
 none). Branding's and email-template's OData error, which master passed on raw, are read through the caller's
-`Redact`, as the DataService failure and the designer's save error are, so no sink is compared vacuously. Call sites inside an instance method that needs a client are read through their seam
+`Redact`, as the DataService failure and the designer's save error are, so no sink is compared vacuously. The
+dynamic-case detail, `ReadServerText` and the template catalog's preview, which master quoted raw and redacted only
+on a passthrough request, are read on master through that `Redact` and here as stdio returns them, the strictest
+pairing; with those four sinks unredacted the differential shows 298,203 tokens. Call sites inside an instance method that needs a client are read through their seam
 (`TryDetect`) with the call site's expression, which the source guard pins; `RedactorSinkCompositionTests` drives
 odata-create, odata-field validation and email-template through their real code with a substitute client.
 
@@ -290,11 +321,12 @@ variable the extractor writes to may be read only inside a `RedactSiteText` argu
 
 **Not every reader is wired yet** - the same guard scans clio's code for DIRECT reads of a site's error text and
 holds each reading member, by file and member, in `KnownSiteErrorReads`: wired through a checked extractor,
-"not text" (a field-name set, a marker, or a member of clio's own result type that shares a site-error name), or
-KNOWN-UNWIRED with the change that wires it - "A2" for the 15 write-tool paths and the dynamic-case files (the
-stacked PR A2) and "follow-up" for the remaining envelope readers, whose text passes `Redact` only until then
-(odata-read's `TryClassify` debug detail is the follow-up entry in `KnownCallSites`). The scan sees exactly these
-forms:
+`via:` an extractor the read reaches another way (a variable, a record, a result redacted upstream, or a classifier
+whose text reaches the caller only through that extractor; a named end-to-end test is the proof), "not text" (a
+field-name set, a marker, or a member of clio's own result type that shares a site-error name), or KNOWN-UNWIRED
+"follow-up" for the remaining envelope readers, whose text passes `Redact` only until then (odata-read's
+`TryClassify` debug detail is the follow-up entry in `KnownCallSites`). The write-tool and dynamic-case files are
+wired and may hold no follow-up entry. The scan sees exactly these forms:
 - the JSON names `errorInfo`, `responseStatus`, `ExceptionMessage`, `errorMessage`, `innererror` and
   `internalexception` written as a literal, on a line with no `[JsonPropertyName]`, `[JsonProperty]` or
   `[DataMember]` decoration;
@@ -329,12 +361,98 @@ Every "not text" entry is checked by `SourceGuard_ShouldProveEveryNotTextEntry`,
 
 | Wiring | Members | Reads |
 |---|---|---|
-| wired | 8 | 21 |
+| wired | 24 | 39 |
+| via | 16 | 30 |
 | not text | 23 | 30 |
-| A2 | 30 | 46 |
-| follow-up | 88 | 108 |
+| follow-up | 85 | 104 |
 
-`KnownCallSites` holds 28 call sites: 18 central, 6 at a call site, 3 discarded and 1 follow-up.
+`KnownCallSites` holds 37 call sites: 27 central, 6 at a call site, 3 discarded and 1 follow-up.
+
+**The write paths** - the same rule, at the point each write tool reads the site's text: the designer and
+template refusals (`PageSchemaMetadataHelper.DescribeRefusal`, used by `PageDesignerHierarchyClient` and
+`SchemaTemplateCatalog`: update-page, sync-pages, get-page, create-page), `TryGetSchema` and
+`TryLoadTemplateLocalizableStrings`, the catalog's non-JSON preview, the entity-schema designer's
+`EnsureSuccess`, `SelectQueryHelper.DescribeServerFailure` and `ServiceResponseJsonGuard`'s body preview, the
+compile verdicts (compile-creatio's `ProceedResponse`, `ApplyEnvironmentVerdict` and history lines,
+`PackageBuilder.Fail`), the installer's `InstallLogAnalyzer.DescribeFailure` and invalid-archive message,
+`ProcessDesignServerFault.ReadServerText`, the four process write failures - create, modify, as a new version,
+activate a version - through `ProcessDesignServerFault.SiteMessageOr`, `SiteWarnings` and `SiteText` (the message,
+each warning on its own so a frame in one cannot cut the owed-compile warning after it, and the version and layout
+element names), compile-business-process's fenced lines (`UntrustedText.FencedSiteText`), and the dynamic-case
+tools (`DynamicCaseService` redacts an answer's code and message where they enter the result; `BuildCaseClient`
+redacts a quoted body over master's 400-character cap). These texts become log lines as well as errors, and on stdio the
+returned log is deliberately not redacted again (`McpPassthroughRedaction` redacts only on passthrough), so the
+redaction at the read is the only one a stdio caller gets; `SiteTextWritePathWiringTests` asserts the marker in
+both the result and the log. `DescribeRefusal` reads only `errorInfo`'s code and message: the whole `errorInfo` used
+to be copied, so its `stackTrace` reached update-page's `error`. A compile diagnostic is redacted where it is
+rendered (`PackageBuildDiagnostic.WithSiteTextRedacted`), not in the parser, because compile-status already fences
+the history diagnostics it renders. A file the environment names - in a diagnostic, an environment verdict or an
+installation log's compiler line - is cut to its NAME before the redaction (`PackageBuildDiagnostic.SiteFileName`,
+which compile-status uses too): the redactor takes a whole absolute path as `[redacted-path]` and a relative
+`Terrasoft.Configuration\...` or `Autogenerated\Src\...` one as a server instance, so the line stopped naming the
+file to fix. An installation log tail is redacted with its lines apart and flattened to ` | ` only after, or the cut
+never sees the line break before a stack frame. A designer refusal is no reason when it is empty, or when it
+redacts to placeholders and punctuation only (`SensitiveErrorTextRedactor.IsPlaceholderOnly`). Then the caller says
+its own sentence. A refusal that is only a stack trace is placeholder-only, because the site cut replaces the frame
+with one placeholder (option B). A process write's refusal (`SiteMessageOr`) falls back the same way. A layout
+refusal whose element names are all placeholder-only gets no elements clause. A leftover, note or warning is not a
+refusal, so it keeps its placeholder. A save refusal's `addonsErrors` item gives its code and message only,
+never its `stackTrace`. The WCF prefix `IsUnreadableRequest` looks for is prose no rule takes. The four quoted bodies
+follow master's order, with no clamp of clio's own before the chain (option B):
+- `ServiceResponseJsonGuard`'s preview: master redacted the whole collapsed body, then cut at 200. Here the whole
+  body is redacted (before the collapse, so the site cut sees the line break before a frame), then collapsed and cut
+  at 200, after the chain.
+- `BuildCaseClient`'s detail: master quoted `Cap(body)`, raw, at 400. Here it is `RedactSiteText(Cap(body))`.
+- `ReadServerText`: master returned the fault raw, cut at 400 with "...". Here that cut runs first, then
+  `RedactSiteText`.
+- The page template catalog's preview: master quoted the body raw, cut at 200. Here that cut runs first, then
+  `RedactSiteText`, and the "…" marker follows the redaction.
+
+Where master's cut runs before the chain, the end-of-text rules take what it left open: a quoted sign-in name or a
+JWT's first segments at the end, before an optional "...". `RedactorSinkCompositionTests` pins each composition, and
+the differential compares each sink with master's real output. The process write
+commands' success-path warnings are logged each through `RedactSiteText` too, and so are the schema and version
+names a successful write returns.
+
+**Follow-up text at a write tool's sink** - a write tool also quotes text that a reader still on the follow-up list
+produced, and that text is redacted where it enters the write tool's result or log, because the reader itself stays
+unwired. Only the quoted part is redacted, where it is embedded, never clio's sentence around it: a sentence that
+carries a remedy or a `docs://` link would lose it to the stack-frame cut or the URI rule. The record page resolver
+redacts every site text it quotes - the RelatedPage add-on read's failure, the card registrations' SelectQuery failure
+(list-entity-client-schemas, read by `DataServiceSelectResponse`) and the name of a Classic card - and the page step
+redacts get-page's error and a page write that throws; `DynamicCaseService` redacts the package dependency manager's failure (each part of a remove-again warning
+on its own) and the server's notes, warnings, leftovers, case names and captions item by item. update-page's own
+error, from the dry run or the save, is passed on as it came: update-page redacts the site parts it quotes, and
+redacting its sentence again turns `docs://mcp/guides/page-modification.]` into `[redacted-uri]`. The process writes
+redact a describe-business-process read-back failure (`ProcessWriteDigest` before and after the write, the
+access-rights and flow-label guards, the verification warning) and a failure while the digest is built;
+compile-creatio and compile-package redact a compilation-history baseline that could not be read (the ATF data
+provider), and compile-package's tolerated poll round quotes that provider through the site fence
+(`CompilationHistoryPoller`; compile-creatio's activity watcher writes no line for a failed round). When the poll
+gives up, `PackageBuilder` chains the data provider's failure rebuilt with only its quote of the answer site-redacted
+(`WithSiteRedactedServerText`): that quote ends the failure's message and console text, so the give-up's elapsed
+time and window and the failed read's operation stay, and the debug excerpt is site-redacted too. Not
+redacted at a sink, on purpose: transport texts (`BuildCaseClient`'s route and transport failures, compile-business-process's
+transport detail, compile-creatio's request error), which carry no answer of the site, and the dependency manager's
+own "Validation warnings from server" log line, which the manager writes itself and which is follow-up with it. A
+file the environment names is shown by its last segment only when that is a plain file name (an extension, no
+separator, drive, scheme or key pair) that the redaction leaves whole; anything else - a path ending in a separator,
+a share host, a URI, a secret's fragment - reads `[redacted-path]`. An installation log tail leaves out stack frames
+before it is taken, so a log that ends in frames does not open its tail with one. In an installation log's compiler
+line only the token right before `(line,column)` is the file: a timestamp or a level word before it is the log's own
+text, so `2026-09-05 21:18:24,665 UsrX.cs(1,79) error CS1519` keeps `UsrX.cs`.
+
+**What the guard proves and what it does not** - a `wired:` entry of a write-tool file is checked read by read: each
+counted read in the member must be an argument of a call to the named extractor - by its qualified name
+(`ProcessDesignServerFault.SiteText(`), or by its bare name only inside the extractor's own class, so a same-named
+helper of another class does not count - or the member must be that extractor. A read that reaches the extractor another way (a variable, a record field, a result redacted upstream) is
+listed `via: <extractor>; proven by <test>[, <test>…]` - one test per branch of the extractor that quotes site text,
+as the record page resolver's three (the add-on read, the card registrations, the Classic card) - and the guard
+checks only that each named end-to-end test exists: the tests, not the scan, are the proof. Entries outside the
+write-tool files are not checked read by read, and a `not text:` entry is checked only for one of its two forms;
+both are where a mislabel can still hide, which is why the dynamic-case page refusal, once labelled `not text`, now
+has end-to-end tests over fake answers. Out of this rule by decision: the raw streamed installation log (`BasePackageInstaller.ListenForLogs`,
+and `ReportLocallyModifiedSchemas`' raw log lines), a separate finding.
 
 **Fail closed** - `RedactSiteText` runs the cut, the whole Redact chain and every site rule inside ONE
 `ExecuteRegex` guard, so a `RegexMatchTimeoutException` in any of them returns `[redacted]` for the whole text:

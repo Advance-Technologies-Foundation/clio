@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Common;
 using Clio.Package;
 using Clio.Requests;
@@ -203,6 +204,64 @@ internal sealed class InstallerFailureClassificationTests : BaseClioModuleTests 
 		// Assert
 		act.Should().Throw<InvalidGZipArchiveInstallException>(
 			because: "install-application maps an invalid archive to its own exit code, which the locally-modified downgrade must never swallow");
+	}
+
+	// The error lines the installer wrote. The raw streamed installation log (ListenForLogs) is a separate finding and
+	// is deliberately not asserted here; no test below puts the marker into the log.
+	private string[] ErrorLines() =>
+		_logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+			.Select(call => (string)call.GetArguments()[0])
+			.ToArray();
+
+	[Test]
+	[Description("push-pkg and the other install tools: the service's failure code and message reach the installer's "
+		+ "error line (InstallLogAnalyzer.DescribeFailure) through the site-text redaction.")]
+	public void Install_ShouldRedactTheServiceFailure_AsSiteText_InTheErrorLine() {
+		// Arrange
+		EnvironmentSettings environmentSettings = new();
+		string packagePath = AddPackageArchive("UsrIssue1299.gz");
+		ArrangeServer("{\"success\":false,\"errorInfo\":{\"errorCode\":\"Exception\",\"message\":\""
+			+ Clio.Tests.Common.SiteTextWiringTests.SiteMessage + "\"}}", LocallyModifiedLog);
+		PackageInstaller installer = CreatePackageInstaller(environmentSettings);
+
+		// Act
+		bool result = installer.Install(packagePath, environmentSettings);
+
+		// Assert
+		result.Should().BeFalse(because: "the service named a concrete reason");
+		ErrorLines().Should().Contain("Package installation failed: Exception: Login failed for user '[redacted]'.",
+			because: "the code and the reason stay")
+			.And.NotContain(line => line.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+				because: "the error line is the stdio caller's result");
+	}
+
+	[Test]
+	[Description("install-application: the invalid-archive exception's message (GetInvalidGZipArchiveMessage) carries "
+		+ "the service's message through the site-text redaction.")]
+	public void Install_ShouldRedactTheInvalidArchiveMessage_AsSiteText() {
+		// Arrange
+		EnvironmentSettings environmentSettings = new();
+		string packagePath = AddPackageArchive("UsrIssue1299App.gz");
+		ArrangeServer("{\"success\":false,\"errorInfo\":{\"errorCode\":\"Terrasoft.Common.InvalidGZipArchiveException\","
+			+ "\"message\":\"" + Clio.Tests.Common.SiteTextWiringTests.SiteMessage + "\"}}", LocallyModifiedLog);
+		ApplicationInstaller installer = CreateInstaller(environmentSettings,
+			(logProvider, settings, clientFactory, application, archiver, scriptExecutor, urlBuilder, fileSystem,
+					logger, lockManager) =>
+				new ApplicationInstaller(logProvider, settings, clientFactory, application, archiver, scriptExecutor,
+					urlBuilder, fileSystem, logger, lockManager, Substitute.For<IDesignNodeSessionGuard>()));
+
+		// Act
+		Action act = () => installer.Install(packagePath, environmentSettings);
+
+		// Assert - the installer writes no line of its own for an invalid archive: it throws, and install-application
+		// writes the exception's message as its error line (InstallApplicationCommand's InvalidGZipArchiveInstallException
+		// catch). So the message below IS that log line, and no error line the installer wrote carries the login either.
+		act.Should().Throw<InvalidGZipArchiveInstallException>(because: "the service named an invalid archive")
+			.Which.Message.Should().Be("Login failed for user '[redacted]'.",
+				because: "the service's message is the site's text, redacted");
+		ErrorLines().Should().NotContain(line => line.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no error line may carry the login");
 	}
 
 	[Test]

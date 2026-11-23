@@ -119,8 +119,10 @@ public sealed class RedactionMasterDifferentialTests {
 		+ "or at a site sink is visible in this build's output of the same sink: Redact, RedactCredentials, "
 		+ "RedactJsonCredentialProperties, both fenced renderings and the console one, site-response's message and code, "
 		+ "the non-JSON preview, the OData error call sites, the keyed write, the DataService failure, the designer's save "
-		+ "error, the batch item error, compile-status' diagnostic and message tail, a refused delete's inner message and "
-		+ "DataWriteDiagnostic. Option B declares no trade; what this build removes MORE is allowed and counted.")]
+		+ "error, the batch item error, compile-status' diagnostic and message tail, a refused delete's inner message, "
+		+ "DataWriteDiagnostic, and the write paths' quotes: ServiceResponseJsonGuard's preview, the dynamic-case detail, "
+		+ "ReadServerText and the page template catalog's preview. Option B declares no trade; what this build removes "
+		+ "MORE is allowed and counted.")]
 	public void EveryEntryPointAndSink_ShouldShowNoTokenMasterRemoved() {
 		// Arrange
 		Dictionary<string, BaselineLine> baseline = ReadBaseline(out string header);

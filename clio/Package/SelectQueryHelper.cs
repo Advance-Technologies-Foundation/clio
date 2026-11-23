@@ -216,17 +216,20 @@ internal static class SelectQueryHelper
 	/// <c>errorInfo.message</c> and puts "Collection was modified" elsewhere in the body; treating a blank message as
 	/// the detail hid the cause from the final error.
 	/// <para>PR #1782 review: the raw body is server-authored and unbounded (a whole stack trace), and the message
-	/// reaches MCP envelopes, so the fallback goes through <see cref="UntrustedText.Fenced"/> - scrubbed, flattened,
-	/// capped and fenced - per <c>docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md</c>.
-	/// The non-blank platform message keeps its existing treatment.</para>
+	/// reaches MCP envelopes, so the fallback goes through <see cref="UntrustedText.FencedSiteText"/> - scrubbed,
+	/// flattened, capped and fenced - per <c>docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md</c>.</para>
+	/// <para>Both are the site's text, so both take the site-text redaction here, where they are read
+	/// (<c>docs/knowledge/Common/site-text-takes-redact-site-text-and-fails-closed.md</c>): the exception's message
+	/// reaches every SelectQuery caller's error and log line, and a stdio log is not redacted again. The non-blank
+	/// platform message is redacted, not fenced, as before.</para>
 	/// </remarks>
 	/// <param name="errorMessage">The server's <c>errorInfo.message</c>, if any.</param>
 	/// <param name="responseJson">The raw response body.</param>
 	/// <returns>The failure text.</returns>
 	internal static string DescribeServerFailure(string? errorMessage, string responseJson) =>
 		string.IsNullOrWhiteSpace(errorMessage)
-			? UntrustedText.Fenced(responseJson) ?? "the server returned no failure details"
-			: errorMessage;
+			? UntrustedText.FencedSiteText(responseJson) ?? "the server returned no failure details"
+			: SensitiveErrorTextRedactor.RedactSiteText(errorMessage);
 
 	/// <summary>
 	/// Builds a SelectQuery that returns one row with the number of records of <paramref name="rootSchemaName"/> the

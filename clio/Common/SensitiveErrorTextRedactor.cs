@@ -1137,6 +1137,60 @@ internal static partial class SensitiveErrorTextRedactor {
 		return ExecuteRegex(nameof(RedactSiteText), text.Length, () => Site(RedactCore(text)));
 	}
 
+	// The opening every placeholder shares: [redacted], [redacted-path], [redacted-uri], [redacted-host],
+	// [redacted-timeout].
+	private const string PlaceholderOpening = "[redacted";
+
+	/// <summary>
+	/// True when a redacted text says nothing a person can read. Outside its <c>[redacted…]</c> placeholders it has no
+	/// letter and no digit, only whitespace and punctuation ("[redacted]", "[redacted-path] [redacted-uri].", ""). A
+	/// refusal that is only a stack trace is one: the site cut replaces the frame with one placeholder.
+	/// </summary>
+	/// <remarks>
+	/// A caller treats such a reason like an empty one: it says its own sentence or leaves its clause out. That exposes
+	/// nothing the placeholder hid. The scan is linear and runs no regular expression. A bracket that opens no
+	/// placeholder ("[redactedx]", "[redacted" with no close) is read as text, so its letters count.
+	/// </remarks>
+	/// <param name="text">The redacted text.</param>
+	internal static bool IsPlaceholderOnly(string? text) {
+		if (string.IsNullOrWhiteSpace(text)) {
+			return true;
+		}
+		int index = 0;
+		while (index < text.Length) {
+			int placeholderEnd = PlaceholderEndAt(text, index);
+			if (placeholderEnd > index) {
+				index = placeholderEnd;
+				continue;
+			}
+			if (char.IsLetterOrDigit(text[index])) {
+				return false;
+			}
+			index++;
+		}
+		return true;
+	}
+
+	// The index after the placeholder that starts at `index` ("[redacted" then nothing or "-" and lower-case letters,
+	// then "]"), or `index` when none starts there.
+	private static int PlaceholderEndAt(string text, int index) {
+		if (!text.AsSpan(index).StartsWith(PlaceholderOpening, StringComparison.Ordinal)) {
+			return index;
+		}
+		int at = index + PlaceholderOpening.Length;
+		if (at < text.Length && text[at] == '-') {
+			at++;
+			int kindStart = at;
+			while (at < text.Length && text[at] is >= 'a' and <= 'z') {
+				at++;
+			}
+			if (at == kindStart) {
+				return index;
+			}
+		}
+		return at < text.Length && text[at] == ']' ? at + 1 : index;
+	}
+
 	// OPTION B: Redact(x) = Extra(MasterChain.Redact(x)), RedactSiteText(x) = Site(Redact(x)). Master's chain runs first,
 	// unchanged (MasterChain); Extra and Site only replace spans of what it returned, through ApplyEdits.
 	private static string RedactCore(string text) {

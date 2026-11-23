@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.ProcessModel;
 using Clio.Command.RuntimeVerification;
 using Clio.Common;
 using Clio.Package;
@@ -21,7 +22,7 @@ namespace Clio.Tests.Common;
 /// Option B at every wired sink: each one, driven through its own seam, carries exactly the composition master's order
 /// gives it - master's cuts where master had them, then the site-text redaction (master's frozen chain, Extra, Site),
 /// then clio's own cut or cap after. Run over every decoded fixture row, every edge string and every shrinking-prefix
-/// string (691 strings).
+/// string (899 strings).
 /// </summary>
 [TestFixture]
 [Property("Module", "Common")]
@@ -59,7 +60,7 @@ public sealed class RedactorSinkCompositionTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("COMPOSITION at every statically reachable sink, over the 691-string set: site-response's message and "
+	[Description("COMPOSITION at every statically reachable sink, over the 899-string set: site-response's message and "
 		+ "code are Cap(RedactSiteText(x)); the non-JSON preview is RedactSiteText of master's 500-character cut; the keyed "
 		+ "write is RedactSiteText of the detected OData error; the designer's save error and the DataService failure are "
 		+ "RedactSiteText(x); the batch item error, DataWriteDiagnostic.message, the compile diagnostic and the fenced "
@@ -168,7 +169,7 @@ public sealed class RedactorSinkCompositionTests {
 	[Test]
 	[Category("Unit")]
 	[Description("COMPOSITION at the call sites that need a client, driven through them with a substitute client over the "
-		+ "691-string set: odata-create's refused insert (ODataCreateTool), odata-field validation's metadata read "
+		+ "899-string set: odata-create's refused insert (ODataCreateTool), odata-field validation's metadata read "
 		+ "(ODataFieldValidation.FetchMetadataOnce) and record probe (ProbeOnce), and email-template's read "
 		+ "(EmailTemplateContentService.Read) each carry RedactSiteText of the OData error the site sent. Branding's "
 		+ "TryQuerySingleId and the trigger smoke run's CreateTrigger make the same call on CreatioResponseError.TryDetect's "
@@ -225,6 +226,95 @@ public sealed class RedactorSinkCompositionTests {
 				wrong.Add($"{sink}: \"{Short(text)}\" -> \"{Short(output)}\"");
 			}
 		}
+	}
+
+	// The four quoted bodies of #1991's write paths, each through its own seam.
+	private static string GuardPreview(string body) => (string)Invoke(typeof(ServiceResponseJsonGuard), "BuildResponsePreview", body);
+
+	private static string DynamicCaseDetail(string body) => (string)Invoke(typeof(BuildCaseClient), "SiteDetail", body);
+
+	private static string TemplateCatalogMessage(string body) =>
+		(string)Invoke(typeof(SchemaTemplateCatalog), "BuildNonJsonErrorMessage", "u", body, new FormatException("p"));
+
+	private static string ServerText(string text) => ProcessDesignServerFault.ReadServerText(JsonSerializer.Serialize(text));
+
+	[Test]
+	[Category("Unit")]
+	[Description("COMPOSITION at #1991's four quoted bodies, over the composition set, in master's order with no clamp "
+		+ "of clio's own before the chain: ServiceResponseJsonGuard's preview (master: Redact over the whole collapsed "
+		+ "body, then the 200 cut) is RedactSiteText over the whole body, then the collapse and the 200 cut; the "
+		+ "dynamic-case detail (master: Cap, raw, at 400) is RedactSiteText(Cap(body)); ReadServerText (master: raw, cut at "
+		+ "400) is RedactSiteText of master's cut; the page template catalog's preview (master: raw, cut at 200) is "
+		+ "RedactSiteText of master's cut, then the marker.")]
+	public void EveryWritePathQuote_ShouldCarryMastersOrderThenTheSiteText() {
+		// Arrange
+		IReadOnlyList<string> set = CompositionSet();
+		List<string> wrong = [];
+
+		// Act
+		foreach (string text in set) {
+			long failedClosed = SensitiveErrorTextRedactor.FailedClosed;
+			string collapsed = Site(text).Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal)
+				.Trim().Trim('\uFEFF').Trim();
+			string guard = collapsed.Length == 0 ? "<empty body>"
+				: collapsed.Length > 200 ? TextUtilities.TruncateWithoutSplittingSurrogatePair(collapsed, 200) + "\u2026" : collapsed;
+			Check(GuardPreview(text) == guard, "ServiceResponseJsonGuard preview", text, GuardPreview(text));
+			string trimmed = text.Trim();
+			string detail = Site(trimmed.Length <= 400 ? trimmed : trimmed[..400] + "...").Trim();
+			Check(DynamicCaseDetail(text) == detail, "dynamic-case detail", text, DynamicCaseDetail(text));
+			string quoted = trimmed.Length <= 400 ? trimmed : TextUtilities.TruncateWithoutSplittingSurrogatePair(trimmed, 400) + "...";
+			string server = string.IsNullOrWhiteSpace(text) || Site(quoted).Trim().Length == 0 ? null : Site(quoted).Trim();
+			Check(ServerText(text) == server, "ReadServerText", text, ServerText(text));
+			if (!text.TrimStart().StartsWith('<')) {
+				bool cut = text.Length > 200;
+				string redacted = string.IsNullOrWhiteSpace(text) ? null
+					: Site(cut ? TextUtilities.TruncateWithoutSplittingSurrogatePair(text, 200) : text);
+				string snippet = string.IsNullOrWhiteSpace(redacted) ? "<empty body>" : cut ? redacted + "\u2026" : redacted;
+				Check(TemplateCatalogMessage(text).EndsWith("Response preview: " + snippet, StringComparison.Ordinal),
+					"page template catalog preview", text, TemplateCatalogMessage(text));
+			}
+			Check(SensitiveErrorTextRedactor.FailedClosed == failedClosed, "no redaction failed closed", text,
+				$"{SensitiveErrorTextRedactor.FailedClosed - failedClosed} fail-closed calls");
+		}
+
+		// Assert
+		wrong.Should().BeEmpty(because: $"every write-path quote carries master's order then the site text; {wrong.Count} found:\n"
+			+ string.Join('\n', wrong.Take(20)));
+
+		void Check(bool holds, string sink, string text, string output) {
+			if (!holds) {
+				wrong.Add($"{sink}: \"{Short(text)}\" -> \"{Short(output)}\"");
+			}
+		}
+	}
+
+	// Bodies whose quoted sign-in name or JWT a cut at `cut` leaves open: the name's quote is at cut - 7, so the cut keeps
+	// "'zq inv"; the token starts at cut - 30, so the cut keeps its header and part of its payload.
+	private static string NameAcross(int cut) => new string('a', cut - 30) + " Login failed for user 'zq invented login' end";
+
+	private static string TokenAcross(int cut) =>
+		new string('a', cut - 31) + " eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ6cSJ9.c2lnbmF0dXJl end";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Master's cut before the chain at the three raw quotes (dynamic-case detail at 400, ReadServerText at "
+		+ "400, the template catalog's preview at 200) leaves a quoted sign-in name or a JWT open at the end, and the "
+		+ "site text's end-of-text rules take it: no head of either is shown. The guard preview redacts the whole body "
+		+ "first, so neither is cut at all.")]
+	public void AWritePathQuote_ShouldShowNoHeadOfANameOrATokenItsCutLeftOpen() {
+		// Act
+		string[] outputs = [
+			DynamicCaseDetail(NameAcross(400)), DynamicCaseDetail(TokenAcross(400)),
+			ServerText(NameAcross(400)), ServerText(TokenAcross(400)),
+			TemplateCatalogMessage(NameAcross(200)), TemplateCatalogMessage(TokenAcross(200)),
+			GuardPreview(NameAcross(200)), GuardPreview(TokenAcross(200))
+		];
+
+		// Assert
+		NameAcross(400)[..400].Should().EndWith("'zq inv", because: "the cut opens the name");
+		TokenAcross(400)[..400].Should().Contain("eyJhbGciOiJIUzI1NiJ9.").And.NotContain("c2lnbmF0dXJl", because: "the cut opens the token");
+		outputs.Should().AllSatisfy(output => output.Should().NotContainAny(["zq inv", "zq", "eyJhbGci", "eyJzdWIi"],
+			because: "what master's cut leaves open goes with the end-of-text rules"));
 	}
 
 	private static ODataCreateBatchResponse CreateOne(string body) {

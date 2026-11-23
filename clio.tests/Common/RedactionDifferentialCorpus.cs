@@ -13,8 +13,8 @@ namespace Clio.Tests.Common;
 /// The deterministic corpus the redaction differential runs over: the site-text fixture's inputs in their three
 /// spellings (decoded, and JSON-escaped by the default and the relaxed encoder), then seeded random mixes of path shapes,
 /// JSON escapes, quotes, brackets, versions, times, sign-in phrases, server instances, hosts and Bearer tokens, and the
-/// edge strings: long quoted values that cross every clamp (300, 500, 2,000, 2,400), and values and paths that cross a
-/// stack-frame or page cut.
+/// edge strings: long quoted values that cross every clamp (300, 500, 2,000, 2,400, and the write paths' 200 and 400),
+/// and values and paths that cross a stack-frame or page cut.
 /// </summary>
 /// <remarks>
 /// <see cref="Random"/> with a seed is deterministic across runs and machines, and the JSON spellings come from
@@ -29,9 +29,9 @@ internal static class RedactionDifferentialCorpus {
 	/// <summary>How many random strings each seed adds.</summary>
 	internal const int StringsPerSeed = 4_000;
 
-	/// <summary>How many strings the corpus holds: 350 fixture rows x 3 spellings, 87 edge strings, 252 shrinking-prefix
+	/// <summary>How many strings the corpus holds: 350 fixture rows x 3 spellings, 127 edge strings, 420 shrinking-prefix
 	/// strings and 3 x 4,000 seeded ones.</summary>
-	internal const int ExpectedCount = 350 * 3 + 87 + 252 + 3 * StringsPerSeed;
+	internal const int ExpectedCount = 350 * 3 + 127 + 420 + 3 * StringsPerSeed;
 
 	private static readonly string[] Fragments = [
 		@"..\x\y.config", @".\conf\x.config", @"..\..\Terrasoft.Configuration\Web.config", @"../..\Terrasoft.Configuration/Web.config",
@@ -50,8 +50,9 @@ internal static class RedactionDifferentialCorpus {
 	private static readonly string[] Joins = [" ", " ", " ", "", ", ", ". ", "\\n", "\n", "\\\"", "'", "(", ")"];
 
 	// The clamp limits a value may cross: the fenced rendering (300), the non-JSON preview (500), site-response.message
-	// (2,000) and master's raw cut before its fenced rendering (2,400).
-	private static readonly int[] ClampLimits = [300, 500, 2_000, 2_400];
+	// (2,000), master's raw cut before its fenced rendering (2,400), and the write paths' quotes: the guard's and the
+	// template catalog's previews (200), the dynamic-case detail and the process-design server text (400).
+	private static readonly int[] ClampLimits = [300, 500, 2_000, 2_400, 200, 400];
 
 	/// <summary>The edge strings: long quoted values near each clamp, and the cut cases.</summary>
 	internal static IEnumerable<string> EdgeStrings() {
@@ -75,13 +76,14 @@ internal static class RedactionDifferentialCorpus {
 	}
 
 	// Tokens a prefix that shrinks under redaction (a URL, a credential pair, a JSON-escaped password, a path) can move
-	// across a cut: master cut BEFORE its chain at 500 and 2,400, and the fenced rendering cuts AFTER it at 300.
+	// across a cut: master cut BEFORE its chain at 500 and 2,400 (and at the write paths' 200 and 400), and the fenced
+	// rendering cuts AFTER it at 300 (and the guard preview at 200).
 	private static readonly string[] CrossingTokens = [
 		"user@foo-bar.example", "Login failed for user 'zq_login'", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ6cSJ9.c2lnbmF0dXJl",
 		"db01.internal:1433", "password=hunter2", "Bearer x7Kq2mVb9LpQ3", "\\\\" + "SRV01" + "\\" + "share" + "\\" + "Web.config"
 	];
 
-	private static readonly int[] CrossedCuts = [300, 500, 2_400];
+	private static readonly int[] CrossedCuts = [300, 500, 2_400, 200, 400];
 
 	private static string Filled(string head, char filler, int length) => head + new string(filler, Math.Max(1, length - head.Length));
 

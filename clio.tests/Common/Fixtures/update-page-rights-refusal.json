@@ -1,0 +1,9 @@
+{
+  "_fixture": "The shape of the designer's GetParentSchemas refusal a non-administrator received through update-page and its dry run on 19 Nov 2026 (errorCode, message and stackTrace inside errorInfo). Every value is invented: no real host, login or stack frame. The stack trace, the host and the path are fakes that exist only to prove clio drops them.",
+  "success": false,
+  "errorInfo": {
+    "errorCode": "SecurityException",
+    "message": "Current user does not have sufficient permissions to run \"CanManageSolution\"",
+    "stackTrace": "   at Terrasoft.Fixture.Security.FixtureGuard.CheckCanManageSolution(String operation) in C:\\fixture-build\\FixtureGuard.cs:line 42\r\n   at Terrasoft.Fixture.Designer.FixtureService.GetParentSchemas() served by http://fixture-site.invalid/0/ServiceModel/ClientUnitSchemaDesignerService.svc"
+  }
+}

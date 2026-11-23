@@ -763,6 +763,205 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		_logger.DidNotReceive().WriteLine(body);
 	}
 
+	// Every string the logger was handed: compile-creatio returns these lines, unredacted on stdio.
+	private string[] LoggedText() =>
+		_logger.ReceivedCalls().SelectMany(call => call.GetArguments()).OfType<string>().ToArray();
+
+	// The recorded WriteError lines, so a test asserts on observed values: SonarCloud S2699 does not count NSubstitute's
+	// Received() as an assertion.
+	private string[] LoggedErrors() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+		.Select(call => (string)call.GetArguments()[0])
+		.ToArray();
+
+	[Test]
+	[Description("compile-creatio: the failed build response's errorInfo and every diagnostic's code, text and file "
+		+ "(ProceedResponse) take the site-text redaction before they become log lines.")]
+	public void Execute_ShouldRedactTheBuildResponse_AsSiteText_InTheLog() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		StubCompileResponse(
+			"{\"success\":false,\"buildResult\":1,"
+			+ "\"errorInfo\":{\"errorCode\":\"CompilationError\",\"message\":\"" + site + "\"},"
+			+ "\"errors\":[{\"errorNumber\":\"CS0006\",\"errorText\":\"" + site + "\",\"fileName\":\"Foo.cs\",\"warning\":false}]}");
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the response reported the build as failed");
+		_logger.Received().WriteError("CompilationError: Login failed for user '[redacted]'.");
+		_logger.Received().WriteError("(CS0006) in Foo.cs: Login failed for user '[redacted]'.");
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no log line may carry the login the environment's text named");
+	}
+
+	[Test]
+	[Description("compile-creatio: the environment's verdict read after the build (ApplyEnvironmentVerdict) logs each "
+		+ "diagnostic's code, file and text through the site-text redaction.")]
+	public void Execute_ShouldRedactTheEnvironmentVerdict_AsSiteText_InTheLog() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse(
+			[new CreatioCompilationError(12, 3, "CS0103", site, false, "Foo.cs " + site)], 1, false));
+
+		// Act
+		int exitCode = command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "the environment reported the compilation as failed");
+		_logger.Received().WriteError(Arg.Is<string>(message =>
+			message.StartsWith("(CS0103) in [redacted-path] at (12,3): Login failed for user", StringComparison.Ordinal)));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "no log line may carry the login the environment's text named");
+	}
+
+	[Test]
+	[Description("compile-creatio's history lines (FormatHistoryDiagnostics) take the site-text redaction, for a "
+		+ "readable payload and for one shown as it came.")]
+	public void FormatHistoryDiagnostics_ShouldRedactTheEnvironmentsText_AsSiteText([Values(true, false)] bool readable) {
+		// Arrange
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		string errorsWarnings = readable
+			? "[{\"ErrorNumber\":\"CS0006\",\"ErrorText\":\"" + site + "\",\"FileName\":\"Foo.cs\",\"IsWarning\":false}]"
+			: site;
+
+		// Act
+		string rendered = CompileConfigurationCommand.FormatHistoryDiagnostics(errorsWarnings);
+
+		// Assert
+		rendered.Should().Contain("Login failed for user '[redacted]'.", because: "the reason stays");
+		rendered.Should().NotContain(Clio.Tests.Common.SiteTextWiringTests.Marker,
+			because: "the rendered history is a log line");
+	}
+
+	// A file the environment reports under its full path: a Windows one, a POSIX one and a relative
+	// Terrasoft.Configuration one. Only the name may reach the line; the directories are the environment's layout.
+	private static readonly string[] EnvironmentFilePaths = [
+		@"C:\inetpub\wwwroot\creatio\Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs",
+		"/app/Terrasoft.Configuration/Pkg/UsrPkg/Files/cs/UsrClass.cs",
+		@"Terrasoft.Configuration\Pkg\UsrPkg\Files\cs\UsrClass.cs"
+	];
+
+	[Test]
+	[Description("compile-creatio names the file of a failed build's diagnostic whatever path the environment reported "
+		+ "it under: the path is cut to its name before the site-text redaction, which would take a whole path.")]
+	public void Execute_ShouldNameTheFile_OfABuildResponseDiagnostic([ValueSource(nameof(EnvironmentFilePaths))] string path) {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubCompileResponse(System.Text.Json.JsonSerializer.Serialize(new {
+			success = false, buildResult = 1,
+			errors = new[] { new { errorNumber = "CS0103", errorText = "The name 'x' does not exist", fileName = path, warning = false } }
+		}));
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		LoggedErrors().Should().Contain("(CS0103) in UsrClass.cs: The name 'x' does not exist",
+			because: "the diagnostic names the file by its name, whatever path the build response reported");
+	}
+
+	[Test]
+	[Description("compile-creatio names the file of the environment's verdict diagnostic whatever path it reported.")]
+	public void Execute_ShouldNameTheFile_OfAnEnvironmentVerdictDiagnostic([ValueSource(nameof(EnvironmentFilePaths))] string path) {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse(
+			[new CreatioCompilationError(12, 3, "CS0103", "The name 'x' does not exist", false, path)], 1, false));
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		LoggedErrors().Should().Contain("(CS0103) in UsrClass.cs at (12,3): The name 'x' does not exist",
+			because: "the diagnostic names the file by its name, whatever path the environment's verdict reported");
+	}
+
+	[Test]
+	[Description("compile-creatio: a compilation-history baseline the real poller cannot read (the ATF data provider, a "
+		+ "follow-up reader) is reported with its text redacted as site text in the warning line (TryGetBaseline).")]
+	public void Execute_ShouldRedactTheBaselineReadFailure_AsSiteText() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		_dataProvider.GetItems(Arg.Any<ISelectQuery>())
+			.Returns(_ => throw new InvalidOperationException(Clio.Tests.Common.SiteTextWiringTests.SiteMessage));
+		StubCompileResponse(SuccessResponse);
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteWarning(Arg.Is<string>(line =>
+			line.StartsWith("Could not read the compilation history baseline: ", StringComparison.Ordinal)
+			&& line.Contains("Login failed for user '[redacted]'.", StringComparison.Ordinal)));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the warning line is the stdio caller's result");
+	}
+
+	[Test]
+	[Description("compile-creatio names an environment verdict diagnostic whose path ends in a separator as "
+		+ "[redacted-path], not as an empty name ('in  at (12,3)').")]
+	public void Execute_ShouldNotPrintAnEmptyFileName_OfAnEnvironmentVerdictDiagnostic() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		StubNeverAnsweringCompileRequest();
+		_activityWatcher.Snapshot.Returns(Built);
+		_reloadWatcher.Snapshot.Returns(Reloaded);
+		_compilationResultReader.TryRead().Returns(new CreatioCompilationLogResponse(
+			[new CreatioCompilationError(12, 3, "CS0103", "The name 'x' does not exist", false, @"C:\a\b\")], 1, false));
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		LoggedErrors().Should().Contain("(CS0103) in [redacted-path] at (12,3): The name 'x' does not exist",
+			because: "a path that ends in a separator has no name, so the diagnostic says [redacted-path], not an empty name");
+	}
+
+	[Test]
+	[Description("compile-creatio's history line (LogRecord, written as each compilation-history row arrives) carries "
+		+ "the row's diagnostics redacted as site text and names their file.")]
+	public void Execute_ShouldRedactTheHistoryLine_AsSiteText() {
+		// Arrange
+		CompileConfigurationCommand command = CreateCommand();
+		CompileConfigurationOptions options = new() { Environment = "dev", All = true };
+		string site = Clio.Tests.Common.SiteTextWiringTests.SiteMessage;
+		CompilationHistory row = new() {
+			ProjectName = "UsrPkg.csproj", Result = false, CreatedOn = DateTime.UtcNow, DurationInSeconds = 3,
+			ErrorsWarnings = System.Text.Json.JsonSerializer.Serialize(new[] {
+				new { ErrorNumber = "CS0006", ErrorText = site, FileName = EnvironmentFilePaths[0], IsWarning = false }
+			})
+		};
+		_activityWatcher.When(watcher => watcher.Start(Arg.Any<DateTime>(), Arg.Any<Action<CompilationHistory>>(),
+				Arg.Any<Action<int, Exception>>()))
+			.Do(call => call.ArgAt<Action<CompilationHistory>>(1)(row));
+		StubCompileResponse(SuccessResponse);
+
+		// Act
+		command.Execute(options);
+
+		// Assert
+		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("Login failed for user '[redacted]'.")
+			&& line.Contains("UsrClass.cs") && !line.Contains("inetpub")));
+		LoggedText().Should().NotContain(text => text.Contains(Clio.Tests.Common.SiteTextWiringTests.Marker),
+			because: "the history line is the environment's text");
+	}
+
 	private CompileConfigurationCommand CreateCommand() {
 		CompileConfigurationCommand command = Container.GetRequiredService<CompileConfigurationCommand>();
 		// The production grace is 90 seconds, sized for a cold stand's first compilation-history row. A

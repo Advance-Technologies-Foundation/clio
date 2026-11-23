@@ -168,6 +168,17 @@ public sealed class DynamicCaseService(
 		return WithPage(options, built, dependencies, pagePlan);
 	}
 
+	// The answer's code and message are the site's text: they take the site-text redaction here, where they enter the
+	// result, because every dynamic-case tool returns them and its command logs them in its verdict line; a stdio
+	// log is not redacted again. Null stays null, so a code-less answer still reads as one.
+	private static string SiteText(string text) =>
+		text is null ? null : SensitiveErrorTextRedactor.RedactSiteText(text);
+
+	// The server's (or the page step's) notes, warnings, leftovers and case names: each the site's text, redacted on
+	// its own so a stack frame in one cannot cut the next, where it enters the result. The commands log each item.
+	private static List<string> SiteList(IEnumerable<string> items) =>
+		(items ?? []).Select(SiteText).Where(item => !string.IsNullOrWhiteSpace(item)).ToList();
+
 	/// <inheritdoc />
 	public DescribeDynamicCaseResult Describe(DescribeDynamicCaseOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
@@ -186,12 +197,12 @@ public sealed class DynamicCaseService(
 		DescribeCaseResponse response = reply.Response;
 		return new DescribeDynamicCaseResult {
 			Success = response.Success,
-			ErrorCode = response.ErrorCode,
-			ErrorMessage = response.ErrorMessage,
+			ErrorCode = SiteText(response.ErrorCode),
+			ErrorMessage = SiteText(response.ErrorMessage),
 			Cases = [.. (response.Cases ?? []).Select(info => ExistingCaseInfo(options.Environment, info))],
 			Settings = response.Settings ?? [],
-			Notes = response.Notes ?? [],
-			Warnings = response.Warnings ?? []
+			Notes = SiteList(response.Notes),
+			Warnings = SiteList(response.Warnings)
 		};
 	}
 
@@ -226,16 +237,16 @@ public sealed class DynamicCaseService(
 		return new ModifyDynamicCaseResult {
 			Success = response.Success && DynamicCaseModifyOutcomes.IsSuccess(outcome),
 			Outcome = outcome,
-			ErrorCode = response.ErrorCode,
-			ErrorMessage = response.ErrorMessage,
+			ErrorCode = SiteText(response.ErrorCode),
+			ErrorMessage = SiteText(response.ErrorMessage),
 			Case = response.Case is null ? null : ExistingCaseInfo(options.Environment, response.Case),
 			Diff = response.Diff,
 			RunningInstances = response.RunningInstances,
 			Settings = response.Settings,
 			Obligations = response.Obligations,
-			Leftovers = response.Leftovers ?? [],
-			Notes = response.Notes ?? [],
-			Warnings = response.Warnings ?? []
+			Leftovers = SiteList(response.Leftovers),
+			Notes = SiteList(response.Notes),
+			Warnings = SiteList(response.Warnings)
 		};
 	}
 
@@ -295,7 +306,7 @@ public sealed class DynamicCaseService(
 				Outcome = DynamicCaseOutcomes.Refused,
 				ErrorCode = validation ? DynamicCaseErrorCodes.DependencyCycle : DynamicCaseErrorCodes.DependencyAddFailed,
 				ErrorMessage = $"Adding the missing package dependencies ({string.Join(", ", missing)}) to "
-					+ $"'{options.PackageName}' failed, so the case was not built: {exception.Message}"
+					+ $"'{options.PackageName}' failed, so the case was not built: {SiteText(exception.Message)}"
 					+ (validation
 						? " The storage refused the dependency, which usually means one of those packages already "
 						+ $"depends on '{options.PackageName}'. Choose a package that sits above them."
@@ -306,7 +317,7 @@ public sealed class DynamicCaseService(
 					compilationRequired: false),
 				Page = PageInfo(pagePlan, PageNotReached),
 				Notes = [],
-				Warnings = [.. plan.Warnings ?? [], .. warnings]
+				Warnings = [.. SiteList(plan.Warnings), .. warnings]
 			};
 		}
 	}
@@ -320,8 +331,8 @@ public sealed class DynamicCaseService(
 		} catch (Exception exception) {
 			return (DependenciesLeftAfterFailure, [
 				$"Adding the package dependencies to '{packageName}' failed without the storage's answer "
-				+ $"({failure.Message}), so the save may have applied them, and removing them again failed too: "
-				+ $"{exception.Message} Read the package's dependencies and remove any of {string.Join(", ", missing)} "
+				+ $"({SiteText(failure.Message)}), so the save may have applied them, and removing them again failed too: "
+				+ $"{SiteText(exception.Message)} Read the package's dependencies and remove any of {string.Join(", ", missing)} "
 				+ "that are declared with remove-package-dependency."
 			]);
 		}
@@ -337,7 +348,7 @@ public sealed class DynamicCaseService(
 		} catch (Exception exception) {
 			return (DependenciesLeftAfterFailure, [
 				$"The case was not built, but the package dependencies this call added to '{packageName}' "
-				+ $"({string.Join(", ", added)}) could not be removed again: {exception.Message} They are still "
+				+ $"({string.Join(", ", added)}) could not be removed again: {SiteText(exception.Message)} They are still "
 				+ "declared; remove them with remove-package-dependency if they are not wanted."
 			]);
 		}
@@ -345,8 +356,8 @@ public sealed class DynamicCaseService(
 
 	private DynamicCaseResult WithPage(CreateDynamicCaseOptions options, BuildCaseResponse built,
 		DynamicCaseDependencies dependencies, DynamicCasePagePlan pagePlan) {
-		List<string> notes = [.. built.Notes ?? []];
-		List<string> warnings = [.. built.Warnings ?? []];
+		List<string> notes = SiteList(built.Notes);
+		List<string> warnings = SiteList(built.Warnings);
 		AddCompilationNotice(options, dependencies, notes, warnings,
 			" The case and the progress bar themselves need no compile.");
 		string designerUrl = DesignerUrl(options.Environment, built.Case?.SchemaUId);
@@ -357,8 +368,8 @@ public sealed class DynamicCaseService(
 				options, built, designerUrl, dependencies, new DynamicCasePageInfo { Status = PageSkipped }, notes,
 				warnings, pageWritten: false);
 		}
-		notes.AddRange(pagePlan.Notes);
-		warnings.AddRange(pagePlan.Warnings);
+		notes.AddRange(SiteList(pagePlan.Notes));
+		warnings.AddRange(SiteList(pagePlan.Warnings));
 		if (pagePlan.Status == DynamicCasePageStep.StatusAlreadyPresent) {
 			AddPackageNote(options, pagePlan, notes);
 			return Result(alreadyPresent ? DynamicCaseOutcomes.AlreadyPresent : DynamicCaseOutcomes.Created, options,
@@ -366,7 +377,7 @@ public sealed class DynamicCaseService(
 				warnings, pageWritten: false);
 		}
 		DynamicCasePageWrite write = pageStep.Write(options.Environment, pagePlan);
-		warnings.AddRange(write.Warnings ?? []);
+		warnings.AddRange(SiteList(write.Warnings));
 		if (write.Inserted) {
 			AddPackageNote(options, pagePlan, notes);
 			return Result(alreadyPresent ? DynamicCaseOutcomes.AlreadyPresent : DynamicCaseOutcomes.Created, options,
@@ -450,22 +461,22 @@ public sealed class DynamicCaseService(
 			ErrorMessage = errorMessage,
 			Case = CaseInfo(options, built.Case, designerUrl),
 			Settings = built.Settings,
-			DeactivatedCases = built.DeactivatedCases ?? [],
+			DeactivatedCases = SiteList(built.DeactivatedCases),
 			Dependencies = dependencies,
 			Page = page,
 			Obligations = WithPageArtifact(built.Obligations, pageWritten, dependencies?.CompilationRequired == true),
-			Leftovers = built.Leftovers ?? [],
+			Leftovers = SiteList(built.Leftovers),
 			Notes = notes,
 			Warnings = warnings
 		};
 
 	private static DynamicCaseResult Planned(CreateDynamicCaseOptions options, BuildCaseResponse plan,
 		List<string> missing, DynamicCasePagePlan pagePlan) {
-		List<string> notes = [.. plan.Notes ?? []];
-		List<string> warnings = [.. plan.Warnings ?? []];
+		List<string> notes = SiteList(plan.Notes);
+		List<string> warnings = SiteList(plan.Warnings);
 		if (pagePlan is not null) {
-			notes.AddRange(pagePlan.Notes);
-			warnings.AddRange(pagePlan.Warnings);
+			notes.AddRange(SiteList(pagePlan.Notes));
+			warnings.AddRange(SiteList(pagePlan.Warnings));
 			AddPackageNote(options, pagePlan, notes);
 		}
 		AddSkippedBarModeNote(options, notes);
@@ -475,7 +486,7 @@ public sealed class DynamicCaseService(
 		return new DynamicCaseResult {
 			Success = true,
 			Outcome = DynamicCaseOutcomes.Planned,
-			DeactivatedCases = plan.DeactivatedCases ?? [],
+			DeactivatedCases = SiteList(plan.DeactivatedCases),
 			Case = CaseInfo(options, plan.Case, designerUrl: null),
 			Settings = plan.Settings,
 			Dependencies = Dependencies(plan, missing, [], dependencyStatus, compilationRequired: false),
@@ -495,6 +506,8 @@ public sealed class DynamicCaseService(
 			Success = false,
 			Outcome = DynamicCaseOutcomes.Refused,
 			ErrorCode = pagePlan.ErrorCode,
+			// clio's own sentence: the page step and the resolver redact the site text they quote where they embed it,
+			// so the remedy around it is never cut or redacted a second time.
 			ErrorMessage = pagePlan.ErrorMessage,
 			Case = CaseInfo(options, plan.Case, designerUrl: null),
 			Settings = plan.Settings,
@@ -503,7 +516,7 @@ public sealed class DynamicCaseService(
 			Page = PageInfo(pagePlan, DynamicCasePageStep.StatusRefused),
 			Leftovers = [],
 			Notes = [],
-			Warnings = plan.Warnings ?? []
+			Warnings = SiteList(plan.Warnings)
 		};
 
 	private DynamicCaseResult FromServer(CreateDynamicCaseOptions options, BuildCaseResponse response,
@@ -511,21 +524,21 @@ public sealed class DynamicCaseService(
 		string outcome = response.Outcome is DynamicCaseOutcomes.FailedRolledBack or DynamicCaseOutcomes.FailedLeftover
 			? response.Outcome
 			: DynamicCaseOutcomes.Refused;
-		List<string> notes = [.. response.Notes ?? []];
-		List<string> warnings = [.. response.Warnings ?? [], .. extraWarnings];
+		List<string> notes = SiteList(response.Notes);
+		List<string> warnings = [.. SiteList(response.Warnings), .. extraWarnings];
 		AddCompilationNotice(options, dependencies, notes, warnings);
 		return new DynamicCaseResult {
 			Success = false,
 			Outcome = outcome,
-			ErrorCode = response.ErrorCode,
-			ErrorMessage = response.ErrorMessage,
+			ErrorCode = SiteText(response.ErrorCode),
+			ErrorMessage = SiteText(response.ErrorMessage),
 			Case = CaseInfo(options, response.Case, designerUrl: null),
 			Settings = response.Settings,
-			DeactivatedCases = response.DeactivatedCases ?? [],
+			DeactivatedCases = SiteList(response.DeactivatedCases),
 			Dependencies = dependencies,
 			Page = page,
 			Obligations = WithPageArtifact(response.Obligations, page: false, dependencies?.CompilationRequired == true),
-			Leftovers = response.Leftovers ?? [],
+			Leftovers = SiteList(response.Leftovers),
 			Notes = notes,
 			Warnings = warnings
 		};
@@ -694,9 +707,10 @@ public sealed class DynamicCaseService(
 		string entitySchemaName, string stageColumnName) =>
 		new() {
 			Status = info.Status,
-			SchemaName = info.SchemaName,
+			// The case's name and caption are the site's text: every verdict line and the result line show them.
+			SchemaName = SiteText(info.SchemaName),
 			SchemaUId = info.SchemaUId,
-			Caption = info.Caption,
+			Caption = SiteText(info.Caption),
 			PackageName = packageName,
 			EntitySchemaName = entitySchemaName,
 			StageColumnName = stageColumnName,

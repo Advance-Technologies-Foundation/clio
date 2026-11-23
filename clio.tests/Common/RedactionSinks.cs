@@ -189,6 +189,57 @@ internal sealed class RedactionSinks {
 	}
 
 	/// <summary>
+	/// <c>ServiceResponseJsonGuard.BuildResponsePreview</c>: the preview of a SelectQuery or designer body that is not
+	/// JSON. Master redacted the collapsed body whole and cut it at 200 after its chain.
+	/// </summary>
+	internal string GuardPreview(string text) =>
+		(string)Call(Type("Clio.Package.ServiceResponseJsonGuard"), "BuildResponsePreview", [typeof(string)], text);
+
+	/// <summary>
+	/// A raw quote master returned unredacted and the MCP layer redacts only on a passthrough request: master's output is
+	/// read through that <c>Redact</c>, its strongest path, and this build's as stdio returns it, its weakest, so the
+	/// comparison is the strictest of the two paths.
+	/// </summary>
+	private string RawOnMaster(string output) => _siteBuild ? output : Redact(output);
+
+	/// <summary>
+	/// <c>BuildCaseClient.Classify</c>'s detail of a body that is no case envelope: every dynamic-case tool quotes it.
+	/// Master quoted <c>Cap(body)</c>, raw, cut at 400.
+	/// </summary>
+	internal string DynamicCaseDetail(string text) {
+		MethodInfo classify = Type("Clio.Command.BuildCaseClient").GetMethod("Classify", AnyStatic)!.MakeGenericMethod(typeof(object));
+		object reply;
+		try {
+			reply = classify.Invoke(null, [text, "BuildCaseResult"]);
+		}
+		catch (TargetInvocationException exception) when (exception.InnerException is not null) {
+			throw exception.InnerException;
+		}
+		return RawOnMaster((string)reply!.GetType().GetProperty("Detail")!.GetValue(reply) ?? string.Empty);
+	}
+
+	/// <summary>
+	/// <c>ProcessDesignServerFault.ReadServerText</c> of a body that is a JSON string: the process-design and
+	/// dynamic-case tools quote it. Master returned it raw, cut at 400.
+	/// </summary>
+	internal string ProcessServerText(string text) =>
+		RawOnMaster((string)Call(Type("Clio.Command.ProcessModel.ProcessDesignServerFault"), "ReadServerText", [typeof(string)],
+			JsonSerializer.Serialize(text)) ?? string.Empty);
+
+	/// <summary>
+	/// <c>SchemaTemplateCatalog.BuildNonJsonErrorMessage</c>: the page template catalog's preview of a body that is not
+	/// JSON. Master quoted it raw, cut at 200.
+	/// </summary>
+	internal string TemplateCatalogPreview(string text) =>
+		RawOnMaster((string)Call(Type("Clio.Command.SchemaTemplateCatalog"), "BuildNonJsonErrorMessage",
+			[typeof(string), typeof(string), typeof(Exception)], "u", text, new FormatException("p")) ?? string.Empty);
+
+	// Master's collapse before the guard preview's chain: the line breaks become spaces, then whitespace and byte-order
+	// marks are trimmed.
+	private static string GuardCollapse(string text) =>
+		text.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim().Trim('\uFEFF').Trim();
+
+	/// <summary>
 	/// One compared output of the baseline. <paramref name="Code"/> is its letter in the baseline file;
 	/// <paramref name="Run"/> is the sink; <paramref name="Uncut"/>, for a sink that cuts AFTER the chain (the fenced
 	/// renderings at 300, <c>site-response</c> at its cap), is master's chain over the same input with that cut left out.
@@ -229,7 +280,13 @@ internal sealed class RedactionSinks {
 		new('Y', "DataWriteDiagnostic.message", (sinks, text) => sinks.DataWriteDiagnosticMessage(text), (sinks, text) => {
 			int preview = text.IndexOf(" Response: ", StringComparison.Ordinal);
 			return sinks.SiteText(FenceInput(preview >= 0 ? text[..preview] : text));
-		})
+		}),
+		// #1991's write paths. The guard preview cuts at 200 AFTER its chain; the other three keep master's cut before it.
+		new('A', "ServiceResponseJsonGuard's non-JSON preview", (sinks, text) => sinks.GuardPreview(text),
+			(sinks, text) => sinks.Redact(GuardCollapse(text))),
+		new('U', "dynamic-case detail (BuildCaseClient)", (sinks, text) => sinks.DynamicCaseDetail(text)),
+		new('V', "process-design server text (ReadServerText)", (sinks, text) => sinks.ProcessServerText(text)),
+		new('E', "page template catalog's non-JSON preview", (sinks, text) => sinks.TemplateCatalogPreview(text))
 	];
 
 	/// <summary>
@@ -247,4 +304,11 @@ internal sealed class RedactionSinks {
 	/// error. None is compared vacuously.
 	/// </summary>
 	internal static readonly char[] ReadThroughTheCallersRedact = ['S', 'G', 'H', 'L'];
+
+	/// <summary>
+	/// The raw quotes of #1991's write paths that master's MCP layer redacted only on passthrough, read on master through
+	/// that <c>Redact</c> and here as stdio returns them (<see cref="RawOnMaster"/>): the dynamic-case detail (U), the
+	/// process-design server text (V) and the page template catalog's preview (E).
+	/// </summary>
+	internal static readonly char[] ReadThroughThePassthroughRedactOnMaster = ['U', 'V', 'E'];
 }
