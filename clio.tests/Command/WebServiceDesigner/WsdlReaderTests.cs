@@ -515,8 +515,10 @@ public sealed class WsdlReaderTests {
 		WsdlReadResult result = _sut.Read(Files(path));
 
 		// Assert
-		result.Warnings.Should().HaveCount(WarningLog.MaxKept + 1, because: "the kept warnings and one count line");
-		result.Warnings[^1].Should().Be("...and 20 more warnings.", because: "the parser's dropped warnings are counted");
+		int shown = result.Warnings.Count - 1;
+		shown.Should().BeLessThanOrEqualTo(WarningLog.MaxKept, because: "the warnings shown are at most the kept ones, and one count line");
+		result.Warnings[^1].Should().StartWith($"...and {WarningLog.MaxKept - shown + 20} more warnings",
+			because: "the parser's dropped warnings are counted together with any the reply budget left out");
 	}
 
 	[Test]
@@ -768,6 +770,26 @@ public sealed class WsdlReaderTests {
 			because: "the warnings past their share are counted in one line, with their number");
 		result.Services.Should().OnlyContain(s => s.Arguments != null || s.Operations.Contains("Op"),
 			because: "the warnings no longer crowd out the operation, by arguments or at least by name");
+	}
+
+	[Test]
+	[Description("One port with one operation whose warnings pass their share keeps its arguments and cuts the warnings, without asking for a narrower read that does not exist.")]
+	public void Read_Should_Cut_The_Warnings_Before_The_Arguments_Of_One_Operation() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Range(0, WsdlParser.MaxWarnings)
+			.Select(i => $"<xs:element name=\"aVeryLongFieldNameThatTheGeneratorWrote{i:000}\" type=\"tns:AMissingTypeTheGeneratorReferenced{i:000}\" />"));
+		string path = GivenFile("one-op-warnings.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		result.Services.Single().Arguments.Should().NotBeNull(because: "the operation's arguments are worth more than the warnings past their share");
+		int warningBytes = result.Warnings.Sum(w => Encoding.UTF8.GetByteCount(w) + 3);
+		warningBytes.Should().BeLessThanOrEqualTo(WsdlReader.MaxWarningBytes + 200,
+			because: "the warnings take at most their share of the reply, plus the count line");
+		result.Warnings[^1].Should().EndWith("more warnings, left out to keep the reply inline.",
+			because: "one port with one operation is already the narrowest read, so no narrower one is suggested");
 	}
 
 	[Test]

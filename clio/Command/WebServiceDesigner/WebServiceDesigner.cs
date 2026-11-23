@@ -236,13 +236,24 @@ public sealed class WebServiceDesigner(
 	/// <summary>
 	/// An empty SOAP action sends no SOAPAction header at all (measured); many SOAP 1.1 servers refuse such a call. The
 	/// notice is written to be passed on whole: an agent that relayed only its first half dropped the risk (isolated run).
-	/// Only a SOAP 1.1 service gets it: the header is the SOAP 1.1 dispatch convention.
+	/// Only a SOAP 1.1 service gets it: the header is the SOAP 1.1 dispatch convention. Several such methods share one
+	/// notice, so a large service does not fill the reply with copies of the same sentence.
 	/// </summary>
-	private static IEnumerable<string> SoapActionNotices(ServiceSchemaDto schema, IEnumerable<ServiceMethodDto> methods) =>
-		schema.Type != ServiceSchemaCodes.ServiceTypeSoap11 ? [] : methods.Where(m => m.SoapAction is { Length: 0 })
-			.Select(m => $"Tell the user: method '{m.Name}' has no soap-action, so no SOAPAction header is sent, and many "
+	private static IEnumerable<string> SoapActionNotices(ServiceSchemaDto schema, IEnumerable<ServiceMethodDto> methods) {
+		if (schema.Type != ServiceSchemaCodes.ServiceTypeSoap11) {
+			return [];
+		}
+		List<string> names = methods.Where(m => m.SoapAction is { Length: 0 }).Select(m => $"'{m.Name}'").ToList();
+		return names.Count switch {
+			0 => [],
+			1 => [$"Tell the user: method {names[0]} has no soap-action, so no SOAPAction header is sent, and many "
 				+ "SOAP 1.1 servers refuse such a call. Ask them for the SOAP action (the WSDL's binding operation "
-				+ "soapAction); do not make one up.");
+				+ "soapAction); do not make one up."],
+			_ => [$"Tell the user: methods {string.Join(", ", names)} have no soap-action, so no SOAPAction header is "
+				+ "sent for them, and many SOAP 1.1 servers refuse such a call. Ask them for the SOAP actions (the WSDL's "
+				+ "binding operation soapAction); do not make them up."]
+		};
+	}
 
 	/// <summary>
 	/// The refusal of the usage guard. A changed or removed method leaves its callers' elements with mappings that point

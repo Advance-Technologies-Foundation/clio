@@ -76,7 +76,7 @@ public interface IWsdlReader {
 	/// <param name="request">The request.</param>
 	/// <returns>
 	/// The ports with warnings, within <see cref="McpServer.McpResultSize.InlineReplyBudgetBytes"/>: every port in full when
-	/// that fits; else the port to register (<see cref="WsdlDocument.RegisterInstead"/>, or Studio's pick) in full and the
+	/// that fits, with all warnings or, failing that, the warnings within their share; else the port to register (<see cref="WsdlDocument.RegisterInstead"/>, or Studio's pick) in full and the
 	/// other ports by operation name; else operation names only. Warnings take at most <see cref="WsdlReader.MaxWarningBytes"/>,
 	/// and one port with one operation is returned whole up to <see cref="WsdlReader.MaxNarrowestReplyBytes"/>.
 	/// </returns>
@@ -288,7 +288,8 @@ public sealed partial class WsdlReader(
 	private static IEnumerable<WsdlParameter> Flatten(IReadOnlyList<WsdlParameter> parameters) =>
 		(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
-	// The result within the reply budget, in three steps: every port in full; then, with several ports, the port to register in
+	// The result within the reply budget, in steps: every port in full, with every warning and then with the warnings
+	// within their share; then, with several ports, the port to register in
 	// full and the others by operation name (on one binding they are near copies, so a WSDL with SOAP 1.1 and SOAP 1.2 ports
 	// would otherwise cost the agent the same operations twice); then operation names only.
 	private static WsdlReadResult Result(IReadOnlyList<WsdlServiceArguments> services, WarningLog warnings,
@@ -297,11 +298,17 @@ public sealed partial class WsdlReader(
 		List<WsdlServiceView> views = services.Select(Full).ToList();
 		var result = new WsdlReadResult(true, Services: views, Warnings: allWarnings.Count > 0 ? allWarnings : null,
 			Notices: notices.Count > 0 ? notices : null);
-		if (Fits(result) || (IsNarrowest(services) && McpServer.McpResultSize.Of(result) <= MaxNarrowestReplyBytes)) {
+		if (Fits(result)) {
 			return result;
 		}
-		// Only a reply that does not fit gives up warnings, and then only past their share.
-		List<string> shownWarnings = ShownWarnings(warnings, WarningShare(warnings));
+		// Only a reply that does not fit gives up warnings, and then only past their share: the arguments of every port
+		// are worth more than the warnings past it.
+		bool narrowest = IsNarrowest(services);
+		List<string> shownWarnings = ShownWarnings(warnings, WarningShare(warnings), narrowest);
+		WsdlReadResult capped = result with { Warnings = shownWarnings.Count > 0 ? shownWarnings : null };
+		if (Fits(capped) || (narrowest && McpServer.McpResultSize.Of(capped) <= MaxNarrowestReplyBytes)) {
+			return capped;
+		}
 		if (services.Count > 1) {
 			WsdlServiceArguments shown = services.FirstOrDefault(s => s.Port == registerInstead)
 				?? services.FirstOrDefault(s => s.StudioPick) ?? services[0];
@@ -349,11 +356,14 @@ public sealed partial class WsdlReader(
 	}
 
 	// The first kept warnings, and one count line for the rest, the ones the log already left out included.
-	private static List<string> ShownWarnings(WarningLog warnings, int kept) =>
+	// The count line names the narrower read only when there is one: one port with one operation is already the narrowest.
+	private static List<string> ShownWarnings(WarningLog warnings, int kept, bool narrowest = false) =>
 		kept >= warnings.Kept.Count
 			? [.. warnings.ToList()]
 			: [.. warnings.Kept.Take(kept), $"...and {warnings.Kept.Count - kept + warnings.Dropped} more warnings, left out "
-				+ "to keep the reply inline; read the WSDL again with port and operations, which gives fewer."];
+				+ (narrowest
+					? "to keep the reply inline."
+					: "to keep the reply inline; read the WSDL again with port and operations, which gives fewer.")];
 
 	// The operation names to list, cut like any WSDL text, at most remaining of them, with a count line for the rest.
 	private static List<string> Names(List<string> operations, ref int remaining) {
@@ -387,7 +397,7 @@ public sealed partial class WsdlReader(
 			int remaining = limit;
 			List<WsdlServiceView> views = ports.Select(p => new WsdlServiceView(p.Port, p.StudioPick,
 				Operations: Names(p.Operations, ref remaining))).ToList();
-			List<string> shownWarnings = ShownWarnings(warnings, keptWarnings);
+			List<string> shownWarnings = ShownWarnings(warnings, keptWarnings, narrowest);
 			var result = new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
 				Notices: summaryNotices);
 			long size = McpServer.McpResultSize.Of(result);

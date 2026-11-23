@@ -1864,6 +1864,25 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("describe-web-service with methods and usages lists the usages of those methods and the callers whose method is unknown, and leaves out the others.")]
+	public void Describe_Should_List_The_Usages_Of_The_Named_Methods() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(3));
+		GivenSelect("SysSchema", ProcessRow("CallsM01", "UsrM01"), ProcessRow("CallsM02", "UsrM02"), new JsonObject {
+			["Name"] = "BrokenProcess", ["Caption"] = "BrokenProcess", ["SysPackageName"] = "Custom",
+			["MetaData"] = "{\"a\":1,\"a\":\"" + ServiceUId + "\"}"
+		});
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", true, ["UsrM01"]);
+
+		// Assert
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM01"], because: "only the named method is returned");
+		result.Usages.Select(u => u.Process).Should().BeEquivalentTo(["CallsM01", "BrokenProcess"],
+			because: "a caller of the named method, and one whose method cannot be read, may call it; the caller of UsrM02 does not");
+	}
+
+	[Test]
 	[Description("A service too large to describe inline returns as many methods in full as fit, in stored order, and lists the rest by code with their parameter counts.")]
 	public void Describe_Should_List_The_Methods_That_Do_Not_Fit_By_Code() {
 		// Arrange

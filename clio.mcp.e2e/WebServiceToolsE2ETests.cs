@@ -691,9 +691,10 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureTag(DescribeWebServiceTool.ToolName)]
+	[AllureTag(ModifyWebServiceTool.ToolName)]
 	[AllureTag(TestWebServiceMethodTool.ToolName)]
-	[AllureName("register, describe and test-call replies stay within Copilot CLI's inline limit")]
-	[Description("Registers a REST service with 40 methods on an echo API, expects the register and describe replies within Copilot CLI's 20,480-byte inline limit with the methods that do not fit listed in methods-not-shown, describe with methods to return one of those in full, and a test call whose response is longer than the reply to come back cut, marked response-body-truncated and within the limit. The test-call part is ignored when the stand cannot reach the echo API.")]
+	[AllureName("register, describe, modify and test-call replies stay within Copilot CLI's inline limit")]
+	[Description("Registers a REST service with 40 methods on an echo API, expects the register and describe replies within Copilot CLI's 20,480-byte inline limit with the methods that do not fit listed in methods-not-shown, describe with methods to return one of those in full, a modify reply to show the method it changed in full, and a test call whose response is longer than the reply to come back cut, marked response-body-truncated and within the limit. The test-call part is ignored when the stand cannot reach the echo API.")]
 	public async Task WebServiceTools_Should_Keep_Large_Replies_Inline() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -730,6 +731,22 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["methods"] = new[] { hidden }
 			}, cts.Token);
+		string lastCode = Prefixed("Lookup38");
+		(WebServiceToolResult modified, int modifiedBytes) = await CallMeasuredAsync<WebServiceToolResult>(
+			ModifyWebServiceTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode,
+				["operations"] = new[] {
+					new Dictionary<string, object?> {
+						["op"] = "setMethod",
+						["method"] = new Dictionary<string, object?> {
+							["code"] = lastCode, ["http-method"] = "GET", ["uri"] = "anything/lookup38",
+							["request-parameters"] = new[] {
+								new Dictionary<string, object?> { ["code"] = Prefixed("Region"), ["in"] = "query", ["path"] = "region" }
+							}
+						}
+					}
+				}
+			}, cts.Token);
 		(WebServiceTestResult range, int rangeBytes) = await CallMeasuredAsync<WebServiceTestResult>(
 			TestWebServiceMethodTool.ToolName, new Dictionary<string, object?> {
 				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = rangeCode
@@ -745,6 +762,11 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "every method is either shown or listed by code");
 		one.Service!.Methods.Select(m => m.Code).Should().Equal([hidden],
 			because: "a method listed by code is read in full with methods");
+		modified.Success.Should().BeTrue(because: $"the last method is replaced; error: {modified.Error}");
+		modifiedBytes.Should().BeInRange(1, 20_480, because: "Copilot CLI writes a larger tool result to a file");
+		modified.Service!.Methods.Should().Contain(m => m.Code == lastCode,
+			because: "the method the change built is shown in full first, though it is the last one stored");
+		modified.Service.MethodsNotShown.Should().NotBeNullOrEmpty(because: "the other methods still do not all fit");
 		if (range.StatusCode is not 200) {
 			Assert.Ignore($"'{_environmentName}' got no answer from httpbin.org (status {range.StatusCode}, error "
 				+ $"{range.Error}), so the response cut cannot be checked.");
