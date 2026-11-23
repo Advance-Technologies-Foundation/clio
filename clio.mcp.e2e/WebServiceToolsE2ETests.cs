@@ -688,6 +688,79 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the key-like constant went out and its echo is masked");
 	}
 
+	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureTag(DescribeWebServiceTool.ToolName)]
+	[AllureTag(TestWebServiceMethodTool.ToolName)]
+	[AllureName("register, describe and test-call replies stay within Copilot CLI's inline limit")]
+	[Description("Registers a REST service with 40 methods on an echo API, expects the register and describe replies within Copilot CLI's 20,480-byte inline limit with the methods that do not fit listed in methods-not-shown, describe with methods to return one of those in full, and a test call whose response is longer than the reply to come back cut, marked response-body-truncated and within the limit. The test-call part is ignored when the stand cannot reach the echo API.")]
+	public async Task WebServiceTools_Should_Keep_Large_Replies_Inline() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		await ResolvePrefixAsync(settings, cts.Token);
+		_serviceCode = UniqueCode("E2eWsBig");
+		string rangeCode = Prefixed("Range");
+		object[] methods = [
+			new Dictionary<string, object?> { ["code"] = rangeCode, ["http-method"] = "GET", ["uri"] = "range/30000" },
+			.. Enumerable.Range(0, 39).Select(i => new Dictionary<string, object?> {
+				["code"] = Prefixed($"Lookup{i:00}"), ["http-method"] = "GET", ["uri"] = $"anything/lookup{i}",
+				["request-parameters"] = Enumerable.Range(0, 6).Select(p => new Dictionary<string, object?> {
+					["code"] = Prefixed($"Filter{p}"), ["in"] = "query", ["path"] = $"filter_{p}"
+				}).ToArray()
+			})
+		];
+
+		// Act
+		(WebServiceToolResult registered, int registeredBytes) = await CallMeasuredAsync<WebServiceToolResult>(
+			RegisterWebServiceTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["package-name"] = PackageName, ["code"] = _serviceCode,
+				["base-uri"] = "https://httpbin.org", ["methods"] = methods
+			}, cts.Token);
+		(WebServiceToolResult described, int describedBytes) = await CallMeasuredAsync<WebServiceToolResult>(
+			DescribeWebServiceTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode }, cts.Token);
+		string hidden = described.Service?.MethodsNotShown?.FirstOrDefault()?.Code ?? string.Empty;
+		WebServiceToolResult one = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["methods"] = new[] { hidden }
+			}, cts.Token);
+		(WebServiceTestResult range, int rangeBytes) = await CallMeasuredAsync<WebServiceTestResult>(
+			TestWebServiceMethodTool.ToolName, new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = _serviceCode, ["method"] = rangeCode
+			}, cts.Token);
+
+		// Assert
+		registered.Success.Should().BeTrue(because: $"40 methods register; error: {registered.Error}");
+		registeredBytes.Should().BeLessThanOrEqualTo(20_480, because: "Copilot CLI writes a larger tool result to a file");
+		described.Success.Should().BeTrue(because: $"describe reads the service back; error: {described.Error}");
+		describedBytes.Should().BeLessThanOrEqualTo(20_480, because: "Copilot CLI writes a larger tool result to a file");
+		described.Service!.MethodsNotShown.Should().NotBeNullOrEmpty(because: "40 methods with parameters do not fit one reply");
+		(described.Service.Methods.Count + described.Service.MethodsNotShown!.Count).Should().Be(40,
+			because: "every method is either shown or listed by code");
+		one.Service!.Methods.Select(m => m.Code).Should().Equal([hidden],
+			because: "a method listed by code is read in full with methods");
+		if (range.StatusCode is not 200) {
+			Assert.Ignore($"'{_environmentName}' got no answer from httpbin.org (status {range.StatusCode}, error "
+				+ $"{range.Error}), so the response cut cannot be checked.");
+		}
+		range.ResponseBodyTruncated.Should().BeTrue(because: "a 30,000-character response is longer than the reply");
+		rangeBytes.Should().BeLessThanOrEqualTo(20_480, because: "Copilot CLI writes a larger tool result to a file");
+	}
+
+	private async Task<(T Result, int Bytes)> CallMeasuredAsync<T>(string toolName, Dictionary<string, object?> args,
+		CancellationToken token) {
+		CallToolResult result = await Session.CallToolAsync(toolName,
+			new Dictionary<string, object?> { ["args"] = args }, token);
+		int bytes = result.Content.OfType<TextContentBlock>().Sum(block => System.Text.Encoding.UTF8.GetByteCount(block.Text));
+		return (EntitySchemaStructuredResultParser.Extract<T>(result), bytes);
+	}
+
 	/// <summary>
 	/// Inserts an OAuth application with placeholder endpoints and a placeholder client id; it carries no secret.
 	/// Only ClientId is required by the entity. The id is recorded BEFORE the insert, so the teardown deletes the

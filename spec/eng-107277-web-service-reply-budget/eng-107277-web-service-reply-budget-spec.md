@@ -35,7 +35,7 @@ and writes a larger one to a file, which the agent reads back in pieces, one mod
   service through `IWebServiceDesigner.Describe` and must see every method to keep its codes.
 - `describe-web-service`, `register-web-service` and `modify-web-service` return as many methods in full as fit (a
   single method over the budget is still returned, or describing it by code would loop; with several, a large first one
-  is listed by code rather than dragging the reply over), and list the rest
+  is listed by code, and the methods after it are still tried, rather than dragging the reply over), and list the rest
   in `methods-not-shown` (code, caption, parameter counts) with a notice; usages that still do not fit are cut last.
   `modify-web-service` keeps the methods its operations add or replace in full first. `describe-web-service` takes
   `methods` to read named methods.

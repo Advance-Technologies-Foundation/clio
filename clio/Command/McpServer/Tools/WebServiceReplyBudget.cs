@@ -18,7 +18,8 @@ internal static class WebServiceReplyBudget {
 
 	/// <summary>
 	/// A service reply within the budget: every method in full when that fits; a single method always in full; otherwise
-	/// as many as fit, the methods named in <paramref name="shownFirst"/> first and then in stored order, with the rest listed by code in
+	/// as many as fit, taken in priority order (the methods named in <paramref name="shownFirst"/>, then stored order) and
+	/// skipping one that alone does not fit, with the rest listed by code in
 	/// <c>methods-not-shown</c> and a notice saying how to read them. Usages that still do not fit are cut last, with a
 	/// notice.
 	/// </summary>
@@ -34,11 +35,10 @@ internal static class WebServiceReplyBudget {
 		List<WebServiceMethodView> byPriority = [.. methods.Where(m => first.Contains(m.Code ?? string.Empty)),
 			.. methods.Where(m => !first.Contains(m.Code ?? string.Empty))];
 		// A single method stays in full even when it alone passes the budget: otherwise describing it by code could never
-		// show it. With several, a large first one must not drag the reply over: then every method is listed by code.
+		// show it. With several, a large one must not drag the reply over, nor push the small ones after it out.
 		WebServiceToolResult narrowed = methods.Count <= 1
 			? result
-			: Narrowed(result, methods, byPriority,
-				LargestFitting(0, methods.Count - 1, count => Fits(Narrowed(result, methods, byPriority, count))));
+			: Narrowed(result, methods, Shown(result, methods, byPriority));
 		if (Fits(narrowed) || narrowed.Usages is not { Count: > 0 } usages) {
 			return narrowed;
 		}
@@ -105,12 +105,29 @@ internal static class WebServiceReplyBudget {
 
 	private static bool Fits<T>(T reply) => McpResultSize.Of(reply) <= McpResultSize.InlineReplyBudgetBytes;
 
+	/// <summary>The most methods a narrowed reply tries one by one after the longest fitting run, which bounds the work.</summary>
+	private const int MaxSkippingTries = 100;
+
+	// The methods shown in full: the longest run in priority order that fits (a binary search), then each later method
+	// that still fits, skipping the ones that do not, so a large method does not push the small ones after it out.
+	private static HashSet<WebServiceMethodView> Shown(WebServiceToolResult result, IReadOnlyList<WebServiceMethodView> methods,
+		List<WebServiceMethodView> byPriority) {
+		int run = LargestFitting(0, byPriority.Count - 1, count => Fits(Narrowed(result, methods, byPriority.Take(count))));
+		var shown = new HashSet<WebServiceMethodView>(byPriority.Take(run), ReferenceEqualityComparer.Instance);
+		foreach (WebServiceMethodView method in byPriority.Skip(run + 1).Take(MaxSkippingTries)) {
+			shown.Add(method);
+			if (!Fits(Narrowed(result, methods, shown))) {
+				shown.Remove(method);
+			}
+		}
+		return shown;
+	}
+
 	private static WebServiceToolResult Narrowed(WebServiceToolResult result, IReadOnlyList<WebServiceMethodView> methods,
-		List<WebServiceMethodView> byPriority, int shownCount) {
-		var shownCodes = new HashSet<string>(byPriority.Take(shownCount).Select(m => m.Code ?? string.Empty),
-			StringComparer.OrdinalIgnoreCase);
-		List<WebServiceMethodView> shown = methods.Where(m => shownCodes.Contains(m.Code ?? string.Empty)).ToList();
-		List<WebServiceMethodSummary> notShown = methods.Where(m => !shownCodes.Contains(m.Code ?? string.Empty))
+		IEnumerable<WebServiceMethodView> shownMethods) {
+		var shownSet = new HashSet<WebServiceMethodView>(shownMethods, ReferenceEqualityComparer.Instance);
+		List<WebServiceMethodView> shown = methods.Where(shownSet.Contains).ToList();
+		List<WebServiceMethodSummary> notShown = methods.Where(m => !shownSet.Contains(m))
 			.Select(m => new WebServiceMethodSummary(m.Code, m.Caption, m.RequestParameters?.Count ?? 0,
 				m.ResponseParameters?.Count ?? 0))
 			.ToList();

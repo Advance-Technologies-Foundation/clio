@@ -1889,8 +1889,8 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
-	[Description("A large first method does not drag a several-method reply over the budget: every method is then listed by code.")]
-	public void Describe_Should_List_Every_Method_By_Code_When_The_First_Alone_Passes_The_Budget() {
+	[Description("A large first method neither drags a several-method reply over the budget nor pushes the small methods after it out: it alone is listed by code.")]
+	public void Describe_Should_Skip_A_Method_That_Alone_Passes_The_Budget() {
 		// Arrange
 		ServiceSchemaDto schema = ManyMethodsSchema(3);
 		var errors = new WebServiceDefinitionBuilder.Errors();
@@ -1907,8 +1907,10 @@ public sealed class WebServiceDesignerTests {
 		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
 			because: "listing every method by code fits, so the reply must not spill");
 		result.Service.Methods.Should().NotContain(m => m.Code == "UsrA0Big", because: "the large method alone passes the budget");
-		result.Service.MethodsNotShown.Should().Contain(m => m.Code == "UsrA0Big",
-			because: "it is listed by code, to be read on its own with methods");
+		result.Service.MethodsNotShown.Select(m => m.Code).Should().Equal(["UsrA0Big"],
+			because: "it alone is listed by code, to be read on its own with methods");
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM00", "UsrM01", "UsrM02"],
+			because: "the small methods after it still fit and are returned in full");
 	}
 
 	[Test]
