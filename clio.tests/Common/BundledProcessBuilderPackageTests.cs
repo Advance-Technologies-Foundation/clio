@@ -103,9 +103,10 @@ public class BundledProcessBuilderPackageTests {
 	/// anything new. What earlier cuts carried is in this file's git history.
 	/// </para>
 	/// <para>
-	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7266 passed, 0 failed, on
-	/// <c>dev-nf</c> on the producing commit (by the script) and on the fix commit before it. <c>dev-n8</c> was NOT run,
-	/// because the cutting host has no net-core reference set.
+	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7310 passed, 0 failed, on
+	/// <c>dev-nf</c> on the producing commit (by the script). <c>dev-n8</c> ran by hand on the same source tree - the
+	/// refactor's last commit, which the producing commit carries unchanged apart from the compile-marker stamp: 7310
+	/// passed, 0 failed.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse
 	/// failure the two security counts below exist to catch.
