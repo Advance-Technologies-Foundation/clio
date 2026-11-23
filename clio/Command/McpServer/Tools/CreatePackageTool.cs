@@ -65,7 +65,7 @@ public sealed class CreatePackageTool(
 				 exists but a later step failed, and error says which (dependencies not applied: add them with
 				 add-package-dependency; readback failed: check it with list-packages); null means the create
 				 request failed in transport and the outcome is unknown: check list-packages before retrying.
-				 Returns package-uid, package-name, maintainer, description, dependencies, install-type and
+				 Returns package-uid, package-name, maintainer, description, dependencies, install-type, type and
 				 editable. Not idempotent: a second call with the same name is refused as a duplicate.
 				 """)]
 	public CreatePackageResponse CreatePackage(

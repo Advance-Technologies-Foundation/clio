@@ -106,6 +106,14 @@ public sealed record CreatePackageResponse
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public int? InstallType { get; init; }
 
+	/// <summary>
+	/// Gets the stored package type: <c>0</c> an ordinary package, <c>1</c> an assembly package. A created package is
+	/// ordinary; omitted when the readback did not report it.
+	/// </summary>
+	[JsonPropertyName("type")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? Type { get; init; }
+
 	/// <summary>Gets whether the package can receive design-time changes.</summary>
 	[JsonPropertyName("editable")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -179,6 +187,7 @@ public class CreatePackageCommand : RemoteCommand<CreatePackageOptions>
 			Description = result.Description,
 			Dependencies = result.Dependencies,
 			InstallType = result.InstallType,
+			Type = result.Type,
 			Editable = result.InstallType is null ? null : result.Editable,
 			ApplicationCode = string.IsNullOrWhiteSpace(result.ApplicationCode) ? null : result.ApplicationCode
 		};
