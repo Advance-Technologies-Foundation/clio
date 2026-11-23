@@ -1814,9 +1814,13 @@ public sealed class SiteTextWritePathWiringTests {
 		ProcessWriteDigest.Report(logger, after, versionFactsRead: true);
 
 		// Assert
-		logger.Received().WriteWarning(Arg.Is<string>(text =>
-			text.Contains("its summary could not be built: " + RedactedReason, StringComparison.Ordinal)));
-		logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains(Marker, StringComparison.Ordinal)));
+		List<string> warnings = logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => (string)call.GetArguments()[0])
+			.ToList();
+		warnings.Should().Contain(text => text.Contains("its summary could not be built: " + RedactedReason,
+				StringComparison.Ordinal), because: "the build failure is quoted, redacted as site text")
+			.And.NotContain(text => text.Contains(Marker, StringComparison.Ordinal), because: "the warning carries no login");
 	}
 
 	private const string RightsDescriptor = "{\"name\":\"UsrFixtureProcess\",\"packageName\":\"Custom\",\"elements\":[{\"name\":"

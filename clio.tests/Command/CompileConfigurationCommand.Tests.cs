@@ -767,6 +767,13 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 	private string[] LoggedText() =>
 		_logger.ReceivedCalls().SelectMany(call => call.GetArguments()).OfType<string>().ToArray();
 
+	// The recorded WriteError lines, so a test asserts on observed values: SonarCloud S2699 does not count NSubstitute's
+	// Received() as an assertion.
+	private string[] LoggedErrors() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteError))
+		.Select(call => (string)call.GetArguments()[0])
+		.ToArray();
+
 	[Test]
 	[Description("compile-creatio: the failed build response's errorInfo and every diagnostic's code, text and file "
 		+ "(ProceedResponse) take the site-text redaction before they become log lines.")]
@@ -859,7 +866,8 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		command.Execute(options);
 
 		// Assert
-		_logger.Received().WriteError("(CS0103) in UsrClass.cs: The name 'x' does not exist");
+		LoggedErrors().Should().Contain("(CS0103) in UsrClass.cs: The name 'x' does not exist",
+			because: "the diagnostic names the file by its name, whatever path the build response reported");
 	}
 
 	[Test]
@@ -878,7 +886,8 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		command.Execute(options);
 
 		// Assert
-		_logger.Received().WriteError("(CS0103) in UsrClass.cs at (12,3): The name 'x' does not exist");
+		LoggedErrors().Should().Contain("(CS0103) in UsrClass.cs at (12,3): The name 'x' does not exist",
+			because: "the diagnostic names the file by its name, whatever path the environment's verdict reported");
 	}
 
 	[Test]
@@ -920,7 +929,8 @@ public class CompileConfigurationCommandTestCase : BaseCommandTests<CompileConfi
 		command.Execute(options);
 
 		// Assert
-		_logger.Received().WriteError("(CS0103) in [redacted-path] at (12,3): The name 'x' does not exist");
+		LoggedErrors().Should().Contain("(CS0103) in [redacted-path] at (12,3): The name 'x' does not exist",
+			because: "a path that ends in a separator has no name, so the diagnostic says [redacted-path], not an empty name");
 	}
 
 	[Test]

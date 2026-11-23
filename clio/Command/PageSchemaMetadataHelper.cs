@@ -36,6 +36,7 @@ namespace Clio.Command {
 		private const string ItemsKey = "items";
 		private const string RootSchemaNameKey = "rootSchemaName";
 		private const string OperationTypeKey = "operationType";
+		private const string MessageKey = "message";
 		private const string FiltersKey = "filters";
 		private const string ColumnsKey = "columns";
 		private const string RowCountKey = "rowCount";
@@ -472,10 +473,10 @@ namespace Clio.Command {
 				NullIfEmpty(string.Join("; ", parts.Select(Site).Where(part => part is not null)));
 			string errorMessage = null;
 			if (saveResponse["errorInfo"] is JObject errorInfo) {
-				errorMessage = Site(errorInfo["message"]?.ToString()) ?? errorMessage;
+				errorMessage = Site(errorInfo[MessageKey]?.ToString()) ?? errorMessage;
 			}
 			if (saveResponse["validationErrors"] is JArray validationErrors && validationErrors.Count > 0) {
-				errorMessage = JoinSite(validationErrors.Select(e => e["message"]?.ToString() ?? e["caption"]?.ToString()))
+				errorMessage = JoinSite(validationErrors.Select(e => e[MessageKey]?.ToString() ?? e["caption"]?.ToString()))
 					?? errorMessage;
 			}
 			if (saveResponse["addonsErrors"] is JArray addonsErrors && addonsErrors.Count > 0) {
@@ -495,7 +496,7 @@ namespace Clio.Command {
 			JToken info = error["errorInfo"];
 			JObject infoObject = info as JObject;
 			return JoinNonBlank(SiteValue(error["errorCode"] ?? error["code"] ?? infoObject?["errorCode"]),
-				SiteValue(error["message"] ?? infoObject?["message"] ?? (infoObject is null ? info : null)));
+				SiteValue(error[MessageKey] ?? infoObject?[MessageKey] ?? (infoObject is null ? info : null)));
 		}
 
 		// A string value the site wrote, redacted as site text BEFORE it is trimmed (the cut keys on the line break before
@@ -530,13 +531,13 @@ namespace Clio.Command {
 		/// <returns>The redacted reason, or <see langword="null"/>.</returns>
 		internal static string DescribeRefusal(JObject response) =>
 			response["errorInfo"] switch {
-				JObject errorInfo => JoinNonBlank(SiteValue(errorInfo["errorCode"]), SiteValue(errorInfo["message"])),
+				JObject errorInfo => JoinNonBlank(SiteValue(errorInfo["errorCode"]), SiteValue(errorInfo[MessageKey])),
 				JToken errorInfo => SiteValue(errorInfo),
-				null => null
+				_ => null
 			}
-			?? SiteValue(response["message"])
+			?? SiteValue(response[MessageKey])
 			?? SiteValue(response["error"])
-			?? SiteValue((response["error"] as JObject)?["message"]);
+			?? SiteValue((response["error"] as JObject)?[MessageKey]);
 
 		private static string JoinNonBlank(string code, string message) =>
 			(code, message) switch {
