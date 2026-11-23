@@ -25,12 +25,22 @@ and writes a larger one to a file, which the agent reads back in pieces, one mod
   binding are near copies, so the two-port reply cost the agent the same operations twice.
   Rejected: always returning only Studio's pick. A small WSDL fits whole, and the agent shows the user every port
   before registering.
-- The old 120,000-character limit stays as `MaxMappedTextCharacters`, a bound on the mapping work only.
-- `describe-web-service`, `register-web-service` and `modify-web-service` return as many methods in full as fit and
-  list the rest in `methods-not-shown` (code, caption, parameter counts) with a notice. `modify-web-service` keeps the
-  methods the call built in full first. `describe-web-service` takes `methods` to read named methods.
-- `test-web-service-method` cuts the body to the remaining budget first; when the parsed values alone leave no room
-  they are omitted (`response-values-omitted`) and the body is cut again from its start.
+- The old 120,000-character limit stays as `MaxMappedTextCharacters`, a bound on the mapping work, and as
+  `MaxNarrowestReplyBytes`: one port with one operation is returned whole up to it even over the budget, since reading
+  again cannot narrow it and a spilled reply beats describing the method by hand.
+- Warnings take at most half the budget (`MaxWarningBytes`); the rest are counted in one line with the ones the parser
+  already left out. A generator that writes a long warning per element would otherwise leave no room even for the
+  operation names an agent narrows a read by.
+- The narrowing runs in the MCP tools, never in `WebServiceDesigner`: read-wsdl with `service-code` reads the existing
+  service through `IWebServiceDesigner.Describe` and must see every method to keep its codes.
+- `describe-web-service`, `register-web-service` and `modify-web-service` return as many methods in full as fit, at
+  least one (a single method over the budget is still returned, or describing it by code would loop), and list the rest
+  in `methods-not-shown` (code, caption, parameter counts) with a notice; usages that still do not fit are cut last.
+  `modify-web-service` keeps the methods its operations add or replace in full first. `describe-web-service` takes
+  `methods` to read named methods.
+- `test-web-service-method` cuts the masked body to the longest start that fits (a binary search: cutting characters by
+  the bytes over emptied a Cyrillic or CJK body); when the parsed values alone leave no room they are omitted
+  (`response-values-omitted`) and the body is cut again from its start.
 - `list-web-services` takes `filter` (code, caption or package contains, ignoring case) and cuts a list over the
   budget with a notice to narrow it.
 

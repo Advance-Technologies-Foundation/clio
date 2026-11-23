@@ -45,7 +45,7 @@ public sealed record WsdlServiceView(
 	IReadOnlyList<string> ExistingMethods = null,
 
 	[property: JsonPropertyName("operations")]
-	[property: Description("Operation names only, when the result was too large to return whole")]
+	[property: Description("Operation names only, for a port not returned in full to keep the reply inline")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	IReadOnlyList<string> Operations = null);
 
@@ -74,7 +74,12 @@ public sealed record WsdlReadResult(
 public interface IWsdlReader {
 	/// <summary>Reads the WSDL and returns one argument object per SOAP port.</summary>
 	/// <param name="request">The request.</param>
-	/// <returns>The ports with warnings, or operation names only when the result would be too large.</returns>
+	/// <returns>
+	/// The ports with warnings, within <see cref="McpServer.McpResultSize.InlineReplyBudgetBytes"/>: every port in full when
+	/// that fits; else the port to register (<see cref="WsdlDocument.RegisterInstead"/>, or Studio's pick) in full and the
+	/// other ports by operation name; else operation names only. Warnings take at most <see cref="WsdlReader.MaxWarningBytes"/>,
+	/// and one port with one operation is returned whole up to <see cref="WsdlReader.MaxNarrowestReplyBytes"/>.
+	/// </returns>
 	/// <exception cref="ArgumentException">
 	/// The request names both or neither source, or both code and service-code; code is not a Latin identifier with the
 	/// schema-name prefix; a URL carries credentials or a key, a path is not a local absolute one, a file cannot be read or
@@ -102,15 +107,23 @@ public sealed partial class WsdlReader(
 	/// <summary>The most all local files may hold together, the same as a download.</summary>
 	internal const long MaxTotalBytes = WebServiceDesignerClient.MaxDownloadedBytes;
 	/// <summary>
-	/// The size the reply keeps within, as the agent receives it (<see cref="McpServer.McpResultSize"/>). Above it the result
-	/// narrows: first one port in full with the others' operation names, then operation names only.
+	/// The share of <see cref="McpServer.McpResultSize.InlineReplyBudgetBytes"/> the warnings may take, so that the ports, or
+	/// at least the operation names an agent narrows a read by, keep room; the rest is counted in one line.
 	/// </summary>
-	internal const int ReplyBudgetBytes = McpServer.McpResultSize.InlineReplyBudgetBytes;
+	internal const int MaxWarningBytes = McpServer.McpResultSize.InlineReplyBudgetBytes / 2;
 	/// <summary>
 	/// Above this many characters of parameter paths and captions the result lists operation names before anything is
-	/// mapped: such a result could not fit <see cref="ReplyBudgetBytes"/>, and mapping it first would cost the work.
+	/// mapped: such a result could not be returned, and mapping it first would cost the work. Also the most a result of one
+	/// port with one operation may hold to be returned whole over the reply budget (<see cref="MaxNarrowestReplyBytes"/>).
 	/// </summary>
 	internal const int MaxMappedTextCharacters = 120_000;
+	/// <summary>
+	/// A result of one port with one operation is returned whole up to this size even over the reply budget: reading
+	/// again cannot narrow it, and a reply the agent reads back in pieces beats describing the method by hand.
+	/// </summary>
+	internal const int MaxNarrowestReplyBytes = 120_000;
+	private const string LeftOutWarnings = "More warnings were left out to keep the reply inline; read the WSDL again with "
+		+ "port and operations, which gives fewer.";
 	/// <summary>The most operation names a too-large result lists, over every port together.</summary>
 	internal const int MaxListedOperations = 500;
 	/// <summary>
@@ -173,7 +186,8 @@ public sealed partial class WsdlReader(
 		if (ports.Sum(p => p.Operations.Sum(o => Count(o.Request) + Count(o.Response))) > MaxMappedParameters
 				|| ports.Sum(p => p.Operations.Sum(o => TextLength(o.Request) + TextLength(o.Response))) > MaxMappedTextCharacters) {
 			return NamesOnly(ports.Select(p => (p.Name, p.Name == document.StudioPort, p.Operations.Select(o => o.Caption).ToList()))
-				.ToList(), warnings, [], narrowest: ports.Count == 1 && ports[0].Operations.Count <= 1);
+				.ToList(), WarningsWithin(warnings, MaxWarningBytes), [],
+				narrowest: ports.Count == 1 && ports[0].Operations.Count <= 1);
 		}
 		var services = new List<WsdlServiceArguments>();
 		foreach (WsdlPort port in ports) {
@@ -282,11 +296,11 @@ public sealed partial class WsdlReader(
 	// would otherwise cost the agent the same operations twice); then operation names only.
 	private static WsdlReadResult Result(IReadOnlyList<WsdlServiceArguments> services, WarningLog warnings,
 		List<string> notices, string registerInstead) {
-		IReadOnlyList<string> shownWarnings = warnings.ToList();
+		List<string> shownWarnings = WarningsWithin(warnings, MaxWarningBytes);
 		List<WsdlServiceView> views = services.Select(Full).ToList();
 		var result = new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
 			Notices: notices.Count > 0 ? notices : null);
-		if (Fits(result)) {
+		if (Fits(result) || (IsNarrowest(services) && McpServer.McpResultSize.Of(result) <= MaxNarrowestReplyBytes)) {
 			return result;
 		}
 		if (services.Count > 1) {
@@ -294,8 +308,8 @@ public sealed partial class WsdlReader(
 				?? services.FirstOrDefault(s => s.StudioPick) ?? services[0];
 			List<string> onePortNotices = [.. notices,
 				$"Only port '{WsdlParser.Shown(shown.Port)}' is returned in full, the port to register (see the warnings), "
-				+ $"to keep the reply within {ReplyBudgetBytes:N0} bytes; the other ports list their operation names. To "
-				+ "register another port, read the WSDL again with that port."];
+				+ $"to keep the reply within {McpServer.McpResultSize.InlineReplyBudgetBytes:N0} bytes; the other ports list "
+				+ "their operation names. To register another port, read the WSDL again with that port."];
 			int remaining = MaxListedOperations;
 			List<WsdlServiceView> onePort = services.Select(s => s == shown
 				? Full(s)
@@ -307,13 +321,35 @@ public sealed partial class WsdlReader(
 			}
 		}
 		return NamesOnly(services.Select(s => (s.Port, s.StudioPick, s.Arguments.Methods.Select(m => m.Caption).ToList())).ToList(),
-			warnings, notices, IsNarrowest(services));
+			shownWarnings, notices, IsNarrowest(services));
 	}
 
 	private static WsdlServiceView Full(WsdlServiceArguments service) => new(service.Port, service.StudioPick,
 		JsonSerializer.SerializeToElement(service.Arguments, ArgumentOptions), service.ExistingMethods);
 
-	private static bool Fits(WsdlReadResult result) => McpServer.McpResultSize.Of(result) <= ReplyBudgetBytes;
+	private static bool Fits(WsdlReadResult result) =>
+		McpServer.McpResultSize.Of(result) <= McpServer.McpResultSize.InlineReplyBudgetBytes;
+
+	// The warnings in order while they fit maxBytes, and one count line for the rest, the ones the log already left out
+	// included. A WSDL whose generator writes a long warning per element would otherwise leave no room for the ports or
+	// even the operation names.
+	private static List<string> WarningsWithin(WarningLog warnings, int maxBytes) {
+		int used = 0;
+		int kept = 0;
+		foreach (string warning in warnings.Kept) {
+			// The quotes and the comma around each warning in the reply.
+			int bytes = System.Text.Encoding.UTF8.GetByteCount(warning) + 3;
+			if (used + bytes > maxBytes) {
+				break;
+			}
+			used += bytes;
+			kept++;
+		}
+		return kept == warnings.Kept.Count
+			? [.. warnings.ToList()]
+			: [.. warnings.Kept.Take(kept), $"...and {warnings.Kept.Count - kept + warnings.Dropped} more warnings, left out "
+				+ "to keep the reply inline; read the WSDL again with port and operations, which gives fewer."];
+	}
 
 	// The operation names to list, cut like any WSDL text, at most remaining of them, with a count line for the rest.
 	private static List<string> Names(List<string> operations, ref int remaining) {
@@ -330,37 +366,36 @@ public sealed partial class WsdlReader(
 	// names are cut like any WSDL text and capped over every port together; when that still passes the reply budget, fewer
 	// names are listed, and past that fewer warnings, so this fallback stays inline itself.
 	private static WsdlReadResult NamesOnly(List<(string Port, bool StudioPick, List<string> Operations)> ports,
-		WarningLog warnings, List<string> notices, bool narrowest) {
-		List<string> allWarnings = [.. warnings.ToList()];
+		List<string> warnings, List<string> notices, bool narrowest) {
+		const int budget = McpServer.McpResultSize.InlineReplyBudgetBytes;
 		var summaryNotices = new List<string>(notices) {
 			narrowest
-				? $"The result is too large to return whole (over {ReplyBudgetBytes:N0} bytes) even for one operation of one "
-					+ "port; only its name is listed. Ask the user which fields of it they need and describe the method by hand."
-				: $"The result is too large to return whole (over {ReplyBudgetBytes:N0} bytes); only the operation names "
-					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port), "
-					+ "keeping the same code or service-code."
+				? $"The result is too large to return whole (over {MaxNarrowestReplyBytes:N0} bytes) even for one operation of "
+					+ "one port; only its name is listed. Ask the user which fields of it they need and describe the method by hand."
+				: $"The result is too large to return whole (over {budget:N0} bytes); only the operation names are listed. Ask "
+					+ "the user which operations they need, then read the WSDL again with operations (and port), keeping the same "
+					+ "code or service-code."
 		};
 		int limit = MaxListedOperations;
-		int keptWarnings = allWarnings.Count;
+		int keptWarnings = warnings.Count;
 		while (true) {
 			int remaining = limit;
 			List<WsdlServiceView> views = ports.Select(p => new WsdlServiceView(p.Port, p.StudioPick,
 				Operations: Names(p.Operations, ref remaining))).ToList();
-			List<string> shownWarnings = keptWarnings == allWarnings.Count
-				? allWarnings
-				: [.. allWarnings.Take(keptWarnings), "More warnings were left out to keep the reply inline; read the WSDL again "
-					+ "with port and operations to see the ones that apply."];
+			List<string> shownWarnings = keptWarnings == warnings.Count
+				? warnings
+				: [.. warnings.Take(keptWarnings), LeftOutWarnings];
 			var result = new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
 				Notices: summaryNotices);
-			if (Fits(result) || (limit == 0 && keptWarnings == 0)) {
+			long size = McpServer.McpResultSize.Of(result);
+			if (size <= budget || (limit == 0 && keptWarnings == 0)) {
 				return result;
 			}
 			// Names go first: the agent reads the WSDL again narrower anyway, and the warnings are what it must show the user.
 			if (limit > 0) {
-				limit = Math.Min(limit - 1, limit * ReplyBudgetBytes / (int)Math.Max(McpServer.McpResultSize.Of(result), 1));
+				limit = (int)Math.Min(limit - 1, (long)limit * budget / size);
 			} else {
-				keptWarnings = Math.Min(keptWarnings - 1,
-					keptWarnings * ReplyBudgetBytes / (int)Math.Max(McpServer.McpResultSize.Of(result), 1));
+				keptWarnings = (int)Math.Min(keptWarnings - 1, (long)keptWarnings * budget / size);
 			}
 		}
 	}

@@ -504,7 +504,7 @@ public sealed class WsdlReaderTests {
 	}
 
 	[Test]
-	[Description("Warnings the parser left out are counted in the one count line of the result.")]
+	[Description("Warnings the parser left out are counted in the one count line of the result, together with those left out to keep the reply inline.")]
 	public void Read_Should_Count_The_Warnings_The_Parser_Left_Out() {
 		// Arrange
 		string fields = string.Concat(Enumerable.Range(0, WsdlParser.MaxWarnings + 20)
@@ -515,8 +515,10 @@ public sealed class WsdlReaderTests {
 		WsdlReadResult result = _sut.Read(Files(path));
 
 		// Assert
-		result.Warnings.Should().HaveCount(WarningLog.MaxKept + 1, because: "the kept warnings and one count line");
-		result.Warnings[^1].Should().Be("...and 20 more warnings.", because: "the parser's dropped warnings are counted");
+		int kept = result.Warnings.Count - 1;
+		kept.Should().BeInRange(1, WarningLog.MaxKept - 1, because: "warnings past their share of the reply are left out too");
+		result.Warnings[^1].Should().StartWith($"...and {WsdlParser.MaxWarnings + 20 - kept} more warnings",
+			because: "one count line counts the parser's dropped warnings and the ones the reply left out");
 	}
 
 	[Test]
@@ -661,7 +663,7 @@ public sealed class WsdlReaderTests {
 		result.Services[1].Operations.Should().HaveCount(TwoPortOperations, because: "its operation names are listed");
 		result.Notices.Should().Contain(n => n.Contains("Only port 'Soap' is returned in full") && n.Contains("with that port"),
 			because: "the agent is told how to read the other port");
-		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes,
 			because: "the narrowed reply is returned inline");
 	}
 
@@ -700,7 +702,7 @@ public sealed class WsdlReaderTests {
 
 		// Assert
 		result.Success.Should().BeTrue(because: $"the WSDL is readable; error: {result.Error}");
-		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes,
 			because: "a reply over the budget is written to a file and read back in pieces");
 	}
 
@@ -718,7 +720,7 @@ public sealed class WsdlReaderTests {
 		List<string> names = result.Services.Single().Operations.ToList();
 		names.Count.Should().BeLessThan(WsdlReader.MaxListedOperations, because: "400 names of about 90 characters do not fit");
 		names[^1].Should().StartWith("...and ", because: "the names left out are counted");
-		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes,
 			because: "the names-only fallback is returned inline too");
 	}
 
@@ -734,13 +736,52 @@ public sealed class WsdlReaderTests {
 		WsdlReadResult result = _sut.Read(Files(path));
 
 		// Assert
-		(soap11 + soap12).Should().BeGreaterThan(WsdlReader.ReplyBudgetBytes, because: "the fixture must not fit with both ports in full");
+		(soap11 + soap12).Should().BeGreaterThan(Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes, because: "the fixture must not fit with both ports in full");
 		result.Services.Select(s => (s.Port, s.StudioPick, s.Arguments is not null)).Should().Equal(
 			[("OrdersServiceSoap", false, false), ("OrdersServiceSoap12", true, true)],
 			because: "Studio's pick is the port to register on an ASMX WSDL, so it is the one returned in full");
 		result.Services[0].Operations.Should().HaveCount(22, because: "the other port lists its operation names");
-		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes,
 			because: "the narrowed reply is returned inline");
+	}
+
+	[Test]
+	[Description("Warnings that would take the whole reply are cut to their share, so the operation names an agent narrows a read by stay listed.")]
+	public void Read_Should_Keep_Room_For_The_Names_When_The_Warnings_Are_Long() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Range(0, WsdlParser.MaxWarnings)
+			.Select(i => $"<xs:element name=\"aVeryLongFieldNameThatTheGeneratorWrote{i:000}\" type=\"tns:AMissingTypeTheGeneratorReferenced{i:000}\" />"));
+		string ops = string.Concat(Enumerable.Range(0, 30).Select(i => $"<xs:element name=\"x{i}\" type=\"xs:string\" />"));
+		string path = GivenFile("warnings.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields + ops)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		int warningBytes = result.Warnings.Sum(w => Encoding.UTF8.GetByteCount(w) + 3);
+		warningBytes.Should().BeLessThanOrEqualTo(WsdlReader.MaxWarningBytes + 200,
+			because: "the warnings take at most their share of the reply, plus the count line");
+		result.Warnings[^1].Should().Contain("more warnings, left out to keep the reply inline",
+			because: "the warnings past their share are counted in one line");
+		result.Services.Single().Arguments.Should().NotBeNull(because: "the warnings no longer crowd out the one operation the WSDL has");
+	}
+
+	[Test]
+	[Description("One port with one operation over the reply budget is returned whole: reading again cannot make it smaller.")]
+	public void Read_Should_Return_One_Large_Operation_Whole() {
+		// Arrange
+		string fields = string.Concat(Enumerable.Range(0, 400)
+			.Select(i => $"<xs:element name=\"aLongerFieldNameNumber{i:000}\" type=\"xs:string\" />"));
+		string path = GivenFile("one-op.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(new WsdlReadRequest("dev", null, [path], Port: "Soap", Operations: ["Op"]));
+
+		// Assert
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeGreaterThan(
+			Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes, because: "the fixture must not fit the budget");
+		Arguments(result.Services.Single()).Methods.Single().RequestParameters.Should().HaveCount(400,
+			because: "the only operation is returned whole rather than as a name to describe by hand");
 	}
 
 	// Operations in BigWsdl for which one port fits the reply budget and two ports do not.

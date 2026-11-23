@@ -1027,7 +1027,9 @@ public sealed partial class WsdlParser : IWsdlParser {
 				// Only the three definite failures below end with "Register port ... instead"; a plain SOAP 1.2 port keeps itself.
 				bool definite = required.MessageSecurity || required.AddressingNamespace is not null
 					|| (wcf ??= WrittenByWcf(definitions));
-				if (definite && port.Name == studioPort && alternative is { Difference: null }) {
+				// Only a port this read returns: past MaxPorts the alternative may be one the read left out.
+				if (definite && port.Name == studioPort && alternative is { Difference: null }
+						&& selected.Contains(alternative.Port)) {
 					registerInstead = alternative.Port.Name;
 				}
 				if (required.MessageSecurity) {

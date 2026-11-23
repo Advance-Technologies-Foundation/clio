@@ -33,9 +33,9 @@ public interface IWebServiceDesigner {
 	/// have is refused with the codes it has.
 	/// </param>
 	/// <returns>
-	/// The service view, and its usages when asked for (only the usages of the named methods when methods are named). A
-	/// reply over <see cref="McpServer.McpResultSize.InlineReplyBudgetBytes"/> returns as many methods in full as fit and
-	/// lists the rest by code in <c>methods-not-shown</c>.
+	/// The service view with every named method in full, and its usages when asked for (only the usages of the named
+	/// methods when methods are named). Never cut here: read-wsdl reads an existing service through it, and the MCP tool
+	/// fits the reply it returns to the agent.
 	/// </returns>
 	WebServiceToolResult Describe(string code, bool includeUsages, IReadOnlyList<string> methods = null);
 
@@ -156,8 +156,7 @@ public sealed class WebServiceDesigner(
 		if (wanted is not null) {
 			view = view with { Methods = view.Methods.Where(m => wanted.Contains(m.Code)).ToList() };
 		}
-		return WebServiceReplyBudget.Fit(new WebServiceToolResult(true, Service: view, Usages: usages,
-			Notices: notices.Count > 0 ? notices : null));
+		return new WebServiceToolResult(true, Service: view, Usages: usages, Notices: notices.Count > 0 ? notices : null);
 	}
 
 	/// <summary>The method codes describe-web-service was asked for, or null for every method.</summary>
@@ -229,9 +228,9 @@ public sealed class WebServiceDesigner(
 		IReadOnlyList<string> cleared = ClearUseAuthWithoutAuthentication(schema);
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
-		return WebServiceReplyBudget.Fit(new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
+		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
 			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName),
-				.. ClearedUseAuthNotices(cleared)]));
+				.. ClearedUseAuthNotices(cleared)]);
 	}
 
 	/// <summary>
@@ -350,11 +349,10 @@ public sealed class WebServiceDesigner(
 			: [];
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
-		// The methods this call built are the ones the agent checks, so they are the last to be listed by code only.
-		return WebServiceReplyBudget.Fit(new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
+		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
 			Usages: affected,
 			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations, useAuthBefore),
-				.. Notices(settings, row.Package, missingKept), .. ClearedUseAuthNotices(cleared)]), builtMethods);
+				.. Notices(settings, row.Package, missingKept), .. ClearedUseAuthNotices(cleared)]);
 	}
 
 	/// <summary>
@@ -426,12 +424,12 @@ public sealed class WebServiceDesigner(
 		bool truncated = body is { Length: > MaxResponseBodyLength };
 		// An XML response read through a JSONPath gives null with no error, which reads like a failure of the call.
 		IReadOnlyList<string> notices = WebServiceSchemaView.XmlResponsePathNotices([method], WebServiceSchemaView.IsSoap(schema));
-		// The character limit bounds the work; the reply budget, in bytes as the agent receives them, decides what is shown.
-		return WebServiceReplyBudget.Fit(new WebServiceTestResult(result.Success,
+		// The character limit bounds the work; the MCP tool cuts the reply to its byte budget after this masking.
+		return new WebServiceTestResult(result.Success,
 			error is null ? null : SensitiveErrorTextRedactor.Redact(error),
 			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
 			bodyMasked || errorMasked || valuesMasked, responseValues, valuesOmitted ? true : null,
-			notices.Count > 0 ? notices : null));
+			notices.Count > 0 ? notices : null);
 	}
 
 	/// <summary>

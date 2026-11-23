@@ -119,8 +119,33 @@ public sealed class WebServiceToolsArgumentTests {
 			because: "the services kept are the first ones, in order");
 		result.Notices.Should().ContainSingle(n => n.Contains($"{400 - result.Services.Count} of the 400 services")
 			&& n.Contains("filter"), because: "the agent is told how many were left out and how to narrow the list");
-		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WebServiceReplyBudget.BudgetBytes,
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
 			because: "the cut list is returned inline");
+	}
+
+	[Test]
+	[Description("modify-web-service keeps the methods its operations add or replace in full when the reply is cut, whatever their place in stored order.")]
+	public void ModifyWebService_Should_Keep_The_Changed_Methods_In_Full() {
+		// Arrange
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
+		List<WebServiceMethodView> methods = Enumerable.Range(0, 60).Select(i => new WebServiceMethodView($"UsrM{i:00}",
+			$"Method {i}", "GET", $"orders/{i}", 5000, "json", false,
+			[.. Enumerable.Range(0, 6).Select(p => new WebServiceParameterView($"UsrQuery{p}", $"Query {p}", "query",
+				$"query_{p}", "Text", false, false, null, null, false, []))], [])).ToList();
+		designer.Modify(default, default, default).ReturnsForAnyArgs(new WebServiceToolResult(true,
+			Service: new WebServiceView(Guid.NewGuid(), "UsrErp", "Erp", "Custom", "REST", "https://erp.example/", 0, null, methods)));
+
+		// Act
+		WebServiceToolResult result = new ModifyWebServiceTool(resolver).ModifyWebService(new ModifyWebServiceArgs("dev", "UsrErp",
+			[new WebServiceOperationArg("setMethod", new WebServiceMethodArg("UsrM59", "GET", "orders/59"))]));
+
+		// Assert
+		result.Service.Methods.Should().Contain(m => m.Code == "UsrM59", because: "the method the call replaced is the one the agent checks");
+		result.Service.MethodsNotShown.Should().NotBeEmpty(because: "60 methods do not fit the reply");
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
+			because: "the reply is returned inline");
 	}
 
 	private static TestWebServiceMethodTool TestMethodTool(IWebServiceDesigner designer) {
