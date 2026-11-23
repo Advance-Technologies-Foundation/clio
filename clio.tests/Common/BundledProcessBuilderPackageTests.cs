@@ -193,7 +193,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"624883F6FCFC1D4D8033DB5B30361EFFAA9C6A668E970949C91AD41CB35A05FF";
+		"03617C50B17B82CC9E4A10C89585B3476ECFDDE9B1373C1D2D49F729EC684D44";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -221,7 +221,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.191";
+	private const string ExpectedArchiveVersion = "1.6.6.192";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -245,7 +245,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "417b27fa58f17b6e989fba5acbfe21675f379b38";
+	private const string ExpectedProducingCommit = "a9afdfaec03bd8a35ac1557a069a3f08bef2474c";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -271,7 +271,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795183131000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1795436028000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -286,7 +286,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795183072000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1795435838000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See
