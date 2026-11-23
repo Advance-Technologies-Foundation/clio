@@ -1,5 +1,5 @@
 ---
-description: an assembly package whose C# is only under Files/ (the add-package template) is skipped by every target-side compile on Creatio 10.x
+description: an assembly package whose C# is only under Files/ (the add-package template) is skipped by every target-side compile on Creatio 10.0.0.636 or later
 applies-to:
   - clio/tpl/package/
   - clio/Package/PackageCreator.cs
@@ -8,11 +8,11 @@ ticket: ENG-106256
 date: 2026-11-21
 ---
 
-**What is true** — On Creatio 10.0.0.171 or later, a target-side compile builds an assembly package only when it has
+**What is true** — On Creatio 10.0.0.636 or later (some 10.0.0.171-635 builds too), a target-side compile builds an assembly package only when it has
 compilable content (a SourceCode, process or user-task schema, or a reference assembly); C# under `Files/src/cs`
 does not count. `clio add-package` without `--as-app` makes exactly such a package: the package and full compiles log
 `skipped (no compilable schemas)`, the install compiles nothing, no DLL is built. One `clio add-schema <Name> -t
-source-code` schema fixes it (measured 2026-11, Creatio 10.2 and trunk, .NET Framework). An install also skips a
+source-code -p <package folder>` schema fixes it (measured 2026-11, Creatio 10.2 and trunk, .NET Framework). An install also skips a
 package whose pushed `Files/Bin/<Package>.dll` loads, so a locally built DLL keeps running. 8.x builds every one.
 
 **Why it is this way** — The platform decides compilability from schemas (`PackageCompilabilityInspector`), not from

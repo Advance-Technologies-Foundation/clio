@@ -55,15 +55,20 @@ namespace Clio.Package
 		];
 
 		/// <summary>
-		/// The package-type columns: <c>Type</c> (0 ordinary, 1 assembly package) and <c>ProjectPath</c>. Selected
-		/// together with <see cref="PackageColumns"/>; an environment whose <c>SysPackage</c> predates them is read
-		/// with <see cref="PackageColumns"/> alone and reports the type as unknown.
+		/// The package-type columns: <c>Type</c> (0 ordinary, 1 assembly package) and <c>ProjectPath</c>. DataService
+		/// answers a column the schema does not have with <c>success:true</c>, rows without that key and the column in
+		/// <c>notFoundColumns</c> (it never refuses the query), so an environment without them still lists its packages
+		/// and reports the type as unknown.
 		/// </summary>
-		private static readonly IReadOnlyList<SelectQueryHelper.SelectQueryColumnDefinition> PackageTypeColumns =
+		private const string TypeColumn = "Type";
+
+		private const string ProjectPathColumn = "ProjectPath";
+
+		private static readonly IReadOnlyList<SelectQueryHelper.SelectQueryColumnDefinition> PackageColumnsWithType =
 		[
 			.. PackageColumns,
-			new("Type", "Type"),
-			new("ProjectPath", "ProjectPath")
+			new(TypeColumn, TypeColumn),
+			new(ProjectPathColumn, ProjectPathColumn)
 		];
 
 		private static readonly JsonSerializerOptions JsonOptions = new()
@@ -72,9 +77,8 @@ namespace Clio.Package
 			NumberHandling = JsonNumberHandling.AllowReadingFromString
 		};
 
-		private static object BuildSysPackageQuery(IReadOnlyList<SelectQueryHelper.SelectQueryColumnDefinition> columns,
-				IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters) =>
-			SelectQueryHelper.BuildSelectQuery("SysPackage", columns, filters);
+		private static object BuildSysPackageQuery(IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters) =>
+			SelectQueryHelper.BuildSelectQuery("SysPackage", PackageColumnsWithType, filters);
 
 		private static IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> ParseFilters(string scriptData) {
 			if (string.IsNullOrWhiteSpace(scriptData) || scriptData.Trim() == "{}")
@@ -99,7 +103,7 @@ namespace Clio.Package
 			return [];
 		}
 
-		private static PackageInfo CreatePackageInfo(SysPackageRowDto row) {
+		private static PackageInfo CreatePackageInfo(SysPackageRowDto row, bool typeColumnsExist) {
 			PackageDescriptor descriptor = new() {
 				Name = row.Name ?? string.Empty,
 				UId = Guid.TryParse(row.UId, out Guid uid) ? uid : Guid.Empty,
@@ -109,37 +113,9 @@ namespace Clio.Package
 				ProjectPath = row.ProjectPath ?? string.Empty
 			};
 			return new PackageInfo(descriptor, string.Empty, []) {
-				IsTypeKnown = row.Type is (int)PackageType.General or (int)PackageType.Assembly
+				IsTypeKnown = typeColumnsExist
+					&& row.Type is (int)PackageType.General or (int)PackageType.Assembly
 			};
-		}
-
-		/// <summary>
-		/// Whether a refused package read names a missing package-type column: the platform answers an unknown column
-		/// with "Column by path &lt;column&gt; not found in schema SysPackage." (the column and schema names survive
-		/// localization). A non-JSON answer (login page, proxy error) is never such a refusal.
-		/// </summary>
-		private static bool IsMissingTypeColumnRefusal(InvalidOperationException exception) =>
-			exception is not NonJsonServiceResponseException
-			&& exception.Message.Contains("SysPackage", StringComparison.Ordinal)
-			&& (exception.Message.Contains("ProjectPath", StringComparison.Ordinal)
-				|| MissingTypeColumn.IsMatch(exception.Message));
-
-		private static readonly System.Text.RegularExpressions.Regex MissingTypeColumn =
-			new(@"\bType\b", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-
-		private SysPackageSelectQueryResponseDto SelectPackages(
-				IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters, int requestTimeoutMs) {
-			try {
-				return SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
-					_applicationClient, _serviceUrlBuilder, BuildSysPackageQuery(PackageTypeColumns, filters),
-					requestTimeoutMs);
-			} catch (InvalidOperationException exception) when (IsMissingTypeColumnRefusal(exception)) {
-				// The environment's SysPackage predates the Type/ProjectPath columns: read the list without them
-				// rather than lose it. Any other failure surfaces as it is.
-				return SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
-					_applicationClient, _serviceUrlBuilder, BuildSysPackageQuery(PackageColumns, filters),
-					requestTimeoutMs);
-			}
 		}
 
 		#endregion
@@ -154,8 +130,13 @@ namespace Clio.Package
 		/// <inheritdoc cref="IApplicationPackageListProvider.GetPackages(string, int)"/>
 		public IEnumerable<PackageInfo> GetPackages(string scriptData, int requestTimeoutMs) {
 			IReadOnlyList<SelectQueryHelper.SelectQueryFilterDefinition> filters = ParseFilters(scriptData);
-			SysPackageSelectQueryResponseDto response = SelectPackages(filters, requestTimeoutMs);
-			return (response.Rows ?? []).Select(CreatePackageInfo);
+			SysPackageSelectQueryResponseDto response =
+				SelectQueryHelper.ExecuteSelectQuery<SysPackageSelectQueryResponseDto>(
+					_applicationClient, _serviceUrlBuilder, BuildSysPackageQuery(filters), requestTimeoutMs);
+			string[] notFound = response.NotFoundColumns ?? [];
+			bool typeColumnsExist = !notFound.Contains(TypeColumn, StringComparer.OrdinalIgnoreCase)
+				&& !notFound.Contains(ProjectPathColumn, StringComparer.OrdinalIgnoreCase);
+			return (response.Rows ?? []).Select(row => CreatePackageInfo(row, typeColumnsExist));
 		}
 
 		#endregion
@@ -188,6 +169,9 @@ namespace Clio.Package
 		{
 			[JsonPropertyName("rows")]
 			public List<SysPackageRowDto> Rows { get; set; } = [];
+
+			[JsonPropertyName("notFoundColumns")]
+			public string[]? NotFoundColumns { get; set; }
 		}
 
 		private sealed class SysPackageRowDto

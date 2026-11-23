@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture(Category = "UnitTests")]
+[Property("Module", "Package")]
 internal class ApplicationPackageListProviderTest
 {
 	private IApplicationClient _applicationClient;
@@ -66,46 +67,57 @@ internal class ApplicationPackageListProviderTest
 		result[0].IsTypeKnown.Should().BeTrue("because the environment returned the Type column");
 		result[1].Descriptor.Type.Should().Be(PackageType.General, "because SysPackage.Type 0 is an ordinary package");
 		result[1].Descriptor.ProjectPath.Should().BeEmpty("because an ordinary package has no project");
+		result[1].IsTypeKnown.Should().BeTrue("because the environment returned the Type column for every row");
 	}
 
 	[Test]
-	[Description("GetPackages falls back to the read without Type and ProjectPath when the environment refuses them, and reports the type as unknown")]
-	public void GetPackages_FallsBackAndReportsUnknownType_WhenTypeColumnsAreRefused() {
+	[Description("GetPackages reports the type as unknown when DataService lists the type columns as not found, as an environment without them answers")]
+	public void GetPackages_ReportsUnknownType_WhenTheTypeColumnsAreNotFound() {
 		// Arrange
-		string legacy = BuildSelectQueryResponse(("OldPkg", "00000000-0000-0000-0000-000000000003", "M", "1.0"));
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")))
-			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Column by path Type not found in schema SysPackage.\"}}");
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")))
-			.Returns(legacy);
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"notFoundColumns\":[\"Type\",\"ProjectPath\"],\"rows\":[{\"Name\":\"OldPkg\",\"UId\":\"00000000-0000-0000-0000-000000000003\",\"Maintainer\":\"M\",\"Version\":\"1.0\"}]}");
 
 		// Act
 		List<PackageInfo> result = _sut.GetPackages().ToList();
 
 		// Assert
-		result.Should().ContainSingle("because the fallback read still returns the package list");
-		result[0].Descriptor.Name.Should().Be("OldPkg", "because the fallback read maps the base columns");
+		result.Should().ContainSingle("because the read still returns the package list");
+		result[0].Descriptor.Name.Should().Be("OldPkg", "because the base columns are mapped");
 		result[0].IsTypeKnown.Should().BeFalse("because an environment without the Type column cannot report it");
+		_applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
 	}
 
 	[Test]
-	[Description("GetPackages does not fall back when the first answer is not JSON, so a login or proxy page is never reported as an unknown package type")]
-	public void GetPackages_Throws_WhenTheTypedReadReturnsANonJsonPage() {
+	[Description("GetPackages reports the type as unknown when only ProjectPath is not found, so an assembly package never shows an empty project path as real")]
+	public void GetPackages_ReportsUnknownType_WhenOnlyProjectPathIsNotFound() {
 		// Arrange
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")))
-			.Returns("<html><body>Bad gateway</body></html>");
-		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")))
-			.Returns(BuildSelectQueryResponse(("OldPkg", "00000000-0000-0000-0000-000000000003", "M", "1.0")));
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"notFoundColumns\":[\"ProjectPath\"],\"rows\":[{\"Name\":\"Asm\",\"UId\":\"00000000-0000-0000-0000-000000000004\",\"Type\":1}]}");
 
 		// Act
-		Action act = () => _sut.GetPackages().ToList();
+		List<PackageInfo> result = _sut.GetPackages().ToList();
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>("because only a refusal naming a missing type column may degrade the read");
+		result[0].IsTypeKnown.Should().BeFalse("because a type without its project path is not a complete answer");
 	}
 
 	[Test]
-	[Description("GetPackages does not fall back on a refusal that names no package-type column")]
-	public void GetPackages_Throws_WhenTheRefusalIsNotAboutTheTypeColumns() {
+	[Description("GetPackages reports an unknown Type value as unknown rather than as an ordinary package")]
+	public void GetPackages_ReportsUnknownType_WhenTheTypeValueIsNotKnown() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"rows\":[{\"Name\":\"Future\",\"UId\":\"00000000-0000-0000-0000-000000000005\",\"Type\":2,\"ProjectPath\":\"\"}]}");
+
+		// Act
+		List<PackageInfo> result = _sut.GetPackages().ToList();
+
+		// Assert
+		result[0].IsTypeKnown.Should().BeFalse("because clio knows only 0 (ordinary) and 1 (assembly package)");
+	}
+
+	[Test]
+	[Description("GetPackages surfaces a refused read instead of retrying it")]
+	public void GetPackages_Throws_WhenTheReadIsRefused() {
 		// Arrange
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
 			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
@@ -114,10 +126,8 @@ internal class ApplicationPackageListProviderTest
 		Action act = () => _sut.GetPackages().ToList();
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>("because an unrelated refusal must surface, not degrade the read")
+		act.Should().Throw<InvalidOperationException>("because a refused read must surface")
 			.WithMessage("*Access denied*");
-		_applicationClient.Received().ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("ProjectPath")));
-		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => !body.Contains("ProjectPath")));
 	}
 
 	[Test]

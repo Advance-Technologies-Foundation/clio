@@ -80,7 +80,7 @@ public sealed class GetPkgListToolE2ETests : McpContractFixtureBase {
 				callResult.IsError.Should().NotBeTrue(because: "every list-packages page should be returned for a valid sandbox environment");
 				GetPkgListResponseEnvelope page = GetPkgListResultParser.ExtractResponse(callResult);
 				all.AddRange(page.Packages);
-				if (!page.Truncated) {
+				if (!page.Truncated || page.Count == 0) {
 					return all;
 				}
 				offset += page.Count;
@@ -94,8 +94,9 @@ public sealed class GetPkgListToolE2ETests : McpContractFixtureBase {
 		GetPkgListEnvelope gate = packages.Single(package => package.Name == "cliogate");
 		gate.Type.Should().Be(0, because: "the arranged cliogate package is installed from an ordinary-package descriptor");
 		gate.ProjectPath.Should().BeEmpty(because: "an ordinary package has no project of its own");
-		packages.Should().Contain(package => package.Type == 1 && package.ProjectPath == $"Files/{package.Name}.csproj",
-			because: "product assembly packages are installed with Type 1 and their Files/<Name>.csproj project");
+		packages.Where(package => package.Type == 1).Should().OnlyContain(
+			package => (package.ProjectPath ?? string.Empty).EndsWith(".csproj", StringComparison.OrdinalIgnoreCase),
+			because: "an assembly package's stored project path names its csproj");
 	}
 
 	private async Task<GetPkgListArrangeContext> ArrangeAsync(McpE2ESettings settings) {

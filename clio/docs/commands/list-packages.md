@@ -77,14 +77,17 @@ clio list-packages -e MyEnvironment
 ## Output Format
 
 Table format (default):
+
+```text
 Name                Version         Maintainer     Type
 ───────────────────────────────────────────────────────────
 PackageName1        1.0.0          Company        General
 PackageName2        2.1.3          Developer      Assembly
+```
 
 `Type` is the stored `SysPackage.Type`: `General` for an ordinary package, `Assembly` for an assembly
 package (its own `Files/<Name>.csproj` and DLL). It is empty when the environment does not store the
-package type; clio then reads the list without it.
+package type.
 
 JSON format (`--json`) — unified envelope (default):
 

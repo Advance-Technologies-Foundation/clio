@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using Clio.Command;
 using Clio.Common;
@@ -221,8 +222,14 @@ public class GetPkgListCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "listing succeeds");
-		_logger.Received(1).WriteInfo(Arg.Is<string>(s =>
-			s != null && s.Contains("Type") && s.Contains("Assembly") && s.Contains("OldPkg") && !s.Contains("General")));
+		string table = _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+			.Select(call => call.GetArguments()[0] as string)
+			.Single(text => text != null && text.Contains("AsmPkg"));
+		table.Should().Contain("Type", because: "the table has a Type column");
+		table.Should().Contain("Assembly", because: "an assembly package is shown as Assembly");
+		table.Should().Contain("OldPkg", because: "a package with an unknown type is still listed");
+		table.Should().NotContain("General", because: "an unknown type is shown empty, not as an ordinary package");
 	}
 
 	[Test]
