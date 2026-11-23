@@ -92,10 +92,12 @@ public sealed class WsdlReaderTests {
 		RegisterWebServiceTool register = RegisterTool(out Func<ServiceSchemaDto> saved);
 
 		// Act
-		WsdlReadResult result = _sut.Read(Files(path));
+		// Each port read on its own: two ports of a large WSDL do not fit one reply, and every port must be valid input.
+		List<WsdlServiceView> ports = _sut.Read(Files(path)).Services
+			.Select(port => _sut.Read(Files(path) with { Port = port.Port }).Services.Single()).ToList();
 
 		// Assert
-		foreach (WsdlServiceView service in result.Services) {
+		foreach (WsdlServiceView service in ports) {
 			JsonObject arguments = JsonNode.Parse(service.Arguments!.Value.GetRawText())!.AsObject();
 			arguments["package-name"] = "Custom";
 			RegisterWebServiceArgs args = arguments.Deserialize<RegisterWebServiceArgs>()!;
@@ -642,17 +644,120 @@ public sealed class WsdlReaderTests {
 			because: "each port keeps the named operation only");
 	}
 
-	private static string BigWsdl(int operationCount, int ports = 1) {
+	[Test]
+	[Description("Two ports that do not fit the reply together come back as one port in full and the other by operation name, with a notice saying how to read it.")]
+	public void Read_Should_Return_One_Port_In_Full_When_Every_Port_Does_Not_Fit() {
+		// Arrange
+		string path = GivenFile("two-ports.wsdl", Encoding.UTF8.GetBytes(BigWsdl(TwoPortOperations, ports: 2)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		result.Services.Select(s => s.Port).Should().Equal(["Soap", "Soap1"], because: "both ports are still listed");
+		Arguments(result.Services[0]).Methods.Should().HaveCount(TwoPortOperations,
+			because: "Studio's pick (the first port when there is no SOAP 1.2 one) is returned in full");
+		result.Services[1].Arguments.Should().BeNull(because: "the other port would repeat the same operations");
+		result.Services[1].Operations.Should().HaveCount(TwoPortOperations, because: "its operation names are listed");
+		result.Notices.Should().Contain(n => n.Contains("Only port 'Soap' is returned in full") && n.Contains("with that port"),
+			because: "the agent is told how to read the other port");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+			because: "the narrowed reply is returned inline");
+	}
+
+	[Test]
+	[Description("When a warning says to register another port instead of Studio's pick, that port is the one returned in full.")]
+	public void Read_Should_Return_The_Port_To_Register_Instead_In_Full() {
+		// Arrange
+		string path = GivenFile("two-ports.wsdl", Encoding.UTF8.GetBytes(BigWsdl(TwoPortOperations, ports: 2)));
+		var real = new WsdlParser();
+		IWsdlParser parser = Substitute.For<IWsdlParser>();
+		parser.Parse(default, default, default).ReturnsForAnyArgs(call =>
+			real.Parse(call.ArgAt<IReadOnlyList<WsdlSourceFile>>(0), call.ArgAt<string>(1), call.ArgAt<WsdlParseOptions>(2))
+				with { RegisterInstead = "Soap1" });
+		var sut = new WsdlReader(_client, _rights, _prefix, _designer, parser, _fileSystem);
+
+		// Act
+		WsdlReadResult result = sut.Read(Files(path));
+
+		// Assert
+		result.Services[1].Arguments.Should().NotBeNull(because: "the port the warning names is the one the agent registers");
+		result.Services[0].Arguments.Should().BeNull(because: "Studio's pick is listed by operation name only");
+		result.Notices.Should().Contain(n => n.Contains("Only port 'Soap1' is returned in full"),
+			because: "the notice names the port returned in full");
+	}
+
+	[TestCase(300, 1)]
+	[TestCase(400, 2)]
+	[TestCase(TwoPortOperations, 2)]
+	[Description("Whatever the WSDL, the read-wsdl reply stays within the inline reply budget.")]
+	public void Read_Should_Keep_The_Reply_Within_The_Budget(int operations, int ports) {
+		// Arrange
+		string path = GivenFile("big.wsdl", Encoding.UTF8.GetBytes(BigWsdl(operations, ports)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"the WSDL is readable; error: {result.Error}");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+			because: "a reply over the budget is written to a file and read back in pieces");
+	}
+
+	[Test]
+	[Description("A names-only reply whose names alone pass the budget lists fewer names, with a count line, instead of spilling.")]
+	public void Read_Should_List_Fewer_Names_When_The_Names_Alone_Pass_The_Budget() {
+		// Arrange
+		string prefix = "Operation" + new string('N', 80);
+		string path = GivenFile("long-names.wsdl", Encoding.UTF8.GetBytes(BigWsdl(400, prefix: prefix)));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		List<string> names = result.Services.Single().Operations.ToList();
+		names.Count.Should().BeLessThan(WsdlReader.MaxListedOperations, because: "400 names of about 90 characters do not fit");
+		names[^1].Should().StartWith("...and ", because: "the names left out are counted");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+			because: "the names-only fallback is returned inline too");
+	}
+
+	[Test]
+	[Description("An ASMX-style WSDL with a SOAP 1.1 and a SOAP 1.2 port that do not fit one reply together returns the SOAP 1.2 port (Studio's pick) in full and the SOAP 1.1 port by operation name.")]
+	public void Read_Should_Return_Studio_Pick_In_Full_For_A_Two_Port_Wsdl() {
+		// Arrange
+		string path = GivenFixture("orders-two-ports.wsdl");
+		long soap11 = Clio.Command.McpServer.McpResultSize.Of(_sut.Read(Files(path) with { Port = "OrdersServiceSoap" }));
+		long soap12 = Clio.Command.McpServer.McpResultSize.Of(_sut.Read(Files(path) with { Port = "OrdersServiceSoap12" }));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		(soap11 + soap12).Should().BeGreaterThan(WsdlReader.ReplyBudgetBytes, because: "the fixture must not fit with both ports in full");
+		result.Services.Select(s => (s.Port, s.StudioPick, s.Arguments is not null)).Should().Equal(
+			[("OrdersServiceSoap", false, false), ("OrdersServiceSoap12", true, true)],
+			because: "Studio's pick is the port to register on an ASMX WSDL, so it is the one returned in full");
+		result.Services[0].Operations.Should().HaveCount(22, because: "the other port lists its operation names");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WsdlReader.ReplyBudgetBytes,
+			because: "the narrowed reply is returned inline");
+	}
+
+	// Operations in BigWsdl for which one port fits the reply budget and two ports do not.
+	private const int TwoPortOperations = 22;
+
+	private static string BigWsdl(int operationCount, int ports = 1, string prefix = "Op") {
 		var operations = new StringBuilder();
 		var messages = new StringBuilder();
 		var types = new StringBuilder();
 		var binding = new StringBuilder();
-		for (int i = 0; i < operationCount; i++) {
-			types.Append($"<xs:element name=\"Op{i}\"><xs:complexType><xs:sequence><xs:element name=\"firstValue\" type=\"xs:string\" /><xs:element name=\"secondValue\" type=\"xs:string\" /><xs:element name=\"thirdValue\" type=\"xs:int\" /></xs:sequence></xs:complexType></xs:element>");
-			types.Append($"<xs:element name=\"Op{i}Response\"><xs:complexType><xs:sequence><xs:element name=\"result\" type=\"xs:string\" /></xs:sequence></xs:complexType></xs:element>");
-			messages.Append($"<wsdl:message name=\"Op{i}In\"><wsdl:part name=\"p\" element=\"tns:Op{i}\" /></wsdl:message><wsdl:message name=\"Op{i}Out\"><wsdl:part name=\"p\" element=\"tns:Op{i}Response\" /></wsdl:message>");
-			operations.Append($"<wsdl:operation name=\"Op{i}\"><wsdl:input message=\"tns:Op{i}In\" /><wsdl:output message=\"tns:Op{i}Out\" /></wsdl:operation>");
-			binding.Append($"<wsdl:operation name=\"Op{i}\"><soap:operation soapAction=\"urn:op{i}\" /></wsdl:operation>");
+		for (int n = 0; n < operationCount; n++) {
+			string name = prefix + n.ToString(System.Globalization.CultureInfo.InvariantCulture);
+			types.Append($"<xs:element name=\"{name}\"><xs:complexType><xs:sequence><xs:element name=\"firstValue\" type=\"xs:string\" /><xs:element name=\"secondValue\" type=\"xs:string\" /><xs:element name=\"thirdValue\" type=\"xs:int\" /></xs:sequence></xs:complexType></xs:element>");
+			types.Append($"<xs:element name=\"{name}Response\"><xs:complexType><xs:sequence><xs:element name=\"result\" type=\"xs:string\" /></xs:sequence></xs:complexType></xs:element>");
+			messages.Append($"<wsdl:message name=\"{name}In\"><wsdl:part name=\"p\" element=\"tns:{name}\" /></wsdl:message><wsdl:message name=\"{name}Out\"><wsdl:part name=\"p\" element=\"tns:{name}Response\" /></wsdl:message>");
+			operations.Append($"<wsdl:operation name=\"{name}\"><wsdl:input message=\"tns:{name}In\" /><wsdl:output message=\"tns:{name}Out\" /></wsdl:operation>");
+			binding.Append($"<wsdl:operation name=\"{name}\"><soap:operation soapAction=\"urn:{name}\" /></wsdl:operation>");
 		}
 		return $"""
 			<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"

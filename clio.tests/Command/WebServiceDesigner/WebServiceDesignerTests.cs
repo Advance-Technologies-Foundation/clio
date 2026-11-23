@@ -1844,4 +1844,154 @@ public sealed class WebServiceDesignerTests {
 			.WithMessage("*would show in the new uri*", because: "the refusal says why and how to clear it");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
 	}
+
+	// A REST service with count methods UsrM00..UsrMnn, each with six query parameters and two response parameters.
+	private static ServiceSchemaDto ManyMethodsSchema(int count) {
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Clear();
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		for (int i = 0; i < count; i++) {
+			ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg($"UsrM{i:00}", "GET",
+				$"orders/m{i}",
+				RequestParameters: [.. Enumerable.Range(0, 6).Select(p => new WebServiceParameterArg($"UsrQuery{p}", "query"))],
+				ResponseParameters: [new WebServiceParameterArg("UsrStatus", Path: "$.status"),
+					new WebServiceParameterArg("UsrTotal", Path: "$.total")]), null, false, errors);
+			schema.Methods.Items[method.UId.ToString()] = method;
+		}
+		return schema;
+	}
+
+	[Test]
+	[Description("A service too large to describe inline returns as many methods in full as fit, in stored order, and lists the rest by code with their parameter counts.")]
+	public void Describe_Should_List_The_Methods_That_Do_Not_Fit_By_Code() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(40));
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", false);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"the service exists; error: {result.Error}");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WebServiceReplyBudget.BudgetBytes,
+			because: "a reply over the budget is written to a file and read back in pieces");
+		int shown = result.Service.Methods.Count;
+		shown.Should().BeInRange(1, 39, because: "some methods fit and some do not");
+		result.Service.Methods.Select(m => m.Code).Should().Equal(Enumerable.Range(0, shown).Select(i => $"UsrM{i:00}"),
+			because: "the methods shown are the first ones in stored order");
+		result.Service.MethodsNotShown.Should().HaveCount(40 - shown, because: "every other method is listed by code");
+		result.Service.MethodsNotShown[0].Should().Be(new WebServiceMethodSummary($"UsrM{shown:00}", $"UsrM{shown:00}", 6, 2),
+			because: "a method listed by code carries its parameter counts");
+		result.Notices.Should().Contain(n => n.Contains("methods-not-shown") && n.Contains("describe-web-service methods"),
+			because: "the agent is told how to read the rest");
+	}
+
+	[Test]
+	[Description("describe-web-service with methods returns only the named methods, matched ignoring case, in full.")]
+	public void Describe_Should_Return_Only_The_Named_Methods() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(40));
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", false, ["UsrM37", "usrm05"]);
+
+		// Assert
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM05", "UsrM37"],
+			because: "only the named methods are returned, in stored order");
+		result.Service.MethodsNotShown.Should().BeNull(because: "the narrowed reply fits whole");
+		result.Notices.Should().BeNull(because: "nothing was left out");
+	}
+
+	[Test]
+	[Description("describe-web-service refuses a method code the service does not have and names the codes it has.")]
+	public void Describe_Should_Refuse_A_Method_The_Service_Does_Not_Have() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(3));
+
+		// Act
+		Action act = () => _sut.Describe("BingSearchApiCall", false, ["UsrM01", "UsrNope"]);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the method does not exist")
+			.WithMessage("*'UsrNope' not found*UsrM00, UsrM01, UsrM02*");
+	}
+
+	[Test]
+	[Description("A change to a large service returns the methods the call built in full, whatever their place in stored order.")]
+	public void Modify_Should_Keep_The_Built_Method_In_Full_When_The_Reply_Does_Not_Fit() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(40));
+
+		// Act
+		WebServiceToolResult result = _sut.Modify("BingSearchApiCall", [new WebServiceOperationArg("addMethod",
+			new WebServiceMethodArg("UsrZzNew", "GET", "orders/new"))], null);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"an added method is saved; error: {result.Error}");
+		result.Service.Methods.Should().Contain(m => m.Code == "UsrZzNew",
+			because: "the method the call built is the one the agent checks, so it is kept in full");
+		result.Service.MethodsNotShown.Should().NotBeEmpty(because: "the rest of the large service is listed by code");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WebServiceReplyBudget.BudgetBytes,
+			because: "the reply is returned inline");
+	}
+
+	[Test]
+	[Description("A test call whose body would pass the reply budget returns the body cut to fit and says so.")]
+	public void TestMethod_Should_Cut_The_Body_To_The_Reply_Budget() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		string body = "<r>" + new string('x', Clio.Command.WebServiceDesigner.WebServiceDesigner.MaxResponseBodyLength) + "</r>";
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, body, null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, "{\"UsrResult\":\"ok\"}"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
+
+		// Assert
+		result.ResponseBodyTruncated.Should().BeTrue(because: "the body was cut");
+		result.ResponseBody.Should().StartWith("<r>xxx", because: "the start of the body is kept");
+		result.ResponseValues.Should().NotBeNull(because: "the small parsed values still fit beside the cut body");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WebServiceReplyBudget.BudgetBytes,
+			because: "the reply is returned inline");
+	}
+
+	[Test]
+	[Description("Parsed response values that alone leave no room for the body are left out, and the body is returned in full when it then fits.")]
+	public void TestMethod_Should_Omit_Values_That_Leave_No_Room() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		string values = JsonSerializer.Serialize(new Dictionary<string, string> { ["UsrResult"] = new string('v', 19_000) });
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, values));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true);
+
+		// Assert
+		result.ResponseValues.Should().BeNull(because: "the values alone do not fit the reply");
+		result.ResponseValuesOmitted.Should().BeTrue(because: "the agent learns the values exist but were left out");
+		result.ResponseBody.Should().Be("<ok/>", because: "the body fits once the values are left out");
+		result.ResponseBodyTruncated.Should().BeFalse(because: "nothing of the body was cut");
+	}
+
+	[TestCase("erp", new[] { "UsrErpOrders", "UsrInvoices" })]
+	[TestCase("ORDERS", new[] { "UsrErpOrders" })]
+	[TestCase(" ", new[] { "UsrErpOrders", "UsrInvoices", "UsrWeather" })]
+	[Description("list-web-services keeps the services whose code, caption or package contains the filter, ignoring case; a blank filter keeps all.")]
+	public void List_Should_Filter_By_Code_Caption_Or_Package(string filter, string[] expected) {
+		// Arrange
+		JsonObject Row(string name, string caption, string package) => new() {
+			["UId"] = Guid.NewGuid().ToString(), ["PackageUId"] = PackageUId.ToString(), ["Name"] = name,
+			["Caption"] = caption, ["TypeName"] = "REST", ["SysPackageName"] = package
+		};
+		GivenSelect("VwWebServiceV2", Row("UsrErpOrders", "Orders", "Custom"), Row("UsrInvoices", "Invoices", "UsrErpLink"),
+			Row("UsrWeather", "Weather", "Custom"));
+
+		// Act
+		IReadOnlyList<WebServiceListItem> listed = _sut.List(filter);
+
+		// Assert
+		listed.Select(s => s.Code).Should().Equal(expected, because: "the filter matches the code, caption or package");
+	}
 }

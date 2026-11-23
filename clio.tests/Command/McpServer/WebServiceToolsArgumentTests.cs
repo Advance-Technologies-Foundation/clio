@@ -79,6 +79,50 @@ public sealed class WebServiceToolsArgumentTests {
 		designer.Received(1).TestMethod("UsrErp", "UsrPost", null, expected);
 	}
 
+	[Test]
+	[Description("describe-web-service passes the method codes to the designer for the environment of the call.")]
+	public void DescribeWebService_Should_Pass_The_Method_Codes() {
+		// Arrange
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
+		designer.Describe(default, default, default).ReturnsForAnyArgs(new WebServiceToolResult(true));
+		string[] methods = ["UsrGetOrders"];
+
+		// Act
+		WebServiceToolResult result = new DescribeWebServiceTool(resolver).DescribeWebService(
+			new DescribeWebServiceArgs("dev", "UsrErp", Methods: methods));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the designer's answer is returned as it is");
+		designer.Received(1).Describe("UsrErp", false, Arg.Is<IReadOnlyList<string>>(m => ReferenceEquals(m, methods)));
+	}
+
+	[Test]
+	[Description("list-web-services passes the filter to the designer and cuts a list over the reply budget, with a notice to narrow it.")]
+	public void ListWebServices_Should_Pass_The_Filter_And_Cut_A_Long_List() {
+		// Arrange
+		IWebServiceDesigner designer = Substitute.For<IWebServiceDesigner>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
+		List<WebServiceListItem> services = Enumerable.Range(0, 400).Select(i => new WebServiceListItem(Guid.NewGuid(),
+			$"UsrService{i:000}", $"Service number {i}", "REST", "Custom", $"https://api{i}.example.org/v1")).ToList();
+		designer.List("Usr").Returns(services);
+
+		// Act
+		WebServiceListResult result = new ListWebServicesTool(resolver).ListWebServices(new ListWebServicesArgs("dev", "Usr"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the list is read");
+		result.Services.Count.Should().BeInRange(1, 399, because: "400 services do not fit the reply");
+		result.Services.Select(s => s.Code).Should().Equal(services.Take(result.Services.Count).Select(s => s.Code),
+			because: "the services kept are the first ones, in order");
+		result.Notices.Should().ContainSingle(n => n.Contains($"{400 - result.Services.Count} of the 400 services")
+			&& n.Contains("filter"), because: "the agent is told how many were left out and how to narrow the list");
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(WebServiceReplyBudget.BudgetBytes,
+			because: "the cut list is returned inline");
+	}
+
 	private static TestWebServiceMethodTool TestMethodTool(IWebServiceDesigner designer) {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IWebServiceDesigner>(Arg.Any<EnvironmentOptions>()).Returns(designer);
@@ -125,7 +169,7 @@ public sealed class WebServiceToolsArgumentTests {
 		result.Success.Should().BeFalse(because: "a guessed argument name is refused, not bound");
 		result.Error.Should().Contain("'service-code' -> 'code'", because: "a known guess gets a rename hint");
 		result.Error.Should().Contain("Unknown args: 'colour'", because: "an unrelated key is still reported as unknown");
-		result.Error.Should().Contain("Valid: environment-name, code, usages.", because: "the valid fields are listed");
+		result.Error.Should().Contain("Valid: environment-name, code, usages, methods.", because: "the valid fields are listed");
 		resolver.DidNotReceiveWithAnyArgs().Resolve<IWebServiceDesigner>(default);
 	}
 

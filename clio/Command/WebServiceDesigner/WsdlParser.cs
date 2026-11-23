@@ -84,8 +84,13 @@ public sealed record WsdlPort(string Name, string ServiceName, int ServiceType, 
 /// Whether a name left out for not being an XML name contained '?', which is what the platform's ASCII download makes of a
 /// non-ASCII character.
 /// </param>
+/// <param name="RegisterInstead">
+/// The SOAP 1.1 port a warning tells the agent to register instead of <paramref name="StudioPort"/> ("Register port ...
+/// instead": the Studio pick cannot be called and that port, at the same address, can); null when the Studio pick is the
+/// port to register.
+/// </param>
 public sealed record WsdlDocument(IReadOnlyList<WsdlPort> Ports, string StudioPort, IReadOnlyList<string> Warnings,
-	int WarningsDropped = 0, bool DroppedNamesWithQuestionMark = false);
+	int WarningsDropped = 0, bool DroppedNamesWithQuestionMark = false, string RegisterInstead = null);
 
 /// <summary>What one parse reads: a port and operations named here are the only ones built.</summary>
 /// <param name="Port">The one port to read (exact name first, then ignoring case); null reads every SOAP port.</param>
@@ -769,10 +774,11 @@ public sealed partial class WsdlParser : IWsdlParser {
 			string studioPort = (candidates.FirstOrDefault(p => p.ServiceType == ServiceSchemaCodes.ServiceTypeSoap12)
 				?? candidates.FirstOrDefault())?.Name;
 			List<PortCandidate> selected = SelectPorts(candidates, studioPort);
-			ReportDispatchRisks(definitions, candidates, selected);
+			string registerInstead = ReportDispatchRisks(definitions, candidates, selected, studioPort);
 			List<WsdlPort> ports = selected.Select(c => BuildPort(definitions, c)).ToList();
 			CheckWantedOperations(definitions, candidates, selected, ports);
-			return new WsdlDocument(ports, studioPort, _warnings, _warningsDropped, _droppedNamesWithQuestionMark);
+			return new WsdlDocument(ports, studioPort, _warnings, _warningsDropped, _droppedNamesWithQuestionMark,
+				registerInstead);
 		}
 
 		private sealed record PortCandidate(string Name, XElement Service, XElement Address, int ServiceType, XElement Binding);
@@ -1002,9 +1008,14 @@ public sealed partial class WsdlParser : IWsdlParser {
 		/// failure only on WCF (an ASMX service answers, measured), so outside a WSDL WCF wrote the SOAP 1.1 port is named
 		/// as the way out after a failed test call, not as the port to register.
 		/// </summary>
-		private void ReportDispatchRisks(XElement definitions, List<PortCandidate> candidates, List<PortCandidate> selected) {
+		/// <returns>
+		/// The SOAP 1.1 port whose warning says to register it instead of <paramref name="studioPort"/>, or null.
+		/// </returns>
+		private string ReportDispatchRisks(XElement definitions, List<PortCandidate> candidates, List<PortCandidate> selected,
+			string studioPort) {
 			var requirements = new BindingRequirements(definitions, CheckClock);
 			bool? wcf = null;
+			string registerInstead = null;
 			foreach (PortCandidate port in selected) {
 				BindingRequirement required = requirements.Of(port.Binding);
 				if (!required.MessageSecurity && required.AddressingNamespace is null
@@ -1013,6 +1024,12 @@ public sealed partial class WsdlParser : IWsdlParser {
 				}
 				Soap11Port alternative = Soap11Alternative(port, candidates, requirements);
 				string instead = alternative?.Instead();
+				// Only the three definite failures below end with "Register port ... instead"; a plain SOAP 1.2 port keeps itself.
+				bool definite = required.MessageSecurity || required.AddressingNamespace is not null
+					|| (wcf ??= WrittenByWcf(definitions));
+				if (definite && port.Name == studioPort && alternative is { Difference: null }) {
+					registerInstead = alternative.Port.Name;
+				}
 				if (required.MessageSecurity) {
 					Warn($"Port '{port.Name}' requires WS-Security message security (its binding policy), which the platform "
 						+ "cannot produce, so it cannot be called from Creatio." + (instead ?? " Ask the API owner for an "
@@ -1045,6 +1062,7 @@ public sealed partial class WsdlParser : IWsdlParser {
 							: $"switch to port '{alternative.Port.Name}' (SOAP 1.1){alternative.Caveat()}."));
 				}
 			}
+			return registerInstead;
 		}
 
 		/// <summary>

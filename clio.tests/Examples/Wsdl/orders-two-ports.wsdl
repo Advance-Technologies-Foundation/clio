@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetic ASMX-style WSDL for clio's read-wsdl reply-budget tests (ENG-107277): a SOAP 1.1 and a SOAP 1.2 port on
+     one port type with 22 operations, so one port fits the inline reply budget and the two together do not. -->
+<wsdl:definitions xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="http://example.org/clio/orders/" xmlns:s="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/" targetNamespace="http://example.org/clio/orders/" xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+  <wsdl:types>
+    <s:schema elementFormDefault="qualified" targetNamespace="http://example.org/clio/orders/">
+      <s:element name="GetOrder"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetOrderResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetOrderResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListOrders"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListOrdersResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="ListOrdersResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CreateOrder"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CreateOrderResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="CreateOrderResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CancelOrder"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CancelOrderResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="CancelOrderResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetCustomer"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetCustomerResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetCustomerResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListCustomers"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListCustomersResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="ListCustomersResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="UpdateCustomer"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="UpdateCustomerResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="UpdateCustomerResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetInvoice"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetInvoiceResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetInvoiceResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListInvoices"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListInvoicesResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="ListInvoicesResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="PayInvoice"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="PayInvoiceResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="PayInvoiceResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetProduct"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetProductResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetProductResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListProducts"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListProductsResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="ListProductsResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetStock"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetStockResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetStockResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ReserveStock"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ReserveStockResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="ReserveStockResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ReleaseStock"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ReleaseStockResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="ReleaseStockResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetShipment"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetShipmentResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetShipmentResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="TrackShipment"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="TrackShipmentResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="TrackShipmentResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CreateReturn"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CreateReturnResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="CreateReturnResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetReturn"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetReturnResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetReturnResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListWarehouses"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="ListWarehousesResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="ListWarehousesResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetPriceList"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="GetPriceListResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="GetPriceListResult" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CalculateDiscount"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="orderNumber" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="customerCode" type="s:string" /><s:element minOccurs="0" maxOccurs="1" name="currencyCode" type="s:string" /></s:sequence></s:complexType></s:element>
+      <s:element name="CalculateDiscountResponse"><s:complexType><s:sequence><s:element minOccurs="0" maxOccurs="1" name="CalculateDiscountResult" type="s:string" /></s:sequence></s:complexType></s:element>
+    </s:schema>
+  </wsdl:types>
+  <wsdl:message name="GetOrderSoapIn"><wsdl:part name="parameters" element="tns:GetOrder" /></wsdl:message>
+  <wsdl:message name="GetOrderSoapOut"><wsdl:part name="parameters" element="tns:GetOrderResponse" /></wsdl:message>
+  <wsdl:message name="ListOrdersSoapIn"><wsdl:part name="parameters" element="tns:ListOrders" /></wsdl:message>
+  <wsdl:message name="ListOrdersSoapOut"><wsdl:part name="parameters" element="tns:ListOrdersResponse" /></wsdl:message>
+  <wsdl:message name="CreateOrderSoapIn"><wsdl:part name="parameters" element="tns:CreateOrder" /></wsdl:message>
+  <wsdl:message name="CreateOrderSoapOut"><wsdl:part name="parameters" element="tns:CreateOrderResponse" /></wsdl:message>
+  <wsdl:message name="CancelOrderSoapIn"><wsdl:part name="parameters" element="tns:CancelOrder" /></wsdl:message>
+  <wsdl:message name="CancelOrderSoapOut"><wsdl:part name="parameters" element="tns:CancelOrderResponse" /></wsdl:message>
+  <wsdl:message name="GetCustomerSoapIn"><wsdl:part name="parameters" element="tns:GetCustomer" /></wsdl:message>
+  <wsdl:message name="GetCustomerSoapOut"><wsdl:part name="parameters" element="tns:GetCustomerResponse" /></wsdl:message>
+  <wsdl:message name="ListCustomersSoapIn"><wsdl:part name="parameters" element="tns:ListCustomers" /></wsdl:message>
+  <wsdl:message name="ListCustomersSoapOut"><wsdl:part name="parameters" element="tns:ListCustomersResponse" /></wsdl:message>
+  <wsdl:message name="UpdateCustomerSoapIn"><wsdl:part name="parameters" element="tns:UpdateCustomer" /></wsdl:message>
+  <wsdl:message name="UpdateCustomerSoapOut"><wsdl:part name="parameters" element="tns:UpdateCustomerResponse" /></wsdl:message>
+  <wsdl:message name="GetInvoiceSoapIn"><wsdl:part name="parameters" element="tns:GetInvoice" /></wsdl:message>
+  <wsdl:message name="GetInvoiceSoapOut"><wsdl:part name="parameters" element="tns:GetInvoiceResponse" /></wsdl:message>
+  <wsdl:message name="ListInvoicesSoapIn"><wsdl:part name="parameters" element="tns:ListInvoices" /></wsdl:message>
+  <wsdl:message name="ListInvoicesSoapOut"><wsdl:part name="parameters" element="tns:ListInvoicesResponse" /></wsdl:message>
+  <wsdl:message name="PayInvoiceSoapIn"><wsdl:part name="parameters" element="tns:PayInvoice" /></wsdl:message>
+  <wsdl:message name="PayInvoiceSoapOut"><wsdl:part name="parameters" element="tns:PayInvoiceResponse" /></wsdl:message>
+  <wsdl:message name="GetProductSoapIn"><wsdl:part name="parameters" element="tns:GetProduct" /></wsdl:message>
+  <wsdl:message name="GetProductSoapOut"><wsdl:part name="parameters" element="tns:GetProductResponse" /></wsdl:message>
+  <wsdl:message name="ListProductsSoapIn"><wsdl:part name="parameters" element="tns:ListProducts" /></wsdl:message>
+  <wsdl:message name="ListProductsSoapOut"><wsdl:part name="parameters" element="tns:ListProductsResponse" /></wsdl:message>
+  <wsdl:message name="GetStockSoapIn"><wsdl:part name="parameters" element="tns:GetStock" /></wsdl:message>
+  <wsdl:message name="GetStockSoapOut"><wsdl:part name="parameters" element="tns:GetStockResponse" /></wsdl:message>
+  <wsdl:message name="ReserveStockSoapIn"><wsdl:part name="parameters" element="tns:ReserveStock" /></wsdl:message>
+  <wsdl:message name="ReserveStockSoapOut"><wsdl:part name="parameters" element="tns:ReserveStockResponse" /></wsdl:message>
+  <wsdl:message name="ReleaseStockSoapIn"><wsdl:part name="parameters" element="tns:ReleaseStock" /></wsdl:message>
+  <wsdl:message name="ReleaseStockSoapOut"><wsdl:part name="parameters" element="tns:ReleaseStockResponse" /></wsdl:message>
+  <wsdl:message name="GetShipmentSoapIn"><wsdl:part name="parameters" element="tns:GetShipment" /></wsdl:message>
+  <wsdl:message name="GetShipmentSoapOut"><wsdl:part name="parameters" element="tns:GetShipmentResponse" /></wsdl:message>
+  <wsdl:message name="TrackShipmentSoapIn"><wsdl:part name="parameters" element="tns:TrackShipment" /></wsdl:message>
+  <wsdl:message name="TrackShipmentSoapOut"><wsdl:part name="parameters" element="tns:TrackShipmentResponse" /></wsdl:message>
+  <wsdl:message name="CreateReturnSoapIn"><wsdl:part name="parameters" element="tns:CreateReturn" /></wsdl:message>
+  <wsdl:message name="CreateReturnSoapOut"><wsdl:part name="parameters" element="tns:CreateReturnResponse" /></wsdl:message>
+  <wsdl:message name="GetReturnSoapIn"><wsdl:part name="parameters" element="tns:GetReturn" /></wsdl:message>
+  <wsdl:message name="GetReturnSoapOut"><wsdl:part name="parameters" element="tns:GetReturnResponse" /></wsdl:message>
+  <wsdl:message name="ListWarehousesSoapIn"><wsdl:part name="parameters" element="tns:ListWarehouses" /></wsdl:message>
+  <wsdl:message name="ListWarehousesSoapOut"><wsdl:part name="parameters" element="tns:ListWarehousesResponse" /></wsdl:message>
+  <wsdl:message name="GetPriceListSoapIn"><wsdl:part name="parameters" element="tns:GetPriceList" /></wsdl:message>
+  <wsdl:message name="GetPriceListSoapOut"><wsdl:part name="parameters" element="tns:GetPriceListResponse" /></wsdl:message>
+  <wsdl:message name="CalculateDiscountSoapIn"><wsdl:part name="parameters" element="tns:CalculateDiscount" /></wsdl:message>
+  <wsdl:message name="CalculateDiscountSoapOut"><wsdl:part name="parameters" element="tns:CalculateDiscountResponse" /></wsdl:message>
+  <wsdl:portType name="OrdersServiceSoap">
+    <wsdl:operation name="GetOrder"><wsdl:input message="tns:GetOrderSoapIn" /><wsdl:output message="tns:GetOrderSoapOut" /></wsdl:operation>
+    <wsdl:operation name="ListOrders"><wsdl:input message="tns:ListOrdersSoapIn" /><wsdl:output message="tns:ListOrdersSoapOut" /></wsdl:operation>
+    <wsdl:operation name="CreateOrder"><wsdl:input message="tns:CreateOrderSoapIn" /><wsdl:output message="tns:CreateOrderSoapOut" /></wsdl:operation>
+    <wsdl:operation name="CancelOrder"><wsdl:input message="tns:CancelOrderSoapIn" /><wsdl:output message="tns:CancelOrderSoapOut" /></wsdl:operation>
+    <wsdl:operation name="GetCustomer"><wsdl:input message="tns:GetCustomerSoapIn" /><wsdl:output message="tns:GetCustomerSoapOut" /></wsdl:operation>
+    <wsdl:operation name="ListCustomers"><wsdl:input message="tns:ListCustomersSoapIn" /><wsdl:output message="tns:ListCustomersSoapOut" /></wsdl:operation>
+    <wsdl:operation name="UpdateCustomer"><wsdl:input message="tns:UpdateCustomerSoapIn" /><wsdl:output message="tns:UpdateCustomerSoapOut" /></wsdl:operation>
+    <wsdl:operation name="GetInvoice"><wsdl:input message="tns:GetInvoiceSoapIn" /><wsdl:output message="tns:GetInvoiceSoapOut" /></wsdl:operation>
+    <wsdl:operation name="ListInvoices"><wsdl:input message="tns:ListInvoicesSoapIn" /><wsdl:output message="tns:ListInvoicesSoapOut" /></wsdl:operation>
+    <wsdl:operation name="PayInvoice"><wsdl:input message="tns:PayInvoiceSoapIn" /><wsdl:output message="tns:PayInvoiceSoapOut" /></wsdl:operation>
+    <wsdl:operation name="GetProduct"><wsdl:input message="tns:GetProductSoapIn" /><wsdl:output message="tns:GetProductSoapOut" /></wsdl:operation>
+    <wsdl:operation name="ListProducts"><wsdl:input message="tns:ListProductsSoapIn" /><wsdl:output message="tns:ListProductsSoapOut" /></wsdl:operation>
+    <wsdl:operation name="GetStock"><wsdl:input message="tns:GetStockSoapIn" /><wsdl:output message="tns:GetStockSoapOut" /></wsdl:operation>
+    <wsdl:operation name="ReserveStock"><wsdl:input message="tns:ReserveStockSoapIn" /><wsdl:output message="tns:ReserveStockSoapOut" /></wsdl:operation>
+    <wsdl:operation name="ReleaseStock"><wsdl:input message="tns:ReleaseStockSoapIn" /><wsdl:output message="tns:ReleaseStockSoapOut" /></wsdl:operation>
+    <wsdl:operation name="GetShipment"><wsdl:input message="tns:GetShipmentSoapIn" /><wsdl:output message="tns:GetShipmentSoapOut" /></wsdl:operation>
+    <wsdl:operation name="TrackShipment"><wsdl:input message="tns:TrackShipmentSoapIn" /><wsdl:output message="tns:TrackShipmentSoapOut" /></wsdl:operation>
+    <wsdl:operation name="CreateReturn"><wsdl:input message="tns:CreateReturnSoapIn" /><wsdl:output message="tns:CreateReturnSoapOut" /></wsdl:operation>
+    <wsdl:operation name="GetReturn"><wsdl:input message="tns:GetReturnSoapIn" /><wsdl:output message="tns:GetReturnSoapOut" /></wsdl:operation>
+    <wsdl:operation name="ListWarehouses"><wsdl:input message="tns:ListWarehousesSoapIn" /><wsdl:output message="tns:ListWarehousesSoapOut" /></wsdl:operation>
+    <wsdl:operation name="GetPriceList"><wsdl:input message="tns:GetPriceListSoapIn" /><wsdl:output message="tns:GetPriceListSoapOut" /></wsdl:operation>
+    <wsdl:operation name="CalculateDiscount"><wsdl:input message="tns:CalculateDiscountSoapIn" /><wsdl:output message="tns:CalculateDiscountSoapOut" /></wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="OrdersServiceSoap" type="tns:OrdersServiceSoap">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="GetOrder"><soap:operation soapAction="http://example.org/clio/orders/GetOrder" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListOrders"><soap:operation soapAction="http://example.org/clio/orders/ListOrders" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CreateOrder"><soap:operation soapAction="http://example.org/clio/orders/CreateOrder" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CancelOrder"><soap:operation soapAction="http://example.org/clio/orders/CancelOrder" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetCustomer"><soap:operation soapAction="http://example.org/clio/orders/GetCustomer" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListCustomers"><soap:operation soapAction="http://example.org/clio/orders/ListCustomers" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="UpdateCustomer"><soap:operation soapAction="http://example.org/clio/orders/UpdateCustomer" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetInvoice"><soap:operation soapAction="http://example.org/clio/orders/GetInvoice" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListInvoices"><soap:operation soapAction="http://example.org/clio/orders/ListInvoices" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="PayInvoice"><soap:operation soapAction="http://example.org/clio/orders/PayInvoice" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetProduct"><soap:operation soapAction="http://example.org/clio/orders/GetProduct" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListProducts"><soap:operation soapAction="http://example.org/clio/orders/ListProducts" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetStock"><soap:operation soapAction="http://example.org/clio/orders/GetStock" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ReserveStock"><soap:operation soapAction="http://example.org/clio/orders/ReserveStock" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ReleaseStock"><soap:operation soapAction="http://example.org/clio/orders/ReleaseStock" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetShipment"><soap:operation soapAction="http://example.org/clio/orders/GetShipment" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="TrackShipment"><soap:operation soapAction="http://example.org/clio/orders/TrackShipment" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CreateReturn"><soap:operation soapAction="http://example.org/clio/orders/CreateReturn" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetReturn"><soap:operation soapAction="http://example.org/clio/orders/GetReturn" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListWarehouses"><soap:operation soapAction="http://example.org/clio/orders/ListWarehouses" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetPriceList"><soap:operation soapAction="http://example.org/clio/orders/GetPriceList" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CalculateDiscount"><soap:operation soapAction="http://example.org/clio/orders/CalculateDiscount" style="document" /><wsdl:input><soap:body use="literal" /></wsdl:input><wsdl:output><soap:body use="literal" /></wsdl:output></wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="OrdersServiceSoap12" type="tns:OrdersServiceSoap">
+    <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" />
+    <wsdl:operation name="GetOrder"><soap12:operation soapAction="http://example.org/clio/orders/GetOrder" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListOrders"><soap12:operation soapAction="http://example.org/clio/orders/ListOrders" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CreateOrder"><soap12:operation soapAction="http://example.org/clio/orders/CreateOrder" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CancelOrder"><soap12:operation soapAction="http://example.org/clio/orders/CancelOrder" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetCustomer"><soap12:operation soapAction="http://example.org/clio/orders/GetCustomer" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListCustomers"><soap12:operation soapAction="http://example.org/clio/orders/ListCustomers" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="UpdateCustomer"><soap12:operation soapAction="http://example.org/clio/orders/UpdateCustomer" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetInvoice"><soap12:operation soapAction="http://example.org/clio/orders/GetInvoice" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListInvoices"><soap12:operation soapAction="http://example.org/clio/orders/ListInvoices" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="PayInvoice"><soap12:operation soapAction="http://example.org/clio/orders/PayInvoice" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetProduct"><soap12:operation soapAction="http://example.org/clio/orders/GetProduct" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListProducts"><soap12:operation soapAction="http://example.org/clio/orders/ListProducts" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetStock"><soap12:operation soapAction="http://example.org/clio/orders/GetStock" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ReserveStock"><soap12:operation soapAction="http://example.org/clio/orders/ReserveStock" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ReleaseStock"><soap12:operation soapAction="http://example.org/clio/orders/ReleaseStock" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetShipment"><soap12:operation soapAction="http://example.org/clio/orders/GetShipment" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="TrackShipment"><soap12:operation soapAction="http://example.org/clio/orders/TrackShipment" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CreateReturn"><soap12:operation soapAction="http://example.org/clio/orders/CreateReturn" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetReturn"><soap12:operation soapAction="http://example.org/clio/orders/GetReturn" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="ListWarehouses"><soap12:operation soapAction="http://example.org/clio/orders/ListWarehouses" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="GetPriceList"><soap12:operation soapAction="http://example.org/clio/orders/GetPriceList" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+    <wsdl:operation name="CalculateDiscount"><soap12:operation soapAction="http://example.org/clio/orders/CalculateDiscount" style="document" /><wsdl:input><soap12:body use="literal" /></wsdl:input><wsdl:output><soap12:body use="literal" /></wsdl:output></wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="OrdersService">
+    <wsdl:port name="OrdersServiceSoap" binding="tns:OrdersServiceSoap"><soap:address location="http://erp.example.org/orders.asmx" /></wsdl:port>
+    <wsdl:port name="OrdersServiceSoap12" binding="tns:OrdersServiceSoap12"><soap12:address location="http://erp.example.org/orders.asmx" /></wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

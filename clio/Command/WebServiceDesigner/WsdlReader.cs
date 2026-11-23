@@ -101,8 +101,16 @@ public sealed partial class WsdlReader(
 	internal const long MaxFileBytes = 10 * 1024 * 1024;
 	/// <summary>The most all local files may hold together, the same as a download.</summary>
 	internal const long MaxTotalBytes = WebServiceDesignerClient.MaxDownloadedBytes;
-	/// <summary>Above this the result lists operation names only; an agent reads it again with operations.</summary>
-	internal const int MaxResultCharacters = 120_000;
+	/// <summary>
+	/// The size the reply keeps within, as the agent receives it (<see cref="McpServer.McpResultSize"/>). Above it the result
+	/// narrows: first one port in full with the others' operation names, then operation names only.
+	/// </summary>
+	internal const int ReplyBudgetBytes = McpServer.McpResultSize.InlineReplyBudgetBytes;
+	/// <summary>
+	/// Above this many characters of parameter paths and captions the result lists operation names before anything is
+	/// mapped: such a result could not fit <see cref="ReplyBudgetBytes"/>, and mapping it first would cost the work.
+	/// </summary>
+	internal const int MaxMappedTextCharacters = 120_000;
 	/// <summary>The most operation names a too-large result lists, over every port together.</summary>
 	internal const int MaxListedOperations = 500;
 	/// <summary>
@@ -163,7 +171,7 @@ public sealed partial class WsdlReader(
 		// keeps that alone pass the result limit (each is serialized, so the result could not fit). Ports on one binding share
 		// their operations, so mapping and serializing each would copy the same long paths once per port first.
 		if (ports.Sum(p => p.Operations.Sum(o => Count(o.Request) + Count(o.Response))) > MaxMappedParameters
-				|| ports.Sum(p => p.Operations.Sum(o => TextLength(o.Request) + TextLength(o.Response))) > MaxResultCharacters) {
+				|| ports.Sum(p => p.Operations.Sum(o => TextLength(o.Request) + TextLength(o.Response))) > MaxMappedTextCharacters) {
 			return NamesOnly(ports.Select(p => (p.Name, p.Name == document.StudioPort, p.Operations.Select(o => o.Caption).ToList()))
 				.ToList(), warnings, [], narrowest: ports.Count == 1 && ports[0].Operations.Count <= 1);
 		}
@@ -172,7 +180,7 @@ public sealed partial class WsdlReader(
 			services.Add(WsdlRegistrationMapper.Map(port, port.Name == document.StudioPort, prefix,
 				request.EnvironmentName, target, warnings, code));
 		}
-		return Result(services, warnings, Notices(services, target, url));
+		return Result(services, warnings, Notices(services, target, url), document.RegisterInstead);
 	}
 
 	// Checks what needs no environment: one source, a URL or paths that may be read, and code or service-code, not both.
@@ -269,46 +277,92 @@ public sealed partial class WsdlReader(
 	private static IEnumerable<WsdlParameter> Flatten(IReadOnlyList<WsdlParameter> parameters) =>
 		(parameters ?? []).SelectMany(p => Flatten(p.Items).Prepend(p));
 
+	// The result within the reply budget, in three steps: every port in full; then, with several ports, the port to register in
+	// full and the others by operation name (on one binding they are near copies, so a WSDL with SOAP 1.1 and SOAP 1.2 ports
+	// would otherwise cost the agent the same operations twice); then operation names only.
 	private static WsdlReadResult Result(IReadOnlyList<WsdlServiceArguments> services, WarningLog warnings,
-		List<string> notices) {
+		List<string> notices, string registerInstead) {
 		IReadOnlyList<string> shownWarnings = warnings.ToList();
-		List<WsdlServiceView> views = services.Select(s => new WsdlServiceView(s.Port, s.StudioPick,
-			JsonSerializer.SerializeToElement(s.Arguments, ArgumentOptions), s.ExistingMethods)).ToList();
+		List<WsdlServiceView> views = services.Select(Full).ToList();
 		var result = new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
 			Notices: notices.Count > 0 ? notices : null);
-		if (JsonSerializer.Serialize(result).Length <= MaxResultCharacters) {
+		if (Fits(result)) {
 			return result;
+		}
+		if (services.Count > 1) {
+			WsdlServiceArguments shown = services.FirstOrDefault(s => s.Port == registerInstead)
+				?? services.FirstOrDefault(s => s.StudioPick) ?? services[0];
+			List<string> onePortNotices = [.. notices,
+				$"Only port '{WsdlParser.Shown(shown.Port)}' is returned in full, the port to register (see the warnings), "
+				+ $"to keep the reply within {ReplyBudgetBytes:N0} bytes; the other ports list their operation names. To "
+				+ "register another port, read the WSDL again with that port."];
+			int remaining = MaxListedOperations;
+			List<WsdlServiceView> onePort = services.Select(s => s == shown
+				? Full(s)
+				: new WsdlServiceView(s.Port, s.StudioPick, Operations: Names(s.Arguments.Methods.Select(m => m.Caption).ToList(),
+					ref remaining))).ToList();
+			var narrowed = new WsdlReadResult(true, Services: onePort, Warnings: result.Warnings, Notices: onePortNotices);
+			if (Fits(narrowed)) {
+				return narrowed;
+			}
 		}
 		return NamesOnly(services.Select(s => (s.Port, s.StudioPick, s.Arguments.Methods.Select(m => m.Caption).ToList())).ToList(),
 			warnings, notices, IsNarrowest(services));
 	}
 
+	private static WsdlServiceView Full(WsdlServiceArguments service) => new(service.Port, service.StudioPick,
+		JsonSerializer.SerializeToElement(service.Arguments, ArgumentOptions), service.ExistingMethods);
+
+	private static bool Fits(WsdlReadResult result) => McpServer.McpResultSize.Of(result) <= ReplyBudgetBytes;
+
+	// The operation names to list, cut like any WSDL text, at most remaining of them, with a count line for the rest.
+	private static List<string> Names(List<string> operations, ref int remaining) {
+		int listed = Math.Max(0, Math.Min(remaining, operations.Count));
+		List<string> names = operations.Take(listed).Select(name => WsdlParser.Shown(name)).ToList();
+		if (operations.Count > listed) {
+			names.Add($"...and {operations.Count - listed} more");
+		}
+		remaining -= listed;
+		return names;
+	}
+
 	// The operation names of each port, with a notice to read again narrower, for a result too large to return whole. The
-	// names are cut like any WSDL text and capped over every port together, so this fallback stays small itself.
+	// names are cut like any WSDL text and capped over every port together; when that still passes the reply budget, fewer
+	// names are listed, and past that fewer warnings, so this fallback stays inline itself.
 	private static WsdlReadResult NamesOnly(List<(string Port, bool StudioPick, List<string> Operations)> ports,
 		WarningLog warnings, List<string> notices, bool narrowest) {
-		IReadOnlyList<string> shownWarnings = warnings.ToList();
+		List<string> allWarnings = [.. warnings.ToList()];
 		var summaryNotices = new List<string>(notices) {
 			narrowest
-				? $"The result is too large to return whole (over {MaxResultCharacters} characters) even for one operation of one "
+				? $"The result is too large to return whole (over {ReplyBudgetBytes:N0} bytes) even for one operation of one "
 					+ "port; only its name is listed. Ask the user which fields of it they need and describe the method by hand."
-				: $"The result is too large to return whole (over {MaxResultCharacters} characters); only the operation names "
+				: $"The result is too large to return whole (over {ReplyBudgetBytes:N0} bytes); only the operation names "
 					+ "are listed. Ask the user which operations they need, then read the WSDL again with operations (and port), "
 					+ "keeping the same code or service-code."
 		};
-		int remaining = MaxListedOperations;
-		var views = new List<WsdlServiceView>();
-		foreach ((string port, bool studioPick, List<string> operations) in ports) {
-			int listed = Math.Min(remaining, operations.Count);
-			List<string> names = operations.Take(listed).Select(name => WsdlParser.Shown(name)).ToList();
-			if (operations.Count > listed) {
-				names.Add($"...and {operations.Count - listed} more");
+		int limit = MaxListedOperations;
+		int keptWarnings = allWarnings.Count;
+		while (true) {
+			int remaining = limit;
+			List<WsdlServiceView> views = ports.Select(p => new WsdlServiceView(p.Port, p.StudioPick,
+				Operations: Names(p.Operations, ref remaining))).ToList();
+			List<string> shownWarnings = keptWarnings == allWarnings.Count
+				? allWarnings
+				: [.. allWarnings.Take(keptWarnings), "More warnings were left out to keep the reply inline; read the WSDL again "
+					+ "with port and operations to see the ones that apply."];
+			var result = new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
+				Notices: summaryNotices);
+			if (Fits(result) || (limit == 0 && keptWarnings == 0)) {
+				return result;
 			}
-			remaining -= listed;
-			views.Add(new WsdlServiceView(port, studioPick, Operations: names));
+			// Names go first: the agent reads the WSDL again narrower anyway, and the warnings are what it must show the user.
+			if (limit > 0) {
+				limit = Math.Min(limit - 1, limit * ReplyBudgetBytes / (int)Math.Max(McpServer.McpResultSize.Of(result), 1));
+			} else {
+				keptWarnings = Math.Min(keptWarnings - 1,
+					keptWarnings * ReplyBudgetBytes / (int)Math.Max(McpServer.McpResultSize.Of(result), 1));
+			}
 		}
-		return new WsdlReadResult(true, Services: views, Warnings: shownWarnings.Count > 0 ? shownWarnings : null,
-			Notices: summaryNotices);
 	}
 
 	private static Uri CheckUrl(string url) {

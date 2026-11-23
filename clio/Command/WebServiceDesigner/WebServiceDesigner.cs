@@ -16,8 +16,11 @@ public interface IWebServiceDesigner {
 	/// Lists the web services of the environment, REST and SOAP, as Studio > Web services shows them. Needs no
 	/// CanManageSolution: it returns codes, captions, packages and base URIs with user information removed.
 	/// </summary>
+	/// <param name="filter">
+	/// Text the code, caption or package must contain, ignoring case; null or blank lists every service.
+	/// </param>
 	/// <returns>One row per service.</returns>
-	IReadOnlyList<WebServiceListItem> List();
+	IReadOnlyList<WebServiceListItem> List(string filter = null);
 
 	/// <summary>
 	/// Reads one service with its methods and parameters. Credential values and secret-like constant defaults
@@ -25,8 +28,16 @@ public interface IWebServiceDesigner {
 	/// </summary>
 	/// <param name="code">The service code.</param>
 	/// <param name="includeUsages">Whether to scan every process schema for Call web service elements calling it.</param>
-	/// <returns>The service view, and its usages when asked for.</returns>
-	WebServiceToolResult Describe(string code, bool includeUsages);
+	/// <param name="methods">
+	/// The codes of the methods to return (ignoring case); null or empty returns every method. A code the service does not
+	/// have is refused with the codes it has.
+	/// </param>
+	/// <returns>
+	/// The service view, and its usages when asked for (only the usages of the named methods when methods are named). A
+	/// reply over <see cref="McpServer.McpResultSize.InlineReplyBudgetBytes"/> returns as many methods in full as fit and
+	/// lists the rest by code in <c>methods-not-shown</c>.
+	/// </returns>
+	WebServiceToolResult Describe(string code, bool includeUsages, IReadOnlyList<string> methods = null);
 
 	/// <summary>
 	/// Creates a REST, SOAP 1.1 or SOAP 1.2 service. Every rule Studio enforces on save is checked first, plus the
@@ -97,12 +108,20 @@ public sealed class WebServiceDesigner(
 
 	private sealed record ServiceRow(Guid UId, Guid PackageUId, string Name, string Caption, string Type, string Package);
 
-	public IReadOnlyList<WebServiceListItem> List() =>
-		client.Select("VwWebServiceV2", [.. ServiceColumns, MetaDataColumn], null, orderColumn: "Name")
-			.Select(row => (Row: ToServiceRow(row), BaseUri: BaseUriFromMetadata(Text(row, MetaDataColumn))))
+	public IReadOnlyList<WebServiceListItem> List(string filter = null) {
+		string text = filter?.Trim();
+		// Filtered before the base URI is read out of each service's metadata, which is the costly part.
+		return client.Select("VwWebServiceV2", [.. ServiceColumns, MetaDataColumn], null, orderColumn: "Name")
+			.Select(row => (Row: ToServiceRow(row), Raw: row))
+			.Where(item => string.IsNullOrEmpty(text) || Contains(item.Row.Name, text) || Contains(item.Row.Caption, text)
+				|| Contains(item.Row.Package, text))
 			.Select(item => new WebServiceListItem(item.Row.UId, item.Row.Name, item.Row.Caption, item.Row.Type,
-				item.Row.Package, item.BaseUri))
+				item.Row.Package, BaseUriFromMetadata(Text(item.Raw, MetaDataColumn))))
 			.ToList();
+	}
+
+	private static bool Contains(string value, string text) =>
+		value?.Contains(text, StringComparison.OrdinalIgnoreCase) == true;
 
 	/// <summary>
 	/// The base URI out of a service's stored metadata, without credentials. The metadata itself is never
@@ -123,15 +142,40 @@ public sealed class WebServiceDesigner(
 		}
 	}
 
-	public WebServiceToolResult Describe(string code, bool includeUsages) {
+	public WebServiceToolResult Describe(string code, bool includeUsages, IReadOnlyList<string> methods = null) {
 		RequireManageSolution();
 		ServiceRow row = FindService(code);
 		ServiceSchemaDto schema = client.ReadSchema(row.UId, row.PackageUId);
-		IReadOnlyList<WebServiceUsage> usages = includeUsages ? FindUsages(schema.UId) : null;
-		IReadOnlyList<string> notices = WebServiceSchemaView.XmlResponsePathNotices(schema.Methods.Items.Values,
-			WebServiceSchemaView.IsSoap(schema));
-		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(schema, row.Package), Usages: usages,
-			Notices: notices.Count > 0 ? notices : null);
+		HashSet<string> wanted = WantedMethods(schema, methods);
+		IReadOnlyList<WebServiceUsage> usages = includeUsages
+			? FindUsages(schema.UId).Where(u => wanted is null || u.Method is null || wanted.Contains(u.Method)).ToList()
+			: null;
+		IReadOnlyList<string> notices = WebServiceSchemaView.XmlResponsePathNotices(
+			schema.Methods.Items.Values.Where(m => wanted is null || wanted.Contains(m.Name)), WebServiceSchemaView.IsSoap(schema));
+		WebServiceView view = WebServiceSchemaView.From(schema, row.Package);
+		if (wanted is not null) {
+			view = view with { Methods = view.Methods.Where(m => wanted.Contains(m.Code)).ToList() };
+		}
+		return WebServiceReplyBudget.Fit(new WebServiceToolResult(true, Service: view, Usages: usages,
+			Notices: notices.Count > 0 ? notices : null));
+	}
+
+	/// <summary>The method codes describe-web-service was asked for, or null for every method.</summary>
+	/// <exception cref="ArgumentException">A code is not a method of the service.</exception>
+	private static HashSet<string> WantedMethods(ServiceSchemaDto schema, IReadOnlyList<string> methods) {
+		List<string> asked = (methods ?? []).Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).ToList();
+		if (asked.Count == 0) {
+			return null;
+		}
+		List<string> missing = asked.Where(m => FindMethod(schema, m) is null).ToList();
+		if (missing.Count > 0) {
+			List<string> known = schema.Methods.Items.Values.Select(m => m.Name)
+				.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
+			throw new ArgumentException($"methods: {string.Join(", ", missing.Take(10).Select(m => $"'{WsdlParser.Shown(m)}'"))} "
+				+ $"not found; the service's methods: {string.Join(", ", known.Take(100))}"
+				+ (known.Count > 100 ? $" ...and {known.Count - 100} more." : "."));
+		}
+		return new HashSet<string>(asked.Select(m => FindMethod(schema, m).Name), StringComparer.OrdinalIgnoreCase);
 	}
 
 	public WebServiceToolResult Register(string packageName, WebServiceRegistration registration) {
@@ -185,9 +229,9 @@ public sealed class WebServiceDesigner(
 		IReadOnlyList<string> cleared = ClearUseAuthWithoutAuthentication(schema);
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, schema.PackageUId);
-		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
+		return WebServiceReplyBudget.Fit(new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, packageName),
 			Notices: [.. SoapActionNotices(schema, schema.Methods.Items.Values), .. Notices(settings, packageName),
-				.. ClearedUseAuthNotices(cleared)]);
+				.. ClearedUseAuthNotices(cleared)]));
 	}
 
 	/// <summary>
@@ -306,10 +350,11 @@ public sealed class WebServiceDesigner(
 			: [];
 		client.SaveSchema(schema);
 		ServiceSchemaDto saved = client.ReadSchema(schema.UId, row.PackageUId);
-		return new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
+		// The methods this call built are the ones the agent checks, so they are the last to be listed by code only.
+		return WebServiceReplyBudget.Fit(new WebServiceToolResult(true, Service: WebServiceSchemaView.From(saved, row.Package),
 			Usages: affected,
 			Notices: [.. SavedChangeNotices(schema, soap, typeBefore, builtMethods, authBefore, operations, useAuthBefore),
-				.. Notices(settings, row.Package, missingKept), .. ClearedUseAuthNotices(cleared)]);
+				.. Notices(settings, row.Package, missingKept), .. ClearedUseAuthNotices(cleared)]), builtMethods);
 	}
 
 	/// <summary>
@@ -381,11 +426,12 @@ public sealed class WebServiceDesigner(
 		bool truncated = body is { Length: > MaxResponseBodyLength };
 		// An XML response read through a JSONPath gives null with no error, which reads like a failure of the call.
 		IReadOnlyList<string> notices = WebServiceSchemaView.XmlResponsePathNotices([method], WebServiceSchemaView.IsSoap(schema));
-		return new WebServiceTestResult(result.Success,
+		// The character limit bounds the work; the reply budget, in bytes as the agent receives them, decides what is shown.
+		return WebServiceReplyBudget.Fit(new WebServiceTestResult(result.Success,
 			error is null ? null : SensitiveErrorTextRedactor.Redact(error),
 			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
 			bodyMasked || errorMasked || valuesMasked, responseValues, valuesOmitted ? true : null,
-			notices.Count > 0 ? notices : null);
+			notices.Count > 0 ? notices : null));
 	}
 
 	/// <summary>

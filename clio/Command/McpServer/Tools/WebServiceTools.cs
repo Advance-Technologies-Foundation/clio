@@ -57,13 +57,13 @@ public sealed class ListWebServicesTool(IToolCommandResolver commandResolver) {
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Lists web services. Each comes with its code, caption, REST or SOAP, package and base URI, as Studio > Web services shows it (user information and a key kept in the query hidden). Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code.")]
+	[Description("Lists web services. Each comes with its code, caption, REST or SOAP, package and base URI, as Studio > Web services shows it (user information and a key kept in the query hidden). Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code. filter keeps the services whose code, caption or package contains the text; a list too long to return inline is cut, with a notice to narrow it with filter.")]
 	public WebServiceListResult ListWebServices(
-		[Description("Parameters: environment-name (required)")] [Required] WebServiceEnvironmentArgs args) {
+		[Description("Parameters: environment-name (required); filter (optional)")] [Required] ListWebServicesArgs args) {
 		try {
-			WebServiceToolRunner.RejectUnknownArguments(args?.ExtensionData, "Valid: environment-name.");
+			WebServiceToolRunner.RejectUnknownArguments(args?.ExtensionData, "Valid: environment-name, filter.");
 			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args?.EnvironmentName);
-			return new WebServiceListResult(true, Services: designer.List());
+			return WebServiceReplyBudget.Fit(new WebServiceListResult(true, Services: designer.List(args?.Filter)));
 		} catch (Exception exception) {
 			return new WebServiceListResult(false, WebServiceToolRunner.Describe(exception));
 		}
@@ -84,14 +84,14 @@ public sealed class DescribeWebServiceTool(IToolCommandResolver commandResolver)
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Reads one web service. REST, SOAP 1.1 and SOAP 1.2 services are read alike: it returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees. A SOAP service also returns its namespaces (the default first), and each SOAP method its message-element and soap-action instead of a uri; SOAP parameters carry soap-header and sequence-element where they apply, and their paths are element paths (tem:Outer/tem:Inner). Credential values, constant defaults of cookie, key, token or Authorization parameters, header or soap-header constants that look like a key or sit under a credential-like soap-header parent, and query constants under a credential or hosting key name are never returned (default-masked: true); a plain header constant (Accept-Language: en-US) is returned as is; a key kept in a URI query (a credential name, or a 16+ character sig, sas, code, appid, sign or hmac) shows as [masked], and the tools never write one back. Parameters come in stored order, the order a call sends them. With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
+	[Description("Reads one web service. REST, SOAP 1.1 and SOAP 1.2 services are read alike: it returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees (methods narrows that to the method codes given; a reply too large to return inline gives as many methods in full as fit and lists the rest by code in methods-not-shown, to read with methods). A SOAP service also returns its namespaces (the default first), and each SOAP method its message-element and soap-action instead of a uri; SOAP parameters carry soap-header and sequence-element where they apply, and their paths are element paths (tem:Outer/tem:Inner). Credential values, constant defaults of cookie, key, token or Authorization parameters, header or soap-header constants that look like a key or sit under a credential-like soap-header parent, and query constants under a credential or hosting key name are never returned (default-masked: true); a plain header constant (Accept-Language: en-US) is returned as is; a key kept in a URI query (a credential name, or a 16+ character sig, sas, code, appid, sign or hmac) shows as [masked], and the tools never write one back. Parameters come in stored order, the order a call sends them. With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
 	public WebServiceToolResult DescribeWebService(
-		[Description("Parameters: environment-name, code (required); usages (optional, default false)")]
+		[Description("Parameters: environment-name, code (required); usages (optional, default false), methods (optional)")]
 		[Required]
 		DescribeWebServiceArgs args) =>
 		WebServiceToolRunner.Run(commandResolver, args?.EnvironmentName, args?.ExtensionData,
-			"Valid: environment-name, code, usages.",
-			designer => designer.Describe(args.Code, args.Usages ?? false));
+			"Valid: environment-name, code, usages, methods.",
+			designer => designer.Describe(args.Code, args.Usages ?? false, args.Methods));
 }
 
 /// <summary>Changes a registered REST or SOAP web service, refusing a change that would break calling processes.</summary>
@@ -190,7 +190,7 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 
 				 Returns one argument object per SOAP 1.1 and SOAP 1.2 port (studio-pick marks the port Studio would create: the SOAP 1.2 one when both exist; it is not a recommendation, see warnings; HTTP ports are dropped): type, base URI, namespaces, and methods with message-element, soap-action and parameters with element paths, soap-header and sequence-element. Codes are the environment's schema-name prefix plus the full WSDL name in PascalCase (GetCustomerOrders -> UsrGetCustomerOrders; a nested field joins its whole path, wrappers included, customer/name -> UsrCustomerName), the same on every read. warnings list what was not read or needs a test call, and a port the platform may not be able to call as described (SOAP 1.2 dispatched by the Content-Type action, as WCF does; required WS-Addressing; WS-Security message security), naming the SOAP 1.1 port to register instead when there is one (for a plain SOAP 1.2 port only when WCF wrote the WSDL; otherwise as the way out of a failed test call).
 
-				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. When the user named the new service's code, pass it as code. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return whole comes back as operation names: read it again with operations. The caller needs CanManageSolution.
+				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. When the user named the new service's code, pass it as code. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return inline comes back narrower: with several ports, the port to register in full and the others by operation name (read another with port); then operation names only (read it again with operations). The caller needs CanManageSolution.
 				 """)]
 	public WsdlReadResult ReadWsdl(
 		[Description("Parameters: environment-name, and wsdl-url or wsdl-files (required); port, code (new service) or service-code (existing service), operations (optional)")]
@@ -287,14 +287,6 @@ internal static class WebServiceToolRunner {
 		SensitiveErrorTextRedactor.Redact(exception.Message);
 }
 
-public sealed record WebServiceEnvironmentArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName) {
-	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
-}
-
 
 public sealed record RegisterWebServiceArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -361,7 +353,24 @@ public sealed record DescribeWebServiceArgs(
 
 	[property: JsonPropertyName("usages")]
 	[property: Description("Also list the processes that call the service (scans process metadata; slower)")]
-	bool? Usages = null) {
+	bool? Usages = null,
+
+	[property: JsonPropertyName("methods")]
+	[property: Description("Method codes to return, e.g. [\"UsrGetOrders\"]; every method when omitted. Use it for a service with many methods, or for the methods a reply listed in methods-not-shown")]
+	IReadOnlyList<string> Methods = null) {
+	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
+}
+
+/// <summary>The arguments of list-web-services.</summary>
+public sealed record ListWebServicesArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("filter")]
+	[property: Description("Text the code, caption or package contains (ignoring case), e.g. Erp; every service when omitted")]
+	string Filter = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

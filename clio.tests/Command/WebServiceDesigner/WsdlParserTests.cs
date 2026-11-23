@@ -715,6 +715,36 @@ public sealed class WsdlParserTests {
 			because: "WCF refuses every SOAP 1.2 call the platform makes (measured)");
 	}
 
+	[Test]
+	[Description("The document names the SOAP 1.1 port a warning says to register instead of Studio's pick, so a narrowed read-wsdl reply can return that port in full.")]
+	public void Parse_Should_Name_The_Port_To_Register_Instead_Of_Studio_Pick() {
+		// Arrange / Act
+		WsdlDocument wcf = ParseFixture("wcf-bindings.wsdl");
+		WsdlDocument asmx = ParseFixture("calculator.wsdl");
+
+		// Assert
+		wcf.StudioPort.Should().Be("CustomBinding_ICalc", because: "Studio picks the first SOAP 1.2 port");
+		wcf.RegisterInstead.Should().Be("BasicHttpBinding_ICalc",
+			because: "the warning on Studio's pick says to register the SOAP 1.1 port at the same address instead");
+		asmx.RegisterInstead.Should().BeNull(because: "on an ASMX WSDL the SOAP 1.2 port is kept, so Studio's pick is the port to register");
+	}
+
+	[Test]
+	[Description("A SOAP 1.1 alternative that drops https is not named as the port to register instead: it needs the user's yes first.")]
+	public void Parse_Should_Not_Name_A_Port_To_Register_Instead_When_It_Needs_The_Users_Yes() {
+		// Arrange
+		string ports = "<wsdl:port name=\"Soap12\" binding=\"tns:B12\"><soap12:address location=\"https://api.example/svc\" /></wsdl:port>"
+			+ "<wsdl:port name=\"Soap\" binding=\"tns:B11\"><soap:address location=\"http://api.example/svc\" /></wsdl:port>";
+		string wsdl = WcfWsdl(Binding("B12", "soap12") + Binding("B11", "soap"), ports);
+
+		// Act
+		WsdlDocument document = _sut.Parse([Inline(wsdl)], "Usr");
+
+		// Assert
+		document.StudioPort.Should().Be("Soap12", because: "Studio picks the SOAP 1.2 port");
+		document.RegisterInstead.Should().BeNull(because: "the http port is offered only on the user's yes, never as the port to register");
+	}
+
 	// A WSDL as WCF declares it: its contract namespace on the root.
 	private static string WcfWsdl(string bindings, string ports) =>
 		BindingWsdl("", bindings, ports).Replace("<wsdl:definitions ",
