@@ -504,7 +504,7 @@ public sealed class WsdlReaderTests {
 	}
 
 	[Test]
-	[Description("Warnings the parser left out are counted in the one count line of the result, together with those left out to keep the reply inline.")]
+	[Description("Warnings the parser left out are counted in the one count line of the result.")]
 	public void Read_Should_Count_The_Warnings_The_Parser_Left_Out() {
 		// Arrange
 		string fields = string.Concat(Enumerable.Range(0, WsdlParser.MaxWarnings + 20)
@@ -515,10 +515,8 @@ public sealed class WsdlReaderTests {
 		WsdlReadResult result = _sut.Read(Files(path));
 
 		// Assert
-		int kept = result.Warnings.Count - 1;
-		kept.Should().BeInRange(1, WarningLog.MaxKept - 1, because: "warnings past their share of the reply are left out too");
-		result.Warnings[^1].Should().StartWith($"...and {WsdlParser.MaxWarnings + 20 - kept} more warnings",
-			because: "one count line counts the parser's dropped warnings and the ones the reply left out");
+		result.Warnings.Should().HaveCount(WarningLog.MaxKept + 1, because: "the kept warnings and one count line");
+		result.Warnings[^1].Should().Be("...and 20 more warnings.", because: "the parser's dropped warnings are counted");
 	}
 
 	[Test]
@@ -751,19 +749,52 @@ public sealed class WsdlReaderTests {
 		// Arrange
 		string fields = string.Concat(Enumerable.Range(0, WsdlParser.MaxWarnings)
 			.Select(i => $"<xs:element name=\"aVeryLongFieldNameThatTheGeneratorWrote{i:000}\" type=\"tns:AMissingTypeTheGeneratorReferenced{i:000}\" />"));
-		string ops = string.Concat(Enumerable.Range(0, 30).Select(i => $"<xs:element name=\"x{i}\" type=\"xs:string\" />"));
-		string path = GivenFile("warnings.wsdl", Encoding.UTF8.GetBytes(InlineWsdl(fields + ops)));
+		string wsdl = InlineWsdl(fields).Replace(
+			"<wsdl:port name=\"Soap\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc\" /></wsdl:port>",
+			"<wsdl:port name=\"Soap\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc\" /></wsdl:port>"
+			+ "<wsdl:port name=\"Soap2\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc2\" /></wsdl:port>");
+		string path = GivenFile("warnings.wsdl", Encoding.UTF8.GetBytes(wsdl));
+
+		// Act
+		WsdlReadResult result = _sut.Read(Files(path));
+
+		// Assert
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(
+			Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes, because: "the reply is returned inline");
+		int warningBytes = result.Warnings.Sum(w => Encoding.UTF8.GetByteCount(w) + 3);
+		warningBytes.Should().BeLessThanOrEqualTo(WsdlReader.MaxWarningBytes + 200,
+			because: "the warnings take at most their share of the reply, plus the count line");
+		result.Warnings[^1].Should().Contain("more warnings, left out to keep the reply inline",
+			because: "the warnings past their share are counted in one line, with their number");
+		result.Services.Should().OnlyContain(s => s.Arguments != null || s.Operations.Contains("Op"),
+			because: "the warnings no longer crowd out the operation, by arguments or at least by name");
+	}
+
+	[Test]
+	[Description("A reply that fits keeps every warning, however much of the budget the warnings take.")]
+	public void Read_Should_Keep_Every_Warning_When_The_Reply_Fits() {
+		// Arrange
+		string httpPorts = string.Concat(Enumerable.Range(0, 70).Select(i =>
+			$"<wsdl:port name=\"HttpGetPortNumber{i:000}OfTheLegacyEndpoint\" binding=\"tns:BH\"><http:address location=\"http://localhost/h{i}\" /></wsdl:port>"));
+		string wsdl = InlineWsdl("<xs:element name=\"a\" type=\"xs:string\" />")
+			.Replace("<wsdl:definitions ", "<wsdl:definitions xmlns:http=\"http://schemas.xmlsoap.org/wsdl/http/\" ")
+			.Replace("<wsdl:service name=\"Svc\">", "<wsdl:binding name=\"BH\" type=\"tns:P\"><http:binding verb=\"GET\" /></wsdl:binding><wsdl:service name=\"Svc\">")
+			.Replace("<wsdl:port name=\"Soap\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc\" /></wsdl:port>",
+				"<wsdl:port name=\"Soap\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc\" /></wsdl:port>"
+				+ "<wsdl:port name=\"Soap2\" binding=\"tns:B\"><soap:address location=\"http://localhost/svc2\" /></wsdl:port>" + httpPorts);
+		string path = GivenFile("http-ports.wsdl", Encoding.UTF8.GetBytes(wsdl));
 
 		// Act
 		WsdlReadResult result = _sut.Read(Files(path));
 
 		// Assert
 		int warningBytes = result.Warnings.Sum(w => Encoding.UTF8.GetByteCount(w) + 3);
-		warningBytes.Should().BeLessThanOrEqualTo(WsdlReader.MaxWarningBytes + 200,
-			because: "the warnings take at most their share of the reply, plus the count line");
-		result.Warnings[^1].Should().Contain("more warnings, left out to keep the reply inline",
-			because: "the warnings past their share are counted in one line");
-		result.Services.Single().Arguments.Should().NotBeNull(because: "the warnings no longer crowd out the one operation the WSDL has");
+		warningBytes.Should().BeGreaterThan(WsdlReader.MaxWarningBytes, because: "the fixture's warnings must pass their share");
+		Clio.Command.McpServer.McpResultSize.Of(result).Should().BeLessThanOrEqualTo(
+			Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes, because: "the fixture's reply must fit");
+		result.Warnings.Should().NotContain(w => w.Contains("left out to keep the reply inline"),
+			because: "only a reply that does not fit gives up warnings");
+		result.Services.Should().OnlyContain(s => s.Arguments != null, because: "both small ports fit in full");
 	}
 
 	[Test]

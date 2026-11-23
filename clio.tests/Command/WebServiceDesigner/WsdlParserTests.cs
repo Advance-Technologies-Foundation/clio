@@ -745,6 +745,16 @@ public sealed class WsdlParserTests {
 		document.RegisterInstead.Should().BeNull(because: "the http port is offered only on the user's yes, never as the port to register");
 	}
 
+	[Test]
+	[Description("A port to register instead that this read does not return is not named in the document, so a narrowed reply never claims to return it.")]
+	public void Parse_Should_Not_Name_A_Port_To_Register_Instead_That_Was_Not_Read() {
+		// Arrange / Act
+		WsdlDocument document = _sut.Parse([FixtureFile("wcf-bindings.wsdl")], "Usr", new WsdlParseOptions(Port: "CustomBinding_ICalc"));
+
+		// Assert
+		document.RegisterInstead.Should().BeNull(because: "the SOAP 1.1 port was not read, though the warning still names it");
+	}
+
 	// A WSDL as WCF declares it: its contract namespace on the root.
 	private static string WcfWsdl(string bindings, string ports) =>
 		BindingWsdl("", bindings, ports).Replace("<wsdl:definitions ",

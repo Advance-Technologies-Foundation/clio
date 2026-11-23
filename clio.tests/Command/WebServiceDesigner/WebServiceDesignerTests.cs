@@ -1889,6 +1889,29 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("A large first method does not drag a several-method reply over the budget: every method is then listed by code.")]
+	public void Describe_Should_List_Every_Method_By_Code_When_The_First_Alone_Passes_The_Budget() {
+		// Arrange
+		ServiceSchemaDto schema = ManyMethodsSchema(3);
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto big = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrA0Big", "GET", "big",
+			RequestParameters: [.. Enumerable.Range(0, 120).Select(p => new WebServiceParameterArg($"UsrQueryParameter{p:000}",
+				"query", Path: $"query_parameter_{p:000}"))]), null, false, errors);
+		schema.Methods.Items[big.UId.ToString()] = big;
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = WebServiceReplyBudget.Fit(_sut.Describe("BingSearchApiCall", false));
+
+		// Assert
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
+			because: "listing every method by code fits, so the reply must not spill");
+		result.Service.Methods.Should().NotContain(m => m.Code == "UsrA0Big", because: "the large method alone passes the budget");
+		result.Service.MethodsNotShown.Should().Contain(m => m.Code == "UsrA0Big",
+			because: "it is listed by code, to be read on its own with methods");
+	}
+
+	[Test]
 	[Description("The designer itself never cuts a service: read-wsdl with service-code reads every existing method through it.")]
 	public void Describe_Should_Return_Every_Method_To_Internal_Readers() {
 		// Arrange

@@ -86,8 +86,9 @@ public sealed record WsdlPort(string Name, string ServiceName, int ServiceType, 
 /// </param>
 /// <param name="RegisterInstead">
 /// The SOAP 1.1 port a warning tells the agent to register instead of <paramref name="StudioPort"/> ("Register port ...
-/// instead": the Studio pick cannot be called and that port, at the same address, can); null when the Studio pick is the
-/// port to register.
+/// instead": the Studio pick cannot be called and that port, at the same address, can), when this read returns that port;
+/// null when the Studio pick is the port to register, when the Studio pick was not read, or when the alternative was not
+/// read (past the port limit, or another port named) although the warning still names it.
 /// </param>
 public sealed record WsdlDocument(IReadOnlyList<WsdlPort> Ports, string StudioPort, IReadOnlyList<string> Warnings,
 	int WarningsDropped = 0, bool DroppedNamesWithQuestionMark = false, string RegisterInstead = null);

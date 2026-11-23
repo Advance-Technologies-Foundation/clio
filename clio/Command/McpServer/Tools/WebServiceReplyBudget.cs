@@ -17,8 +17,8 @@ namespace Clio.Command.McpServer.Tools;
 internal static class WebServiceReplyBudget {
 
 	/// <summary>
-	/// A service reply within the budget: every method in full when that fits; otherwise as many as fit, at least one, the
-	/// methods named in <paramref name="shownFirst"/> first and then in stored order, with the rest listed by code in
+	/// A service reply within the budget: every method in full when that fits; a single method always in full; otherwise
+	/// as many as fit, the methods named in <paramref name="shownFirst"/> first and then in stored order, with the rest listed by code in
 	/// <c>methods-not-shown</c> and a notice saying how to read them. Usages that still do not fit are cut last, with a
 	/// notice.
 	/// </summary>
@@ -33,11 +33,12 @@ internal static class WebServiceReplyBudget {
 		var first = new HashSet<string>(shownFirst ?? [], StringComparer.OrdinalIgnoreCase);
 		List<WebServiceMethodView> byPriority = [.. methods.Where(m => first.Contains(m.Code ?? string.Empty)),
 			.. methods.Where(m => !first.Contains(m.Code ?? string.Empty))];
-		// One method stays in full even when it alone passes the budget: otherwise describing it by name could never show it.
+		// A single method stays in full even when it alone passes the budget: otherwise describing it by code could never
+		// show it. With several, a large first one must not drag the reply over: then every method is listed by code.
 		WebServiceToolResult narrowed = methods.Count <= 1
 			? result
 			: Narrowed(result, methods, byPriority,
-				LargestFitting(1, methods.Count - 1, count => Fits(Narrowed(result, methods, byPriority, count))));
+				LargestFitting(0, methods.Count - 1, count => Fits(Narrowed(result, methods, byPriority, count))));
 		if (Fits(narrowed) || narrowed.Usages is not { Count: > 0 } usages) {
 			return narrowed;
 		}
@@ -115,8 +116,8 @@ internal static class WebServiceReplyBudget {
 			.ToList();
 		string notice = $"{notShown.Count} of the {methods.Count} methods are listed by code only (methods-not-shown) to "
 			+ $"keep this reply within {McpResultSize.InlineReplyBudgetBytes:N0} bytes; their parameters are unchanged. Read "
-			+ "the ones you need with describe-web-service methods, a few codes at a time; never send an entry of "
-			+ "methods-not-shown back as a method.";
+			+ "the ones you need with describe-web-service methods, a few codes at a time (one when a method is large); never "
+			+ "send an entry of methods-not-shown back as a method.";
 		return result with {
 			Service = result.Service with { Methods = shown, MethodsNotShown = notShown },
 			Notices = [.. result.Notices ?? [], notice]

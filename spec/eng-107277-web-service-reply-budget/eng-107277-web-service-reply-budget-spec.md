@@ -28,13 +28,14 @@ and writes a larger one to a file, which the agent reads back in pieces, one mod
 - The old 120,000-character limit stays as `MaxMappedTextCharacters`, a bound on the mapping work, and as
   `MaxNarrowestReplyBytes`: one port with one operation is returned whole up to it even over the budget, since reading
   again cannot narrow it and a spilled reply beats describing the method by hand.
-- Warnings take at most half the budget (`MaxWarningBytes`); the rest are counted in one line with the ones the parser
+- When the reply does not fit, warnings take at most half the budget (`MaxWarningBytes`); the rest are counted in one line with the ones the parser
   already left out. A generator that writes a long warning per element would otherwise leave no room even for the
   operation names an agent narrows a read by.
 - The narrowing runs in the MCP tools, never in `WebServiceDesigner`: read-wsdl with `service-code` reads the existing
   service through `IWebServiceDesigner.Describe` and must see every method to keep its codes.
-- `describe-web-service`, `register-web-service` and `modify-web-service` return as many methods in full as fit, at
-  least one (a single method over the budget is still returned, or describing it by code would loop), and list the rest
+- `describe-web-service`, `register-web-service` and `modify-web-service` return as many methods in full as fit (a
+  single method over the budget is still returned, or describing it by code would loop; with several, a large first one
+  is listed by code rather than dragging the reply over), and list the rest
   in `methods-not-shown` (code, caption, parameter counts) with a notice; usages that still do not fit are cut last.
   `modify-web-service` keeps the methods its operations add or replace in full first. `describe-web-service` takes
   `methods` to read named methods.

@@ -6,6 +6,7 @@ applies-to:
   - clio/Command/McpServer/Tools/WebServiceReplyBudget.cs
   - clio/Command/McpServer/Tools/WebServiceTools.cs
   - clio/Command/WebServiceDesigner/WsdlReader.cs
+  - clio/Command/WebServiceDesigner/WebServiceDesigner.cs
 ticket: ENG-107277
 date: 2026-11-23
 ---
