@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace Clio.Tests;
 
 [TestFixture(Category = "UnitTests")]
+[Property("Module", "Package")]
 internal class ApplicationPackageListProviderTest
 {
 	private IApplicationClient _applicationClient;
@@ -36,6 +37,97 @@ internal class ApplicationPackageListProviderTest
 			["Version"] = p.version ?? string.Empty
 		}).ToList();
 		return JsonSerializer.Serialize(new { success = true, rows });
+	}
+
+	[Test]
+	[Description("GetPackages selects Type and ProjectPath and maps them onto the descriptor of an assembly package")]
+	public void GetPackages_MapsTypeAndProjectPath_WhenTheEnvironmentStoresThem() {
+		// Arrange
+		string response = JsonSerializer.Serialize(new {
+			success = true,
+			rows = new object[] {
+				new { Name = "UsrAsm", UId = "00000000-0000-0000-0000-000000000001", Maintainer = "Customer",
+					Version = "1.0.0", Type = 1, ProjectPath = "Files/UsrAsm.csproj" },
+				new { Name = "UsrPlain", UId = "00000000-0000-0000-0000-000000000002", Maintainer = "Customer",
+					Version = "1.0.0", Type = 0, ProjectPath = "" }
+			}
+		});
+		string requestBody = null;
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Do<string>(body => requestBody = body))
+			.Returns(response);
+
+		// Act
+		List<PackageInfo> result = _sut.GetPackages().ToList();
+
+		// Assert
+		requestBody.Should().Contain("\"ProjectPath\"", "because the read must select the stored project path");
+		requestBody.Should().Contain("\"Type\"", "because the read must select the stored package type");
+		result[0].Descriptor.Type.Should().Be(PackageType.Assembly, "because SysPackage.Type 1 is an assembly package");
+		result[0].Descriptor.ProjectPath.Should().Be("Files/UsrAsm.csproj", "because the stored project path is reported as is");
+		result[0].IsTypeKnown.Should().BeTrue("because the environment returned the Type column");
+		result[1].Descriptor.Type.Should().Be(PackageType.General, "because SysPackage.Type 0 is an ordinary package");
+		result[1].Descriptor.ProjectPath.Should().BeEmpty("because an ordinary package has no project");
+		result[1].IsTypeKnown.Should().BeTrue("because the environment returned the Type column for every row");
+	}
+
+	[Test]
+	[Description("GetPackages reports the type as unknown when DataService lists the type columns as not found, as an environment without them answers")]
+	public void GetPackages_ReportsUnknownType_WhenTheTypeColumnsAreNotFound() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"notFoundColumns\":[\"Type\",\"ProjectPath\"],\"rows\":[{\"Name\":\"OldPkg\",\"UId\":\"00000000-0000-0000-0000-000000000003\",\"Maintainer\":\"M\",\"Version\":\"1.0\"}]}");
+
+		// Act
+		List<PackageInfo> result = _sut.GetPackages().ToList();
+
+		// Assert
+		result.Should().ContainSingle("because the read still returns the package list");
+		result[0].Descriptor.Name.Should().Be("OldPkg", "because the base columns are mapped");
+		result[0].IsTypeKnown.Should().BeFalse("because an environment without the Type column cannot report it");
+		_applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("GetPackages reports the type as unknown when only ProjectPath is not found, so an assembly package never shows an empty project path as real")]
+	public void GetPackages_ReportsUnknownType_WhenOnlyProjectPathIsNotFound() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"notFoundColumns\":[\"ProjectPath\"],\"rows\":[{\"Name\":\"Asm\",\"UId\":\"00000000-0000-0000-0000-000000000004\",\"Type\":1}]}");
+
+		// Act
+		List<PackageInfo> result = _sut.GetPackages().ToList();
+
+		// Assert
+		result[0].IsTypeKnown.Should().BeFalse("because a type without its project path is not a complete answer");
+	}
+
+	[Test]
+	[Description("GetPackages reports an unknown Type value as unknown rather than as an ordinary package")]
+	public void GetPackages_ReportsUnknownType_WhenTheTypeValueIsNotKnown() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":true,\"rows\":[{\"Name\":\"Future\",\"UId\":\"00000000-0000-0000-0000-000000000005\",\"Type\":2,\"ProjectPath\":\"\"}]}");
+
+		// Act
+		List<PackageInfo> result = _sut.GetPackages().ToList();
+
+		// Assert
+		result[0].IsTypeKnown.Should().BeFalse("because clio knows only 0 (ordinary) and 1 (assembly package)");
+	}
+
+	[Test]
+	[Description("GetPackages surfaces a refused read instead of retrying it")]
+	public void GetPackages_Throws_WhenTheReadIsRefused() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"Access denied\"}}");
+
+		// Act
+		Action act = () => _sut.GetPackages().ToList();
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>("because a refused read must surface")
+			.WithMessage("*Access denied*");
 	}
 
 	[Test]

@@ -174,7 +174,7 @@ internal sealed class RemotePackageCreator : IRemotePackageCreator
 			return new RemotePackageCreateResult(packageUId, stored.Name ?? packageName,
 				ReadString(stored, "maintainer"), ReadString(stored, "description"),
 				(stored.DependsOnPackages ?? []).Select(dependency => dependency.Name).ToList(),
-				ReadInt(stored, "installType"), request.ApplicationCode, incompleteReason);
+				ReadInt(stored, "installType"), request.ApplicationCode, incompleteReason, ReadInt(stored, "type"));
 		} catch (Exception exception) {
 			return new RemotePackageCreateResult(packageUId, packageName, null, request.Description, [], null,
 				request.ApplicationCode,

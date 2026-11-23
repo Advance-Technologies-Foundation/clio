@@ -9,8 +9,9 @@ This is a repository created by `clio` for `Creatio` CRM development. Use this f
 `packages` is the main **server-side** source root. Each Creatio package lives under `./packages/<PACKAGE_NAME>/`.
 
 Typical locations:
-- Backend C#: `./packages/<PACKAGE_NAME>/Files/src/cs/`
+- Backend C#: `./packages/<PACKAGE_NAME>/Files/src/cs/` - before writing or delivering it, call `get-guidance name=assembly-package` (how it is compiled, runtime file paths, background jobs).
 - A package may build a standalone assembly via `./packages/<PACKAGE_NAME>/Files/<PACKAGE_NAME>.csproj` (output → `Files/Bin/...`).
+  In database mode (FSM off) on Creatio 10.0.0.636 or later the environment compiles that project only when the package also has compilable content, such as a C# source-code schema: a package whose C# is only under `Files/src/cs` is skipped (`skipped (no compilable schemas)` in the compile log) and no DLL is built. For source delivery, add one with `clio add-schema <PACKAGE_NAME>Marker -t source-code -p ./packages/<PACKAGE_NAME>` before pushing, and push without a locally built `Files/Bin/<PACKAGE_NAME>.dll` (or `Files/Bin/netstandard/<PACKAGE_NAME>.dll`): when it loads, the install does not compile the package and that DLL runs. If the package ships its built DLL on purpose, ask the user before changing how it is delivered, and remove only the package's own build output.
 - Entry-point web services: `./packages/<PACKAGE_NAME>/Files/src/cs/EntryPoints/WebService/` or `./packages/<PACKAGE_NAME>/Files/src/cs/EntryPoints/WebServices/`
 - Configuration schemas (entities, pages, processes, source-code units): `./packages/<PACKAGE_NAME>/Schemas/<SCHEMA_NAME>/` (each is `metadata.json` + `properties.json` + optional `<Schema>.cs`).
 

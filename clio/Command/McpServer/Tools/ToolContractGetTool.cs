@@ -4931,7 +4931,7 @@ internal static class ToolContractCatalog {
 				["MCP tool result isError == true"],
 				[
 					Field(PackagesFieldName, ArrayType,
-						"Packages in this page, each with name, version, maintainer, and uId."),
+						"Packages in this page, each with name, version, maintainer, uId, and - when the environment stores them - type (0 ordinary, 1 assembly package with its own csproj) and projectPath."),
 					Field(CountFieldName, NumberType, "Number of packages returned in this page."),
 					Field("total", NumberType, "Total packages matching the filter before paging."),
 					Field(OffsetFieldName, NumberType, "Applied zero-based offset."),

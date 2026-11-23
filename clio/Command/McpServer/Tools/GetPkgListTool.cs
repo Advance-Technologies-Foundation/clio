@@ -84,7 +84,9 @@ public sealed class GetPkgListTool(
 				package.Descriptor.Name,
 				package.Descriptor.PackageVersion,
 				package.Descriptor.Maintainer,
-				package.Descriptor.UId.ToString()))
+				package.Descriptor.UId.ToString(),
+				package.IsTypeKnown ? (int)package.Descriptor.Type : null,
+				package.IsTypeKnown ? package.Descriptor.ProjectPath ?? string.Empty : null))
 			.ToList();
 		bool truncated = (long)args.Offset + packagePage.Count < packages.Count;
 		return new PackageListResponse(
@@ -133,8 +135,22 @@ public sealed record PackageListResponse(
 /// <summary>
 /// Structured package-list item returned by the <c>list-packages</c> MCP tool.
 /// </summary>
+/// <param name="Name">Package name.</param>
+/// <param name="Version">Package version.</param>
+/// <param name="Maintainer">Package maintainer.</param>
+/// <param name="UId">Package unique identifier.</param>
+/// <param name="Type">Stored <c>SysPackage.Type</c>: <c>0</c> an ordinary package, <c>1</c> an assembly package
+/// (its own csproj and DLL); <see langword="null"/>, and omitted, when the environment does not store it.</param>
+/// <param name="ProjectPath">Stored <c>SysPackage.ProjectPath</c>, empty for an ordinary package; omitted together
+/// with <paramref name="Type"/>.</param>
 public sealed record PackageListItemResult(
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("version")] string Version,
 	[property: JsonPropertyName("maintainer")] string Maintainer,
-	[property: JsonPropertyName("uId")] string UId);
+	[property: JsonPropertyName("uId")] string UId,
+	[property: JsonPropertyName("type")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	int? Type = null,
+	[property: JsonPropertyName("projectPath")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string? ProjectPath = null);
