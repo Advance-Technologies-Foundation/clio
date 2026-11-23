@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools;
 using Clio.Command.WebServiceDesigner;
 using Clio.Common;
 using FluentAssertions;
@@ -1843,5 +1845,308 @@ public sealed class WebServiceDesignerTests {
 			.Where(e => !e.Message.Contains("sk-live-0042"), "the refusal never echoes the value")
 			.WithMessage("*would show in the new uri*", because: "the refusal says why and how to clear it");
 		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	// A REST service with count methods UsrM00..UsrMnn, each with six query parameters and two response parameters.
+	private static ServiceSchemaDto ManyMethodsSchema(int count) {
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Clear();
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		for (int i = 0; i < count; i++) {
+			ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg($"UsrM{i:00}", "GET",
+				$"orders/m{i}",
+				RequestParameters: [.. Enumerable.Range(0, 6).Select(p => new WebServiceParameterArg($"UsrQuery{p}", "query"))],
+				ResponseParameters: [new WebServiceParameterArg("UsrStatus", Path: "$.status"),
+					new WebServiceParameterArg("UsrTotal", Path: "$.total")]), null, false, errors);
+			schema.Methods.Items[method.UId.ToString()] = method;
+		}
+		return schema;
+	}
+
+	[Test]
+	[Description("describe-web-service with methods and usages lists the usages of those methods and the callers whose method is unknown, and leaves out the others.")]
+	public void Describe_Should_List_The_Usages_Of_The_Named_Methods() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(3));
+		GivenSelect("SysSchema", ProcessRow("CallsM01", "UsrM01"), ProcessRow("CallsM02", "UsrM02"), new JsonObject {
+			["Name"] = "BrokenProcess", ["Caption"] = "BrokenProcess", ["SysPackageName"] = "Custom",
+			["MetaData"] = "{\"a\":1,\"a\":\"" + ServiceUId + "\"}"
+		});
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", true, ["UsrM01"]);
+
+		// Assert
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM01"], because: "only the named method is returned");
+		result.Usages.Select(u => u.Process).Should().BeEquivalentTo(["CallsM01", "BrokenProcess"],
+			because: "a caller of the named method, and one whose method cannot be read, may call it; the caller of UsrM02 does not");
+	}
+
+	[Test]
+	[Description("A service too large to describe inline returns as many methods in full as fit, in stored order, and lists the rest by code with their parameter counts.")]
+	public void Describe_Should_List_The_Methods_That_Do_Not_Fit_By_Code() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(40));
+
+		// Act
+		WebServiceToolResult result = WebServiceReplyBudget.Fit(_sut.Describe("BingSearchApiCall", false));
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"the service exists; error: {result.Error}");
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
+			because: "a reply over the budget is written to a file and read back in pieces");
+		int shown = result.Service.Methods.Count;
+		shown.Should().BeInRange(1, 39, because: "some methods fit and some do not");
+		result.Service.Methods.Select(m => m.Code).Should().Equal(Enumerable.Range(0, shown).Select(i => $"UsrM{i:00}"),
+			because: "the methods shown are the first ones in stored order");
+		result.Service.MethodsNotShown.Should().HaveCount(40 - shown, because: "every other method is listed by code");
+		result.Service.MethodsNotShown[0].Should().Be(new WebServiceMethodSummary($"UsrM{shown:00}", $"UsrM{shown:00}", 6, 2),
+			because: "a method listed by code carries its parameter counts");
+		result.Notices.Should().Contain(n => n.Contains("methods-not-shown") && n.Contains("describe-web-service methods")
+				&& n.Contains("never send an entry of methods-not-shown back as a method"),
+			because: "the agent is told how to read the rest, and not to send a code-only entry back");
+	}
+
+	[Test]
+	[Description("A large first method neither drags a several-method reply over the budget nor pushes the small methods after it out: it alone is listed by code.")]
+	public void Describe_Should_Skip_A_Method_That_Alone_Passes_The_Budget() {
+		// Arrange
+		ServiceSchemaDto schema = ManyMethodsSchema(3);
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto big = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrA0Big", "GET", "big",
+			RequestParameters: [.. Enumerable.Range(0, 120).Select(p => new WebServiceParameterArg($"UsrQueryParameter{p:000}",
+				"query", Path: $"query_parameter_{p:000}"))]), null, false, errors);
+		schema.Methods.Items[big.UId.ToString()] = big;
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = WebServiceReplyBudget.Fit(_sut.Describe("BingSearchApiCall", false));
+
+		// Assert
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
+			because: "listing every method by code fits, so the reply must not spill");
+		result.Service.Methods.Should().NotContain(m => m.Code == "UsrA0Big", because: "the large method alone passes the budget");
+		result.Service.MethodsNotShown.Select(m => m.Code).Should().Equal(["UsrA0Big"],
+			because: "it alone is listed by code, to be read on its own with methods");
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM00", "UsrM01", "UsrM02"],
+			because: "the small methods after it still fit and are returned in full");
+	}
+
+	[Test]
+	[Description("A large method in the middle of a several-method reply is skipped and the methods after it are still tried and shown.")]
+	public void Describe_Should_Skip_A_Large_Method_In_The_Middle() {
+		// Arrange
+		ServiceSchemaDto schema = ManyMethodsSchema(3);
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto big = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrM00Big", "GET", "big",
+			RequestParameters: [.. Enumerable.Range(0, 120).Select(p => new WebServiceParameterArg($"UsrQueryParameter{p:000}",
+				"query", Path: $"query_parameter_{p:000}"))]), null, false, errors);
+		schema.Methods.Items[big.UId.ToString()] = big;
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = WebServiceReplyBudget.Fit(_sut.Describe("BingSearchApiCall", false));
+
+		// Assert
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM00", "UsrM01", "UsrM02"],
+			because: "the run before the large method and the methods after it fit");
+		result.Service.MethodsNotShown.Select(m => m.Code).Should().Equal(["UsrM00Big"],
+			because: "only the large method is listed by code");
+	}
+
+	[Test]
+	[Description("The designer itself never cuts a service: read-wsdl with service-code reads every existing method through it.")]
+	public void Describe_Should_Return_Every_Method_To_Internal_Readers() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(40));
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", false);
+
+		// Assert
+		result.Service.Methods.Should().HaveCount(40, because: "a method left out here would be invisible to read-wsdl's code matching");
+		result.Service.MethodsNotShown.Should().BeNull(because: "only the MCP tool fits the reply it returns to the agent");
+	}
+
+	[Test]
+	[Description("A single method larger than the reply budget is still returned in full, so describing it by code can always show it.")]
+	public void Describe_Should_Keep_One_Method_In_Full_When_It_Alone_Passes_The_Budget() {
+		// Arrange
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Clear();
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto big = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrBig", "GET", "big",
+			RequestParameters: [.. Enumerable.Range(0, 120).Select(p => new WebServiceParameterArg($"UsrQueryParameter{p:000}",
+				"query", Path: $"query_parameter_{p:000}"))]), null, false, errors);
+		schema.Methods.Items[big.UId.ToString()] = big;
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = WebServiceReplyBudget.Fit(_sut.Describe("BingSearchApiCall", false, ["UsrBig"]));
+
+		// Assert
+		McpResultSize.Of(result).Should().BeGreaterThan(McpResultSize.InlineReplyBudgetBytes,
+			because: "the fixture must not fit the budget");
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrBig"],
+			because: "hiding the only method would send the agent round in a loop");
+		result.Service.MethodsNotShown.Should().BeNull(because: "nothing was left out");
+	}
+
+	[Test]
+	[Description("describe-web-service with methods returns only the named methods, matched ignoring case, in full.")]
+	public void Describe_Should_Return_Only_The_Named_Methods() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(40));
+
+		// Act
+		WebServiceToolResult result = _sut.Describe("BingSearchApiCall", false, ["UsrM37", "usrm05"]);
+
+		// Assert
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM05", "UsrM37"],
+			because: "only the named methods are returned, in stored order");
+		result.Service.MethodsNotShown.Should().BeNull(because: "the narrowed reply fits whole");
+		result.Notices.Should().BeNull(because: "nothing was left out");
+	}
+
+	[Test]
+	[Description("describe-web-service refuses a method code the service does not have and names the codes it has.")]
+	public void Describe_Should_Refuse_A_Method_The_Service_Does_Not_Have() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(3));
+
+		// Act
+		Action act = () => _sut.Describe("BingSearchApiCall", false, ["UsrM01", "UsrNope"]);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the method does not exist")
+			.WithMessage("*'UsrNope' not found*UsrM00, UsrM01, UsrM02*", because: "the refusal names the codes the service has");
+	}
+
+	[Test]
+	[Description("A change to a large service returns the methods the call built in full, whatever their place in stored order.")]
+	public void Modify_Should_Keep_The_Built_Method_In_Full_When_The_Reply_Does_Not_Fit() {
+		// Arrange
+		GivenRegisteredService(ManyMethodsSchema(40));
+
+		// Act
+		WebServiceToolResult result = WebServiceReplyBudget.Fit(_sut.Modify("BingSearchApiCall",
+			[new WebServiceOperationArg("addMethod", new WebServiceMethodArg("UsrZzNew", "GET", "orders/new"))], null), ["UsrZzNew"]);
+
+		// Assert
+		result.Success.Should().BeTrue(because: $"an added method is saved; error: {result.Error}");
+		result.Service.Methods.Should().Contain(m => m.Code == "UsrZzNew",
+			because: "the method the call built is the one the agent checks, so it is kept in full");
+		result.Service.MethodsNotShown.Should().NotBeEmpty(because: "the rest of the large service is listed by code");
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
+			because: "the reply is returned inline");
+	}
+
+	[Test]
+	[Description("A test call whose body would pass the reply budget returns the body cut to fit and says so.")]
+	public void TestMethod_Should_Cut_The_Body_To_The_Reply_Budget() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		string body = "<r>" + new string('x', Clio.Command.WebServiceDesigner.WebServiceDesigner.MaxResponseBodyLength) + "</r>";
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, body, null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, "{\"UsrResult\":\"ok\"}"));
+
+		// Act
+		WebServiceTestResult result = WebServiceReplyBudget.Fit(_sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true));
+
+		// Assert
+		result.ResponseBodyTruncated.Should().BeTrue(because: "the body was cut");
+		result.ResponseBody.Should().StartWith("<r>xxx", because: "the start of the body is kept");
+		result.ResponseValues.Should().NotBeNull(because: "the small parsed values still fit beside the cut body");
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
+			because: "the reply is returned inline");
+	}
+
+	[TestCase('\u0416')]
+	[TestCase('\u4E2D')]
+	[Description("A body of characters that take more than one byte is cut to what fits, not emptied.")]
+	public void TestMethod_Should_Cut_A_Non_Ascii_Body_To_What_Fits(char character) {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, new string(character, 20_000), null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, null));
+
+		// Act
+		WebServiceTestResult result = WebServiceReplyBudget.Fit(_sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true));
+
+		// Assert
+		McpResultSize.Of(result).Should().BeLessThanOrEqualTo(McpResultSize.InlineReplyBudgetBytes,
+			because: "the reply is returned inline");
+		McpResultSize.Of(result).Should().BeGreaterThan(McpResultSize.InlineReplyBudgetBytes - 16,
+			because: "the body is cut to the longest start that fits, not cut by characters for bytes");
+	}
+
+	[Test]
+	[Description("A key the API echoes at the very point the reply is cut is masked first, so no part of it survives the cut.")]
+	public void TestMethod_Should_Mask_An_Echoed_Key_Before_The_Reply_Is_Cut() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
+				new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")
+			]), null, false, errors);
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Clear();
+		schema.Methods.Items[method.UId.ToString()] = method;
+		GivenRegisteredService(schema);
+		const string key = "sk-live-0042-abcdefghijklmnop";
+		string body = "{\"lines\":[" + string.Join(",", Enumerable.Range(0, 700).Select(i => $"\"line {i:000} {key}\"")) + "]}";
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, body, null,
+				$"GET https://api.bing.example/search HTTPS/1.1\r\nX-Api-Key: {key}\r\nHost: api.bing.example"));
+
+		// Act
+		WebServiceTestResult result = WebServiceReplyBudget.Fit(_sut.TestMethod("BingSearchApiCall", "Search", null));
+
+		// Assert
+		result.ResponseBodyTruncated.Should().BeTrue(because: "the echoed body is longer than the reply budget");
+		result.ResponseBody.Should().NotContain(key[..4], because: "the key is masked before the body is cut, so no prefix of it is left");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+	}
+
+	[Test]
+	[Description("Parsed response values that alone leave no room for the body are left out, and the body is returned in full when it then fits.")]
+	public void TestMethod_Should_Omit_Values_That_Leave_No_Room() {
+		// Arrange
+		GivenRegisteredService(SoapServiceFixture.Schema(), "UsrSoapProbe");
+		string values = JsonSerializer.Serialize(new Dictionary<string, string> { ["UsrResult"] = new string('v', 19_000) });
+		_client.CallMethod(Arg.Any<string>(), "UsrOp", Arg.Any<IReadOnlyList<ServiceCallParameter>>())
+			.Returns(new ServiceMethodCallResult(true, 200, "<ok/>", null, SoapServiceFixture.SentRaw,
+				SoapServiceFixture.SentEnvelope, values));
+
+		// Act
+		WebServiceTestResult result = WebServiceReplyBudget.Fit(_sut.TestMethod("UsrSoapProbe", "UsrOp", null, userConfirmed: true));
+
+		// Assert
+		result.ResponseValues.Should().BeNull(because: "the values alone do not fit the reply");
+		result.ResponseValuesOmitted.Should().BeTrue(because: "the agent learns the values exist but were left out");
+		result.ResponseBody.Should().Be("<ok/>", because: "the body fits once the values are left out");
+		result.ResponseBodyTruncated.Should().BeFalse(because: "nothing of the body was cut");
+	}
+
+	[TestCase("erp", new[] { "UsrErpOrders", "UsrInvoices" })]
+	[TestCase("ORDERS", new[] { "UsrErpOrders" })]
+	[TestCase(" ", new[] { "UsrErpOrders", "UsrInvoices", "UsrWeather" })]
+	[Description("list-web-services keeps the services whose code, caption or package contains the filter, ignoring case; a blank filter keeps all.")]
+	public void List_Should_Filter_By_Code_Caption_Or_Package(string filter, string[] expected) {
+		// Arrange
+		JsonObject Row(string name, string caption, string package) => new() {
+			["UId"] = Guid.NewGuid().ToString(), ["PackageUId"] = PackageUId.ToString(), ["Name"] = name,
+			["Caption"] = caption, ["TypeName"] = "REST", ["SysPackageName"] = package
+		};
+		GivenSelect("VwWebServiceV2", Row("UsrErpOrders", "Orders", "Custom"), Row("UsrInvoices", "Invoices", "UsrErpLink"),
+			Row("UsrWeather", "Weather", "Custom"));
+
+		// Act
+		IReadOnlyList<WebServiceListItem> listed = _sut.List(filter);
+
+		// Assert
+		listed.Select(s => s.Code).Should().Equal(expected, because: "the filter matches the code, caption or package");
 	}
 }
