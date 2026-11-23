@@ -299,7 +299,19 @@ public sealed record WebServiceView(
 	[property: JsonPropertyName("description")]
 	[property: Description("The service description, when it has one")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	string Description = null);
+	string Description = null,
+
+	[property: JsonPropertyName("methods-not-shown")]
+	[property: Description("Methods left out of methods to keep the reply inline, by code with their parameter counts; read them with describe-web-service methods")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<WebServiceMethodSummary> MethodsNotShown = null);
+
+/// <summary>A method a reply lists by name only, with how many top-level parameters it has.</summary>
+public sealed record WebServiceMethodSummary(
+	[property: JsonPropertyName("code")] string Code,
+	[property: JsonPropertyName("caption")] string Caption,
+	[property: JsonPropertyName("request-parameters")] int RequestParameters,
+	[property: JsonPropertyName("response-parameters")] int ResponseParameters);
 
 public sealed record WebServiceListItem(
 	[property: JsonPropertyName("uid")] Guid UId,
@@ -326,7 +338,12 @@ public sealed record WebServiceToolResult(
 public sealed record WebServiceListResult(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("error")] string Error = null,
-	[property: JsonPropertyName("services")] IReadOnlyList<WebServiceListItem> Services = null);
+	[property: JsonPropertyName("services")] IReadOnlyList<WebServiceListItem> Services = null,
+
+	[property: JsonPropertyName("notices")]
+	[property: Description("Set when the list was cut to return inline: how many services were left out and how to narrow it")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<string> Notices = null);
 
 public sealed record WebServiceTestResult(
 	[property: JsonPropertyName("success")] bool Success,
@@ -342,7 +359,7 @@ public sealed record WebServiceTestResult(
 	JsonElement? ResponseValues = null,
 
 	[property: JsonPropertyName("response-values-omitted")]
-	[property: Description("True when the parsed response values were longer than the response-body limit and are not returned")]
+	[property: Description("True when the parsed response values are not returned because they did not fit the reply (longer than the response-body limit, or too large to return inline beside the body)")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	bool? ResponseValuesOmitted = null,
 

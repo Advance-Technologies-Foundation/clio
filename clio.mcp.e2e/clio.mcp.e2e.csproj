@@ -72,6 +72,10 @@
 		<None Include="..\clio.tests\Examples\Wsdl\wcf-bindings.wsdl" Link="Assets\Wsdl\wcf-bindings.wsdl">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+		<!-- read-wsdl reply budget (ENG-107277): two SOAP ports that do not fit one inline reply together. -->
+		<None Include="..\clio.tests\Examples\Wsdl\orders-two-ports.wsdl" Link="Assets\Wsdl\orders-two-ports.wsdl">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
 	</ItemGroup>
 
 </Project>

@@ -113,6 +113,37 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ReadWsdlTool.ToolName)]
+	[AllureName("read-wsdl returns one port in full when both ports do not fit one inline reply")]
+	[Description("Reads a WSDL shipped with the tests (wsdl-files) whose SOAP 1.1 and SOAP 1.2 ports do not fit one inline reply together, and expects the SOAP 1.2 port (Studio's pick) in full, the SOAP 1.1 port by operation name, a notice to read it with port, and a reply text within Copilot CLI's 20,480-byte inline limit; nothing is saved.")]
+	public async Task ReadWsdl_Should_Return_One_Port_In_Full_When_Both_Do_Not_Fit() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the read-wsdl E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult call = await Session.CallToolAsync(ReadWsdlTool.ToolName, new Dictionary<string, object?> {
+			["args"] = new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["wsdl-files"] = new[] { Asset("orders-two-ports.wsdl") }
+			}
+		}, cts.Token);
+		WsdlReadResult read = EntitySchemaStructuredResultParser.Extract<WsdlReadResult>(call);
+		int replyBytes = call.Content.OfType<TextContentBlock>().Sum(block => System.Text.Encoding.UTF8.GetByteCount(block.Text));
+
+		// Assert
+		read.Success.Should().BeTrue(because: $"the shipped WSDL is readable; error: {read.Error}");
+		read.Services!.Select(s => (s.Port, s.Arguments is not null)).Should().Equal(
+			[("OrdersServiceSoap", false), ("OrdersServiceSoap12", true)],
+			because: "Studio's pick is returned in full and the other port by operation name");
+		read.Services![0].Operations.Should().HaveCount(22, because: "the other port lists every operation name");
+		read.Notices.Should().Contain(n => n.Contains("Only port 'OrdersServiceSoap12' is returned in full"),
+			because: "the agent is told how to read the other port");
+		replyBytes.Should().BeLessThanOrEqualTo(20_480, because: "Copilot CLI writes a larger tool result to a file");
+	}
+
+	[Test]
+	[AllureTag(ReadWsdlTool.ToolName)]
 	[AllureTag(RegisterWebServiceTool.ToolName)]
 	[AllureName("read-wsdl output registers a SOAP service that describe reads back the same")]
 	[Description("Reads a WSDL shipped with the tests (wsdl-files) with the new service's code given as code, expects both SOAP ports with the SOAP 1.2 one as Studio's pick, that code in the arguments and the other codes built from the stand's prefix, registers that port's arguments trimmed to three operations (a SOAP-header array, an object array, a complex header with a body) under a throwaway code, and expects describe-web-service to report the same namespaces, message elements, SOAP actions, paths, SOAP-header flags and item elements; a second read with service-code returns the same codes as existing methods.")]
@@ -149,6 +180,12 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 			["environment-name"] = _environmentName, ["wsdl-files"] = new[] { Asset("wizard-features.wsdl") },
 			["operations"] = operations, ["port"] = pick.Port, ["service-code"] = code
 		}, cts.Token);
+		WebServiceToolResult describedOne = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName, ["code"] = code, ["methods"] = new[] { _prefix + "TaggedCall" }
+			}, cts.Token);
+		WebServiceListResult listed = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["filter"] = code }, cts.Token);
 
 		// Assert
 		read.Services!.Select(s => s.Port).Should().Equal(["ClioWizardFeaturesSoap", "ClioWizardFeaturesSoap12"],
@@ -182,6 +219,9 @@ public sealed class WsdlReadToolE2ETests : McpContractFixtureBase {
 		reread.Success.Should().BeTrue(because: $"the WSDL read again with service-code gives a result; error: {reread.Error}");
 		reread.Services!.Single().ExistingMethods.Should().BeEquivalentTo(service.Methods.Select(m => m.Code),
 			because: "a second read gives the same codes (D11), so every method is matched for setMethod");
+		describedOne.Service!.Methods.Select(m => m.Code).Should().Equal([_prefix + "TaggedCall"],
+			because: "describe-web-service with methods returns only the named method");
+		listed.Services!.Select(s => s.Code).Should().Equal([code], because: "the filter keeps the service whose code contains it");
 	}
 
 	private async Task<T> CallAsync<T>(string toolName, Dictionary<string, object?> args, CancellationToken token) {

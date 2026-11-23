@@ -29,7 +29,7 @@ internal static class ProcessDigest {
 	/// old 15,000-character rule let a quote-heavy graph through). Measured in reply bytes, not graph characters;
 	/// 18,000 leaves ~2 KB under the line.
 	/// </summary>
-	internal const int AutoSummaryThresholdBytes = 18_000;
+	internal const int AutoSummaryThresholdBytes = Clio.Command.McpServer.McpResultSize.InlineReplyBudgetBytes;
 
 	/// <summary>
 	/// The UTF-8 size the whole summary REPLY aims to stay within - the <c>mode</c>, <c>fullChars</c> and <c>more</c>

@@ -217,6 +217,22 @@ public sealed class WebServiceSoapWriteTests {
 	}
 
 	[Test]
+	[Description("Several methods without a soap-action share one notice that names each of them, so a large service does not repeat the sentence per method.")]
+	public void Register_Should_Name_Every_Method_Without_A_Soap_Action_In_One_Notice() {
+		// Arrange
+		WebServiceMethodArg first = AddMethod() with { SoapAction = null };
+		WebServiceMethodArg second = AddMethod() with { Code = "UsrSubtract", MessageElement = "tem:Subtract", SoapAction = null };
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", new WebServiceRegistration("UsrCalc", null, "http://x.example/svc", null, null,
+			[first, second], "soap11", Tem));
+
+		// Assert
+		result.Notices.Should().ContainSingle(n => n.Contains("no SOAPAction header"), because: "one notice covers every such method")
+			.Which.Should().Contain("'UsrAdd', 'UsrSubtract'", because: "the notice names each method without a soap-action");
+	}
+
+	[Test]
 	[Description("A SOAP-header parameter passes the flag to its items, and a constant default on it is judged like a header constant: a key-like value or a credential-like name is refused.")]
 	public void Register_Should_Copy_The_Soap_Header_Flag_And_Refuse_A_Key_Like_Header_Constant() {
 		// Arrange
