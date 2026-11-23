@@ -19,7 +19,7 @@ internal static class WebServiceReplyBudget {
 	/// <summary>
 	/// A service reply within the budget: every method in full when that fits; a single method always in full; otherwise
 	/// as many as fit, taken in priority order (the methods named in <paramref name="shownFirst"/>, then stored order) and
-	/// skipping one that alone does not fit, with the rest listed by code in
+	/// skipping one that no longer fits in the room left, with the rest listed by code in
 	/// <c>methods-not-shown</c> and a notice saying how to read them. Usages that still do not fit are cut last, with a
 	/// notice.
 	/// </summary>
@@ -105,19 +105,30 @@ internal static class WebServiceReplyBudget {
 
 	private static bool Fits<T>(T reply) => McpResultSize.Of(reply) <= McpResultSize.InlineReplyBudgetBytes;
 
-	/// <summary>The most methods a narrowed reply tries one by one after the longest fitting run, which bounds the work.</summary>
-	private const int MaxSkippingTries = 100;
+	/// <summary>The most later methods in a row a narrowed reply may fail to add before it stops trying, which bounds the work.</summary>
+	private const int MaxFailedTriesInARow = 20;
 
 	// The methods shown in full: the longest run in priority order that fits (a binary search), then each later method
-	// that still fits, skipping the ones that do not, so a large method does not push the small ones after it out.
+	// that still fits in the room left, skipping the ones that do not, so a large method does not push the small ones
+	// after it out.
 	private static HashSet<WebServiceMethodView> Shown(WebServiceToolResult result, IReadOnlyList<WebServiceMethodView> methods,
 		List<WebServiceMethodView> byPriority) {
 		int run = LargestFitting(0, byPriority.Count - 1, count => Fits(Narrowed(result, methods, byPriority.Take(count))));
 		var shown = new HashSet<WebServiceMethodView>(byPriority.Take(run), ReferenceEqualityComparer.Instance);
-		foreach (WebServiceMethodView method in byPriority.Skip(run + 1).Take(MaxSkippingTries)) {
+		// With nothing shown and still over (thousands of methods by code), no method can be added.
+		if (run == 0 && !Fits(Narrowed(result, methods, shown))) {
+			return shown;
+		}
+		int failedInARow = 0;
+		foreach (WebServiceMethodView method in byPriority.Skip(run + 1)) {
 			shown.Add(method);
-			if (!Fits(Narrowed(result, methods, shown))) {
+			if (Fits(Narrowed(result, methods, shown))) {
+				failedInARow = 0;
+			} else {
 				shown.Remove(method);
+				if (++failedInARow >= MaxFailedTriesInARow) {
+					break;
+				}
 			}
 		}
 		return shown;

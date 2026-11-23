@@ -1914,6 +1914,28 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("A large method in the middle of a several-method reply is skipped and the methods after it are still tried and shown.")]
+	public void Describe_Should_Skip_A_Large_Method_In_The_Middle() {
+		// Arrange
+		ServiceSchemaDto schema = ManyMethodsSchema(3);
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto big = WebServiceDefinitionBuilder.BuildMethod(new WebServiceMethodArg("UsrM00Big", "GET", "big",
+			RequestParameters: [.. Enumerable.Range(0, 120).Select(p => new WebServiceParameterArg($"UsrQueryParameter{p:000}",
+				"query", Path: $"query_parameter_{p:000}"))]), null, false, errors);
+		schema.Methods.Items[big.UId.ToString()] = big;
+		GivenRegisteredService(schema);
+
+		// Act
+		WebServiceToolResult result = WebServiceReplyBudget.Fit(_sut.Describe("BingSearchApiCall", false));
+
+		// Assert
+		result.Service.Methods.Select(m => m.Code).Should().Equal(["UsrM00", "UsrM01", "UsrM02"],
+			because: "the run before the large method and the methods after it fit");
+		result.Service.MethodsNotShown.Select(m => m.Code).Should().Equal(["UsrM00Big"],
+			because: "only the large method is listed by code");
+	}
+
+	[Test]
 	[Description("The designer itself never cuts a service: read-wsdl with service-code reads every existing method through it.")]
 	public void Describe_Should_Return_Every_Method_To_Internal_Readers() {
 		// Arrange

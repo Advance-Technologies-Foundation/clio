@@ -737,9 +737,9 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 
 		// Assert
 		registered.Success.Should().BeTrue(because: $"40 methods register; error: {registered.Error}");
-		registeredBytes.Should().BeLessThanOrEqualTo(20_480, because: "Copilot CLI writes a larger tool result to a file");
+		registeredBytes.Should().BeInRange(1, 20_480, because: "Copilot CLI writes a larger tool result to a file");
 		described.Success.Should().BeTrue(because: $"describe reads the service back; error: {described.Error}");
-		describedBytes.Should().BeLessThanOrEqualTo(20_480, because: "Copilot CLI writes a larger tool result to a file");
+		describedBytes.Should().BeInRange(1, 20_480, because: "Copilot CLI writes a larger tool result to a file");
 		described.Service!.MethodsNotShown.Should().NotBeNullOrEmpty(because: "40 methods with parameters do not fit one reply");
 		(described.Service.Methods.Count + described.Service.MethodsNotShown!.Count).Should().Be(40,
 			because: "every method is either shown or listed by code");
@@ -750,7 +750,7 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 				+ $"{range.Error}), so the response cut cannot be checked.");
 		}
 		range.ResponseBodyTruncated.Should().BeTrue(because: "a 30,000-character response is longer than the reply");
-		rangeBytes.Should().BeLessThanOrEqualTo(20_480, because: "Copilot CLI writes a larger tool result to a file");
+		rangeBytes.Should().BeInRange(1, 20_480, because: "Copilot CLI writes a larger tool result to a file");
 	}
 
 	private async Task<(T Result, int Bytes)> CallMeasuredAsync<T>(string toolName, Dictionary<string, object?> args,
