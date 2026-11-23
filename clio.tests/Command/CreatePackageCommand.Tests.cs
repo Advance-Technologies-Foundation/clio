@@ -78,6 +78,20 @@ public class CreatePackageCommandTestCase : BaseCommandTests<CreatePackageOption
 	}
 
 	[Test]
+	[Description("Maps the stored package type from the readback into the response.")]
+	public void CreatePackage_ShouldReportTheStoredType() {
+		// Arrange
+		_packageCreator.Create(Arg.Any<RemotePackageCreateRequest>())
+			.Returns(Created() with { Type = 0 });
+
+		// Act
+		CreatePackageResponse response = _command.CreatePackage(new CreatePackageOptions { PackageName = "Calls" });
+
+		// Assert
+		response.Type.Should().Be(0, because: "create-package creates an ordinary package and reports the type it read back");
+	}
+
+	[Test]
 	[Description("Reports a refusal as package-created=false with the refusal message.")]
 	public void CreatePackage_ShouldReportNothingCreated_WhenCreatorRefuses() {
 		// Arrange

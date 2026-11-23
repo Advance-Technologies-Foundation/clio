@@ -36,6 +36,8 @@ public class WorkspacePackageTool(
 				 follow-up flow may need the requested environment to download configuration from Creatio.
 				 Read get-guidance name=localizable-values before using or extending localization primitives
 				 generated with `as-app`.
+				 Without `as-app` the package has no compilable schema, so on Creatio 10.0.0.636 or later a
+				 target-side compile skips it: read get-guidance name=assembly-package before pushing it.
 				 With `as-app`, the generated source-code schema is prefixed with the target environment's
 				 SchemaNamePrefix system setting; Creatio refuses a schema whose code does not start with it.
 				 Pass `environment-name` so that value can be read, or `schema-name-prefix` to set it without
