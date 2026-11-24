@@ -30,8 +30,9 @@ public static string ImportSchemaToWorkspace(string schemaData, Guid packageUId,
 They are present in CreatioSDK `8.0.3` and `8.1.4` alike. **Their shape is not stable across cores**, which the
 implementation had to absorb: on a `10.1.473` stand `ExportSchema` is still a public static, while
 `ImportSchemaToWorkspace` does not exist as a public static at all and the operation is served only by the
-explicit implementation of `ISchemaImporter.ImportSchema(string, Guid)` — an interface whose type is public but
-whose members are not accessible outside the core assembly. Both calls are therefore late-bound, static entry
+explicit implementation of `ISchemaImporter.ImportSchema(string, Guid)` — an interface whose type is internal to
+the core assembly (its members, being interface members, are public). From core 10.3.1146 (ENG-106408) the same
+method is `ImportSchema(string, Guid, ExistingSchemaPackageAction)`; clio always passes `None`. Both calls are therefore late-bound, static entry
 point first and interface second, each isolated in its own `[MethodImpl(MethodImplOptions.NoInlining)]` method:
 a missing member is raised while the CALLING method is jitted, so an in-method try/catch never sees it and WCF
 answers with an opaque "Request Error" instead of a diagnosable message.
@@ -121,6 +122,9 @@ export and silently skip every projection — the reviewability the bundle exist
 
 - Requires cliogate `2.0.0.46` on the target environment. Both commands declare it with
   `[RequiresPackage]`, so an outdated environment is reported rather than failing obscurely.
+  *Amended 2026-11-24 (issue #2001):* `import-schema` now requires `2.0.0.54`, the first gate that binds the
+  three-parameter `ISchemaImporter.ImportSchema` of Creatio 10.3.1146 and later (core ENG-106408).
+  `export-schema` still requires `2.0.0.46`.
 - `export-schema` reads the environment but always writes a local bundle folder, so its MCP annotation is
   `ReadOnly=false, Destructive=false` — the same classification `get-schema` / `get-page` carry, and the one the
   durable-invocation gate keys on. Its `--destination` runs through `OutputPathConfinement` before any network

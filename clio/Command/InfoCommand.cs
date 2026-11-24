@@ -52,7 +52,7 @@ namespace Clio.Command
 	/// <summary>Reports local component versions and the settings file path.</summary>
 	public class InfoCommand : Command<InfoCommandOptions>
 	{
-		private const string _gateVersion = "2.0.0.53";
+		private const string _gateVersion = "2.0.0.54";
 		private readonly ILogger _logger;
 		private readonly IBundledPackageCatalog _bundledPackageCatalog;
 		private readonly IInstalledKnowledgeVersions _knowledgeVersions;
