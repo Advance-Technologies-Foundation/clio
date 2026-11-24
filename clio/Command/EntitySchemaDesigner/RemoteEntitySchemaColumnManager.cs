@@ -231,20 +231,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema, package, options, "schema properties were saved", ODataContractImpact.Unchanged);
 		// The server performs no validation and silently no-ops if a target version expects the legacy
 		// primaryDisplayColumnUId; verify the readback so that silent no-op becomes a clear failure.
-		if (requestedColumnName != null && !string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name,
-			requestedColumnName, StringComparison.OrdinalIgnoreCase)) {
-			throw new EntitySchemaDesignerException(
-				$"Primary-display column '{requestedColumnName}' was not persisted for schema '{schema.Name}'. " +
-				"The target environment may not support setting the primary-display column through this API.");
-		}
+		EnsureColumnReferencePersisted(requestedColumnName, reloadedSchema.PrimaryDisplayColumn,
+			"Primary-display column", "primary-display column", schema.Name);
 		// Same silent no-op risk as the primary-display column: the designer accepts the payload whether or not
 		// the target persists the reference, so only the readback proves the color column changed.
-		if (requestedColorColumnName != null && !string.Equals(reloadedSchema.PrimaryColorColumn?.Name,
-			requestedColorColumnName, StringComparison.OrdinalIgnoreCase)) {
-			throw new EntitySchemaDesignerException(
-				$"Color column '{requestedColorColumnName}' was not persisted for schema '{schema.Name}'. " +
-				"The target environment may not support setting the color column through this API.");
-		}
+		EnsureColumnReferencePersisted(requestedColorColumnName, reloadedSchema.PrimaryColorColumn,
+			"Color column", "color column", schema.Name);
 		VerifySchemaCaption(reloadedSchema, requestedTitles, options.SchemaName);
 		if (options.IsDBView.HasValue) {
 			if (reloadedSchema.IsDBView != options.IsDBView.Value) {
@@ -259,7 +251,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 		if (requestedColorColumnName != null) {
 			_logger.WriteInfo(
-				$"Color column set to '{reloadedSchema.PrimaryColorColumn!.Name}' for schema '{options.SchemaName}'.");
+				$"Color column set to '{reloadedSchema.PrimaryColorColumn.Name}' for schema '{options.SchemaName}'.");
 		}
 		// ApplySchemaCaption returns ReadOnlyDictionary.Empty, never null (Sonar S1168), so a null-coalesce
 		// here was a dead branch that also allocated on every caption-less save.
@@ -316,6 +308,21 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Confirms the requested caption survived the round-trip, so an environment that silently ignores the
 	/// caption fails loudly instead of reporting success on an unchanged schema.
 	/// </summary>
+	/// <summary>
+	/// Fails when a requested schema-level column reference did not survive the save: the designer accepts the
+	/// payload whether or not the target persists it, so only the readback proves the change.
+	/// </summary>
+	private static void EnsureColumnReferencePersisted(string requestedColumnName,
+		EntitySchemaColumnDto persistedColumn, string referenceLabel, string referenceNoun, string schemaName) {
+		if (requestedColumnName == null || string.Equals(persistedColumn?.Name, requestedColumnName,
+			StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+		throw new EntitySchemaDesignerException(
+			$"{referenceLabel} '{requestedColumnName}' was not persisted for schema '{schemaName}'. " +
+			$"The target environment may not support setting the {referenceNoun} through this API.");
+	}
+
 	private static void VerifySchemaCaption(EntityDesignSchemaDto reloadedSchema,
 		IReadOnlyDictionary<string, string> requestedTitles, string schemaName) {
 		if (requestedTitles is not { Count: > 0 }) {
