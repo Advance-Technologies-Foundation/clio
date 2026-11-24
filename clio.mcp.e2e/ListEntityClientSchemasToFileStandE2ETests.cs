@@ -44,7 +44,9 @@ public sealed class ListEntityClientSchemasToFileStandE2ETests : McpContractFixt
 			Assert.Ignore("Set McpE2E__Sandbox__EnvironmentName to a registered stand to run the page-role graph file check.");
 		}
 		string entityName = Environment.GetEnvironmentVariable("MCP_E2E_TO_FILE_ENTITY") ?? "Contact";
-		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		// Two page-role lookups run against the stand (the preflight and the file tool) and share this one
+		// deadline, so it is twice the three minutes a single lookup had.
+		await using var context = Arrange(TimeSpan.FromMinutes(6));
 		string outputFile = Path.Combine(CreateFixtureDirectory("list-entity-to-file-stand"), "graph.json");
 		// Preflight with the inline tool: only an entity that does not resolve on the stand skips the test. A
 		// failure of the file tool after a successful lookup (for example a disk or permission error) must fail.
