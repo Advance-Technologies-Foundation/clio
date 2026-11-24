@@ -391,12 +391,18 @@ public sealed class PageBusinessRuleAttributeProviderTests {
 		// Assert
 		result.Should().ContainKey("PDS_Text", because: "a direct data-source column stays accepted");
 		rejected.Should().NotContainKey("PDS_Text", because: "an accepted attribute has no rejection reason");
-		rejected["UsrVirtualFlag"].Should().StartWith("'UsrVirtualFlag' is a virtual view-model attribute");
-		rejected["UsrOrderStatus"].Should().StartWith("'UsrOrderStatus' is a lookup path ('PDS.Order.Status')");
-		rejected["PDS_Order_Status"].Should().StartWith("'PDS_Order_Status' is a forward reference ('PDS.PDS_Order_Status' -> 'Order.Status')");
-		rejected["PDS_Missing"].Should().Be("'PDS_Missing' is bound to 'PDS.MissingColumn', which is not a supported column of 'UsrTestBR'.");
-		rejected["UsrParam"].Should().Be("'UsrParam' is bound to page parameter 'UsrUntyped', which bundle.parameters[] does not type.");
-		rejected["UsrOther"].Should().Be("'UsrOther' is bound to 'OtherDS.UsrText', but 'OtherDS' is not an entity data source of the page.");
+		rejected["UsrVirtualFlag"].Should().StartWith("'UsrVirtualFlag' is a virtual view-model attribute",
+			because: "an attribute with no modelConfig.path is virtual");
+		rejected["UsrOrderStatus"].Should().StartWith("'UsrOrderStatus' is a lookup path ('PDS.Order.Status')",
+			because: "a three-segment path reads a column of a related object");
+		rejected["PDS_Order_Status"].Should().StartWith("'PDS_Order_Status' is a forward reference ('PDS.PDS_Order_Status' -> 'Order.Status')",
+			because: "the data source declares the column as a forward reference");
+		rejected["PDS_Missing"].Should().Be("'PDS_Missing' is bound to 'PDS.MissingColumn', which is not a supported column of 'UsrTestBR'.",
+			because: "the entity does not expose the bound column");
+		rejected["UsrParam"].Should().Be("'UsrParam' is bound to page parameter 'UsrUntyped', which bundle.parameters[] does not type.",
+			because: "an untyped page parameter cannot be an operand");
+		rejected["UsrOther"].Should().Be("'UsrOther' is bound to 'OtherDS.UsrText', but 'OtherDS' is not an entity data source of the page.",
+			because: "the bound data source is not an entity data source");
 		rejected["PDS_List"].Should().StartWith("'PDS_List' is a collection (list) attribute",
 			because: "every skip point of the provider records why, so the validator never has to guess");
 	}

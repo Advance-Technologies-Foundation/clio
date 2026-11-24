@@ -793,10 +793,20 @@ public sealed class BusinessRuleToolTests {
 		// Assert
 		description.Should().Contain(PageBusinessRuleContractText.ConditionAttributes,
 			because: "the tool description and get-tool-contract must state the same accepted and rejected attributes");
-		PageBusinessRuleContractText.ConditionAttributes.Should()
-			.Contain("PageParameters.<Name>").And.Contain("_ActiveStep").And.Contain("PDS.Priority")
-			.And.Contain("other virtual view-model attributes").And.Contain("lookup paths and forward references")
-			.And.Contain("operation rights").And.Contain("feature toggles");
+		PageBusinessRuleContractText.AcceptedConditionAttributes.Should().Contain("PageParameters.<Name>",
+			because: "page parameters are a condition source");
+		PageBusinessRuleContractText.AcceptedConditionAttributes.Should().Contain("_ActiveStep",
+			because: "a stepper's active step is a condition source");
+		PageBusinessRuleContractText.AcceptedConditionAttributes.Should().Contain("PDS.Priority",
+			because: "the page validator accepts '<data source>.<column>' paths");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("other virtual view-model attributes",
+			because: "virtual attributes are rejected");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("lookup paths or forward references",
+			because: "lookup paths and forward references are rejected");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("operation rights",
+			because: "operation rights are not a page condition operand");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("feature toggles",
+			because: "feature toggles are not a page condition operand");
 	}
 
 	[Test]

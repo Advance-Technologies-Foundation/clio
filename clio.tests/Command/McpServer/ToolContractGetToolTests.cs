@@ -788,6 +788,24 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The default create-page-business-rules contract lookup keeps the rejected condition attributes whole, so an agent that does not ask for detail=full still learns what the page validator rejects.")]
+	public void ToolContractGet_CreatePageBusinessRules_Default_Detail_Should_Keep_Rejected_Attributes() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs([CreatePageBusinessRuleTool.BusinessRuleCreateToolName], "short"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "create-page-business-rules must resolve to a curated contract");
+		result.Tools!.Single().InputSchema.Properties.Single(field => field.Name == "rules").Description.Should()
+			.Contain(PageBusinessRuleContractText.RejectedConditionAttributes,
+				because: "the rejected half is worded as a duty, which the short form keeps whole");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The create-page-business-rules contract states the accepted and rejected condition attributes the page validator enforces and no longer forbids '<data source>.<column>' paths such as PDS.Priority, which the validator accepts.")]
 	public void ToolContractGet_CreatePageBusinessRules_Should_Match_Page_Validator_Attributes() {
 		// Arrange

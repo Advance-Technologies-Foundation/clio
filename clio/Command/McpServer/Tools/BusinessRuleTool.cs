@@ -17,15 +17,25 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 internal static class PageBusinessRuleContractText {
 
-	/// <summary>Which condition attributes (AttributeValue paths) a page rule accepts and which it rejects.</summary>
-	internal const string ConditionAttributes =
+	/// <summary>The condition attributes (AttributeValue paths) a page rule accepts.</summary>
+	internal const string AcceptedConditionAttributes =
 		"Condition attributes (AttributeValue paths) a page rule accepts: a declared page attribute bound to a direct "
 		+ "data-source column (modelConfig.path '<data source>.<column>', for example PDS_Priority), the "
 		+ "'<data source>.<column>' path itself (for example PDS.Priority), 'PageParameters.<Name>', and a stepper's "
-		+ "active step (the plain attribute its activeStep is bound to, or '<stepper name>_ActiveStep' when unbound). "
-		+ "Rejected: other virtual view-model attributes (no modelConfig.path), lookup paths and forward references (a column of a related object), operation rights "
-		+ "(SysAdminOperation) and feature toggles; role membership is a SysValue CurrentUserRoles condition. Put a data condition in an entity business rule (create-entity-business-rules) and "
-		+ "view-model state in a page handler.";
+		+ "active step (the plain attribute its activeStep is bound to, or '<stepper name>_ActiveStep' when unbound).";
+
+	/// <summary>
+	/// The condition attributes a page rule rejects and where such a condition belongs. Worded as a duty
+	/// ("never"), so the short form of get-tool-contract keeps it whole.
+	/// </summary>
+	internal const string RejectedConditionAttributes =
+		"Never name other virtual view-model attributes (no modelConfig.path), lookup paths or forward references "
+		+ "(a column of a related object), operation rights (SysAdminOperation) or feature toggles: the page "
+		+ "validator rejects them. Role membership is a SysValue CurrentUserRoles condition. Put a data condition in "
+		+ "an entity business rule (create-entity-business-rules) and view-model state in a page handler.";
+
+	/// <summary>Which condition attributes a page rule accepts and which it rejects.</summary>
+	internal const string ConditionAttributes = AcceptedConditionAttributes + " " + RejectedConditionAttributes;
 }
 
 [McpServerToolType]

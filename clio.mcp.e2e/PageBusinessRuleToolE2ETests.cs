@@ -163,7 +163,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 		ToolContractDefinition contract = contracts.Tools.Should().ContainSingle(tool => tool.Name == ToolName,
 			because: "get-tool-contract must expand the create-page-business-rules contract").Which;
 		string rulesDescription = contract.InputSchema.Properties.Single(field => field.Name == "rules").Description;
-		rulesDescription.Should().Contain("virtual view-model attributes").And.Contain("lookup paths and forward references")
+		rulesDescription.Should().Contain("virtual view-model attributes").And.Contain("lookup paths or forward references")
 			.And.Contain("'PageParameters.<Name>'").And.Contain("_ActiveStep",
 				because: "the contract must state what the page validator accepts and rejects");
 		rulesDescription.Should().NotContain("not datasource paths like PDS.Priority",
