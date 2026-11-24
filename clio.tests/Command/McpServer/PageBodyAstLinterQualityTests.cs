@@ -149,6 +149,21 @@ internal class PageBodyAstLinterQualityTests {
 	}
 
 	[Test]
+	[Description("Two `function name() {}` helpers with one body, declared directly in two handlers, raise a duplicate warning")]
+	public void Lint_ShouldWarnDuplicateFunction_WhenTwoHandlersDeclareSameFunctionDeclaration() {
+		// Arrange
+		string first = Handler("usr.First", "function fmt(v) { return v && v.value ? v.value : v; } fmt(1);");
+		string second = Handler("usr.Second", "function fmt2(v) { return v && v.value ? v.value : v; } fmt2(2);");
+		string body = Page("[" + first + "," + second + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleDuplicateFunctionInPage);
+
+		// Assert
+		findings.Should().ContainSingle(because: "a function declaration in a handler body is a helper of that handler, not a nested one");
+	}
+
+	[Test]
 	[Description("Helpers with different bodies, and copies of a trivial helper, raise no duplicate warning")]
 	public void Lint_ShouldNotWarnDuplicateFunction_WhenBodiesDifferOrAreTrivial() {
 		// Arrange

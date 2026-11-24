@@ -219,8 +219,10 @@ internal static partial class PageBodyAstLinter {
 				found.Add(DescribeNamedFunction(name.Name, node, init, insideHelper));
 				break;
 		}
+		// A function's own children are inside it; the function itself is at the level it was found on.
+		bool inner = insideHelper || node is IFunction;
 		foreach (Node child in node.ChildNodes) {
-			CollectNamedFunctions(child, found, insideHelper || child is IFunction, depth + 1);
+			CollectNamedFunctions(child, found, inner, depth + 1);
 		}
 	}
 
