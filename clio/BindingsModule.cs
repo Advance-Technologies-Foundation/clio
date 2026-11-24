@@ -560,6 +560,8 @@ public class BindingsModule {
 		services.AddTransient<CreateDynamicCaseCommand>();
 		services.AddTransient<DescribeDynamicCaseCommand>();
 		services.AddTransient<ModifyDynamicCaseCommand>();
+		services.AddTransient<ModifyDynamicCaseAsNewVersionCommand>();
+		services.AddTransient<SetActiveDynamicCaseVersionCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();

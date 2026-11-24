@@ -58,7 +58,7 @@ public class CreateDynamicCaseTool(
 	// re-run after a page failure safe. Destructive also keeps it out of the read-response deadline.
 	[McpServerTool(Name = CreateDynamicCaseToolName, ReadOnly = false, Destructive = true, Idempotent = true,
 		 OpenWorld = false),
-	 Description("Create a minimal dynamic case (DCM): one stage per value of an object's lookup column, plus a "
+	 Description("Creates a minimal dynamic case (DCM). One stage per value of an object's lookup column, plus a "
 		 + "record-page progress bar. Read get-guidance name=process-dynamic-case first. "
 		 + "One call writes the case into package-name with its SysDcmSettings and SysDcmSchemaInSettings rows and "
 		 + "bindings, adds the package dependencies it needs (add-package-dependencies=false refuses instead), and appends "

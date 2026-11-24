@@ -382,6 +382,13 @@ public sealed class BuildCaseCaseInfo {
 	/// <summary>Which new records start the case; absent for a case without a filter, which starts for every record.</summary>
 	[JsonPropertyName("filter")]
 	public DynamicCaseFilter Filter { get; init; }
+
+	/// <summary>
+	/// The members of the case's version family, the case itself included; absent for a case that is the only member
+	/// of its family, and from a package before the version operations.
+	/// </summary>
+	[JsonPropertyName("versions")]
+	public List<CaseVersionMemberInfo> Versions { get; init; }
 }
 
 /// <summary>The settings row and the link row a case needs; the same shape in the server answer and the result.</summary>
@@ -598,6 +605,13 @@ public sealed class DynamicCaseInfo {
 	/// <summary>The case designer link; only for a case that exists.</summary>
 	[JsonPropertyName("designerUrl")]
 	public string DesignerUrl { get; init; }
+
+	/// <summary>
+	/// The members of the case's version family, the case itself included, each with its designer link; absent for a
+	/// case that is the only member of its family.
+	/// </summary>
+	[JsonPropertyName("versions")]
+	public List<DynamicCaseVersionMember> Versions { get; init; }
 }
 
 /// <summary>The package dependencies the case needs and what this call did about them.</summary>

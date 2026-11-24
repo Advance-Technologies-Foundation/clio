@@ -5,21 +5,26 @@ using System.Text.Json.Serialization;
 
 namespace Clio.Command;
 
-/// <summary>The package floor of <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c>.</summary>
+/// <summary>
+/// The package floor of <c>describe-dynamic-case</c>, <c>modify-dynamic-case</c>,
+/// <c>modify-dynamic-case-as-new-version</c> and <c>set-active-dynamic-case-version</c>.
+/// </summary>
 public static class DynamicCaseChangeRequirement {
 	/// <summary>
-	/// The first CrtProcessBuilder archive whose <c>DescribeCase</c> counts the records per stage and whose
-	/// <c>ModifyCase</c> reads <c>confirmStageRecords</c> and <c>confirmValueRename</c>.
+	/// The first CrtProcessBuilder archive that carries <c>ModifyCaseAsNewVersion</c> and <c>SetActiveCaseVersion</c>,
+	/// whose <c>DescribeCase</c> lists a case's <c>versions</c> and reads any family member by name, and whose
+	/// <c>ModifyCase</c> changes an inactive member in place.
 	/// </summary>
 	/// <remarks>
-	/// The one place the floor of both tools is written. A version literal rather than presence: the two are
-	/// operations a package before 1.6.6.173 does not carry at all, so presence alone would let a call reach a package
-	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.185 is the first
-	/// shipped cut whose stage rename renames the lookup value and whose describe reports <c>records</c>. Not 1.6.6.180:
-	/// that number is also another branch's cut without this code. An older package would ignore the two
-	/// confirmations, and a stage rename there would write a caption no one sees.
+	/// The one place the floor of the four tools is written. A version literal rather than presence: the version
+	/// operations are operations an older package does not carry at all, so presence alone would let a call reach a
+	/// package that answers its route with a 404. describe and modify share the floor because what they advertise
+	/// moved with the versions: an older package answers describe without <c>versions</c>, which an agent would read as
+	/// "this case has no versions", and refuses an inactive member that the tool descriptions say it accepts.
+	/// 1.6.6.185 was the floor before (stage value rename, records per stage); 1.6.6.194 is the first cut with the
+	/// versions. Not 1.6.6.193: that number reached a shared test stand as a dev build of the same branch.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.185";
+	public const string MinimumProcessBuilderVersion = "1.6.6.194";
 }
 
 /// <summary>
@@ -382,6 +387,11 @@ public sealed class ModifyCaseResponse {
 	[JsonPropertyName("settings")]
 	public DynamicCaseSettings Settings { get; init; }
 
+	/// <summary>The link row added for an inactive member that had none, which the case designer needs to open it;
+	/// absent when it had one.</summary>
+	[JsonPropertyName("linkRow")]
+	public DynamicCaseSettings LinkRow { get; init; }
+
 	/// <summary>What the caller owes after the call.</summary>
 	[JsonPropertyName("obligations")]
 	public DynamicCaseObligations Obligations { get; init; }
@@ -467,6 +477,11 @@ public sealed class ModifyDynamicCaseResult {
 	/// <summary>The object's settings row when a first filter sets its filter column; absent otherwise.</summary>
 	[JsonPropertyName("settings")]
 	public DynamicCaseSettings Settings { get; init; }
+
+	/// <summary>The link row added for an inactive member that had none, which the case designer needs to open it;
+	/// absent when it had one.</summary>
+	[JsonPropertyName("linkRow")]
+	public DynamicCaseSettings LinkRow { get; init; }
 
 	/// <summary>What the caller owes after the call, per artifact.</summary>
 	[JsonPropertyName("obligations")]

@@ -43,8 +43,8 @@ public class ListUserTasksTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ListUserTasksToolName, ReadOnly = true, Destructive = false, Idempotent = true,
 		 OpenWorld = false),
-	 Description("List the user-facing user tasks available on a Creatio environment (the process designer "
-		 + "palette), including custom ones. Returns each task's name and UId; pass a name as a userTaskName "
+	 Description("Lists designer palette user tasks. They are the user-facing user tasks available on a "
+		 + "Creatio environment, including custom ones. Returns each task's name and UId; pass a name as a userTaskName "
 		 + "on a userTask element when building a process with create-business-process. Exceptions, where a "
 		 + "DEDICATED element type carries configuration the generic userTask route cannot: "
 		 + "PreconfiguredPageUserTask (Pre-configured page) is built ONLY as type preconfiguredPage with its "

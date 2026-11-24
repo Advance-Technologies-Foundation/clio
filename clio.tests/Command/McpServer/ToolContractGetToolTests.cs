@@ -4761,7 +4761,7 @@ public sealed class ToolContractGetToolTests {
 		"Recompiles a registered Creatio environment and forces a runtime reload.",
 		TestName = "PurposePinned_CompileCreatio_ComesFromTheCuratedContract")]
 	[TestCase(ValidateProcessGraphTool.ToolName,
-		"Checks a planned Creatio business-process graph against the BPMN connection rules before you build it.",
+		"Validates a process graph.",
 		TestName = "PurposePinned_ValidateProcessGraph")]
 	[Description("Each tool whose compact-index one-liner ENG-96389 examined advertises that exact purpose, so reverting a single description fails here instead of hiding behind the uniqueness guard.")]
 	public void GetToolContracts_ShouldAdvertiseTheRepairedPurpose_WhenCompactIndexIsBuilt(

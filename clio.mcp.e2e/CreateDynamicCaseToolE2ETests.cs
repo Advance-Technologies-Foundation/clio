@@ -28,6 +28,9 @@ namespace Clio.Mcp.E2E;
 /// different order on the same object that is refused as case-exists, and refusals that write nothing. Then
 /// <c>describe-dynamic-case</c> and <c>modify-dynamic-case</c> on a case each test creates without the bar: a read by
 /// object, a reorder planned and written, a stage removed and added back, a final stage group, and disable / enable.
+/// Then <c>modify-dynamic-case-as-new-version</c> and <c>set-active-dynamic-case-version</c>: a version planned and
+/// created inactive, the family described, activated, re-activated as unchanged and rolled back to the root, and an
+/// inactive version described and changed in place by name with <c>enabled</c> refused on it.
 /// </summary>
 /// <remarks>
 /// <para>Runs on the ProcessDesigner lane. Its seed ships in the AutoTestClioMcp 7.8.0 test package, which the
@@ -54,7 +57,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	/// <summary>The first CrtProcessBuilder that carries BuildCase.</summary>
 	private const string MinimumPackageVersion = CreateDynamicCaseOptions.MinimumProcessBuilderVersion;
 
-	/// <summary>The first CrtProcessBuilder that carries DescribeCase and ModifyCase.</summary>
+	/// <summary>The first CrtProcessBuilder that carries DescribeCase, ModifyCase and the case version operations.</summary>
 	private const string CaseChangePackageVersion = DynamicCaseChangeRequirement.MinimumProcessBuilderVersion;
 
 	/// <summary>The member only a describe result document carries; it has no outcome.</summary>
@@ -590,6 +593,136 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("A change saved as a new version: the dry run plans an inactive version and writes nothing; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; the activation reads the version back as active; the same activation again answers unchanged; activating the root goes back.")]
+	[AllureName("modify-dynamic-case-as-new-version and set-active-dynamic-case-version: create, check, activate, go back")]
+	public async Task DynamicCaseVersion_ShouldBeCreatedInactive_ThenActivated_ThenRolledBack() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		JsonObject? version = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			string rootName = CaseNameOf(created);
+			string[] reordered = SwapFirstTwo(StageValues(created["case"]!.AsObject()));
+			Dictionary<string, object?> change = new() { ["stages"] = reordered };
+
+			// Act
+			CallToolResult planCall = await NewVersionAsync(context, created, change, dryRun: true);
+			JsonObject afterPlan = await DescribeCaseAsync(context, created);
+			CallToolResult versionCall = await NewVersionAsync(context, created, change, dryRun: false);
+			IgnoreWhenProcessBuilderIsBehind(ToolText(versionCall), CaseChangePackageVersion);
+			// Assigned before the assertion, so a failed-leftover or unknown write still reaches the version cleanup.
+			version = ResultOf(versionCall);
+			ShouldHaveLanded(versionCall, "the active case can be changed as a new version");
+			string versionName = Text(version["version"]!.AsObject(), "name")!;
+			JsonObject afterVersion = await DescribeCaseAsync(context, created);
+			CallToolResult activatePlanCall = await SetActiveAsync(context, versionName, dryRun: true);
+			JsonObject afterActivatePlan = await DescribeCaseAsync(context, created);
+			CallToolResult activateCall = await SetActiveAsync(context, versionName, dryRun: false);
+			JsonObject afterActivate = await DescribeCaseAsync(context, created);
+			CallToolResult againCall = await SetActiveAsync(context, versionName, dryRun: false);
+			CallToolResult backCall = await SetActiveAsync(context, rootName, dryRun: false);
+			JsonObject afterBack = await DescribeCaseAsync(context, created);
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(planCall), CaseChangePackageVersion);
+			ShouldHaveLanded(planCall, "a dry run of a valid version plans it");
+			Text(ResultOf(planCall), "outcome").Should().Be("planned", because: "a dry run writes nothing");
+			ResultOf(planCall)["version"]!["active"]!.GetValue<bool>().Should().BeFalse(
+				because: "a version is always planned inactive");
+			afterPlan["versions"].Should().BeNull(because: "the dry run wrote no version, so the case has no other member");
+			Text(version, "outcome").Should().Be("version-created", because: "the version was saved");
+			version["version"]!["active"]!.GetValue<bool>().Should().BeFalse(because: "creating never activates");
+			Text(version["version"]!.AsObject(), "designerUrl").Should().NotBeNullOrWhiteSpace(
+				because: "a saved version opens in the case designer, which is where the user checks it");
+			Text(version, "sourceName").Should().Be(rootName, because: "the version is copied from the active case");
+			Text(afterVersion, "schemaName").Should().Be(rootName, because: "describe by the root reads the root");
+			afterVersion["activeVersion"]!.GetValue<bool>().Should().BeTrue(
+				because: "the case stays active until the separate activation");
+			StageValues(afterVersion).Should().NotEqual(reordered, because: "the change went to the version only");
+			MembersOf(afterVersion).Should().BeEquivalentTo([rootName, versionName],
+				because: "describe lists the whole family once it has a second member");
+			ActiveMemberOf(afterVersion).Should().Be(rootName, because: "the root is still the platform's pick");
+			ShouldHaveLanded(activatePlanCall, "the version can be activated");
+			Text(ResultOf(activatePlanCall), "outcome").Should().Be("planned", because: "a dry run writes nothing");
+			ActiveMemberOf(afterActivatePlan).Should().Be(rootName, because: "the activation dry run wrote nothing");
+			ShouldHaveLanded(activateCall, "the version can be activated");
+			Text(ResultOf(activateCall), "outcome").Should().Be("activated", because: "the switch read back");
+			Text(ResultOf(activateCall)["activeVersion"]!.AsObject(), "name").Should().Be(versionName,
+				because: "the result names the member really active, as read back");
+			ActiveMemberOf(afterActivate).Should().Be(versionName, because: "the switch was stored");
+			ShouldHaveLanded(againCall, "activating the active member again is a success");
+			Text(ResultOf(againCall), "outcome").Should().Be("unchanged", because: "the call is idempotent");
+			ShouldHaveLanded(backCall, "the root is a member like any other, so activating it goes back");
+			ActiveMemberOf(afterBack).Should().Be(rootName, because: "the rollback was stored");
+		} finally {
+			await CleanUpVersionAsync(context, created, version);
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
+	[Description("An inactive version is read by its own name with a note naming the active case, changed in place by name (it stays inactive), and refused invalid-request for enabled, writing nothing.")]
+	[AllureName("describe and modify a dynamic case's inactive version by name")]
+	public async Task DynamicCaseVersion_ShouldBeDescribedAndChangedInPlace_AndRefuseEnabled() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		JsonObject? version = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			string rootName = CaseNameOf(created);
+			CallToolResult versionCall = await NewVersionAsync(context, created, [], dryRun: false);
+			IgnoreWhenProcessBuilderIsBehind(ToolText(versionCall), CaseChangePackageVersion);
+			version = ResultOf(versionCall);
+			ShouldHaveLanded(versionCall, "an unchanged copy of the active case is a valid version");
+			string versionName = Text(version["version"]!.AsObject(), "name")!;
+			string captionBefore = Text(version["case"]!.AsObject(), "caption")!;
+			Dictionary<string, object?> draft = new() {
+				["environment-name"] = context.EnvironmentName,
+				["case-name"] = versionName
+			};
+
+			// Act
+			CallToolResult describeCall = await DescribeAsync(context, new Dictionary<string, object?> {
+				["case-name"] = versionName
+			});
+			CallToolResult captionCall = await ProcessDesignerE2EArrange.CallToolAsync(context,
+				ModifyDynamicCaseTool.ModifyDynamicCaseToolName,
+				new Dictionary<string, object?>(draft) { ["caption"] = captionBefore + " draft" });
+			CallToolResult enabledCall = await ProcessDesignerE2EArrange.CallToolAsync(context,
+				ModifyDynamicCaseTool.ModifyDynamicCaseToolName,
+				new Dictionary<string, object?>(draft) { ["enabled"] = false });
+			JsonObject root = await DescribeCaseAsync(context, created);
+
+			// Assert
+			ShouldHaveLanded(describeCall, "any member of the family can be read by name");
+			JsonObject described = ResultOf(describeCall, DescribeMarker)[DescribeMarker]!.AsArray()[0]!.AsObject();
+			Text(described, "schemaName").Should().Be(versionName, because: "the version itself is read, not the root");
+			described["activeVersion"]!.GetValue<bool>().Should().BeFalse(because: "the version was never activated");
+			LogText(describeCall).Should().Contain($"is not the active version of its case; '{rootName}' (",
+				because: "the note names the active member");
+			ShouldHaveLanded(captionCall, "an inactive version is changed in place");
+			Text(ResultOf(captionCall), "outcome").Should().Be("modified", because: "the caption changed");
+			ResultOf(captionCall)["case"]!["activeVersion"]!.GetValue<bool>().Should().BeFalse(
+				because: "an in-place change does not activate the version");
+			ShouldBeRefused(enabledCall, "enabled lives on the active case");
+			Text(ResultOf(enabledCall), "errorCode").Should().Be("invalid-request", because: "the code names the reason");
+			Text(root, "caption").Should().NotEndWith(" draft", because: "the draft's change never reaches the root");
+			root["enabled"]!.GetValue<bool>().Should().BeTrue(because: "the refused enabled wrote nothing");
+		} finally {
+			await CleanUpVersionAsync(context, created, version);
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
 	#region Methods: Arrange and calls
 
 	private static async Task<ProcessDesignerArrangeContext> StartAsync(
@@ -675,6 +808,40 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		return await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyDynamicCaseTool.ModifyDynamicCaseToolName,
 			args);
 	}
+
+	private static async Task<CallToolResult> NewVersionAsync(ProcessDesignerArrangeContext context,
+		JsonObject created, Dictionary<string, object?> change, bool dryRun) {
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = context.EnvironmentName,
+			["case-name"] = CaseNameOf(created),
+			["dry-run"] = dryRun
+		};
+		foreach (KeyValuePair<string, object?> pair in change) {
+			args[pair.Key] = pair.Value;
+		}
+		return await ProcessDesignerE2EArrange.CallToolAsync(context,
+			ModifyDynamicCaseAsNewVersionTool.ModifyDynamicCaseAsNewVersionToolName, args);
+	}
+
+	private static Task<CallToolResult> SetActiveAsync(ProcessDesignerArrangeContext context, string versionName,
+		bool dryRun) =>
+		ProcessDesignerE2EArrange.CallToolAsync(context,
+			SetActiveDynamicCaseVersionTool.SetActiveDynamicCaseVersionToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["version-name"] = versionName,
+				["dry-run"] = dryRun
+			});
+
+	/// <summary>The names of the case's version family members, as describe lists them.</summary>
+	private static List<string> MembersOf(JsonObject caseBlock) =>
+		[.. (caseBlock["versions"]?.AsArray() ?? []).Select(member => Text(member!.AsObject(), "name")!)];
+
+	/// <summary>The member describe names as the platform's pick.</summary>
+	private static string? ActiveMemberOf(JsonObject caseBlock) =>
+		(caseBlock["versions"]?.AsArray() ?? []).Select(member => member!.AsObject())
+			.Where(member => member["active"]!.GetValue<bool>())
+			.Select(member => Text(member, "name"))
+			.SingleOrDefault();
 
 	private static string CaseNameOf(JsonObject created) => Text(created["case"]!.AsObject(), "schemaName")!;
 
@@ -838,6 +1005,38 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			await DeleteProcessAsync(context.EnvironmentName, caseName);
 		}
 		await RestorePageAsync(context, pageBefore, bodyBefore, directory);
+	}
+
+	// A version goes before its root: the root is made active again first (a version may be the active one when an
+	// assertion failed half-way), then the version's own link-row binding, then the version schema. Deleting a case
+	// schema removes its link row but leaves that row's package binding behind, so the binding goes first.
+	private static async Task CleanUpVersionAsync(ProcessDesignerArrangeContext context, JsonObject? created,
+		JsonObject? version) {
+		// unknown counts too when the answer still names the version: the server answers it after a save it could not
+		// read back, and the version is then on the shared seeded object.
+		if (created is null || version is null
+			|| Text(version, "outcome") is not ("version-created" or "failed-leftover" or "unknown")
+			|| version["version"] is not JsonObject) {
+			return;
+		}
+		try {
+			CallToolResult back = await SetActiveAsync(context, CaseNameOf(created), dryRun: false);
+			if (McpCommandExecutionParser.Extract(back).ExitCode != 0) {
+				await TestContext.Error.WriteLineAsync($"Could not activate the root again: {LogText(back)}");
+			}
+		} catch (Exception exception) {
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
+			await TestContext.Error.WriteLineAsync($"Activating the root again failed: {exception.Message}");
+		}
+		JsonObject? settings = version["settings"]?.AsObject();
+		List<string> bindings = settings?["bindings"]?.AsArray().Select(binding => binding!.GetValue<string>()).ToList()
+			?? [];
+		await RemoveBindingRowAsync(context, bindings, "SysDcmSchemaInSettings_",
+			settings is null ? null : Text(settings, "sysDcmSchemaInSettingsId"));
+		string? versionName = version["version"] is JsonObject block ? Text(block, "name") : null;
+		if (!string.IsNullOrWhiteSpace(versionName)) {
+			await DeleteProcessAsync(context.EnvironmentName, versionName);
+		}
 	}
 
 	private static async Task RemoveBindingRowAsync(ProcessDesignerArrangeContext context, List<string> bindings,

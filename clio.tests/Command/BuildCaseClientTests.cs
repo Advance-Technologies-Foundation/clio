@@ -22,6 +22,8 @@ public sealed class BuildCaseClientTests {
 	private const string BuildCaseUrl = "http://sandbox/0/rest/ProcessDesignService/BuildCase";
 	private const string DescribeCaseUrl = "http://sandbox/0/rest/ProcessDesignService/DescribeCase";
 	private const string ModifyCaseUrl = "http://sandbox/0/rest/ProcessDesignService/ModifyCase";
+	private const string ModifyCaseAsNewVersionUrl = "http://sandbox/0/rest/ProcessDesignService/ModifyCaseAsNewVersion";
+	private const string SetActiveCaseVersionUrl = "http://sandbox/0/rest/ProcessDesignService/SetActiveCaseVersion";
 
 	private EnvironmentSettings _env;
 	private IOwnedApplicationClient _client;
@@ -40,6 +42,8 @@ public sealed class BuildCaseClientTests {
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildCase, _env).Returns(BuildCaseUrl);
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.DescribeCase, _env).Returns(DescribeCaseUrl);
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyCase, _env).Returns(ModifyCaseUrl);
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.ModifyCaseAsNewVersion, _env).Returns(ModifyCaseAsNewVersionUrl);
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.SetActiveCaseVersion, _env).Returns(SetActiveCaseVersionUrl);
 		_sut = new BuildCaseClient(settings, _factory, urlBuilder);
 	}
 
@@ -432,5 +436,223 @@ public sealed class BuildCaseClientTests {
 		removal["filter"].Should().BeNull(because: "the removal is JSON null");
 		JsonNode.Parse(sentBodies[2])!["request"]!.AsObject().ContainsKey("filter").Should().BeFalse(
 			because: "a call that names no filter keeps the stored one");
+	}
+
+	[Test]
+	[Description("A new-version call is posted to the ModifyCaseAsNewVersion route wrapped under 'request' with the server's camelCase keys; a filter removal travels as JSON null and a yes not given is omitted.")]
+	public void ModifyAsNewVersion_ShouldPostTheWrappedCamelCaseBody() {
+		// Arrange
+		string sent = null;
+		_client.ExecutePostRequest(ModifyCaseAsNewVersionUrl, Arg.Do<string>(body => sent = body))
+			.Returns("{\"ModifyCaseAsNewVersionResult\":{\"success\":true,\"outcome\":\"planned\"}}");
+		ModifyCaseAsNewVersionRequest request = new() {
+			CaseName = "UsrOrderCase",
+			PackageName = "UsrOrdersV2",
+			Caption = "Orders v2",
+			Stages = [new CaseStageEditRequest { Value = "New" }],
+			Filter = new CaseFilterPatch(null),
+			ConfirmValueRename = true,
+			ValidateOnly = true
+		};
+
+		// Act
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			session.ModifyAsNewVersion(request);
+		}
+
+		// Assert
+		_client.Received(1).ExecutePostRequest(ModifyCaseAsNewVersionUrl, Arg.Any<string>());
+		JsonObject body = JsonNode.Parse(sent)!["request"]!.AsObject();
+		body["caseName"]!.GetValue<string>().Should().Be("UsrOrderCase", because: "the server reads camelCase keys");
+		body["packageName"]!.GetValue<string>().Should().Be("UsrOrdersV2", because: "the version's package is sent");
+		body["caption"]!.GetValue<string>().Should().Be("Orders v2", because: "the version's caption is sent");
+		body["stages"]!.AsArray()[0]!["value"]!.GetValue<string>().Should().Be("New",
+			because: "the stage list travels as objects");
+		body.ContainsKey("filter").Should().BeTrue(because: "a removal is an explicit filter key");
+		body["filter"].Should().BeNull(because: "the removal is JSON null");
+		body["confirmValueRename"]!.GetValue<bool>().Should().BeTrue(because: "the user's yes is forwarded");
+		body.ContainsKey("confirmStageRecords").Should().BeFalse(because: "a yes not given is not sent");
+		body["validateOnly"]!.GetValue<bool>().Should().BeTrue(because: "a dry run is forwarded as validateOnly");
+		body.ContainsKey("caseUId").Should().BeFalse(because: "only the identity the call named is sent");
+		body.ContainsKey("entitySchemaName").Should().BeFalse(because: "only the identity the call named is sent");
+	}
+
+	[Test]
+	[Description("A new-version call that names no package, stages, caption or filter sends none of those keys, so the version keeps the source's values.")]
+	public void ModifyAsNewVersion_ShouldOmitTheMembersTheCallDoesNotName() {
+		// Arrange
+		string sent = null;
+		_client.ExecutePostRequest(ModifyCaseAsNewVersionUrl, Arg.Do<string>(body => sent = body))
+			.Returns("{\"ModifyCaseAsNewVersionResult\":{\"success\":true,\"outcome\":\"planned\"}}");
+
+		// Act
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			session.ModifyAsNewVersion(new ModifyCaseAsNewVersionRequest { CaseUId = "uid" });
+		}
+
+		// Assert
+		JsonObject body = JsonNode.Parse(sent)!["request"]!.AsObject();
+		body["caseUId"]!.GetValue<string>().Should().Be("uid", because: "the identity is sent under its camelCase key");
+		body.ContainsKey("packageName").Should().BeFalse(because: "no package means the source's package");
+		body.ContainsKey("stages").Should().BeFalse(because: "no stages means the source's stages");
+		body.ContainsKey("caption").Should().BeFalse(because: "no caption means the source's caption");
+		body.ContainsKey("filter").Should().BeFalse(because: "no filter key means the source's filter");
+		body.ContainsKey("confirmStageRecords").Should().BeFalse(because: "a yes not given is not sent");
+		body.ContainsKey("confirmValueRename").Should().BeFalse(because: "a yes not given is not sent");
+		body["validateOnly"]!.GetValue<bool>().Should().BeFalse(because: "validateOnly is always sent");
+	}
+
+	[Test]
+	[Description("The ModifyCaseAsNewVersionResult envelope is parsed with the version block, the source, the case with its versions, the settings and the leftovers; a 404 on its route is RouteMissing.")]
+	public void ModifyAsNewVersion_ShouldParseTheEnvelope_AndClassifyA404() {
+		// Arrange
+		_client.ExecutePostRequest(ModifyCaseAsNewVersionUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyCaseAsNewVersionResult\":{\"success\":true,\"outcome\":\"version-created\","
+			+ "\"version\":{\"name\":\"UsrOrderCaseCustom1\",\"uId\":\"u2\",\"version\":2,\"packageName\":\"UsrOrdersV2\","
+			+ "\"rootName\":\"UsrOrderCase\",\"active\":false},\"sourceName\":\"UsrOrderCase\","
+			+ "\"case\":{\"schemaName\":\"UsrOrderCaseCustom1\",\"versions\":[{\"name\":\"UsrOrderCase\",\"uId\":\"u1\","
+			+ "\"version\":1,\"packageName\":\"UsrOrders\",\"packageReadOnly\":true,\"active\":true,"
+			+ "\"runningInstances\":4,\"hasLinkRow\":true,\"isDelivered\":true}]},"
+			+ "\"diff\":{\"added\":[{\"value\":\"v3\"}]},\"settings\":{\"status\":\"added\"},"
+			+ "\"leftovers\":[\"l\"],\"notes\":[\"n\"],\"warnings\":[\"w\"]}}");
+		_client.ExecutePostRequest(ModifyCaseAsNewVersionUrl, Arg.Is<string>(body => body.Contains("UsrMissing")))
+			.Throws(new HttpRequestException("Not Found", null, HttpStatusCode.NotFound));
+
+		// Act
+		DynamicCaseReply<ModifyCaseAsNewVersionResponse> created;
+		DynamicCaseReply<ModifyCaseAsNewVersionResponse> missing;
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			created = session.ModifyAsNewVersion(new ModifyCaseAsNewVersionRequest { CaseName = "UsrOrderCase" });
+			missing = session.ModifyAsNewVersion(new ModifyCaseAsNewVersionRequest { CaseName = "UsrMissing" });
+		}
+
+		// Assert
+		created.Kind.Should().Be(DynamicCaseReplyKind.Envelope, because: "the body is the ModifyCaseAsNewVersionResult envelope");
+		ModifyCaseAsNewVersionResponse response = created.Response;
+		response.Outcome.Should().Be("version-created", because: "the outcome is read");
+		response.Version.Name.Should().Be("UsrOrderCaseCustom1", because: "the version block is read");
+		response.Version.UId.Should().Be("u2", because: "the version's UId is read");
+		response.Version.Version.Should().Be(2, because: "the stored version number is read");
+		response.Version.PackageName.Should().Be("UsrOrdersV2", because: "the version's package is read");
+		response.Version.RootName.Should().Be("UsrOrderCase", because: "the family root is read");
+		response.SourceName.Should().Be("UsrOrderCase", because: "the source member is read");
+		CaseVersionMemberInfo member = response.Case.Versions.Should().ContainSingle(because: "the family is read").Subject;
+		member.PackageReadOnly.Should().BeTrue(because: "a member's read-only package is read");
+		member.Active.Should().BeTrue(because: "the active member is read");
+		member.RunningInstances.Should().Be(4, because: "a member's running cases are read");
+		member.HasLinkRow.Should().BeTrue(because: "a member's link row is read");
+		member.IsDelivered.Should().BeTrue(because: "the stored IsDelivered is read");
+		response.Diff.Added.Should().ContainSingle(because: "the diff is read");
+		response.Settings.Status.Should().Be("added", because: "the link row block is read");
+		response.Leftovers.Should().Equal(["l"], because: "the leftovers are read");
+		response.Notes.Should().Equal(["n"], because: "the notes are read");
+		response.Warnings.Should().Equal(["w"], because: "the warnings are read");
+		missing.Kind.Should().Be(DynamicCaseReplyKind.RouteMissing, because: "a 404 means the operation does not exist");
+	}
+
+	[Test]
+	[Description("An answer wrapped under another operation's envelope is NotAnEnvelope: the new-version call reads only ModifyCaseAsNewVersionResult.")]
+	public void ModifyAsNewVersion_ShouldReadOnlyItsOwnEnvelope() {
+		// Arrange
+		_client.ExecutePostRequest(ModifyCaseAsNewVersionUrl, Arg.Any<string>())
+			.Returns("{\"ModifyCaseResult\":{\"success\":true,\"outcome\":\"modified\"}}");
+
+		// Act
+		DynamicCaseReply<ModifyCaseAsNewVersionResponse> reply;
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			reply = session.ModifyAsNewVersion(new ModifyCaseAsNewVersionRequest { CaseName = "UsrOrderCase" });
+		}
+
+		// Assert
+		reply.Kind.Should().Be(DynamicCaseReplyKind.NotAnEnvelope,
+			because: "a modify answer must never be read as a saved version");
+	}
+
+	[TestCase("UsrOrderCaseCustom1", null, true)]
+	[TestCase(null, "u2", false)]
+	[Description("An activation is posted to the SetActiveCaseVersion route with the named identity only and validateOnly always sent.")]
+	public void SetActiveVersion_ShouldPostTheWrappedCamelCaseBody(string versionName, string versionUId,
+		bool validateOnly) {
+		// Arrange
+		string sent = null;
+		_client.ExecutePostRequest(SetActiveCaseVersionUrl, Arg.Do<string>(body => sent = body))
+			.Returns("{\"SetActiveCaseVersionResult\":{\"success\":true,\"outcome\":\"planned\"}}");
+		SetActiveCaseVersionRequest request = new() {
+			VersionName = versionName, VersionUId = versionUId, ValidateOnly = validateOnly
+		};
+
+		// Act
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			session.SetActiveVersion(request);
+		}
+
+		// Assert
+		_client.Received(1).ExecutePostRequest(SetActiveCaseVersionUrl, Arg.Any<string>());
+		JsonObject body = JsonNode.Parse(sent)!["request"]!.AsObject();
+		body.ContainsKey("versionName").Should().Be(versionName is not null,
+			because: "only the identity the call named is sent");
+		body.ContainsKey("versionUId").Should().Be(versionUId is not null,
+			because: "only the identity the call named is sent");
+		if (versionName is not null) {
+			body["versionName"]!.GetValue<string>().Should().Be(versionName, because: "the server reads camelCase keys");
+		} else {
+			body["versionUId"]!.GetValue<string>().Should().Be(versionUId, because: "the server reads camelCase keys");
+		}
+		body["validateOnly"]!.GetValue<bool>().Should().Be(validateOnly, because: "the dry-run flag is forwarded");
+	}
+
+	[Test]
+	[Description("The SetActiveCaseVersionResult envelope is parsed with both members, the flagged and package-position lists and the link row; a 404 on its route is RouteMissing.")]
+	public void SetActiveVersion_ShouldParseTheEnvelope_AndClassifyA404() {
+		// Arrange
+		_client.ExecutePostRequest(SetActiveCaseVersionUrl, Arg.Any<string>()).Returns(
+			"{\"SetActiveCaseVersionResult\":{\"success\":true,\"outcome\":\"activated\","
+			+ "\"activeVersion\":{\"name\":\"UsrOrderCaseCustom1\",\"uId\":\"u2\",\"version\":2,\"active\":true},"
+			+ "\"previousActiveVersion\":{\"name\":\"UsrOrderCase\",\"uId\":\"u1\",\"version\":1,\"active\":false},"
+			+ "\"siblingsStillFlagged\":[\"UsrOrderCaseCustom2\"],\"decidedByPackagePosition\":[\"UsrVendorCase\"],"
+			+ "\"linkRow\":{\"status\":\"added\",\"sysDcmSettingsId\":\"s2\"},\"leftovers\":[],\"notes\":[\"n\"]}}");
+		_client.ExecutePostRequest(SetActiveCaseVersionUrl, Arg.Is<string>(body => body.Contains("UsrMissing")))
+			.Throws(new HttpRequestException("Not Found", null, HttpStatusCode.NotFound));
+
+		// Act
+		DynamicCaseReply<SetActiveCaseVersionResponse> activated;
+		DynamicCaseReply<SetActiveCaseVersionResponse> missing;
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			activated = session.SetActiveVersion(new SetActiveCaseVersionRequest { VersionName = "UsrOrderCaseCustom1" });
+			missing = session.SetActiveVersion(new SetActiveCaseVersionRequest { VersionName = "UsrMissing" });
+		}
+
+		// Assert
+		activated.Kind.Should().Be(DynamicCaseReplyKind.Envelope, because: "the body is the SetActiveCaseVersionResult envelope");
+		SetActiveCaseVersionResponse response = activated.Response;
+		response.Outcome.Should().Be("activated", because: "the outcome is read");
+		response.ActiveVersion.Name.Should().Be("UsrOrderCaseCustom1", because: "the active member is read");
+		response.ActiveVersion.Active.Should().BeTrue(because: "the read-back flag is read");
+		response.PreviousActiveVersion.UId.Should().Be("u1", because: "the previous member is read");
+		response.SiblingsStillFlagged.Should().Equal(["UsrOrderCaseCustom2"], because: "still-flagged siblings are read");
+		response.DecidedByPackagePosition.Should().Equal(["UsrVendorCase"],
+			because: "members in read-only packages are read");
+		response.LinkRow.SysDcmSettingsId.Should().Be("s2", because: "the added link row is read");
+		response.Notes.Should().Equal(["n"], because: "the notes are read");
+		missing.Kind.Should().Be(DynamicCaseReplyKind.RouteMissing, because: "a 404 means the operation does not exist");
+	}
+
+	[Test]
+	[Description("A modify answer's linkRow is read under its wire name.")]
+	public void Modify_ShouldReadTheLinkRow() {
+		// Arrange
+		_client.ExecutePostRequest(ModifyCaseUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyCaseResult\":{\"success\":true,\"outcome\":\"modified\","
+			+ "\"linkRow\":{\"status\":\"added\",\"sysDcmSettingsId\":\"s2\"}}}");
+
+		// Act
+		DynamicCaseReply<ModifyCaseResponse> reply;
+		using (IDynamicCaseSession session = _sut.OpenSession(Env)) {
+			reply = session.Modify(new ModifyCaseRequest { CaseName = "UsrOrderCaseCustom1" });
+		}
+
+		// Assert
+		reply.Response.LinkRow.Status.Should().Be("added", because: "the link row added for the member is read");
+		reply.Response.LinkRow.SysDcmSettingsId.Should().Be("s2", because: "the link row's Id is read");
 	}
 }

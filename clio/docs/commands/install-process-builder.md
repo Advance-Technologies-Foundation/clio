@@ -30,6 +30,10 @@ unrecognised verb:
 - describe-dynamic-case and modify-dynamic-case, which read an existing dynamic
   case and change it in place (they need a CrtProcessBuilder that carries the
   DescribeCase and ModifyCase operations)
+- modify-dynamic-case-as-new-version, which saves a change of a dynamic case as a
+  new, inactive version, and set-active-dynamic-case-version, which switches the
+  active version (they need a CrtProcessBuilder that carries the
+  ModifyCaseAsNewVersion and SetActiveCaseVersion operations)
 - describe-business-process
 - list-user-tasks
 - validate-process-graph
