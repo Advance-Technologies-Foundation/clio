@@ -1661,10 +1661,10 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("ENG-101924: a Designer-written binding in a property the mobile registry does not declare for the type (crt.List.selectionState) is not reported as undeclared.")]
+	[Description("ENG-101924: a binding in a property the mobile registry does not declare for the type is not reported as undeclared. The property name is made up so that no registry release can declare it (crt.List.selectionState, used before, is declared since the multi-select release, ENG-107609).")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page skips a binding in a property the mobile registry does not declare")]
-	[AllureDescription("Sends a mobile body whose crt.List binds selectionState to an undeclared attribute, the shape the Mobile Designer saves, and verifies validate-page does not report that binding.")]
+	[AllureDescription("Sends a mobile body whose crt.List binds a property the registry does not declare to an undeclared attribute, and verifies validate-page does not report that binding.")]
 	public async Task PageValidateTool_Should_Skip_Binding_In_Property_The_Registry_Does_Not_Declare() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -1672,7 +1672,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			{
 			  "viewConfigDiff": [
 			    { "operation": "insert", "name": "LeadList", "parentName": "MainContainer", "propertyName": "items",
-			      "values": { "type": "crt.List", "selectionState": "$LeadList_SelectionState" } }
+			      "values": { "type": "crt.List", "usrNotARuntimeInput": "$LeadList_NotARuntimeInput" } }
 			  ],
 			  "viewModelConfigDiff": [
 			    { "operation": "merge", "path": ["attributes"], "values": { "UsrName": {} } }
@@ -1688,8 +1688,8 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Should().NotBeNull(
 			because: "validation details are always included in the response");
 		(response.Validation!.Errors ?? []).Should().NotContain(
-			e => e.Contains("LeadList_SelectionState"),
-			because: "the mobile runtime never reads crt.List.selectionState, so a binding there cannot break the page");
+			e => e.Contains("LeadList_NotARuntimeInput"),
+			because: "the mobile runtime never reads a property its registry does not declare, so a binding there cannot break the page");
 	}
 
 	[Test]
