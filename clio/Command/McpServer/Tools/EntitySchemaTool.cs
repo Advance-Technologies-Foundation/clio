@@ -593,8 +593,8 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "Omit package-name for the MERGED/EFFECTIVE view (columns from all packages) — use this for column discovery; "
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
 		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
-		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing, "
-		+ "primary-color-column-name). virtual tells whether the schema has a physical database table. "
+		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing) "
+		+ "and the authoritative primary-color-column-name (merged may miss it). virtual=true means no database table. "
 		+ "Set required-only=true to return only columns marked required in schema metadata; column counts remain unfiltered. "
 		+ "This does not evaluate dynamic business rules or whether a required column has a default value.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
