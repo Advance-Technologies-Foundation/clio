@@ -408,6 +408,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "a loss from the server body must be named in the envelope, not left for the caller to derive from the counts");
 		projectionField.Description.Should().Contain("collapsedIncomingOperations",
 			because: "the caller-side loss channel must reach an agent end-to-end through the real MCP transport, per the AGENTS.md MCP e2e rule");
+		projectionField.Description.Should().Contain("removedHandlers",
+			because: "ENG-107305: handlers removed by the append merge are reported, and an agent must know where to look");
 		projectionField.Description.Should().Contain("viewConfigDiffApplied",
 			because: "the case where every count describes a discarded array is the one that makes a confident projection dangerous");
 	}
@@ -460,6 +462,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the fragment's single entry introduces a new identity rather than replacing one");
 		response.AppendProjection.ViewConfigDiffApplied.Should().BeTrue(
 			because: "a seeded diff-form page carries the marker pair, so the merged array would reach the written body");
+		response.AppendProjection.RemovedHandlers.Should().NotBeNull(
+				because: "ENG-107305: the handler channel survives MCP serialization as an array, never as an absent field")
+			.And.BeEmpty(because: "the fragment carries no handlers, so no current handler is removed");
 
 		// Assert the dry run wrote nothing, read back over the same transport
 		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
