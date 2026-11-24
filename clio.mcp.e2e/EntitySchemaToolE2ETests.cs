@@ -212,6 +212,103 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("ENG-90714: sets a Color-typed column as the schema color column through set-entity-schema-properties and verifies get-entity-schema-properties reports it as primary-color-column-name.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(SetSchemaToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Set entity schema properties sets the color column and reads it back")]
+	[AllureDescription("Creates a sandbox schema, adds a Color column, sets it as the color column Freedom UI colors records from, and verifies both the package-scoped and the merged readback report it.")]
+	public async Task SetEntitySchemaProperties_Should_Set_Primary_Color_Column_And_Read_It_Back() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
+		const string colorColumnName = "UsrValueColor";
+		CommandExecutionEnvelope addColumnResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				colorColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Color",
+				titleLocalizations: BuildLocalizations("Value color")));
+
+		// Act
+		CommandExecutionEnvelope setResult = McpCommandExecutionParser.Extract(
+			await CallSetEntitySchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				primaryColorColumn: colorColumnName));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		EntitySchemaPropertiesInfo mergedSchemaProperties = EntitySchemaStructuredResultParser
+			.Extract<EntitySchemaPropertiesInfo>(await CallGetSchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				null,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token));
+
+		// Assert
+		AssertCommandSucceeded(addColumnResult, "the Color column should be added before it is set as the color column");
+		AssertCommandSucceeded(setResult, "set-entity-schema-properties should persist the color column");
+		schemaProperties.PrimaryColorColumnName.Should().Be(colorColumnName,
+			because: "the package-scoped read must report the color column set via set-entity-schema-properties");
+		mergedSchemaProperties.PrimaryColorColumnName.Should().Be(colorColumnName,
+			because: "the merged runtime read must expose the same color column; a null here means the runtime payload field name differs from primaryColorColumnName/primaryColorColumnUId");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("ENG-90714: refuses a text column as the color column, because the platform colors records only from a Color-typed column.")]
+	[AllureTag(SetSchemaToolName)]
+	[AllureName("Set entity schema properties refuses a non-Color color column")]
+	[AllureDescription("Creates a sandbox schema, adds a text column, and verifies set-entity-schema-properties refuses it as the color column without changing the schema.")]
+	public async Task SetEntitySchemaProperties_Should_Refuse_Non_Color_Primary_Color_Column() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
+		const string textColumnName = "UsrHexText";
+		CommandExecutionEnvelope addColumnResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"add",
+				textColumnName,
+				arrangeContext.CancellationTokenSource.Token,
+				type: "Text",
+				titleLocalizations: BuildLocalizations("Hex text")));
+
+		// Act
+		CommandExecutionEnvelope setResult = McpCommandExecutionParser.Extract(
+			await CallSetEntitySchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token,
+				primaryColorColumn: textColumnName));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		AssertCommandSucceeded(addColumnResult, "the text column should be added before the refusal is exercised");
+		setResult.ExitCode.Should().Be(1,
+			because: "a text column holding hex codes colors nothing, so it must be refused as the color column");
+		setResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains($"Column '{textColumnName}'", StringComparison.Ordinal)
+				&& message.Value.Contains("not 'Color'", StringComparison.Ordinal),
+			because: "the failure must be the type refusal, not a transport or argument error");
+		schemaProperties.PrimaryColorColumnName.Should().BeNull(
+			because: "the sandbox schema had no color column and the refused column must not have been saved as one");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Renames an existing entity schema's caption through set-entity-schema-properties and verifies get-entity-schema-properties reports the new title. Before issue #1320 no tool could change an existing schema's caption, which left a duplicate-caption process lookup macro unfixable from clio.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(SetSchemaToolName)]
@@ -2205,7 +2302,8 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		string? primaryDisplayColumn = null,
-		IReadOnlyDictionary<string, string>? titleLocalizations = null, bool? isDBView = null) {
+		IReadOnlyDictionary<string, string>? titleLocalizations = null, bool? isDBView = null,
+		string? primaryColorColumn = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName,
 			because: "the set-entity-schema-properties MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
@@ -2217,6 +2315,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		};
 		if (!string.IsNullOrWhiteSpace(primaryDisplayColumn)) {
 			args["primary-display-column"] = primaryDisplayColumn;
+		}
+		if (!string.IsNullOrWhiteSpace(primaryColorColumn)) {
+			args["primary-color-column"] = primaryColorColumn;
 		}
 		if (isDBView.HasValue) {
 			args["is-db-view"] = isDBView.Value;

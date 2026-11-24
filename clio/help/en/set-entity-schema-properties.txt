@@ -10,8 +10,8 @@ SYNOPSIS
 DESCRIPTION
     Sets schema-level properties on an existing remote Creatio entity schema through the
     Entity Schema Designer service, then publishes the change like the other entity-schema
-    commands. The primary-display column is a designer-level property; it does not appear
-    in the OData contract, so setting it never triggers an OData entities rebuild.
+    commands. The primary-display and color columns are designer-level properties; they do not
+    appear in the OData contract, so setting them never triggers an OData entities rebuild.
 
     Supported properties:
     --primary-display-column   The column shown as the record's display value in lookups
@@ -19,6 +19,12 @@ DESCRIPTION
                                it is resolved by name to its column UId before saving
                                (the modern designer contract matches the primary-display
                                column by its column object, not a raw GUID field).
+    --primary-color-column     The column Freedom UI colors the schema's records from, for
+                               example lookup values (the Object Designer "Color" setting).
+                               The target may be an OWN or an INHERITED column and must be
+                               of type Color: a text column, even one named Color, is refused
+                               before anything is saved, because the platform colors nothing
+                               from it.
     --is-db-view <true|false>  Set the database-view flag; omit to preserve metadata.
                               SQL views are provisioned separately; tables are not converted.
     --title /                  The SCHEMA caption. This is the only command that can rename
@@ -40,13 +46,16 @@ OPTIONS
     --schema-name              Entity schema name (required)
     --primary-display-column   Column name (own or inherited) to set as the primary-display
                                column (optional)
+    --primary-color-column     Column name (own or inherited, of type Color) to set as the
+                               color column (optional)
     --title                    New schema caption for the effective caption culture (optional)
     --title-localizations      New schema caption per culture as JSON, e.g.
                                '{"en-US":"Mention language"}' (optional)
     --caption-culture          Culture used for a scalar --title (e.g. en-US). Precedence:
                                this override > the connected user's profile culture > en-US
 
-    At least one settable property (--primary-display-column, --is-db-view, --title or
+    At least one settable property (--primary-display-column, --primary-color-column,
+    --is-db-view, --title or
     --title-localizations) is required. --title and --title-localizations are
     mutually exclusive: supplying both is rejected, because the write applies the
     map only and the scalar would be dropped silently.
@@ -64,13 +73,16 @@ EXAMPLES
     # Set an inherited column as the primary-display column
     clio set-entity-schema-properties -e dev --package Custom --schema-name UsrTickets --primary-display-column Subject
 
+    # Color the values of a lookup from its Color-typed column
+    clio set-entity-schema-properties -e dev --package Custom --schema-name UsrTicketStatus --primary-color-column UsrColor
+
     # Rename the schema caption so it stops colliding with another schema's caption
     clio set-entity-schema-properties -e dev --package Custom --schema-name labLanguage --title-localizations '{"en-US":"Mention language"}'
 
 NOTES
     - read the set values back with get-entity-schema-properties
-    - the change is published automatically; no compile needed. Neither the primary-display column
-      nor the schema caption changes the OData contract, so setting them does not trigger an
+    - the change is published automatically; no compile needed. Neither the primary-display column,
+      the color column nor the schema caption changes the OData contract, so setting them does not trigger an
       OData entities rebuild
     - at least one settable property must be supplied, otherwise the command reports an error
     - a caption change is merged per culture; captions for cultures you do not list are preserved
@@ -78,6 +90,8 @@ NOTES
       A culture the environment does not have fails before anything is saved, listing the
       available cultures; an inactive culture is saved with a warning
     - naming a column that does not exist on the schema fails with a clear error
+    - the color column only tells Freedom UI which column to read; write the hex values
+      (#RRGGBB) into the records separately, for example with upsert-data-binding-row-db
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio

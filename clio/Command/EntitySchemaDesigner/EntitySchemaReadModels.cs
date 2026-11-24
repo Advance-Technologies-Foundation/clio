@@ -57,7 +57,8 @@ public sealed record EntitySchemaPropertiesInfo(
 	[property: JsonPropertyName("administrated-by-records")] bool AdministratedByRecords,
 	[property: JsonPropertyName("use-deny-record-rights")] bool? UseDenyRecordRights,
 	[property: JsonPropertyName("use-live-editing")] bool? UseLiveEditing,
-	[property: JsonPropertyName("columns")] IReadOnlyList<EntitySchemaPropertyColumnInfo>? Columns = null);
+	[property: JsonPropertyName("columns")] IReadOnlyList<EntitySchemaPropertyColumnInfo>? Columns = null,
+	[property: JsonPropertyName("primary-color-column-name")] string? PrimaryColorColumnName = null);
 
 /// <summary>
 /// Represents a structured snapshot of remote entity schema column properties.

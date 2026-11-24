@@ -595,6 +595,7 @@ What an external AI can practically do here:
 - override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
 - redirect an inherited lookup to a schema that inherits from its reference in the parent schema, on a child of a virtual parent (for example `Folder` on a `BaseItemInFolder` child): an `override` column in `create-entity-schema` / `sync-schemas` create-entity, or `reference-schema-name` on a `modify-entity-schema-column` / `update-entity-schema` modify
 - set a schema's primary-display column (own or inherited) via `set-entity-schema-properties`
+- set a schema's color column (own or inherited, of type `Color`; Freedom UI colors records such as lookup values from it) via `set-entity-schema-properties` `primary-color-column`, read back as `primary-color-column-name`
 - execute composite schema changes in one call
 
 Why `sync-schemas` matters:
