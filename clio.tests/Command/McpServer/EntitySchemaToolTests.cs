@@ -161,7 +161,8 @@ public sealed class EntitySchemaToolTests {
 			"UsrPkg",
 			"UsrVehicle",
 			PrimaryDisplayColumn: "UsrName",
-			TitleLocalizations: new Dictionary<string, string> { ["en-US"] = "Vehicle" }, IsDBView: false));
+			TitleLocalizations: new Dictionary<string, string> { ["en-US"] = "Vehicle" }, IsDBView: false,
+			PrimaryColorColumn: "UsrColor"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -178,6 +179,8 @@ public sealed class EntitySchemaToolTests {
 			because: "the schema name must be forwarded to the command");
 		resolvedCommand.CapturedOptions.PrimaryDisplayColumn.Should().Be("UsrName",
 			because: "the primary-display column argument must be forwarded to the command");
+		resolvedCommand.CapturedOptions.PrimaryColorColumn.Should().Be("UsrColor",
+			because: "the primary-color-column argument (ENG-90714) must be forwarded to the command");
 		resolvedCommand.CapturedOptions.IsDBView.Should().BeFalse(
 			because: "an explicit false must survive MCP argument mapping");
 		// This assertion is the entire test for the AC-3 hop from the MCP title-localizations argument to

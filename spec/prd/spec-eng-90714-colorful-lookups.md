@@ -1,52 +1,51 @@
-# SPEC: Colorful lookup values (ENG-90714)
+# SPEC: Colorful lookup values — set and read the schema color column (ENG-90714)
 
-**Created**: 2026-11-23  
-**Size estimate**: M (3-4 stories)  
+**Created**: 2026-11-23 (revised 2026-11-24)  
+**Size estimate**: S (2 stories)  
 **Recommended next**: /bmad-spec is sufficient
 
 ---
 
 ## Why
 
-A no-code creator asks a code agent to "make the values of lookup X colorful" so options are easier to tell
-apart on Freedom UI pages. clio already ships every mechanical step, but nothing tells the agent the
-procedure, the recommended palette, or which write path accepts a Color column — so today the agent
-guesses, reaches for `odata-update` (which cannot write Color) and either fails or picks arbitrary colors.
+A no-code creator asks a code agent to make lookup values colorful. The procedure and the palette are owned by
+the `lookup-colors` guidance article (clio-knowledge PR #356). Freedom UI colors a lookup value from the
+object's **color column** (`PrimaryColorColumn`, the Object Designer "Color" setting), which must be of type
+`Color`. clio can create a `Color` column and write hex values into it, but has no tool that reads or sets the
+color column, so the article has to send the user to the Object Designer by hand after the agent adds the
+column. This SPEC closes that gap.
 
 ## Capabilities
 
 | ID | Intent (WHAT) | Success Signal (HOW WE KNOW) |
 |----|--------------|------------------------------|
-| CAP-01 | Agent determines whether a lookup object already has a Color-typed column | Guidance names the read tool and field; MCP e2e reads a lookup created with a `Color` column and the column reports type `Color` |
-| CAP-02 | When the column is missing, agent asks the user for a target package and adds a `Color` column through a replacing object there | Live-stand run: replacing object of an OOTB lookup with an added `Color` column is saved and published; guidance requires the package question before any schema write |
-| CAP-03 | Agent writes a hex color to selected lookup records through a write path that accepts Color | MCP e2e: `upsert-data-binding-row-db` stores `#EDF9CC` on a lookup row and `execute-esq` reads the same literal back |
-| CAP-04 | When the user names no colors, agent assigns them deterministically from the Academy palette: 16 recommended colors in order, then 16 auxiliary colors | Guidance carries both ordered lists verbatim; a unit test pins the same 32 values in the same order wherever clio embeds them |
-| CAP-05 | Agent is routed to the procedure from the tools it will naturally call | `create-lookup`, `modify-entity-schema-column` and `upsert-data-binding-row-db` descriptions carry a one-line trigger to `get-guidance name=lookup-colors`; drift test passes |
+| CAP-01 | Set an entity schema's color column by name (own or inherited column) | `set-entity-schema-properties --primary-color-column UsrColor` saves and publishes; a readback mismatch is reported as an error, not a silent no-op (unit tests on the manager) |
+| CAP-02 | Refuse a color column that is not of type `Color` or does not exist | Setting a text column (e.g. a text `Color`) fails before any save with a message naming the column and its type; no `SaveSchema` call is made (unit test) |
+| CAP-03 | Report the current color column when reading schema properties | `get-entity-schema-properties` returns `primary-color-column-name` in both package-scoped and merged modes (null when none); CLI prints `Primary color column:` (unit tests) |
+| CAP-04 | Expose CAP-01..03 over MCP | `set-entity-schema-properties` accepts `primary-color-column`; MCP unit test maps the argument; MCP e2e covers set + readback |
 
 ## Constraints
 
-- **C1**: No new write tool. Color values go through the existing `upsert-data-binding-row-db` (dataValueType 18 already supported); `odata-update`/`odata-create` stay unable to write Color (absent from `$metadata`) and guidance must say so.
-- **C2**: Guidance content lives in `clio-knowledge` (new article `lookup-colors` + routing pointer, `libraryVersion` + `sequence` bump); clio carries only trigger lines and re-pins `curated-knowledge-names.json`. No guide text duplicated in `McpServerInstructions.cs`.
-- **C3**: Palette = Academy "Manage lookup values" lists verbatim, uppercase `#RRGGBB`. Recommended: #EDF9CC #CCF4DC #D2EED0 #FFEECD #FFE7CC #FED6E5 #FFE0D6 #FFD9D0 #F1E5F5 #E4DAFC #CCE9FB #CCDEFC #CDEEFD #DCD9F3 #CCEAE7 #CCF2ED. Auxiliary: #A6DE00 #00C853 #22AC14 #FFAC07 #FF8800 #F9307F #FF6534 #FF4013 #B87CCF #7848EE #0091EA #0058EF #03A9F4 #4F43C2 #009688 #00BFA5. It is distinct from `SectionIconPalette` and must not be merged with it.
-- **C4**: A schema change (replacing object) never happens without the user naming/confirming the package; colors explicitly given by the user override the palette but must be valid `#RRGGBB`.
-- **C5**: Tool-description edits are part of the MCP contract → ClioRing compatibility review required (expected: no Ring-consumed contract changed).
+- **C1**: Additive only. Existing CLI options, MCP arguments and JSON fields keep their names and meaning; the new JSON field is appended. `primary-color-column` joins the "one settable property required" set.
+- **C2**: Same save pipeline as `primary-display-column` (`SaveAndReloadSchema`, `ODataContractImpact.Unchanged` — the color column is a designer property absent from the OData contract) and the same readback verification.
+- **C3**: Type check uses the designer column's data value type (`Color` = 18), resolved by `FindColumnForRead` (own, then inherited).
+- **C4**: Kebab-case option names; docs (`help/en`, `docs/commands`, `Commands.md`) and MCP artifacts reviewed per AGENTS.md; ClioRing compatibility reviewed.
 
 ## Non-goals
 
-- Will NOT: add Color (dataValueType 18) support to `execute-dataservice-batch` or make OData write Color.
-- Will NOT: change Freedom UI page bodies — coloring renders from the column value alone.
-- Will NOT: color Classic UI pages or introduce a palette-advisor tool.
+- Will NOT: clear the color column (no "unset" value) — not requested; can be added additively later.
+- Will NOT: add the color column to `sync-schemas` `update-entity` or `create-lookup`/`create-entity-schema` in this change.
+- Will NOT: change how colors are written (`upsert-data-binding-row-db` already supports `Color`) or the palette (owned by guidance).
 
 ## Success Signal
 
-On a live stand, the prompt "make the values of lookup <X> colorful" drives an agent through `get-guidance name=lookup-colors` → column check → (package question + replacing object if needed) → `upsert-data-binding-row-db` per value, and `execute-esq` returns the recommended colors in palette order for the lookup's values.
+`clio set-entity-schema-properties --package P --schema-name UsrLookup --primary-color-column UsrColor -e env` exits 0, and `clio get-entity-schema-properties --schema-name UsrLookup -e env` then prints `Primary color column: UsrColor`; the same pair over MCP returns `primary-color-column-name: "UsrColor"`.
 
 ---
 
 ## Companion Notes
 
-- Existing building blocks: `create-lookup` / `create-entity-schema` (`extend-parent` for replacing objects), `modify-entity-schema-column` (type `Color`), `upsert-data-binding-row-db` (`DataBindingDbCommand.ConvertColorValue`, dataValueType 18), `get-entity-schema-properties`, `execute-esq`.
-- Side effect to document in guidance: `upsert-data-binding-row-db` also binds the record into the package, so the colors ship with it — the intended behaviour for a package-delivered customization.
-- Open (verify on stand, story 1): whether OOTB lookups that already have `Color` (e.g. `ActivityStatus`-style lookups) need no replacing object; whether binding an OOTB record into a user package has caveats.
-- Value ordering for auto-assignment: the lookup's natural order (`Name` ascending unless the user gives an order) so reruns are idempotent.
+- Designer DTO already carries `primaryColorColumn` (`EntitySchemaDesignerDtos.cs`); `RemoteEntitySchemaColumnManager` already clears it when its column is removed.
+- Merged (runtime) read: the runtime payload is mapped tolerantly from `primaryColorColumnName` or `primaryColorColumnUId`, mirroring the primary-display resolution. The exact runtime field name is an open check on a live stand; when absent the field is `null`, never a guess.
+- Follow-up in clio-knowledge: replace the manual Object Designer step in `lookup-colors` with `set-entity-schema-properties primary-color-column`, gated on the clio version that ships this. Re-pin `clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json` once PR #356 is published.
 - Source: https://academy.creatio.com/guides/no-code-customization/customization-tools/system-settings-and-lookups/manage-lookup-values

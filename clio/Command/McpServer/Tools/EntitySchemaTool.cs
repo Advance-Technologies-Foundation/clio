@@ -641,15 +641,16 @@ public sealed class SetEntitySchemaPropertiesTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Sets schema-level properties on a remote Creatio entity schema: primary-display-column (the own or "
-		+ "inherited column, resolved by name, shown as the record's display value in lookups and links) and "
-		+ "title-localizations (the SCHEMA caption, per culture). The ONLY way to rename an existing schema's caption "
+		+ "inherited column, resolved by name, shown as the record's display value in lookups and links), "
+		+ "primary-color-column (the own or inherited Color-typed column Freedom UI colors records from, e.g. lookup "
+		+ "values; a non-Color column is refused) and title-localizations (the SCHEMA caption, per culture). The ONLY way to rename an existing schema's caption "
 		+ "— update-entity-schema is per-COLUMN — which is what fixes a duplicate caption breaking a "
 		+ "[#Lookup.<Caption>.<Value>#] process macro. Also accepts is-db-view to map to a separately provisioned SQL view; it does not convert tables or change is-virtual. Saved and published; these properties do not appear in the OData "
 		+ "contract, so setting them never triggers an OData entities rebuild. The write is verified by readback — a "
 		+ "target that does not persist the value is reported as an error rather than a silent no-op. "
 		+ "Read the values back with get-entity-schema-properties.")]
 	public CommandExecutionResult SetEntitySchemaProperties(
-		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column, title-localizations, and is-db-view optional, one required")] [Required]
+		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column, primary-color-column, title-localizations, and is-db-view optional, one required")] [Required]
 		SetEntitySchemaPropertiesArgs args) {
 		try {
 			SetEntitySchemaPropertiesOptions options = new() {
@@ -657,6 +658,7 @@ public sealed class SetEntitySchemaPropertiesTool(
 				Package = args.PackageName,
 				SchemaName = args.SchemaName,
 				PrimaryDisplayColumn = args.PrimaryDisplayColumn,
+				PrimaryColorColumn = args.PrimaryColorColumn,
 				IsDBView = args.IsDBView,
 				ParsedTitleLocalizations = args.TitleLocalizations is { Count: > 0 }
 					? args.TitleLocalizations
@@ -1487,7 +1489,11 @@ public sealed record SetEntitySchemaPropertiesArgs(
 
 	[property: JsonPropertyName("is-db-view")]
 	[property: Description("Set or clear the DB-view flag; omitted preserves it. Does not create a SQL view, convert an existing table, or change is-virtual.")]
-	bool? IsDBView = null
+	bool? IsDBView = null,
+
+	[property: JsonPropertyName("primary-color-column")]
+	[property: Description("Column name (own or inherited) to set as the schema's color column - the column Freedom UI colors records (e.g. lookup values) from. It must be of type Color; a text column, even one named Color, is refused.")]
+	string? PrimaryColorColumn = null
 ) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
 
 /// <summary>

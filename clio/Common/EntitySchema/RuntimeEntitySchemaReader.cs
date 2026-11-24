@@ -41,6 +41,10 @@ public interface IRuntimeEntitySchemaReader {
 /// <param name="AdministratedByOperations">Whether the schema is administered by operations.</param>
 /// <param name="AdministratedByColumns">Whether the schema is administered by columns.</param>
 /// <param name="AdministratedByRecords">Whether the schema is administered by records.</param>
+/// <param name="PrimaryColorColumnName">
+/// Resolved color column name (the column Freedom UI colors records from), or <c>null</c> when the schema has none
+/// or the runtime payload does not expose it.
+/// </param>
 public sealed record RuntimeEntitySchemaResult(
 	Guid UId,
 	string Name,
@@ -58,7 +62,8 @@ public sealed record RuntimeEntitySchemaResult(
 	bool ShowInAdvancedMode = false,
 	bool AdministratedByOperations = false,
 	bool AdministratedByColumns = false,
-	bool AdministratedByRecords = false
+	bool AdministratedByRecords = false,
+	string? PrimaryColorColumnName = null
 );
 
 /// <summary>
@@ -189,7 +194,9 @@ internal sealed class RuntimeEntitySchemaReader(
 			ShowInAdvancedMode: schema.ShowInAdvancedMode,
 			AdministratedByOperations: schema.AdministratedByOperations,
 			AdministratedByColumns: schema.AdministratedByColumns,
-			AdministratedByRecords: schema.AdministratedByRecords);
+			AdministratedByRecords: schema.AdministratedByRecords,
+			PrimaryColorColumnName: ResolveColumnName(
+				schema.PrimaryColorColumnName, schema.PrimaryColorColumnUId, columns));
 	}
 
 	private static RuntimeEntitySchemaDefaultValueResult? MapDefaultValue(
@@ -206,16 +213,26 @@ internal sealed class RuntimeEntitySchemaReader(
 
 	private static string? ResolvePrimaryDisplayColumnName(
 		RuntimeEntitySchemaPayloadDto schema,
+		IReadOnlyList<RuntimeEntitySchemaColumnResult> columns) =>
+		ResolveColumnName(schema.PrimaryDisplayColumnName, schema.PrimaryDisplayColumnUId, columns);
+
+	/// <summary>
+	/// Resolves a schema-level column reference that the runtime payload may expose by name, by UId, or not at all:
+	/// the explicit name wins, otherwise the UId is matched against the runtime columns, otherwise <c>null</c>.
+	/// </summary>
+	private static string? ResolveColumnName(
+		string? columnName,
+		Guid? columnUId,
 		IReadOnlyList<RuntimeEntitySchemaColumnResult> columns) {
-		if (!string.IsNullOrWhiteSpace(schema.PrimaryDisplayColumnName)) {
-			return schema.PrimaryDisplayColumnName;
+		if (!string.IsNullOrWhiteSpace(columnName)) {
+			return columnName;
 		}
 
-		if (schema.PrimaryDisplayColumnUId is not Guid primaryDisplayColumnUId) {
+		if (columnUId is not Guid uId || uId == Guid.Empty) {
 			return null;
 		}
 
-		return columns.FirstOrDefault(column => column.UId == primaryDisplayColumnUId)?.Name;
+		return columns.FirstOrDefault(column => column.UId == uId)?.Name;
 	}
 
 	private static string? GetLocalizedValue(JsonElement localizedValue) {
@@ -294,7 +311,9 @@ internal sealed class RuntimeEntitySchemaReader(
 		bool AdministratedByColumns,
 		bool AdministratedByRecords,
 		string? PrimaryDisplayColumnName,
-		Guid? PrimaryDisplayColumnUId);
+		Guid? PrimaryDisplayColumnUId,
+		string? PrimaryColorColumnName = null,
+		Guid? PrimaryColorColumnUId = null);
 
 	private sealed record RuntimeEntitySchemaColumnsDto(
 		Dictionary<string, RuntimeEntitySchemaColumnDto> Items);

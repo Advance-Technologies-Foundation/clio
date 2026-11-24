@@ -162,6 +162,167 @@ public sealed class RuntimeEntitySchemaReaderTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-90714: reports the color column from an explicit primaryColorColumnName.")]
+	public void GetByName_Should_Read_PrimaryColorColumnName() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest)
+			.Returns("https://sandbox/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+		applicationClient.ExecutePostRequest(
+				"https://sandbox/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest",
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""
+				{
+				  "success": true,
+				  "schema": {
+				    "uId": "11111111-1111-1111-1111-111111111111",
+				    "name": "ContactType",
+				    "primaryColumnUId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				    "primaryColorColumnName": "Color",
+				    "columns": {
+				      "Items": {
+				        "1": {
+				          "uId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				          "name": "Id",
+				          "dataValueType": 0,
+				          "isRequired": true,
+				          "isInherited": false
+				        },
+				        "2": {
+				          "uId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+				          "name": "Color",
+				          "dataValueType": 18,
+				          "isRequired": false,
+				          "isInherited": false
+				        }
+				      }
+				    }
+				  }
+				}
+				""");
+		RuntimeEntitySchemaReader reader = new(applicationClient, serviceUrlBuilder);
+
+		// Act
+		RuntimeEntitySchemaResult result = reader.GetByName("ContactType");
+
+		// Assert
+		result.PrimaryColorColumnName.Should().Be("Color",
+			because: "the explicit runtime color column name is reported as is");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-90714: resolves the color column name from primaryColorColumnUId when the explicit name is absent.")]
+	public void GetByName_Should_Fallback_To_PrimaryColorColumnUId() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest)
+			.Returns("https://sandbox/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+		applicationClient.ExecutePostRequest(
+				"https://sandbox/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest",
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""
+				{
+				  "success": true,
+				  "schema": {
+				    "uId": "11111111-1111-1111-1111-111111111111",
+				    "name": "ContactType",
+				    "primaryColumnUId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				    "primaryColorColumnUId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+				    "columns": {
+				      "Items": {
+				        "1": {
+				          "uId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				          "name": "Id",
+				          "dataValueType": 0,
+				          "isRequired": true,
+				          "isInherited": false
+				        },
+				        "2": {
+				          "uId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+				          "name": "Color",
+				          "dataValueType": 18,
+				          "isRequired": false,
+				          "isInherited": false
+				        }
+				      }
+				    }
+				  }
+				}
+				""");
+		RuntimeEntitySchemaReader reader = new(applicationClient, serviceUrlBuilder);
+
+		// Act
+		RuntimeEntitySchemaResult result = reader.GetByName("ContactType");
+
+		// Assert
+		result.PrimaryColorColumnName.Should().Be("Color",
+			because: "the referenced runtime column names the color column, mirroring the primary-display fallback");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-90714: a schema whose runtime payload names no color column reports null, never a guessed Color-typed column.")]
+	public void GetByName_Should_Report_No_PrimaryColorColumn_When_Payload_Has_None() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest)
+			.Returns("https://sandbox/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest");
+		applicationClient.ExecutePostRequest(
+				"https://sandbox/0/DataService/json/SyncReply/RuntimeEntitySchemaRequest",
+				Arg.Any<string>(),
+				Arg.Any<int>(),
+				Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""
+				{
+				  "success": true,
+				  "schema": {
+				    "uId": "11111111-1111-1111-1111-111111111111",
+				    "name": "ContactType",
+				    "primaryColumnUId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				    "columns": {
+				      "Items": {
+				        "1": {
+				          "uId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+				          "name": "Id",
+				          "dataValueType": 0,
+				          "isRequired": true,
+				          "isInherited": false
+				        },
+				        "2": {
+				          "uId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+				          "name": "Color",
+				          "dataValueType": 18,
+				          "isRequired": false,
+				          "isInherited": false
+				        }
+				      }
+				    }
+				  }
+				}
+				""");
+		RuntimeEntitySchemaReader reader = new(applicationClient, serviceUrlBuilder);
+
+		// Act
+		RuntimeEntitySchemaResult result = reader.GetByName("ContactType");
+
+		// Assert
+		result.PrimaryColorColumnName.Should().Be(null,
+			because: "a Color-typed column alone does not make it the color column; only the schema reference does");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Treats empty localized objects as missing values instead of throwing, because Creatio often returns {} for caption or description.")]
 	public void GetByName_Should_Tolerate_Empty_Localized_Objects() {
 		// Arrange

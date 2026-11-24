@@ -18,9 +18,9 @@ clio set-entity-schema-properties [OPTIONS]
 
 Sets schema-level properties on an existing remote Creatio entity schema through the
 Entity Schema Designer service, then publishes the change like the other entity-schema
-commands, so the update is effective without a compile. The primary-display column is
-a designer-level property; it does not appear in the OData contract, so setting it
-never triggers an OData entities rebuild.
+commands, so the update is effective without a compile. The primary-display and color
+columns are designer-level properties; they do not appear in the OData contract, so
+setting them never triggers an OData entities rebuild.
 
 The command is an extensible property setter — each settable schema-level property is
 its own optional flag, and only the flags you supply are applied.
@@ -35,6 +35,13 @@ Supported properties:
   resolved by name to its column UId before saving. clio uses the modern designer
   contract, which matches the primary-display column by its column object (not a raw
   `primaryDisplayColumnUId` GUID field).
+- **`--primary-color-column`** — the column Freedom UI colors the schema's records from,
+  for example lookup values; it is the Object Designer's "Color" setting. The target may be
+  an **own** or an **inherited** column and must be of type **`Color`**. A text column is
+  refused before anything is saved, even when it is named `Color` (out-of-the-box lookups
+  such as `CaseStatus` and `ActivityCategory` have such a text column), because the platform
+  colors nothing from it. Setting the color column does not write any colors: put the
+  `#RRGGBB` values into the records separately, for example with `upsert-data-binding-row-db`.
 - **`--title` / `--title-localizations`** — the **schema** caption. This is the only
   command that can rename an existing entity schema's caption: `update-entity-schema`
   applies **column** operations, and its `title-localizations` is a per-column property.
@@ -60,13 +67,16 @@ clear error rather than reporting a silent success.
 --is-db-view <true|false>   Set or clear the database-view flag (optional)
 --primary-display-column   Column name (own or inherited) to set as the
                            primary-display column (optional)
+--primary-color-column     Column name (own or inherited, of type Color) to set
+                           as the color column (optional)
 --title                    New schema caption for the effective caption culture (optional)
 --title-localizations      New schema caption per culture as JSON, for example
                            '{"en-US":"Mention language"}' (optional)
 --caption-culture          Culture used for a scalar --title (e.g. en-US). Precedence:
                            this override > the connected user's profile culture > en-US
 
-At least one settable property (--primary-display-column, --is-db-view, --title or
+At least one settable property (--primary-display-column, --primary-color-column,
+--is-db-view, --title or
 --title-localizations) is required. --title and --title-localizations are
 mutually exclusive: supplying both is rejected, because the write applies the
 map only and the scalar would be dropped silently.
@@ -90,6 +100,9 @@ clio set-entity-schema-properties -e dev --package Custom --schema-name UsrVehic
 # Set an inherited column as the primary-display column
 clio set-entity-schema-properties -e dev --package Custom --schema-name UsrTickets --primary-display-column Subject
 
+# Color the values of a lookup from its Color-typed column
+clio set-entity-schema-properties -e dev --package Custom --schema-name UsrTicketStatus --primary-color-column UsrColor
+
 # Rename the schema caption so a process lookup macro stops colliding with another schema
 clio set-entity-schema-properties -e dev --package Custom --schema-name labLanguage --title-localizations '{"en-US":"Mention language"}'
 ```
@@ -97,12 +110,14 @@ clio set-entity-schema-properties -e dev --package Custom --schema-name labLangu
 ## Notes
 
 - Read the set values back with `get-entity-schema-properties`.
-- The change is published automatically; no compile needed. Neither the primary-display column
-  nor the schema caption changes the OData contract, so setting them does not trigger an OData
+- The change is published automatically; no compile needed. Neither the primary-display column,
+  the color column nor the schema caption changes the OData contract, so setting them does not trigger an OData
   entities rebuild.
 - At least one settable property must be supplied, otherwise the command reports an error.
 - A caption change is merged per culture; captions for cultures you do not list are preserved.
 - Naming a column that does not exist on the schema fails with a clear error.
+- `get-entity-schema-properties` reports the color column as `primary-color-column-name`
+  (`Primary color column:` in the CLI output).
 
 ## See Also
 

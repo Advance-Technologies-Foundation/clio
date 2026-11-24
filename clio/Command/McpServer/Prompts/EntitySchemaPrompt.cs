@@ -337,7 +337,9 @@ public static class EntitySchemaPrompt {
 		[Description("Column name (own or inherited) to set as the primary-display column")]
 		string primaryDisplayColumn = null,
 		[Description("Optional database-view flag; omission preserves the current value")]
-		bool? isDBView = null) =>
+		bool? isDBView = null,
+		[Description("Column name (own or inherited, of type Color) to set as the color column")]
+		string primaryColorColumn = null) =>
 		$"""
 		 Use clio mcp server `{SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName}` to set schema-level
 		 properties on entity schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
@@ -345,11 +347,15 @@ public static class EntitySchemaPrompt {
 		 `primary-display-column` with the column (own or inherited) to show as the record's display value in
 		 lookups and links — this is the only supported way to change the display column of an EXISTING schema.
 		 Requested primary-display column: `{primaryDisplayColumn ?? "<not provided>"}`.
+		 Supply `primary-color-column` with the Color-typed column (own or inherited) Freedom UI colors records
+		 from, for example lookup values; a column of any other type is refused.
+		 Requested color column: `{primaryColorColumn ?? "<not provided>"}`.
 		 When supplied, set `is-db-view` to `{isDBView?.ToString().ToLowerInvariant() ?? "<not provided>"}`.
 		 The SQL view must be provisioned separately; this flag does not convert existing tables or change `is-virtual`.
 		 At least one settable property must be supplied. The change is saved and published like other
 		 entity-schema tools, then verified on readback. Confirm the result with
-		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` (`primary-display-column-name`).
+		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` (`primary-display-column-name`,
+		 `primary-color-column-name`).
 		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 """;
 }

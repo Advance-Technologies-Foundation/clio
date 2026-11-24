@@ -3583,6 +3583,155 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("ENG-90714: sets the color column to an own Color-typed column resolved by name; it is a designer property, so no OData rebuild is requested.")]
+	public void SetSchemaProperties_ShouldSetPrimaryColorColumn_WhenColumnIsOwnColor() {
+		// Arrange
+		EntitySchemaColumnDto colorColumn = CreateColorColumn("UsrColor", CodeColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId),
+			CreateTextColumn("Name", NameColumnUId), colorColumn]);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryColorColumn = "usrcolor"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.PrimaryColorColumn.Should().NotBeNull(
+			because: "the resolved Color column should be assigned as the schema color column");
+		_savedSchema.PrimaryColorColumn!.UId.Should().Be(CodeColumnUId,
+			because: "the designer links the color column by the column object it is given, so it must be the schema's own column");
+		_savedSchema.PrimaryDisplayColumn!.Name.Should().Be("Name",
+			because: "setting the color column must not disturb the primary-display column");
+		PublishedChanges().Should().Equal(
+			[("UsrVehicle", "schema properties were saved", ODataContractImpact.Unchanged)],
+			because: "the color column is a designer-level property absent from the OData contract");
+	}
+
+	[Test]
+	[Description("ENG-90714: an inherited Color-typed column is a valid color column and is resolved after own columns.")]
+	public void SetSchemaProperties_ShouldSetPrimaryColorColumn_WhenColumnIsInherited() {
+		// Arrange
+		EntitySchemaColumnDto colorColumn = CreateColorColumn("StatusColor", CodeColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)],
+			inheritedColumns: [colorColumn], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryColorColumn = "StatusColor"
+		};
+
+		// Act
+		_manager.SetSchemaProperties(options);
+
+		// Assert
+		_savedSchema.PrimaryColorColumn!.Name.Should().Be("StatusColor",
+			because: "a replacing object colors its records from a Color column it inherits as well as from its own");
+	}
+
+	[Test]
+	[Description("ENG-90714: a text column, even one NAMED Color (as on CaseStatus and ActivityCategory), colors nothing on the platform, so it is refused before any save.")]
+	public void SetSchemaProperties_ShouldThrow_WhenColorColumnIsNotColorTyped() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId),
+			CreateTextColumn("Color", CodeColumnUId)]);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryColorColumn = "Color"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*'Color'*not 'Color'*",
+				because: "the refusal must name the column and state that its type is not Color");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("ENG-90714: naming a color column absent from the schema is refused before any save.")]
+	public void SetSchemaProperties_ShouldThrow_WhenColorColumnNotFound() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId)], primaryDisplayColumn: null);
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryColorColumn = "UsrColor"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("*was not found in schema*",
+				because: "a missing color column must be rejected with the same message as a missing display column");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("ENG-90714: a target that does not persist the color column reference is reported as an error, not a silent success.")]
+	public void SetSchemaProperties_ShouldThrow_WhenReadbackDoesNotReflectPrimaryColorColumn() {
+		// Arrange
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId),
+			CreateColorColumn("UsrColor", CodeColumnUId)]);
+		_designerClient.SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(callInfo => {
+				_savedSchema = callInfo.ArgAt<EntityDesignSchemaDto>(0);
+				_savedSchema.PrimaryColorColumn = null;
+				return new Clio.Command.EntitySchemaDesigner.SaveDesignItemDesignerResponse {
+					Success = true,
+					SchemaUId = _savedSchema.UId
+				};
+			});
+		SetupLoadedSchema();
+		var options = new SetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle",
+			PrimaryColorColumn = "UsrColor"
+		};
+
+		// Act
+		Action act = () => _manager.SetSchemaProperties(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>()
+			.WithMessage("Color column 'UsrColor' was not persisted*",
+				because: "only the readback proves the designer stored the color column reference");
+	}
+
+	[Test]
+	[Description("ENG-90714: the package-scoped read reports the schema's color column as primary-color-column-name.")]
+	public void GetSchemaProperties_ShouldReportPrimaryColorColumn_WhenPackageIsSupplied() {
+		// Arrange
+		EntitySchemaColumnDto colorColumn = CreateColorColumn("UsrColor", CodeColumnUId);
+		_loadedSchema = CreateSchema(columns: [CreateGuidColumn("Id", IdColumnUId), colorColumn]);
+		_loadedSchema.PrimaryColorColumn = colorColumn;
+		SetupLoadedSchema();
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicle"
+		});
+
+		// Assert
+		result.PrimaryColorColumnName.Should().Be("UsrColor",
+			because: "the agent decides whether a lookup can be colored from the reported color column");
+	}
+
+	[Test]
 	[Description("A caption-only save leaves the existing primary-display column alone. HasAnyPropertyToSet made SetSchemaProperties reachable with no --primary-display-column at all, and the request DTO carries the whole schema: if the caption path ever stopped preserving the loaded PrimaryDisplayColumn, a rename would silently clear the column the list view is built on, on a published write.")]
 	public void SetSchemaProperties_ShouldKeepThePrimaryDisplayColumn_WhenOnlyTheCaptionChanges() {
 		// Arrange
@@ -4358,6 +4507,12 @@ internal class RemoteEntitySchemaColumnManagerTests
 				Value = name
 			}]
 		};
+	}
+
+	private static EntitySchemaColumnDto CreateColorColumn(string name, Guid uId) {
+		EntitySchemaColumnDto column = CreateTextColumn(name, uId);
+		column.DataValueType = 18;
+		return column;
 	}
 
 	private static EntitySchemaColumnDto CreateTextColumn(string name, Guid uId) {
