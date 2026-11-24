@@ -247,6 +247,20 @@ internal class PageBodyAstLinterQualityTests {
 	}
 
 	[Test]
+	[Description("An object key that happens to share a load result's name is not a read of that result, so the loads stay independent")]
+	public void Lint_ShouldWarnSequentialAwaits_WhenOnlyAPropertyKeySharesTheResultName() {
+		// Arrange
+		string code = "const data = await a.load(); const b1 = await b.load({ data: 1 }); const c1 = await c.load();";
+		string body = Page("[" + Handler("usr.Init", code) + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleSequentialIndependentAwaits);
+
+		// Assert
+		findings.Should().ContainSingle(because: "`{ data: 1 }` names a property, it does not read the variable `data`");
+	}
+
+	[Test]
 	[Description("Loads that use an earlier load's result, also through an intermediate variable, are not independent")]
 	public void Lint_ShouldNotWarnSequentialAwaits_WhenLoadsDependOnEachOther() {
 		// Arrange

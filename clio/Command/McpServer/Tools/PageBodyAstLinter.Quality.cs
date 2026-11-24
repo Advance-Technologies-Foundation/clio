@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 using Acornima.Ast;
 
 namespace Clio.Command.McpServer.Tools;
@@ -43,10 +42,6 @@ internal static partial class PageBodyAstLinter {
 	// A named helper smaller than this many AST nodes (`v => v`) is not worth moving to a module, so two copies
 	// of it are not reported.
 	private const int MinDuplicateFunctionNodes = 8;
-
-	private static readonly Regex GuidLiteral = new(
-		"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
 
 	private const string ModuleHelperAdvice =
 		"Move shared helpers to a client module declared in SCHEMA_DEPS (MCP guide: shared-client-logic).";
@@ -105,7 +100,7 @@ internal static partial class PageBodyAstLinter {
 					() => "`comparisonType` is a bare number; use the named `sdk.ComparisonType.<Name>` value so the "
 						+ "operator can be read and checked (MCP guide: page-schema-handlers).");
 				break;
-			case Literal {Value: string text} when ownerKey != "id" && GuidLiteral.IsMatch(text):
+			case Literal {Value: string text} when ownerKey != "id" && ODataKeyFormatter.IsGuid(text):
 				budget.TryAdd(RuleGuidLiteralDataReference, LintSeverity.Warning,
 					node.Location.Start.Line, node.Location.Start.Column + 1,
 					() => $"Record id `{text}` is hard-coded in page code; read it from the project's constants "
@@ -233,30 +228,8 @@ internal static partial class PageBodyAstLinter {
 			shape.ToString(), nodeCount, free);
 	}
 
-	// The names a binding pattern binds: `a`, `{ a, b: c }`, `[a, ...b]`, `a = 1`.
-	private static void CollectBindingNames(Node pattern, HashSet<string> names) {
-		switch (pattern) {
-			case Identifier identifier:
-				names.Add(identifier.Name);
-				break;
-			case ObjectPattern objectPattern:
-				foreach (Node property in objectPattern.Properties) {
-					CollectBindingNames(property is Property {Value: var value} ? value : property, names);
-				}
-				break;
-			case ArrayPattern arrayPattern:
-				foreach (Node element in arrayPattern.Elements) {
-					CollectBindingNames(element, names);
-				}
-				break;
-			case RestElement rest:
-				CollectBindingNames(rest.Argument, names);
-				break;
-			case AssignmentPattern assignment:
-				CollectBindingNames(assignment.Left, names);
-				break;
-		}
-	}
+	private static void CollectBindingNames(Node pattern, HashSet<string> names) =>
+		VisitBindingNames(pattern, name => names.Add(name), depth: 0);
 
 	// The names a function body declares: variables, functions and catch parameters, and - with `intoFunctions` -
 	// the declarations and parameters of the functions inside it too.
@@ -376,21 +349,24 @@ internal static partial class PageBodyAstLinter {
 		HashSet<string> fromLoads = new(StringComparer.Ordinal);
 		int independent = 0;
 		Statement firstLoad = null;
+		HashSet<string> referenced = new(StringComparer.Ordinal);
 		foreach (Statement statement in block.Body) {
-			HashSet<string> referenced = new(StringComparer.Ordinal);
-			CollectIdentifierNames(statement, referenced, depth: 0);
+			// Nothing can depend on a load before the first one, so the statement is only read once there is one.
+			referenced.Clear();
+			if (fromLoads.Count > 0) {
+				CollectReferencedNames(statement, referenced, depth: 0);
+			}
 			bool usesLoadResult = referenced.Overlaps(fromLoads);
-			if (TryGetAwaitedLoad(statement, out _)) {
-				if (!usesLoadResult) {
-					independent++;
-					firstLoad ??= statement;
-				}
-				CollectDeclaredNames(statement, fromLoads);
-			} else if (usesLoadResult) {
-				CollectDeclaredNames(statement, fromLoads);
+			bool isLoad = IsAwaitedLoad(statement);
+			if (isLoad && !usesLoadResult) {
+				independent++;
+				firstLoad ??= statement;
+			}
+			if (isLoad || usesLoadResult) {
+				CollectStatementBindings(statement, fromLoads);
 			}
 		}
-		if (independent <= MaxSequentialIndependentAwaits || firstLoad is null) {
+		if (independent <= MaxSequentialIndependentAwaits) {
 			return;
 		}
 		budget.TryAdd(RuleSequentialIndependentAwaits, LintSeverity.Warning,
@@ -400,15 +376,14 @@ internal static partial class PageBodyAstLinter {
 				+ "data through the page's data sources.");
 	}
 
-	private static bool TryGetAwaitedLoad(Statement statement, out CallExpression call) {
+	private static bool IsAwaitedLoad(Statement statement) {
 		Node expression = statement switch {
 			ExpressionStatement {Expression: AssignmentExpression assignment} => assignment.Right,
 			ExpressionStatement expressionStatement => expressionStatement.Expression,
 			VariableDeclaration {Declarations.Count: 1} declaration => declaration.Declarations[0].Init,
 			_ => null
 		};
-		call = (expression as AwaitExpression)?.Argument as CallExpression;
-		return call?.Callee is MemberExpression {Computed: false, Property: Identifier property} member
+		return ((expression as AwaitExpression)?.Argument as CallExpression)?.Callee is MemberExpression {Computed: false, Property: Identifier property} member
 			&& (property.Name == "load" || (property.Name == "create" && IsModelReference(member.Object)));
 	}
 
@@ -419,25 +394,13 @@ internal static partial class PageBodyAstLinter {
 			_ => false
 		};
 
-	private static void CollectIdentifierNames(Node node, HashSet<string> names, int depth) {
-		if (node is null || depth > MaxAstDepth) {
-			return;
-		}
-		if (node is Identifier identifier) {
-			names.Add(identifier.Name);
-		}
-		foreach (Node child in node.ChildNodes) {
-			CollectIdentifierNames(child, names, depth + 1);
-		}
-	}
-
 	// The names a statement binds: the declared variables of a declaration, or the assigned identifier of an
 	// assignment.
-	private static void CollectDeclaredNames(Statement statement, HashSet<string> names) {
+	private static void CollectStatementBindings(Statement statement, HashSet<string> names) {
 		switch (statement) {
 			case VariableDeclaration declaration:
 				foreach (VariableDeclarator declarator in declaration.Declarations) {
-					CollectIdentifierNames(declarator.Id, names, depth: 0);
+					CollectBindingNames(declarator.Id, names);
 				}
 				break;
 			case ExpressionStatement {Expression: AssignmentExpression {Left: Identifier target}}:

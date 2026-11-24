@@ -1029,31 +1029,38 @@ internal static partial class PageBodyAstLinter {
 	/// `beta` alone; counting `alpha` as declared is what let a later `alpha()` through unchecked.
 	/// </summary>
 	private static void DeclareBindings(Node node, LexicalScope scope, int depth,
-		bool definitelyInitialized) {
+		bool definitelyInitialized) =>
+		VisitBindingNames(node, name => scope.Declare(name, definitelyInitialized), depth);
+
+	/// <summary>
+	/// Every name a binding pattern binds - `a`, `{ a, b: c }` (binds `a` and `c`, never the key `b`),
+	/// `[a, ...b]`, `a = 1` - handed to <paramref name="bind"/> one by one.
+	/// </summary>
+	private static void VisitBindingNames(Node node, Action<string> bind, int depth) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		switch (node) {
 			case Identifier identifier:
-				scope.Declare(identifier.Name, definitelyInitialized);
+				bind(identifier.Name);
 				break;
 			case ObjectPattern objectPattern:
 				foreach (Node property in objectPattern.Properties) {
 					//Property.Value is the binding target; a RestElement carries its own.
-					DeclareBindings(property is Property {Value: not null} keyed ? keyed.Value : property,
-						scope, depth + 1, definitelyInitialized);
+					VisitBindingNames(property is Property {Value: not null} keyed ? keyed.Value : property,
+						bind, depth + 1);
 				}
 				break;
 			case ArrayPattern arrayPattern:
 				foreach (Node element in arrayPattern.Elements) {
-					DeclareBindings(element, scope, depth + 1, definitelyInitialized);
+					VisitBindingNames(element, bind, depth + 1);
 				}
 				break;
 			case AssignmentPattern assignmentPattern:
-				DeclareBindings(assignmentPattern.Left, scope, depth + 1, definitelyInitialized);
+				VisitBindingNames(assignmentPattern.Left, bind, depth + 1);
 				break;
 			case RestElement restElement:
-				DeclareBindings(restElement.Argument, scope, depth + 1, definitelyInitialized);
+				VisitBindingNames(restElement.Argument, bind, depth + 1);
 				break;
 		}
 	}
