@@ -972,6 +972,30 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			response.Results[1].Warnings.Should().ContainSingle(
 					because: "the show rule only undoes the hide rule, and the platform already does that")
 				.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
+
+			// Act - re-save the hide rule unchanged through update-page-business-rules
+			CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+				UpdatePageBusinessRuleTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["package-name"] = packageName,
+						["page-schema-name"] = target.PageSchemaName,
+						["rules"] = new object[] {
+							CreateNamedPageRule($"MCP E2E hide {suffix}", hideRuleName, target.AttributeName,
+								target.ElementName, "is-filled-in")
+						}
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			BusinessRuleBatchResponse updateResponse =
+				EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(updateResult);
+
+			// Assert - update compares with the other stored rule, not with the rule's own stored copy
+			updateResponse.Succeeded.Should().Be(1, because: "the update targets an existing rule by name");
+			updateResponse.Results[0].Warnings.Should().ContainSingle(
+					because: "the hide rule and the stored show rule are inverses of each other")
+				.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
 		} finally {
 			await arrangeContext.Session.CallToolAsync(
 				DeletePageBusinessRuleTool.ToolName,
