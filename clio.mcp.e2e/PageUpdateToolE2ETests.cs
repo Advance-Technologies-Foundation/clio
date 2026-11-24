@@ -776,6 +776,65 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		after.Should().Be(before, because: "a dry run never saves the proposed replacement");
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("ENG-107305: an append dry run of a grid that binds selectionState carries the grid-selection-without-write-back warning over the real MCP transport only when _selectionOptions is missing, and never rejects the call.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page warns about a grid selection that is never written back")]
+	[AllureDescription("Submits, with mode=append and dry-run=true, a fragment that inserts a DataGrid with selectionState (and, in one case, _selectionOptions.attribute) on ClioMcp_BlankPageToSave and declares the bound attribute. Verifies the call succeeds and the warning appears only without the write-back. Non-destructive: a dry run never saves.")]
+	public async Task PageUpdateTool_Should_Warn_On_Grid_Selection_Without_WriteBack(bool hasWriteBack) {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = SeededBlankPage.SchemaName;
+		string fragment = BuildGridSelectionFragment(savePage, hasWriteBack);
+
+		// Act
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["body"] = fragment,
+					["mode"] = "append",
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(because: "an append dry run is a structured read, not a transport error");
+		response.Success.Should().BeTrue(because: $"the grid-selection rule is a warning and never rejects. Error: {response.Error}");
+		bool warned = (response.Warnings ?? []).Any(warning => warning.Contains("grid-selection-without-write-back"));
+		warned.Should().Be(!hasWriteBack,
+			because: "only a grid without _selectionOptions.attribute never writes its selection back");
+	}
+
+	/// <summary>Builds an append fragment inserting a DataGrid that binds selectionState, with or without the write-back.</summary>
+	internal static string BuildGridSelectionFragment(string schemaName, bool hasWriteBack) =>
+		"define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/" + GridSelectionViewConfigDiff(hasWriteBack) + "/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/" + GridSelectionViewModelConfigDiff + "/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	/// <summary>A viewConfigDiff inserting the probe DataGrid that binds selectionState.</summary>
+	internal static string GridSelectionViewConfigDiff(bool hasWriteBack) =>
+		"[{\"operation\":\"insert\",\"name\":\"UsrClioE2EGridProbe\",\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0," +
+		"\"values\":{\"type\":\"crt.DataGrid\",\"selectionState\":\"$UsrClioE2EGridProbe_SelectionState\"" +
+		(hasWriteBack ? ",\"_selectionOptions\":{\"attribute\":\"UsrClioE2EGridProbe_SelectionState\"}" : string.Empty) +
+		"}}]";
+
+	/// <summary>Declares the attribute the probe grid's selectionState binds, so only the write-back differs.</summary>
+	internal const string GridSelectionViewModelConfigDiff =
+		"[{\"operation\":\"merge\",\"path\":[\"attributes\"],\"values\":{\"UsrClioE2EGridProbe_SelectionState\":{}}}]";
+
 	/// <summary>Builds a minimal diff-form append fragment adding one uniquely named container.</summary>
 	private static string BuildAppendFragment(string schemaName) =>
 		"define(\"" + schemaName + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +

@@ -35,9 +35,9 @@ public sealed class SchemaValidationServiceGridSelectionTests {
 		// Assert
 		result.IsValid.Should().BeTrue(because: "the rule is a warning and never rejects a save");
 		result.Warnings.Should().ContainSingle(because: "exactly one grid binds selection without the write-back half")
-			.Which.Should().Contain("grid-selection-without-write-back")
-			.And.Contain("ProductsList")
-			.And.Contain("_selectionOptions")
+			.Which.Should().Contain("grid-selection-without-write-back", because: "the warning names its rule id")
+			.And.Contain("ProductsList", because: "the warning names the grid")
+			.And.Contain("_selectionOptions", because: "the warning names the missing property")
 			.And.Contain("ProductsList_SelectionState",
 				because: "the warning names the attribute the write-back has to target");
 	}
@@ -128,9 +128,12 @@ public sealed class SchemaValidationServiceGridSelectionTests {
 	[Test]
 	[Description("Returns no warning for an empty body or a body without a viewConfigDiff section.")]
 	public void ValidateGridSelectionWriteBack_WhenBodyEmpty_ReturnsNoWarning() {
+		// Arrange
+		const string bodyWithoutSection = "define(\"X\", [], function() { return {}; });";
+
 		// Act
 		SchemaValidationResult empty = SchemaValidationService.ValidateGridSelectionWriteBack(string.Empty);
-		SchemaValidationResult noSection = SchemaValidationService.ValidateGridSelectionWriteBack("define(\"X\", [], function() { return {}; });");
+		SchemaValidationResult noSection = SchemaValidationService.ValidateGridSelectionWriteBack(bodyWithoutSection);
 
 		// Assert
 		empty.Warnings.Should().BeEmpty(because: "there is nothing to check");

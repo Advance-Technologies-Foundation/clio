@@ -155,18 +155,16 @@ internal sealed class PageBusinessRuleService(
 
 	/// <summary>
 	/// Adds the redundancy warnings to the saved rules of the batch. Only saved rules are compared, so a rule
-	/// that failed is neither warned about nor used as the reason for another rule's warning.
+	/// that failed is neither warned about nor used as the reason for another rule's warning. When the stored
+	/// rules could not be read, the batch's rules are still compared with each other.
 	/// </summary>
 	private static IReadOnlyList<BusinessRuleBatchItemResult> WithRedundancyWarnings(
 		IReadOnlyList<BusinessRule>? stored, IReadOnlyList<BusinessRule?> rules,
 		IReadOnlyList<BusinessRuleBatchItemResult> results) {
-		if (stored is null) {
-			return results;
-		}
 		List<BusinessRule?> saved = rules
 			.Select((rule, index) => results[index].Success ? rule : null)
 			.ToList();
-		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze(stored, saved);
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze(stored ?? [], saved);
 		return results
 			.Select((result, index) => result.Success && warnings[index].Count > 0
 				? result with { Warnings = warnings[index] }

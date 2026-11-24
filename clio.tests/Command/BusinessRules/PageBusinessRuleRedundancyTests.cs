@@ -48,7 +48,8 @@ public sealed class PageBusinessRuleRedundancyTests {
 		// Assert
 		warnings.Should().ContainSingle(because: "one rule was analyzed");
 		warnings[0].Should().ContainSingle(because: "the new rule only repeats the wider rule on a narrower condition")
-			.Which.Should().Contain("subsumed").And.Contain("Order product required");
+			.Which.Should().Contain("subsumed", because: "the warning names its rule id")
+			.And.Contain("Order product required", because: "the warning names the wider rule that covers this one");
 	}
 
 	[Test]
@@ -109,7 +110,48 @@ public sealed class PageBusinessRuleRedundancyTests {
 
 		// Assert
 		warnings[0].Should().ContainSingle(because: "a one-condition group reads the same under AND and OR, and 'A' implies 'A OR B'")
-			.Which.Should().Contain("subsumed");
+			.Which.Should().Contain("subsumed", because: "the warning names its rule id");
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("A multi-condition OR rule is subsumed only by an OR rule with strictly more conditions, never by an equal one.")]
+	public void Analyze_WhenOrRulesCompared_FlagsOnlyStrictSubset(bool storedHasExtraCondition) {
+		// Arrange
+		BusinessRuleCondition third = Equal("PDS.Region", Installment);
+		BusinessRuleCondition[] storedConditions = storedHasExtraCondition
+			? [Equal("PDS.Type", Commercial), Equal("PDS.PaymentType", Installment), third]
+			: [Equal("PDS.Type", Commercial), Equal("PDS.PaymentType", Installment)];
+		BusinessRule existing = Rule("Required when any", "OR", Required("OrderProduct"), storedConditions);
+		BusinessRule incoming = Rule("Required when either", "OR", Required("OrderProduct"),
+			Equal("PDS.Type", Commercial), Equal("PDS.PaymentType", Installment));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().HaveCount(storedHasExtraCondition ? 1 : 0,
+			because: "OR {A,B} is narrower than OR {A,B,C}, while two equal OR rules are a duplicate, not a strict subset");
+	}
+
+	[Test]
+	[Description("An incoming rule that omits enabled keeps the stored value, so a rule that stays disabled is not analyzed.")]
+	public void Analyze_WhenUpdateOmitsEnabledOfDisabledRule_ReturnsNoWarning() {
+		// Arrange
+		BusinessRule other = Rule("Amount required", "AND", Required("Amount"), Equal("PDS.Type", Commercial));
+		BusinessRule storedDisabled = Rule("Amount optional", "AND", Optional("Amount"), Equal("PDS.Region", Installment)) with {
+			Enabled = false
+		};
+		BusinessRule update = storedDisabled with {
+			Enabled = null,
+			Condition = new BusinessRuleConditionGroup("AND", [NotEqual("PDS.Type", Commercial)])
+		};
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([other, storedDisabled], [update]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "the update keeps the rule disabled, and a disabled rule never runs");
 	}
 
 	[Test]
@@ -140,7 +182,8 @@ public sealed class PageBusinessRuleRedundancyTests {
 
 		// Assert
 		warnings[0].Should().ContainSingle(because: "a page state rule already undoes itself when its condition turns false")
-			.Which.Should().Contain("inverse-redundant").And.Contain("Amount required")
+			.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id")
+			.And.Contain("Amount required", because: "the warning names the rule this one undoes")
 			.And.Contain("by default", because: "the warning states the case that was not verified");
 	}
 

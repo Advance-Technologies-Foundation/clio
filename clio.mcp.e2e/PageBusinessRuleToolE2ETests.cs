@@ -971,7 +971,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			response.Results[0].Warnings.Should().BeNull(because: "the first rule of the pair is the one that is needed");
 			response.Results[1].Warnings.Should().ContainSingle(
 					because: "the show rule only undoes the hide rule, and the platform already does that")
-				.Which.Should().Contain("inverse-redundant");
+				.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
 		} finally {
 			await arrangeContext.Session.CallToolAsync(
 				DeletePageBusinessRuleTool.ToolName,

@@ -210,7 +210,7 @@ internal static class PageBusinessRuleRedundancy {
 		private static string Describe(BusinessRuleExpression? expression) =>
 			expression is null
 				? string.Empty
-				: string.Join("\u001f", expression.Type, expression.Path, expression.Expression, expression.SysValueName,
+				: string.Join("\u001f", expression.Type?.ToLowerInvariant(), expression.Path, expression.Expression, expression.SysValueName,
 					expression.SysSettingName,
 					expression.Value is JsonElement value ? value.GetRawText() : string.Empty);
 	}
