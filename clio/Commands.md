@@ -419,7 +419,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="set-entity-connections"></a>
 - [`update-entity-connections`](docs/commands/update-entity-connections.md) - Set an object's Connections to a full ordered list of lookup columns (writes the EntityConnections add-on), `entity-connections-set`, `set-entity-connections`
 <a id="set-entity-schema-properties"></a>
-- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the database-view flag, primary-display column, and schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
+- [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the database-view flag, primary-display column, color column, and schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
 <a id="get-process-signature"></a>
 <a id="gps"></a>
 - [`get-process-signature`](docs/commands/get-process-signature.md) - Read the parameter signature (codes, types, direction) of a Creatio business process, `gps`

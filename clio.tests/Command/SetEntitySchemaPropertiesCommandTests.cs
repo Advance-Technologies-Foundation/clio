@@ -87,6 +87,26 @@ internal class SetEntitySchemaPropertiesCommandTests : BaseCommandTests<SetEntit
 	}
 
 	[Test]
+	[Description("ENG-90714: --primary-color-column parses in kebab-case and alone satisfies the one-settable-property rule, so the request reaches the manager.")]
+	public void Execute_ShouldAcceptPrimaryColorColumnOnly_WhenParsedFromCli() {
+		// Arrange
+		string[] arguments = ["--package", "UsrPkg", "--schema-name", "UsrStatus",
+			"--primary-color-column", "UsrColor"];
+		SetEntitySchemaPropertiesOptions parsed = null;
+		Parser.Default.ParseArguments<SetEntitySchemaPropertiesOptions>(arguments)
+			.WithParsed(options => parsed = options);
+
+		// Act
+		int result = _command.Execute(parsed);
+
+		// Assert
+		parsed.PrimaryColorColumn.Should().Be("UsrColor",
+			because: "the kebab-case option must bind to the color column property");
+		result.Should().Be(0, because: "the color column is a settable schema property on its own");
+		_columnManager.Received(1).SetSchemaProperties(parsed);
+	}
+
+	[Test]
 	[Description("Maps the hidden --package-name and --name aliases to the canonical Package/SchemaName options so an alias-only invocation is accepted and delegated.")]
 	public void Execute_ShouldMapHiddenAliases_WhenOnlyAliasOptionsAreProvided() {
 		// Arrange
