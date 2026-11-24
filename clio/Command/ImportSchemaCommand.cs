@@ -12,7 +12,10 @@ namespace Clio.Command;
 /// </summary>
 [Verb("import-schema", Aliases = ["schema-import"],
 	HelpText = "Import a schema bundle produced by export-schema into a package of a Creatio environment")]
-[RequiresPackage("cliogate", "2.0.0.46",
+// 2.0.0.54, not 2.0.0.46 where ImportSchema first shipped: an older gate binds only the two-parameter platform
+// importer and fails every import on cores from 10.3.1146 (ENG-106408), with a message that does not say to update
+// cliogate. Requiring the fixed gate turns that into the install-gate hint below.
+[RequiresPackage("cliogate", "2.0.0.54",
 	Hint = "Run 'clio install-gate -e <environment>' (or call the install-gate MCP tool) to install/update cliogate.")]
 public class ImportSchemaOptions : EnvironmentOptions {
 

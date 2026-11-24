@@ -82,6 +82,42 @@ namespace cliogate.Files.cs
 		private const string DescriptionColumnName = "Description";
 		private const int PackageDescriptionMaxLength = 250;
 
+		/// <summary>
+		/// The <c>ExistingSchemaPackageAction</c> passed to cores whose importer declares it (ENG-106408).
+		/// </summary>
+		/// <remarks>
+		/// <c>None</c> makes the platform refuse, with its own message naming both packages, an import whose schema
+		/// already exists in a different package where it could be moved. The other two members either move that
+		/// schema into the target package or update it in its current package, and clio has no option that asks for
+		/// either. A replace inside the owning package, which is what clio plans by default, is unaffected by the
+		/// choice.
+		/// </remarks>
+		internal static readonly NamedEnumArgument ExistingSchemaPackageActionNone = new NamedEnumArgument("None");
+
+		#endregion
+
+		#region Class: NamedEnumArgument
+
+		/// <summary>
+		/// An enum argument for a late-bound platform call, identified by member name because the enum type exists
+		/// only in some cores and is absent from the SDK cliogate compiles against.
+		/// </summary>
+		internal sealed class NamedEnumArgument
+		{
+
+			/// <summary>
+			/// Initializes a new instance of the <see cref="NamedEnumArgument"/> class.
+			/// </summary>
+			/// <param name="memberName">Name of the enum member to pass.</param>
+			public NamedEnumArgument(string memberName){
+				MemberName = memberName;
+			}
+
+			/// <summary>Gets the name of the enum member to pass.</summary>
+			public string MemberName { get; }
+
+		}
+
 		#endregion
 
 		#region Methods: Private
@@ -769,12 +805,25 @@ namespace cliogate.Files.cs
 		/// <param name="schemaData">Payload previously produced by the exporter.</param>
 		/// <param name="packageUId">UId of the package that will own the schema.</param>
 		/// <returns>The platform importer's own diagnostic string.</returns>
-		/// <remarks>See <see cref="InvokeSchemaImporter"/> for why the call is late-bound and isolated.</remarks>
+		/// <remarks>
+		/// See <see cref="InvokeSchemaImporter"/> for why the call is late-bound and isolated. The third interface
+		/// argument is <see cref="ExistingSchemaPackageActionNone"/>, and only cores that declare the parameter receive
+		/// it; an older two-parameter <c>ImportSchema</c> drops it as an undeclared trailing argument.
+		/// </remarks>
 		[MethodImpl(MethodImplOptions.NoInlining)]
 		private string InvokeSchemaImport(string schemaData, Guid packageUId) =>
 			InvokeSchemaImporter(
 				"ImportSchemaToWorkspace", new object[] {schemaData, packageUId, _userConnection},
-				"ImportSchema", new object[] {schemaData, packageUId});
+				"ImportSchema", BuildImportInterfaceArguments(schemaData, packageUId));
+
+		/// <summary>
+		/// Builds the arguments offered to <c>ISchemaImporter.ImportSchema</c>, for every core shape at once.
+		/// </summary>
+		/// <param name="schemaData">Payload previously produced by the exporter.</param>
+		/// <param name="packageUId">UId of the package that will own the schema.</param>
+		/// <returns>The schema payload, the package UId and <see cref="ExistingSchemaPackageActionNone"/>.</returns>
+		internal static object[] BuildImportInterfaceArguments(string schemaData, Guid packageUId) =>
+			new object[] {schemaData, packageUId, ExistingSchemaPackageActionNone};
 
 		/// <summary>
 		/// Calls the platform schema importer/exporter, trying the static entry point first and falling back to the
@@ -805,6 +854,12 @@ namespace cliogate.Files.cs
 		/// from <c>SchemaImporter</c>'s own interface list.
 		/// </description></item>
 		/// <item><description>
+		/// From core 10.3.1146 (ENG-106408) the interface method is
+		/// <c>ImportSchema(string, Guid, ExistingSchemaPackageAction)</c>. The enum is public there but absent from
+		/// the SDK cliogate compiles against, so its value is passed as a <see cref="NamedEnumArgument"/> and
+		/// <see cref="MatchArguments"/> converts it to the enum the running core declares.
+		/// </description></item>
+		/// <item><description>
 		/// <c>ExportSchema</c>, by contrast, is still a public static on both — hence static-first rather than
 		/// interface-first.
 		/// </description></item>
@@ -822,29 +877,32 @@ namespace cliogate.Files.cs
 				.GetMethods(BindingFlags.Public | BindingFlags.Static)
 				.Where(method => method.Name == staticMethodName)
 				.ToArray();
-			foreach (MethodInfo candidate in staticCandidates) {
-				object[] callArguments = MatchArguments(candidate, staticArguments);
-				if (callArguments != null) {
-					return (string)candidate.Invoke(null, callArguments);
-				}
+			MethodInfo staticMethod = SelectCandidate(staticCandidates, staticArguments, out object[] staticCall);
+			if (staticMethod != null) {
+				return (string)staticMethod.Invoke(null, staticCall);
 			}
 			Type importerInterface = typeof(SchemaImporter).GetInterfaces()
 				.FirstOrDefault(contract => contract.Name == "ISchemaImporter");
 			// Public only: the TYPE is internal to the core assembly, but interface MEMBERS are always public,
-			// so no accessibility has to be bypassed to find the method on the contract itself.
-			MethodInfo interfaceMethod = importerInterface?.GetMethod(interfaceMethodName,
-				BindingFlags.Public | BindingFlags.Instance);
+			// so no accessibility has to be bypassed to find the method on the contract itself. Enumerated rather
+			// than GetMethod(name): a core that declares two overloads would make GetMethod throw
+			// AmbiguousMatchException before either could be tried.
+			MethodInfo[] interfaceCandidates = importerInterface == null
+				? new MethodInfo[0]
+				: importerInterface.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+					.Where(method => method.Name == interfaceMethodName)
+					.ToArray();
+			MethodInfo interfaceMethod = SelectCandidate(interfaceCandidates, interfaceArguments,
+				out object[] interfaceCall);
 			if (interfaceMethod != null) {
-				object[] callArguments = MatchArguments(interfaceMethod, interfaceArguments);
-				if (callArguments != null) {
-					return (string)interfaceMethod.Invoke(ResolveSchemaImporter(importerInterface), callArguments);
-				}
+				return (string)interfaceMethod.Invoke(ResolveSchemaImporter(importerInterface), interfaceCall);
 			}
 			throw new InvalidOperationException(
 				$"This Creatio version exposes neither a compatible static " +
 				$"Terrasoft.Core.SchemaImporter.{staticMethodName} overload nor " +
 				$"Terrasoft.Core.ISchemaImporter.{interfaceMethodName}. Static overloads found: " +
-				$"{DescribeOverloads(staticMethodName, staticCandidates)}.");
+				$"{DescribeOverloads(staticMethodName, staticCandidates)}. Interface overloads found: " +
+				$"{DescribeOverloads(interfaceMethodName, interfaceCandidates)}.");
 		}
 
 		/// <summary>
@@ -914,28 +972,73 @@ namespace cliogate.Files.cs
 					.ToArray());
 
 		/// <summary>
+		/// Picks the overload to call: the one declaring the most parameters among those the arguments bind to.
+		/// </summary>
+		/// <param name="candidates">Overloads of one platform method.</param>
+		/// <param name="arguments">Arguments available to pass, in declaration order.</param>
+		/// <param name="callArguments">The argument array to invoke the selected overload with.</param>
+		/// <returns>The selected overload, or <c>null</c> when none matches.</returns>
+		/// <remarks>
+		/// Longest first because <see cref="MatchArguments"/> drops undeclared trailing arguments, so a shorter
+		/// overload matches the same arguments too. Taking whichever <c>GetMethods</c> returned first would make the
+		/// choice depend on metadata order, which is unspecified, and a two-parameter importer kept next to the
+		/// three-parameter one would silently discard <see cref="ExistingSchemaPackageActionNone"/>.
+		/// </remarks>
+		internal static MethodInfo SelectCandidate(IEnumerable<MethodInfo> candidates, object[] arguments,
+			out object[] callArguments){
+			foreach (MethodInfo candidate in candidates.OrderByDescending(method => method.GetParameters().Length)) {
+				callArguments = MatchArguments(candidate, arguments);
+				if (callArguments != null) {
+					return candidate;
+				}
+			}
+			callArguments = null;
+			return null;
+		}
+
+		/// <summary>
 		/// Binds the supplied arguments to a candidate method, dropping trailing arguments it does not declare.
 		/// </summary>
 		/// <param name="candidate">Method being considered.</param>
-		/// <param name="arguments">Arguments available to pass, in declaration order.</param>
+		/// <param name="arguments">Arguments available to pass, in declaration order. A
+		/// <see cref="NamedEnumArgument"/> binds to an enum parameter that defines a member of that name.</param>
 		/// <returns>The argument array to invoke with, or <c>null</c> when the method does not match.</returns>
 		[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
 			Justification = "null means 'this candidate does not match'; an empty array is the legitimate call "
 				+ "argument list of a parameterless overload, so collapsing the two would invoke the wrong method.")]
-		private static object[] MatchArguments(MethodInfo candidate, object[] arguments){
+		internal static object[] MatchArguments(MethodInfo candidate, object[] arguments){
 			ParameterInfo[] parameters = candidate.GetParameters();
 			if (parameters.Length > arguments.Length) {
 				return null;
 			}
+			object[] callArguments = new object[parameters.Length];
 			for (int i = 0; i < parameters.Length; i++) {
-				object argument = arguments[i];
-				if (argument == null || !parameters[i].ParameterType.IsInstanceOfType(argument)) {
+				object argument = BindArgument(parameters[i].ParameterType, arguments[i]);
+				if (argument == null) {
 					return null;
 				}
+				callArguments[i] = argument;
 			}
-			object[] callArguments = new object[parameters.Length];
-			Array.Copy(arguments, callArguments, parameters.Length);
 			return callArguments;
+		}
+
+		/// <summary>
+		/// Converts one supplied argument to the value passed for a parameter of the given type.
+		/// </summary>
+		/// <param name="parameterType">Declared type of the parameter.</param>
+		/// <param name="argument">Supplied argument.</param>
+		/// <returns>The value to pass, or <c>null</c> when the argument cannot be bound to the parameter.</returns>
+		/// <remarks>
+		/// An enum member is bound by NAME, never by its number: the number is the core's implementation detail, and
+		/// a renumbered enum must not silently turn one import behaviour into another.
+		/// </remarks>
+		private static object BindArgument(Type parameterType, object argument){
+			if (argument is NamedEnumArgument namedEnum) {
+				return parameterType.IsEnum && Enum.IsDefined(parameterType, namedEnum.MemberName)
+					? Enum.Parse(parameterType, namedEnum.MemberName)
+					: null;
+			}
+			return argument != null && parameterType.IsInstanceOfType(argument) ? argument : null;
 		}
 
 		/// <summary>

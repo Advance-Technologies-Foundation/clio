@@ -121,6 +121,9 @@ export and silently skip every projection — the reviewability the bundle exist
 
 - Requires cliogate `2.0.0.46` on the target environment. Both commands declare it with
   `[RequiresPackage]`, so an outdated environment is reported rather than failing obscurely.
+  *Amended 2026-11-24 (issue #2001):* `import-schema` now requires `2.0.0.54`, the first gate that binds the
+  three-parameter `ISchemaImporter.ImportSchema` of Creatio 10.3.1146 and later (core ENG-106408).
+  `export-schema` still requires `2.0.0.46`.
 - `export-schema` reads the environment but always writes a local bundle folder, so its MCP annotation is
   `ReadOnly=false, Destructive=false` — the same classification `get-schema` / `get-page` carry, and the one the
   durable-invocation gate keys on. Its `--destination` runs through `OutputPathConfinement` before any network

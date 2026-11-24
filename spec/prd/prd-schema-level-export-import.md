@@ -53,4 +53,5 @@ operator can apply without touching anything else.
   with `--allow-new-layer`.
 - AC7 — Both commands are exposed as MCP tools, `export-schema` read-only and `import-schema` destructive.
 - AC8 — Against an environment whose cliogate is older than `2.0.0.46`, both commands report the
-  requirement rather than failing obscurely.
+  requirement rather than failing obscurely. *Amended 2026-11-24 (issue #2001):* the `import-schema`
+  threshold is now `2.0.0.54`; see the ADR's Consequences.
