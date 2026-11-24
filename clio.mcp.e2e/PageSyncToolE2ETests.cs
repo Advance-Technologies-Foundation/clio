@@ -769,6 +769,66 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("A code-quality finding (a catch block that only logs) reaches the sync-pages result as a warning over the real MCP transport and the seeded page is still saved; the original body is restored in teardown.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages saves a page and carries its code-quality warnings")]
+	[AllureDescription("Reads ClioMcp_BlankPageToSave through get-page, replaces its SCHEMA_HANDLERS section with a handler whose catch block only calls console.error, saves it with sync-pages and validate=true, and verifies the save succeeds and the per-page validation warnings carry catch-log-only. The seeded-page lease restores the original body in teardown.")]
+	public async Task PageSyncTool_Should_Save_And_Warn_On_Code_Quality() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages code-quality save test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
+		CallToolResult getResult = await context.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = SavePage,
+					["environment-name"] = environmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+		getResponse.Success.Should().BeTrue(because: $"get-page must read the seeded page first. Error: {getResponse.Error}");
+		string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+		const string qualityHandlers = "/**SCHEMA_HANDLERS*/[{request:\"usr.ClioE2EQualityProbe\",handler:async (request, next)=>{ "
+			+ "try { await request.$context.save(); } catch (e) { console.error(e); } return next?.handle(request); }}]/**SCHEMA_HANDLERS*/";
+		string changedBody = Regex.Replace(body, @"/\*\*SCHEMA_HANDLERS\*/[\s\S]*?/\*\*SCHEMA_HANDLERS\*/",
+			qualityHandlers.Replace("$", "$$"), RegexOptions.None, TimeSpan.FromSeconds(1));
+		changedBody.Should().Contain("usr.ClioE2EQualityProbe", because: "the seeded page body carries a SCHEMA_HANDLERS section to replace");
+
+		// Act
+		CallToolResult syncResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = SavePage,
+							["body"] = changedBody
+						}
+					},
+					["validate"] = true
+				}
+			},
+			context.CancellationTokenSource.Token);
+		PageSyncResponse syncResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
+
+		// Assert
+		syncResult.IsError.Should().NotBeTrue(because: "the save should produce a structured sync-pages response");
+		syncResponse.Success.Should().BeTrue(
+			because: $"code-quality rules are warnings and must not reject the save. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
+		(syncResponse.Pages[0].Validation?.Warnings ?? []).Should().Contain(
+			warning => warning.Contains(PageBodyAstLinter.RuleCatchLogOnly),
+			because: "the save-time lint must tell the agent the catch block swallows the error");
+	}
+
+	[Test]
 	[Description("Writes a unique reversible marker to the seeded Freedom UI page, polls get-page within a short bounded budget until the write is observable after sync-pages returns, and restores the original body.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages makes a completed write observable within a short bounded poll")]

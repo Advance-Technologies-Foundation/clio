@@ -625,6 +625,55 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("A code-quality finding (a catch block that only logs) reaches the update-page response as a warning over the real MCP transport and does not reject the call.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page carries code-quality warnings without rejecting the save")]
+	[AllureDescription("Reads the seeded page ClioMcp_BlankPageToSave, submits an append fragment whose handler wraps a save in a catch block that only calls console.error, with dry-run=true, and verifies the structured response is successful and carries the catch-log-only warning. Then re-reads the page and asserts the stored body is unchanged. Non-destructive by construction: a dry run never reaches TrySaveSchema.")]
+	public async Task PageUpdateTool_Should_Warn_On_Code_Quality_Without_Rejecting() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = SeededBlankPage.SchemaName;
+		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		string fragment = "define(\"" + savePage + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{request:\"usr.ClioE2EQualityProbe\",handler:async (request, next)=>{ " +
+			"try { await request.$context.save(); } catch (e) { console.error(e); } return next?.handle(request); }}]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["body"] = fragment,
+					["mode"] = "append",
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response =
+			EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: "an append dry run against a seeded diff-form page is a structured read, not a transport error");
+		response.Success.Should().BeTrue(
+			because: $"code-quality rules are warnings and must not reject the save. Error: {response.Error}");
+		response.Warnings.Should().Contain(warning => warning.Contains(PageBodyAstLinter.RuleCatchLogOnly),
+			because: "the save-time lint must tell the agent the catch block swallows the error");
+		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		bodyAfter.Should().Be(bodyBefore, because: "a dry run must not write the page");
+	}
+
+	[Test]
 	[Description("GitHub #1753: a modelConfigDiff merge into a single value makes the Creatio runtime throw, so update-page rejects the real save. On a dry run the same merge must be listed in `warnings` as breaking the page, over the real MCP transport.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page dry run warns about a config merge that breaks the page")]
