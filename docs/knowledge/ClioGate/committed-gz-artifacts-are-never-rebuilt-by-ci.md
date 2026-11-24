@@ -40,5 +40,3 @@ the package version (see `BundledPackages.cs`).
 Compare the archive's file list with the previous one as well. `build.ps1` packs with `--skip-pdb`,
 because the build leaves `cliogate.pdb` and the SqlClient SNI `.pdb` files in `Files/Bin`. Without the
 flag they ship in both archives: about 1.5 MB more uncompressed, and of no use on a target.
-
-Re-verified while rebuilding both runtime archives for cliogate 2.0.0.54 (issue #2001).
