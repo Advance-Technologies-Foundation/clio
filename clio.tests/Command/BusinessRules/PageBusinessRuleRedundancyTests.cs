@@ -97,6 +97,22 @@ public sealed class PageBusinessRuleRedundancyTests {
 	}
 
 	[Test]
+	[Description("Treats a one-condition rule as narrower than an OR rule that contains its condition.")]
+	public void Analyze_WhenSingleConditionRuleIsPartOfWiderOrRule_ReturnsSubsumedWarning() {
+		// Arrange
+		BusinessRule existing = Rule("Required when either", "OR", Required("OrderProduct"),
+			Equal("PDS.Type", Commercial), Equal("PDS.PaymentType", Installment));
+		BusinessRule incoming = Rule("Required for commercial", "AND", Required("OrderProduct"), Equal("PDS.Type", Commercial));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().ContainSingle(because: "a one-condition group reads the same under AND and OR, and 'A' implies 'A OR B'")
+			.Which.Should().Contain("subsumed");
+	}
+
+	[Test]
 	[Description("Compares rules of the same batch with each other, not only with the stored rules.")]
 	public void Analyze_WhenSubsumedRuleIsInSameBatch_ReturnsSubsumedWarning() {
 		// Arrange

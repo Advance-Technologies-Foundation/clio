@@ -3639,7 +3639,7 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. PageBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(PageBusinessRuleResultsDescription),
+			BusinessRuleBatchOutput(warningsDescription: PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -4064,7 +4064,8 @@ internal static class ToolContractCatalog {
 					.. PageBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(
-				PageBusinessRuleUpdateResultsDescription),
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error.",
+				PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -7535,16 +7536,9 @@ internal static class ToolContractCatalog {
 		+ "Page state rules undo themselves when their condition turns false, so delete the redundant rule unless "
 		+ "the element is read-only, required or hidden by default.";
 
-	private const string PageBusinessRuleResultsDescription =
-		"Per-rule outcomes in input order; each item has name, success, ruleName, and error."
-		+ PageBusinessRuleWarningsDescription;
-
-	private const string PageBusinessRuleUpdateResultsDescription =
-		"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."
-		+ PageBusinessRuleWarningsDescription;
-
 	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
-		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {
+		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.",
+		string warningsDescription = "") {
 		return new ToolOutputContract(
 			"business-rule-batch-result",
 			null,
@@ -7555,7 +7549,7 @@ internal static class ToolContractCatalog {
 			[
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
-				Field(ResultsFieldName, ArrayType, resultsDescription),
+				Field(ResultsFieldName, ArrayType, resultsDescription + warningsDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}

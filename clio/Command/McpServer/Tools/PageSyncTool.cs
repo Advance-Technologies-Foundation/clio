@@ -1197,8 +1197,8 @@ public sealed class PageSyncTool(
 			converterDeclResult,
 			converterFunctionShapeResult,
 			validatorDeclResult);
-		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
-		warnings.AddRange(gridSelectionResult.Warnings);
+		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult,
+			gridSelectionResult);
 		// Widget-caption resolvability is a PRE-FLIGHT heuristic here (body, `resources`, and the schema's stored
 		// and inherited keys when a provider is given); surface it as a warning. The authoritative hard gate runs
 		// at save time via TryUpdatePage.
@@ -1287,7 +1287,8 @@ public sealed class PageSyncTool(
 		SchemaValidationResult fieldResult,
 		SchemaValidationResult bindingResult,
 		SchemaValidationResult schemaDepsResult,
-		SchemaValidationResult contextAwaitResult) {
+		SchemaValidationResult contextAwaitResult,
+		SchemaValidationResult gridSelectionResult) {
 		var warnings = new List<string>();
 		if (fieldResult.Warnings.Count > 0) {
 			warnings.AddRange(fieldResult.Warnings);
@@ -1304,6 +1305,8 @@ public sealed class PageSyncTool(
 		if (contextAwaitResult.Warnings.Count > 0) {
 			warnings.AddRange(contextAwaitResult.Warnings);
 		}
+
+		warnings.AddRange(gridSelectionResult.Warnings);
 
 		return warnings;
 	}

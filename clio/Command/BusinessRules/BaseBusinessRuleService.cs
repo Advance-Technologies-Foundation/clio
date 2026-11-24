@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Command.AddonSchemaDesigner;
+using Clio.Command.BusinessRules.Converters;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 
 namespace Clio.Command.BusinessRules;
@@ -51,7 +52,8 @@ internal abstract class BaseBusinessRuleService(
 	protected IReadOnlyList<BusinessRuleBatchItemResult> UpdateBatch(
 		AddonGetRequestDto addonRequest,
 		IReadOnlyList<BusinessRule> rules,
-		Func<BusinessRule, JsonObject, IReadOnlyList<BusinessRuleMetadataDto>> convert) {
+		Func<BusinessRule, JsonObject, IReadOnlyList<BusinessRuleMetadataDto>> convert,
+		Action<IReadOnlyList<BusinessRule>>? onStoredRules = null) {
 		ArgumentNullException.ThrowIfNull(addonRequest);
 		ArgumentNullException.ThrowIfNull(rules);
 		ArgumentNullException.ThrowIfNull(convert);
@@ -60,6 +62,7 @@ internal abstract class BaseBusinessRuleService(
 		JsonObject metadata = BusinessRuleAddonMetadata.ParseMetadata(schema.MetaData);
 		JsonArray metadataRules = BusinessRuleAddonMetadata.GetOrCreateRules(metadata);
 		List<AddonResourceDto> resources = BusinessRuleAddonMetadata.NormalizeResourceKeys(schema.Resources.ToList());
+		ReportStoredRules(onStoredRules, metadataRules, resources);
 
 		var results = new BusinessRuleBatchItemResult[rules.Count];
 		var pending = new List<(int Index, string Name)>();
@@ -129,6 +132,22 @@ internal abstract class BaseBusinessRuleService(
 		}
 
 		return results;
+	}
+
+	/// <summary>
+	/// Hands the rules stored before the update to an advisory check, converted from the metadata the update
+	/// already fetched so the check needs no second read. Fails open: a conversion failure only skips the check.
+	/// </summary>
+	private static void ReportStoredRules(Action<IReadOnlyList<BusinessRule>>? onStoredRules, JsonArray metadataRules,
+		List<AddonResourceDto> resources) {
+		if (onStoredRules is null) {
+			return;
+		}
+		try {
+			onStoredRules(FullToSimpleBusinessRuleConverter.Convert(metadataRules, resources));
+		} catch (Exception) {
+			// Advisory only: the update itself must not fail because its warnings could not be computed.
+		}
 	}
 
 	protected IReadOnlyList<BusinessRule> ReadCore(AddonGetRequestDto addonRequest) =>

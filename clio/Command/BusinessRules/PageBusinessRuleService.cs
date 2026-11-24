@@ -85,7 +85,6 @@ internal sealed class PageBusinessRuleService(
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 		AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
-		IReadOnlyList<BusinessRule>? stored = TryReadStoredRules(addonRequest);
 
 		IReadOnlyList<BusinessRuleBatchItemResult> results = CreateBatch(
 			addonRequest,
@@ -95,7 +94,16 @@ internal sealed class PageBusinessRuleService(
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap)];
 			});
-		return WithRedundancyWarnings(stored, request.Rules, results);
+		if (!results.Any(result => result.Success)) {
+			return results;
+		}
+		// Read after the save, so the check costs nothing when no rule was saved. The batch's own rules are then
+		// stored too; giving each one its generated name lets the check replace its stored copy with it.
+		IReadOnlyList<BusinessRule>? stored = TryReadStoredRules(addonRequest);
+		List<BusinessRule> savedRules = request.Rules
+			.Select((rule, index) => results[index].Success ? rule with { Name = results[index].RuleName } : rule)
+			.ToList();
+		return WithRedundancyWarnings(stored, savedRules, results);
 	}
 
 	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
@@ -119,7 +127,7 @@ internal sealed class PageBusinessRuleService(
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 		AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
-		IReadOnlyList<BusinessRule>? stored = TryReadStoredRules(addonRequest);
+		IReadOnlyList<BusinessRule>? stored = null;
 
 		IReadOnlyList<BusinessRuleBatchItemResult> results = UpdateBatch(
 			addonRequest,
@@ -128,8 +136,9 @@ internal sealed class PageBusinessRuleService(
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing, sysSettingMap)];
-			});
-		return WithRedundancyWarnings(stored, WithStoredEnabledState(request.Rules, stored), results);
+			},
+			storedRules => stored = storedRules);
+		return WithRedundancyWarnings(stored, request.Rules, results);
 	}
 
 	/// <summary>
@@ -155,28 +164,15 @@ internal sealed class PageBusinessRuleService(
 			return results;
 		}
 		List<BusinessRule?> saved = rules
-			.Select((rule, index) => index < results.Count && results[index]?.Success == true ? rule : null)
+			.Select((rule, index) => results[index].Success ? rule : null)
 			.ToList();
 		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze(stored, saved);
 		return results
-			.Select((result, index) => result?.Success == true && warnings[index].Count > 0
+			.Select((result, index) => result.Success && warnings[index].Count > 0
 				? result with { Warnings = warnings[index] }
 				: result)
 			.ToList();
 	}
-
-	/// <summary>
-	/// An update that omits <c>enabled</c> keeps the stored value, so the check reads it from the stored copy.
-	/// </summary>
-	private static IReadOnlyList<BusinessRule?> WithStoredEnabledState(IReadOnlyList<BusinessRule> rules,
-		IReadOnlyList<BusinessRule>? stored) =>
-		rules.Select(rule => rule is null || rule.Enabled is not null || stored is null
-				? rule
-				: rule with {
-					Enabled = stored.FirstOrDefault(copy => string.Equals(copy?.Name?.Trim(), rule.Name?.Trim(),
-						StringComparison.OrdinalIgnoreCase))?.Enabled
-				})
-			.ToList();
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {
 		ArgumentNullException.ThrowIfNull(request);

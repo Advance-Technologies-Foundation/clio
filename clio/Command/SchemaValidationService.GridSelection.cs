@@ -41,71 +41,36 @@ public static partial class SchemaValidationService {
 			if (vcdDoc.RootElement.ValueKind != JsonValueKind.Array) {
 				return result;
 			}
-			GridSelectionScan scan = ScanGridSelection(vcdDoc.RootElement);
-			foreach ((string name, string binding) in scan.SelectionBindings) {
-				if (scan.WrittenBack.Contains(name) || !scan.Inserted.Contains(name)) {
+			var inserted = new HashSet<string>(StringComparer.Ordinal);
+			var writtenBack = new HashSet<string>(StringComparer.Ordinal);
+			var selectionBindings = new Dictionary<string, string>(StringComparer.Ordinal);
+			foreach (JsonElement entry in vcdDoc.RootElement.EnumerateArray()) {
+				if (!(IsExactOperation(entry, InsertOperationName) || IsExactOperation(entry, MergeOperationName))
+					|| !TryGetStringProperty(entry, NamePropertyName, out string name)
+					|| !entry.TryGetProperty(ValuesPropertyName, out JsonElement values)
+					|| values.ValueKind != JsonValueKind.Object) {
 					continue;
 				}
-				result.Warnings.Add(FormatGridSelectionWarning(name, binding));
+				if (IsExactOperation(entry, InsertOperationName)) {
+					inserted.Add(name);
+				}
+				if (values.TryGetProperty(SelectionOptionsPropertyName, out JsonElement options)
+					&& options.ValueKind == JsonValueKind.Object
+					&& TryGetStringProperty(options, SelectionOptionsAttributePropertyName, out _)) {
+					writtenBack.Add(name);
+				}
+				if (TryGetStringProperty(values, SelectionStatePropertyName, out string binding)) {
+					selectionBindings.TryAdd(name, binding);
+				}
+			}
+			foreach ((string name, string binding) in selectionBindings) {
+				if (inserted.Contains(name) && !writtenBack.Contains(name)) {
+					result.Warnings.Add(FormatGridSelectionWarning(name, binding));
+				}
 			}
 		}
 		return result;
 	}
-
-	private sealed record GridSelectionScan(
-		HashSet<string> Inserted,
-		HashSet<string> WrittenBack,
-		List<(string Name, string Binding)> SelectionBindings);
-
-	private static GridSelectionScan ScanGridSelection(JsonElement operations) {
-		GridSelectionScan scan = new(new HashSet<string>(StringComparer.Ordinal),
-			new HashSet<string>(StringComparer.Ordinal), []);
-		var bound = new HashSet<string>(StringComparer.Ordinal);
-		foreach (JsonElement entry in operations.EnumerateArray()) {
-			if (!TryReadNamedOperation(entry, out string operation, out string name, out JsonElement values)) {
-				continue;
-			}
-			if (operation == "insert") {
-				scan.Inserted.Add(name);
-			}
-			if (HasSelectionWriteBack(values)) {
-				scan.WrittenBack.Add(name);
-			}
-			if (values.TryGetProperty(SelectionStatePropertyName, out JsonElement selectionState)
-				&& selectionState.ValueKind == JsonValueKind.String
-				&& !string.IsNullOrWhiteSpace(selectionState.GetString())
-				&& bound.Add(name)) {
-				scan.SelectionBindings.Add((name, selectionState.GetString()!));
-			}
-		}
-		return scan;
-	}
-
-	private static bool TryReadNamedOperation(JsonElement entry, out string operation, out string name,
-		out JsonElement values) {
-		operation = null!;
-		name = null!;
-		values = default;
-		if (entry.ValueKind != JsonValueKind.Object
-			|| !entry.TryGetProperty("operation", out JsonElement operationElement)
-			|| operationElement.ValueKind != JsonValueKind.String
-			|| !entry.TryGetProperty("name", out JsonElement nameElement)
-			|| nameElement.ValueKind != JsonValueKind.String
-			|| !entry.TryGetProperty("values", out values)
-			|| values.ValueKind != JsonValueKind.Object) {
-			return false;
-		}
-		operation = operationElement.GetString()!;
-		name = nameElement.GetString()!;
-		return operation is "insert" or "merge" && !string.IsNullOrEmpty(name);
-	}
-
-	private static bool HasSelectionWriteBack(JsonElement values) =>
-		values.TryGetProperty(SelectionOptionsPropertyName, out JsonElement options)
-		&& options.ValueKind == JsonValueKind.Object
-		&& options.TryGetProperty(SelectionOptionsAttributePropertyName, out JsonElement attribute)
-		&& attribute.ValueKind == JsonValueKind.String
-		&& !string.IsNullOrWhiteSpace(attribute.GetString());
 
 	private static string FormatGridSelectionWarning(string name, string binding) {
 		string attribute = binding.StartsWith('$') ? binding[1..] : binding;

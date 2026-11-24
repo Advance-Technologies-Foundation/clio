@@ -21,8 +21,8 @@ namespace Clio.Command.BusinessRules;
 /// condition turns false, so the inverse rule only restores what the platform restores anyway. Not verified for
 /// an element that is read-only, required or hidden by default; the warning says so.</item>
 /// </list>
-/// Disabled rules never run and are ignored. A rule of the batch replaces its stored copy (matched by name).
-/// The check is advisory: it never rejects a rule.
+/// Disabled rules never run and are ignored; an incoming rule that omits <c>enabled</c> keeps its stored value.
+/// A rule of the batch replaces its stored copy (matched by name). The check is advisory: it never rejects a rule.
 /// </remarks>
 internal static class PageBusinessRuleRedundancy {
 
@@ -32,16 +32,12 @@ internal static class PageBusinessRuleRedundancy {
 	private const string And = "AND";
 	private const string Or = "OR";
 
-	private static readonly IReadOnlyDictionary<string, string> OppositeStateActions =
-		new Dictionary<string, string>(StringComparer.Ordinal) {
-			["make-read-only"] = "make-editable",
-			["make-editable"] = "make-read-only",
-			["make-required"] = "make-optional",
-			["make-optional"] = "make-required",
-			["hide-element"] = "show-element",
-			["show-element"] = "hide-element"
-		};
+	private static readonly IReadOnlyDictionary<string, string> OppositeStateActions = BuildOppositeStateActions(
+		(new MakeReadOnlyBusinessRuleAction().ActionType, new MakeEditableBusinessRuleAction().ActionType),
+		(new MakeRequiredBusinessRuleAction().ActionType, new MakeOptionalBusinessRuleAction().ActionType),
+		(new HideElementBusinessRuleAction().ActionType, new ShowElementBusinessRuleAction().ActionType));
 
+	// Pairs every comparison with its negation; the names are the keys of SupportedComparisonTypeValues.
 	private static readonly IReadOnlyDictionary<string, string> NegatedComparisons =
 		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
 			["equal"] = "not-equal",
@@ -61,35 +57,44 @@ internal static class PageBusinessRuleRedundancy {
 	/// </summary>
 	/// <param name="stored">The rules already saved on the page.</param>
 	/// <param name="incoming">The rules being created or updated, in batch order; a <see langword="null"/> entry
-	/// gets no warnings.</param>
+	/// gets no warnings and is not compared.</param>
 	public static IReadOnlyList<IReadOnlyList<string>> Analyze(IReadOnlyList<BusinessRule> stored,
 		IReadOnlyList<BusinessRule?> incoming) {
+		Dictionary<string, BusinessRule> storedByName = stored
+			.Where(rule => !string.IsNullOrWhiteSpace(rule?.Name))
+			.GroupBy(rule => rule.Name!.Trim(), StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
 		var incomingNames = new HashSet<string>(incoming
 			.Where(rule => !string.IsNullOrWhiteSpace(rule?.Name))
 			.Select(rule => rule!.Name!.Trim()), StringComparer.OrdinalIgnoreCase);
-		List<RuleShape> others = (stored ?? [])
+		List<RuleShape> others = stored
 			.Where(rule => rule is not null
 				&& (string.IsNullOrWhiteSpace(rule.Name) || !incomingNames.Contains(rule.Name.Trim())))
 			.Select(RuleShape.TryCreate)
-			.Where(shape => shape is not null)
-			.ToList()!;
-		List<RuleShape?> batch = incoming.Select(rule => rule is null ? null : RuleShape.TryCreate(rule)).ToList();
+			.OfType<RuleShape>()
+			.ToList();
+		List<RuleShape?> batch = incoming
+			.Select(rule => rule is null ? null : RuleShape.TryCreate(WithStoredEnabled(rule, storedByName)))
+			.ToList();
 		var warnings = new List<IReadOnlyList<string>>(incoming.Count);
 		for (int index = 0; index < batch.Count; index++) {
-			RuleShape? shape = batch[index];
-			if (shape is null) {
+			if (batch[index] is not { } shape) {
 				warnings.Add([]);
 				continue;
 			}
-			IEnumerable<RuleShape> otherBatchRules = batch
-				.Select((other, otherIndex) => (other, otherIndex))
-				.Where(pair => pair.other is not null && pair.otherIndex != index)
-				.Select(pair => pair.other!);
-			IEnumerable<RuleShape> earlierBatchRules = batch.Take(index).Where(other => other is not null)!;
-			warnings.Add(FindWarnings(shape, others.Concat(otherBatchRules), others.Concat(earlierBatchRules!)));
+			int current = index;
+			IEnumerable<RuleShape> otherBatchRules = batch.Where((_, otherIndex) => otherIndex != current).OfType<RuleShape>();
+			IEnumerable<RuleShape> earlierBatchRules = batch.Take(current).OfType<RuleShape>();
+			warnings.Add(FindWarnings(shape, others.Concat(otherBatchRules), others.Concat(earlierBatchRules)));
 		}
 		return warnings;
 	}
+
+	private static BusinessRule WithStoredEnabled(BusinessRule rule, IReadOnlyDictionary<string, BusinessRule> storedByName) =>
+		rule.Enabled is null && !string.IsNullOrWhiteSpace(rule.Name)
+			&& storedByName.TryGetValue(rule.Name.Trim(), out BusinessRule? storedCopy)
+			? rule with { Enabled = storedCopy.Enabled }
+			: rule;
 
 	private static List<string> FindWarnings(RuleShape rule, IEnumerable<RuleShape> subsumptionCandidates,
 		IEnumerable<RuleShape> inverseCandidates) {
@@ -111,59 +116,68 @@ internal static class PageBusinessRuleRedundancy {
 	}
 
 	private static bool IsSubsumedBy(RuleShape rule, RuleShape other) {
-		if (!rule.Actions.All(action => other.Actions.Any(otherAction =>
-				otherAction.Type == action.Type && action.Items.IsSubsetOf(otherAction.Items)))) {
+		if (!CoversActions(rule, other, otherType => otherType)) {
 			return false;
 		}
-		string operation = CommonOperation(rule, other);
-		return operation switch {
-			And => other.Conditions.IsProperSubsetOf(rule.Conditions),
-			Or => rule.Conditions.IsProperSubsetOf(other.Conditions),
-			_ => false
-		};
+		// The one-condition side takes the other side's operation: "A" is narrower than "A OR B" too.
+		string operation = rule.Conditions.Count == 1 ? other.Operation : rule.Operation;
+		if (other.Conditions.Count > 1 && other.Operation != operation) {
+			return false;
+		}
+		return operation == And
+			? other.Conditions.IsProperSubsetOf(rule.Conditions)
+			: rule.Conditions.IsProperSubsetOf(other.Conditions);
 	}
 
 	private static bool IsInverseOf(RuleShape rule, RuleShape other) {
-		if (!rule.Actions.All(action => other.Actions.Any(otherAction =>
-				OppositeStateActions.TryGetValue(otherAction.Type, out string? opposite)
-				&& opposite == action.Type
-				&& action.Items.IsSubsetOf(otherAction.Items)))) {
+		if (!CoversActions(rule, other, otherType => OppositeStateActions[otherType])
+			|| !TryNegate(other, out string negatedOperation, out HashSet<ConditionKey> negatedConditions)) {
 			return false;
 		}
-		if (!TryNegate(other, out string negatedOperation, out HashSet<string> negatedConditions)) {
-			return false;
-		}
-		bool operationMatches = rule.Conditions.Count == 1 || rule.Operation == negatedOperation;
-		return operationMatches && rule.Conditions.SetEquals(negatedConditions);
+		return rule.Operation == negatedOperation && rule.Conditions.SetEquals(negatedConditions);
 	}
 
-	private static string CommonOperation(RuleShape rule, RuleShape other) {
-		// A one-condition group reads the same under AND and OR, so it takes the other rule's operation.
-		string ruleOperation = rule.Conditions.Count == 1 ? other.Operation : rule.Operation;
-		string otherOperation = other.Conditions.Count == 1 ? ruleOperation : other.Operation;
-		return ruleOperation == otherOperation ? ruleOperation : string.Empty;
-	}
+	/// <summary>
+	/// Whether every action of <paramref name="rule"/> matches an action of <paramref name="other"/> (its type
+	/// mapped by <paramref name="mapOtherType"/>) on the same or more items.
+	/// </summary>
+	private static bool CoversActions(RuleShape rule, RuleShape other, Func<string, string> mapOtherType) =>
+		rule.Actions.All(action => other.Actions.Any(otherAction =>
+			mapOtherType(otherAction.Type) == action.Type && action.Items.IsSubsetOf(otherAction.Items)));
 
-	private static bool TryNegate(RuleShape rule, out string operation, out HashSet<string> conditions) {
-		operation = rule.Operation == And ? Or : And;
-		conditions = new HashSet<string>(StringComparer.Ordinal);
-		foreach (ConditionKey condition in rule.ConditionKeys) {
+	private static bool TryNegate(RuleShape rule, out string operation, out HashSet<ConditionKey> conditions) {
+		conditions = [];
+		foreach (ConditionKey condition in rule.Conditions) {
 			if (!NegatedComparisons.TryGetValue(condition.Comparison, out string? negated)) {
+				operation = string.Empty;
 				return false;
 			}
 			conditions.Add(condition with { Comparison = negated });
 		}
+		operation = NormalizeOperation(rule.Operation == And ? Or : And, conditions.Count);
 		return true;
+	}
+
+	// A one-condition group reads the same under AND and OR, so it is always stored as AND.
+	private static string NormalizeOperation(string operation, int conditionCount) =>
+		conditionCount == 1 ? And : operation;
+
+	private static IReadOnlyDictionary<string, string> BuildOppositeStateActions(
+		params (string First, string Second)[] pairs) {
+		var map = new Dictionary<string, string>(StringComparer.Ordinal);
+		foreach ((string first, string second) in pairs) {
+			map[first] = second;
+			map[second] = first;
+		}
+		return map;
 	}
 
 	private sealed record ActionShape(string Type, HashSet<string> Items);
 
-	private sealed record ConditionKey(string Left, string Comparison, string Right) {
-		public static implicit operator string(ConditionKey key) => $"{key.Left}|{key.Comparison}|{key.Right}";
-	}
+	private sealed record ConditionKey(string Left, string Comparison, string Right);
 
-	private sealed record RuleShape(string Label, string Operation, IReadOnlyList<ConditionKey> ConditionKeys,
-		HashSet<string> Conditions, IReadOnlyList<ActionShape> Actions) {
+	private sealed record RuleShape(string Label, string Operation, HashSet<ConditionKey> Conditions,
+		IReadOnlyList<ActionShape> Actions) {
 
 		public static RuleShape? TryCreate(BusinessRule rule) {
 			if (rule.Enabled == false || rule.Condition?.Conditions is not { Count: > 0 } conditions
@@ -183,15 +197,14 @@ internal static class PageBusinessRuleRedundancy {
 				actionShapes.Add(new ActionShape(action.ActionType,
 					new HashSet<string>(fieldAction.FieldSelectionItems, StringComparer.Ordinal)));
 			}
-			List<ConditionKey> keys = conditions
-				.Where(condition => condition is not null)
+			HashSet<ConditionKey> keys = conditions
+				.OfType<BusinessRuleCondition>()
 				.Select(condition => new ConditionKey(Describe(condition.LeftExpression),
 					(condition.ComparisonType ?? string.Empty).Trim().ToLowerInvariant(),
 					Describe(condition.RightExpression)))
-				.ToList();
+				.ToHashSet();
 			string label = string.IsNullOrWhiteSpace(rule.Caption) ? rule.Name ?? string.Empty : rule.Caption.Trim();
-			return new RuleShape(label, operation, keys,
-				new HashSet<string>(keys.Select(key => (string)key), StringComparer.Ordinal), actionShapes);
+			return new RuleShape(label, NormalizeOperation(operation, keys.Count), keys, actionShapes);
 		}
 
 		private static string Describe(BusinessRuleExpression? expression) =>
