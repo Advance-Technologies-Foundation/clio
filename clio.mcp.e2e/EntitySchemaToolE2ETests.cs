@@ -244,12 +244,21 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				arrangeContext.CancellationTokenSource.Token,
 				primaryColorColumn: colorColumnName));
 		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		EntitySchemaPropertiesInfo mergedSchemaProperties = EntitySchemaStructuredResultParser
+			.Extract<EntitySchemaPropertiesInfo>(await CallGetSchemaPropertiesAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				null,
+				arrangeContext.SchemaName,
+				arrangeContext.CancellationTokenSource.Token));
 
 		// Assert
 		AssertCommandSucceeded(addColumnResult, "the Color column should be added before it is set as the color column");
 		AssertCommandSucceeded(setResult, "set-entity-schema-properties should persist the color column");
 		schemaProperties.PrimaryColorColumnName.Should().Be(colorColumnName,
-			because: "get-entity-schema-properties must report the color column set via set-entity-schema-properties");
+			because: "the package-scoped read must report the color column set via set-entity-schema-properties");
+		mergedSchemaProperties.PrimaryColorColumnName.Should().Be(colorColumnName,
+			because: "the merged runtime read must expose the same color column; a null here means the runtime payload field name differs from primaryColorColumnName/primaryColorColumnUId");
 	}
 
 	[Category("McpE2E.Sandbox")]

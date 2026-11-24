@@ -653,6 +653,16 @@ public sealed class SetEntitySchemaPropertiesTool(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column, primary-color-column, title-localizations, and is-db-view optional, one required")] [Required]
 		SetEntitySchemaPropertiesArgs args) {
 		try {
+			// A wrapped {"args":{...}} call bypasses the flat-argument classifier, and the serializer would
+			// otherwise drop a misspelled key (e.g. primary-colour-column) while the remaining properties are
+			// saved and published - a success report on a write that ignored part of the request.
+			string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
+				args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
+				"Valid: environment-name, package-name, schema-name, primary-display-column, "
+				+ "primary-color-column, title-localizations, is-db-view. Nothing was saved.");
+			if (argumentError is not null) {
+				throw new ArgumentException(argumentError);
+			}
 			SetEntitySchemaPropertiesOptions options = new() {
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
@@ -1494,7 +1504,14 @@ public sealed record SetEntitySchemaPropertiesArgs(
 	[property: JsonPropertyName("primary-color-column")]
 	[property: Description("Column name (own or inherited) to set as the schema's color column - the column Freedom UI colors records (e.g. lookup values) from. It must be of type Color; a text column, even one named Color, is refused.")]
 	string? PrimaryColorColumn = null
-) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName);
+) : EntitySchemaTargetArgsBase(EnvironmentName, PackageName, SchemaName) {
+	/// <summary>
+	/// Captures unsupported arguments so the tool can reject them with the valid field names instead of
+	/// silently dropping them on a published write.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
 
 /// <summary>
 /// Arguments for the <c>get-entity-schema-column-properties</c> MCP tool. Omit <c>package-name</c> to inspect

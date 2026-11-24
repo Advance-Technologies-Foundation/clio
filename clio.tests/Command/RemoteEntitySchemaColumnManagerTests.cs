@@ -3297,6 +3297,32 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("ENG-90714 review: the merged read passes the runtime color column through to primary-color-column-name, and the CLI prints it.")]
+	public void PrintSchemaProperties_ShouldReportMergedPrimaryColorColumn_WhenPackageIsOmitted() {
+		// Arrange
+		_runtimeEntitySchemaReader.GetByName("Account")
+			.Returns(CreateMergedRuntimeSchema() with { PrimaryColorColumnName = "UsrColor" });
+
+		// Act
+		EntitySchemaPropertiesInfo result = _manager.GetSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+		_manager.PrintSchemaProperties(new GetEntitySchemaPropertiesOptions {
+			SchemaName = "Account"
+		});
+
+		// Assert
+		result.PrimaryColorColumnName.Should().Be("UsrColor",
+			because: "the merged read must not drop the color column the runtime schema reports");
+		List<string> loggedMessages = _logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+			.Select(call => (string)call.GetArguments()[0]!)
+			.ToList();
+		loggedMessages.Should().Contain("Primary color column: UsrColor",
+			because: "the CLI summary must show the color column next to the primary-display column");
+	}
+
+	[Test]
 	[Description("Renders the synthetic merged package label and the unresolved parent placeholder when the package is omitted.")]
 	public void PrintSchemaProperties_RendersMergedLabel_WhenPackageIsOmitted() {
 		// Arrange

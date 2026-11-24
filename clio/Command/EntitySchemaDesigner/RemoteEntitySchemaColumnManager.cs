@@ -262,7 +262,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 		if (requestedColorColumnName != null) {
 			_logger.WriteInfo(
-				$"Color column set to '{requestedColorColumnName}' for schema '{options.SchemaName}'.");
+				$"Color column set to '{reloadedSchema.PrimaryColorColumn!.Name}' for schema '{options.SchemaName}'.");
 		}
 		// ApplySchemaCaption returns ReadOnlyDictionary.Empty, never null (Sonar S1168), so a null-coalesce
 		// here was a dead branch that also allocated on every caption-less save.

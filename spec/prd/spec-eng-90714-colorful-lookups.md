@@ -39,7 +39,7 @@ column. This SPEC closes that gap.
 
 ## Success Signal
 
-`clio set-entity-schema-properties --package P --schema-name UsrLookup --primary-color-column UsrColor -e env` exits 0, and `clio get-entity-schema-properties --schema-name UsrLookup -e env` then prints `Primary color column: UsrColor`; the same pair over MCP returns `primary-color-column-name: "UsrColor"`.
+`clio set-entity-schema-properties --package P --schema-name UsrLookup --primary-color-column UsrColor -e env` exits 0, and `clio get-entity-schema-properties --package P --schema-name UsrLookup -e env` then prints `Primary color column: UsrColor`; the same pair over MCP returns `primary-color-column-name: "UsrColor"`. Acceptance item for the live stand: the merged read (no `--package`) reports the same value — asserted by the MCP e2e test.
 
 ---
 

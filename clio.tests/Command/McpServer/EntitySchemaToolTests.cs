@@ -195,6 +195,34 @@ public sealed class EntitySchemaToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-90714 review: an unknown key (a misspelled primary-color-column) is refused before the command runs, instead of being dropped while the other properties are saved and published.")]
+	public void SetEntitySchemaProperties_Should_Reject_Unknown_Argument_Without_Executing() {
+		// Arrange
+		FakeSetEntitySchemaPropertiesCommand defaultCommand = new();
+		FakeSetEntitySchemaPropertiesCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetEntitySchemaPropertiesCommand>(Arg.Any<SetEntitySchemaPropertiesOptions>())
+			.Returns(resolvedCommand);
+		SetEntitySchemaPropertiesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetEntitySchemaPropertiesArgs args = System.Text.Json.JsonSerializer.Deserialize<SetEntitySchemaPropertiesArgs>(
+			"""{"environment-name":"dev","package-name":"UsrPkg","schema-name":"UsrStatus","primary-display-column":"UsrName","primary-colour-column":"UsrColor"}""")!;
+
+		// Act
+		CommandExecutionResult result = tool.SetEntitySchemaProperties(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "a request whose color column was misspelled must fail instead of reporting success");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "nothing may be saved when part of the request would be silently ignored");
+		result.Output.Should().ContainSingle(
+			because: "the refusal is reported as one error message");
+		result.Output!.Single().Value!.ToString().Should().Contain("primary-colour-column",
+			because: "the error must name the key that was not recognized");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Leaves the parsed caption map unset when set-entity-schema-properties supplies no title-localizations.")]
 	public void SetEntitySchemaProperties_Should_Not_Set_Parsed_Map_Without_Title_Localizations() {
 		// Arrange
