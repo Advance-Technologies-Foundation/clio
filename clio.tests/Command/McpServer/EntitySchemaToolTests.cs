@@ -161,7 +161,8 @@ public sealed class EntitySchemaToolTests {
 			"UsrPkg",
 			"UsrVehicle",
 			PrimaryDisplayColumn: "UsrName",
-			TitleLocalizations: new Dictionary<string, string> { ["en-US"] = "Vehicle" }, IsDBView: false));
+			TitleLocalizations: new Dictionary<string, string> { ["en-US"] = "Vehicle" }, IsDBView: false,
+			PrimaryColorColumn: "UsrColor"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -178,6 +179,8 @@ public sealed class EntitySchemaToolTests {
 			because: "the schema name must be forwarded to the command");
 		resolvedCommand.CapturedOptions.PrimaryDisplayColumn.Should().Be("UsrName",
 			because: "the primary-display column argument must be forwarded to the command");
+		resolvedCommand.CapturedOptions.PrimaryColorColumn.Should().Be("UsrColor",
+			because: "the primary-color-column argument (ENG-90714) must be forwarded to the command");
 		resolvedCommand.CapturedOptions.IsDBView.Should().BeFalse(
 			because: "an explicit false must survive MCP argument mapping");
 		// This assertion is the entire test for the AC-3 hop from the MCP title-localizations argument to
@@ -188,6 +191,34 @@ public sealed class EntitySchemaToolTests {
 		resolvedCommand.CapturedOptions.ParsedTitleLocalizations!.Should().ContainKey("en-US")
 			.WhoseValue.Should().Be("Vehicle",
 				because: "the caption for each supplied culture must reach the command unchanged");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-90714 review: an unknown key (a misspelled primary-color-column) is refused before the command runs, instead of being dropped while the other properties are saved and published.")]
+	public void SetEntitySchemaProperties_Should_Reject_Unknown_Argument_Without_Executing() {
+		// Arrange
+		FakeSetEntitySchemaPropertiesCommand defaultCommand = new();
+		FakeSetEntitySchemaPropertiesCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetEntitySchemaPropertiesCommand>(Arg.Any<SetEntitySchemaPropertiesOptions>())
+			.Returns(resolvedCommand);
+		SetEntitySchemaPropertiesTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		SetEntitySchemaPropertiesArgs args = System.Text.Json.JsonSerializer.Deserialize<SetEntitySchemaPropertiesArgs>(
+			"""{"environment-name":"dev","package-name":"UsrPkg","schema-name":"UsrStatus","primary-display-column":"UsrName","primary-colour-column":"UsrColor"}""")!;
+
+		// Act
+		CommandExecutionResult result = tool.SetEntitySchemaProperties(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1,
+			because: "a request whose color column was misspelled must fail instead of reporting success");
+		resolvedCommand.CapturedOptions.Should().BeNull(
+			because: "nothing may be saved when part of the request would be silently ignored");
+		result.Output.Should().ContainSingle(
+			because: "the refusal is reported as one error message");
+		result.Output!.Single().Value!.ToString().Should().Contain("primary-colour-column",
+			because: "the error must name the key that was not recognized");
 	}
 
 	[Test]
