@@ -73,9 +73,6 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	internal const string MergedSchemaPackageName = "(merged: all packages)";
 	internal const string InheritedColumnSource = "inherited";
 
-	/// <summary>Creatio data value type code of a <c>Color</c> column.</summary>
-	private const int ColorDataValueType = 18;
-
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
 	private readonly IRemoteEntitySchemaDesignerClient _entitySchemaDesignerClient;
@@ -1167,7 +1164,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// </summary>
 	private EntitySchemaColumnDto ResolveColorColumn(EntityDesignSchemaDto schema, string columnName) {
 		(EntitySchemaColumnDto column, _) = FindColumnForRead(schema, columnName);
-		if (column.DataValueType != ColorDataValueType) {
+		if (column.DataValueType != EntitySchemaDesignerSupport.SupportedDataValueTypes["color"]) {
 			throw new EntitySchemaDesignerException(
 				$"Column '{column.Name}' of schema '{schema.Name}' is of type " +
 				$"'{EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType)}', not 'Color'. " +

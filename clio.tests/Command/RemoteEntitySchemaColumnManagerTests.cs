@@ -3638,7 +3638,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("ENG-90714: an inherited Color-typed column is a valid color column and is resolved after own columns.")]
+	[Description("ENG-90714: an inherited Color-typed column is a valid color column.")]
 	public void SetSchemaProperties_ShouldSetPrimaryColorColumn_WhenColumnIsInherited() {
 		// Arrange
 		EntitySchemaColumnDto colorColumn = CreateColorColumn("StatusColor", CodeColumnUId);
@@ -3677,7 +3677,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>()
-			.WithMessage("*'Color'*not 'Color'*",
+			.WithMessage("*'Color'*is of type 'Text*not 'Color'*",
 				because: "the refusal must name the column and state that its type is not Color");
 		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
 			Arg.Any<Clio.Command.RemoteCommandOptions>());

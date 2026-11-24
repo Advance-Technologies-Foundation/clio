@@ -98,7 +98,7 @@ from the schema summary object
 - the color column (`primary-color-column-name`; CLI: `Primary color column:`) is the
   `Color`-typed column Freedom UI colors records from, for example lookup values; `null`
   when the schema has none. In the merged view it comes from the runtime schema and has not
-  yet been confirmed on every Creatio version, so a `null` there is not proof of absence:
+  yet been verified on a stand, so a `null` there is not proof of absence:
   read it with `--package` for the authoritative value. Set it with
   `set-entity-schema-properties --primary-color-column`.
 

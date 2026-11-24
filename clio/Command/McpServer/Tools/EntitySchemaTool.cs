@@ -593,8 +593,8 @@ public sealed class GetEntitySchemaPropertiesTool(
 		+ "Omit package-name for the MERGED/EFFECTIVE view (columns from all packages) — use this for column discovery; "
 		+ "an empty column list from a single-package read does NOT prove a column is absent. "
 		+ "Supply package-name to inspect one package layer and to read schema-level fields that the merged view returns as null "
-		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing). "
-		+ "The result always includes virtual so callers can verify whether the schema has a physical database table. "
+		+ "(parent-schema-name, indexes-count, ssp-available, use-record-deactivation, use-deny-record-rights, use-live-editing, "
+		+ "primary-color-column-name). virtual tells whether the schema has a physical database table. "
 		+ "Set required-only=true to return only columns marked required in schema metadata; column counts remain unfiltered. "
 		+ "This does not evaluate dynamic business rules or whether a required column has a default value.")]
 	public EntitySchemaPropertiesInfo GetEntitySchemaProperties(
@@ -653,11 +653,11 @@ public sealed class SetEntitySchemaPropertiesTool(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); primary-display-column, primary-color-column, title-localizations, and is-db-view optional, one required")] [Required]
 		SetEntitySchemaPropertiesArgs args) {
 		try {
-			// A wrapped {"args":{...}} call bypasses the flat-argument classifier, and the serializer would
-			// otherwise drop a misspelled key (e.g. primary-colour-column) while the remaining properties are
-			// saved and published - a success report on a write that ignored part of the request.
-			string? argumentError = McpToolArgumentSupport.BuildLegacyAliasError(
-				args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".",
+			// This tool is not resident, so no call reaches it through the flat-argument classifier, and the
+			// serializer would otherwise drop a misspelled key (e.g. primary-colour-column) while the remaining
+			// properties are saved and published - a success report on a write that ignored part of the request.
+			string? argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
+				args.ExtensionData,
 				"Valid: environment-name, package-name, schema-name, primary-display-column, "
 				+ "primary-color-column, title-localizations, is-db-view. Nothing was saved.");
 			if (argumentError is not null) {

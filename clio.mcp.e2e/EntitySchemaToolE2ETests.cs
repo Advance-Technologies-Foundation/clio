@@ -296,10 +296,15 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		AssertCommandSucceeded(addColumnResult, "the text column should be added before the refusal is exercised");
-		setResult.ExitCode.Should().NotBe(0,
+		setResult.ExitCode.Should().Be(1,
 			because: "a text column holding hex codes colors nothing, so it must be refused as the color column");
-		schemaProperties.PrimaryColorColumnName.Should().NotBe(textColumnName,
-			because: "the refused column must not have been saved as the color column");
+		setResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains($"Column '{textColumnName}'", StringComparison.Ordinal)
+				&& message.Value.Contains("not 'Color'", StringComparison.Ordinal),
+			because: "the failure must be the type refusal, not a transport or argument error");
+		schemaProperties.PrimaryColorColumnName.Should().BeNull(
+			because: "the sandbox schema had no color column and the refused column must not have been saved as one");
 	}
 
 	[Category("McpE2E.Sandbox")]
