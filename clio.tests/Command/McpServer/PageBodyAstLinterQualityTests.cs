@@ -131,6 +131,23 @@ internal class PageBodyAstLinterQualityTests {
 	}
 
 	[Test]
+	[Description("A helper that reads its own handler's variables is a binding of that handler, so its copies in other handlers raise no duplicate warning")]
+	public void Lint_ShouldNotWarnDuplicateFunction_WhenHelperUsesHandlerVariables() {
+		// Arrange
+		string wrapper = "const { $context, scopes } = request; "
+			+ "const process = (config) => sdk.HandlerChainService.instance.process({ ...config, $context, scopes: [...scopes] }); "
+			+ "await process({ type: \"usr.Other\" });";
+		string body = Page("[" + Handler("usr.First", wrapper) + "," + Handler("usr.Second", wrapper) + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleDuplicateFunctionInPage);
+
+		// Assert
+		findings.Should().BeEmpty(
+			because: "the wrapper closes over the handler's $context and scopes and cannot move to a module unchanged");
+	}
+
+	[Test]
 	[Description("Helpers with different bodies, and copies of a trivial helper, raise no duplicate warning")]
 	public void Lint_ShouldNotWarnDuplicateFunction_WhenBodiesDifferOrAreTrivial() {
 		// Arrange

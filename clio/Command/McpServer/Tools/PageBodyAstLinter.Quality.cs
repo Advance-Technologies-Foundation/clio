@@ -158,8 +158,19 @@ internal static partial class PageBodyAstLinter {
 		LintFindingBudget budget) {
 		List<NamedFunction> helpers = new();
 		CollectNamedFunctions(handler.Body, helpers, depth: 0);
+		// The handler's own variables: its parameters and what its body declares outside the functions in it. A
+		// sibling helper is not one of them - a helper calling another moves to the module with it.
+		HashSet<string> handlerNames = new(StringComparer.Ordinal);
+		foreach (Node param in handler.Params) {
+			CollectBindingNames(param, handlerNames);
+		}
+		CollectDeclaredNames(handler.Body, handlerNames, intoFunctions: false, depth: 0);
+		handlerNames.ExceptWith(helpers.Select(h => h.Name));
 		foreach (NamedFunction helper in helpers) {
-			if (helper.NodeCount < MinDuplicateFunctionNodes) {
+			// A helper that reads a variable of its own handler (`$context`, `scopes`, a local) is a binding of that
+			// handler: it cannot be declared once in a module without changing its signature, so its copies are
+			// not reported as copies.
+			if (helper.NodeCount < MinDuplicateFunctionNodes || helper.FreeNames.Overlaps(handlerNames)) {
 				continue;
 			}
 			if (!helpersByShape.TryGetValue(helper.Shape, out List<NamedFunction> sameShape)) {
@@ -181,7 +192,8 @@ internal static partial class PageBodyAstLinter {
 	}
 
 	/// <summary>A function a handler declares by name, and its shape for the duplicate check.</summary>
-	private sealed record NamedFunction(string Name, int Line, int Column, string Shape, int NodeCount);
+	private sealed record NamedFunction(string Name, int Line, int Column, string Shape, int NodeCount,
+		HashSet<string> FreeNames);
 
 	// Named functions only: `function name() {}` and `const name = () => {}`. An inline callback such as
 	// `.map(x => x.id)` is not a helper and is not counted.
@@ -209,8 +221,98 @@ internal static partial class PageBodyAstLinter {
 			AppendShape(param, shape, ref nodeCount, depth: 0);
 		}
 		AppendShape(function.Body, shape, ref nodeCount, depth: 0);
+		HashSet<string> own = new(StringComparer.Ordinal) {name};
+		foreach (Node param in function.Params) {
+			CollectBindingNames(param, own);
+		}
+		CollectDeclaredNames(function.Body, own, intoFunctions: true, depth: 0);
+		HashSet<string> free = new(StringComparer.Ordinal);
+		CollectReferencedNames(function.Body, free, depth: 0);
+		free.ExceptWith(own);
 		return new NamedFunction(name, anchor.Location.Start.Line, anchor.Location.Start.Column + 1,
-			shape.ToString(), nodeCount);
+			shape.ToString(), nodeCount, free);
+	}
+
+	// The names a binding pattern binds: `a`, `{ a, b: c }`, `[a, ...b]`, `a = 1`.
+	private static void CollectBindingNames(Node pattern, HashSet<string> names) {
+		switch (pattern) {
+			case Identifier identifier:
+				names.Add(identifier.Name);
+				break;
+			case ObjectPattern objectPattern:
+				foreach (Node property in objectPattern.Properties) {
+					CollectBindingNames(property is Property {Value: var value} ? value : property, names);
+				}
+				break;
+			case ArrayPattern arrayPattern:
+				foreach (Node element in arrayPattern.Elements) {
+					CollectBindingNames(element, names);
+				}
+				break;
+			case RestElement rest:
+				CollectBindingNames(rest.Argument, names);
+				break;
+			case AssignmentPattern assignment:
+				CollectBindingNames(assignment.Left, names);
+				break;
+		}
+	}
+
+	// The names a function body declares: variables, functions and catch parameters, and - with `intoFunctions` -
+	// the declarations and parameters of the functions inside it too.
+	private static void CollectDeclaredNames(Node node, HashSet<string> names, bool intoFunctions, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		switch (node) {
+			case VariableDeclarator declarator:
+				CollectBindingNames(declarator.Id, names);
+				break;
+			case FunctionDeclaration {Id: not null} declaration:
+				names.Add(declaration.Id.Name);
+				break;
+			case CatchClause {Param: not null} catchClause:
+				CollectBindingNames(catchClause.Param, names);
+				break;
+		}
+		foreach (Node child in node.ChildNodes) {
+			if (child is IFunction function) {
+				if (!intoFunctions) {
+					continue;
+				}
+				foreach (Node param in function.Params) {
+					CollectBindingNames(param, names);
+				}
+			}
+			CollectDeclaredNames(child, names, intoFunctions, depth + 1);
+		}
+	}
+
+	// The variable names an expression reads: identifiers, except a property name (`a.name`, `{ name: v }`).
+	private static void CollectReferencedNames(Node node, HashSet<string> names, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		switch (node) {
+			case Identifier identifier:
+				names.Add(identifier.Name);
+				return;
+			case MemberExpression member:
+				CollectReferencedNames(member.Object, names, depth + 1);
+				if (member.Computed) {
+					CollectReferencedNames(member.Property, names, depth + 1);
+				}
+				return;
+			case Property property:
+				if (property.Computed) {
+					CollectReferencedNames(property.Key, names, depth + 1);
+				}
+				CollectReferencedNames(property.Value, names, depth + 1);
+				return;
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectReferencedNames(child, names, depth + 1);
+		}
 	}
 
 	// The structure of a function without its own name: node types, identifier names and literal values. Two
