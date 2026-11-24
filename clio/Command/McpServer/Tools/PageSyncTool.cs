@@ -1178,6 +1178,8 @@ public sealed class PageSyncTool(
 			contentResult, () => SchemaValidationService.ValidateSchemaDepsCompleteness(body));
 		SchemaValidationResult contextAwaitResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateContextAccessAwait(body));
+		SchemaValidationResult gridSelectionResult = RunContentValidation(
+			contentResult, () => SchemaValidationService.ValidateGridSelectionWriteBack(body));
 		List<string> errors = CollectErrors(
 			markerResult,
 			contentResult,
@@ -1196,6 +1198,7 @@ public sealed class PageSyncTool(
 			converterFunctionShapeResult,
 			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
+		warnings.AddRange(gridSelectionResult.Warnings);
 		// Widget-caption resolvability is a PRE-FLIGHT heuristic here (body, `resources`, and the schema's stored
 		// and inherited keys when a provider is given); surface it as a warning. The authoritative hard gate runs
 		// at save time via TryUpdatePage.
