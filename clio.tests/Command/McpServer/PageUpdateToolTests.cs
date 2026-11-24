@@ -114,6 +114,24 @@ public sealed class PageUpdateToolTests {
 			because: "saving must preserve comments and both boundaries of every marker");
 	}
 
+	[Test]
+	[Description("A code-quality finding (a catch block that only logs) reaches the update-page response as a warning and the body is still saved")]
+	public async Task UpdatePage_ShouldSaveAndWarn_WhenBodyBreaksACodeQualityRule() {
+		// Arrange
+		string body = ValidBody.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{request:'usr.SaveRequest',handler:async (request, next)=>{ "
+			+ "try { await request.$context.save(); } catch (e) { console.error(e); } return next?.handle(request); }}]/**SCHEMA_HANDLERS*/");
+		PageUpdateArgs args = new(SchemaName, body, Validate: true);
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args);
+		// Assert
+		response.Success.Should().BeTrue(because: $"code-quality rules are warnings and never reject a save: {response.Error}");
+		response.Warnings.Should().Contain(warning => warning.Contains(PageBodyAstLinter.RuleCatchLogOnly),
+			because: "the save-time lint must tell the agent the catch block swallows the error");
+		_applicationClient.Received().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	[TestCase(false)]
 	[TestCase(true)]
 	[Description("Update-page refuses missing marker boundaries and never reaches SaveSchema.")]

@@ -58,8 +58,8 @@ internal class PageBodyAstLinterQualityTests {
 		// Assert
 		findings.Should().ContainSingle(because: "exactly one function in the page is over the limit");
 		findings[0].Severity.Should().Be(LintSeverity.Warning, because: "a long function works and must not block the save");
-		findings[0].Message.Should().Contain($"limit {PageBodyAstLinter.MaxFunctionLines}",
-			because: "the reader needs the threshold to know how far to cut");
+		findings[0].Message.Should().Contain($"is {PageBodyAstLinter.MaxFunctionLines + 4} lines long (limit {PageBodyAstLinter.MaxFunctionLines})",
+			because: "the reader needs the measured length beside the threshold to know how far to cut");
 	}
 
 	[Test]
@@ -91,7 +91,8 @@ internal class PageBodyAstLinterQualityTests {
 
 		// Assert
 		findings.Should().ContainSingle(because: "four named functions exceed the limit of three");
-		findings[0].Message.Should().Contain("a, b, c, d", because: "the warning must name the helpers to move");
+		findings[0].Message.Should().Contain("declares 4 functions inside its body (limit 3): a, b, c, d",
+			because: "the warning must state the count beside the limit and name the helpers to move");
 	}
 
 	[Test]
@@ -244,6 +245,36 @@ internal class PageBodyAstLinterQualityTests {
 		// Assert
 		findings.Should().ContainSingle(because: "three independent loads are over the limit of two");
 		findings[0].Message.Should().Contain("3 awaited model loads", because: "the count tells the reader what to merge");
+		findings[0].Message.Should().Contain("(limit 2)", because: "the threshold is stated beside the count");
+	}
+
+	[Test]
+	[Description("Loads inside a helper declared in a handler are checked as their own sequence")]
+	public void Lint_ShouldWarnSequentialAwaits_WhenLoadsSitInAHelperDeclaredInTheHandler() {
+		// Arrange
+		string code = "const loadAll = async () => { const a = await m1.load(); const b = await m2.load(); const c = await m3.load(); return [a, b, c]; }; "
+			+ "await loadAll();";
+		string body = Page("[" + Handler("usr.Init", code) + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleSequentialIndependentAwaits);
+
+		// Assert
+		findings.Should().ContainSingle(because: "the helper runs three independent loads one after another");
+	}
+
+	[Test]
+	[Description("Assigning a new load result to an earlier load's variable writes it, it does not read it, so the loads stay independent")]
+	public void Lint_ShouldWarnSequentialAwaits_WhenAVariableIsReassigned() {
+		// Arrange
+		string code = "let data = await a.load(); data = await b.load(); const c1 = await c.load();";
+		string body = Page("[" + Handler("usr.Init", code) + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleSequentialIndependentAwaits);
+
+		// Assert
+		findings.Should().ContainSingle(because: "`data = await b.load()` does not use the value `data` held before");
 	}
 
 	[Test]
@@ -294,8 +325,23 @@ internal class PageBodyAstLinterQualityTests {
 		findings[0].Severity.Should().Be(LintSeverity.Warning, because: "a hard-coded id works and must not block the save");
 	}
 
+	[TestCase("await request.$context.executeRequest({ type: \"usr.Open\", id: \"8dc41780-1234-4000-8000-000000000001\" });")]
+	[TestCase("const owner = { id: \"8dc41780-1234-4000-8000-000000000001\", displayValue: \"Supervisor\" };")]
+	[TestCase("const filter = { recordId: \"8dc41780-1234-4000-8000-000000000001\" };")]
+	[Description("A record id passed as data - a request id, a lookup value, a recordId - raises a GUID warning, whatever its key")]
+	public void Lint_ShouldWarnGuidLiteral_WhenIdIsData(string code) {
+		// Arrange
+		string body = Page("[" + Handler("usr.Data", code) + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleGuidLiteralDataReference);
+
+		// Assert
+		findings.Should().ContainSingle(because: "an object that is not a page element carries a record id, not a local id");
+	}
+
 	[Test]
-	[Description("Local element ids (columns[].id of a list widget, or an id key in a handler) raise no GUID warning")]
+	[Description("Local element ids (columns[].id of a list widget, or the id of an element-shaped object in a handler) raise no GUID warning")]
 	public void Lint_ShouldNotWarnGuidLiteral_ForLocalElementIds() {
 		// Arrange
 		string columns = "[{ \"operation\": \"insert\", \"name\": \"List\", \"values\": { \"type\": \"crt.ListWidget\", "
@@ -323,9 +369,12 @@ internal class PageBodyAstLinterQualityTests {
 			+ "try { await request.$context.save(); } catch (e) { console.error(e); }\n"
 			+ "const f = { comparisonType: 3, value: \"8dc41780-1234-4000-8000-000000000001\" };\n"
 			+ "const x = await m1.load(); const y = await m2.load(); const z = await m3.load();";
-		string body = Page("[" + Handler("usr.Everything", code) + "]");
+		string copy = Handler("usr.Copy", "const idOf = (v) => v && v.value ? v.value : v; idOf(1);");
+		string original = Handler("usr.Original", "const idOf = (v) => v && v.value ? v.value : v; idOf(2);");
+		string body = Page("[" + Handler("usr.Everything", code) + "," + copy + "," + original + "]");
 		string[] qualityRules = [
 			PageBodyAstLinter.RuleFunctionTooLong, PageBodyAstLinter.RuleHandlerTooManyNestedFunctions,
+			PageBodyAstLinter.RuleDuplicateFunctionInPage,
 			PageBodyAstLinter.RuleCatchLogOnly, PageBodyAstLinter.RuleNumericComparisonType,
 			PageBodyAstLinter.RuleSequentialIndependentAwaits, PageBodyAstLinter.RuleGuidLiteralDataReference
 		];

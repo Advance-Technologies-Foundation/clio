@@ -53,7 +53,7 @@ internal static partial class PageBodyAstLinter {
 	private static void CheckCodeQuality(HashSet<Node> sections, LintFindingBudget budget) {
 		Dictionary<string, List<NamedFunction>> helpersByShape = new(StringComparer.Ordinal);
 		foreach (Property section in sections.OfType<Property>()) {
-			CheckSectionNode(section.Value, ownerKey: null, depth: 0, budget);
+			CheckSectionNode(section.Value, isElementId: false, depth: 0, budget);
 			if (TryGetStaticPropertyName(section) == "handlers" && section.Value is ArrayExpression handlers) {
 				foreach (Node entry in handlers.Elements) {
 					if (entry is ObjectExpression handlerEntry && TryGetHandlerFunction(handlerEntry, out IFunction handler)) {
@@ -81,13 +81,24 @@ internal static partial class PageBodyAstLinter {
 
 	#region Section-wide rules
 
-	// One walk over a section for the rules that look at single nodes. `ownerKey` is the key of the property
-	// whose value the node is, so a GUID that is an element's own `id` is told apart from one used as data.
-	private static void CheckSectionNode(Node node, string ownerKey, int depth, LintFindingBudget budget) {
+	// The keys that make an object a page element (a list column, a field) rather than data: its `id` is a
+	// generated local id, which only has to be unique on the page, not a record id.
+	private static readonly HashSet<string> ElementKeys = new(StringComparer.Ordinal) {
+		"code", "path", "caption", "title", "width"
+	};
+
+	// One walk over a section for the rules that look at single nodes. `isElementId` marks the value of an
+	// element-shaped object's `id`, so a generated local id is told apart from a record id used as data; an `id`
+	// beside `displayValue` or `type` is data and is reported.
+	private static void CheckSectionNode(Node node, bool isElementId, int depth, LintFindingBudget budget) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		switch (node) {
+			case Property {Value: Literal} elementIdProperty when isElementId:
+				// The flag belongs to this property's value: walk only that, so no other key inherits it.
+				CheckSectionNode(elementIdProperty.Value, isElementId: true, depth + 1, budget);
+				return;
 			case IFunction function:
 				CheckFunctionLength(node, function, budget);
 				break;
@@ -100,7 +111,7 @@ internal static partial class PageBodyAstLinter {
 					() => "`comparisonType` is a bare number; use the named `sdk.ComparisonType.<Name>` value so the "
 						+ "operator can be read and checked (MCP guide: page-schema-handlers).");
 				break;
-			case Literal {Value: string text} when ownerKey != "id" && ODataKeyFormatter.IsGuid(text):
+			case Literal {Value: string text} when !isElementId && ODataKeyFormatter.IsGuid(text):
 				budget.TryAdd(RuleGuidLiteralDataReference, LintSeverity.Warning,
 					node.Location.Start.Line, node.Location.Start.Column + 1,
 					() => $"Record id `{text}` is hard-coded in page code; read it from the project's constants "
@@ -108,13 +119,16 @@ internal static partial class PageBodyAstLinter {
 						+ "place to change.");
 				break;
 		}
+		bool elementObject = node is ObjectExpression obj && IsElementObject(obj);
 		foreach (Node child in node.ChildNodes) {
-			string childOwner = node is Property parent && ReferenceEquals(child, parent.Value)
-				? TryGetStaticPropertyName(parent)
-				: null;
-			CheckSectionNode(child, childOwner, depth + 1, budget);
+			bool childIsElementId = elementObject && child is Property {Value: Literal} idProperty
+				&& TryGetStaticPropertyName(idProperty) == "id";
+			CheckSectionNode(child, childIsElementId, depth + 1, budget);
 		}
 	}
+
+	private static bool IsElementObject(ObjectExpression obj) =>
+		obj.Properties.OfType<Property>().Any(p => TryGetStaticPropertyName(p) is { } key && ElementKeys.Contains(key));
 
 	private static void CheckFunctionLength(Node node, IFunction function, LintFindingBudget budget) {
 		int lines = node.Location.End.Line - node.Location.Start.Line + 1;
@@ -152,7 +166,7 @@ internal static partial class PageBodyAstLinter {
 	private static void CheckHandler(IFunction handler, Dictionary<string, List<NamedFunction>> helpersByShape,
 		LintFindingBudget budget) {
 		List<NamedFunction> helpers = new();
-		CollectNamedFunctions(handler.Body, helpers, depth: 0);
+		CollectNamedFunctions(handler.Body, helpers, insideHelper: false, depth: 0);
 		// The handler's own variables: its parameters and what its body declares outside the functions in it. A
 		// sibling helper is not one of them - a helper calling another moves to the module with it.
 		HashSet<string> handlerNames = new(StringComparer.Ordinal);
@@ -165,7 +179,8 @@ internal static partial class PageBodyAstLinter {
 			// A helper that reads a variable of its own handler (`$context`, `scopes`, a local) is a binding of that
 			// handler: it cannot be declared once in a module without changing its signature, so its copies are
 			// not reported as copies.
-			if (helper.NodeCount < MinDuplicateFunctionNodes || helper.FreeNames.Overlaps(handlerNames)) {
+			// A helper nested in another helper is part of that helper: it moves (or is copied) with it.
+			if (helper.Nested || helper.NodeCount < MinDuplicateFunctionNodes || helper.FreeNames.Overlaps(handlerNames)) {
 				continue;
 			}
 			if (!helpersByShape.TryGetValue(helper.Shape, out List<NamedFunction> sameShape)) {
@@ -188,28 +203,28 @@ internal static partial class PageBodyAstLinter {
 
 	/// <summary>A function a handler declares by name, and its shape for the duplicate check.</summary>
 	private sealed record NamedFunction(string Name, int Line, int Column, string Shape, int NodeCount,
-		HashSet<string> FreeNames);
+		HashSet<string> FreeNames, bool Nested);
 
 	// Named functions only: `function name() {}` and `const name = () => {}`. An inline callback such as
 	// `.map(x => x.id)` is not a helper and is not counted.
-	private static void CollectNamedFunctions(Node node, List<NamedFunction> found, int depth) {
+	private static void CollectNamedFunctions(Node node, List<NamedFunction> found, bool insideHelper, int depth) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		switch (node) {
 			case FunctionDeclaration {Id: not null} declaration:
-				found.Add(DescribeNamedFunction(declaration.Id.Name, node, declaration));
+				found.Add(DescribeNamedFunction(declaration.Id.Name, node, declaration, insideHelper));
 				break;
 			case VariableDeclarator {Id: Identifier name, Init: IFunction init}:
-				found.Add(DescribeNamedFunction(name.Name, node, init));
+				found.Add(DescribeNamedFunction(name.Name, node, init, insideHelper));
 				break;
 		}
 		foreach (Node child in node.ChildNodes) {
-			CollectNamedFunctions(child, found, depth + 1);
+			CollectNamedFunctions(child, found, insideHelper || child is IFunction, depth + 1);
 		}
 	}
 
-	private static NamedFunction DescribeNamedFunction(string name, Node anchor, IFunction function) {
+	private static NamedFunction DescribeNamedFunction(string name, Node anchor, IFunction function, bool nested) {
 		StringBuilder shape = new();
 		int nodeCount = 0;
 		foreach (Node param in function.Params) {
@@ -225,7 +240,7 @@ internal static partial class PageBodyAstLinter {
 		CollectReferencedNames(function.Body, free, depth: 0);
 		free.ExceptWith(own);
 		return new NamedFunction(name, anchor.Location.Start.Line, anchor.Location.Start.Column + 1,
-			shape.ToString(), nodeCount, free);
+			shape.ToString(), nodeCount, free, nested);
 	}
 
 	private static void CollectBindingNames(Node pattern, HashSet<string> names) =>
@@ -282,6 +297,10 @@ internal static partial class PageBodyAstLinter {
 				}
 				CollectReferencedNames(property.Value, names, depth + 1);
 				return;
+			case AssignmentExpression {Left: Identifier} assignment:
+				// The target is written, not read: `data = await other.load()` does not depend on the old `data`.
+				CollectReferencedNames(assignment.Right, names, depth + 1);
+				return;
 		}
 		foreach (Node child in node.ChildNodes) {
 			CollectReferencedNames(child, names, depth + 1);
@@ -337,11 +356,9 @@ internal static partial class PageBodyAstLinter {
 			CheckBlockAwaits(block, budget);
 		}
 		foreach (Node child in node.ChildNodes) {
-			// A nested function is its own sequence: its awaits do not run in this block's order.
-			if (child is IFunction) {
-				continue;
-			}
-			CheckSequentialAwaits(child, depth + 1, budget);
+			// A nested function is its own sequence: its awaits do not run in this block's order, so its body is
+			// checked on its own (each block keeps its own count).
+			CheckSequentialAwaits(child is IFunction function ? function.Body : child, depth + 1, budget);
 		}
 	}
 
