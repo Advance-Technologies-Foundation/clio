@@ -57,13 +57,15 @@ internal sealed class PageBusinessRuleService(
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.SchemaName, packageUId);
+		Dictionary<string, string> rejectedAttributes = new(StringComparer.Ordinal);
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = attributeProvider.GetAttributes(
 			pageContext.Bundle,
-			packageUId);
+			packageUId,
+			rejectedAttributes);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 		BusinessRule rule = request.Rule;
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
-		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, pageContext.Bundle);
+		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, rejectedAttributes);
 
 		BusinessRuleMetadataDto createdRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap);
 		return AddonService.AppendRule(
@@ -79,9 +81,11 @@ internal sealed class PageBusinessRuleService(
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.SchemaName, packageUId);
+		Dictionary<string, string> rejectedAttributes = new(StringComparer.Ordinal);
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = attributeProvider.GetAttributes(
 			pageContext.Bundle,
-			packageUId);
+			packageUId,
+			rejectedAttributes);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 
 		return CreateBatch(
@@ -89,7 +93,7 @@ internal sealed class PageBusinessRuleService(
 			request.Rules,
 			rule => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
-				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, pageContext.Bundle);
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, rejectedAttributes);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap)];
 			});
 	}
@@ -110,9 +114,11 @@ internal sealed class PageBusinessRuleService(
 
 		Guid packageUId = PackageResolver.ResolveUId(request.PackageName);
 		PageBusinessRuleSchemaContext pageContext = schemaProvider.GetSchema(request.SchemaName, packageUId);
+		Dictionary<string, string> rejectedAttributes = new(StringComparer.Ordinal);
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap = attributeProvider.GetAttributes(
 			pageContext.Bundle,
-			packageUId);
+			packageUId,
+			rejectedAttributes);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 
 		return UpdateBatch(
@@ -120,7 +126,7 @@ internal sealed class PageBusinessRuleService(
 			request.Rules,
 			(rule, existing) => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
-				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, pageContext.Bundle);
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, rejectedAttributes);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing, sysSettingMap)];
 			});
 	}

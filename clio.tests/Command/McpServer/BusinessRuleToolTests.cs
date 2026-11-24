@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ComponentDescriptionAttribute = System.ComponentModel.DescriptionAttribute;
 using System.ComponentModel.DataAnnotations;
 using Clio;
 using Clio.Command.BusinessRules;
@@ -775,7 +776,7 @@ public sealed class BusinessRuleToolTests {
 		payloadArgs!.Rules.Single().ToBusinessRule().Actions.Single().Should().BeOfType<ApplyStaticFilterBusinessRuleAction>(
 			because: "the page validator receives the action and rejects it with the redirect to create-entity-business-rules");
 		typeof(PageApplyStaticFilterBusinessRuleActionMcpContract)
-			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description
+			.GetCustomAttribute<ComponentDescriptionAttribute>()!.Description
 			.Should().Contain("always rejected by the page tools").And.Contain("create-entity-business-rules",
 				because: "the generated input schema still lists the type, so its description must say it is entity-only");
 	}
@@ -787,7 +788,7 @@ public sealed class BusinessRuleToolTests {
 		// Arrange
 		string description = typeof(CreatePageBusinessRulesArgs)
 			.GetProperty(nameof(CreatePageBusinessRulesArgs.Rules))!
-			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+			.GetCustomAttribute<ComponentDescriptionAttribute>()!.Description;
 
 		// Assert
 		description.Should().Contain(PageBusinessRuleContractText.ConditionAttributes,

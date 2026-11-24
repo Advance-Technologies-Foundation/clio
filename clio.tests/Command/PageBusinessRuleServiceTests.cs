@@ -36,7 +36,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
 			["PDS_Text"] = new("PDS_Text", "Text", null)
 		});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
@@ -88,11 +88,12 @@ public sealed class PageBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Hands the page bundle to the page validator, so a rejected attribute is explained from the page it was read from.")]
-	public void Create_Should_Pass_Page_Bundle_To_Validator() {
+	[Description("Hands the attributes the provider rejected, with their reasons, to the page validator, so a rejected attribute is explained in the error.")]
+	public void Create_Should_Pass_Rejected_Attributes_To_Validator() {
 		// Arrange
 		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
 		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
 		IPageBusinessRuleValidator validator = Substitute.For<IPageBusinessRuleValidator>();
 		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 		PageBundleInfo bundle = new();
@@ -102,18 +103,21 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
+		attributeProvider
+			.GetAttributes(bundle, packageUId, Arg.Do<IDictionary<string, string>?>(rejected => rejected!["UsrFlag"] = "virtual"))
+			.Returns(new Dictionary<string, BusinessRuleAttributeDescriptor>());
 		validator
 			.When(v => v.Validate(
 				Arg.Any<BusinessRule>(),
 				Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>(),
 				Arg.Any<IReadOnlySet<string>>(),
 				Arg.Any<IReadOnlyDictionary<string, SysSettingOperandDescriptor>?>(),
-				Arg.Any<PageBundleInfo?>()))
+				Arg.Any<IReadOnlyDictionary<string, string>?>()))
 			.Do(_ => throw new ArgumentException("rejected"));
 		PageBusinessRuleService service = new(
 			packageResolver,
 			schemaProvider,
-			Substitute.For<IPageBusinessRuleAttributeProvider>(),
+			attributeProvider,
 			Substitute.For<IPageBusinessRuleElementProvider>(),
 			Substitute.For<IBusinessRuleAddonService>(),
 			validator,
@@ -129,7 +133,7 @@ public sealed class PageBusinessRuleServiceTests {
 			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>(),
 			Arg.Any<IReadOnlySet<string>>(),
 			Arg.Any<IReadOnlyDictionary<string, SysSettingOperandDescriptor>?>(),
-			bundle);
+			Arg.Is<IReadOnlyDictionary<string, string>?>(rejected => rejected != null && rejected["UsrFlag"] == "virtual"));
 	}
 
 	[Test]
@@ -151,7 +155,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
 			["PDS_Text"] = new("PDS_Text", "Text", null)
 		});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
@@ -195,7 +199,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
 			["PDS_Text"] = new("PDS_Text", "Text", null)
 		});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
@@ -568,7 +572,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor>());
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor>());
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) { "Input_One" });
 		sysSettingResolver.Resolve(Arg.Any<BusinessRule>()).Returns(
 			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
@@ -866,7 +870,7 @@ public sealed class PageBusinessRuleServiceTests {
 				index => new BusinessRuleAttributeDescriptor($"Col{index:00}", "Text", null, "PDS"));
 		attributes["RequestStepper_ActiveStep"] =
 			new BusinessRuleAttributeDescriptor("RequestStepper_ActiveStep", "Text", null) { IsComponentAttribute = true };
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(attributes);
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(attributes);
 		PageBusinessRuleService service = new(
 			packageResolver,
 			schemaProvider,
@@ -967,7 +971,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
 			["PDS_Text"] = new("PDS_Text", "Text", null)
 		});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {

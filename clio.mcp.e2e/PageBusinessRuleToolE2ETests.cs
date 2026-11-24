@@ -120,25 +120,7 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 					["environment-name"] = invalidEnvironmentName,
 					["package-name"] = "UsrPkg",
 					["page-schema-name"] = "UsrCase_FormPage",
-					["rules"] = new object[] {
-						new Dictionary<string, object?> {
-							["caption"] = "Filter owners",
-							["condition"] = new Dictionary<string, object?> {
-								["logicalOperation"] = "AND",
-								["conditions"] = Array.Empty<object>()
-							},
-							["actions"] = new object[] {
-								new Dictionary<string, object?> {
-									["type"] = "apply-static-filter",
-									["targetAttribute"] = "UsrOwner",
-									["filter"] = new Dictionary<string, object?> {
-										["logicalOperation"] = "AND",
-										["items"] = Array.Empty<object>()
-									}
-								}
-							}
-						}
-					}
+					["rules"] = new object[] { CreateApplyStaticFilterRule() }
 				}
 			},
 			arrangeContext.CancellationTokenSource.Token);
@@ -1000,6 +982,26 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			rule => string.Equals(rule.Name, ruleName, StringComparison.OrdinalIgnoreCase),
 			because: "the deleted page rule should no longer be returned by read");
 	}
+
+	// An entity-only lookup filter sent to the page tool: it must bind so the page validator can redirect it.
+	private static Dictionary<string, object?> CreateApplyStaticFilterRule() =>
+		new() {
+			["caption"] = "Filter owners",
+			["condition"] = new Dictionary<string, object?> {
+				["logicalOperation"] = "AND",
+				["conditions"] = Array.Empty<object>()
+			},
+			["actions"] = new object[] {
+				new Dictionary<string, object?> {
+					["type"] = "apply-static-filter",
+					["targetAttribute"] = "UsrOwner",
+					["filter"] = new Dictionary<string, object?> {
+						["logicalOperation"] = "AND",
+						["items"] = Array.Empty<object>()
+					}
+				}
+			}
+		};
 
 	private static bool ContainsText(string? value, string expectedText) =>
 		value != null && value.Contains(expectedText, StringComparison.OrdinalIgnoreCase);

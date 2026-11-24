@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
-using System.Text.Json.Nodes;
-using Clio.Command;
 using Clio.Command.BusinessRules;
 using FluentAssertions;
 using NSubstitute;
@@ -139,35 +137,30 @@ public sealed class PageBusinessRuleValidatorTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Explains each kind of rejected page condition attribute from the page bundle and redirects to an entity rule or a page handler, keeping the candidate list.")]
-	[TestCase("UsrVirtualFlag", "'UsrVirtualFlag' is a virtual view-model attribute: it has no modelConfig.path to a page data source")]
-	[TestCase("UsrOrderStatus", "'UsrOrderStatus' is a lookup path ('PDS.Order.Status')")]
-	[TestCase("PDS_Order_Status", "'PDS_Order_Status' is a forward reference ('PDS.PDS_Order_Status' -> 'Order.Status')")]
-	[TestCase("PDS_Unknown", "'PDS_Unknown' is bound to 'PDS.UsrUnknown', which is not a supported column of a page data source")]
-	[TestCase("UsrItems", "'UsrItems' is a collection (list) attribute")]
-	[TestCase("UsrMissing", "'UsrMissing' is not declared in bundle.viewModelConfig.attributes")]
-	public void Validate_Should_Explain_Rejected_Condition_Attribute_From_Bundle(string path, string expectedReason) {
+	[Description("Explains a rejected page condition attribute with the provider's reason, or as not declared when the provider never saw it, redirects to an entity rule or a page handler, and keeps the candidate list.")]
+	[TestCase("UsrVirtualFlag", "'UsrVirtualFlag' is a virtual view-model attribute.")]
+	[TestCase("UsrMissing", "'UsrMissing' is not declared in bundle.viewModelConfig.attributes and is not a '<data source>.<column>' path of a page data source.")]
+	public void Validate_Should_Explain_Rejected_Condition_Attribute(string path, string expectedReason) {
 		// Arrange
 		BusinessRule rule = CreatePageRule(leftPath: path);
+		Dictionary<string, string> rejected = new(StringComparer.Ordinal) {
+			["UsrVirtualFlag"] = "'UsrVirtualFlag' is a virtual view-model attribute."
+		};
 
 		// Act
 		Action act = () => CreateValidator().Validate(
-			rule, CreateAttributeMap(), CreateElementNames(), bundle: CreateBundleWithUnsupportedAttributes());
+			rule, CreateAttributeMap(), CreateElementNames(), rejectedAttributes: rejected);
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
-			.WithMessage($"Unknown or unsupported datasource-bound page attribute '{path}' in rule.condition.conditions[*].leftExpression.path. {expectedReason}*",
-				because: "the agent must learn why the attribute is not a condition source instead of falling back to a view-config binding")
-			.Which.Message.Should().Contain(PageBusinessRuleValidator.UnsupportedAttributeRedirect,
-				because: "the message must say where the condition belongs instead")
-			.And.EndWith("Available condition attributes: PDS_Name, PDS_Status.",
-				because: "the candidate list stays for agents that pick a supported attribute from it");
+			.WithMessage($"Unknown or unsupported datasource-bound page attribute '{path}' in rule.condition.conditions[*].leftExpression.path. {expectedReason} {PageBusinessRuleValidator.UnsupportedAttributeRedirect} Available condition attributes: PDS_Name, PDS_Status.",
+				because: "the agent must learn why the attribute is not a condition source and where the condition belongs, instead of falling back to a view-config binding");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Keeps the previous message, with no reason or redirect, when no page bundle is supplied.")]
-	public void Validate_Should_Not_Explain_Rejected_Attribute_Without_Bundle() {
+	[Description("Keeps the message without a reason or redirect when no rejected-attribute map is supplied.")]
+	public void Validate_Should_Not_Explain_Rejected_Attribute_Without_Rejections() {
 		// Arrange
 		BusinessRule rule = CreatePageRule(leftPath: "UsrVirtualFlag");
 
@@ -177,7 +170,7 @@ public sealed class PageBusinessRuleValidatorTests {
 		// Assert
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("Unknown or unsupported datasource-bound page attribute 'UsrVirtualFlag' in rule.condition.conditions[*].leftExpression.path. Available condition attributes: PDS_Name, PDS_Status.",
-				because: "without the bundle there is nothing to classify the attribute by");
+				because: "without the provider's rejections there is nothing to explain the attribute by");
 	}
 
 	[Test]
@@ -191,47 +184,13 @@ public sealed class PageBusinessRuleValidatorTests {
 			[new ApplyStaticFilterBusinessRuleAction("UsrOwner", JsonDocument.Parse("{}").RootElement)]);
 
 		// Act
-		Action act = () => CreateValidator().Validate(
-			rule, CreateAttributeMap(), CreateElementNames(), bundle: CreateBundleWithUnsupportedAttributes());
+		Action act = () => CreateValidator().Validate(rule, CreateAttributeMap(), CreateElementNames());
 
 		// Assert
 		act.Should().Throw<ArgumentException>()
 			.WithMessage($"Unsupported rule.actions[*].type 'apply-static-filter'. Supported values: hide-element, show-element, make-editable, make-read-only, make-required, make-optional. {PageBusinessRuleValidator.EntityOnlyLookupFilterRedirect}*",
 				because: "Freedom UI page rules have no lookup-filter action, so the agent must be sent to the entity rule tool");
 	}
-
-	private static PageBundleInfo CreateBundleWithUnsupportedAttributes() =>
-		new() {
-			ViewModelConfig = new JsonObject {
-				["attributes"] = new JsonObject {
-					["PDS_Name"] = new JsonObject { ["modelConfig"] = new JsonObject { ["path"] = "PDS.Name" } },
-					["UsrVirtualFlag"] = new JsonObject { ["value"] = true },
-					["UsrOrderStatus"] = new JsonObject { ["modelConfig"] = new JsonObject { ["path"] = "PDS.Order.Status" } },
-					["PDS_Order_Status"] = new JsonObject { ["modelConfig"] = new JsonObject { ["path"] = "PDS.PDS_Order_Status" } },
-					["PDS_Unknown"] = new JsonObject { ["modelConfig"] = new JsonObject { ["path"] = "PDS.UsrUnknown" } },
-					["UsrItems"] = new JsonObject {
-						["isCollection"] = true,
-						["modelConfig"] = new JsonObject { ["path"] = "ItemsDS" }
-					}
-				}
-			},
-			ModelConfig = new JsonObject {
-				["dataSources"] = new JsonObject {
-					["PDS"] = new JsonObject {
-						["type"] = "crt.EntityDataSource",
-						["config"] = new JsonObject {
-							["entitySchemaName"] = "UsrInvoice",
-							["attributes"] = new JsonObject {
-								["PDS_Order_Status"] = new JsonObject {
-									["path"] = "Order.Status",
-									["type"] = "ForwardReference"
-								}
-							}
-						}
-					}
-				}
-			}
-		};
 
 	private static BusinessRule CreatePageRule(
 		string leftPath = "PDS_Name",

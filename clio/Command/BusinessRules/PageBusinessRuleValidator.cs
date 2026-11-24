@@ -13,14 +13,14 @@ internal interface IPageBusinessRuleValidator {
 	/// <param name="attributeMap">Page business-rule attributes keyed by payload path.</param>
 	/// <param name="elementNames">Available page element names.</param>
 	/// <param name="sysSettingMap">Resolved system-setting condition operands keyed by setting code. Optional when the rule references no SysSetting operand.</param>
-	/// <param name="bundle">The page bundle the attribute map was built from. When given, a rejected attribute is
-	/// explained (virtual, lookup path, forward reference, not declared) and the message says where to go instead.</param>
+	/// <param name="rejectedAttributes">Declared page attributes the attribute provider did not expose, keyed by name,
+	/// with the reason. When given, a rejected attribute is explained and the message says where the condition belongs.</param>
 	void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames,
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null,
-		PageBundleInfo? bundle = null);
+		IReadOnlyDictionary<string, string>? rejectedAttributes = null);
 }
 
 internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessRuleValidator)
@@ -34,19 +34,30 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 		"apply-static-filter is an entity business rule: Freedom UI page rules have no lookup-filter action. "
 		+ "Create it with create-entity-business-rules on the object that owns the lookup column.";
 
+	private const string UnknownPageAttributePrefix = "Unknown or unsupported datasource-bound page attribute";
+
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames,
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null,
-		PageBundleInfo? bundle = null) {
+		IReadOnlyDictionary<string, string>? rejectedAttributes = null) {
 		try {
 			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames), sysSettingMap);
+		} catch (UnknownBusinessRuleAttributeException unknown) {
+			string message = $"{UnknownPageAttributePrefix} '{unknown.Path}' in {unknown.FieldName}.";
+			if (rejectedAttributes is not null) {
+				string reason = rejectedAttributes.TryGetValue(unknown.Path, out string? known)
+					? known
+					: $"'{unknown.Path}' is not declared in bundle.viewModelConfig.attributes and is not a "
+						+ "'<data source>.<column>' path of a page data source.";
+				message += $" {reason} {UnsupportedAttributeRedirect}";
+			}
+			throw new ArgumentException(AppendCandidateHint(message, unknown.FieldName, attributeMap, elementNames), unknown);
 		} catch (ArgumentException exception) {
-			string? reason = exception is UnknownBusinessRuleAttributeException unknown && bundle is not null
-				? PageBusinessRuleAttributeProvider.DescribeUnsupportedConditionAttribute(bundle, unknown.Path)
-				: null;
-			throw new ArgumentException(AppendCandidateHint(exception.Message, reason, attributeMap, elementNames), exception);
+			// Other validators (the formula builder) still report an unknown attribute in the base wording.
+			string message = exception.Message.Replace("Unknown attribute", UnknownPageAttributePrefix, StringComparison.Ordinal);
+			throw new ArgumentException(AppendCandidateHint(message, message, attributeMap, elementNames), exception);
 		}
 	}
 
@@ -57,12 +68,14 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 				throw new ArgumentException("rule.actions[*].type is required.");
 			}
 
-			if (!SupportedPageActionTypeNames.ContainsKey(action.ActionType)) {
-				string redirect = string.Equals(action.ActionType, ApplyStaticFilterActionTypeName, StringComparison.Ordinal)
-					? $" {EntityOnlyLookupFilterRedirect}"
-					: string.Empty;
+			if (action is ApplyStaticFilterBusinessRuleAction) {
 				throw new ArgumentException(
-					$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}.{redirect}");
+					$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}. {EntityOnlyLookupFilterRedirect}");
+			}
+
+			if (!SupportedPageActionTypeNames.ContainsKey(action.ActionType)) {
+				throw new ArgumentException(
+					$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}.");
 			}
 
 			List<string> items = action.FieldSelectionItems;
@@ -81,25 +94,19 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 			}
 		};
 
+	// The candidates follow the field that failed: condition attributes for a condition, page elements for an action.
 	private static string AppendCandidateHint(
 		string message,
-		string? reason,
+		string failedField,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames) {
-		string result = message.Replace(
-			"Unknown attribute",
-			"Unknown or unsupported datasource-bound page attribute",
-			StringComparison.Ordinal);
-		if (!string.IsNullOrEmpty(reason)) {
-			result += $" {reason} {UnsupportedAttributeRedirect}";
+		if (failedField.Contains("rule.condition.conditions", StringComparison.Ordinal)) {
+			message += $" Available condition attributes: {FormatAttributeCandidates(attributeMap)}.";
 		}
-		if (result.Contains("rule.condition.conditions", StringComparison.Ordinal)) {
-			result += $" Available condition attributes: {FormatAttributeCandidates(attributeMap)}.";
+		if (failedField.Contains("rule.actions", StringComparison.Ordinal)) {
+			message += $" Available page elements: {FormatCandidates(elementNames)}.";
 		}
-		if (result.Contains("rule.actions", StringComparison.Ordinal)) {
-			result += $" Available page elements: {FormatCandidates(elementNames)}.";
-		}
-		return result;
+		return message;
 	}
 
 	// Component attributes are few and easy to miss among the many
