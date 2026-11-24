@@ -31,10 +31,10 @@ public sealed class ListEntityClientSchemasToFileStandE2ETests : McpContractFixt
 	private const string ToolName = ListEntityClientSchemasToFileTool.ToolName;
 
 	[Test]
-	[Description("Against a live stand, writes the full list-entity-client-schemas response of a real entity to the file and returns section and edit-page counts that match the file.")]
+	[Description("Against a live stand where the entity resolves, writes the full list-entity-client-schemas response of a real entity to the file and returns section and edit-page counts that match the file.")]
 	[AllureTag(ToolName)]
 	[AllureName("list-entity-client-schemas-to-file writes the page-role graph of a real entity")]
-	[AllureDescription("Runs list-entity-client-schemas-to-file on the configured sandbox and verifies the file holds a successful list-entity-client-schemas response for the entity, and the response counts per kind equal the counts in that file.")]
+	[AllureDescription("Checks with list-entity-client-schemas that the entity resolves on the configured sandbox (skips otherwise), runs list-entity-client-schemas-to-file and verifies the tool succeeds, the file holds a successful list-entity-client-schemas response for the entity, and the response counts per kind equal the counts in that file.")]
 	public async Task ListEntityClientSchemasToFile_Should_Write_Page_Role_Graph_On_Stand() {
 		// Arrange - needs a registered sandbox stand; skip when none is configured so the NoEnvironment run stays
 		// green. The entity defaults to Contact, which every product ships, and is overridable via
@@ -46,15 +46,23 @@ public sealed class ListEntityClientSchemasToFileStandE2ETests : McpContractFixt
 		string entityName = Environment.GetEnvironmentVariable("MCP_E2E_TO_FILE_ENTITY") ?? "Contact";
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string outputFile = Path.Combine(CreateFixtureDirectory("list-entity-to-file-stand"), "graph.json");
+		// Preflight with the inline tool: only an entity that does not resolve on the stand skips the test. A
+		// failure of the file tool after a successful lookup (for example a disk or permission error) must fail.
+		ListEntityClientSchemasResponse lookup = await AllureApi.Step(
+			"Arrange by checking that the entity resolves on the sandbox",
+			async () => await CallInlineAsync(context, entityName, settings.Sandbox.EnvironmentName));
+		if (!lookup.Success) {
+			Assert.Ignore(
+				$"Entity '{entityName}' does not resolve on this sandbox ({lookup.Error}); set MCP_E2E_TO_FILE_ENTITY to an entity present on the stand.");
+		}
 
 		// Act
 		ListEntityClientSchemasToFileResponse response = await AllureApi.Step(
 			"Act by invoking the tool against the sandbox",
 			async () => await CallAsync(context, entityName, settings.Sandbox.EnvironmentName, outputFile));
-		if (!response.Success) {
-			Assert.Ignore(
-				$"Entity '{entityName}' does not resolve on this sandbox ({response.Error}); set MCP_E2E_TO_FILE_ENTITY to an entity present on the stand.");
-		}
+		AllureApi.Step("Assert the file tool succeeds for an entity that resolves", () =>
+			response.Success.Should().BeTrue(
+				because: $"the entity resolved in the inline lookup, so a failure here is a file-write or writer error: {response.Error}"));
 		ListEntityClientSchemasResponse fileContent = JsonSerializer.Deserialize<ListEntityClientSchemasResponse>(
 			File.ReadAllText(outputFile),
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
@@ -82,6 +90,24 @@ public sealed class ListEntityClientSchemasToFileStandE2ETests : McpContractFixt
 		int classic = all.Count(kind => kind == ListEntityClientSchemasCommand.KindClassic);
 		int freedom = all.Count(kind => kind == ListEntityClientSchemasCommand.KindFreedom);
 		return new PageKindCounts(all.Count, classic, freedom, all.Count - classic - freedom);
+	}
+
+	private static async Task<ListEntityClientSchemasResponse> CallInlineAsync(
+		ArrangeContext context,
+		string entityName,
+		string environmentName) {
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ListEntityClientSchemasTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["entity-name"] = entityName,
+					["environment-name"] = environmentName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		callResult.IsError.Should().NotBeTrue(
+			because: "valid list-entity-client-schemas payloads should bind and return a structured tool response");
+		return EntitySchemaStructuredResultParser.Extract<ListEntityClientSchemasResponse>(callResult);
 	}
 
 	private static async Task<ListEntityClientSchemasToFileResponse> CallAsync(
