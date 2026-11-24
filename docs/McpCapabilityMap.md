@@ -588,7 +588,8 @@ What an external AI can practically do here:
   environment but writes a bundle folder on local disk, and `import-schema` offers `dry-run` for a
   REPLACE / CREATE / refused-NEW-LAYER preview before it writes. A schema name that matches more than
   one layer is refused with every candidate listed as `'package' (manager)` rather than resolved to an
-  arbitrary one. Both require cliogate 2.0.0.46 or newer on the environment.
+  arbitrary one. `export-schema` requires cliogate 2.0.0.46 or newer on the environment and
+  `import-schema` 2.0.0.54 or newer.
 - mutate one column or a whole schema batch
 - create `Color` columns (dataValueType 18; read back as the named `Color` type)
 - override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)

@@ -44,12 +44,13 @@ public class ImportSchemaTool(
 				 - When the schema name is already owned by a DIFFERENT package, the import is refused and
 				 names that package, because creating a second layer is sometimes intended and sometimes the
 				 duplicate-key defect this feature exists to avoid. Pass `allow-new-layer: true` to do it
-				 deliberately.
+				 deliberately. On Creatio 10.3.1146 and later the platform can still refuse it when a schema
+				 with the bundle's UId exists in another package; its message names both packages.
 
 				 The schema is saved but not built: run `compile-configuration` when it carries source
 				 code, and `update-db-structure` when it changes the database structure.
 
-				 Requires cliogate 2.0.0.46 or newer on the environment.
+				 Requires cliogate 2.0.0.54 or newer on the environment.
 				 """)]
 	public CommandExecutionResult ImportSchema(
 		[Description("Import schema parameters")] [Required] ImportSchemaArgs args

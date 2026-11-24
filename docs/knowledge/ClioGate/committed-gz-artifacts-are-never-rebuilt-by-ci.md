@@ -6,7 +6,7 @@ applies-to:
   - clio/cliogate/cliogate_netcore.gz
   - build.ps1
   - .github/workflows/build.yml
-date: 2026-09-11
+date: 2026-11-24
 ---
 
 **What is true** — `clio/cliogate/cliogate.gz` and `cliogate_netcore.gz` are the artifacts a user
@@ -37,4 +37,6 @@ in `descriptor.json`, and keep the build script's package version and InfoComman
 The assembly version in `version.txt` is independent; do not change it merely to match
 the package version (see `BundledPackages.cs`).
 
-Re-verified while rebuilding both runtime archives for the package-file path-confinement release.
+Compare the archive's file list with the previous one as well. `build.ps1` packs with `--skip-pdb`,
+because the build leaves `cliogate.pdb` and the SqlClient SNI `.pdb` files in `Files/Bin`. Without the
+flag they ship in both archives: about 1.5 MB more uncompressed, and of no use on a target.

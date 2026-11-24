@@ -108,7 +108,7 @@ cp ~/.nuget/packages/atf.repository/<version>/lib/netstandard2.0/ATF.Repository.
 dotnet clio/bin/Release/net10.0/clio.dll set-pkg-version ./cliogate --package-version X.Y.Z.W
 
 # 4. Compress
-dotnet clio/bin/Release/net10.0/clio.dll compress ./cliogate -d ./clio/cliogate/cliogate.gz
+dotnet clio/bin/Release/net10.0/clio.dll compress ./cliogate --skip-pdb -d ./clio/cliogate/cliogate.gz
 
 # 5. Clean up build artifacts from Files/Bin (build.ps1 does this too)
 rm -f cliogate/Files/Bin/cliogate.dll cliogate/Files/Bin/cliogate.pdb \
