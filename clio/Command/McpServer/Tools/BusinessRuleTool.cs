@@ -11,6 +11,23 @@ using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
 
+/// <summary>
+/// Contract text shared by the page business-rule tool descriptions and get-tool-contract, so both state the
+/// same accepted and rejected condition attributes as <see cref="PageBusinessRuleAttributeProvider"/>.
+/// </summary>
+internal static class PageBusinessRuleContractText {
+
+	/// <summary>Which condition attributes (AttributeValue paths) a page rule accepts and which it rejects.</summary>
+	internal const string ConditionAttributes =
+		"Condition attributes (AttributeValue paths) a page rule accepts: a declared page attribute bound to a direct "
+		+ "data-source column (modelConfig.path '<data source>.<column>', for example PDS_Priority), the "
+		+ "'<data source>.<column>' path itself (for example PDS.Priority), 'PageParameters.<Name>', and a stepper's "
+		+ "active step (the plain attribute its activeStep is bound to, or '<stepper name>_ActiveStep' when unbound). "
+		+ "Rejected: other virtual view-model attributes (no modelConfig.path), lookup paths and forward references (a column of a related object), operation rights "
+		+ "(SysAdminOperation) and feature toggles; role membership is a SysValue CurrentUserRoles condition. Put a data condition in an entity business rule (create-entity-business-rules) and "
+		+ "view-model state in a page handler.";
+}
+
 [McpServerToolType]
 public sealed class CreateEntityBusinessRuleTool(
 	IToolCommandResolver commandResolver,
@@ -396,6 +413,13 @@ public sealed record EntityApplyStaticFilterBusinessRuleActionMcpContract : Enti
 /// <summary>
 /// Page-variant of apply-static-filter exists only so payloads deserialize cleanly; page validator rejects it.
 /// </summary>
+/// <remarks>
+/// Without it a page payload carrying the entity-only type fails in the JSON reader with the generic
+/// "does not match the documented shape" error (the shape diagnosis cannot explain a polymorphic member), so the
+/// agent never learns that a lookup filter is an entity rule. The page validator rejects it with that redirect.
+/// The generated input schema still lists the type; the description says it is always rejected here.
+/// </remarks>
+[Description("Entity-only action, always rejected by the page tools: Freedom UI page rules have no lookup-filter action. Create a lookup filter with create-entity-business-rules.")]
 public sealed record PageApplyStaticFilterBusinessRuleActionMcpContract : PageBusinessRuleActionMcpContract
 {
 	[JsonPropertyName("targetAttribute")]
@@ -643,7 +667,7 @@ public sealed class CreatePageBusinessRuleTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Creates one or more page-level Freedom UI business rules on a single page in ONE batch call (one configuration rebuild for the whole batch) that change page element visibility, editability, or required state. Pass every rule for the same page in the 'rules' array and prefer one batch call over many single-rule calls; a failed rule does not abort the others and the response reports per-rule status. Before calling, read get-guidance business-rules and get-tool-contract for create-page-business-rules.")]
+	[Description("Creates one or more page-level Freedom UI business rules on a single page in ONE batch call (one configuration rebuild for the whole batch) that change page element visibility, editability, or required state. Pass every rule for the same page in the 'rules' array and prefer one batch call over many single-rule calls; a failed rule does not abort the others and the response reports per-rule status. Lookup filters are entity rules only (create-entity-business-rules): page rules have no lookup-filter action. Before calling, read get-guidance business-rules and get-tool-contract for create-page-business-rules.")]
 	public object BusinessRuleCreate(
 		[Description("Parameters: environment-name, package-name, page-schema-name, rules (all required).")]
 		[Required]
@@ -727,7 +751,7 @@ public sealed record CreatePageBusinessRulesArgs : PageBusinessRuleTargetArgs {
 	/// Gets the structured page business-rule definitions to create in one batch.
 	/// </summary>
 	[JsonPropertyName("rules")]
-	[Description("One or more structured page business-rule definitions to create on this page in a single batch (saved with one configuration rebuild). Use declared page attribute names from get-page bundle.viewModelConfig.attributes and page element names from bundle.viewConfig.")]
+	[Description("One or more structured page business-rule definitions to create on this page in a single batch (saved with one configuration rebuild). Action items are page element names from bundle.viewConfig. " + PageBusinessRuleContractText.ConditionAttributes)]
 	[Required]
 	public List<PageBusinessRuleMcpContract> Rules { get; init; } = [];
 }

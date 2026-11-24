@@ -88,6 +88,52 @@ public sealed class PageBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Hands the page bundle to the page validator, so a rejected attribute is explained from the page it was read from.")]
+	public void Create_Should_Pass_Page_Bundle_To_Validator() {
+		// Arrange
+		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
+		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		IPageBusinessRuleValidator validator = Substitute.For<IPageBusinessRuleValidator>();
+		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+		PageBundleInfo bundle = new();
+		BusinessRule rule = CreatePageRule();
+		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
+		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
+			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			bundle));
+		validator
+			.When(v => v.Validate(
+				Arg.Any<BusinessRule>(),
+				Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>(),
+				Arg.Any<IReadOnlySet<string>>(),
+				Arg.Any<IReadOnlyDictionary<string, SysSettingOperandDescriptor>?>(),
+				Arg.Any<PageBundleInfo?>()))
+			.Do(_ => throw new ArgumentException("rejected"));
+		PageBusinessRuleService service = new(
+			packageResolver,
+			schemaProvider,
+			Substitute.For<IPageBusinessRuleAttributeProvider>(),
+			Substitute.For<IPageBusinessRuleElementProvider>(),
+			Substitute.For<IBusinessRuleAddonService>(),
+			validator,
+			Substitute.For<ISysSettingConditionOperandResolver>());
+
+		// Act
+		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the substitute validator rejects the rule once it is reached");
+		validator.Received(1).Validate(
+			rule,
+			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>(),
+			Arg.Any<IReadOnlySet<string>>(),
+			Arg.Any<IReadOnlyDictionary<string, SysSettingOperandDescriptor>?>(),
+			bundle);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stops before add-on mutation when page business-rule validation fails.")]
 	public void Create_Should_Not_Append_Addon_When_Page_Rule_Validation_Fails() {
 		// Arrange

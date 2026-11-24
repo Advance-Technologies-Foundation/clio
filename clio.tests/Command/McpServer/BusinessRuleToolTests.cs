@@ -748,6 +748,58 @@ public sealed class BusinessRuleToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Deserializes a page apply-static-filter action so the page validator, not the JSON reader, rejects it with the entity-rule redirect.")]
+	public void PageBusinessRuleCreate_Should_Deserialize_Entity_Only_Apply_Static_Filter_For_Validator_Rejection() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "page-schema-name": "UsrCase_FormPage",
+		  "rules": [
+		    {
+		      "caption": "Filter owners",
+		      "condition": { "logicalOperation": "AND", "conditions": [] },
+		      "actions": [ { "type": "apply-static-filter", "targetAttribute": "UsrOwner", "filter": { "logicalOperation": "AND", "items": [] } } ]
+		    }
+		  ]
+		}
+		""";
+
+		// Act
+		CreatePageBusinessRulesArgs? payloadArgs = JsonSerializer.Deserialize<CreatePageBusinessRulesArgs>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "a generic JSON error would hide that a lookup filter is an entity rule");
+		payloadArgs!.Rules.Single().ToBusinessRule().Actions.Single().Should().BeOfType<ApplyStaticFilterBusinessRuleAction>(
+			because: "the page validator receives the action and rejects it with the redirect to create-entity-business-rules");
+		typeof(PageApplyStaticFilterBusinessRuleActionMcpContract)
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description
+			.Should().Contain("always rejected by the page tools").And.Contain("create-entity-business-rules",
+				because: "the generated input schema still lists the type, so its description must say it is entity-only");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("States in the create-page-business-rules rules description which condition attributes are accepted and which are rejected.")]
+	public void PageBusinessRuleCreate_Rules_Description_Should_State_Accepted_And_Rejected_Attributes() {
+		// Arrange
+		string description = typeof(CreatePageBusinessRulesArgs)
+			.GetProperty(nameof(CreatePageBusinessRulesArgs.Rules))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain(PageBusinessRuleContractText.ConditionAttributes,
+			because: "the tool description and get-tool-contract must state the same accepted and rejected attributes");
+		PageBusinessRuleContractText.ConditionAttributes.Should()
+			.Contain("PageParameters.<Name>").And.Contain("_ActiveStep").And.Contain("PDS.Priority")
+			.And.Contain("other virtual view-model attributes").And.Contain("lookup paths and forward references")
+			.And.Contain("operation rights").And.Contain("feature toggles");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Converts null page action items to an empty model list so command validation returns the standard item error.")]
 	public void PageBusinessRuleCreate_Should_Convert_Null_Page_Action_Items_To_Empty_Model_List() {
 		// Arrange

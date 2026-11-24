@@ -13,25 +13,40 @@ internal interface IPageBusinessRuleValidator {
 	/// <param name="attributeMap">Page business-rule attributes keyed by payload path.</param>
 	/// <param name="elementNames">Available page element names.</param>
 	/// <param name="sysSettingMap">Resolved system-setting condition operands keyed by setting code. Optional when the rule references no SysSetting operand.</param>
+	/// <param name="bundle">The page bundle the attribute map was built from. When given, a rejected attribute is
+	/// explained (virtual, lookup path, forward reference, not declared) and the message says where to go instead.</param>
 	void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames,
-		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null);
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null,
+		PageBundleInfo? bundle = null);
 }
 
 internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessRuleValidator)
 	: IPageBusinessRuleValidator {
 
+	internal const string UnsupportedAttributeRedirect =
+		"A data condition belongs in an entity business rule (create-entity-business-rules) on the object that owns "
+		+ "the column; view-model state belongs in a page handler (crt.HandleViewModelAttributeChangeRequest).";
+
+	internal const string EntityOnlyLookupFilterRedirect =
+		"apply-static-filter is an entity business rule: Freedom UI page rules have no lookup-filter action. "
+		+ "Create it with create-entity-business-rules on the object that owns the lookup column.";
+
 	public void Validate(
 		BusinessRule rule,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames,
-		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null) {
+		IReadOnlyDictionary<string, SysSettingOperandDescriptor>? sysSettingMap = null,
+		PageBundleInfo? bundle = null) {
 		try {
 			businessRuleValidator.Validate(rule, attributeMap, ValidatePageAction(elementNames), sysSettingMap);
 		} catch (ArgumentException exception) {
-			throw new ArgumentException(AppendCandidateHint(exception.Message, attributeMap, elementNames), exception);
+			string? reason = exception is UnknownBusinessRuleAttributeException unknown && bundle is not null
+				? PageBusinessRuleAttributeProvider.DescribeUnsupportedConditionAttribute(bundle, unknown.Path)
+				: null;
+			throw new ArgumentException(AppendCandidateHint(exception.Message, reason, attributeMap, elementNames), exception);
 		}
 	}
 
@@ -43,8 +58,11 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 			}
 
 			if (!SupportedPageActionTypeNames.ContainsKey(action.ActionType)) {
+				string redirect = string.Equals(action.ActionType, ApplyStaticFilterActionTypeName, StringComparison.Ordinal)
+					? $" {EntityOnlyLookupFilterRedirect}"
+					: string.Empty;
 				throw new ArgumentException(
-					$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}.");
+					$"Unsupported rule.actions[*].type '{action.ActionType}'. Supported values: {SupportedPageActionTypesDescription}.{redirect}");
 			}
 
 			List<string> items = action.FieldSelectionItems;
@@ -65,12 +83,16 @@ internal sealed class PageBusinessRuleValidator(IBusinessRuleValidator businessR
 
 	private static string AppendCandidateHint(
 		string message,
+		string? reason,
 		IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> attributeMap,
 		IReadOnlySet<string> elementNames) {
 		string result = message.Replace(
 			"Unknown attribute",
 			"Unknown or unsupported datasource-bound page attribute",
 			StringComparison.Ordinal);
+		if (!string.IsNullOrEmpty(reason)) {
+			result += $" {reason} {UnsupportedAttributeRedirect}";
+		}
 		if (result.Contains("rule.condition.conditions", StringComparison.Ordinal)) {
 			result += $" Available condition attributes: {FormatAttributeCandidates(attributeMap)}.";
 		}

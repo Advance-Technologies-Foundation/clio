@@ -215,4 +215,78 @@ internal sealed class PageBusinessRuleAttributeProvider(
 		entitySchemaName = dataSources[datasourceName]?["config"]?["entitySchemaName"]?.GetValue<string>() ?? string.Empty;
 		return !string.IsNullOrWhiteSpace(entitySchemaName);
 	}
+
+	/// <summary>
+	/// Explains why <paramref name="path"/> is not a page condition attribute, from the page bundle alone.
+	/// </summary>
+	/// <param name="bundle">The page bundle the rule was validated against.</param>
+	/// <param name="path">The attribute path the rule named and the attribute map does not hold.</param>
+	/// <returns>One sentence naming the kind of attribute, or <c>null</c> when the bundle does not say.</returns>
+	/// <remarks>
+	/// The provider exposes only direct columns of a page data source, page parameters and component state.
+	/// An agent that names anything else (a virtual view-model attribute, a lookup path, a forward reference)
+	/// otherwise gets "unknown attribute" with no reason and tends to fall back to a view-config binding, which
+	/// the Freedom UI Designer later overwrites.
+	/// </remarks>
+	internal static string? DescribeUnsupportedConditionAttribute(PageBundleInfo bundle, string path) {
+		if (bundle is null || string.IsNullOrWhiteSpace(path)) {
+			return null;
+		}
+
+		JsonObject attributes = bundle.ViewModelConfig?["attributes"] as JsonObject ?? [];
+		JsonObject dataSources = bundle.ModelConfig?["dataSources"] as JsonObject ?? [];
+		if (attributes[path] is JsonObject attribute) {
+			return DescribeDeclaredAttribute(path, attribute, dataSources);
+		}
+
+		string[] parts = SplitPath(path);
+		if (parts.Length >= 2 && dataSources.ContainsKey(parts[0])) {
+			return DescribeDatasourcePath(path, parts, dataSources);
+		}
+
+		return $"'{path}' is not declared in bundle.viewModelConfig.attributes and is not a "
+			+ "'<data source>.<column>' path of a page data source.";
+	}
+
+	private static string DescribeDeclaredAttribute(string name, JsonObject attribute, JsonObject dataSources) {
+		if (IsCollectionAttribute(attribute)) {
+			return $"'{name}' is a collection (list) attribute, which cannot be a condition operand.";
+		}
+
+		string modelPath = ReadString(attribute["modelConfig"]?["path"]);
+		if (string.IsNullOrWhiteSpace(modelPath)) {
+			return $"'{name}' is a virtual view-model attribute: it has no modelConfig.path to a page data source, "
+				+ "and page business rules read only data-source-bound attributes (and a stepper's active step).";
+		}
+
+		return DescribeDatasourcePath(name, SplitPath(modelPath), dataSources, modelPath);
+	}
+
+	private static string DescribeDatasourcePath(
+		string name,
+		string[] parts,
+		JsonObject dataSources,
+		string? boundPath = null) {
+		string shownPath = boundPath ?? string.Join('.', parts);
+		if (parts.Length > 2) {
+			return $"'{name}' is a lookup path ('{shownPath}'): page business rules read only direct columns of a page "
+				+ "data source, never a column of a related object.";
+		}
+
+		if (parts.Length == 2
+			&& dataSources[parts[0]]?["config"]?["attributes"]?[parts[1]] is JsonObject datasourceAttribute) {
+			string referencePath = ReadString(datasourceAttribute["path"]);
+			return $"'{name}' is a forward reference ('{shownPath}'"
+				+ (string.IsNullOrWhiteSpace(referencePath) ? string.Empty : $" -> '{referencePath}'")
+				+ "): page business rules read only direct columns of a page data source.";
+		}
+
+		return $"'{name}' is bound to '{shownPath}', which is not a supported column of a page data source.";
+	}
+
+	private static string[] SplitPath(string path) =>
+		path.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+	private static string ReadString(JsonNode? node) =>
+		node is JsonValue value && value.TryGetValue(out string? text) ? text : string.Empty;
 }

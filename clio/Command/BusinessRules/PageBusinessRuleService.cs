@@ -63,7 +63,7 @@ internal sealed class PageBusinessRuleService(
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
 		BusinessRule rule = request.Rule;
 		IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
-		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
+		pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, pageContext.Bundle);
 
 		BusinessRuleMetadataDto createdRule = SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap);
 		return AddonService.AppendRule(
@@ -89,7 +89,7 @@ internal sealed class PageBusinessRuleService(
 			request.Rules,
 			rule => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
-				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, pageContext.Bundle);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap)];
 			});
 	}
@@ -120,7 +120,7 @@ internal sealed class PageBusinessRuleService(
 			request.Rules,
 			(rule, existing) => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
-				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
+				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap, pageContext.Bundle);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing, sysSettingMap)];
 			});
 	}

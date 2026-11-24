@@ -788,6 +788,31 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The create-page-business-rules contract states the accepted and rejected condition attributes the page validator enforces and no longer forbids '<data source>.<column>' paths such as PDS.Priority, which the validator accepts.")]
+	public void ToolContractGet_CreatePageBusinessRules_Should_Match_Page_Validator_Attributes() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(
+			new ToolContractGetArgs([CreatePageBusinessRuleTool.BusinessRuleCreateToolName], ToolContractShortForm.FullDetail));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "create-page-business-rules must resolve to a curated contract");
+		ToolContractDefinition entry = result.Tools!.Single();
+		entry.InputSchema.Properties.Single(field => field.Name == "rules").Description.Should()
+			.Contain(PageBusinessRuleContractText.ConditionAttributes,
+				because: "the contract must state the same accepted and rejected attributes as the tool description")
+			.And.NotContain("not datasource paths like PDS.Priority",
+				because: "the page validator accepts '<data source>.<column>' paths");
+		entry.AntiPatterns!.Should().NotContain(pattern => pattern.Pattern.Contains("PDS.Priority", StringComparison.Ordinal),
+			because: "a '<data source>.<column>' path is accepted, so it is no anti-pattern");
+		entry.AntiPatterns!.Should().Contain(pattern => pattern.Pattern.Contains("virtual view-model attribute", StringComparison.Ordinal),
+			because: "the anti-pattern names the attributes the page validator actually rejects");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("GitHub #1150: the curated update-page contract states that an append dry run projects the merge and returns appendProjection, and declares that field in the output envelope. update-page is non-resident, so this curated entry — not the tool's [Description] attribute — is the whole description an agent reads.")]
 	public void ToolContractGet_Should_State_That_An_Append_DryRun_Projects_The_Merge() {
 		// Arrange
