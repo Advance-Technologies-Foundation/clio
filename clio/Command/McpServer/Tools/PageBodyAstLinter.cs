@@ -30,8 +30,12 @@ namespace Clio.Command.McpServer.Tools;
 /// intentionally NOT migrated by this class — they ship side-by-side. The
 /// linter complements them with AST-precise checks for anti-patterns regexes
 /// cannot reliably express.
+///
+/// The code-quality rules (function length, nested and duplicated helpers, log-only catch blocks,
+/// numeric comparison types, sequential independent awaits, GUID literals) live in
+/// <c>PageBodyAstLinter.Quality.cs</c>.
 /// </summary>
-internal static class PageBodyAstLinter {
+internal static partial class PageBodyAstLinter {
 
 	#region Rule identifiers
 
@@ -89,7 +93,12 @@ internal static class PageBodyAstLinter {
 		}
 		LintFindingBudget budget = new();
 		Visit(ast, default, depth: 0, budget);
-		CheckUndefinedSectionCalls(ast, budget);
+		HashSet<Node> factories = new(NodeReferenceComparer.Instance);
+		CollectFactoryFunctions(ast, factories, depth: 0);
+		HashSet<Node> sections = new(NodeReferenceComparer.Instance);
+		CollectSectionProperties(ast, factories, sections, depth: 0);
+		CheckUndefinedSectionCalls(ast, factories, sections, budget);
+		CheckCodeQuality(sections, budget);
 		budget.AppendSummaries();
 		return budget.Findings;
 	}
@@ -669,7 +678,8 @@ internal static class PageBodyAstLinter {
 	// when it is a direct property of the object the factory returns - see CollectSectionProperties.
 	private static readonly string[] SectionPropertyNames = ["handlers", "converters", "validators"];
 
-	private static void CheckUndefinedSectionCalls(Script ast, LintFindingBudget budget) {
+	private static void CheckUndefinedSectionCalls(Script ast, HashSet<Node> factories, HashSet<Node> sections,
+		LintFindingBudget budget) {
 		//Two roots, not one. Seeding script-level user declarations into the single root the AMD
 		//factory inherits let a helper declared OUTSIDE `define(...)` satisfy a handler call - the
 		//exact shape this rule exists to catch, because Page Designer can keep the handler entry and
@@ -683,11 +693,7 @@ internal static class PageBodyAstLinter {
 		DeclareHoistedNames(ast, scriptScope, depth: 0, strict, atStatementLevel: true,
 			unconditional: true);
 		DeclareBlockNames(ast.Body, scriptScope, depth: 0, assignmentsAlwaysRun: true);
-		HashSet<Node> factories = new(NodeReferenceComparer.Instance);
-		CollectFactoryFunctions(ast, factories, depth: 0);
 		CheckDesignerUnsafeFactoryStatements(factories, budget);
-		HashSet<Node> sections = new(NodeReferenceComparer.Instance);
-		CollectSectionProperties(ast, factories, sections, depth: 0);
 		SectionScanState state = new(globalScope, factories, sections, budget, new UndefinedCallBudget());
 		ScanForUndefinedSectionCalls(ast, scriptScope, insideSection: false, depth: 0, strict,
 			unconditional: true, state);

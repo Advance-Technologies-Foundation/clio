@@ -125,6 +125,34 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		});
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("The real MCP transport carries code-quality warnings (a log-only catch block) without blocking validation, and stays silent when the catch block handles the error")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page reports code-quality warnings without blocking")]
+	[AllureDescription("A handler whose catch block only calls console.error carries the catch-log-only warning and still validates; the same handler that stops after logging carries none.")]
+	public async Task PageValidateTool_ShouldWarnOnLogOnlyCatch_WithoutBlocking(bool handlesError) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string handling = handlesError ? " return;" : string.Empty;
+		string body = ValidPageBody.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{request:'usr.ProbeRequest',handler:async (request, next)=>{ "
+			+ $"try {{ await request.$context.save(); }} catch (e) {{ console.error(e);{handling} }} "
+			+ "return next?.handle(request); }}]/**SCHEMA_HANDLERS*/");
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate a log-only catch block through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the warning does not block validation", () =>
+			response.Valid.Should().BeTrue(because: "code-quality rules are warnings; errors: "
+				+ string.Join("; ", response.Validation.Errors ?? [])));
+		AllureApi.Step("Verify the catch-log-only warning appears only when the catch block just logs", () => {
+			bool warned = (response.Validation.Warnings ?? []).Any(w => w.Contains(PageBodyAstLinter.RuleCatchLogOnly));
+			warned.Should().Be(!handlesError,
+				because: "a catch block that only logs swallows the error, while one that stops the action handles it");
+		});
+	}
+
 	[Test]
 	[Description("Advertises validate-page MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]

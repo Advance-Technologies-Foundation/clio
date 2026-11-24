@@ -1,0 +1,349 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using Acornima.Ast;
+
+namespace Clio.Command.McpServer.Tools;
+
+/// <summary>
+/// Code-quality rules of the page-body lint pass. They read only the page-schema sections
+/// (<c>handlers</c>, <c>converters</c>, <c>validators</c>) of the object the page factory returns, and every
+/// one of them is a <see cref="LintSeverity.Warning"/>: the page works, it is just hard to maintain.
+///
+/// The rule ids and thresholds are shared with the Classic-to-Freedom migration engine of the CAADT toolkit,
+/// which applies the same rules as a blocking gate on the pages it builds. A rule changed here is changed
+/// there too, or the save-time warning and the migration gate start to disagree.
+/// </summary>
+internal static partial class PageBodyAstLinter {
+
+	#region Rule identifiers and thresholds
+
+	internal const string RuleFunctionTooLong = "function-too-long";
+	internal const string RuleHandlerTooManyNestedFunctions = "handler-too-many-nested-functions";
+	internal const string RuleDuplicateFunctionInPage = "duplicate-function-in-page";
+	internal const string RuleCatchLogOnly = "catch-log-only";
+	internal const string RuleNumericComparisonType = "numeric-comparison-type";
+	internal const string RuleSequentialIndependentAwaits = "sequential-independent-awaits";
+	internal const string RuleGuidLiteralDataReference = "guid-literal-data-reference";
+
+	/// <summary>A function in a section longer than this many lines is reported.</summary>
+	internal const int MaxFunctionLines = 60;
+
+	/// <summary>A handler declaring more named functions than this inside its body is reported.</summary>
+	internal const int MaxNestedFunctionsPerHandler = 3;
+
+	/// <summary>
+	/// A block running more awaited model loads than this one after another, none using another's result, is
+	/// reported.
+	/// </summary>
+	internal const int MaxSequentialIndependentAwaits = 2;
+
+	// A named helper smaller than this many AST nodes (`v => v`) is not worth moving to a module, so two copies
+	// of it are not reported.
+	private const int MinDuplicateFunctionNodes = 8;
+
+	private static readonly Regex GuidLiteral = new(
+		"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+		RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+	private const string ModuleHelperAdvice =
+		"Move shared helpers to a client module declared in SCHEMA_DEPS (MCP guide: shared-client-logic).";
+
+	#endregion
+
+	#region Entry point
+
+	private static void CheckCodeQuality(HashSet<Node> sections, LintFindingBudget budget) {
+		Dictionary<string, List<NamedFunction>> helpersByShape = new(StringComparer.Ordinal);
+		foreach (Property section in sections.OfType<Property>()) {
+			CheckSectionNode(section.Value, ownerKey: null, depth: 0, budget);
+			if (TryGetStaticPropertyName(section) == "handlers" && section.Value is ArrayExpression handlers) {
+				foreach (Node entry in handlers.Elements) {
+					if (entry is ObjectExpression handlerEntry && TryGetHandlerFunction(handlerEntry, out IFunction handler)) {
+						CheckHandler(handler, helpersByShape, budget);
+					}
+				}
+			}
+		}
+		ReportDuplicateHelpers(helpersByShape, budget);
+	}
+
+	private static bool TryGetHandlerFunction(ObjectExpression entry, out IFunction handler) {
+		handler = null;
+		foreach (Node element in entry.Properties) {
+			if (TryGetEntryProperty(element, out Property prop, out string key) && key == "handler"
+				&& prop.Value is IFunction function) {
+				handler = function;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	#endregion
+
+	#region Section-wide rules
+
+	// One walk over a section for the rules that look at single nodes. `ownerKey` is the key of the property
+	// whose value the node is, so a GUID that is an element's own `id` is told apart from one used as data.
+	private static void CheckSectionNode(Node node, string ownerKey, int depth, LintFindingBudget budget) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		switch (node) {
+			case IFunction function:
+				CheckFunctionLength(node, function, budget);
+				break;
+			case CatchClause catchClause:
+				CheckCatchLogOnly(catchClause, budget);
+				break;
+			case Property {Value: Literal {Value: double}} prop when TryGetStaticPropertyName(prop) == "comparisonType":
+				budget.TryAdd(RuleNumericComparisonType, LintSeverity.Warning,
+					prop.Location.Start.Line, prop.Location.Start.Column + 1,
+					() => "`comparisonType` is a bare number; use the named `sdk.ComparisonType.<Name>` value so the "
+						+ "operator can be read and checked (MCP guide: page-schema-handlers).");
+				break;
+			case Literal {Value: string text} when ownerKey != "id" && GuidLiteral.IsMatch(text):
+				budget.TryAdd(RuleGuidLiteralDataReference, LintSeverity.Warning,
+					node.Location.Start.Line, node.Location.Start.Column + 1,
+					() => $"Record id `{text}` is hard-coded in page code; read it from the project's constants "
+						+ "module (declared in SCHEMA_DEPS) or a system setting, so the reference has a name and one "
+						+ "place to change.");
+				break;
+		}
+		foreach (Node child in node.ChildNodes) {
+			string childOwner = node is Property parent && ReferenceEquals(child, parent.Value)
+				? TryGetStaticPropertyName(parent)
+				: null;
+			CheckSectionNode(child, childOwner, depth + 1, budget);
+		}
+	}
+
+	private static void CheckFunctionLength(Node node, IFunction function, LintFindingBudget budget) {
+		int lines = node.Location.End.Line - node.Location.Start.Line + 1;
+		if (lines <= MaxFunctionLines) {
+			return;
+		}
+		string name = function.Id?.Name;
+		budget.TryAdd(RuleFunctionTooLong, LintSeverity.Warning,
+			node.Location.Start.Line, node.Location.Start.Column + 1,
+			() => $"Function{(name is null ? string.Empty : $" `{name}`")} is {lines} lines long (limit "
+				+ $"{MaxFunctionLines}); split it into named requests or module functions, one behavior each.");
+	}
+
+	// A catch block that is empty or only writes to the console swallows the error: the caller carries on as if
+	// the operation had worked.
+	private static void CheckCatchLogOnly(CatchClause catchClause, LintFindingBudget budget) {
+		if (!catchClause.Body.Body.All(IsConsoleCall)) {
+			return;
+		}
+		budget.TryAdd(RuleCatchLogOnly, LintSeverity.Warning,
+			catchClause.Location.Start.Line, catchClause.Location.Start.Column + 1,
+			() => "This catch block only logs (or ignores) the error, so the page carries on as if the operation "
+				+ "had worked. Show the user a message, stop the action, or let the error reach the platform.");
+	}
+
+	private static bool IsConsoleCall(Statement statement) =>
+		statement is ExpressionStatement {
+			Expression: CallExpression {Callee: MemberExpression {Object: Identifier {Name: "console"}}}
+		};
+
+	#endregion
+
+	#region Handler rules
+
+	private static void CheckHandler(IFunction handler, Dictionary<string, List<NamedFunction>> helpersByShape,
+		LintFindingBudget budget) {
+		List<NamedFunction> helpers = new();
+		CollectNamedFunctions(handler.Body, helpers, depth: 0);
+		foreach (NamedFunction helper in helpers) {
+			if (helper.NodeCount < MinDuplicateFunctionNodes) {
+				continue;
+			}
+			if (!helpersByShape.TryGetValue(helper.Shape, out List<NamedFunction> sameShape)) {
+				sameShape = new List<NamedFunction>();
+				helpersByShape[helper.Shape] = sameShape;
+			}
+			sameShape.Add(helper);
+		}
+		Node handlerNode = (Node)handler;
+		if (helpers.Count > MaxNestedFunctionsPerHandler) {
+			budget.TryAdd(RuleHandlerTooManyNestedFunctions, LintSeverity.Warning,
+				handlerNode.Location.Start.Line, handlerNode.Location.Start.Column + 1,
+				() => $"This handler declares {helpers.Count} functions inside its body (limit "
+					+ $"{MaxNestedFunctionsPerHandler}): {string.Join(", ", helpers.Select(h => h.Name))}. Keep the "
+					+ $"handler thin and move each behavior to its own named request or module function. "
+					+ ModuleHelperAdvice);
+		}
+		CheckSequentialAwaits(handler.Body, depth: 0, budget);
+	}
+
+	/// <summary>A function a handler declares by name, and its shape for the duplicate check.</summary>
+	private sealed record NamedFunction(string Name, int Line, int Column, string Shape, int NodeCount);
+
+	// Named functions only: `function name() {}` and `const name = () => {}`. An inline callback such as
+	// `.map(x => x.id)` is not a helper and is not counted.
+	private static void CollectNamedFunctions(Node node, List<NamedFunction> found, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		switch (node) {
+			case FunctionDeclaration {Id: not null} declaration:
+				found.Add(DescribeNamedFunction(declaration.Id.Name, node, declaration));
+				break;
+			case VariableDeclarator {Id: Identifier name, Init: IFunction init}:
+				found.Add(DescribeNamedFunction(name.Name, node, init));
+				break;
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectNamedFunctions(child, found, depth + 1);
+		}
+	}
+
+	private static NamedFunction DescribeNamedFunction(string name, Node anchor, IFunction function) {
+		StringBuilder shape = new();
+		int nodeCount = 0;
+		foreach (Node param in function.Params) {
+			AppendShape(param, shape, ref nodeCount, depth: 0);
+		}
+		AppendShape(function.Body, shape, ref nodeCount, depth: 0);
+		return new NamedFunction(name, anchor.Location.Start.Line, anchor.Location.Start.Column + 1,
+			shape.ToString(), nodeCount);
+	}
+
+	// The structure of a function without its own name: node types, identifier names and literal values. Two
+	// copies of one helper give the same shape wherever they sit and whatever they are called.
+	private static void AppendShape(Node node, StringBuilder shape, ref int nodeCount, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		nodeCount++;
+		shape.Append('(').Append(node.Type);
+		switch (node) {
+			case Identifier identifier:
+				shape.Append(' ').Append(identifier.Name);
+				break;
+			case Literal literal:
+				shape.Append(' ').Append(literal.Raw);
+				break;
+		}
+		foreach (Node child in node.ChildNodes) {
+			AppendShape(child, shape, ref nodeCount, depth + 1);
+		}
+		shape.Append(')');
+	}
+
+	private static void ReportDuplicateHelpers(Dictionary<string, List<NamedFunction>> helpersByShape,
+		LintFindingBudget budget) {
+		foreach (List<NamedFunction> copies in helpersByShape.Values.Where(list => list.Count > 1)) {
+			NamedFunction first = copies[0];
+			foreach (NamedFunction copy in copies.Skip(1)) {
+				budget.TryAdd(RuleDuplicateFunctionInPage, LintSeverity.Warning, copy.Line, copy.Column,
+					() => $"`{copy.Name}` repeats the body of `{first.Name}` (line {first.Line}); the page declares "
+						+ $"this function {copies.Count} times. Declare it once. " + ModuleHelperAdvice);
+			}
+		}
+	}
+
+	#endregion
+
+	#region Sequential awaits
+
+	// Within each block, counts the awaited model loads (`await x.load(...)`, `await sdk.Model.create(...)`) that
+	// do not use the result of an earlier one. A result is followed through the variables assigned from it, so
+	// `const id = rows[0].id; await other.load(id)` still depends on the load that produced `rows`.
+	private static void CheckSequentialAwaits(Node node, int depth, LintFindingBudget budget) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (node is BlockStatement block) {
+			CheckBlockAwaits(block, budget);
+		}
+		foreach (Node child in node.ChildNodes) {
+			// A nested function is its own sequence: its awaits do not run in this block's order.
+			if (child is IFunction) {
+				continue;
+			}
+			CheckSequentialAwaits(child, depth + 1, budget);
+		}
+	}
+
+	private static void CheckBlockAwaits(BlockStatement block, LintFindingBudget budget) {
+		HashSet<string> fromLoads = new(StringComparer.Ordinal);
+		int independent = 0;
+		Statement firstLoad = null;
+		foreach (Statement statement in block.Body) {
+			HashSet<string> referenced = new(StringComparer.Ordinal);
+			CollectIdentifierNames(statement, referenced, depth: 0);
+			bool usesLoadResult = referenced.Overlaps(fromLoads);
+			if (TryGetAwaitedLoad(statement, out _)) {
+				if (!usesLoadResult) {
+					independent++;
+					firstLoad ??= statement;
+				}
+				CollectDeclaredNames(statement, fromLoads);
+			} else if (usesLoadResult) {
+				CollectDeclaredNames(statement, fromLoads);
+			}
+		}
+		if (independent <= MaxSequentialIndependentAwaits || firstLoad is null) {
+			return;
+		}
+		budget.TryAdd(RuleSequentialIndependentAwaits, LintSeverity.Warning,
+			firstLoad.Location.Start.Line, firstLoad.Location.Start.Column + 1,
+			() => $"{independent} awaited model loads run one after another although none uses another's result "
+				+ $"(limit {MaxSequentialIndependentAwaits}); start them together with `Promise.all`, or read the "
+				+ "data through the page's data sources.");
+	}
+
+	private static bool TryGetAwaitedLoad(Statement statement, out CallExpression call) {
+		Node expression = statement switch {
+			ExpressionStatement {Expression: AssignmentExpression assignment} => assignment.Right,
+			ExpressionStatement expressionStatement => expressionStatement.Expression,
+			VariableDeclaration {Declarations.Count: 1} declaration => declaration.Declarations[0].Init,
+			_ => null
+		};
+		call = (expression as AwaitExpression)?.Argument as CallExpression;
+		return call?.Callee is MemberExpression {Computed: false, Property: Identifier property} member
+			&& (property.Name == "load" || (property.Name == "create" && IsModelReference(member.Object)));
+	}
+
+	private static bool IsModelReference(Node node) =>
+		node switch {
+			Identifier {Name: "Model"} => true,
+			MemberExpression {Computed: false, Property: Identifier {Name: "Model"}} => true,
+			_ => false
+		};
+
+	private static void CollectIdentifierNames(Node node, HashSet<string> names, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		if (node is Identifier identifier) {
+			names.Add(identifier.Name);
+		}
+		foreach (Node child in node.ChildNodes) {
+			CollectIdentifierNames(child, names, depth + 1);
+		}
+	}
+
+	// The names a statement binds: the declared variables of a declaration, or the assigned identifier of an
+	// assignment.
+	private static void CollectDeclaredNames(Statement statement, HashSet<string> names) {
+		switch (statement) {
+			case VariableDeclaration declaration:
+				foreach (VariableDeclarator declarator in declaration.Declarations) {
+					CollectIdentifierNames(declarator.Id, names, depth: 0);
+				}
+				break;
+			case ExpressionStatement {Expression: AssignmentExpression {Left: Identifier target}}:
+				names.Add(target.Name);
+				break;
+		}
+	}
+
+	#endregion
+
+}
