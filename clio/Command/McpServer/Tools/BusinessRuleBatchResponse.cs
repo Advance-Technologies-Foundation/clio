@@ -41,7 +41,8 @@ public sealed record BusinessRuleBatchResponse {
 				Name = item.Name,
 				Success = item.Success,
 				RuleName = item.RuleName,
-				Error = item.Error
+				Error = item.Error,
+				Warnings = item.Warnings is { Count: > 0 } ? item.Warnings : null
 			})
 			.ToList();
 		return new BusinessRuleBatchResponse {
@@ -99,4 +100,10 @@ public sealed record BusinessRuleResultDto {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[Description("The failure reason when not created.")]
 	public string? Error { get; init; }
+
+	/// <summary>Gets advisory findings about a saved rule; absent when there are none.</summary>
+	[JsonPropertyName("warnings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Advisory findings about a saved rule, for example a rule another rule already covers. The rule is saved.")]
+	public IReadOnlyList<string>? Warnings { get; init; }
 }

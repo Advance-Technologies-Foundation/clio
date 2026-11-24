@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.AddonSchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using Clio.Command.BusinessRules.Converters;
@@ -83,15 +84,18 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
+		AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
+		IReadOnlyList<BusinessRule>? stored = TryReadStoredRules(addonRequest);
 
-		return CreateBatch(
-			BuildAddonSchemaRequest(pageContext, packageUId),
+		IReadOnlyList<BusinessRuleBatchItemResult> results = CreateBatch(
+			addonRequest,
 			request.Rules,
 			rule => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap)];
 			});
+		return WithRedundancyWarnings(stored, request.Rules, results);
 	}
 
 	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
@@ -114,16 +118,65 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
+		AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
+		IReadOnlyList<BusinessRule>? stored = TryReadStoredRules(addonRequest);
 
-		return UpdateBatch(
-			BuildAddonSchemaRequest(pageContext, packageUId),
+		IReadOnlyList<BusinessRuleBatchItemResult> results = UpdateBatch(
+			addonRequest,
 			request.Rules,
 			(rule, existing) => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing, sysSettingMap)];
 			});
+		return WithRedundancyWarnings(stored, WithStoredEnabledState(request.Rules, stored), results);
 	}
+
+	/// <summary>
+	/// Reads the rules already on the page for the advisory redundancy check (ENG-107305). Fails open: a read
+	/// failure only skips the check, it never fails the save.
+	/// </summary>
+	private IReadOnlyList<BusinessRule>? TryReadStoredRules(AddonGetRequestDto addonRequest) {
+		try {
+			return ReadCore(addonRequest);
+		} catch (Exception) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Adds the redundancy warnings to the saved rules of the batch. Only saved rules are compared, so a rule
+	/// that failed is neither warned about nor used as the reason for another rule's warning.
+	/// </summary>
+	private static IReadOnlyList<BusinessRuleBatchItemResult> WithRedundancyWarnings(
+		IReadOnlyList<BusinessRule>? stored, IReadOnlyList<BusinessRule?> rules,
+		IReadOnlyList<BusinessRuleBatchItemResult> results) {
+		if (stored is null) {
+			return results;
+		}
+		List<BusinessRule?> saved = rules
+			.Select((rule, index) => index < results.Count && results[index]?.Success == true ? rule : null)
+			.ToList();
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze(stored, saved);
+		return results
+			.Select((result, index) => result?.Success == true && warnings[index].Count > 0
+				? result with { Warnings = warnings[index] }
+				: result)
+			.ToList();
+	}
+
+	/// <summary>
+	/// An update that omits <c>enabled</c> keeps the stored value, so the check reads it from the stored copy.
+	/// </summary>
+	private static IReadOnlyList<BusinessRule?> WithStoredEnabledState(IReadOnlyList<BusinessRule> rules,
+		IReadOnlyList<BusinessRule>? stored) =>
+		rules.Select(rule => rule is null || rule.Enabled is not null || stored is null
+				? rule
+				: rule with {
+					Enabled = stored.FirstOrDefault(copy => string.Equals(copy?.Name?.Trim(), rule.Name?.Trim(),
+						StringComparison.OrdinalIgnoreCase))?.Enabled
+				})
+			.ToList();
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {
 		ArgumentNullException.ThrowIfNull(request);

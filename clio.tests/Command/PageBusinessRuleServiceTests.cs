@@ -230,6 +230,49 @@ public sealed class PageBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Saves a rule that only undoes a stored rule and returns an inverse-redundant warning on its result.")]
+	public void Create_Batch_Should_Warn_When_Rule_Only_Undoes_Stored_Rule() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		BusinessRule stored = CreatePageRule(caption: "Show input") with { Name = "BusinessRule_stored" };
+		addonService.ReadRules(Arg.Any<AddonGetRequestDto>()).Returns([stored]);
+		BusinessRule inverse = CreatePageRule(caption: "Hide input") with {
+			Condition = new BusinessRuleConditionGroup("AND", [
+				stored.Condition.Conditions[0] with { ComparisonType = "not-equal" }
+			]),
+			Actions = [new HideElementBusinessRuleAction(["Input_One"])]
+		};
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [inverse]));
+
+		// Assert
+		results.Should().ContainSingle(because: "one rule was sent");
+		results[0].Success.Should().BeTrue(because: "a redundancy finding is advisory and never blocks the save");
+		results[0].Warnings.Should().ContainSingle(because: "the rule only undoes the stored show rule")
+			.Which.Should().Contain(PageBusinessRuleRedundancy.RuleInverseRedundant);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Saves the batch without warnings when the stored rules cannot be read.")]
+	public void Create_Batch_Should_Save_Without_Warnings_When_Stored_Rules_Unreadable() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		addonService.ReadRules(Arg.Any<AddonGetRequestDto>()).Returns(_ => throw new InvalidOperationException("read failed"));
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [CreatePageRule(caption: "Rule A")]));
+
+		// Assert
+		results.Should().OnlyContain(result => result.Success && result.Warnings == null,
+			because: "the advisory check fails open: a read failure must not fail or decorate the save");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Marks every converted page rule as failed with the save error when the single add-on save throws.")]
 	public void Create_Batch_Should_Mark_All_Pending_Failed_When_Save_Throws() {
 		// Arrange
