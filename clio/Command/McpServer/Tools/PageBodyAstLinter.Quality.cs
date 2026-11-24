@@ -385,11 +385,12 @@ internal static partial class PageBodyAstLinter {
 				CollectStatementBindings(statement, fromLoads);
 			}
 		}
-		if (independent <= MaxSequentialIndependentAwaits) {
+		// The first independent load is where the warning points; it is set whenever the count is above zero.
+		if (independent <= MaxSequentialIndependentAwaits || firstLoad is not { } first) {
 			return;
 		}
 		budget.TryAdd(RuleSequentialIndependentAwaits, LintSeverity.Warning,
-			firstLoad.Location.Start.Line, firstLoad.Location.Start.Column + 1,
+			first.Location.Start.Line, first.Location.Start.Column + 1,
 			() => $"{independent} awaited model loads run one after another although none uses another's result "
 				+ $"(limit {MaxSequentialIndependentAwaits}); start them together with `Promise.all`, or read the "
 				+ "data through the page's data sources.");
