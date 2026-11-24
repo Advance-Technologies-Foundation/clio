@@ -49,7 +49,7 @@ public sealed class ListEntityClientSchemasToFileStandE2ETests : McpContractFixt
 		await using var context = Arrange(TimeSpan.FromMinutes(6));
 		string outputFile = Path.Combine(CreateFixtureDirectory("list-entity-to-file-stand"), "graph.json");
 		// Preflight with the inline tool: only an entity that does not resolve on the stand skips the test. A
-		// failure of the file tool after a successful lookup (for example a disk or permission error) must fail.
+		// failure of the file tool after a successful lookup (output path, its own lookup or the write) must fail.
 		ListEntityClientSchemasResponse lookup = await AllureApi.Step(
 			"Arrange by checking that the entity resolves on the sandbox",
 			async () => await CallInlineAsync(context, entityName, settings.Sandbox.EnvironmentName));
@@ -64,7 +64,7 @@ public sealed class ListEntityClientSchemasToFileStandE2ETests : McpContractFixt
 			async () => await CallAsync(context, entityName, settings.Sandbox.EnvironmentName, outputFile));
 		AllureApi.Step("Assert the file tool succeeds for an entity that resolves", () =>
 			response.Success.Should().BeTrue(
-				because: $"the entity resolved in the inline lookup, so a failure here is a file-write or writer error: {response.Error}"));
+				because: $"the entity resolved in the inline lookup, so the file tool must succeed (path, lookup or write failure): {response.Error}"));
 		ListEntityClientSchemasResponse fileContent = JsonSerializer.Deserialize<ListEntityClientSchemasResponse>(
 			File.ReadAllText(outputFile),
 			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
