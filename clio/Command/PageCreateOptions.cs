@@ -204,7 +204,7 @@ namespace Clio.Command {
 				return null;
 			}
 			string hint = $"For a {template.Name} page the caption is the title shown in the page header. Pass `caption` "
-				+ "with the human-readable name the user asked for (for example \"IT Requests overview\"), not the schema name.";
+				+ "with the human-readable name the user asked for (for example \"Sales overview\"), not the schema name.";
 			if (string.IsNullOrWhiteSpace(options.Caption)) {
 				return $"caption is required for template '{template.Name}'. {hint}";
 			}
