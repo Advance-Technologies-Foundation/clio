@@ -114,6 +114,8 @@ public sealed class EntityBusinessRuleServiceTests {
 
 	private const string RejectedProbe = """{"success":false,"errorInfo":{"message":"Column by path Status not found."}}""";
 	private const string AcceptedProbe = """{"success":true,"rows":[{"ProbeCount":3}]}""";
+	private const string PermissionDeniedProbe =
+		"""{"success":false,"errorInfo":{"message":"User does not have permission to read Contact."}}""";
 
 	private (EntityBusinessRuleService Service, IApplicationClient Client) CreateServiceWithProbe(params string[] probeResponses) {
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
@@ -207,6 +209,131 @@ public sealed class EntityBusinessRuleServiceTests {
 		// Assert
 		result.FilterMatchCount.Should().BeNull(because: "only a static-filter rule has a filter to count");
 		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default!, default!, default, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270: a static filter the environment could not run (rights) is still saved, and the result says it went unverified.")]
+	public void Create_Should_Save_And_Warn_When_The_Static_Filter_Could_Not_Be_Run() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(PermissionDeniedProbe);
+
+		// Act
+		BusinessRuleCreateResult result = service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrOrder", StaticFilterRule("Owners starting with A")));
+
+		// Assert
+		_savedAddonSchema.Should().NotBeNull(because: "a failure that says nothing about the filter does not block the rule");
+		result.FilterMatchCount.Should().BeNull(because: "nothing was counted");
+		result.Warning.Should().Contain("saved without running its filter", because: "the agent must know the filter went unverified");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270: in a batch, only the static-filter rule that could not be run carries the warning.")]
+	public void CreateBatch_Should_Warn_Only_On_The_Rule_Whose_Filter_Could_Not_Be_Run() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(PermissionDeniedProbe);
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [CreateRule(caption: "Plain"), StaticFilterRule("Unverified")]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(request);
+
+		// Assert
+		results.Should().OnlyContain(result => result.Success, because: "both rules are saved");
+		results[0].Warning.Should().BeNull(because: "the plain rule has no filter to check");
+		results[1].Warning.Should().Contain("saved without running its filter", because: "only the static-filter rule went unverified");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270 review: update-entity-business-rules reports how many lookup records the updated static filter keeps.")]
+	public void Update_Should_Report_How_Many_Records_The_Static_Filter_Keeps() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(AcceptedProbe);
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [StaticFilterRule("Owners starting with A") with { Name = "BusinessRule_old" }]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeTrue(because: "the probe accepted the filter and the rule was saved");
+		results[0].FilterMatchCount.Should().Be(3,
+			because: "the count must survive the copy of the rule that the update path converts");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270 review: an updated static filter the environment could not run is saved, and the result says it went unverified.")]
+	public void Update_Should_Save_And_Warn_When_The_Static_Filter_Could_Not_Be_Run() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(PermissionDeniedProbe);
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [StaticFilterRule("Owners starting with A") with { Name = "BusinessRule_old" }]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeTrue(because: "a failure that says nothing about the filter does not block the update");
+		results[0].FilterMatchCount.Should().BeNull(because: "nothing was counted");
+		results[0].Warning.Should().Contain("saved without running its filter",
+			because: "a silent success would hide that the saved filter was never checked");
+		_savedAddonSchema.Should().NotBeNull(because: "the rule is saved");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270 review: an updated static filter the environment rejects fails the item and is not saved.")]
+	public void Update_Should_Not_Save_When_The_Environment_Rejects_The_Static_Filter() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(RejectedProbe);
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [StaticFilterRule("Owners starting with A") with { Name = "BusinessRule_old" }]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeFalse(because: "the server rejected the filter");
+		results[0].Error.Should().Contain("Nothing was saved", because: "the per-rule error carries the probe verdict");
+		_savedAddonSchema.Should().BeNull(because: "the only rule in the batch failed, so nothing is written");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270 review: when the save itself fails, the item carries the save error and no probe result that says the rule was saved.")]
+	public void Update_Should_Drop_The_Probe_Result_When_The_Save_Fails() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(PermissionDeniedProbe);
+		_addonSchemaDesignerClient
+			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
+			.Do(_ => throw new InvalidOperationException("Add-on save failed."));
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [StaticFilterRule("Owners starting with A") with { Name = "BusinessRule_old" }]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(request);
+
+		// Assert
+		results[0].Success.Should().BeFalse(because: "the save failed");
+		results[0].Warning.Should().BeNull(because: "a warning that says the rule was saved would contradict the error");
+		results[0].FilterMatchCount.Should().BeNull(because: "a failed item reports no count");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-95270 review: a created rule whose save fails carries the save error and no warning that says it was saved.")]
+	public void CreateBatch_Should_Drop_The_Probe_Result_When_The_Save_Fails() {
+		// Arrange
+		(EntityBusinessRuleService service, _) = CreateServiceWithProbe(PermissionDeniedProbe);
+		_addonSchemaDesignerClient
+			.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
+			.Do(_ => throw new InvalidOperationException("Add-on save failed."));
+		BusinessRulesBatchRequest request = new("UsrPkg", "UsrOrder", [StaticFilterRule("Owners starting with A")]);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(request);
+
+		// Assert
+		results[0].Success.Should().BeFalse(because: "the save failed");
+		results[0].Warning.Should().BeNull(because: "a warning that says the rule was saved would contradict the error");
 	}
 
 	[TestCase("", "UsrOrder", true, "package-name is required.")]

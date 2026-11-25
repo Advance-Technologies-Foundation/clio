@@ -126,7 +126,7 @@ internal sealed class EntityBusinessRuleService(
 				}
 				return createdRules;
 			});
-		return WithProbeResults(request.Rules, results, probes);
+		return WithProbeResults(request.Rules, results, probes, rule => rule);
 	}
 
 	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
@@ -150,7 +150,9 @@ internal sealed class EntityBusinessRuleService(
 			request.SchemaName,
 			packageUId);
 		StaticFilterContext? batchStaticFilterContext = null;
-		var probes = new Dictionary<BusinessRule, StaticFilterProbeResult>(ReferenceEqualityComparer.Instance);
+		// Keyed by name, not by rule: UpdateBatch hands the converter a `with` copy of each request rule, and an
+		// update batch already refuses duplicate names.
+		var probes = new Dictionary<string, StaticFilterProbeResult>(StringComparer.OrdinalIgnoreCase);
 
 		IReadOnlyList<BusinessRuleBatchItemResult> results = UpdateBatch(
 			BuildAddonSchemaRequest(attributeContext.EntitySchema, packageUId),
@@ -173,11 +175,11 @@ internal sealed class EntityBusinessRuleService(
 					existing,
 					sysSettingMap);
 				if (ProbeStaticFilter(rule, attributeContext.Attributes, updatedRules, staticFilterContext) is { } probe) {
-					probes[rule] = probe;
+					probes[rule.Name.Trim()] = probe;
 				}
 				return updatedRules;
 			});
-		return WithProbeResults(request.Rules, results, probes);
+		return WithProbeResults(request.Rules, results, probes, rule => rule?.Name?.Trim());
 	}
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {
@@ -214,22 +216,22 @@ internal sealed class EntityBusinessRuleService(
 		return envelope is null ? null : context.Probe.Probe(envelope, target.ReferenceSchemaName, action.TargetAttribute);
 	}
 
-	private static IReadOnlyList<BusinessRuleBatchItemResult> WithProbeResults(
+	private static IReadOnlyList<BusinessRuleBatchItemResult> WithProbeResults<TKey>(
 		IReadOnlyList<BusinessRule> rules,
 		IReadOnlyList<BusinessRuleBatchItemResult> results,
-		IReadOnlyDictionary<BusinessRule, StaticFilterProbeResult> probes) {
+		IReadOnlyDictionary<TKey, StaticFilterProbeResult> probes,
+		Func<BusinessRule?, TKey?> keyOf)
+		where TKey : notnull {
 		if (probes.Count == 0) {
 			return results;
 		}
 		return results
-			.Select((result, index) => index < rules.Count && rules[index] is { } rule && probes.TryGetValue(rule, out StaticFilterProbeResult? probe)
-				? WithProbeResult(result, probe)
-				: result)
+			.Select((result, index) => result.Success && index < rules.Count && keyOf(rules[index]) is { } key
+				&& probes.TryGetValue(key, out StaticFilterProbeResult? probe)
+					? result with { FilterMatchCount = probe.MatchCount, Warning = probe.Warning }
+					: result)
 			.ToList();
 	}
-
-	private static BusinessRuleBatchItemResult WithProbeResult(BusinessRuleBatchItemResult result, StaticFilterProbeResult probe) =>
-		result with { FilterMatchCount = result.Success ? probe.MatchCount : null, Warning = probe.Warning };
 
 	private static bool RequiresStaticFilterScope(BusinessRule rule) =>
 		rule?.Actions?.Any(action =>
