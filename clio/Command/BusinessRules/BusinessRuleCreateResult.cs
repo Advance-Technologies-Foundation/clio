@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Clio.Command.BusinessRules;
 
 /// <summary>
@@ -22,10 +24,13 @@ public sealed record BusinessRuleCreateResult(string RuleName, int? FilterMatchC
 /// <param name="FilterMatchCount">For an apply-static-filter rule, how many records of the target lookup its filter
 /// matched on the environment when it was checked.</param>
 /// <param name="Warning">Set when something about the rule could not be checked.</param>
+/// <param name="Warnings">Advisory findings about a saved rule (for example a rule another rule already
+/// covers); <c>null</c> when there are none. Never set on a failed item.</param>
 public sealed record BusinessRuleBatchItemResult(
 	string Name,
 	bool Success,
 	string? RuleName,
 	string? Error,
 	int? FilterMatchCount = null,
-	string? Warning = null);
+	string? Warning = null,
+	IReadOnlyList<string>? Warnings = null);

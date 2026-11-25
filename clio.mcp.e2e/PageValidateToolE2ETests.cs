@@ -71,6 +71,35 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("ENG-107305: the real MCP transport warns, without blocking, about a grid that binds selectionState without _selectionOptions, and stays silent when the write-back is there")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about a grid selection that is never written back")]
+	[AllureDescription("An inserted DataGrid with selectionState and no _selectionOptions carries the grid-selection-without-write-back warning and still validates; the same grid with _selectionOptions.attribute carries none.")]
+	public async Task PageValidateTool_ShouldWarnOnGridSelectionWithoutWriteBack(bool hasWriteBack) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string writeBack = hasWriteBack ? ",\"_selectionOptions\":{\"attribute\":\"UsrProbeList_SelectionState\"}" : string.Empty;
+		string body = ValidPageBody.Replace("/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrProbeList\",\"parentName\":\"MainContainer\","
+			+ "\"propertyName\":\"items\",\"index\":0,\"values\":{\"type\":\"crt.DataGrid\","
+			+ $"\"selectionState\":\"$UsrProbeList_SelectionState\"{writeBack}}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate a grid selection through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the warning appears only when the write-back is missing", () => {
+			bool warned = (response.Validation.Warnings ?? [])
+				.Any(w => w.Contains("grid-selection-without-write-back") && w.Contains("UsrProbeList"));
+			warned.Should().Be(!hasWriteBack,
+				because: "a grid without _selectionOptions never writes the selection back, while one with it does");
+		});
+		AllureApi.Step("Verify no grid-selection error blocks validation", () =>
+			(response.Validation.Errors ?? []).Should().NotContain(e => e.Contains("grid-selection"),
+				because: "the rule is a warning and never rejects the body"));
+	}
+
 	[Test]
 	[Description("A page that calls an imported client module from its handler remains valid through real MCP")]
 	[AllureTag(ToolName)]
@@ -122,6 +151,34 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			bool warned = (response.Validation.Warnings ?? []).Any(w => w.Contains("handler-process-without-scopes"));
 			warned.Should().Be(!passScopes,
 				because: "a process call without scopes skips the page's own handlers silently, while one with scopes reaches them");
+		});
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("The real MCP transport carries code-quality warnings (a log-only catch block) without blocking validation, and stays silent when the catch block handles the error")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page reports code-quality warnings without blocking")]
+	[AllureDescription("A handler whose catch block only calls console.error carries the catch-log-only warning and still validates; the same handler that stops after logging carries none.")]
+	public async Task PageValidateTool_ShouldWarnOnLogOnlyCatch_WithoutBlocking(bool handlesError) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string handling = handlesError ? " return;" : string.Empty;
+		string body = ValidPageBody.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			"/**SCHEMA_HANDLERS*/[{request:'usr.ProbeRequest',handler:async (request, next)=>{ "
+			+ $"try {{ await request.$context.save(); }} catch (e) {{ console.error(e);{handling} }} "
+			+ "return next?.handle(request); }}]/**SCHEMA_HANDLERS*/");
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate a log-only catch block through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the warning does not block validation", () =>
+			response.Valid.Should().BeTrue(because: "code-quality rules are warnings; errors: "
+				+ string.Join("; ", response.Validation.Errors ?? [])));
+		AllureApi.Step("Verify the catch-log-only warning appears only when the catch block just logs", () => {
+			bool warned = (response.Validation.Warnings ?? []).Any(w => w.Contains(PageBodyAstLinter.RuleCatchLogOnly));
+			warned.Should().Be(!handlesError,
+				because: "a catch block that only logs swallows the error, while one that stops the action handles it");
 		});
 	}
 

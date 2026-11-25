@@ -43,7 +43,8 @@ public sealed record BusinessRuleBatchResponse {
 				RuleName = item.RuleName,
 				Error = item.Error,
 				FilterMatchCount = item.FilterMatchCount,
-				Warning = item.Warning
+				Warning = item.Warning,
+				Warnings = item.Warnings is { Count: > 0 } ? item.Warnings : null
 			})
 			.ToList();
 		return new BusinessRuleBatchResponse {
@@ -111,4 +112,10 @@ public sealed record BusinessRuleResultDto {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[Description("Set when something about the rule could not be checked (for apply-static-filter: the filter could not be run on the environment).")]
 	public string? Warning { get; init; }
+
+	/// <summary>Gets advisory findings about a saved rule; absent when there are none.</summary>
+	[JsonPropertyName("warnings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Advisory findings about a saved rule, for example a rule another rule already covers. The rule is saved.")]
+	public IReadOnlyList<string>? Warnings { get; init; }
 }
