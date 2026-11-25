@@ -7,7 +7,7 @@ applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/SetActiveDynamicCaseVersionTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyDynamicCaseAsNewVersionTool.cs
 ticket: ENG-106400
-date: 2026-11-24
+date: 2026-11-25
 ---
 
 **What is true** — which member of a version family is "the active one" is not a single stored flag. The
@@ -24,8 +24,11 @@ is left with. Measured on `studio-16354310` (2026-11-24) for the winning branch 
 the root's 167); the losing branch is traced in core source, not measured, because the designer always puts a
 version above its root.
 
-**What breaks if you ignore it** — the package therefore treats this as a WARNING, not a refusal:
-`modify-dynamic-case-as-new-version` and the activation dry run warn and name the package to add a dependency on,
-and `set-active-dynamic-case-version` reads the pick back and reports `failed-not-restored` naming the member that
-really won. A clio or guidance change that turned the warning into a refusal would block a user whose package does
-rank higher, because the losing branch is not measured.
+**What breaks if you ignore it** — a switch the platform may lose leaves new records starting a member nobody
+chose, and `failed-not-restored` is never undone. So the package warns at creation and in the activation dry run,
+naming the package to add a dependency on, and refuses the real switch
+`package-position-confirmation-required` until `confirmPackagePosition` (clio: `confirm-package-position`) carries
+the user's yes; `set-active-dynamic-case-version` still reads the pick back and reports the member that really
+won. It is a confirmation, not a hard refusal, on purpose: the losing branch is not measured, so a user whose
+package does rank higher must still be able to switch. Dropping the confirmation flag, or turning the check into a
+refusal no flag lifts, would block that user; dropping the refusal brings back the silent wrong pick.

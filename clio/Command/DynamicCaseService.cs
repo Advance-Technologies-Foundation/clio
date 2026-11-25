@@ -331,6 +331,7 @@ public sealed class DynamicCaseService(
 	public SetActiveDynamicCaseVersionResult SetActiveVersion(SetActiveDynamicCaseVersionOptions options) {
 		ArgumentNullException.ThrowIfNull(options);
 		SetActiveCaseVersionRequest request = new() {
+			ConfirmPackagePosition = options.ConfirmPackagePosition ? true : null,
 			VersionName = NullIfBlank(options.VersionName),
 			VersionUId = NullIfBlank(options.VersionUId),
 			ValidateOnly = options.DryRun

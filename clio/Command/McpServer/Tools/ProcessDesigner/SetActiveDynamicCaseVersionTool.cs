@@ -20,7 +20,7 @@ public class SetActiveDynamicCaseVersionTool(
 	internal const string SetActiveDynamicCaseVersionToolName = "set-active-dynamic-case-version";
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused.</summary>
-	internal const string ValidArgsHint = "Valid: environment-name, version-name, version-uid, dry-run.";
+	internal const string ValidArgsHint = "Valid: environment-name, version-name, version-uid, confirm-package-position, dry-run.";
 
 	/// <summary>Refusal for a call whose whole argument object is absent.</summary>
 	/// <remarks>
@@ -52,7 +52,8 @@ public class SetActiveDynamicCaseVersionTool(
 		 + "version only with Change case on its page, which cancels its running case. Open pages need F5. Run it "
 		 + "with dry-run=true first. A user who asked for this switch has given the yes: with notes only (records in "
 		 + "stages the version lacks, a disabled family), switch and relay them with the result; with warnings "
-		 + "(package position), show them and wait for their yes. Never call it on your own after "
+		 + "(package position), show them and wait for their yes; the switch itself is then refused until "
+		 + "confirm-package-position=true, sent only after that yes. Never call it on your own after "
 		 + "modify-dynamic-case-as-new-version: ask the user whether to activate. Name the member by version-name or version-uid (describe-dynamic-case lists versions). The "
 		 + "result is READ BACK: failed-not-restored names the member really active and is never undone - the same "
 		 + "call can be repeated once the cause is fixed; decidedByPackagePosition names members in packages that do "
@@ -110,7 +111,8 @@ public class SetActiveDynamicCaseVersionTool(
 			Environment = args.EnvironmentName,
 			VersionName = args.VersionName?.Trim(),
 			VersionUId = args.VersionUId?.Trim(),
-			DryRun = args.DryRun ?? false
+			DryRun = args.DryRun ?? false,
+			ConfirmPackagePosition = args.ConfirmPackagePosition ?? false
 		};
 		// A case is interpreted, so the deterministic note can never contradict the response; it rides success only,
 		// like on every other process-designer write.
@@ -126,7 +128,7 @@ public class SetActiveDynamicCaseVersionTool(
 		[
 			"environment-name (registered environment)",
 			"version-name or version-uid (the member of the case's version family to activate, the root included)",
-			"optional: dry-run (see the tool description)"
+			"optional: confirm-package-position, dry-run (see the tool description)"
 		],
 		MinimalExample);
 }
@@ -154,7 +156,14 @@ public sealed record SetActiveDynamicCaseVersionArgs(
 	[property: JsonPropertyName("dry-run")]
 	[property: Description("Run every check and return the planned switch and its notes without writing anything; "
 		+ "default false.")]
-	bool? DryRun = null) {
+	bool? DryRun = null,
+
+	[property: JsonPropertyName("confirm-package-position")]
+	[property: Description("The user's yes to switch although a member in a package that does not accept changes "
+		+ "may outrank the target (the dry run's package-position warning; refused "
+		+ "package-position-confirmation-required without it): new records may then keep starting that member. "
+		+ "Pass true ONLY after the user agreed, never on your own; default false.")]
+	bool? ConfirmPackagePosition = null) {
 
 	/// <summary>
 	/// Overflow bag for top-level keys the SDK could not bind to a declared argument. Inspected by the tool so a

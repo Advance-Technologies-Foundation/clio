@@ -152,6 +152,24 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 			because: "the UId is forwarded trimmed");
 		_resolved.Captured.VersionName.Should().BeNull(because: "the call named no schema name");
 		_resolved.Captured.DryRun.Should().BeTrue(because: "dry-run asks for the planned switch only");
+		_resolved.Captured.ConfirmPackagePosition.Should().BeFalse(because: "the user's yes is never assumed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("confirm-package-position=true reaches the command: the user's yes to a switch a member in a non-editable package may outrank.")]
+	public void SetActiveDynamicCaseVersion_ShouldMapThePackagePositionConfirmation() {
+		// Arrange
+		SetActiveDynamicCaseVersionArgs args = Args("{\"environment-name\":\"dev\","
+			+ "\"version-name\":\"UsrOrderCaseCustom1\",\"confirm-package-position\":true}");
+
+		// Act
+		CommandExecutionResult result = _tool.SetActiveDynamicCaseVersion(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "confirm-package-position is a declared argument");
+		_resolved.Captured!.ConfirmPackagePosition.Should().BeTrue(
+			because: "the user's yes is forwarded, or the server keeps refusing the switch");
 	}
 
 	[Test]
@@ -293,6 +311,8 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
+		description.Should().Contain("refused until confirm-package-position=true, sent only after that yes",
+			because: "the server refuses a switch a foreign member may outrank until the user's own yes");
 		description.Should().Contain("Run it with dry-run=true first", because: "every switch is planned before it is made")
 			.And.Contain("A user who asked for this switch has given the yes",
 				because: "a request to switch is the consent when the dry run carries notes only")

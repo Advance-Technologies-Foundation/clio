@@ -24,6 +24,10 @@ public sealed class SetActiveDynamicCaseVersionOptions : EnvironmentOptions {
 
 	/// <summary>Run every check and return the planned switch without writing anything.</summary>
 	public bool DryRun { get; set; }
+
+	/// <summary>The user's yes to a switch that a member in a package that does not accept changes may outrank;
+	/// without it such a switch is refused <c>package-position-confirmation-required</c>.</summary>
+	public bool ConfirmPackagePosition { get; set; }
 }
 
 /// <summary>

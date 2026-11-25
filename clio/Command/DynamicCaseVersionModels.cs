@@ -291,6 +291,11 @@ public sealed record SetActiveCaseVersionRequest {
 	/// <summary>True to run every check and answer the planned switch without writing anything.</summary>
 	[JsonPropertyName("validateOnly")]
 	public bool ValidateOnly { get; init; }
+
+	/// <summary>The user's yes to a switch a member in a package that does not accept changes may outrank; sent only
+	/// when given, so an older package never sees a key it does not know.</summary>
+	[JsonPropertyName("confirmPackagePosition")]
+	public bool? ConfirmPackagePosition { get; init; }
 }
 
 /// <summary>The server's <c>SetActiveCaseVersionResult</c>.</summary>

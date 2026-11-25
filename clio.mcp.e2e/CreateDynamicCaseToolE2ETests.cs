@@ -594,7 +594,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("A change saved as a new version: the dry run plans an inactive version and writes nothing; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; the activation reads the version back as active; the same activation again answers unchanged; activating the root goes back.")]
+	[Description("A change saved as a new version: the dry run plans an inactive version and writes nothing; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; the activation reads the version back as active; the same activation again, with an unneeded confirm-package-position, answers unchanged; activating the root goes back.")]
 	[AllureName("modify-dynamic-case-as-new-version and set-active-dynamic-case-version: create, check, activate, go back")]
 	public async Task DynamicCaseVersion_ShouldBeCreatedInactive_ThenActivated_ThenRolledBack() {
 		// Arrange
@@ -624,7 +624,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			JsonObject afterActivatePlan = await DescribeCaseAsync(context, created);
 			CallToolResult activateCall = await SetActiveAsync(context, versionName, dryRun: false);
 			JsonObject afterActivate = await DescribeCaseAsync(context, created);
-			CallToolResult againCall = await SetActiveAsync(context, versionName, dryRun: false);
+			CallToolResult againCall = await SetActiveAsync(context, versionName, dryRun: false,
+				confirmPackagePosition: true);
 			CallToolResult backCall = await SetActiveAsync(context, rootName, dryRun: false);
 			JsonObject afterBack = await DescribeCaseAsync(context, created);
 
@@ -656,7 +657,8 @@ public sealed class CreateDynamicCaseToolE2ETests {
 				because: "the result names the member really active, as read back");
 			ActiveMemberOf(afterActivate).Should().Be(versionName, because: "the switch was stored");
 			ShouldHaveLanded(againCall, "activating the active member again is a success");
-			Text(ResultOf(againCall), "outcome").Should().Be("unchanged", because: "the call is idempotent");
+			Text(ResultOf(againCall), "outcome").Should().Be("unchanged",
+				because: "the call is idempotent, and a package-position yes the switch does not need binds and changes nothing");
 			ShouldHaveLanded(backCall, "the root is a member like any other, so activating it goes back");
 			ActiveMemberOf(afterBack).Should().Be(rootName, because: "the rollback was stored");
 		} finally {
@@ -824,13 +826,18 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	private static Task<CallToolResult> SetActiveAsync(ProcessDesignerArrangeContext context, string versionName,
-		bool dryRun) =>
-		ProcessDesignerE2EArrange.CallToolAsync(context,
-			SetActiveDynamicCaseVersionTool.SetActiveDynamicCaseVersionToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["version-name"] = versionName,
-				["dry-run"] = dryRun
-			});
+		bool dryRun, bool confirmPackagePosition = false) {
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = context.EnvironmentName,
+			["version-name"] = versionName,
+			["dry-run"] = dryRun
+		};
+		if (confirmPackagePosition) {
+			args["confirm-package-position"] = true;
+		}
+		return ProcessDesignerE2EArrange.CallToolAsync(context,
+			SetActiveDynamicCaseVersionTool.SetActiveDynamicCaseVersionToolName, args);
+	}
 
 	/// <summary>The names of the case's version family members, as describe lists them.</summary>
 	private static List<string> MembersOf(JsonObject caseBlock) =>

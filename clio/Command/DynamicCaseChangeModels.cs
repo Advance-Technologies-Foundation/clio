@@ -26,8 +26,10 @@ public static class DynamicCaseChangeRequirement {
 	/// resolves an object named by a unique caption and lists <c>Name (caption)</c> candidates when it is not unique,
 	/// which the <c>entity-schema-name</c> descriptions of describe, modify and new-version promise. 1.6.6.196
 	/// stops promising that a disabled family's new records start a version, which the tool descriptions rely on.
+	/// 1.6.6.197 refuses an outranked activation without <c>confirmPackagePosition</c>, which
+	/// <c>set-active-dynamic-case-version</c> sends as <c>confirm-package-position</c>.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.196";
+	public const string MinimumProcessBuilderVersion = "1.6.6.197";
 }
 
 /// <summary>

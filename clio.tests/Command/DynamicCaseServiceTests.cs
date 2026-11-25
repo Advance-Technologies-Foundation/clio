@@ -1678,6 +1678,24 @@ public sealed class DynamicCaseServiceTests {
 		_session.Received(1).SetActiveVersion(Arg.Is<SetActiveCaseVersionRequest>(request =>
 			request.VersionName == null && request.VersionUId == VersionUId && !request.ValidateOnly));
 		_session.Received(2).Dispose();
+		_session.DidNotReceive().SetActiveVersion(Arg.Is<SetActiveCaseVersionRequest>(request =>
+			request.ConfirmPackagePosition != null));
+	}
+
+	[Test]
+	[Description("The package-position confirmation is sent as confirmPackagePosition=true only when the user gave it; otherwise the key is left out, so the server keeps refusing an outranked switch.")]
+	public void SetActiveVersion_ShouldSendThePackagePositionConfirmation_OnlyWhenGiven() {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse { Success = true, Outcome = "activated" });
+		SetActiveDynamicCaseVersionOptions confirmed = ActivationOptions();
+		confirmed.ConfirmPackagePosition = true;
+
+		// Act
+		_service.SetActiveVersion(confirmed);
+
+		// Assert
+		_session.Received(1).SetActiveVersion(Arg.Is<SetActiveCaseVersionRequest>(request =>
+			request.ConfirmPackagePosition == true));
 	}
 
 	[Test]
