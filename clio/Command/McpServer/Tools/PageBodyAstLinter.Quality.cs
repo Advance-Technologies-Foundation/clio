@@ -89,7 +89,7 @@ internal static partial class PageBodyAstLinter {
 	private static IFunction FindModuleFactory(Script ast) {
 		foreach (Statement statement in ast.Body) {
 			if (statement is ExpressionStatement {
-					Expression: CallExpression {Callee: Identifier {Name: "define"}} call
+					Expression: CallExpression {Callee: Identifier {Name: DefineGlobalName}} call
 				}) {
 				return call.Arguments.OfType<IFunction>().FirstOrDefault();
 			}
@@ -265,11 +265,17 @@ internal static partial class PageBodyAstLinter {
 				+ "chain is the point.");
 	}
 
-	// Null when the handler hands the request on: it takes `next`, its own body (not a callback inside it) calls
-	// `next.handle(...)`, and a `return` - or an arrow's expression body - gives that call's result, directly or
-	// through a variable assigned from it.
+	// Null when the handler hands the request on: it takes `next` (a defaulted parameter counts), its own body (not a
+	// callback inside it) calls `next.handle(...)`, and the result reaches the caller - an arrow's expression body
+	// gives it, or every `return` of a block body does (directly or through a variable assigned from it) and the body
+	// does not run off its end.
 	private static string NextProblem(IFunction handler) {
-		if (handler.Params.Count < 2 || handler.Params[1] is not Identifier {Name: var next}) {
+		string next = handler.Params.Count > 1 ? handler.Params[1] switch {
+			Identifier identifier => identifier.Name,
+			AssignmentPattern {Left: Identifier defaulted} => defaulted.Name,
+			_ => null
+		} : null;
+		if (next is null) {
 			return "takes no `next`";
 		}
 		List<Node> own = new();
@@ -288,10 +294,27 @@ internal static partial class PageBodyAstLinter {
 					break;
 			}
 		}
-		bool returned = handler.Body is Expression expressionBody
-			? GivesNextResult(expressionBody, next, fromNext)
-			: own.OfType<ReturnStatement>().Any(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext));
+		bool returned = handler.Body switch {
+			BlockStatement block => EndsInReturn(block, depth: 0)
+				&& own.OfType<ReturnStatement>().All(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext)),
+			Node expressionBody => GivesNextResult(expressionBody, next, fromNext)
+		};
 		return returned ? null : "calls `next.handle(request)` but does not return its result";
+	}
+
+	// Every path through the statement ends in a `return` or a `throw`.
+	private static bool EndsInReturn(Statement statement, int depth) {
+		if (statement is null || depth > MaxAstDepth) {
+			return false;
+		}
+		return statement switch {
+			ReturnStatement or ThrowStatement => true,
+			BlockStatement block => block.Body.Count > 0 && EndsInReturn(block.Body[^1], depth + 1),
+			IfStatement branch => EndsInReturn(branch.Consequent, depth + 1) && EndsInReturn(branch.Alternate, depth + 1),
+			TryStatement attempt => EndsInReturn(attempt.Finalizer, depth + 1)
+				|| (EndsInReturn(attempt.Block, depth + 1) && (attempt.Handler is null || EndsInReturn(attempt.Handler.Body, depth + 1))),
+			_ => false
+		};
 	}
 
 	// The nodes of a function body that run as part of it: a nested function is a callback with its own flow.

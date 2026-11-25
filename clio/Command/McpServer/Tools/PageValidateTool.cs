@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Abstractions;
 using System.Linq;
@@ -219,8 +219,6 @@ public sealed class PageValidateTool(
 		}
 	};
 
-	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
-	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
 	// A client module (`define("Name", [deps], function (...) { ... })` with no page-schema markers) holds the logic a
 	// page imports. It gets the code-quality lint and no page rule; a body that does not parse goes down the page path,
 	// which reports the syntax error.
@@ -244,6 +242,8 @@ public sealed class PageValidateTool(
 		return true;
 	}
 
+	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
+	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
 	private static PageSyncValidationResult FoldInContentErrors(
 		PageSyncValidationResult result, SchemaValidationResult extraResult) {
 		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);

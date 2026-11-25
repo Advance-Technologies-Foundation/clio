@@ -452,6 +452,9 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("async (request, next) => { [1].forEach(() => next.handle(request)); return true; }", "never calls `next.handle(request)`")]
 	[TestCase("async (request, next) => { await next?.handle(request); }", "does not return its result")]
 	[TestCase("async (request, next) => { const result = await next?.handle(request); return true; }", "does not return its result")]
+	[TestCase("async (request, next) => { if (!request.value) { return; } return next?.handle(request); }", "does not return its result")]
+	[TestCase("async (request, next) => { if (request.value) { return true; } return next?.handle(request); }", "does not return its result")]
+	[TestCase("async (request, next) => { if (request.value) { return next?.handle(request); } }", "does not return its result")]
 	[Description("A handler that takes no `next`, never calls `next.handle` in its own body, or drops that call's result raises a warning that says which")]
 	public void Lint_ShouldWarnHandlerWithoutNext_WhenNextIsNeverUsed(string handler, string problem) {
 		// Arrange
@@ -470,7 +473,9 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("async (request, next) => { await request.$context.set(\"A\", 1); return next?.handle(request); }")]
 	[TestCase("async (request, next) => { const result = await next?.handle(request); return result; }")]
 	[TestCase("async (request, next) => next.handle(request)")]
-	[TestCase("async (request, next) => { if (!request.value) { return next?.handle(request); } return false; }")]
+	[TestCase("async (request, next = null) => { return next?.handle(request); }")]
+	[TestCase("async (request, next) => { if (!request.value) { return next?.handle(request); } const r = await next?.handle(request); return r; }")]
+	[TestCase("async (request, next) => { try { return await next?.handle(request); } catch (e) { throw e; } }")]
 	[TestCase("async (request, chain) => { return chain?.handle(request); }")]
 	[TestCase("async (request, next) => { let result; result = await next.handle(request); return result; }")]
 	[Description("A handler that returns `next.handle(request)`, directly or through a variable assigned from it, keeps the chain and raises no warning")]
