@@ -754,6 +754,7 @@ public sealed class PageUpdateTool(
 		var warnings = new List<string>();
 		warnings.AddRange(SchemaValidationService.ValidateSchemaDepsCompleteness(body).Warnings);
 		warnings.AddRange(SchemaValidationService.ValidateContextAccessAwait(body).Warnings);
+		warnings.AddRange(SchemaValidationService.ValidateGridSelectionWriteBack(body).Warnings);
 		string error = errors.Count > 0 ? ValidationFailedPrefix + string.Join("; ", errors) : null;
 		return (error, warnings.Count > 0 ? warnings : null);
 	}

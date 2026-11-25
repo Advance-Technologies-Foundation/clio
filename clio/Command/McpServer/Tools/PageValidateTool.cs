@@ -319,7 +319,9 @@ public sealed class PageValidateTool(
 			SchemaDeps: RunContentValidation(contentResult,
 				() => SchemaValidationService.ValidateSchemaDepsCompleteness(body)),
 			ContextAwait: RunContentValidation(contentResult,
-				() => SchemaValidationService.ValidateContextAccessAwait(body)));
+				() => SchemaValidationService.ValidateContextAccessAwait(body)),
+			GridSelection: RunContentValidation(contentResult,
+				() => SchemaValidationService.ValidateGridSelectionWriteBack(body)));
 
 	private static PageSyncValidationResult BuildResult(
 		SchemaValidationResult markerResult,
@@ -344,6 +346,7 @@ public sealed class PageValidateTool(
 		}
 		warnings.AddRange(content.SchemaDeps.Warnings);
 		warnings.AddRange(content.ContextAwait.Warnings);
+		warnings.AddRange(content.GridSelection.Warnings);
 		bool contentOk = contentResult.IsValid && content.Field.IsValid && content.InsertSelfConsistency.IsValid &&
 			content.LocalizableText.IsValid &&
 			content.ConverterDecl.IsValid &&
@@ -401,7 +404,8 @@ public sealed class PageValidateTool(
 		SchemaValidationResult ValidatorDecl,
 		SchemaValidationResult ValidatorFactoryShape,
 		SchemaValidationResult SchemaDeps,
-		SchemaValidationResult ContextAwait);
+		SchemaValidationResult ContextAwait,
+		SchemaValidationResult GridSelection);
 }
 
 /// <summary>

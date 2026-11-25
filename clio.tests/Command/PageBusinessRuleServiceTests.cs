@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.BusinessRules;
+using Clio.Command.BusinessRules.Converters;
 using Clio.Command.EntitySchemaDesigner;
 using FluentAssertions;
 using NSubstitute;
@@ -276,6 +277,139 @@ public sealed class PageBusinessRuleServiceTests {
 		results[1].Error.Should().Contain("MissingInput", because: "the failure reports the unknown element");
 		results[2].Success.Should().BeTrue(because: "a failed rule must not abort the remaining rules");
 		addonService.Received(1).AppendRules(Arg.Any<AddonGetRequestDto>(), Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Saves a rule that only undoes a stored rule and returns an inverse-redundant warning on its result.")]
+	public void Create_Batch_Should_Warn_When_Rule_Only_Undoes_Stored_Rule() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		BusinessRule stored = CreatePageRule(caption: "Show input") with { Name = "BusinessRule_stored" };
+		addonService.ReadRules(Arg.Any<AddonGetRequestDto>()).Returns([stored]);
+		BusinessRule inverse = InverseOf(stored, "Hide input");
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [inverse]));
+
+		// Assert
+		results.Should().ContainSingle(because: "one rule was sent");
+		results[0].Success.Should().BeTrue(because: "a redundancy finding is advisory and never blocks the save");
+		results[0].Warnings.Should().ContainSingle(because: "the rule only undoes the stored show rule")
+			.Which.Should().Contain(PageBusinessRuleRedundancy.RuleInverseRedundant,
+				because: "the warning names the inverse-redundant rule");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Re-reads the stored rules after the save, so the batch's own saved rules come back too; each one replaces its stored copy by its generated name, and only the second rule of an inverse pair is flagged.")]
+	public void Create_Batch_Should_Flag_Only_Second_Rule_Of_Inverse_Pair_When_Saved_Rules_Are_Read_Back() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		BusinessRule show = CreatePageRule(caption: "Show input") with { Name = "UsrShow" };
+		BusinessRule hide = InverseOf(show, "Hide input") with { Name = "UsrHide" };
+		addonService.ReadRules(Arg.Any<AddonGetRequestDto>()).Returns([show, hide]);
+		addonService.AppendRules(Arg.Any<AddonGetRequestDto>(), Arg.Any<IReadOnlyList<BusinessRuleMetadataDto>>())
+			.Returns(new BusinessRuleCreateResult("UsrShow"));
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [show, hide]));
+
+		// Assert
+		results.Select(result => result.RuleName).Should().Equal(["UsrShow", "UsrHide"],
+			because: "each saved item reports the name its stored copy is matched by");
+		results[0].Warnings.Should().BeNull(
+			because: "the stored copies of the batch's own rules are replaced by the batch rules, so the first rule is not compared with itself");
+		results[1].Warnings.Should().ContainSingle(because: "the second rule only undoes the first one")
+			.Which.Should().Contain(PageBusinessRuleRedundancy.RuleInverseRedundant,
+				because: "the warning names the inverse-redundant rule");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Saves the batch when the stored rules cannot be read, and still compares the batch's rules with each other.")]
+	public void Create_Batch_Should_Still_Compare_Batch_Rules_When_Stored_Rules_Unreadable() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		addonService.ReadRules(Arg.Any<AddonGetRequestDto>()).Returns(_ => throw new InvalidOperationException("read failed"));
+		BusinessRule show = CreatePageRule(caption: "Show input");
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [show, InverseOf(show, "Hide input")]));
+
+		// Assert
+		results.Should().OnlyContain(result => result.Success,
+			because: "the advisory check fails open: a read failure must not fail the save");
+		results[0].Warnings.Should().BeNull(because: "the first rule of the pair is the one that is needed");
+		results[1].Warnings.Should().ContainSingle(
+			because: "comparing the batch's rules with each other needs no stored rules");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Update warns when the updated rule only undoes another stored rule; the stored rules come from the schema the update already fetched.")]
+	public void Update_Should_Warn_When_Updated_Rule_Only_Undoes_Another_Stored_Rule() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		BusinessRule show = CreatePageRule(caption: "Show input") with { Name = "UsrShow" };
+		BusinessRule other = CreatePageRule(caption: "Other") with { Name = "UsrOther" };
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(BuildStoredRulesSchema(show, other));
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [InverseOf(show, "Other") with { Name = "UsrOther" }]));
+
+		// Assert
+		results[0].Success.Should().BeTrue(because: "a redundancy finding never blocks the update");
+		results[0].Warnings.Should().ContainSingle(because: "the updated rule now only undoes the stored show rule")
+			.Which.Should().Contain(PageBusinessRuleRedundancy.RuleInverseRedundant,
+				because: "the warning names the inverse-redundant rule");
+		addonService.Received(1).GetSchema(Arg.Any<AddonGetRequestDto>());
+		addonService.DidNotReceiveWithAnyArgs().ReadRules(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Update does not compare a rule with its own stored copy, even when it is rewritten into that copy's inverse.")]
+	public void Update_Should_Not_Warn_When_Rule_Is_Rewritten_Into_Its_Own_Inverse() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		BusinessRule show = CreatePageRule(caption: "Show input") with { Name = "UsrShow" };
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(BuildStoredRulesSchema(show));
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [InverseOf(show, "Show input") with { Name = "UsrShow" }]));
+
+		// Assert
+		results[0].Success.Should().BeTrue(because: "the rule exists and the payload is valid");
+		results[0].Warnings.Should().BeNull(because: "the update replaces the stored copy, so there is nothing left to undo");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Update never puts warnings on an item that failed.")]
+	public void Update_Should_Not_Warn_On_Failed_Item() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		BusinessRule show = CreatePageRule(caption: "Show input") with { Name = "UsrShow" };
+		BusinessRule other = CreatePageRule(caption: "Other") with { Name = "UsrOther" };
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>()).Returns(BuildStoredRulesSchema(show, other));
+		BusinessRule invalidInverse = InverseOf(show, "Other") with {
+			Name = "UsrOther",
+			Actions = [new HideElementBusinessRuleAction(["MissingInput"])]
+		};
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [invalidInverse]));
+
+		// Assert
+		results[0].Success.Should().BeFalse(because: "the rule targets an unknown page element");
+		results[0].Warnings.Should().BeNull(because: "a failed item was not saved, so it is not analyzed");
 	}
 
 	[Test]
@@ -1060,6 +1194,31 @@ public sealed class PageBusinessRuleServiceTests {
 	}
 
 	private const string VirtualFlagReason = "'UsrFlag' is a virtual view-model attribute.";
+
+	/// <summary>The rule that only undoes <paramref name="rule"/>: its condition negated, show turned into hide.</summary>
+	private static BusinessRule InverseOf(BusinessRule rule, string caption) =>
+		CreatePageRule(caption: caption) with {
+			Condition = new BusinessRuleConditionGroup("AND", [
+				rule.Condition.Conditions[0] with { ComparisonType = "not-equal" }
+			]),
+			Actions = [new HideElementBusinessRuleAction(["Input_One"])]
+		};
+
+	/// <summary>An add-on schema whose metadata stores <paramref name="rules"/>, built the way a save writes them.</summary>
+	private static AddonSchemaDto BuildStoredRulesSchema(params BusinessRule[] rules) {
+		Dictionary<string, BusinessRuleAttributeDescriptor> attributes = new() {
+			["PDS_Text"] = new("PDS_Text", "Text", null)
+		};
+		JsonArray metadataRules = new(rules
+			.Select(rule => BusinessRuleAddonMetadata.SerializeCreatedRule(SimpleToFullBusinessRuleConverter.ToPageMetadata(
+				attributes, rule, existingRule: null, new Dictionary<string, SysSettingOperandDescriptor>())))
+			.ToArray());
+		JsonObject metadata = new() {
+			["typeName"] = BusinessRuleConstants.BusinessRulesMetadataTypeName,
+			["rules"] = metadataRules
+		};
+		return new AddonSchemaDto { MetaData = metadata.ToJsonString(), Resources = [] };
+	}
 
 	private static BusinessRule CreatePageRule(
 		string actionElementName = "Input_One",

@@ -796,15 +796,11 @@ public sealed class PageParameterInfo {
 /// the only way an append loses an operation, and that was false.
 /// </para>
 /// <para>
-/// Scoped to <c>viewConfigDiff</c> deliberately: it is the only section merged by operation identity,
-/// and the only one this projection speaks for. The sibling <c>*_DIFF</c> arrays append
-/// unconditionally, so they cannot lose a current entry. Handlers are a different case and NOT covered
-/// — say so rather than implying otherwise: converters key on property name and replace, but
-/// <c>MergeHandlersRaw</c> drops EVERY current handler whose <c>request</c> appears in the fragment, so
-/// a current body carrying that request twice keeps neither and the fragment contributes one. That is
-/// the same shape of quiet loss this projection exists to report, in a section it does not read.
-/// Widening it means giving the raw handler-text merge a structured identity first; until then,
-/// reporting zeros for handlers would read as coverage.
+/// The operation counts and lists speak for <c>viewConfigDiff</c> only: it is the only section merged by
+/// operation identity. The sibling <c>*_DIFF</c> arrays append unconditionally, so they cannot lose a
+/// current entry. Handlers have their own channel, <see cref="RemovedHandlers"/> (ENG-107305): the merge
+/// removes EVERY current handler whose <c>request</c> the fragment declares, and several handlers for one
+/// request are legal and all run, so a current body carrying that request twice loses code.
 /// </para>
 /// </remarks>
 [DataContract]
@@ -959,6 +955,44 @@ public sealed class PageAppendProjection {
 	[Newtonsoft.Json.JsonIgnore]
 	[System.Text.Json.Serialization.JsonIgnore]
 	public IReadOnlyList<string> SupersededDropWarnings { get; init; }
+
+	/// <summary>
+	/// Gets one entry per request whose CURRENT handlers the fragment removed, in current-body order (ENG-107305).
+	/// Empty when no fragment request matches a current handler.
+	/// </summary>
+	/// <remarks>
+	/// One replaced handler is the ordinary re-save of a handler. <see cref="PageAppendRemovedHandler.HadDuplicates"/>
+	/// marks the real loss: the current body chained several handlers for the request, all of which ran, and
+	/// the fragment replaced every one of them.
+	/// </remarks>
+	[DataMember(Name = "removedHandlers")]
+	[JsonProperty("removedHandlers")]
+	[JsonPropertyName("removedHandlers")]
+	public IReadOnlyList<PageAppendRemovedHandler> RemovedHandlers { get; init; } = [];
+}
+
+/// <summary>
+/// One request whose current handlers an append merge removed.
+/// </summary>
+/// <param name="Request">The handler <c>request</c> the fragment declares, for example <c>crt.SaveRecordRequest</c>.</param>
+/// <param name="RemovedCount">How many current handlers declared that request and were removed.</param>
+[DataContract]
+public sealed record PageAppendRemovedHandler(
+	[property: DataMember(Name = "request")]
+	[property: JsonProperty("request")]
+	[property: JsonPropertyName("request")]
+	string Request,
+	[property: DataMember(Name = "removedCount")]
+	[property: JsonProperty("removedCount")]
+	[property: JsonPropertyName("removedCount")]
+	int RemovedCount) {
+
+	/// <summary>
+	/// Gets whether the current body declared the request more than once, so code that ran was lost.
+	/// </summary>
+	[JsonProperty("hadDuplicates")]
+	[JsonPropertyName("hadDuplicates")]
+	public bool HadDuplicates => RemovedCount > 1;
 }
 
 /// <summary>

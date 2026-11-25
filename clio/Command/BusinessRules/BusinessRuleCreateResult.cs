@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Clio.Command.BusinessRules;
 
 /// <summary>
@@ -14,8 +16,11 @@ public sealed record BusinessRuleCreateResult(string RuleName);
 /// <param name="Success">Whether the rule was created.</param>
 /// <param name="RuleName">The generated internal rule name when created; otherwise <c>null</c>.</param>
 /// <param name="Error">The failure reason when not created; otherwise <c>null</c>.</param>
+/// <param name="Warnings">Advisory findings about a saved rule (for example a rule another rule already
+/// covers); <c>null</c> when there are none. Never set on a failed item.</param>
 public sealed record BusinessRuleBatchItemResult(
 	string Name,
 	bool Success,
 	string? RuleName,
-	string? Error);
+	string? Error,
+	IReadOnlyList<string>? Warnings = null);
