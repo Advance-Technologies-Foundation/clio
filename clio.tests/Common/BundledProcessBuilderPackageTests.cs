@@ -106,7 +106,7 @@ public class BundledProcessBuilderPackageTests {
 	/// history.
 	/// </para>
 	/// <para>
-	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7417 passed, 0 failed, on
+	/// The package suite ran on the sources of this cut, not carried over from a previous one: 7433 passed, 0 failed, on
 	/// <c>dev-nf</c> on the producing commit (by the script). <c>dev-n8</c> was not run for this cut.
 	/// That matters beyond hygiene, because skipping the suite
 	/// (<c>-SkipTests</c> on the script; simply not running it on a hand cut) is the ONE path that can reach the coarse

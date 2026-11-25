@@ -200,7 +200,7 @@ public sealed record ModifyCaseRequest {
 	[JsonPropertyName("caseUId")]
 	public string CaseUId { get; init; }
 
-	/// <summary>The object; accepted only when it has exactly one case.</summary>
+	/// <summary>The object's schema name, or a caption the package resolves when it names one object; accepted only when it has exactly one case.</summary>
 	[JsonPropertyName("entitySchemaName")]
 	public string EntitySchemaName { get; init; }
 
