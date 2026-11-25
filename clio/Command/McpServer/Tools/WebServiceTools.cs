@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.WebServiceDesigner;
@@ -30,7 +31,7 @@ public sealed class RegisterWebServiceTool(IToolCommandResolver commandResolver)
 
 				 SOAP from a WSDL (a URL or files the user gives): call read-wsdl first and register one of the ports it returns, adding package-name; never hand-build what read-wsdl returned or infer a soap-action from another operation (describe by hand only what it says it left out). SOAP: type soap11 or soap12 with namespaces (prefix, uri; the first is the default); each method has message-element (e.g. tem:Add) and an optional soap-action (from the WSDL binding or the user, never made up) instead of http-method and uri, request parameters are body, header or cookie with element paths such as tem:intA (every prefix must be declared), soap-header on a top-level body parameter puts it in the envelope's Header, sequence-element names array items, and response paths are element paths such as AddResult, never JSONPath. A SOAP base URI is stored as given, without a trailing slash.
 
-				 Credentials are never values: basic/digest auth and every cookie, key, token or Authorization parameter reference a SYSTEM SETTING code (it must exist), and the user fills its value; a constant there, a header or soap-header constant that looks like a key (an authentication scheme and its credentials, a credential pair such as password=..., a generated key, a long letters-only or digits-only run, a password-like word, an address with credentials or a key in it) or sits under a credential-like soap-header parent (a plain one such as Accept-Language: en-US is allowed, but a key, password or PIN the user gives always goes into a system setting, even one the tool would accept), or user:password@ in base-uri, a namespace uri or a soap-action, is refused, and so is a key in a URI query or a query parameter's constant (a credential name, or a 16+ character sig, sas, code, appid, sign or hmac). The service code and every method and parameter code must carry the environment's schema-name prefix (Studio refuses to save a method without it; wire names go in uri and path), and the service code must not be used by another service (an existing service is changed with modify-web-service). The caller needs CanManageSolution. Returns the registered service with its parameter tree and the steps left to the user.
+				 Credentials are never values: basic/digest auth and every cookie, key, token or Authorization parameter reference a SYSTEM SETTING code (it must exist), and the user fills its value; a constant there, a header or soap-header constant that looks like a key (an authentication scheme and its credentials, a credential pair such as password=..., a generated key, a long letters-only or digits-only run, a password-like word, an address with credentials or a key in it) or sits under a credential-like soap-header parent (a plain one such as Accept-Language: en-US is allowed, but a key, password or PIN the user gives always goes into a system setting, even one the tool would accept), or user:password@ in base-uri, a namespace uri or a soap-action, is refused, and so is a key in a URI query or a query parameter's constant (a credential name, or a 16+ character sig, sas, code, appid, sign or hmac). The service code and every method and parameter code must carry the environment's schema-name prefix (Studio refuses to save a method without it; wire names go in uri and path), and the service code must not be used by another service (an existing service is changed with modify-web-service). The caller needs CanManageSolution. Returns the registered service with its parameter tree (a large one lists some methods by code only, in methods-not-shown) and the steps left to the user.
 				 """)]
 	public WebServiceToolResult RegisterWebService(
 		[Description("Parameters: environment-name, package-name, code, base-uri, methods (required); caption, description, retry-count, auth, type, namespaces (optional)")]
@@ -57,13 +58,13 @@ public sealed class ListWebServicesTool(IToolCommandResolver commandResolver) {
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Lists web services. Each comes with its code, caption, REST or SOAP, package and base URI, as Studio > Web services shows it (user information and a key kept in the query hidden). Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code.")]
+	[Description("Lists web services. Each comes with its code, caption, REST or SOAP, package and base URI, as Studio > Web services shows it (user information and a key kept in the query hidden). Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code. filter keeps the services whose code, caption or package contains the text; a list too long to return inline is cut, with a notice to narrow it with filter.")]
 	public WebServiceListResult ListWebServices(
-		[Description("Parameters: environment-name (required)")] [Required] WebServiceEnvironmentArgs args) {
+		[Description("Parameters: environment-name (required); filter (optional)")] [Required] ListWebServicesArgs args) {
 		try {
-			WebServiceToolRunner.RejectUnknownArguments(args?.ExtensionData, "Valid: environment-name.");
+			WebServiceToolRunner.RejectUnknownArguments(args?.ExtensionData, "Valid: environment-name, filter.");
 			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args?.EnvironmentName);
-			return new WebServiceListResult(true, Services: designer.List());
+			return WebServiceReplyBudget.Fit(new WebServiceListResult(true, Services: designer.List(args?.Filter)));
 		} catch (Exception exception) {
 			return new WebServiceListResult(false, WebServiceToolRunner.Describe(exception));
 		}
@@ -84,14 +85,14 @@ public sealed class DescribeWebServiceTool(IToolCommandResolver commandResolver)
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Reads one web service. REST, SOAP 1.1 and SOAP 1.2 services are read alike: it returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees. A SOAP service also returns its namespaces (the default first), and each SOAP method its message-element and soap-action instead of a uri; SOAP parameters carry soap-header and sequence-element where they apply, and their paths are element paths (tem:Outer/tem:Inner). Credential values, constant defaults of cookie, key, token or Authorization parameters, header or soap-header constants that look like a key or sit under a credential-like soap-header parent, and query constants under a credential or hosting key name are never returned (default-masked: true); a plain header constant (Accept-Language: en-US) is returned as is; a key kept in a URI query (a credential name, or a 16+ character sig, sas, code, appid, sign or hmac) shows as [masked], and the tools never write one back. Parameters come in stored order, the order a call sends them. With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
+	[Description("Reads one web service. REST, SOAP 1.1 and SOAP 1.2 services are read alike: it returns the base URI, the authentication type and the system settings it reads, and every method with its request and response parameter trees (methods narrows that to the method codes given; a reply too large to return inline gives as many methods in full as fit and lists the rest by code in methods-not-shown, to read with methods). A SOAP service also returns its namespaces (the default first), and each SOAP method its message-element and soap-action instead of a uri; SOAP parameters carry soap-header and sequence-element where they apply, and their paths are element paths (tem:Outer/tem:Inner). Credential values, constant defaults of cookie, key, token or Authorization parameters, header or soap-header constants that look like a key or sit under a credential-like soap-header parent, and query constants under a credential or hosting key name are never returned (default-masked: true); a plain header constant (Accept-Language: en-US) is returned as is; a key kept in a URI query (a credential name, or a 16+ character sig, sas, code, appid, sign or hmac) shows as [masked], and the tools never write one back. Parameters come in stored order, the order a call sends them. With usages: true it also lists the processes and Call web service elements that call each method. The caller needs CanManageSolution.")]
 	public WebServiceToolResult DescribeWebService(
-		[Description("Parameters: environment-name, code (required); usages (optional, default false)")]
+		[Description("Parameters: environment-name, code (required); usages (optional, default false), methods (optional)")]
 		[Required]
 		DescribeWebServiceArgs args) =>
 		WebServiceToolRunner.Run(commandResolver, args?.EnvironmentName, args?.ExtensionData,
-			"Valid: environment-name, code, usages.",
-			designer => designer.Describe(args.Code, args.Usages ?? false));
+			"Valid: environment-name, code, usages, methods.",
+			designer => designer.Describe(args.Code, args.Usages ?? false, args.Methods));
 }
 
 /// <summary>Changes a registered REST or SOAP web service, refusing a change that would break calling processes.</summary>
@@ -109,9 +110,9 @@ public sealed class ModifyWebServiceTool(IToolCommandResolver commandResolver) {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("""
-				 Changes a web service. For a REST or SOAP service it applies ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth, setDescription. Credentials follow the register-web-service rules; a method with use-auth false sends no authentication, so after a change of the authentication a notice names such methods, and setAuth none clears use-auth on every method, with a notice. Codes the service already has are kept as they are, prefix or not (never rename one to add it); a method or parameter this call adds follows the register-web-service prefix and path rules.
+				 Changes a web service. For a REST or SOAP service it applies ordered operations: addMethod, setMethod (replaces a method of the same code, keeping the UIds of the parameters it keeps), removeMethod, setBaseUri, setRetryCount, setAuth, setDescription. A reply too large to return inline gives the methods this call built in full first and lists the rest by code in methods-not-shown. Credentials follow the register-web-service rules; a method with use-auth false sends no authentication, so after a change of the authentication a notice names such methods, and setAuth none clears use-auth on every method, with a notice. Codes the service already has are kept as they are, prefix or not (never rename one to add it); a method or parameter this call adds follows the register-web-service prefix and path rules.
 
-				 A SOAP service also takes setNamespaces (the whole list; a prefix a kept method uses must stay) and setType (soap11 or soap12; REST and SOAP cannot be switched); both change every call, as does setBaseUri, so the usage guard treats them as changing every method; setAuth changes the calls of the methods with use-auth true. Its methods follow the register-web-service SOAP rules, and describe-web-service output is valid setMethod and setNamespaces input, except a uri, soap-action, base URI or namespace uri that shows a [masked] key: that is refused.
+				 A SOAP service also takes setNamespaces (the whole list; a prefix a kept method uses must stay) and setType (soap11 or soap12; REST and SOAP cannot be switched); both change every call, as does setBaseUri, so the usage guard treats them as changing every method; setAuth changes the calls of the methods with use-auth true. Its methods follow the register-web-service SOAP rules, and describe-web-service output is valid setMethod and setNamespaces input (a method in full, never an entry of methods-not-shown), except a uri, soap-action, base URI or namespace uri that shows a [masked] key: that is refused.
 
 				 BEFORE CALLING with setMethod or removeMethod: a process whose Call web service element calls that method loses its parameters on the next designer load and fails at run time, silently. setBaseUri, setAuth, setNamespaces and setType keep those parameters but change the calls the processes make. The tool refuses these changes (those four only when the service differs after the whole call; setAuth only for methods with use-auth true; setRetryCount never) while a process calls the service and lists the processes; show them to the user and repeat with acknowledge-usages naming them only after the user says yes. The caller needs CanManageSolution.
 				 """)]
@@ -121,7 +122,10 @@ public sealed class ModifyWebServiceTool(IToolCommandResolver commandResolver) {
 		ModifyWebServiceArgs args) =>
 		WebServiceToolRunner.Run(commandResolver, args?.EnvironmentName, args?.ExtensionData,
 			"Valid: environment-name, code, operations, acknowledge-usages.",
-			designer => designer.Modify(args.Code, args.Operations, args.AcknowledgeUsages));
+			designer => designer.Modify(args.Code, args.Operations, args.AcknowledgeUsages),
+			// The methods the call adds or replaces are the ones the agent checks, so they are the last listed by code only.
+			args?.Operations?.Select(operation => operation?.Method?.Code).Where(code => !string.IsNullOrWhiteSpace(code))
+				.ToList());
 }
 
 /// <summary>Sends one test request through a registered method.</summary>
@@ -138,7 +142,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Test-calls a web service method. A request to test is not a confirmation: for any method but a REST GET (POST, PUT, PATCH, DELETE, every SOAP method), first tell the user the call sends a real request that can change data in that API, and call only after their explicit yes, with user-confirmed: true (without it such a call is refused and nothing is sent). For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, as are the constants describe-web-service hides (also each key-like part of one, e.g. the key after Bearer) and keys kept in the stored URIs' queries, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
+	[Description("Test-calls a web service method. A request to test is not a confirmation: for any method but a REST GET (POST, PUT, PATCH, DELETE, every SOAP method), first tell the user the call sends a real request that can change data in that API, and call only after their explicit yes, with user-confirmed: true (without it such a call is refused and nothing is sent). For a REST or SOAP method it sends one real request, as Studio's Send test request does, and returns the HTTP status, the response body (cut to fit the reply: response-body-truncated) and response-values, the response parameters as the platform parsed them (a value the API did not send shows the parameter's default, or null). Request and response headers are never returned whole; values sent from system settings (also inside a SOAP envelope and its Header) or in Authorization are masked, as are the constants describe-web-service hides (also each key-like part of one, e.g. the key after Bearer) and keys kept in the stored URIs' queries, and so are response parameters read from a cookie, a credential-named header or with a setting or secret default. A REST method with content-type xml cannot be test-called; a process calls it through RequestBody. The caller needs CanManageSolution.")]
 	public WebServiceTestResult TestWebServiceMethod(
 		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value; arrays and arrays of objects take JSON arrays), user-confirmed (optional; true only after the user's explicit yes to a call of any method but a REST GET)")]
 		[Required]
@@ -148,7 +152,9 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData,
 				"Valid: environment-name, code, method, parameters, user-confirmed.", WebServiceToolRunner.TestMethodAliases);
 			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args.EnvironmentName);
-			return designer.TestMethod(args.Code, args.Method, args.Parameters, args.UserConfirmed == true);
+			// The designer masks the body first; only then is it cut to the reply budget.
+			return WebServiceReplyBudget.Fit(designer.TestMethod(args.Code, args.Method, args.Parameters,
+				args.UserConfirmed == true));
 		} catch (Exception exception) {
 			return new WebServiceTestResult(false, WebServiceToolRunner.Describe(exception));
 		}
@@ -190,7 +196,7 @@ public sealed class ReadWsdlTool(IToolCommandResolver commandResolver, IHttpCont
 
 				 Returns one argument object per SOAP 1.1 and SOAP 1.2 port (studio-pick marks the port Studio would create: the SOAP 1.2 one when both exist; it is not a recommendation, see warnings; HTTP ports are dropped): type, base URI, namespaces, and methods with message-element, soap-action and parameters with element paths, soap-header and sequence-element. Codes are the environment's schema-name prefix plus the full WSDL name in PascalCase (GetCustomerOrders -> UsrGetCustomerOrders; a nested field joins its whole path, wrappers included, customer/name -> UsrCustomerName), the same on every read. warnings list what was not read or needs a test call, and a port the platform may not be able to call as described (SOAP 1.2 dispatched by the Content-Type action, as WCF does; required WS-Addressing; WS-Security message security), naming the SOAP 1.1 port to register instead when there is one (for a plain SOAP 1.2 port only when WCF wrote the WSDL; otherwise as the way out of a failed test call).
 
-				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. When the user named the new service's code, pass it as code. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return whole comes back as operation names: read it again with operations. The caller needs CanManageSolution.
+				 wsdl-url is downloaded by the stand (Studio's WSDL download, imported schemas included; it turns non-ASCII text into ?), never by clio. wsdl-files reads local absolute paths: the WSDL and every schema it imports. Show the operations to the user, keep the ones they want, add package-name and call register-web-service with one port's arguments. When the user named the new service's code, pass it as code. With service-code (an existing SOAP service), operations that match its methods keep their codes (existing-methods: replace them with modify-web-service setMethod, add the rest with addMethod, the namespaces with setNamespaces). A WSDL too large to return inline comes back narrower: with several ports, the port to register in full and the others by operation name (read another with port); then operation names only (read it again with operations). The caller needs CanManageSolution.
 				 """)]
 	public WsdlReadResult ReadWsdl(
 		[Description("Parameters: environment-name, and wsdl-url or wsdl-files (required); port, code (new service) or service-code (existing service), operations (optional)")]
@@ -272,12 +278,16 @@ internal static class WebServiceToolRunner {
 		}
 	}
 
+	/// <summary>
+	/// Runs a designer call for a tool, refusing unknown arguments first, and fits the reply to the inline budget
+	/// (<see cref="WebServiceReplyBudget"/>), keeping the methods named in <paramref name="shownFirst"/> in full first.
+	/// </summary>
 	public static WebServiceToolResult Run(IToolCommandResolver resolver, string environmentName,
 		IReadOnlyDictionary<string, JsonElement> extensionData, string validHint,
-		Func<IWebServiceDesigner, WebServiceToolResult> action) {
+		Func<IWebServiceDesigner, WebServiceToolResult> action, IReadOnlyCollection<string> shownFirst = null) {
 		try {
 			RejectUnknownArguments(extensionData, validHint, ServiceCodeAliases);
-			return action(Resolve(resolver, environmentName));
+			return WebServiceReplyBudget.Fit(action(Resolve(resolver, environmentName)), shownFirst);
 		} catch (Exception exception) {
 			return new WebServiceToolResult(false, Describe(exception));
 		}
@@ -285,14 +295,6 @@ internal static class WebServiceToolRunner {
 
 	public static string Describe(Exception exception) =>
 		SensitiveErrorTextRedactor.Redact(exception.Message);
-}
-
-public sealed record WebServiceEnvironmentArgs(
-	[property: JsonPropertyName("environment-name")]
-	[property: Description(McpToolDescriptions.EnvironmentName)]
-	[property: Required]
-	string EnvironmentName) {
-	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 
 
@@ -361,7 +363,24 @@ public sealed record DescribeWebServiceArgs(
 
 	[property: JsonPropertyName("usages")]
 	[property: Description("Also list the processes that call the service (scans process metadata; slower)")]
-	bool? Usages = null) {
+	bool? Usages = null,
+
+	[property: JsonPropertyName("methods")]
+	[property: Description("Method codes to return, e.g. [\"UsrGetOrders\"]; every method when omitted. Use it for a service with many methods, or for the methods a reply listed in methods-not-shown")]
+	IReadOnlyList<string> Methods = null) {
+	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
+}
+
+/// <summary>The arguments of list-web-services.</summary>
+public sealed record ListWebServicesArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("filter")]
+	[property: Description("Text the code, caption or package contains (ignoring case), e.g. Erp; every service when omitted")]
+	string Filter = null) {
 	[JsonExtensionData] public Dictionary<string, JsonElement> ExtensionData { get; init; }
 }
 

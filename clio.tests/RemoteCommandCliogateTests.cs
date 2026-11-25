@@ -135,6 +135,22 @@ namespace Clio.Tests
         }
 
         [Test]
+        [Description("import-schema requires the cliogate version that can call the schema importer of Creatio 10.3.1146 and later.")]
+        public void ImportSchemaOptions_ShouldRequireCliogateVersion_AfterImporterContractFix()
+        {
+            // Arrange & Act
+            RequiresPackageAttribute requirement = GetCliogateRequirement(typeof(ImportSchemaOptions));
+
+            // Assert
+            requirement.Should().NotBeNull(
+                because: "import-schema must reject a gate that cannot bind the current platform importer");
+            requirement!.Version.Should().Be("2.0.0.54",
+                because: "older gates fail every import on Creatio 10.3.1146+ with a message that does not say to update cliogate");
+            requirement.Hint.Should().Be(ExpectedCliogateHint,
+                because: "the version failure must tell the user how to update cliogate");
+        }
+
+        [Test]
         [Description("show-package-file-content requires the path-confinement fix introduced in cliogate 2.0.0.47.")]
         public void ShowPackageFileContentOptions_ShouldDeclareVersionedCliogateRequirement_AfterPathConfinementFix()
         {

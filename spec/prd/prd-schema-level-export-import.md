@@ -50,7 +50,9 @@ operator can apply without touching anything else.
 - AC4 — `clio import-schema <Path> -p <Package> -e <Env>` recreates a deleted schema with its original `UId`.
 - AC5 — `import-schema --dry-run` reports the planned action and changes nothing.
 - AC6 — Importing when the name is owned by a different package fails naming that package, and succeeds
-  with `--allow-new-layer`.
+  with `--allow-new-layer`. *Amended 2026-11-24 (issue #2001):* on Creatio 10.3.1146+ the platform itself may
+  still refuse such an import, because clio passes `ExistingSchemaPackageAction.None`; see `import-schema.md`.
 - AC7 — Both commands are exposed as MCP tools, `export-schema` read-only and `import-schema` destructive.
 - AC8 — Against an environment whose cliogate is older than `2.0.0.46`, both commands report the
-  requirement rather than failing obscurely.
+  requirement rather than failing obscurely. *Amended 2026-11-24 (issue #2001):* the `import-schema`
+  threshold is now `2.0.0.54`; see the ADR's Consequences.

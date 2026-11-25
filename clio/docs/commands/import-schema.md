@@ -50,6 +50,11 @@ indistinguishable from here, so the safe branch is the default.
 
 Use `--dry-run` first on any environment you care about — it prints the plan and writes nothing.
 
+On Creatio 10.3.1146 and later, `--allow-new-layer` can still be refused by the platform: when a schema
+with the bundle's `UId` already exists in another package and the platform could move it, the import
+stops with the platform's message naming both packages. clio asks the platform neither to move that
+schema into the target package nor to update it where it is.
+
 ## After the import
 
 The schema is saved but **not built**:
@@ -61,7 +66,8 @@ The command prints this reminder on every successful import.
 
 ## Requirements
 
-- cliogate `2.0.0.46` or newer on the environment (`clio install-gate -e <environment>`).
+- cliogate `2.0.0.54` or newer on the environment (`clio install-gate -e <environment>`). Older
+  gates cannot call the schema importer of Creatio 10.3.1146 and later.
 - The target package must be unlocked (`clio unlock-package`).
 
 ## Examples

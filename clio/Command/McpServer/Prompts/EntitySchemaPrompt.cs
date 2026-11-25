@@ -10,6 +10,7 @@ namespace Clio.Command.McpServer.Prompts;
 /// </summary>
 [McpServerPromptType, Description("Prompts for creating, reading, and modifying remote entity schemas")]
 public static class EntitySchemaPrompt {
+	private const string NotProvided = "<not provided>";
 
 	/// <summary>
 	/// Builds a prompt that directs the agent to create a remote entity schema through MCP.
@@ -84,7 +85,7 @@ public static class EntitySchemaPrompt {
 		 The column readback enriches the
 		 lookup `Const` default-value-config with `display-value` (and a `record-resolution` marker when it
 		 cannot be resolved) so you can verify which record the default points to without a second query.
-		 Current parent request: `{parentSchemaName ?? "<not provided>"}`. Current replacement request:
+		 Current parent request: `{parentSchemaName ?? NotProvided}`. Current replacement request:
 		 `{extendParent}`.
 		 Detect the connected user's profile language ONCE per session via `get-user-culture` and reuse it for the schema and column captions; if it returns `success:false`, ASK the user which language to use — do NOT silently use the host locale or `en-US`. Override per call with `caption-culture`.
 		 The detected culture is the LANGUAGE of the caption text, not just the map key: author each localization value in its own language and keep the mandatory `en-US` value in ENGLISH. clio rejects non-English text (e.g. Cyrillic) under `en-US`; put localized text under its own culture key such as `uk-UA`.
@@ -337,19 +338,25 @@ public static class EntitySchemaPrompt {
 		[Description("Column name (own or inherited) to set as the primary-display column")]
 		string primaryDisplayColumn = null,
 		[Description("Optional database-view flag; omission preserves the current value")]
-		bool? isDBView = null) =>
+		bool? isDBView = null,
+		[Description("Column name (own or inherited, of type Color) to set as the color column")]
+		string primaryColorColumn = null) =>
 		$"""
 		 Use clio mcp server `{SetEntitySchemaPropertiesTool.SetEntitySchemaPropertiesToolName}` to set schema-level
 		 properties on entity schema `{schemaName}` in package `{packageName}` on environment `{environmentName}`.
 		 Pass `package-name`, `schema-name`, and `environment-name` exactly as provided. Supply
 		 `primary-display-column` with the column (own or inherited) to show as the record's display value in
 		 lookups and links — this is the only supported way to change the display column of an EXISTING schema.
-		 Requested primary-display column: `{primaryDisplayColumn ?? "<not provided>"}`.
-		 When supplied, set `is-db-view` to `{isDBView?.ToString().ToLowerInvariant() ?? "<not provided>"}`.
+		 Requested primary-display column: `{primaryDisplayColumn ?? NotProvided}`.
+		 Supply `primary-color-column` with the Color-typed column (own or inherited) Freedom UI colors records
+		 from, for example lookup values; a column of any other type is refused.
+		 Requested color column: `{primaryColorColumn ?? NotProvided}`.
+		 When supplied, set `is-db-view` to `{isDBView?.ToString().ToLowerInvariant() ?? NotProvided}`.
 		 The SQL view must be provisioned separately; this flag does not convert existing tables or change `is-virtual`.
 		 At least one settable property must be supplied. The change is saved and published like other
 		 entity-schema tools, then verified on readback. Confirm the result with
-		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` (`primary-display-column-name`).
+		 `{GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName}` (`primary-display-column-name`,
+		 `primary-color-column-name`).
 		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 """;
 }

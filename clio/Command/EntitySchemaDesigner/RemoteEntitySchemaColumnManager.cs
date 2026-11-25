@@ -210,6 +210,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			(EntitySchemaColumnDto targetColumn, _) = FindColumnForRead(schema, requestedColumnName);
 			schema.PrimaryDisplayColumn = targetColumn;
 		}
+		string requestedColorColumnName = string.IsNullOrWhiteSpace(options.PrimaryColorColumn)
+			? null
+			: options.PrimaryColorColumn.Trim();
+		if (requestedColorColumnName != null) {
+			schema.PrimaryColorColumn = ResolveColorColumn(schema, requestedColorColumnName);
+		}
 		// The culture is resolved LAZILY: only a scalar --title needs a culture to anchor to, and resolving
 		// it eagerly would add a profile-culture lookup (a remote call) to the pre-existing
 		// primary-display-column-only invocation, which never made one.
@@ -225,12 +231,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema, package, options, "schema properties were saved", ODataContractImpact.Unchanged);
 		// The server performs no validation and silently no-ops if a target version expects the legacy
 		// primaryDisplayColumnUId; verify the readback so that silent no-op becomes a clear failure.
-		if (requestedColumnName != null && !string.Equals(reloadedSchema.PrimaryDisplayColumn?.Name,
-			requestedColumnName, StringComparison.OrdinalIgnoreCase)) {
-			throw new EntitySchemaDesignerException(
-				$"Primary-display column '{requestedColumnName}' was not persisted for schema '{schema.Name}'. " +
-				"The target environment may not support setting the primary-display column through this API.");
-		}
+		EnsureColumnReferencePersisted(requestedColumnName, reloadedSchema.PrimaryDisplayColumn,
+			"Primary-display column", "primary-display column", schema.Name);
+		// Same silent no-op risk as the primary-display column: the designer accepts the payload whether or not
+		// the target persists the reference, so only the readback proves the color column changed.
+		EnsureColumnReferencePersisted(requestedColorColumnName, reloadedSchema.PrimaryColorColumn,
+			"Color column", "color column", schema.Name);
 		VerifySchemaCaption(reloadedSchema, requestedTitles, options.SchemaName);
 		if (options.IsDBView.HasValue) {
 			if (reloadedSchema.IsDBView != options.IsDBView.Value) {
@@ -242,6 +248,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (requestedColumnName != null) {
 			_logger.WriteInfo(
 				$"Primary-display column set to '{requestedColumnName}' for schema '{options.SchemaName}'.");
+		}
+		if (requestedColorColumnName != null) {
+			_logger.WriteInfo(
+				$"Color column set to '{reloadedSchema.PrimaryColorColumn.Name}' for schema '{options.SchemaName}'.");
 		}
 		// ApplySchemaCaption returns ReadOnlyDictionary.Empty, never null (Sonar S1168), so a null-coalesce
 		// here was a dead branch that also allocated on every caption-less save.
@@ -298,6 +308,21 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Confirms the requested caption survived the round-trip, so an environment that silently ignores the
 	/// caption fails loudly instead of reporting success on an unchanged schema.
 	/// </summary>
+	/// <summary>
+	/// Fails when a requested schema-level column reference did not survive the save: the designer accepts the
+	/// payload whether or not the target persists it, so only the readback proves the change.
+	/// </summary>
+	private static void EnsureColumnReferencePersisted(string requestedColumnName,
+		EntitySchemaColumnDto persistedColumn, string referenceLabel, string referenceNoun, string schemaName) {
+		if (requestedColumnName == null || string.Equals(persistedColumn?.Name, requestedColumnName,
+			StringComparison.OrdinalIgnoreCase)) {
+			return;
+		}
+		throw new EntitySchemaDesignerException(
+			$"{referenceLabel} '{requestedColumnName}' was not persisted for schema '{schemaName}'. " +
+			$"The target environment may not support setting the {referenceNoun} through this API.");
+	}
+
 	private static void VerifySchemaCaption(EntityDesignSchemaDto reloadedSchema,
 		IReadOnlyDictionary<string, string> requestedTitles, string schemaName) {
 		if (requestedTitles is not { Count: > 0 }) {
@@ -572,7 +597,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			schema.AdministratedByRecords,
 			schema.UseDenyRecordRights,
 			schema.UseLiveEditing,
-			columns);
+			columns,
+			schema.PrimaryColorColumn?.Name);
 	}
 
 	/// <summary>
@@ -630,7 +656,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			AdministratedByRecords: runtimeSchema.AdministratedByRecords,
 			UseDenyRecordRights: null,
 			UseLiveEditing: null,
-			Columns: columns);
+			Columns: columns,
+			PrimaryColorColumnName: runtimeSchema.PrimaryColorColumnName);
 	}
 
 	/// <summary>
@@ -681,6 +708,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		WriteInfo($"Extend parent: {FormatBoolean(schema.ExtendParent)}");
 		WriteInfo($"Primary column: {FormatText(schema.PrimaryColumnName)}");
 		WriteInfo($"Primary display column: {FormatText(schema.PrimaryDisplayColumnName)}");
+		WriteInfo($"Primary color column: {FormatText(schema.PrimaryColorColumnName)}");
 		WriteInfo($"Own columns: {schema.OwnColumnCount}");
 		WriteInfo($"Inherited columns: {schema.InheritedColumnCount}");
 		WriteInfo($"Indexes: {FormatNullableCount(schema.IndexesCount)}");
@@ -1133,6 +1161,23 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 		throw new EntitySchemaDesignerException(
 			$"Column '{columnName}' was not found in schema '{schema.Name}'.");
+	}
+
+	/// <summary>
+	/// Resolves the requested color column (own, then inherited) and refuses a column whose type is not
+	/// <c>Color</c>. The platform colors records only from a <c>Color</c>-typed column; a text column that merely
+	/// holds hex codes (out-of-the-box lookups such as <c>CaseStatus</c> and <c>ActivityCategory</c> have a text
+	/// column NAMED <c>Color</c>) would be saved without complaint and color nothing.
+	/// </summary>
+	private EntitySchemaColumnDto ResolveColorColumn(EntityDesignSchemaDto schema, string columnName) {
+		(EntitySchemaColumnDto column, _) = FindColumnForRead(schema, columnName);
+		if (column.DataValueType != EntitySchemaDesignerSupport.SupportedDataValueTypes["color"]) {
+			throw new EntitySchemaDesignerException(
+				$"Column '{column.Name}' of schema '{schema.Name}' is of type " +
+				$"'{EntitySchemaDesignerSupport.GetFriendlyTypeName(column.DataValueType)}', not 'Color'. " +
+				"The color column must be of type Color; add one with modify-entity-schema-column (type Color) first.");
+		}
+		return column;
 	}
 
 	private (EntitySchemaColumnDto Column, string Source) FindColumnForRead(EntityDesignSchemaDto schema, string columnName) {
