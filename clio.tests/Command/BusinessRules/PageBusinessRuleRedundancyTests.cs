@@ -250,6 +250,76 @@ public sealed class PageBusinessRuleRedundancyTests {
 	}
 
 	[Test]
+	[Description("Keeps subsumption on the conditions as written: boolean constants are re-keyed for the inverse check only.")]
+	public void Analyze_WhenBooleanConstantsDifferOnlyInForm_KeepsSubsumptionAsWritten() {
+		// Arrange
+		BusinessRuleCondition notEqualTrue = new(new BusinessRuleExpression("AttributeValue", path: "Approved"), "not-equal",
+			new BusinessRuleExpression("Const", value: JsonSerializer.SerializeToElement(true)));
+		BusinessRule stored = Rule("Read-only when not approved", "AND", ReadOnly("Amount"), EqualFlag("Approved", false));
+		BusinessRule otherForm = Rule("Read-only when not approved and closed", "AND", ReadOnly("Amount"),
+			notEqualTrue, Equal("Status", Commercial));
+		BusinessRule sameForm = Rule("Read-only when false and closed", "AND", ReadOnly("Amount"),
+			EqualFlag("Approved", false), Equal("Status", Commercial));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([stored], [otherForm, sameForm]);
+
+		// Assert
+		warnings[0].Should().NotContain(warning => warning.Contains("subsumed"),
+			because: "'equal false' and 'not-equal true' are different conditions as written, so subsumption does not match them");
+		warnings[1].Should().ContainSingle(warning => warning.Contains("subsumed"),
+			because: "the same condition as written plus one more is still subsumed, as before this change");
+	}
+
+	[Test]
+	[Description("Drops an is-filled-in check beside 'equal' in an AND group: 'X equal v AND X is-filled-in' undoes 'X not-equal v'.")]
+	public void Analyze_WhenInverseAddsIsFilledInToEqual_ReturnsInverseRedundantWarning() {
+		// Arrange
+		BusinessRule existing = Rule("Editable when open", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial));
+		BusinessRule incoming = Rule("Read-only when closed and set", "AND", ReadOnly("Amount"),
+			Equal("Status", Commercial), IsFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().ContainSingle(because: "'equal v' is already false on an empty value, so the check adds nothing")
+			.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
+	}
+
+	[Test]
+	[Description("Keeps an is-filled-in check in an AND group when it targets another attribute.")]
+	public void Analyze_WhenAndedIsFilledInTargetsOtherAttribute_ReturnsNoWarning() {
+		// Arrange
+		BusinessRule existing = Rule("Editable when open", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial));
+		BusinessRule incoming = Rule("Read-only when closed with owner", "AND", ReadOnly("Amount"),
+			Equal("Status", Commercial), IsFilledIn("Owner"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "an empty owner narrows the rule beyond the negation of the other one");
+	}
+
+	[Test]
+	[Description("Keeps an is-filled-in check beside 'not-equal' in an AND group: 'not-equal v' is true on an empty value.")]
+	public void Analyze_WhenIsFilledInIsAndedWithNotEqual_ReturnsNoWarning() {
+		// Arrange — "Status not-equal v AND Status filled" skips an empty status, where "Status not-equal v" fires.
+		BusinessRule existing = Rule("Read-only when closed", "AND", ReadOnly("Amount"), Equal("Status", Commercial));
+		BusinessRule incoming = Rule("Editable when open and set", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial), IsFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "the check narrows the rule, so it is not the plain negation of 'equal v'");
+	}
+
+	[Test]
 	[Description("Does not treat the strings \"true\" and \"false\" as opposite booleans.")]
 	public void Analyze_WhenOppositeValuesAreStrings_ReturnsNoWarning() {
 		// Arrange
