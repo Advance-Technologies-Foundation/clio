@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -54,6 +55,9 @@ public sealed class PageValidateTool(
 		string body = resolvedBody;
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
 			return await ValidateMobileAsync(body, args, cancellationToken).ConfigureAwait(false);
+		}
+		if (TryValidateClientModule(body, out PageValidateResponse? moduleResponse)) {
+			return moduleResponse;
 		}
 		PageSyncValidationResult result = Validate(body, args.Resources);
 		// Registry-driven chart-widget validation needs the (async, version-scoped) component catalog,
@@ -217,6 +221,29 @@ public sealed class PageValidateTool(
 
 	// Folds an extra content-validation result's errors into the envelope and forces ContentOk=false; shared by the
 	// async chart-widget and run-process structural checks that run outside the static content-validation pipeline.
+	// A client module (`define("Name", [deps], function (...) { ... })` with no page-schema markers) holds the logic a
+	// page imports. It gets the code-quality lint and no page rule; a body that does not parse goes down the page path,
+	// which reports the syntax error.
+	private static bool TryValidateClientModule(string body, [NotNullWhen(true)] out PageValidateResponse? response) {
+		response = null;
+		if (body.Contains("/**SCHEMA_", StringComparison.Ordinal)
+			|| !PageBodySyntaxValidator.ValidateAndParse(body, out Script ast).IsValid
+			|| PageBodyAstLinter.LintClientModule(ast) is not { } findings) {
+			return false;
+		}
+		List<string> warnings = findings.Select(PageBodyAstLinter.FormatFinding).ToList();
+		response = new PageValidateResponse {
+			Valid = true,
+			Validation = new PageSyncValidationResult {
+				MarkersOk = true,
+				JsSyntaxOk = true,
+				ContentOk = true,
+				Warnings = warnings.Count > 0 ? warnings : null
+			}
+		};
+		return true;
+	}
+
 	private static PageSyncValidationResult FoldInContentErrors(
 		PageSyncValidationResult result, SchemaValidationResult extraResult) {
 		List<string> mergedErrors = result.Errors is null ? new List<string>() : new List<string>(result.Errors);

@@ -7,9 +7,10 @@ using Acornima.Ast;
 namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
-/// Code-quality rules of the page-body lint pass. They read only the page-schema sections
-/// (<c>handlers</c>, <c>converters</c>, <c>validators</c>) of the object the page factory returns, and every
-/// one of them is a <see cref="LintSeverity.Warning"/>: the page works, it is just hard to maintain.
+/// Code-quality rules of the page-body lint pass. They read the page-schema sections (<c>handlers</c>,
+/// <c>converters</c>, <c>validators</c>) of the object the page factory returns, and - through
+/// <see cref="LintClientModule"/> - the client modules a page imports, where its logic lives. Every one of them is a
+/// <see cref="LintSeverity.Warning"/>: the page works, it is just hard to maintain.
 ///
 /// The rule ids and thresholds are shared with the Classic-to-Freedom migration engine of the CAADT toolkit,
 /// which applies the same rules as a blocking gate on the pages it builds. A rule changed here is changed
@@ -26,6 +27,7 @@ internal static partial class PageBodyAstLinter {
 	internal const string RuleNumericComparisonType = "numeric-comparison-type";
 	internal const string RuleSequentialIndependentAwaits = "sequential-independent-awaits";
 	internal const string RuleGuidLiteralDataReference = "guid-literal-data-reference";
+	internal const string RuleHandlerWithoutNext = "handler-without-next";
 
 	/// <summary>A function in a section longer than this many lines is reported.</summary>
 	internal const int MaxFunctionLines = 60;
@@ -53,16 +55,46 @@ internal static partial class PageBodyAstLinter {
 	private static void CheckCodeQuality(HashSet<Node> sections, LintFindingBudget budget) {
 		Dictionary<string, List<NamedFunction>> helpersByShape = new(StringComparer.Ordinal);
 		foreach (Property section in sections.OfType<Property>()) {
-			CheckSectionNode(section.Value, isElementId: false, depth: 0, budget);
+			CheckSectionNode(section.Value, new QualityScope(IsElementId: false, CheckGuids: true), depth: 0, budget);
 			if (TryGetStaticPropertyName(section) == "handlers" && section.Value is ArrayExpression handlers) {
 				foreach (Node entry in handlers.Elements) {
 					if (entry is ObjectExpression handlerEntry && TryGetHandlerFunction(handlerEntry, out IFunction handler)) {
 						CheckHandler(handler, helpersByShape, budget);
+						CheckHandlerCallsNext(handler, RequestOf(handlerEntry), budget);
 					}
 				}
 			}
 		}
 		ReportDuplicateHelpers(helpersByShape, budget);
+	}
+
+	/// <summary>
+	/// Lints a client module (<c>define("Name", [deps], function(...) { ... })</c>) with the code-quality rules that
+	/// apply outside a page section: function length, log-only catch blocks, bare numeric comparison types and
+	/// sequential independent loads. A record id is not reported: a module is where a page's named constants are
+	/// declared. Returns null when the script is not a client module, so the caller can lint it as a page instead.
+	/// </summary>
+	public static IReadOnlyList<PageBodyLintFinding> LintClientModule(Script ast) {
+		if (ast is null || FindModuleFactory(ast) is not { } factory) {
+			return null;
+		}
+		LintFindingBudget budget = new();
+		CheckSectionNode(factory.Body, new QualityScope(IsElementId: false, CheckGuids: false), depth: 0, budget);
+		CheckSequentialAwaits(factory.Body, depth: 0, budget);
+		budget.AppendSummaries();
+		return budget.Findings;
+	}
+
+	// The factory of the script's top-level `define(...)` call; null when the script has none.
+	private static IFunction FindModuleFactory(Script ast) {
+		foreach (Statement statement in ast.Body) {
+			if (statement is ExpressionStatement {
+					Expression: CallExpression {Callee: Identifier {Name: "define"}} call
+				}) {
+				return call.Arguments.OfType<IFunction>().FirstOrDefault();
+			}
+		}
+		return null;
 	}
 
 	private static bool TryGetHandlerFunction(ObjectExpression entry, out IFunction handler) {
@@ -77,6 +109,17 @@ internal static partial class PageBodyAstLinter {
 		return false;
 	}
 
+	// The request a handler entry answers, or null when it is not a string literal.
+	private static string RequestOf(ObjectExpression entry) {
+		foreach (Node element in entry.Properties) {
+			if (TryGetEntryProperty(element, out Property prop, out string key) && key == "request"
+				&& prop.Value is Literal {Value: string request}) {
+				return request;
+			}
+		}
+		return null;
+	}
+
 	#endregion
 
 	#region Section-wide rules
@@ -87,17 +130,20 @@ internal static partial class PageBodyAstLinter {
 		"code", "path", "caption", "title", "width"
 	};
 
-	// One walk over a section for the rules that look at single nodes. `isElementId` marks the value of an
-	// element-shaped object's `id`, so a generated local id is told apart from a record id used as data; an `id`
-	// beside `displayValue` or `type` is data and is reported.
-	private static void CheckSectionNode(Node node, bool isElementId, int depth, LintFindingBudget budget) {
+	// Where a node sits for the single-node rules: `IsElementId` marks the value of an element-shaped object's `id`,
+	// and `CheckGuids` is off in a client module, which is where named record ids are declared.
+	private readonly record struct QualityScope(bool IsElementId, bool CheckGuids);
+
+	// One walk over a section for the rules that look at single nodes. An element-shaped object's `id` is told apart
+	// from a record id used as data; an `id` beside `displayValue` or `type` is data and is reported.
+	private static void CheckSectionNode(Node node, QualityScope scope, int depth, LintFindingBudget budget) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		switch (node) {
-			case Property {Value: Literal} elementIdProperty when isElementId:
+			case Property {Value: Literal} elementIdProperty when scope.IsElementId:
 				// The flag belongs to this property's value: walk only that, so no other key inherits it.
-				CheckSectionNode(elementIdProperty.Value, isElementId: true, depth + 1, budget);
+				CheckSectionNode(elementIdProperty.Value, scope, depth + 1, budget);
 				return;
 			case IFunction function:
 				CheckFunctionLength(node, function, budget);
@@ -111,7 +157,7 @@ internal static partial class PageBodyAstLinter {
 					() => "`comparisonType` is a bare number; use the named `sdk.ComparisonType.<Name>` value so the "
 						+ "operator can be read and checked (MCP guide: page-schema-handlers).");
 				break;
-			case Literal {Value: string text} when !isElementId && ODataKeyFormatter.IsGuid(text):
+			case Literal {Value: string text} when scope.CheckGuids && !scope.IsElementId && ODataKeyFormatter.IsGuid(text):
 				budget.TryAdd(RuleGuidLiteralDataReference, LintSeverity.Warning,
 					node.Location.Start.Line, node.Location.Start.Column + 1,
 					() => $"Record id `{text}` is hard-coded in page code; read it from the project's constants "
@@ -123,7 +169,7 @@ internal static partial class PageBodyAstLinter {
 		foreach (Node child in node.ChildNodes) {
 			bool childIsElementId = elementObject && child is Property {Value: Literal} idProperty
 				&& TryGetStaticPropertyName(idProperty) == "id";
-			CheckSectionNode(child, childIsElementId, depth + 1, budget);
+			CheckSectionNode(child, scope with {IsElementId = childIsElementId}, depth + 1, budget);
 		}
 	}
 
@@ -200,6 +246,85 @@ internal static partial class PageBodyAstLinter {
 		}
 		CheckSequentialAwaits(handler.Body, depth: 0, budget);
 	}
+
+	// Page handlers run as a chain: a handler that does not call `next.handle(request)` stops every later handler of
+	// the request, and the platform's own handling of a `crt.*` request, without an error; one that calls it and drops
+	// the result loses what the rest of the chain returned. The toolkit's migration gate holds the same rule.
+	private static void CheckHandlerCallsNext(IFunction handler, string request, LintFindingBudget budget) {
+		string problem = NextProblem(handler);
+		if (problem is null) {
+			return;
+		}
+		Node handlerNode = (Node)handler;
+		string requestName = request is null ? "its request" : $"`{request}`";
+		budget.TryAdd(RuleHandlerWithoutNext, LintSeverity.Warning,
+			handlerNode.Location.Start.Line, handlerNode.Location.Start.Column + 1,
+			() => $"This handler {problem}, so the rest of the chain for {requestName} (and the platform's own handling "
+				+ "of a `crt.*` request) is skipped or its result lost, without an error. Take `next` as the second "
+				+ "parameter and return `next?.handle(request)` (or a variable assigned from it), unless stopping the "
+				+ "chain is the point.");
+	}
+
+	// Null when the handler hands the request on: it takes `next`, its own body (not a callback inside it) calls
+	// `next.handle(...)`, and a `return` - or an arrow's expression body - gives that call's result, directly or
+	// through a variable assigned from it.
+	private static string NextProblem(IFunction handler) {
+		if (handler.Params.Count < 2 || handler.Params[1] is not Identifier {Name: var next}) {
+			return "takes no `next`";
+		}
+		List<Node> own = new();
+		CollectOwnNodes((Node)handler.Body, own, depth: 0);
+		if (!own.Any(node => IsNextHandleCall(node, next))) {
+			return "never calls `next.handle(request)`";
+		}
+		HashSet<string> fromNext = new(StringComparer.Ordinal);
+		foreach (Node node in own) {
+			switch (node) {
+				case VariableDeclarator {Id: Identifier name, Init: not null} declarator when GivesNextResult(declarator.Init, next, fromNext):
+					fromNext.Add(name.Name);
+					break;
+				case AssignmentExpression {Left: Identifier target} assignment when GivesNextResult(assignment.Right, next, fromNext):
+					fromNext.Add(target.Name);
+					break;
+			}
+		}
+		bool returned = handler.Body is Expression expressionBody
+			? GivesNextResult(expressionBody, next, fromNext)
+			: own.OfType<ReturnStatement>().Any(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext));
+		return returned ? null : "calls `next.handle(request)` but does not return its result";
+	}
+
+	// The nodes of a function body that run as part of it: a nested function is a callback with its own flow.
+	private static void CollectOwnNodes(Node node, List<Node> into, int depth) {
+		if (node is null || depth > MaxAstDepth) {
+			return;
+		}
+		into.Add(node);
+		foreach (Node child in node.ChildNodes) {
+			if (child is not IFunction) {
+				CollectOwnNodes(child, into, depth + 1);
+			}
+		}
+	}
+
+	// `next.handle(...)` or `next?.handle(...)`.
+	private static bool IsNextHandleCall(Node node, string next) =>
+		Unwrap(node) is CallExpression {
+			Callee: MemberExpression {Computed: false, Object: Identifier {Name: var target}, Property: Identifier {Name: "handle"}}
+		} && target == next;
+
+	// The expression gives the chain's result: the call itself (awaited or not) or a variable assigned from it.
+	private static bool GivesNextResult(Node expression, string next, HashSet<string> fromNext) {
+		Node value = Unwrap(expression);
+		return IsNextHandleCall(value, next) || (value is Identifier {Name: var name} && fromNext.Contains(name));
+	}
+
+	private static Node Unwrap(Node node) =>
+		node switch {
+			AwaitExpression await => Unwrap(await.Argument),
+			ChainExpression chain => Unwrap(chain.Expression),
+			_ => node
+		};
 
 	/// <summary>A function a handler declares by name, and its shape for the duplicate check.</summary>
 	private sealed record NamedFunction(string Name, int Line, int Column, string Shape, int NodeCount,

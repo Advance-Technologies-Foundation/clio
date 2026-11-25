@@ -3,16 +3,21 @@ description: The page-lint code-quality rule ids and thresholds are duplicated o
 applies-to:
   - clio/Command/McpServer/Tools/PageBodyAstLinter.Quality.cs
 ticket: ENG-107270
-date: 2026-11-24
+date: 2026-11-25
 ---
 
-**What is true** — the seven code-quality rules of `PageBodyAstLinter.Quality.cs`
+**What is true** — the eight code-quality rules of `PageBodyAstLinter.Quality.cs`
 (`function-too-long`, `handler-too-many-nested-functions`, `duplicate-function-in-page`,
 `catch-log-only`, `numeric-comparison-type`, `sequential-independent-awaits`,
-`guid-literal-data-reference`) and their thresholds (60 lines, 3 nested functions, 2 sequential
-independent awaits) also exist, under the same ids and with the same numbers, in the
-`classic-to-freedom-migration` engine of `creatio-ai-app-development-toolkit`. There they are a
+`guid-literal-data-reference`, `handler-without-next`) and their thresholds (60 lines, 3 nested
+functions, 2 sequential independent awaits) also exist, under the same ids and with the same numbers, in
+the `classic-to-freedom-migration` engine of `creatio-ai-app-development-toolkit`. There they are a
 BLOCKING `--verify` gate on the pages the migration builds; here they are save-time warnings only.
+Both sides also lint the client modules a page imports (`LintClientModule`, reached through
+`validate-page` with a module body) with the rules that hold outside a page section: function length,
+log-only catches, bare numeric `comparisonType` and sequential independent loads. A record id in a module
+is not reported here, because a module is where a page's named ids are declared; the toolkit still blocks
+on one that the project's constants module already holds.
 Nothing shares code between the two: the toolkit engine parses the built page itself with its own
 vendored acorn.
 

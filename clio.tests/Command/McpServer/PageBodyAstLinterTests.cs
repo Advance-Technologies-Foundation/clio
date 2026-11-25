@@ -137,7 +137,7 @@ internal class PageBodyAstLinterTests {
 		// Arrange
 		const string body = "define('X', ['UsrLogic'], function(Logic) { return { handlers: [{ "
 			+ "handler: (request, next) => { function helper() { return Logic.run(request); } "
-			+ "helper(); next(request); parseInt('1'); } }], converters: {}, validators: {} }; });";
+			+ "helper(); parseInt('1'); return next?.handle(request); } }], converters: {}, validators: {} }; });";
 		// Act
 		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
 		// Assert

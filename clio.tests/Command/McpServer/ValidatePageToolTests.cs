@@ -968,4 +968,34 @@ public sealed class ValidatePageToolTests {
 		requestedVersion.Should().Be("8.1.5",
 			because: "validate-page must scope its chart-widget pre-flight check to the version the agent passed");
 	}
+
+	[Test]
+	[Description("A client module body (a define() with no page-schema markers) is linted with the code-quality rules and gets no page rule.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldLintClientModule_WhenBodyHasNoPageMarkers() {
+		// Arrange
+		string moduleBody =
+			"define(\"UsrDemoModule\", [\"@creatio-devkit/common\"], function(sdk) {\n" +
+			"  async function save($context) { try { await $context.save(); } catch (e) { console.error(e); } }\n" +
+			"  return { save: save };\n" +
+			"});";
+
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: moduleBody));
+
+		// Assert
+		response.Valid.Should().BeTrue(because: "a code-quality finding is a warning and a module has no page markers to miss");
+		response.Validation.Errors.Should().BeNull(because: "no page rule applies to a client module");
+		response.Validation.Warnings.Should().ContainSingle(w => w.Contains(PageBodyAstLinter.RuleCatchLogOnly),
+			because: "the module's log-only catch block is reported the way it is on a page");
+	}
+
+	[Test]
+	[Description("A body without page-schema markers that is not a client module still goes down the page path and fails on the markers.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldReportMissingMarkers_WhenBodyIsNeitherPageNorModule() {
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: "const a = 1;"));
+
+		// Assert
+		response.Valid.Should().BeFalse(because: "a script that is neither a page nor a client module is not a valid page body");
+	}
 }
