@@ -219,9 +219,14 @@ public sealed class PageValidateTool(
 		}
 	};
 
+	// The first warning of a client-module result, so a caller can tell it from a page result.
+	internal const string ClientModuleNote =
+		"client-module: validated as a client module (define() without page-schema markers whose factory returns no "
+		+ "page sections); only the code-quality lint applies. Validate each module a page imports on its own.";
+
 	// A client module (`define("Name", [deps], function (...) { ... })` with no page-schema markers) holds the logic a
-	// page imports. It gets the code-quality lint and no page rule; a body that does not parse goes down the page path,
-	// which reports the syntax error.
+	// page imports. It gets the code-quality lint and no page rule. A body that does not parse, or a page body that lost
+	// its markers (its factory returns page sections), goes down the page path, which reports what is wrong with it.
 	private static bool TryValidateClientModule(string body, [NotNullWhen(true)] out PageValidateResponse? response) {
 		response = null;
 		if (body.Contains("/**SCHEMA_", StringComparison.Ordinal)
@@ -229,14 +234,13 @@ public sealed class PageValidateTool(
 			|| PageBodyAstLinter.LintClientModule(ast) is not { } findings) {
 			return false;
 		}
-		List<string> warnings = findings.Select(PageBodyAstLinter.FormatFinding).ToList();
 		response = new PageValidateResponse {
 			Valid = true,
 			Validation = new PageSyncValidationResult {
 				MarkersOk = true,
 				JsSyntaxOk = true,
 				ContentOk = true,
-				Warnings = warnings.Count > 0 ? warnings : null
+				Warnings = [ClientModuleNote, ..findings.Select(PageBodyAstLinter.FormatFinding)]
 			}
 		};
 		return true;

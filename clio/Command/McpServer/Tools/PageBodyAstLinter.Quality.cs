@@ -9,7 +9,8 @@ namespace Clio.Command.McpServer.Tools;
 /// <summary>
 /// Code-quality rules of the page-body lint pass. They read the page-schema sections (<c>handlers</c>,
 /// <c>converters</c>, <c>validators</c>) of the object the page factory returns, and - through
-/// <see cref="LintClientModule"/> - the client modules a page imports, where its logic lives. Every one of them is a
+/// <see cref="LintClientModule"/> - a client module's body, where a page's logic lives (validate-page lints one module
+/// body per call; the toolkit gate follows a page's imports to every module). Every one of them is a
 /// <see cref="LintSeverity.Warning"/>: the page works, it is just hard to maintain.
 ///
 /// The rule ids and thresholds are shared with the Classic-to-Freedom migration engine of the CAADT toolkit,
@@ -85,16 +86,33 @@ internal static partial class PageBodyAstLinter {
 		return budget.Findings;
 	}
 
-	// The factory of the script's top-level `define(...)` call; null when the script has none.
+	// The sections a page factory returns. A `define` whose factory returns one of them is a page, even with its
+	// `/**SCHEMA_*/` markers lost, and must be validated as one.
+	private static readonly HashSet<string> PageSectionKeys = new(StringComparer.Ordinal) {
+		"viewConfigDiff", "viewConfig", "viewModelConfigDiff", "viewModelConfig", "modelConfigDiff", "modelConfig",
+		"handlers", "converters", "validators"
+	};
+
+	// The factory of the script's top-level `define(...)` call; null when the script has none, or when the factory
+	// returns page sections (a page body is not a client module).
 	private static IFunction FindModuleFactory(Script ast) {
 		foreach (Statement statement in ast.Body) {
 			if (statement is ExpressionStatement {
 					Expression: CallExpression {Callee: Identifier {Name: DefineGlobalName}} call
 				}) {
-				return call.Arguments.OfType<IFunction>().FirstOrDefault();
+				IFunction factory = call.Arguments.OfType<IFunction>().FirstOrDefault();
+				return factory is null || ReturnsPageSections(factory) ? null : factory;
 			}
 		}
 		return null;
+	}
+
+	private static bool ReturnsPageSections(IFunction factory) {
+		IEnumerable<Node> returned = factory.Body is BlockStatement block
+			? block.Body.OfType<ReturnStatement>().Select(r => (Node)r.Argument)
+			: [(Node)factory.Body];
+		return returned.OfType<ObjectExpression>().Any(obj => obj.Properties.OfType<Property>()
+			.Any(p => TryGetStaticPropertyName(p) is { } key && PageSectionKeys.Contains(key)));
 	}
 
 	private static bool TryGetHandlerFunction(ObjectExpression entry, out IFunction handler) {
@@ -313,8 +331,18 @@ internal static partial class PageBodyAstLinter {
 			IfStatement branch => EndsInReturn(branch.Consequent, depth + 1) && EndsInReturn(branch.Alternate, depth + 1),
 			TryStatement attempt => EndsInReturn(attempt.Finalizer, depth + 1)
 				|| (EndsInReturn(attempt.Block, depth + 1) && (attempt.Handler is null || EndsInReturn(attempt.Handler.Body, depth + 1))),
+			SwitchStatement choice => SwitchEndsInReturn(choice, depth + 1),
 			_ => false
 		};
+	}
+
+	// A switch ends in a return when it has a `default` and every case either falls through to the next one (no
+	// statements) or ends in a return or throw itself, the last one included.
+	private static bool SwitchEndsInReturn(SwitchStatement choice, int depth) {
+		if (!choice.Cases.Any(c => c.Test is null) || choice.Cases.Count == 0 || choice.Cases[^1].Consequent.Count == 0) {
+			return false;
+		}
+		return choice.Cases.All(c => c.Consequent.Count == 0 || EndsInReturn(c.Consequent[^1], depth));
 	}
 
 	// The nodes of a function body that run as part of it: a nested function is a callback with its own flow.
@@ -336,10 +364,14 @@ internal static partial class PageBodyAstLinter {
 			Callee: MemberExpression {Computed: false, Object: Identifier {Name: var target}, Property: Identifier {Name: "handle"}}
 		} && target == next;
 
-	// The expression gives the chain's result: the call itself (awaited or not) or a variable assigned from it.
+	// The expression gives the chain's result: the call itself (awaited or not), a call chained on it
+	// (`next.handle(request).then(...)`), or a variable assigned from either.
 	private static bool GivesNextResult(Node expression, string next, HashSet<string> fromNext) {
 		Node value = Unwrap(expression);
-		return IsNextHandleCall(value, next) || (value is Identifier {Name: var name} && fromNext.Contains(name));
+		return IsNextHandleCall(value, next)
+			|| (value is Identifier {Name: var name} && fromNext.Contains(name))
+			|| (value is CallExpression {Callee: MemberExpression {Computed: false} chained}
+				&& GivesNextResult(chained.Object, next, fromNext));
 	}
 
 	private static Node Unwrap(Node node) =>

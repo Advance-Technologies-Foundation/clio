@@ -465,7 +465,9 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
   Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks. `include-operations=false` trims the `verify=true` read-back the same way as on `get-page`.
 - `validate-page`
   Validate a page body without saving. Unregistered captions of inserted widgets come back as one warning
-  that states the rule once and lists every node, property and key.
+  that states the rule once and lists every node, property and key. A client-module body (`define(...)`
+  without page-schema markers, whose factory returns no page sections) is validated with the code-quality
+  lint only; its first warning says so. Each module a page imports is validated with its own call.
 - `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`

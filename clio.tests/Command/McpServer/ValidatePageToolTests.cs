@@ -987,15 +987,34 @@ public sealed class ValidatePageToolTests {
 		response.Validation.Errors.Should().BeNull(because: "no page rule applies to a client module");
 		response.Validation.Warnings.Should().ContainSingle(w => w.Contains(PageBodyAstLinter.RuleCatchLogOnly),
 			because: "the module's log-only catch block is reported the way it is on a page");
+		response.Validation.Warnings[0].Should().Be(PageValidateTool.ClientModuleNote,
+			because: "a caller must be able to tell a module result from a page result");
+	}
+
+	[TestCase("const a = 1;")]
+	[TestCase("define(\"UsrX\", []);")]
+	[TestCase("define(\"UsrX_FormPage\", [], function() { return { viewConfigDiff: [], handlers: [], converters: {}, validators: {} }; });")]
+	[Description("A body without page-schema markers that is not a client module - a plain script, a define without a factory, a page that lost its markers - goes down the page path and fails on the markers.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldReportMissingMarkers_WhenBodyIsNotAClientModule(string body) {
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+
+		// Assert
+		response.Valid.Should().BeFalse(because: "a body that is not a client module is validated as a page");
+		response.Validation.MarkersOk.Should().BeFalse(because: "the page path reports the missing page-schema markers");
+		(response.Validation.Warnings ?? []).Should().NotContain(PageValidateTool.ClientModuleNote,
+			because: "the body was not validated as a client module");
 	}
 
 	[Test]
-	[Description("A body without page-schema markers that is not a client module still goes down the page path and fails on the markers.")]
-	public async System.Threading.Tasks.Task ValidatePage_ShouldReportMissingMarkers_WhenBodyIsNeitherPageNorModule() {
+	[Description("A client-module body that does not parse goes down the page path, which reports the syntax error.")]
+	public async System.Threading.Tasks.Task ValidatePage_ShouldReportSyntaxError_WhenModuleBodyDoesNotParse() {
 		// Act
-		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: "const a = 1;"));
+		PageValidateResponse response = await CreateTool().ValidatePage(
+			new PageValidateArgs(Body: "define(\"UsrDemoModule\", [], function() { return {"));
 
 		// Assert
-		response.Valid.Should().BeFalse(because: "a script that is neither a page nor a client module is not a valid page body");
+		response.Valid.Should().BeFalse(because: "a body that does not parse is not valid");
+		response.Validation.JsSyntaxOk.Should().BeFalse(because: "the syntax error is what is wrong with it");
 	}
 }

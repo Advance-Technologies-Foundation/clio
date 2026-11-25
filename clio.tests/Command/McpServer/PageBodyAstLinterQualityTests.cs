@@ -455,6 +455,7 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("async (request, next) => { if (!request.value) { return; } return next?.handle(request); }", "does not return its result")]
 	[TestCase("async (request, next) => { if (request.value) { return true; } return next?.handle(request); }", "does not return its result")]
 	[TestCase("async (request, next) => { if (request.value) { return next?.handle(request); } }", "does not return its result")]
+	[TestCase("async (request, next) => { switch (request.mode) { case \"a\": return next.handle(request); } }", "does not return its result")]
 	[Description("A handler that takes no `next`, never calls `next.handle` in its own body, or drops that call's result raises a warning that says which")]
 	public void Lint_ShouldWarnHandlerWithoutNext_WhenNextIsNeverUsed(string handler, string problem) {
 		// Arrange
@@ -476,6 +477,9 @@ internal class PageBodyAstLinterQualityTests {
 	[TestCase("async (request, next = null) => { return next?.handle(request); }")]
 	[TestCase("async (request, next) => { if (!request.value) { return next?.handle(request); } const r = await next?.handle(request); return r; }")]
 	[TestCase("async (request, next) => { try { return await next?.handle(request); } catch (e) { throw e; } }")]
+	[TestCase("async (request, next) => { try { await request.$context.save(); } finally { return next?.handle(request); } }")]
+	[TestCase("async (request, next) => { switch (request.mode) { case \"a\": await request.$context.save(); return next.handle(request); case \"b\": default: return next.handle(request); } }")]
+	[TestCase("async (request, next) => { return next.handle(request).then((result) => result); }")]
 	[TestCase("async (request, chain) => { return chain?.handle(request); }")]
 	[TestCase("async (request, next) => { let result; result = await next.handle(request); return result; }")]
 	[Description("A handler that returns `next.handle(request)`, directly or through a variable assigned from it, keeps the chain and raises no warning")]
@@ -537,6 +541,17 @@ internal class PageBodyAstLinterQualityTests {
 		// Assert
 		findings.Should().BeEmpty(
 			because: "a module is where a page's named record ids are declared, and the factory is the module itself");
+	}
+
+	[TestCase("function() { return { viewConfigDiff: [], handlers: [] }; }")]
+	[TestCase("() => ({ handlers: [], converters: {} })")]
+	[Description("A define whose factory returns page sections is a page that lost its markers, not a client module")]
+	public void LintClientModule_ShouldReturnNull_WhenFactoryReturnsPageSections(string factory) {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule("define(\"UsrX_FormPage\", [], " + factory + ");");
+
+		// Assert
+		findings.Should().BeNull(because: "a page body must be validated as a page, so its missing markers are reported");
 	}
 
 	[Test]
