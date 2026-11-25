@@ -282,7 +282,7 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: ask the user first with a dry run, running cases stay, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
+	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: a dry run first, a requested switch as the yes unless the dry run warns, never on its own after creating a version, running cases stay, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
 	public void Description_ShouldCarryTheContract() {
 		// Arrange
 		string description = Description();
@@ -293,9 +293,13 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 		// Assert
 		description.All(character => character < 128).Should().BeTrue(because: "tool descriptions are ASCII only");
 		firstSentence.Length.Should().BeLessThanOrEqualTo(120, because: "the compact index cuts the purpose at 120");
-		description.Should().Contain("ASK THE USER FIRST")
-			.And.Contain("never call it on your own after modify-dynamic-case-as-new-version")
-			.And.Contain("dry-run=true", because: "activation needs the user's yes after a dry run");
+		description.Should().Contain("Run it with dry-run=true first", because: "every switch is planned before it is made")
+			.And.Contain("A user who asked for this switch has given the yes",
+				because: "a request to switch is the consent when the dry run carries notes only")
+			.And.Contain("with warnings (package position), show them and wait for their yes",
+				because: "a warning may change the user's mind, so it needs its own yes")
+			.And.Contain("Never call it on your own after modify-dynamic-case-as-new-version: ask the user whether to activate",
+				because: "creating a version is not a request to activate it");
 		description.Should().Contain("the family root included (that is how you go back)",
 			because: "going back to the root is an activation too");
 		description.Should().Contain("Running cases keep the version they started on",
