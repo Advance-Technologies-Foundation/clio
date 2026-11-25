@@ -303,7 +303,8 @@ internal static class PageBodyMerger {
 			incomingModelConfigDiff);
 		string mergedHandlers = MergeHandlersRaw(
 			ReadRawSection(currentBody, "SCHEMA_HANDLERS") ?? "[]",
-			incomingHandlers);
+			incomingHandlers,
+			collector);
 		string mergedConverters = MergeKeyedObjectRaw(
 			ReadRawSection(currentBody, "SCHEMA_CONVERTERS") ?? "{}",
 			incomingConverters);
@@ -690,7 +691,7 @@ internal static class PageBodyMerger {
 		return merged;
 	}
 
-	private static string MergeHandlersRaw(string current, string incoming) {
+	private static string MergeHandlersRaw(string current, string incoming, ProjectionCollector collector) {
 		string currentTrim = current.Trim();
 		string incomingTrim = incoming.Trim();
 		if (currentTrim == "[]" || string.IsNullOrEmpty(currentTrim)) {
@@ -707,7 +708,7 @@ internal static class PageBodyMerger {
 			return JoinHandlers(currentInner, incomingInner);
 		}
 		if (!TryParseHandlers(incomingTrim, out List<HandlerEntry> incomingHandlers)) {
-			return AppendHandlersVerbatim(currentInner, currentHandlers, incomingInner);
+			return AppendHandlersVerbatim(currentInner, currentHandlers, incomingInner, collector);
 		}
 		Dictionary<string, List<string>> incomingByRequest = incomingHandlers
 			.Where(handler => handler.Request is not null)
@@ -717,10 +718,12 @@ internal static class PageBodyMerger {
 		// ENG-104715: an incoming handler whose request a current handler already declares takes that
 		// handler's place, so a re-saved handler does not move to the end and reorder the schema.
 		var replacedRequests = new HashSet<string>(StringComparer.Ordinal);
+		var removedRequests = new List<string>();
 		var merged = new List<string>();
 		foreach (HandlerEntry handler in currentHandlers) {
 			if (handler.Request is not null
 				&& incomingByRequest.TryGetValue(handler.Request, out List<string> replacement)) {
+				removedRequests.Add(handler.Request);
 				if (replacedRequests.Add(handler.Request)) {
 					merged.AddRange(replacement);
 				}
@@ -731,6 +734,7 @@ internal static class PageBodyMerger {
 		if (replacedRequests.Count == 0) {
 			return JoinHandlers(currentInner, incomingInner);
 		}
+		collector.RecordRemovedHandlers(removedRequests);
 		merged.AddRange(incomingHandlers
 			.Where(handler => handler.Request is null || !replacedRequests.Contains(handler.Request))
 			.Select(handler => handler.Source));
@@ -743,19 +747,24 @@ internal static class PageBodyMerger {
 	/// the fragment goes to the end unchanged, so no request is saved twice.
 	/// </summary>
 	private static string AppendHandlersVerbatim(string currentInner, List<HandlerEntry> currentHandlers,
-		string incomingInner) {
+		string incomingInner, ProjectionCollector collector) {
 		HashSet<string> incomingRequests = HandlerRequestRegex.Matches(incomingInner)
 			.Select(match => match.Groups[1].Value)
 			.ToHashSet(StringComparer.Ordinal);
 		if (incomingRequests.Count == 0) {
 			return JoinHandlers(currentInner, incomingInner);
 		}
-		IEnumerable<string> kept = currentHandlers
-			.Where(handler => {
-				string request = handler.Request ?? ReadFirstRequest(handler.Source);
-				return request is null || !incomingRequests.Contains(request);
-			})
-			.Select(handler => handler.Source);
+		var kept = new List<string>();
+		var removedRequests = new List<string>();
+		foreach (HandlerEntry handler in currentHandlers) {
+			string request = handler.Request ?? ReadFirstRequest(handler.Source);
+			if (request is not null && incomingRequests.Contains(request)) {
+				removedRequests.Add(request);
+				continue;
+			}
+			kept.Add(handler.Source);
+		}
+		collector.RecordRemovedHandlers(removedRequests);
 		return JoinHandlers(string.Join(",", kept), incomingInner);
 	}
 
@@ -943,6 +952,7 @@ internal static class PageBodyMerger {
 		private readonly List<string> _dropped = [];
 		private readonly List<string> _collapsedIncoming = [];
 		private readonly List<string> _supersededDropWarnings = [];
+		private readonly List<PageAppendRemovedHandler> _removedHandlers = [];
 		private int _added;
 		private int _currentCount;
 		private int _incomingCount;
@@ -999,6 +1009,16 @@ internal static class PageBodyMerger {
 		public void RecordAdded() => _added++;
 
 		/// <summary>
+		/// Records the requests of the current handlers the append removed, one entry per removed handler in
+		/// current-body order; grouped into one <see cref="PageAppendRemovedHandler"/> per request.
+		/// </summary>
+		public void RecordRemovedHandlers(IEnumerable<string> removedRequests) {
+			foreach (IGrouping<string, string> group in removedRequests.GroupBy(request => request, StringComparer.Ordinal)) {
+				_removedHandlers.Add(new PageAppendRemovedHandler(group.Key, group.Count()));
+			}
+		}
+
+		/// <summary>
 		/// Whether the merged <c>viewConfigDiff</c> array actually reaches the returned body. False when the
 		/// current web body carries no <c>SCHEMA_VIEW_CONFIG_DIFF</c> marker pair to write it back into.
 		/// </summary>
@@ -1036,7 +1056,8 @@ internal static class PageBodyMerger {
 				ViewConfigDiffApplied = _viewConfigDiffApplied,
 				IncomingViewModelConfigDiffOperationCount = _incomingViewModelConfigDiffCount,
 				IncomingModelConfigDiffOperationCount = _incomingModelConfigDiffCount,
-				SupersededDropWarnings = _supersededDropWarnings
+				SupersededDropWarnings = _supersededDropWarnings,
+				RemovedHandlers = _removedHandlers
 			};
 
 		private static void Append(List<string> target, OperationIdentity identity) {

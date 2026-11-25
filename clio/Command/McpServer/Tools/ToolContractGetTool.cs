@@ -3639,7 +3639,7 @@ internal static class ToolContractCatalog {
 					.. BusinessRuleConditionValidators(),
 					.. PageBusinessRuleActionValidators()
 				]),
-			BusinessRuleBatchOutput(),
+			BusinessRuleBatchOutput(warningsDescription: PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -4064,7 +4064,8 @@ internal static class ToolContractCatalog {
 					.. PageBusinessRuleActionValidators()
 				]),
 			BusinessRuleBatchOutput(
-				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error."),
+				"Per-rule outcomes in input order; each item has name (the match key), success, ruleName, and error.",
+				PageBusinessRuleWarningsDescription),
 			CommonErrorContract,
 			[
 				Alias(ParameterScope, PageSchemaNameFieldName, SchemaNameFieldName, AcceptedStatus,
@@ -6293,7 +6294,7 @@ internal static class ToolContractCatalog {
 				Field(CamelCaseSchemaNameFieldName, StringType, "Page schema name."),
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
-				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (see `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes, data only, no warning; `viewConfigDiffApplied` = false: the web body lacks the SCHEMA_VIEW_CONFIG_DIFF marker pair, so none is written - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation keeps your values. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). Handlers are NOT covered: the merge drops every current handler whose `request` your fragment carries (a `request` held twice keeps neither)."),
+				Field("appendProjection", ObjectType, "What the append merge did (dry run: WOULD do) to viewConfigDiff; absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`, `incoming{Model,ViewModel}ConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS: `droppedOperations`/`droppedOperationCount` = SERVER-body entries the merge drops (see `mode`), each also a `warnings` entry; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries of YOUR fragment that a later entry in it supersedes, data only, no warning; `viewConfigDiffApplied` = false: no SCHEMA_VIEW_CONFIG_DIFF marker pair, nothing written - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss. Lists are capped; counts are exact. Covers viewConfigDiff ONLY: a non-empty sibling `*_DIFF` section with no stored marker pair, or an all-empty fragment, is rejected (use `mode: replace`). `removedHandlers`: per `request`, how many CURRENT handlers your fragment replaced (`removedCount`); `hadDuplicates: true` = several chained handlers, all gone - re-add the ones you need."),
 				Field("resourcesRegistered", NumberType, "New resource keys this save added."),
 				Field("resourcesUpdated", NumberType, "Existing keys whose en-US value this save changed."),
 				Field("digest", ObjectType, "Real save: written `components`, `otherSections`, post-save `checksum`; confirm the save from it."),
@@ -7528,8 +7529,16 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private const string PageBusinessRuleWarningsDescription =
+		" A saved item may also carry `warnings` (absent when none): advisory findings, the rule IS saved. "
+		+ "`subsumed` = another rule already applies the same state action to the same elements on a wider condition; "
+		+ "`inverse-redundant` = the rule only undoes another one (negated condition, opposite state action). "
+		+ "Page state rules undo themselves when their condition turns false, so delete the redundant rule unless "
+		+ "the element is read-only, required or hidden by default.";
+
 	private static ToolOutputContract BusinessRuleBatchOutput(string resultsDescription =
-		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.") {
+		"Per-rule outcomes in input order; each item has name, success, ruleName, and error.",
+		string warningsDescription = "") {
 		return new ToolOutputContract(
 			"business-rule-batch-result",
 			null,
@@ -7540,7 +7549,7 @@ internal static class ToolContractCatalog {
 			[
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
-				Field(ResultsFieldName, ArrayType, resultsDescription),
+				Field(ResultsFieldName, ArrayType, resultsDescription + warningsDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}

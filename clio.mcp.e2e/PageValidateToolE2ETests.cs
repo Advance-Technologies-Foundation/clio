@@ -71,6 +71,35 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("ENG-107305: the real MCP transport warns, without blocking, about a grid that binds selectionState without _selectionOptions, and stays silent when the write-back is there")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns about a grid selection that is never written back")]
+	[AllureDescription("An inserted DataGrid with selectionState and no _selectionOptions carries the grid-selection-without-write-back warning and still validates; the same grid with _selectionOptions.attribute carries none.")]
+	public async Task PageValidateTool_ShouldWarnOnGridSelectionWithoutWriteBack(bool hasWriteBack) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string writeBack = hasWriteBack ? ",\"_selectionOptions\":{\"attribute\":\"UsrProbeList_SelectionState\"}" : string.Empty;
+		string body = ValidPageBody.Replace("/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrProbeList\",\"parentName\":\"MainContainer\","
+			+ "\"propertyName\":\"items\",\"index\":0,\"values\":{\"type\":\"crt.DataGrid\","
+			+ $"\"selectionState\":\"$UsrProbeList_SelectionState\"{writeBack}}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate a grid selection through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the warning appears only when the write-back is missing", () => {
+			bool warned = (response.Validation.Warnings ?? [])
+				.Any(w => w.Contains("grid-selection-without-write-back") && w.Contains("UsrProbeList"));
+			warned.Should().Be(!hasWriteBack,
+				because: "a grid without _selectionOptions never writes the selection back, while one with it does");
+		});
+		AllureApi.Step("Verify no grid-selection error blocks validation", () =>
+			(response.Validation.Errors ?? []).Should().NotContain(e => e.Contains("grid-selection"),
+				because: "the rule is a warning and never rejects the body"));
+	}
+
 	[Test]
 	[Description("A page that calls an imported client module from its handler remains valid through real MCP")]
 	[AllureTag(ToolName)]
