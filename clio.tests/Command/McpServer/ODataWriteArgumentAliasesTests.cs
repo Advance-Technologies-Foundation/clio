@@ -62,7 +62,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(CreateArgs($"\"{alias}\":{{\"Name\":\"Acme\"}}"));
@@ -83,7 +83,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
 		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"Id\":\"11111111-1111-1111-1111-111111111111\"}");
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(CreateArgs("\"values\":[{\"Name\":\"A\"},{\"Name\":\"B\"}]"));
@@ -100,7 +100,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 	public void Create_Should_Reject_Ambiguous_Payloads(string extra, string rows) {
 		// Arrange
 		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(CreateArgs(extra, rows));
@@ -121,7 +121,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(Csdl);
 		client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(string.Empty);
-		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataWriteResponse response = tool.Update(UpdateArgs($"\"{alias}\":{{\"Name\":\"New\"}}"));
@@ -140,7 +140,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 	public void Update_Should_Reject_Ambiguous_Payloads(string extra, string data) {
 		// Arrange
 		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
-		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataWriteResponse response = tool.Update(UpdateArgs(extra, data));
@@ -157,7 +157,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 	public void Unknown_Create_Argument_Is_Still_Rejected() {
 		// Arrange
 		(IApplicationClient _, IToolCommandResolver resolver) = Wire();
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(CreateArgs("\"bogus\":1", "[{\"Name\":\"a\"}]"));
@@ -172,7 +172,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 		// Arrange
 		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
 		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(Csdl);
-		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataWriteResponse response = tool.Update(UpdateArgs("\"values\":{\"Bogus\":\"New\"}"));
@@ -191,7 +191,7 @@ public sealed class ODataWriteArgumentAliasesTests {
 	public void Create_Refused_After_Synonym_Should_Not_Say_Accepted() {
 		// Arrange
 		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
-		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles(), new ODataWriteVerifier());
 
 		// Act
 		ODataCreateBatchResponse response = tool.Create(CreateArgs("\"payload\":{\"Name\":\"x\"},\"bogus\":1"));

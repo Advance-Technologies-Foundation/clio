@@ -968,6 +968,7 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<IConfinedFileAccess, ConfinedFileAccess>();
 		services.AddTransient<IODataFileContract, ODataFileContract>();
+		services.AddTransient<IODataWriteVerifier, ODataWriteVerifier>();
 		services.AddTransient<IMcpOutputFileWriter, McpOutputFileWriter>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataReadToFileTool>();

@@ -75,6 +75,23 @@ public sealed record ODataWriteResponse(
 	[JsonPropertyName("note"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Note { get; init; }
 
+	/// <summary>odata-update: whether the written fields were read back and compared; absent when verify=false or nothing was written.</summary>
+	[JsonPropertyName("verified"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("odata-update: true when the written fields were read back right after the write and compared with what was sent; "
+		+ "false when the read-back failed (the write itself still succeeded - see verification-note). Absent when verify=false or nothing was written.")]
+	public bool? Verified { get; init; }
+
+	/// <summary>odata-update: the sent fields Creatio stored with a different value.</summary>
+	[JsonPropertyName("diverged"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("odata-update: sent fields Creatio stored with a different value, typically replaced by an entity rule during the save. "
+		+ "Re-sending the same write does not change them. Absent when every compared field matched.")]
+	public IReadOnlyList<ODataFieldDivergence>? Diverged { get; init; }
+
+	/// <summary>odata-update: why the read-back did not verify the write, or which sent fields it did not compare.</summary>
+	[JsonPropertyName("verification-note"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("odata-update: why the read-back did not verify the write, or which sent fields it did not compare.")]
+	public string? VerificationNote { get; init; }
+
 	/// <summary>Notes that did not stop the call, for example that a synonym of data was accepted.</summary>
 	[JsonPropertyName("warnings"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string>? Warnings { get; init; }

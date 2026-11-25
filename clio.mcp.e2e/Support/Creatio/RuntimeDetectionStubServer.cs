@@ -167,6 +167,17 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataPreWriteStallPatch = "stallpatch";
 
 	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that plays an entity rule
+	/// replacing a written value (ENG-107611 / clio#1995): the CSDL of <see cref="ODataPreWriteMetadata"/>, a PATCH
+	/// acked with 204 and a POST with the created Id, but every read - the keyed read after a PATCH and the
+	/// collection read by Id after a POST - answers <c>Name</c> as <see cref="ODataWriteDivergenceStoredName"/>.
+	/// </summary>
+	public const string ODataWriteDivergence = "divergence";
+
+	/// <summary>The <c>Name</c> value the <see cref="ODataWriteDivergence"/> stub reports as stored.</summary>
+	public const string ODataWriteDivergenceStoredName = "Rewritten by rule";
+
+	/// <summary>
 	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers BOTH
 	/// pre-write reads (<c>$metadata</c> and the keyed <c>$select</c> probe) with a non-JSON body, so the
 	/// payload can be neither confirmed nor refuted. A PATCH is still acked, so a tool that wrote anyway
@@ -660,7 +671,8 @@ http.createServer((request, response) => {
       const isPatch = request.method === "PATCH" && url.includes("/odata/" + config.ODataEntity + "(");
       const isCollectionPost = request.method === "POST" && url.endsWith("/odata/" + config.ODataEntity);
       if (isMetadata && (config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}"
-          || config.ODataPreWriteMode === "{{ODataPreWriteStallPatch}}")) {
+          || config.ODataPreWriteMode === "{{ODataPreWriteStallPatch}}"
+          || config.ODataPreWriteMode === "{{ODataWriteDivergence}}")) {
         response.writeHead(200, { "Content-Type": "application/xml" });
         response.end(metadataCsdl(config.ODataEntity, false));
         return;
@@ -730,6 +742,22 @@ http.createServer((request, response) => {
           "@odata.context": "http://127.0.0.1/odata/$metadata#" + fragment,
           value: [record]
         });
+        return;
+      }
+      const isCollectionFilterRead = request.method === "GET"
+        && url.includes("/odata/" + config.ODataEntity + "?")
+        && url.includes("$filter=");
+      if ((isKeyedProbe || isCollectionFilterRead) && config.ODataPreWriteMode === "{{ODataWriteDivergence}}") {
+        // An entity rule replaced Name during the save: whatever was written, the stored Name is fixed.
+        const stored = (id) => ({ Id: id, Name: "{{ODataWriteDivergenceStoredName}}" });
+        if (isKeyedProbe) {
+          const key = url.substring(url.indexOf("(") + 1, url.indexOf(")"));
+          sendJson(response, 200, stored(key));
+          return;
+        }
+        const filter = new URL(url, "http://127.0.0.1").searchParams.get("$filter") || "";
+        const ids = filter.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/g) || [];
+        sendJson(response, 200, { value: ids.map(stored) });
         return;
       }
       if (isKeyedProbe) {

@@ -20,18 +20,24 @@ namespace Clio.Command.McpServer.Tools;
 /// no time-zone offset is refused before the PATCH (<see cref="ODataDateTimeGuard"/>), because the
 /// platform either rejects it opaquely or stores DateTime.MinValue while reporting success. Every
 /// other value is passed through - an empty-GUID lookup reference among them - so success:true means
-/// the service accepted the PATCH, not that every value survived it.
+/// the service accepted the PATCH, not that every value survived it. Unless verify=false, the written fields
+/// are then read back through <see cref="IODataWriteVerifier"/> and any field stored with another value is
+/// reported in <c>diverged</c>; the read-back never turns the accepted PATCH into a failure.
 /// </summary>
 [McpServerToolType]
 public sealed class ODataUpdateTool(
 	IToolCommandResolver commandResolver,
 	IOperationCorrelationIdProvider correlationIds,
-	IODataFileContract fileContract) {
+	IODataFileContract fileContract,
+	IODataWriteVerifier writeVerifier) {
 
 	//File I/O is behaviour, so it arrives through DI rather than being reached statically: that is what lets
 	//a failure-path test substitute a file-contract fake instead of driving the production write plumbing.
 	private readonly IODataFileContract _fileContract =
 		fileContract ?? throw new ArgumentNullException(nameof(fileContract));
+
+	private readonly IODataWriteVerifier _writeVerifier =
+		writeVerifier ?? throw new ArgumentNullException(nameof(writeVerifier));
 
 	internal const string ToolName = "odata-update";
 
@@ -39,7 +45,7 @@ public sealed class ODataUpdateTool(
 		"data is required and must be a non-empty object of field/value pairs.";
 
 	private const string ValidArgumentsHint =
-		"Valid: entity, id, environment-name, data, rows-file, confirm.";
+		"Valid: entity, id, environment-name, data, rows-file, confirm, verify.";
 
 	/// <summary>How long the PATCH waits for an answer before creatio.client cancels it on the client side.</summary>
 	private const int PatchTimeoutMs = 30_000;
@@ -96,9 +102,12 @@ public sealed class ODataUpdateTool(
 		"an unknown field fails the call with nothing written. Field VALUES are otherwise not validated, with one " +
 		"exception: a date-time string without a UTC designator or offset (e.g. '2024-01-01T04:00:00') is rejected " +
 		"before the write - send '...Z' or '...+02:00' instead. " +
-		"success:true means the service accepted the PATCH after this pre-validation; " +
-		"platform builds that silently discard unsupported values can still leave some fields unwritten, so " +
-		"re-read important values with odata-read after a critical write. " +
+		"success:true means the service accepted the PATCH after this pre-validation. " +
+		"By default (verify=true) the written fields are then read back with one GET and compared with what was sent: " +
+		"'diverged' lists each field Creatio stored with a different value (field, sent, stored) - typically an entity rule " +
+		"that replaced it during the save, which re-sending will not change; success stays true. A failed read-back never " +
+		"fails the call: verified=false with verification-note. The read-back runs right after the write, so a value an " +
+		"asynchronous business process changes later is not seen. verify=false skips it. " +
 		"A PATCH that gets no answer within 30 s fails with side-effect unknown, because Creatio may still apply it; " +
 		"re-sending the same call sets the same values again, but can run update-time business processes a second time. " +
 		"This tool never performs a keyless mass update. " +
@@ -138,7 +147,11 @@ public sealed class ODataUpdateTool(
 		if (result.SiteResponse is { RefusedWithoutProcessing: true }) {
 			diagnostic = diagnostic.AsRefusedWithoutProcessing();
 		}
-		return result with { Warnings = payloadAlias.WarningFor(!result.Success && !attempted) is { } warning ? [warning] : null,
+		string[] warnings = new[] { payloadAlias.WarningFor(!result.Success && !attempted) }
+			.Concat(result.Warnings ?? [])
+			.Where(warning => warning is not null)
+			.ToArray();
+		return result with { Warnings = warnings.Length == 0 ? null : warnings,
 			CorrelationId = correlationId, Diagnostic = diagnostic };
 	}
 
@@ -210,10 +223,34 @@ public sealed class ODataUpdateTool(
 					SiteResponse = SiteResponse.FromRefusal(answer)
 				};
 			}
-			return new ODataWriteResponse(true, null, args.Id.Trim());
+			ODataWriteResponse written = new(true, null, args.Id.Trim());
+			return args.Verify == false ? written : WithVerification(written, client, urlBuilder, args, data, propertyTypes);
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
+	}
+
+	/// <summary>
+	/// Reads the written fields back and adds the outcome to the successful response. The PATCH already happened,
+	/// so nothing here may turn the response into a failure.
+	/// </summary>
+	private ODataWriteResponse WithVerification(ODataWriteResponse written, IApplicationClient client,
+		IServiceUrlBuilder urlBuilder, ODataUpdateArgs args, JsonElement data,
+		IReadOnlyDictionary<string, string> propertyTypes) {
+		ODataWriteVerification verification;
+		try {
+			verification = _writeVerifier.VerifyRecord(client, urlBuilder, args.Entity.Trim(), args.Id.Trim(), data,
+				propertyTypes);
+		} catch (Exception ex) {
+			verification = ODataWriteVerification.Unverified("the read-back after the write failed ("
+				+ SensitiveErrorTextRedactor.Redact(ex.Message) + "), so the stored values were not compared.");
+		}
+		return written with {
+			Verified = verification.Verified,
+			Diverged = verification.DivergedOrNull,
+			VerificationNote = verification.Note,
+			Warnings = verification.DivergenceWarning is { } warning ? [warning] : null
+		};
 	}
 
 	/// <summary>
@@ -337,6 +374,12 @@ public sealed record ODataUpdateArgs {
 	[JsonPropertyName("rows-file")]
 	[Description("Optional path to a JSON object of field/value pairs. Use this instead of data for large payloads; confirm=true is still required.")]
 	public string? RowsFile { get; init; }
+
+	/// <summary>Whether to read the written fields back and report divergences; <see langword="null"/> means true.</summary>
+	[JsonPropertyName("verify")]
+	[Description("Read the written fields back right after the PATCH (one GET) and report each field Creatio stored with a " +
+		"different value in 'diverged'. Default: true. false skips the read-back.")]
+	public bool? Verify { get; init; }
 
 	/// <summary>Unbound JSON members, rejected before any file access or Creatio request.</summary>
 	[JsonExtensionData]

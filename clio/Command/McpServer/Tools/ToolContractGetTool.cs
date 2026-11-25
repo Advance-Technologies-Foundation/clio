@@ -3043,12 +3043,14 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
 			ODataCreateTool.ToolName,
-			$"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array or place that JSON array in rows-file for large payloads; each row is inserted sequentially and reported independently. {ODataCreateTool.RowCountLimitDescription} Returns a created/failed summary and a per-row result array including each created record's Id. The synonyms payload, values, body and data are accepted for rows (a single object becomes one row) and named in warnings; one of them together with rows or rows-file is rejected as ambiguous.",
+			$"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array or place that JSON array in rows-file for large payloads; each row is inserted sequentially and reported independently. {ODataCreateTool.RowCountLimitDescription} Returns a created/failed summary and a per-row result array including each created record's Id. The synonyms payload, values, body and data are accepted for rows (a single object becomes one row) and named in warnings; one of them together with rows or rows-file is rejected as ambiguous. " +
+			"By default (verify=true) the created rows are read back by Id after the batch and compared with what was sent; a row an entity rule changed during the save carries diverged (field, sent, stored) and stays created.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact, Account, or a custom schema."),
 					Field("rows", ArrayType, $"Array of row objects to insert; each row is an object of field/value pairs for one new record. Lookup fields are set with their GUID, for example [ {{ \"Name\": \"Acme\", \"TypeId\": \"00000000-0000-0000-0000-000000000001\" }} ]. Pass all rows in one call rather than one call per row. {ODataCreateTool.RowCountLimitDescription}"),
+					Field("verify", BooleanType, ODataCreateVerifyDescription),
 					Field("stop-on-error", BooleanType, "Optional. Stop after the first failed row. Default false: continue and report every row independently. When true, rows after a failure are not attempted and do not appear in results, so results may be shorter than rows."),
 					Field("rows-file", StringType, "Optional path to a JSON array of row objects, confined to the workspace or the OS temp directory and capped at 10 MB. Exactly one of rows or rows-file is required; supplying both is rejected."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
@@ -3071,7 +3073,7 @@ internal static class ToolContractCatalog {
 					"Discover the entity and column names first when they are unknown, then create."),
 				Flow(
 					[ODataCreateTool.ToolName, ODataReadTool.ToolName],
-					"Create the record, then read it back by the returned id to confirm persisted values.")
+					"Create the record; when a row reports diverged or verified=false, read it by the returned id to see the values a rule set.")
 			],
 			[],
 			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: false),
@@ -3090,8 +3092,9 @@ internal static class ToolContractCatalog {
 			"The synonyms values, payload, body and fields are accepted for data and named in warnings; one of them together with data or rows-file is rejected as ambiguous. " +
 			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
 			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
-			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
-			"some fields unwritten, so re-read important values with odata-read after a critical write. " +
+			"success:true means the service accepted the PATCH after this pre-validation. By default (verify=true) the written fields are then read back with one GET " +
+			"and compared with what was sent: diverged lists each field Creatio stored with a different value (field, sent, stored), typically an entity rule that replaced it " +
+			"during the save, which re-sending will not change; success stays true. A failed read-back gives verified=false and verification-note, never a failed call. " +
 			"A PATCH that gets no answer within 30 s fails with diagnostic.side-effect unknown, because Creatio may still apply it; " +
 			"re-sending the same call sets the same values again, but if the first PATCH was applied it is a second update and can run update-time business processes again - read the record first when processes react to its changes. Never performs a keyless mass update.",
 			new ToolInputSchemaContract(
@@ -3105,6 +3108,7 @@ internal static class ToolContractCatalog {
 						"Set lookups via their <Field>Id column with a real GUID; to CLEAR a lookup send null (the platform silently drops an empty GUID)."),
 					Field("rows-file", StringType, "Optional path to a JSON object of field/value pairs, confined to the workspace or the OS temp directory and capped at 10 MB. Exactly one of data or rows-file is required; supplying both is rejected. Read only after the confirm gate passes."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive update. When false or omitted the tool refuses without any remote call."),
+					Field("verify", BooleanType, ODataUpdateVerifyDescription),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
 			EnvelopeOutput(
@@ -3114,6 +3118,9 @@ internal static class ToolContractCatalog {
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field(SiteResponseFieldName, ObjectType, SiteResponseDescription),
 				Field("id", StringType, "GUID of the updated record."),
+				Field("verified", BooleanType, "true when the written fields were read back after the PATCH and compared; false when the read-back failed (the write still succeeded, see verification-note); absent when verify=false or nothing was written."),
+				Field("diverged", ArrayType, DivergedFieldDescription),
+				Field("verification-note", StringType, "Why the read-back did not verify the write, or which sent fields it did not compare."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that values was accepted as data; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
@@ -7562,6 +7569,22 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private const string DivergedFieldDescription =
+		"Sent fields Creatio stored with a different value, each {field, sent, stored} - typically an entity rule that replaced the value during the save. "
+		+ "Re-sending the same write does not change it. Absent when every compared field matched.";
+
+	private const string ReadBackScopeDescription =
+		"The read-back runs right after the write and compares only the sent fields, by their $metadata type when known (GUID case, date-time offset and number form are not differences); "
+		+ "a value an asynchronous business process changes later is not seen, and binary columns are not compared.";
+
+	private const string ODataUpdateVerifyDescription =
+		"Optional, default true: read the written fields back with one GET after the PATCH and report divergences in diverged. false skips the read-back. "
+		+ ReadBackScopeDescription;
+
+	private const string ODataCreateVerifyDescription =
+		"Optional, default true: read the created rows back by Id after the batch (batched GETs within the batch time budget) and report each row's divergences. false skips the read-back. "
+		+ ReadBackScopeDescription;
+
 	private static ToolOutputContract ODataCreateBatchOutput() {
 		return new ToolOutputContract(
 			"odata-create-batch-result",
@@ -7573,6 +7596,7 @@ internal static class ToolContractCatalog {
 			[
 				Field("created", NumberType, "Number of rows created."),
 				Field("failed", NumberType, "Number of rows that failed."),
+				Field("diverged", NumberType, "Created rows whose read-back found a field stored with a different value than sent (see each row's diverged). Absent when verify=false."),
 				Field("unverified", NumberType,
 					"Failed rows whose side effect could NOT be verified (a subset of 'failed'). Non-zero means the "
 					+ "batch must not be blindly re-sent."),
@@ -7585,6 +7609,7 @@ internal static class ToolContractCatalog {
 					+ "diagnostic side-effect none. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. A failed row the site answered also carries site-response. "
+					+ "A created row also carries verified (absent when verify=false), diverged and verification-note from the read-back after the batch. "
 					+ ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field("warnings", ArrayType, "Notes that did not stop the call, for example that payload was accepted as rows; absent when there is nothing to note."),
