@@ -213,12 +213,8 @@ public sealed class ODataCreateTool(
 		ODataCreateBatchResponse result = payloadAlias.Error is not null
 			? ODataCreateBatchResponse.RequestError(payloadAlias.Error)
 			: CreateCore(args, cancellationToken);
-		string[] warnings = new[] { payloadAlias.WarningFor(result.Error is not null) }
-			.Concat(result.Warnings ?? [])
-			.Where(warning => warning is not null)
-			.ToArray();
 		return result with {
-			Warnings = warnings.Length == 0 ? null : warnings,
+			Warnings = payloadAlias.MergeWarnings(result.Error is not null, result.Warnings),
 			CorrelationId = correlationId,
 			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
 			Results = result.Results.Select(row => row with {
@@ -334,17 +330,10 @@ public sealed class ODataCreateTool(
 			.Where(result => result.Success && !string.IsNullOrWhiteSpace(result.Id))
 			.Select(result => new ODataSentRecord(result.Id.Trim(), sentRows[result.Index]))
 			.ToList();
-		IReadOnlyDictionary<string, ODataWriteVerification> outcomes;
-		try {
-			outcomes = created.Count == 0
-				? new Dictionary<string, ODataWriteVerification>()
-				: _writeVerifier.VerifyRecords(client, urlBuilder, entity, created, propertyTypes, remainingBudgetMs);
-		} catch (Exception ex) {
-			ODataWriteVerification failed = ODataWriteVerification.Unverified("the read-back after the batch failed ("
-				+ SensitiveErrorTextRedactor.Redact(ex.Message) + "), so the stored values were not compared.");
-			outcomes = created.GroupBy(record => record.Id, StringComparer.OrdinalIgnoreCase)
-				.ToDictionary(group => group.Key, _ => failed, StringComparer.OrdinalIgnoreCase);
-		}
+		// The verifier never throws: a failed read-back comes back as an unverified outcome per row.
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = created.Count == 0
+			? new Dictionary<string, ODataWriteVerification>()
+			: _writeVerifier.VerifyRecords(client, urlBuilder, entity, created, propertyTypes, remainingBudgetMs);
 		return results.Select(result => {
 			if (!result.Success) {
 				return result;

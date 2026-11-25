@@ -147,11 +147,7 @@ public sealed class ODataUpdateTool(
 		if (result.SiteResponse is { RefusedWithoutProcessing: true }) {
 			diagnostic = diagnostic.AsRefusedWithoutProcessing();
 		}
-		string[] warnings = new[] { payloadAlias.WarningFor(!result.Success && !attempted) }
-			.Concat(result.Warnings ?? [])
-			.Where(warning => warning is not null)
-			.ToArray();
-		return result with { Warnings = warnings.Length == 0 ? null : warnings,
+		return result with { Warnings = payloadAlias.MergeWarnings(!result.Success && !attempted, result.Warnings),
 			CorrelationId = correlationId, Diagnostic = diagnostic };
 	}
 
@@ -231,20 +227,14 @@ public sealed class ODataUpdateTool(
 	}
 
 	/// <summary>
-	/// Reads the written fields back and adds the outcome to the successful response. The PATCH already happened,
-	/// so nothing here may turn the response into a failure.
+	/// Reads the written fields back and adds the outcome to the successful response. The verifier never throws,
+	/// so the accepted PATCH is never turned into a failure here.
 	/// </summary>
 	private ODataWriteResponse WithVerification(ODataWriteResponse written, IApplicationClient client,
 		IServiceUrlBuilder urlBuilder, ODataUpdateArgs args, JsonElement data,
 		IReadOnlyDictionary<string, string> propertyTypes) {
-		ODataWriteVerification verification;
-		try {
-			verification = _writeVerifier.VerifyRecord(client, urlBuilder, args.Entity.Trim(), args.Id.Trim(), data,
-				propertyTypes);
-		} catch (Exception ex) {
-			verification = ODataWriteVerification.Unverified("the read-back after the write failed ("
-				+ SensitiveErrorTextRedactor.Redact(ex.Message) + "), so the stored values were not compared.");
-		}
+		ODataWriteVerification verification = _writeVerifier.VerifyRecord(client, urlBuilder, args.Entity.Trim(),
+			args.Id.Trim(), data, propertyTypes);
 		return written with {
 			Verified = verification.Verified,
 			Diverged = verification.DivergedOrNull,

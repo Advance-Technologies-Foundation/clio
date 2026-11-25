@@ -79,6 +79,15 @@ public sealed record ODataWriteVerification(bool Verified, IReadOnlyList<ODataFi
 	/// <param name="reason">Why the stored values were not compared.</param>
 	public static ODataWriteVerification Unverified(string reason) => new(false, [], reason);
 
+	/// <summary>A verified outcome with nothing that diverged, also used when no sent field could be compared.</summary>
+	public static ODataWriteVerification NothingToCompare { get; } = new(true, [], null);
+
+	/// <summary>An unverified outcome for a read-back that threw; the exception text is redacted.</summary>
+	/// <param name="exception">What the read-back threw.</param>
+	public static ODataWriteVerification ReadBackFailed(Exception exception) =>
+		Unverified("the read-back after the write failed (" + SensitiveErrorTextRedactor.Redact(exception.Message)
+			+ "), so the stored values were not compared.");
+
 	/// <summary>The divergences for a response member: <see langword="null"/> when there are none, so the member is omitted.</summary>
 	public IReadOnlyList<ODataFieldDivergence>? DivergedOrNull => Diverged.Count == 0 ? null : Diverged;
 
@@ -133,16 +142,20 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	/// <inheritdoc />
 	public ODataWriteVerification VerifyRecord(IApplicationClient client, IServiceUrlBuilder urlBuilder,
 		string entity, string id, JsonElement sent, IReadOnlyDictionary<string, string>? propertyTypes) {
-		IReadOnlyList<string> fields = ComparableFields(sent, propertyTypes);
-		if (fields.Count == 0) {
-			return new ODataWriteVerification(true, [], null);
+		try {
+			IReadOnlyList<string> fields = ComparableFields(sent, propertyTypes);
+			if (fields.Count == 0) {
+				return ODataWriteVerification.NothingToCompare;
+			}
+			string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id))
+				+ "?$select=" + Uri.EscapeDataString(string.Join(",", fields));
+			return TryRead(client, url, ReadBackTimeoutMs, out JsonElement root, out string failure)
+				? Compare(sent, root, fields, propertyTypes)
+				: ODataWriteVerification.Unverified(failure);
+		} catch (Exception ex) {
+			// The write already happened: nothing on the read-back path may surface as a failed write.
+			return ODataWriteVerification.ReadBackFailed(ex);
 		}
-		string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id))
-			+ "?$select=" + Uri.EscapeDataString(string.Join(",", fields));
-		if (!TryRead(client, url, ReadBackTimeoutMs, out JsonElement root, out string failure)) {
-			return ODataWriteVerification.Unverified(failure);
-		}
-		return Compare(sent, root, fields, propertyTypes);
 	}
 
 	/// <inheritdoc />
@@ -150,40 +163,55 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 		IServiceUrlBuilder urlBuilder, string entity, IReadOnlyList<ODataSentRecord> records,
 		IReadOnlyDictionary<string, string>? propertyTypes, Func<int> remainingBudgetMs) {
 		Dictionary<string, ODataWriteVerification> outcomes = new(StringComparer.OrdinalIgnoreCase);
-		string collectionUrl = urlBuilder.Build(ODataKeyFormatter.CollectionPath(entity));
-		// The Id goes into $filter verbatim, so only a GUID is read back; anything else cannot address a record.
-		List<ODataSentRecord> addressable = [];
-		foreach (ODataSentRecord record in records) {
-			if (ODataKeyFormatter.IsGuid(record.Id?.Trim() ?? string.Empty)) {
-				addressable.Add(record with { Id = record.Id!.Trim() });
-			} else if (record.Id is not null) {
-				outcomes[record.Id] = ODataWriteVerification.Unverified(UnreadableAnswer);
+		try {
+			VerifyRecordsCore(client, urlBuilder, entity, records, propertyTypes, remainingBudgetMs, outcomes);
+		} catch (Exception ex) {
+			ODataWriteVerification failed = ODataWriteVerification.ReadBackFailed(ex);
+			foreach (ODataSentRecord record in records.Where(record => record.Id is not null)) {
+				outcomes.TryAdd(record.Id.Trim(), failed);
 			}
 		}
-		IEnumerable<List<ODataSentRecord>> chunks = Chunk(addressable, propertyTypes,
-			out IReadOnlyList<ODataSentRecord> fieldless);
-		foreach (List<ODataSentRecord> chunk in chunks) {
+		return outcomes;
+	}
+
+	/// <summary>A record to read back, with its comparable fields worked out once.</summary>
+	private sealed record PendingRecord(string Id, JsonElement Sent, IReadOnlyList<string> Fields);
+
+	private static void VerifyRecordsCore(IApplicationClient client, IServiceUrlBuilder urlBuilder, string entity,
+		IReadOnlyList<ODataSentRecord> records, IReadOnlyDictionary<string, string>? propertyTypes,
+		Func<int> remainingBudgetMs, Dictionary<string, ODataWriteVerification> outcomes) {
+		List<PendingRecord> pending = [];
+		foreach (ODataSentRecord record in records) {
+			string id = record.Id?.Trim() ?? string.Empty;
+			IReadOnlyList<string> fields = ComparableFields(record.Sent, propertyTypes);
+			// The Id goes into $filter verbatim, so only a GUID is read back; anything else cannot address a record.
+			if (!ODataKeyFormatter.IsGuid(id)) {
+				outcomes[id] = ODataWriteVerification.Unverified(UnreadableAnswer);
+			} else if (fields.Count == 0) {
+				outcomes[id] = ODataWriteVerification.NothingToCompare;
+			} else {
+				pending.Add(new PendingRecord(id, record.Sent, fields));
+			}
+		}
+		string collectionUrl = urlBuilder.Build(ODataKeyFormatter.CollectionPath(entity));
+		foreach (List<PendingRecord> chunk in Chunk(pending)) {
 			int remaining = remainingBudgetMs();
 			if (remaining < MinReadBudgetMs) {
 				chunk.ForEach(record => outcomes[record.Id] = ODataWriteVerification.Unverified(BudgetSpent));
 				continue;
 			}
-			string url = collectionUrl + "?" + BuildChunkQuery(chunk, propertyTypes);
+			string url = collectionUrl + "?" + BuildChunkQuery(chunk);
 			if (!TryRead(client, url, Math.Min(ReadBackTimeoutMs, remaining), out JsonElement root, out string failure)) {
 				chunk.ForEach(record => outcomes[record.Id] = ODataWriteVerification.Unverified(failure));
 				continue;
 			}
 			Dictionary<Guid, JsonElement> stored = StoredById(root);
-			foreach (ODataSentRecord record in chunk) {
-				outcomes[record.Id] = Guid.TryParse(record.Id, out Guid key) && stored.TryGetValue(key, out JsonElement row)
-					? Compare(record.Sent, row, ComparableFields(record.Sent, propertyTypes), propertyTypes)
+			foreach (PendingRecord record in chunk) {
+				outcomes[record.Id] = stored.TryGetValue(Guid.Parse(record.Id), out JsonElement row)
+					? Compare(record.Sent, row, record.Fields, propertyTypes)
 					: ODataWriteVerification.Unverified(NotReturned);
 			}
 		}
-		foreach (ODataSentRecord record in fieldless) {
-			outcomes[record.Id] = new ODataWriteVerification(true, [], null);
-		}
-		return outcomes;
 	}
 
 	/// <summary>
@@ -204,44 +232,63 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	private static string? TypeOf(string field, IReadOnlyDictionary<string, string>? propertyTypes) =>
 		propertyTypes is not null && propertyTypes.TryGetValue(field, out string? type) ? type : null;
 
-	/// <summary>Splits the records into chunks whose query fits <see cref="MaxQueryLength"/>.</summary>
-	private static IEnumerable<List<ODataSentRecord>> Chunk(IReadOnlyList<ODataSentRecord> records,
-		IReadOnlyDictionary<string, string>? propertyTypes, out IReadOnlyList<ODataSentRecord> fieldless) {
-		List<ODataSentRecord> withFields = [];
-		List<ODataSentRecord> withoutFields = [];
-		foreach (ODataSentRecord record in records) {
-			(ComparableFields(record.Sent, propertyTypes).Count > 0 ? withFields : withoutFields).Add(record);
-		}
-		fieldless = withoutFields;
-		List<List<ODataSentRecord>> chunks = [];
-		List<ODataSentRecord> current = [];
-		foreach (ODataSentRecord record in withFields) {
-			List<ODataSentRecord> candidate = [.. current, record];
-			if (current.Count > 0 && BuildChunkQuery(candidate, propertyTypes).Length > MaxQueryLength) {
-				chunks.Add(current);
-				current = [record];
-			} else {
-				current = candidate;
+	private const string FilterPrefix = "$filter=";
+	private const string SelectPrefix = "&$select=";
+	private const string IdTerm = "Id eq ";
+	private const string OrSeparator = " or ";
+	private const string SelectSeparator = ",";
+
+	/// <summary>
+	/// Splits the records into chunks whose query (see <see cref="BuildChunkQuery"/>) fits
+	/// <see cref="MaxQueryLength"/>, tracking the escaped length as records are added instead of rebuilding it.
+	/// </summary>
+	private static IEnumerable<List<PendingRecord>> Chunk(IReadOnlyList<PendingRecord> records) {
+		List<PendingRecord> current = [];
+		HashSet<string> selected = new(StringComparer.Ordinal) { "Id" };
+		int filterLength = 0;
+		int selectLength = EscapedLength("Id");
+		foreach (PendingRecord record in records) {
+			int idLength = EscapedLength(IdTerm + record.Id) + (current.Count == 0 ? 0 : EscapedLength(OrSeparator));
+			int addedSelect = SelectLengthOf(record.Fields.Where(field => !selected.Contains(field)));
+			if (current.Count > 0
+				&& QueryLength(filterLength + idLength, selectLength + addedSelect) > MaxQueryLength) {
+				yield return current;
+				current = [];
+				selected = new HashSet<string>(StringComparer.Ordinal) { "Id" };
+				filterLength = 0;
+				selectLength = EscapedLength("Id");
+				idLength = EscapedLength(IdTerm + record.Id);
+				addedSelect = SelectLengthOf(record.Fields);
 			}
+			current.Add(record);
+			selected.UnionWith(record.Fields);
+			filterLength += idLength;
+			selectLength += addedSelect;
 		}
 		if (current.Count > 0) {
-			chunks.Add(current);
+			yield return current;
 		}
-		return chunks;
 	}
+
+	private static int EscapedLength(string text) => Uri.EscapeDataString(text).Length;
+
+	private static int SelectLengthOf(IEnumerable<string> fields) =>
+		fields.Distinct(StringComparer.Ordinal).Sum(field => EscapedLength(SelectSeparator) + EscapedLength(field));
+
+	private static int QueryLength(int filterLength, int selectLength) =>
+		FilterPrefix.Length + filterLength + (selectLength <= MaxSelectLength ? SelectPrefix.Length + selectLength : 0);
 
 	/// <summary>
 	/// <c>$filter</c> on the chunk's Ids plus a <c>$select</c> of the union of their fields and <c>Id</c>; the
 	/// <c>$select</c> is left out when it alone would crowd the Ids out of the query, so every column is read.
 	/// </summary>
-	private static string BuildChunkQuery(IReadOnlyList<ODataSentRecord> chunk,
-		IReadOnlyDictionary<string, string>? propertyTypes) {
-		string filter = string.Join(" or ", chunk.Select(record => $"Id eq {record.Id.Trim()}"));
-		StringBuilder query = new StringBuilder("$filter=").Append(Uri.EscapeDataString(filter));
-		IEnumerable<string> fields = chunk.SelectMany(record => ComparableFields(record.Sent, propertyTypes));
-		string select = Uri.EscapeDataString(string.Join(",", new[] { "Id" }.Concat(fields).Distinct(StringComparer.Ordinal)));
+	private static string BuildChunkQuery(IReadOnlyList<PendingRecord> chunk) {
+		string filter = string.Join(OrSeparator, chunk.Select(record => IdTerm + record.Id));
+		StringBuilder query = new StringBuilder(FilterPrefix).Append(Uri.EscapeDataString(filter));
+		string select = Uri.EscapeDataString(string.Join(SelectSeparator,
+			new[] { "Id" }.Concat(chunk.SelectMany(record => record.Fields)).Distinct(StringComparer.Ordinal)));
 		if (select.Length <= MaxSelectLength) {
-			query.Append("&$select=").Append(select);
+			query.Append(SelectPrefix).Append(select);
 		}
 		return query.ToString();
 	}
@@ -255,8 +302,7 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 		try {
 			body = client.ExecuteGetRequest(url, timeoutMs, 1);
 		} catch (Exception ex) {
-			failure = "the read-back after the write failed ("
-				+ SensitiveErrorTextRedactor.Redact(ex.Message) + "), so the stored values were not compared.";
+			failure = ODataWriteVerification.ReadBackFailed(ex).Note!;
 			return false;
 		}
 		if (string.IsNullOrWhiteSpace(body)) {
