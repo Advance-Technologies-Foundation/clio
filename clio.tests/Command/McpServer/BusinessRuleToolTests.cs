@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ComponentDescriptionAttribute = System.ComponentModel.DescriptionAttribute;
 using System.ComponentModel.DataAnnotations;
 using Clio;
 using Clio.Command.BusinessRules;
@@ -744,6 +745,68 @@ public sealed class BusinessRuleToolTests {
 		BusinessRule rule = payloadArgs!.Rules.Single().ToBusinessRule();
 		rule.Actions.Select(action => action.ActionType).Should().Equal(["hide-element", "make-read-only"]);
 		rule.Actions.SelectMany(action => action.FieldSelectionItems).Should().Equal(["EscalateButton", "AmountInput"]);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Deserializes a page apply-static-filter action so the page validator, not the JSON reader, rejects it with the entity-rule redirect.")]
+	public void PageBusinessRuleCreate_Should_Deserialize_Entity_Only_Apply_Static_Filter_For_Validator_Rejection() {
+		// Arrange
+		string payload = """
+		{
+		  "environment-name": "dev",
+		  "package-name": "UsrPkg",
+		  "page-schema-name": "UsrCase_FormPage",
+		  "rules": [
+		    {
+		      "caption": "Filter owners",
+		      "condition": { "logicalOperation": "AND", "conditions": [] },
+		      "actions": [ { "type": "apply-static-filter", "targetAttribute": "UsrOwner", "filter": { "logicalOperation": "AND", "items": [] } } ]
+		    }
+		  ]
+		}
+		""";
+
+		// Act
+		CreatePageBusinessRulesArgs? payloadArgs = JsonSerializer.Deserialize<CreatePageBusinessRulesArgs>(payload);
+
+		// Assert
+		payloadArgs.Should().NotBeNull(
+			because: "a generic JSON error would hide that a lookup filter is an entity rule");
+		payloadArgs!.Rules.Single().ToBusinessRule().Actions.Single().Should().BeOfType<ApplyStaticFilterBusinessRuleAction>(
+			because: "the page validator receives the action and rejects it with the redirect to create-entity-business-rules");
+		typeof(PageApplyStaticFilterBusinessRuleActionMcpContract)
+			.GetCustomAttribute<ComponentDescriptionAttribute>()!.Description
+			.Should().Contain("always rejected by the page tools").And.Contain("create-entity-business-rules",
+				because: "the generated input schema still lists the type, so its description must say it is entity-only");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("States in the create-page-business-rules rules description which condition attributes are accepted and which are rejected.")]
+	public void PageBusinessRuleCreate_Rules_Description_Should_State_Accepted_And_Rejected_Attributes() {
+		// Arrange
+		string description = typeof(CreatePageBusinessRulesArgs)
+			.GetProperty(nameof(CreatePageBusinessRulesArgs.Rules))!
+			.GetCustomAttribute<ComponentDescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain(PageBusinessRuleContractText.ConditionAttributes,
+			because: "the tool description and get-tool-contract must state the same accepted and rejected attributes");
+		PageBusinessRuleContractText.AcceptedConditionAttributes.Should().Contain("PageParameters.<Name>",
+			because: "page parameters are a condition source");
+		PageBusinessRuleContractText.AcceptedConditionAttributes.Should().Contain("_ActiveStep",
+			because: "a stepper's active step is a condition source");
+		PageBusinessRuleContractText.AcceptedConditionAttributes.Should().Contain("PDS.Priority",
+			because: "the page validator accepts '<data source>.<column>' paths");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("other virtual view-model attributes",
+			because: "virtual attributes are rejected");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("lookup paths or forward references",
+			because: "lookup paths and forward references are rejected");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("operation rights",
+			because: "operation rights are not a page condition operand");
+		PageBusinessRuleContractText.RejectedConditionAttributes.Should().Contain("feature toggles",
+			because: "feature toggles are not a page condition operand");
 	}
 
 	[Test]

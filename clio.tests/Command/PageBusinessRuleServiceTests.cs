@@ -37,7 +37,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
 			["PDS_Text"] = new("PDS_Text", "Text", null)
 		});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
@@ -89,6 +89,56 @@ public sealed class PageBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Hands the attributes the provider rejected, with their reasons, to the page validator, so a rejected attribute is explained in the error.")]
+	public void Create_Should_Pass_Rejected_Attributes_To_Validator() {
+		// Arrange
+		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
+		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
+		IPageBusinessRuleValidator validator = Substitute.For<IPageBusinessRuleValidator>();
+		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+		PageBundleInfo bundle = new();
+		BusinessRule rule = CreatePageRule();
+		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
+		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
+			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			bundle));
+		attributeProvider
+			.GetAttributes(bundle, packageUId, Arg.Do<IDictionary<string, string>?>(rejected => rejected!["UsrFlag"] = "virtual"))
+			.Returns(new Dictionary<string, BusinessRuleAttributeDescriptor>());
+		validator
+			.When(v => v.Validate(
+				Arg.Any<BusinessRule>(),
+				Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>(),
+				Arg.Any<IReadOnlySet<string>>(),
+				Arg.Any<IReadOnlyDictionary<string, SysSettingOperandDescriptor>?>(),
+				Arg.Any<IReadOnlyDictionary<string, string>?>()))
+			.Do(_ => throw new ArgumentException("rejected"));
+		PageBusinessRuleService service = new(
+			packageResolver,
+			schemaProvider,
+			attributeProvider,
+			Substitute.For<IPageBusinessRuleElementProvider>(),
+			Substitute.For<IBusinessRuleAddonService>(),
+			validator,
+			Substitute.For<ISysSettingConditionOperandResolver>());
+
+		// Act
+		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "the substitute validator rejects the rule once it is reached");
+		validator.Received(1).Validate(
+			rule,
+			Arg.Any<IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor>>(),
+			Arg.Any<IReadOnlySet<string>>(),
+			Arg.Any<IReadOnlyDictionary<string, SysSettingOperandDescriptor>?>(),
+			Arg.Is<IReadOnlyDictionary<string, string>?>(rejected => rejected != null && rejected["UsrFlag"] == "virtual"));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Stops before add-on mutation when page business-rule validation fails.")]
 	public void Create_Should_Not_Append_Addon_When_Page_Rule_Validation_Fails() {
 		// Arrange
@@ -106,7 +156,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
 			["PDS_Text"] = new("PDS_Text", "Text", null)
 		});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
@@ -150,7 +200,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
 			["PDS_Text"] = new("PDS_Text", "Text", null)
 		});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
@@ -477,6 +527,49 @@ public sealed class PageBusinessRuleServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Explains a rejected condition attribute with the provider's reason and the redirect in the per-rule result of a batch create, the path create-page-business-rules uses.")]
+	public void Create_Batch_Should_Explain_Rejected_Attribute_In_Rule_Result() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out _);
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Create(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [CreatePageRule(leftPath: "UsrFlag")]));
+
+		// Assert
+		results.Should().ContainSingle(because: "one input rule yields one outcome");
+		results[0].Success.Should().BeFalse(because: "a virtual attribute is not a page condition source");
+		results[0].Error.Should().Contain(VirtualFlagReason,
+				because: "the provider's reason must reach the agent through the batch path the MCP tool calls")
+			.And.Contain(PageBusinessRuleValidator.UnsupportedAttributeRedirect,
+				because: "the agent must be told where the condition belongs instead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Explains a rejected condition attribute with the provider's reason and the redirect in the per-rule result of a batch update, the path update-page-business-rules uses.")]
+	public void Update_Batch_Should_Explain_Rejected_Attribute_In_Rule_Result() {
+		// Arrange
+		PageBusinessRuleService service = BuildBatchService(out IBusinessRuleAddonService addonService);
+		addonService.GetSchema(Arg.Any<AddonGetRequestDto>())
+			.Returns(BuildPageAddonSchema(("BusinessRule_pg", "pg-rule")));
+		BusinessRule rule = CreatePageRule(leftPath: "UsrFlag") with { Name = "BusinessRule_pg" };
+
+		// Act
+		IReadOnlyList<BusinessRuleBatchItemResult> results = service.Update(new BusinessRulesBatchRequest(
+			"UsrPkg", "UsrPage", [rule]));
+
+		// Assert
+		results.Should().ContainSingle(because: "one input rule yields one outcome");
+		results[0].Success.Should().BeFalse(because: "a virtual attribute is not a page condition source");
+		results[0].Error.Should().Contain(VirtualFlagReason,
+				because: "the provider's reason must reach the agent through the batch path the MCP tool calls")
+			.And.Contain(PageBusinessRuleValidator.UnsupportedAttributeRedirect,
+				because: "the agent must be told where the condition belongs instead");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Fails a rule without a name as an isolated per-rule failure result instead of throwing, and skips the add-on update when it is the only rule.")]
 	public void Update_Should_Fail_Per_Rule_When_Name_Is_Missing() {
 		// Arrange
@@ -656,7 +749,7 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor>());
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor>());
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) { "Input_One" });
 		sysSettingResolver.Resolve(Arg.Any<BusinessRule>()).Returns(
 			new Dictionary<string, SysSettingOperandDescriptor>(StringComparer.Ordinal) {
@@ -954,7 +1047,7 @@ public sealed class PageBusinessRuleServiceTests {
 				index => new BusinessRuleAttributeDescriptor($"Col{index:00}", "Text", null, "PDS"));
 		attributes["RequestStepper_ActiveStep"] =
 			new BusinessRuleAttributeDescriptor("RequestStepper_ActiveStep", "Text", null) { IsComponentAttribute = true };
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(attributes);
+		attributeProvider.GetAttributes(bundle, packageUId, Arg.Any<IDictionary<string, string>?>()).Returns(attributes);
 		PageBusinessRuleService service = new(
 			packageResolver,
 			schemaProvider,
@@ -1055,9 +1148,15 @@ public sealed class PageBusinessRuleServiceTests {
 			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
 			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
 			bundle));
-		attributeProvider.GetAttributes(bundle, packageUId).Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
-			["PDS_Text"] = new("PDS_Text", "Text", null)
-		});
+		attributeProvider
+			.GetAttributes(bundle, packageUId, Arg.Do<IDictionary<string, string>?>(rejected => {
+				if (rejected is not null) {
+					rejected["UsrFlag"] = VirtualFlagReason;
+				}
+			}))
+			.Returns(new Dictionary<string, BusinessRuleAttributeDescriptor> {
+				["PDS_Text"] = new("PDS_Text", "Text", null)
+			});
 		elementProvider.GetElementNames(bundle).Returns(new HashSet<string>(StringComparer.Ordinal) {
 			"Input_One"
 		});
@@ -1094,6 +1193,8 @@ public sealed class PageBusinessRuleServiceTests {
 		};
 	}
 
+	private const string VirtualFlagReason = "'UsrFlag' is a virtual view-model attribute.";
+
 	/// <summary>The rule that only undoes <paramref name="rule"/>: its condition negated, show turned into hide.</summary>
 	private static BusinessRule InverseOf(BusinessRule rule, string caption) =>
 		CreatePageRule(caption: caption) with {
@@ -1119,14 +1220,17 @@ public sealed class PageBusinessRuleServiceTests {
 		return new AddonSchemaDto { MetaData = metadata.ToJsonString(), Resources = [] };
 	}
 
-	private static BusinessRule CreatePageRule(string actionElementName = "Input_One", string caption = "Show input") =>
+	private static BusinessRule CreatePageRule(
+		string actionElementName = "Input_One",
+		string caption = "Show input",
+		string leftPath = "PDS_Text") =>
 		new(
 			caption,
 			new BusinessRuleConditionGroup(
 				"AND",
 				[
 					new BusinessRuleCondition(
-						new BusinessRuleExpression("AttributeValue", "PDS_Text", null),
+						new BusinessRuleExpression("AttributeValue", leftPath, null),
 						"equal",
 						new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"Ready\"")))
 				]),
