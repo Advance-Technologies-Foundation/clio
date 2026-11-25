@@ -965,6 +965,38 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A code-quality finding (a catch block that only logs) reaches the sync-pages result as a warning and does not stop the save")]
+	public async Task SyncPages_Should_Save_And_Warn_When_Body_Breaks_A_Code_Quality_Rule() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(), new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(),
+			new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		string body = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[{request:'usr.SaveRequest',handler:async (request, next)=>{ " +
+			"try { await request.$context.save(); } catch (e) { console.error(e); } return next?.handle(request); }}]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageSyncArgs args = new("dev", [new PageSyncPageInput("UsrTodo_FormPage", body, null)], Validate: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "code-quality rules are warnings and never reject a save");
+		response.Pages[0].Validation!.Warnings.Should().Contain(warning => warning.Contains(PageBodyAstLinter.RuleCatchLogOnly),
+			because: "the save-time lint must tell the agent the catch block swallows the error");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Passes page resources through sync-pages and returns the registered resource count from update-page.")]
 	public async Task SyncPages_Should_Surface_Registered_Resources() {
 		// Arrange
