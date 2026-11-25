@@ -146,6 +146,12 @@ internal static class ODataReadColumnValidation {
 		foreach (ODataExpandEntry entry in expand ?? []) {
 			references.Add(new Reference("expand", entry.NavigationPath, true));
 			//A nested $select name is a member of the navigation's target, checked and reported as Nav/Name.
+			//The metadata shape holds ONE level of navigation targets, so behind a multi-segment navigation
+			//(Account/Owner) the target is unknown and its nested names are not checked - the same depth
+			//limit every other path here has. Adding them would only make an unchecked name look checked.
+			if (entry.NavigationPath.Contains('/', StringComparison.Ordinal)) {
+				continue;
+			}
 			foreach (string name in entry.Select ?? []) {
 				references.Add(new Reference("expand", $"{entry.NavigationPath}/{name}", false));
 			}

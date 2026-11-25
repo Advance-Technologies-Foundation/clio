@@ -183,6 +183,24 @@ public sealed class ODataReadColumnValidationTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Behind a multi-segment navigation the metadata shape has no target type, so nested names are not checked and not reported, rather than reported as checked-and-known.")]
+	public void Read_Should_Not_Check_Nested_Select_Names_Behind_A_Multi_Segment_Navigation() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Titel"),
+			expand: Cols("Account/Owner($select=Bogus)")));
+
+		// Assert
+		response.UnknownMembers.Should().NotContain(member => member.Name.Contains("Bogus"),
+			because: "the shape holds one level of navigation targets, so a name behind Account/Owner cannot be checked");
+		response.UnknownMembers.Should().Contain(member => member.Argument == "select",
+			because: "the rest of the query is still checked as before");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Known nested $select names are not reported, so an unrelated rejection is not blamed on a valid expand.")]
 	public void Read_Should_Not_Report_Known_Nested_Select_Names() {
 		// Arrange
