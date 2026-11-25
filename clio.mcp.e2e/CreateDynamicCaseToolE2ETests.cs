@@ -555,6 +555,60 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
+	[Description("Step conditions (ENG-107647): a dry run with a step's condition writes nothing; the write stores the condition, which describe-dynamic-case returns by result and target stage; a result the step's task category does not offer is refused with nothing written; removing the step removes its condition and the case still saves.")]
+	[AllureName("modify-dynamic-case writes, describes and removes a step's condition")]
+	public async Task ModifyDynamicCase_ShouldWriteDescribeAndRemoveAStepCondition() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync(CaseChangePackageVersion);
+		JsonObject? created = null;
+		try {
+			CallToolResult createCall = await CallAsync(context, WithoutBar());
+			IgnoreWhenProcessBuilderIsBehind(ToolText(createCall), MinimumPackageVersion);
+			created = ResultOf(createCall);
+			ShouldHaveLanded(createCall, "the seeded object takes a case");
+			List<string> stored = StageValues(created["case"]!.AsObject());
+			string target = stored[^1];
+			Dictionary<string, object?> check = Step("Check the order");
+			check["conditions"] = new[] { new Dictionary<string, object?> { ["result"] = "Canceled", ["nextStage"] = target } };
+			Dictionary<string, object?> unknown = Step("Check the order");
+			unknown["conditions"] = new[] { new Dictionary<string, object?> { ["result"] = "Maybe later", ["nextStage"] = target } };
+
+			// Act
+			CallToolResult dryRun = await ModifyAsync(context, created, new Dictionary<string, object?> {
+				["stages"] = WithSteps(stored, stored[1], null, check), ["dry-run"] = true
+			});
+			JsonObject afterDryRun = await DescribeCaseAsync(context, created);
+			CallToolResult write = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, check) });
+			JsonObject after = await DescribeCaseAsync(context, created);
+			CallToolResult refused = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null, unknown) });
+			CallToolResult removed = await ModifyAsync(context, created,
+				new Dictionary<string, object?> { ["stages"] = WithSteps(stored, stored[1], null) });
+			JsonObject afterRemoval = await DescribeCaseAsync(context, created);
+
+			// Assert
+			IgnoreWhenProcessBuilderIsBehind(ToolText(dryRun), CaseChangePackageVersion);
+			ShouldHaveLanded(dryRun, "a Perform task step takes a condition");
+			Text(ResultOf(dryRun), "outcome").Should().Be("planned");
+			StepsOf(StageOf(afterDryRun, stored[1])).Should().BeEmpty(because: "the dry run wrote nothing");
+			ShouldHaveLanded(write, "the planned condition can be written");
+			JsonObject step = StepsOf(StageOf(after, stored[1])).Single();
+			JsonObject condition = step["conditions"]!.AsArray().Single()!.AsObject();
+			Text(condition, "result").Should().Be("Canceled");
+			Text(condition, "nextStage").Should().Be(Text(StageOf(after, target), "caption"),
+				because: "the condition leads to the stage named");
+			Text(ResultOf(refused), "outcome").Should().Be("refused");
+			Text(ResultOf(refused), "errorCode").Should().Be("step-condition-invalid",
+				because: "the task category offers no such result");
+			ShouldHaveLanded(removed, "a step with a condition is removed with it");
+			StepsOf(StageOf(afterRemoval, stored[1])).Should().BeEmpty();
+		} finally {
+			await CleanUpAsync(context, created, null, null, string.Empty);
+		}
+	}
+
+	[Test]
 	[Description("successful=false on a stage outside the final group is refused as stage-group-invalid with nothing written; grouping the last two stages, the second unsuccessful, stores the group and the flag, read back by describe-dynamic-case from the saved case.")]
 	[AllureName("modify-dynamic-case groups the final stages and refuses an unsuccessful non-final stage")]
 	public async Task ModifyDynamicCase_ShouldGroupTheFinalStages_AndRefuseAnUnsuccessfulNonFinalStage() {
