@@ -494,6 +494,24 @@ internal class PageBodyAstLinterQualityTests {
 		findings.Should().BeEmpty(because: "the handler hands the request on through its second parameter");
 	}
 
+	[Test]
+	[Description("A returned call chain far deeper than MaxAstDepth is reported as not giving the chain's result, without overflowing the stack")]
+	public void Lint_ShouldReportHandlerWithoutNext_WhenReturnedChainIsDeeperThanMaxAstDepth() {
+		// Arrange
+		string chain = "x" + string.Concat(Enumerable.Repeat(".a()", 50_000));
+		string body = Page("[{ request: \"usr.PostButtonClicked\", handler: (request, next) => { next.handle(request); return "
+			+ chain + "; } }]");
+		PageBodySyntaxValidator.ValidateAndParse(body, out Script ast);
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = PageBodyAstLinter.Lint(ast);
+
+		// Assert
+		ast.Should().NotBeNull(because: "the parser reads a left-leaning call chain without recursing");
+		findings.Should().Contain(f => f.Rule == PageBodyAstLinter.RuleHandlerWithoutNext,
+			because: "the walk stops at MaxAstDepth and reports the handler instead of crashing the server process");
+	}
+
 	#endregion
 
 	#region client modules
@@ -545,6 +563,8 @@ internal class PageBodyAstLinterQualityTests {
 
 	[TestCase("function() { return { viewConfigDiff: [], handlers: [] }; }")]
 	[TestCase("() => ({ handlers: [], converters: {} })")]
+	[TestCase("function() { const schema = { viewConfigDiff: [], handlers: [], converters: {}, validators: {} }; return schema; }")]
+	[TestCase("function() { const schema = { modelConfigDiff: [] }; return schema; }")]
 	[Description("A define whose factory returns page sections is a page that lost its markers, not a client module")]
 	public void LintClientModule_ShouldReturnNull_WhenFactoryReturnsPageSections(string factory) {
 		// Act
@@ -552,6 +572,45 @@ internal class PageBodyAstLinterQualityTests {
 
 		// Assert
 		findings.Should().BeNull(because: "a page body must be validated as a page, so its missing markers are reported");
+	}
+
+	[TestCase("function(sdk) { return { handlers: [] }; }")]
+	[TestCase("function(sdk) { const shared = { converters: {} }; return shared; }")]
+	[TestCase("() => ({ validators: {}, format: () => 1 })")]
+	[Description("A module that exports one of handlers / converters / validators and no page config section is a shared client module, not a page")]
+	public void LintClientModule_ShouldLintModule_WhenFactoryExportsOneSharedSection(string factory) {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule("define(\"UsrShared_Handlers\", [], " + factory + ");");
+
+		// Assert
+		findings.Should().NotBeNull(because: "sharing handler entries, converters or validators through a module is a valid module");
+	}
+
+	[TestCase("async function load(model) { return model.load({ filters: { StatusId: \"8dc41780-1234-4000-8000-000000000001\" } }); }")]
+	[TestCase("let status = \"8dc41780-1234-4000-8000-000000000001\";")]
+	[TestCase("const ACTIONS = { close: (model) => model.set(\"StatusId\", \"8dc41780-1234-4000-8000-000000000001\") };")]
+	[TestCase("const load = (model) => model.load(\"8dc41780-1234-4000-8000-000000000001\");")]
+	[Description("A record id used in a module's code - not as the value of a const data declaration - is reported")]
+	public void LintClientModule_ShouldReportRecordId_WhenUsedOutsideConstantData(string code) {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(Module(code));
+
+		// Assert
+		findings.Should().ContainSingle(f => f.Rule == PageBodyAstLinter.RuleGuidLiteralDataReference,
+			because: "moving page logic into a module must not hide a hard-coded record id");
+	}
+
+	[TestCase("const CLOSED = \"8dc41780-1234-4000-8000-000000000001\";")]
+	[TestCase("const STATUS = { Closed: \"8dc41780-1234-4000-8000-000000000001\", Open: [\"8dc41780-1234-4000-8000-000000000002\"] };")]
+	[TestCase("const IDS = [\"8dc41780-1234-4000-8000-000000000001\"];")]
+	[Description("A record id held by a const data declaration is the named constant the rule asks for and is not reported")]
+	public void LintClientModule_ShouldNotReportRecordId_WhenDeclaredAsConstantData(string code) {
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintModule(Module(code));
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleGuidLiteralDataReference,
+			because: "a named constant is where a record id belongs");
 	}
 
 	[Test]

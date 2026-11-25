@@ -466,8 +466,10 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
 - `validate-page`
   Validate a page body without saving. Unregistered captions of inserted widgets come back as one warning
   that states the rule once and lists every node, property and key. A client-module body (`define(...)`
-  without page-schema markers, whose factory returns no page sections) is validated with the code-quality
-  lint only; its first warning says so. Each module a page imports is validated with its own call.
+  without page-schema markers, whose factory returns no view/model config section and at most one of
+  `handlers` / `converters` / `validators`) is validated with the code-quality lint only; its first warning
+  says so. Each module a page imports is validated with its own call: nothing in clio walks `SCHEMA_DEPS`,
+  the CAADT migration gate is what holds a page whose imported modules were not read.
 - `sync-pages`
   Save many pages in one call with optional validation and optional read-back verification.
 - `component-info`

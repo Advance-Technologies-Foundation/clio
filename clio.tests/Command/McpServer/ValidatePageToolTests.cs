@@ -994,6 +994,7 @@ public sealed class ValidatePageToolTests {
 	[TestCase("const a = 1;")]
 	[TestCase("define(\"UsrX\", []);")]
 	[TestCase("define(\"UsrX_FormPage\", [], function() { return { viewConfigDiff: [], handlers: [], converters: {}, validators: {} }; });")]
+	[TestCase("define(\"UsrX_FormPage\", [], function() { const schema = { viewConfigDiff: [], handlers: [], converters: {}, validators: {} }; return schema; });")]
 	[Description("A body without page-schema markers that is not a client module - a plain script, a define without a factory, a page that lost its markers - goes down the page path and fails on the markers.")]
 	public async System.Threading.Tasks.Task ValidatePage_ShouldReportMissingMarkers_WhenBodyIsNotAClientModule(string body) {
 		// Act

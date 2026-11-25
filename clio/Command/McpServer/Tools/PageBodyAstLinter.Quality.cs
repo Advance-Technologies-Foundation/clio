@@ -56,7 +56,7 @@ internal static partial class PageBodyAstLinter {
 	private static void CheckCodeQuality(HashSet<Node> sections, LintFindingBudget budget) {
 		Dictionary<string, List<NamedFunction>> helpersByShape = new(StringComparer.Ordinal);
 		foreach (Property section in sections.OfType<Property>()) {
-			CheckSectionNode(section.Value, new QualityScope(IsElementId: false, CheckGuids: true), depth: 0, budget);
+			CheckSectionNode(section.Value, new QualityScope(IsElementId: false, InModule: false, InConstantData: false), depth: 0, budget);
 			if (TryGetStaticPropertyName(section) == "handlers" && section.Value is ArrayExpression handlers) {
 				foreach (Node entry in handlers.Elements) {
 					if (entry is ObjectExpression handlerEntry && TryGetHandlerFunction(handlerEntry, out IFunction handler)) {
@@ -72,25 +72,25 @@ internal static partial class PageBodyAstLinter {
 	/// <summary>
 	/// Lints a client module (<c>define("Name", [deps], function(...) { ... })</c>) with the code-quality rules that
 	/// apply outside a page section: function length, log-only catch blocks, bare numeric comparison types and
-	/// sequential independent loads. A record id is not reported: a module is where a page's named constants are
-	/// declared. Returns null when the script is not a client module, so the caller can lint it as a page instead.
+	/// sequential independent loads, and record ids. A record id held by a `const` whose value is data (a literal, an
+	/// object or array literal, or <c>Object.freeze(...)</c> of one) is not reported: that is the named constant the
+	/// rule asks for. Returns null when the script is not a client module, so the caller can lint it as a page instead.
 	/// </summary>
 	public static IReadOnlyList<PageBodyLintFinding> LintClientModule(Script ast) {
 		if (ast is null || FindModuleFactory(ast) is not { } factory) {
 			return null;
 		}
 		LintFindingBudget budget = new();
-		CheckSectionNode(factory.Body, new QualityScope(IsElementId: false, CheckGuids: false), depth: 0, budget);
+		CheckSectionNode(factory.Body, new QualityScope(IsElementId: false, InModule: true, InConstantData: false), depth: 0, budget);
 		CheckSequentialAwaits(factory.Body, depth: 0, budget);
 		budget.AppendSummaries();
 		return budget.Findings;
 	}
 
-	// The sections a page factory returns. A `define` whose factory returns one of them is a page, even with its
-	// `/**SCHEMA_*/` markers lost, and must be validated as one.
-	private static readonly HashSet<string> PageSectionKeys = new(StringComparer.Ordinal) {
-		"viewConfigDiff", "viewConfig", "viewModelConfigDiff", "viewModelConfig", "modelConfigDiff", "modelConfig",
-		"handlers", "converters", "validators"
+	// The config sections only a page factory returns. `handlers`, `converters` and `validators` (SectionPropertyNames)
+	// are also names a shared module may export, so one of them alone does not make a page.
+	private static readonly HashSet<string> PageConfigKeys = new(StringComparer.Ordinal) {
+		"viewConfigDiff", "viewConfig", "viewModelConfigDiff", "viewModelConfig", "modelConfigDiff", "modelConfig"
 	};
 
 	// The factory of the script's top-level `define(...)` call; null when the script has none, or when the factory
@@ -107,13 +107,15 @@ internal static partial class PageBodyAstLinter {
 		return null;
 	}
 
-	private static bool ReturnsPageSections(IFunction factory) {
-		IEnumerable<Node> returned = factory.Body is BlockStatement block
-			? block.Body.OfType<ReturnStatement>().Select(r => (Node)r.Argument)
-			: [(Node)factory.Body];
-		return returned.OfType<ObjectExpression>().Any(obj => obj.Properties.OfType<Property>()
-			.Any(p => TryGetStaticPropertyName(p) is { } key && PageSectionKeys.Contains(key)));
-	}
+	// A `define` whose factory returns page sections is a page, even with its `/**SCHEMA_*/` markers lost, and must be
+	// validated as one: the returned object (found the way the page rules find it) has a page config section, or two
+	// or more of handlers / converters / validators. A module exporting only `{ handlers: [...] }` stays a module.
+	private static bool ReturnsPageSections(IFunction factory) =>
+		ReturnedObjectLiterals(factory).Any(returned => {
+			List<string> keys = returned.Properties.OfType<Property>()
+				.Select(TryGetStaticPropertyName).Where(key => key is not null).ToList();
+			return keys.Any(PageConfigKeys.Contains) || keys.Count(key => Array.IndexOf(SectionPropertyNames, key) >= 0) >= 2;
+		});
 
 	private static bool TryGetHandlerFunction(ObjectExpression entry, out IFunction handler) {
 		handler = null;
@@ -148,9 +150,9 @@ internal static partial class PageBodyAstLinter {
 		"code", "path", "caption", "title", "width"
 	};
 
-	// Where a node sits for the single-node rules: `IsElementId` marks the value of an element-shaped object's `id`,
-	// and `CheckGuids` is off in a client module, which is where named record ids are declared.
-	private readonly record struct QualityScope(bool IsElementId, bool CheckGuids);
+	// Where a node sits for the single-node rules: `IsElementId` marks the value of an element-shaped object's `id`;
+	// `InConstantData` marks the value of a client module's `const` data declaration, where a named record id belongs.
+	private readonly record struct QualityScope(bool IsElementId, bool InModule, bool InConstantData);
 
 	// One walk over a section for the rules that look at single nodes. An element-shaped object's `id` is told apart
 	// from a record id used as data; an `id` beside `displayValue` or `type` is data and is reported.
@@ -175,7 +177,7 @@ internal static partial class PageBodyAstLinter {
 					() => "`comparisonType` is a bare number; use the named `sdk.ComparisonType.<Name>` value so the "
 						+ "operator can be read and checked (MCP guide: page-schema-handlers).");
 				break;
-			case Literal {Value: string text} when scope.CheckGuids && !scope.IsElementId && ODataKeyFormatter.IsGuid(text):
+			case Literal {Value: string text} when !scope.InConstantData && !scope.IsElementId && ODataKeyFormatter.IsGuid(text):
 				budget.TryAdd(RuleGuidLiteralDataReference, LintSeverity.Warning,
 					node.Location.Start.Line, node.Location.Start.Column + 1,
 					() => $"Record id `{text}` is hard-coded in page code; read it from the project's constants "
@@ -184,12 +186,30 @@ internal static partial class PageBodyAstLinter {
 				break;
 		}
 		bool elementObject = node is ObjectExpression obj && IsElementObject(obj);
+		// Code inside constant data (a function stored in it) is code again, and its record ids are reported.
+		bool constantData = scope.InConstantData && node is not IFunction;
+		bool constantDeclaration = scope.InModule && node is VariableDeclaration {Kind: VariableDeclarationKind.Const};
 		foreach (Node child in node.ChildNodes) {
 			bool childIsElementId = elementObject && child is Property {Value: Literal} idProperty
 				&& TryGetStaticPropertyName(idProperty) == "id";
-			CheckSectionNode(child, scope with {IsElementId = childIsElementId}, depth + 1, budget);
+			bool childIsConstantData = constantData
+				|| (constantDeclaration && child is VariableDeclarator {Init: var init} && IsConstantData(init));
+			CheckSectionNode(child, scope with {IsElementId = childIsElementId, InConstantData = childIsConstantData},
+				depth + 1, budget);
 		}
 	}
+
+	// A declaration's value that is data, not code: a literal, an object or array literal, or `Object.freeze(...)` of
+	// one.
+	private static bool IsConstantData(Node init) =>
+		init switch {
+			Literal or ObjectExpression or ArrayExpression => true,
+			CallExpression {
+				Callee: MemberExpression {Computed: false, Object: Identifier {Name: "Object"}, Property: Identifier {Name: "freeze"}},
+				Arguments: [var frozen]
+			} => frozen is ObjectExpression or ArrayExpression,
+			_ => false
+		};
 
 	private static bool IsElementObject(ObjectExpression obj) =>
 		obj.Properties.OfType<Property>().Any(p => TryGetStaticPropertyName(p) is { } key && ElementKeys.Contains(key));
@@ -304,18 +324,18 @@ internal static partial class PageBodyAstLinter {
 		HashSet<string> fromNext = new(StringComparer.Ordinal);
 		foreach (Node node in own) {
 			switch (node) {
-				case VariableDeclarator {Id: Identifier name, Init: not null} declarator when GivesNextResult(declarator.Init, next, fromNext):
+				case VariableDeclarator {Id: Identifier name, Init: not null} declarator when GivesNextResult(declarator.Init, next, fromNext, depth: 0):
 					fromNext.Add(name.Name);
 					break;
-				case AssignmentExpression {Left: Identifier target} assignment when GivesNextResult(assignment.Right, next, fromNext):
+				case AssignmentExpression {Left: Identifier target} assignment when GivesNextResult(assignment.Right, next, fromNext, depth: 0):
 					fromNext.Add(target.Name);
 					break;
 			}
 		}
 		bool returned = handler.Body switch {
 			BlockStatement block => EndsInReturn(block, depth: 0)
-				&& own.OfType<ReturnStatement>().All(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext)),
-			Node expressionBody => GivesNextResult(expressionBody, next, fromNext)
+				&& own.OfType<ReturnStatement>().All(r => r.Argument is not null && GivesNextResult(r.Argument, next, fromNext, depth: 0)),
+			Node expressionBody => GivesNextResult(expressionBody, next, fromNext, depth: 0)
 		};
 		return returned ? null : "calls `next.handle(request)` but does not return its result";
 	}
@@ -360,24 +380,29 @@ internal static partial class PageBodyAstLinter {
 
 	// `next.handle(...)` or `next?.handle(...)`.
 	private static bool IsNextHandleCall(Node node, string next) =>
-		Unwrap(node) is CallExpression {
+		Unwrap(node, depth: 0) is CallExpression {
 			Callee: MemberExpression {Computed: false, Object: Identifier {Name: var target}, Property: Identifier {Name: "handle"}}
 		} && target == next;
 
 	// The expression gives the chain's result: the call itself (awaited or not), a call chained on it
-	// (`next.handle(request).then(...)`), or a variable assigned from either.
-	private static bool GivesNextResult(Node expression, string next, HashSet<string> fromNext) {
-		Node value = Unwrap(expression);
+	// (`next.handle(request).then(...)`), or a variable assigned from either. A chain deeper than MaxAstDepth counts
+	// as not giving it (the handler is then reported), never as a stack overflow.
+	private static bool GivesNextResult(Node expression, string next, HashSet<string> fromNext, int depth) {
+		if (depth > MaxAstDepth) {
+			return false;
+		}
+		Node value = Unwrap(expression, depth);
 		return IsNextHandleCall(value, next)
 			|| (value is Identifier {Name: var name} && fromNext.Contains(name))
 			|| (value is CallExpression {Callee: MemberExpression {Computed: false} chained}
-				&& GivesNextResult(chained.Object, next, fromNext));
+				&& GivesNextResult(chained.Object, next, fromNext, depth + 1));
 	}
 
-	private static Node Unwrap(Node node) =>
-		node switch {
-			AwaitExpression await => Unwrap(await.Argument),
-			ChainExpression chain => Unwrap(chain.Expression),
+	// The expression under `await` and `?.` wrappers; past MaxAstDepth the node is returned as it is.
+	private static Node Unwrap(Node node, int depth) =>
+		depth > MaxAstDepth ? node : node switch {
+			AwaitExpression await => Unwrap(await.Argument, depth + 1),
+			ChainExpression chain => Unwrap(chain.Expression, depth + 1),
 			_ => node
 		};
 

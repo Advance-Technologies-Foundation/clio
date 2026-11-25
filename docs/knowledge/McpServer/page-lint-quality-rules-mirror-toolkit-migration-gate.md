@@ -14,10 +14,16 @@ functions, 2 sequential independent awaits) also exist, under the same ids and w
 the `classic-to-freedom-migration` engine of `creatio-ai-app-development-toolkit`. There they are a
 BLOCKING `--verify` gate on the pages the migration builds; here they are save-time warnings only.
 Both sides also lint the client modules a page imports (`LintClientModule`, reached through
-`validate-page` with a module body) with the rules that hold outside a page section: function length,
-log-only catches, bare numeric `comparisonType` and sequential independent loads. A record id in a module
-is not reported here, because a module is where a page's named ids are declared; the toolkit still blocks
-on one that the project's constants module already holds.
+`validate-page` with a module body) with the single-node and per-function rules: function length,
+log-only catches, bare numeric `comparisonType`, sequential independent loads and record ids. A record id
+held by a module's `const` data declaration (a literal, an object or array literal, `Object.freeze` of one)
+is the named constant the rule asks for and is not reported; one used in module code is. The toolkit
+reports module record ids too, blocking on one the project's constants module already holds. The three
+rules driven by a page's `handlers` section (`handler-too-many-nested-functions`,
+`duplicate-function-in-page`, `handler-without-next`) do not run over a module body.
+A `define` is a page, not a module, when the object its factory returns (directly or through a `const`)
+has a view/model config section, or two or more of `handlers` / `converters` / `validators`; a module that
+exports one of those three alone is a shared client module.
 Nothing shares code between the two: the toolkit engine parses the built page itself with its own
 vendored acorn.
 
