@@ -50,7 +50,7 @@ public class DescribeDynamicCaseTool(
 		 + "it before answering any question about an existing case and before changing one with "
 		 + "modify-dynamic-case or modify-dynamic-case-as-new-version. Name the case by case-name or case-uid (any "
 		 + "member of its family, an inactive version included), or the object by entity-schema-name (its active "
-		 + "cases). Requires CrtProcessBuilder 1.6.6.194 or later (install-process-builder, after user approval).")]
+		 + "cases). Requires CrtProcessBuilder 1.6.6.195 or later (install-process-builder, after user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -105,7 +105,8 @@ public sealed record DescribeDynamicCaseArgs(
 	string CaseUId = null,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("The object: every active case of it is read, enabled or not.")]
+	[property: Description("The object's schema name (e.g. UsrOrder); a unique caption is resolved. Every active "
+		+ "case of it is read, enabled or not.")]
 	string EntitySchemaName = null) {
 
 	/// <summary>

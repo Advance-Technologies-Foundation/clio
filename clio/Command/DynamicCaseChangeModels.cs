@@ -21,10 +21,12 @@ public static class DynamicCaseChangeRequirement {
 	/// package that answers its route with a 404. describe and modify share the floor because what they advertise
 	/// moved with the versions: an older package answers describe without <c>versions</c>, which an agent would read as
 	/// "this case has no versions", and refuses an inactive member that the tool descriptions say it accepts.
-	/// 1.6.6.185 was the floor before (stage value rename, records per stage); 1.6.6.194 is the first cut with the
-	/// versions. Not 1.6.6.193: that number reached a shared test stand as a dev build of the same branch.
+	/// 1.6.6.185 was the floor before (stage value rename, records per stage); 1.6.6.194 was the first cut with the
+	/// versions (not 1.6.6.193: that number reached a shared test stand as a dev build of the same branch). 1.6.6.195
+	/// resolves an object named by a unique caption and lists <c>Name (caption)</c> candidates when it is not unique,
+	/// which the <c>entity-schema-name</c> descriptions of describe, modify and new-version promise.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.194";
+	public const string MinimumProcessBuilderVersion = "1.6.6.195";
 }
 
 /// <summary>

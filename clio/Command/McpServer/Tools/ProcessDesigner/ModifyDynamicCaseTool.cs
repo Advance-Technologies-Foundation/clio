@@ -75,7 +75,7 @@ public class ModifyDynamicCaseTool(
 		 + "show: running cases (confirm-running-instances), records in a removed stage (confirm-stage-records), a "
 		 + "stage value rename (confirm-value-rename). Every refusal answers outcome refused with a stable errorCode "
 		 + "and writes nothing; the same call again answers unchanged. A case is interpreted: no compile-creatio and "
-		 + "no restart, but open pages of the object need a reload (F5). Requires CrtProcessBuilder 1.6.6.194 or later "
+		 + "no restart, but open pages of the object need a reload (F5). Requires CrtProcessBuilder 1.6.6.195 or later "
 		 + "(install-process-builder, after user approval). Steps inside stages are not supported.")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -190,8 +190,8 @@ public sealed record ModifyDynamicCaseArgs(
 	string CaseUId = null,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("The object; accepted only when it has exactly one case (else case-ambiguous with the "
-		+ "list).")]
+	[property: Description("The object's schema name (e.g. UsrOrder); a unique caption is resolved. Accepted only "
+		+ "when it has exactly one case (else case-ambiguous with the list).")]
 	string EntitySchemaName = null,
 
 	// JsonElement, not a typed list: an array of stage objects, an array of strings and a string holding either are
