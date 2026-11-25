@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Clio.Command.AddonSchemaDesigner;
 using static Clio.Command.BusinessRules.BusinessRuleConstants;
 using Clio.Command.BusinessRules.Converters;
@@ -83,15 +84,26 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
+		AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
 
-		return CreateBatch(
-			BuildAddonSchemaRequest(pageContext, packageUId),
+		IReadOnlyList<BusinessRuleBatchItemResult> results = CreateBatch(
+			addonRequest,
 			request.Rules,
 			rule => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existingRule: null, sysSettingMap)];
 			});
+		if (!results.Any(result => result.Success)) {
+			return results;
+		}
+		// Read after the save, so the check costs nothing when no rule was saved. The batch's own rules are then
+		// stored too; giving each one its generated name lets the check replace its stored copy with it.
+		IReadOnlyList<BusinessRule>? stored = TryReadStoredRules(addonRequest);
+		List<BusinessRule> savedRules = request.Rules
+			.Select((rule, index) => results[index].Success ? rule with { Name = results[index].RuleName } : rule)
+			.ToList();
+		return WithRedundancyWarnings(stored, savedRules, results);
 	}
 
 	public IReadOnlyList<BusinessRule> Read(BusinessRulesReadRequest request) {
@@ -114,15 +126,50 @@ internal sealed class PageBusinessRuleService(
 			pageContext.Bundle,
 			packageUId);
 		IReadOnlySet<string> elementNames = elementProvider.GetElementNames(pageContext.Bundle);
+		AddonGetRequestDto addonRequest = BuildAddonSchemaRequest(pageContext, packageUId);
+		IReadOnlyList<BusinessRule>? stored = null;
 
-		return UpdateBatch(
-			BuildAddonSchemaRequest(pageContext, packageUId),
+		IReadOnlyList<BusinessRuleBatchItemResult> results = UpdateBatch(
+			addonRequest,
 			request.Rules,
 			(rule, existing) => {
 				IReadOnlyDictionary<string, SysSettingOperandDescriptor> sysSettingMap = sysSettingResolver.Resolve(rule);
 				pageBusinessRuleValidator.Validate(rule, attributeMap, elementNames, sysSettingMap);
 				return [SimpleToFullBusinessRuleConverter.ToPageMetadata(attributeMap, rule, existing, sysSettingMap)];
-			});
+			},
+			storedRules => stored = storedRules);
+		return WithRedundancyWarnings(stored, request.Rules, results);
+	}
+
+	/// <summary>
+	/// Reads the rules already on the page for the advisory redundancy check (ENG-107305). Fails open: a read
+	/// failure only skips the check, it never fails the save.
+	/// </summary>
+	private IReadOnlyList<BusinessRule>? TryReadStoredRules(AddonGetRequestDto addonRequest) {
+		try {
+			return ReadCore(addonRequest);
+		} catch (Exception) {
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Adds the redundancy warnings to the saved rules of the batch. Only saved rules are compared, so a rule
+	/// that failed is neither warned about nor used as the reason for another rule's warning. When the stored
+	/// rules could not be read, the batch's rules are still compared with each other.
+	/// </summary>
+	private static IReadOnlyList<BusinessRuleBatchItemResult> WithRedundancyWarnings(
+		IReadOnlyList<BusinessRule>? stored, IReadOnlyList<BusinessRule?> rules,
+		IReadOnlyList<BusinessRuleBatchItemResult> results) {
+		List<BusinessRule?> saved = rules
+			.Select((rule, index) => results[index].Success ? rule : null)
+			.ToList();
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze(stored ?? [], saved);
+		return results
+			.Select((result, index) => result.Success && warnings[index].Count > 0
+				? result with { Warnings = warnings[index] }
+				: result)
+			.ToList();
 	}
 
 	public IReadOnlyList<BusinessRuleBatchItemResult> Delete(BusinessRulesDeleteRequest request) {

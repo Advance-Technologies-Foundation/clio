@@ -769,6 +769,40 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-107305: a grid that binds selectionState without _selectionOptions reaches the sync-pages result as a grid-selection-without-write-back warning over the real MCP transport, and the seeded page is still saved; the original body is restored in teardown.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages saves a page and warns about a grid selection that is never written back")]
+	[AllureDescription("Reads ClioMcp_BlankPageToSave through get-page, replaces its viewConfigDiff with a DataGrid that binds selectionState without _selectionOptions and its viewModelConfigDiff with the bound attribute, saves it with sync-pages and validate=true, and verifies the save succeeds and the per-page warnings carry grid-selection-without-write-back. The seeded-page lease restores the original body in teardown.")]
+	public async Task PageSyncTool_Should_Save_And_Warn_On_Grid_Selection_Without_WriteBack() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages grid-selection save test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
+		string body = await ReadSeededBodyAsync(context, environmentName);
+		string changedBody = ReplaceSection(body, "SCHEMA_VIEW_CONFIG_DIFF",
+			PageUpdateToolE2ETests.GridSelectionViewConfigDiff(hasWriteBack: false));
+		changedBody = ReplaceSection(changedBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+			PageUpdateToolE2ETests.GridSelectionViewModelConfigDiff);
+		changedBody.Should().Contain("UsrClioE2EGridProbe",
+			because: "the seeded page body carries a SCHEMA_VIEW_CONFIG_DIFF section to replace");
+
+		// Act
+		PageSyncResponse syncResponse = await SyncWithValidationAsync(context, environmentName, changedBody);
+
+		// Assert
+		syncResponse.Success.Should().BeTrue(
+			because: $"the grid-selection rule is a warning and must not reject the save. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
+		(syncResponse.Pages[0].Validation?.Warnings ?? []).Should().Contain(
+			warning => warning.Contains("grid-selection-without-write-back"),
+			because: "the grid binds selectionState but never writes the selection back");
+	}
+
+	[Test]
 	[Description("A code-quality finding (a catch block that only logs) reaches the sync-pages result as a warning over the real MCP transport and the seeded page is still saved; the original body is restored in teardown.")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-pages saves a page and carries its code-quality warnings")]
@@ -783,6 +817,25 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using ArrangeContext context = await ArrangeAsync();
 		_seededPageLease = await SeededBlankPage.LeaseAsync(context.Session, environmentName);
+		string body = await ReadSeededBodyAsync(context, environmentName);
+		string changedBody = ReplaceSection(body, "SCHEMA_HANDLERS",
+			"[{request:\"usr.ClioE2EQualityProbe\",handler:async (request, next)=>{ "
+			+ "try { await request.$context.save(); } catch (e) { console.error(e); } return next?.handle(request); }}]");
+		changedBody.Should().Contain("usr.ClioE2EQualityProbe", because: "the seeded page body carries a SCHEMA_HANDLERS section to replace");
+
+		// Act
+		PageSyncResponse syncResponse = await SyncWithValidationAsync(context, environmentName, changedBody);
+
+		// Assert
+		syncResponse.Success.Should().BeTrue(
+			because: $"code-quality rules are warnings and must not reject the save. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
+		(syncResponse.Pages[0].Validation?.Warnings ?? []).Should().Contain(
+			warning => warning.Contains(PageBodyAstLinter.RuleCatchLogOnly),
+			because: "the save-time lint must tell the agent the catch block swallows the error");
+	}
+
+	/// <summary>Reads the seeded page through get-page and returns its body.</summary>
+	private static async Task<string> ReadSeededBodyAsync(ArrangeContext context, string environmentName) {
 		CallToolResult getResult = await context.Session.CallToolAsync(
 			PageGetTool.ToolName,
 			new Dictionary<string, object?> {
@@ -794,14 +847,12 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			context.CancellationTokenSource.Token);
 		PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
 		getResponse.Success.Should().BeTrue(because: $"get-page must read the seeded page first. Error: {getResponse.Error}");
-		string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
-		const string qualityHandlers = "/**SCHEMA_HANDLERS*/[{request:\"usr.ClioE2EQualityProbe\",handler:async (request, next)=>{ "
-			+ "try { await request.$context.save(); } catch (e) { console.error(e); } return next?.handle(request); }}]/**SCHEMA_HANDLERS*/";
-		string changedBody = Regex.Replace(body, @"/\*\*SCHEMA_HANDLERS\*/[\s\S]*?/\*\*SCHEMA_HANDLERS\*/",
-			qualityHandlers.Replace("$", "$$"), RegexOptions.None, TimeSpan.FromSeconds(1));
-		changedBody.Should().Contain("usr.ClioE2EQualityProbe", because: "the seeded page body carries a SCHEMA_HANDLERS section to replace");
+		return await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+	}
 
-		// Act
+	/// <summary>Saves one body of the seeded page through sync-pages with validation on.</summary>
+	private static async Task<PageSyncResponse> SyncWithValidationAsync(ArrangeContext context, string environmentName,
+		string changedBody) {
 		CallToolResult syncResult = await context.Session.CallToolAsync(
 			ToolName,
 			new Dictionary<string, object?> {
@@ -817,16 +868,14 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				}
 			},
 			context.CancellationTokenSource.Token);
-		PageSyncResponse syncResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
-
-		// Assert
 		syncResult.IsError.Should().NotBeTrue(because: "the save should produce a structured sync-pages response");
-		syncResponse.Success.Should().BeTrue(
-			because: $"code-quality rules are warnings and must not reject the save. Per-page error: {syncResponse.Pages.FirstOrDefault()?.Error}");
-		(syncResponse.Pages[0].Validation?.Warnings ?? []).Should().Contain(
-			warning => warning.Contains(PageBodyAstLinter.RuleCatchLogOnly),
-			because: "the save-time lint must tell the agent the catch block swallows the error");
+		return EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(syncResult);
 	}
+
+	/// <summary>Replaces the content of one marker-delimited section of a page body.</summary>
+	private static string ReplaceSection(string body, string marker, string content) =>
+		Regex.Replace(body, $@"/\*\*{marker}\*/[\s\S]*?/\*\*{marker}\*/",
+			($"/**{marker}*/" + content + $"/**{marker}*/").Replace("$", "$$"), RegexOptions.None, TimeSpan.FromSeconds(1));
 
 	[Test]
 	[Description("Writes a unique reversible marker to the seeded Freedom UI page, polls get-page within a short bounded budget until the write is observable after sync-pages returns, and restores the original body.")]

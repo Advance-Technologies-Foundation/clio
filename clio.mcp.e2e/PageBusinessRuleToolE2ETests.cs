@@ -914,6 +914,103 @@ public sealed class PageBusinessRuleToolE2ETests : McpContractFixtureBase {
 			because: "the deleted page rule should no longer be returned by read");
 	}
 
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("ENG-107305: creating a hide rule and the show rule that only undoes it in one batch saves both and returns an inverse-redundant warning on the second, through the real MCP server and Creatio environment.")]
+	[AllureTag(ToolName)]
+	[AllureName("Page business-rule MCP tool warns about a rule that only undoes another")]
+	[AllureDescription("Requires a reachable sandbox environment and destructive opt-in. Creates, in one batch, a hide-element rule on 'is-filled-in' and a show-element rule on 'is-not-filled-in' for the same element; asserts both are saved, only the second carries the inverse-redundant warning, then deletes both rules by name.")]
+	public async Task BusinessRuleCreate_Should_Warn_About_Inverse_Redundant_Rule_In_Creatio() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false - skipping destructive inverse-redundant page rule test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		string packageName = ResolvePackageName(settings);
+		await ClioCliCommandRunner.EnsureCliogateInstalledAsync(settings, environmentName);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(10));
+		PageRuleTarget target = await ResolvePageRuleTargetAsync(
+			arrangeContext.Session,
+			arrangeContext.CancellationTokenSource.Token,
+			environmentName);
+		string suffix = Guid.NewGuid().ToString("N");
+		string hideRuleName = $"UsrMcpE2EHide{suffix}";
+		string showRuleName = $"UsrMcpE2EShow{suffix}";
+		Dictionary<string, object?> showRule = new(CreateNamedPageRule(
+			$"MCP E2E show {suffix}", showRuleName, target.AttributeName, target.ElementName, "is-not-filled-in")) {
+			["actions"] = new object[] {
+				new Dictionary<string, object?> { ["type"] = "show-element", ["items"] = new object[] { target.ElementName } }
+			}
+		};
+
+		try {
+			// Act
+			CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["package-name"] = packageName,
+						["page-schema-name"] = target.PageSchemaName,
+						["rules"] = new object[] {
+							CreateNamedPageRule($"MCP E2E hide {suffix}", hideRuleName, target.AttributeName,
+								target.ElementName, "is-filled-in"),
+							showRule
+						}
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			BusinessRuleBatchResponse response = McpCommandExecutionParser.ExtractBusinessRuleBatchResponse(createResult);
+
+			// Assert
+			createResult.IsError.Should().NotBeTrue(
+				because: "a valid batch returns the structured batch response, not an MCP error");
+			response.Succeeded.Should().Be(2, because: "a redundancy finding is advisory and never blocks a save");
+			response.Results[0].Warnings.Should().BeNull(because: "the first rule of the pair is the one that is needed");
+			response.Results[1].Warnings.Should().ContainSingle(
+					because: "the show rule only undoes the hide rule, and the platform already does that")
+				.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
+
+			// Act - re-save the hide rule unchanged through update-page-business-rules
+			CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+				UpdatePageBusinessRuleTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["package-name"] = packageName,
+						["page-schema-name"] = target.PageSchemaName,
+						["rules"] = new object[] {
+							CreateNamedPageRule($"MCP E2E hide {suffix}", hideRuleName, target.AttributeName,
+								target.ElementName, "is-filled-in")
+						}
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			BusinessRuleBatchResponse updateResponse =
+				EntitySchemaStructuredResultParser.Extract<BusinessRuleBatchResponse>(updateResult);
+
+			// Assert - update compares with the other stored rule, not with the rule's own stored copy
+			updateResponse.Succeeded.Should().Be(1, because: "the update targets an existing rule by name");
+			updateResponse.Results[0].Warnings.Should().ContainSingle(
+					because: "the hide rule and the stored show rule are inverses of each other")
+				.Which.Should().Contain("inverse-redundant", because: "the warning names its rule id");
+		} finally {
+			await arrangeContext.Session.CallToolAsync(
+				DeletePageBusinessRuleTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = environmentName,
+						["package-name"] = packageName,
+						["page-schema-name"] = target.PageSchemaName,
+						["rule-names"] = new object[] { hideRuleName, showRuleName }
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+		}
+	}
+
 	private static bool ContainsText(string? value, string expectedText) =>
 		value != null && value.Contains(expectedText, StringComparison.OrdinalIgnoreCase);
 
