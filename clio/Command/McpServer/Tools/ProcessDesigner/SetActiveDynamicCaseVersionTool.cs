@@ -59,7 +59,7 @@ public class SetActiveDynamicCaseVersionTool(
 		 + "not accept changes, which the switch cannot write. A member without its own link row gets one first, so "
 		 + "the case designer can open it. It deletes nothing. Activating the active member again answers unchanged once no other editable member is "
 		 + "still flagged active. "
-		 + "No compile, no restart. Requires CrtProcessBuilder 1.6.6.196 or later (install-process-builder, after "
+		 + $"No compile, no restart. Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or later (install-process-builder, after "
 		 + "user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,

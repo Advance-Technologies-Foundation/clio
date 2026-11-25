@@ -155,19 +155,23 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 	[Description("Every identity, package-name, caption, both confirmations and dry-run map onto the options trimmed.")]
 	public void ModifyDynamicCaseAsNewVersion_ShouldMapEveryArgument() {
 		// Arrange
+		ModifyDynamicCaseAsNewVersionArgs byUId = Args("{\"environment-name\":\"dev\","
+			+ "\"case-uid\":\" 5c58c4c4-134b-4744-9c67-96d9c69c9d55 \"}");
 		ModifyDynamicCaseAsNewVersionArgs args = Args("{\"environment-name\":\"dev\",\"case-name\":\" UsrOrderCase \","
-			+ "\"case-uid\":\" 5c58c4c4-134b-4744-9c67-96d9c69c9d55 \",\"entity-schema-name\":\" UsrOrder \","
+			+ "\"entity-schema-name\":\" UsrOrder \","
 			+ "\"package-name\":\" UsrOrdersV2 \",\"caption\":\" Orders v2 \",\"confirm-stage-records\":true,"
 			+ "\"confirm-value-rename\":true,\"dry-run\":true,\"stages\":[\"New\",{\"value\":\"Done\",\"caption\":\"Closed\"}]}");
 
 		// Act
+		_tool.ModifyDynamicCaseAsNewVersion(byUId);
+		string caseUId = _resolved.Captured!.CaseUId;
 		CommandExecutionResult result = _tool.ModifyDynamicCaseAsNewVersion(args);
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "every argument is declared");
 		ModifyDynamicCaseAsNewVersionOptions options = _resolved.Captured!;
 		options.CaseName.Should().Be("UsrOrderCase", because: "the case name is forwarded trimmed");
-		options.CaseUId.Should().Be("5c58c4c4-134b-4744-9c67-96d9c69c9d55", because: "the UId is forwarded trimmed");
+		caseUId.Should().Be("5c58c4c4-134b-4744-9c67-96d9c69c9d55", because: "the UId is forwarded trimmed");
 		options.EntitySchemaName.Should().Be("UsrOrder", because: "the object is forwarded trimmed");
 		options.PackageName.Should().Be("UsrOrdersV2", because: "the version's package is forwarded trimmed");
 		options.Caption.Should().Be("Orders v2", because: "the caption is forwarded trimmed");
@@ -209,6 +213,24 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 		refused.ExitCode.Should().Be(1, because: "a new filter and its removal contradict each other");
 		TextOf(refused).Should().Contain("[invalid-request]", because: "the refusal carries a stable code");
 		_resolver.DidNotReceiveWithAnyArgs().Resolve<ModifyDynamicCaseAsNewVersionCommand>(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("case-name and case-uid together are refused invalid-request before the command runs: the server would copy the case the UId names and ignore the name, and the write is not idempotent.")]
+	public void ModifyDynamicCaseAsNewVersion_ShouldRefuse_WhenBothCaseNameAndCaseUIdAreGiven() {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionArgs args = Args("{\"environment-name\":\"dev\",\"case-name\":\"UsrOrderCase\","
+			+ "\"case-uid\":\"9a1b2c3d-0000-4000-8000-000000000001\"}");
+
+		// Act
+		CommandExecutionResult result = _tool.ModifyDynamicCaseAsNewVersion(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "two case identities would be resolved silently in favour of the UId");
+		TextOf(result).Should().Contain("[invalid-request]", because: "the refusal carries a stable code")
+			.And.Contain("only one of case-name or case-uid", because: "the refusal names the conflict");
+		ShouldNotHaveRun();
 	}
 
 	[TestCase("caption")]

@@ -66,6 +66,9 @@ public sealed class DynamicCaseService(
 	IServiceUrlBuilder serviceUrlBuilder)
 	: IDynamicCaseService {
 
+	// The link-row status of a dry run that would add the row: the member has none yet.
+	private const string PlannedLinkRowStatus = "planned";
+
 	/// <summary>Nothing was missing.</summary>
 	public const string DependenciesNoneMissing = "none-missing";
 
@@ -345,7 +348,9 @@ public sealed class DynamicCaseService(
 		if (unreadOutcome) {
 			outcome = options.DryRun ? DynamicCaseActivationOutcomes.Refused : DynamicCaseActivationOutcomes.Unknown;
 		}
-		// Every member an activation names exists: it was found before anything was written.
+		// Every member an activation names exists: it was found before anything was written. A dry run that plans the
+		// target's link row says the target has none yet, and the case designer opens only a member that has one.
+		bool targetOpens = !string.Equals(response.LinkRow?.Status, PlannedLinkRowStatus, StringComparison.OrdinalIgnoreCase);
 		return new SetActiveDynamicCaseVersionResult {
 			Success = response.Success && DynamicCaseActivationOutcomes.IsSuccess(outcome),
 			Outcome = outcome,
@@ -358,7 +363,7 @@ public sealed class DynamicCaseService(
 						+ "of its versions is active before deciding. ")
 					+ (response.ErrorMessage ?? string.Empty)
 				: response.ErrorMessage,
-			ActiveVersion = VersionInfo(options.Environment, response.ActiveVersion, exists: true),
+			ActiveVersion = VersionInfo(options.Environment, response.ActiveVersion, exists: targetOpens),
 			PreviousActiveVersion = VersionInfo(options.Environment, response.PreviousActiveVersion, exists: true),
 			SiblingsStillFlagged = response.SiblingsStillFlagged ?? [],
 			DecidedByPackagePosition = response.DecidedByPackagePosition ?? [],
@@ -884,10 +889,15 @@ public sealed class DynamicCaseService(
 				info.EntitySchemaName ?? options.EntitySchemaName, info.StageColumnName ?? options.StageColumnName,
 				versions: null);
 
-	// A described or changed case exists in every outcome that answers one, so it always gets its designer link.
+	// A described or changed case exists in every outcome that answers one, so it gets its designer link, unless its
+	// family lists it without a link row of its own: the case designer opens only a member that has one.
 	private DynamicCaseInfo ExistingCaseInfo(string environmentName, BuildCaseCaseInfo info) =>
-		ToCaseInfo(info, DesignerUrl(environmentName, info.SchemaUId), info.PackageName, info.EntitySchemaName,
-			info.StageColumnName, Versions(environmentName, info.Versions));
+		ToCaseInfo(info, OpensInTheDesigner(info) ? DesignerUrl(environmentName, info.SchemaUId) : null,
+			info.PackageName, info.EntitySchemaName, info.StageColumnName, Versions(environmentName, info.Versions));
+
+	private static bool OpensInTheDesigner(BuildCaseCaseInfo info) =>
+		info.Versions?.FirstOrDefault(member => string.Equals(member.UId, info.SchemaUId,
+			StringComparison.OrdinalIgnoreCase)) is not { HasLinkRow: false };
 
 	// Every member a family lists exists, but the case designer opens only a member with its own link row, so only
 	// such a member gets a link; the others get theirs once a write (an activation, an in-place change) adds the row.

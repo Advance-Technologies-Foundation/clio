@@ -69,7 +69,7 @@ public class ModifyDynamicCaseAsNewVersionTool(
 		 + "Removing a stage that records hold needs confirm-stage-records. Never activates: after the user has "
 		 + "checked the version and said yes, activate it with set-active-dynamic-case-version. Not idempotent: each "
 		 + "write makes one more version, and a saved version is never removed. After failed-leftover or unknown, run "
-		 + "describe-dynamic-case before any retry. No compile, no restart. Requires CrtProcessBuilder 1.6.6.196 or "
+		 + $"describe-dynamic-case before any retry. No compile, no restart. Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or "
 		 + "later (install-process-builder, after user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
@@ -102,6 +102,12 @@ public class ModifyDynamicCaseAsNewVersionTool(
 				CommandExecutionResult.FromValidationError(
 					"One of case-name, case-uid or entity-schema-name is required: name the active case to copy."),
 				missing, ForModifyDynamicCaseAsNewVersion);
+		}
+		// The server takes the UId and ignores the name, so both together would copy whichever case the UId names,
+		// silently; this write is not idempotent, so it is refused rather than guessed.
+		if (!string.IsNullOrWhiteSpace(args.CaseName) && !string.IsNullOrWhiteSpace(args.CaseUId)) {
+			return DynamicCaseStageArguments.Refuse("Provide only one of case-name or case-uid, not both.",
+				DynamicCaseStageArguments.InvalidRequestCode);
 		}
 		if (args.Caption is not null && string.IsNullOrWhiteSpace(args.Caption)) {
 			return DynamicCaseStageArguments.Refuse(
@@ -187,7 +193,7 @@ public sealed record ModifyDynamicCaseAsNewVersionArgs(
 	string CaseName = null,
 
 	[property: JsonPropertyName("case-uid")]
-	[property: Description("The active case's schema UId.")]
+	[property: Description("The active case's schema UId; not together with case-name.")]
 	string CaseUId = null,
 
 	[property: JsonPropertyName("entity-schema-name")]

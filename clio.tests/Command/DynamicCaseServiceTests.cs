@@ -1835,6 +1835,49 @@ public sealed class DynamicCaseServiceTests {
 	}
 
 	[Test]
+	[Description("A described member that its family lists without a link row gets no designer link on the case block either: the case designer opens only a member that has one.")]
+	public void Describe_ShouldLeaveTheCaseLinkOut_WhenTheDescribedMemberHasNoLinkRow() {
+		// Arrange
+		BuildCaseCaseInfo draft = new() {
+			Status = "existing", SchemaName = "UsrOrderCaseCustom1", SchemaUId = VersionUId,
+			Stages = ExistingCase().Stages,
+			Versions = [Member("UsrOrderCase", CaseUId, 1, true), Member("UsrOrderCaseCustom1", VersionUId, 2, false)]
+		};
+		_session.Describe(Arg.Any<DescribeCaseRequest>()).Returns(new DynamicCaseReply<DescribeCaseResponse>(
+			DynamicCaseReplyKind.Envelope, new DescribeCaseResponse { Success = true, Cases = [draft] }, null));
+
+		// Act
+		DescribeDynamicCaseResult result = _service.Describe(DescribeOptions());
+
+		// Assert
+		result.Cases[0].DesignerUrl.Should().BeNull(
+			because: "the described member has no link row, so a link to it would not open");
+		result.Cases[0].Versions[0].DesignerUrl.Should().Be(DesignerPrefix + CaseUId,
+			because: "the member that has a link row keeps its link");
+	}
+
+	[TestCase("planned", false)]
+	[TestCase("present", true)]
+	[Description("An activation dry run that plans the target's link row gives the target no designer link (it has no row yet), while one whose target already has a row links it.")]
+	public void SetActiveVersion_ShouldLinkTheTarget_OnlyWhenItHasALinkRow(string linkRowStatus, bool linked) {
+		// Arrange
+		AnswerActivation(new SetActiveCaseVersionResponse {
+			Success = true, Outcome = "planned", ActiveVersion = NewVersion(active: true),
+			PreviousActiveVersion = RootVersion(),
+			LinkRow = new DynamicCaseSettings { Status = linkRowStatus, SysDcmSettingsId = "s2" }
+		});
+
+		// Act
+		SetActiveDynamicCaseVersionResult result = _service.SetActiveVersion(ActivationOptions(dryRun: true));
+
+		// Assert
+		result.ActiveVersion.DesignerUrl.Should().Be(linked ? DesignerPrefix + VersionUId : null,
+			because: "the case designer opens only a member that has its own link row");
+		result.PreviousActiveVersion.DesignerUrl.Should().Be(DesignerPrefix + CaseUId,
+			because: "the member that was active keeps its link");
+	}
+
+	[Test]
 	[Description("A describe maps each case's version family with every member field and a designer link per member that has its own link row, and leaves versions absent for a case that lists none.")]
 	public void Describe_ShouldMapTheVersions_WithADesignerLinkPerMember() {
 		// Arrange

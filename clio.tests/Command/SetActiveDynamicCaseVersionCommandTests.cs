@@ -102,10 +102,10 @@ public sealed class SetActiveDynamicCaseVersionCommandTests : BaseClioModuleTest
 			because: "the result document follows the verdict");
 	}
 
-	[TestCase(true, "'UsrOrderCaseCustom1' is now the active version of the case (was 'UsrOrderCase'): the bar and new "
-		+ "records use it; running cases stay on the version they started on.")]
-	[TestCase(false, "'UsrOrderCaseCustom1' is now the active version of the case: the bar and new records use it; "
-		+ "running cases stay on the version they started on.")]
+	[TestCase(true, "'UsrOrderCaseCustom1' is now the active version of the case (was 'UsrOrderCase'): the bar and the "
+		+ "new records of an enabled family use it; running cases stay on the version they started on.")]
+	[TestCase(false, "'UsrOrderCaseCustom1' is now the active version of the case: the bar and the new records of an "
+		+ "enabled family use it; running cases stay on the version they started on.")]
 	[Description("activated: exit 0 and an info verdict naming the new active member, the previous one when known, and that running cases stay.")]
 	public void Execute_ShouldReportTheSwitch_WhenTheOutcomeIsActivated(bool withPrevious, string expected) {
 		// Arrange

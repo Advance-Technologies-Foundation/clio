@@ -50,7 +50,7 @@ public class DescribeDynamicCaseTool(
 		 + "it before answering any question about an existing case and before changing one with "
 		 + "modify-dynamic-case or modify-dynamic-case-as-new-version. Name the case by case-name or case-uid (any "
 		 + "member of its family, an inactive version included), or the object by entity-schema-name (its active "
-		 + "cases). Requires CrtProcessBuilder 1.6.6.196 or later (install-process-builder, after user approval).")]
+		 + $"cases). Requires CrtProcessBuilder {DynamicCaseChangeRequirement.MinimumProcessBuilderVersion} or later (install-process-builder, after user approval).")]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,

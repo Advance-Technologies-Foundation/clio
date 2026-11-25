@@ -68,8 +68,8 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 			DynamicCaseActivationOutcomes.Planned => $"Dry run: '{active}' would become the active version"
 				+ (previous is null ? "." : $" instead of '{previous}'.") + NothingWritten,
 			DynamicCaseActivationOutcomes.Activated => $"'{active}' is now the active version of the case"
-				+ (previous is null ? "" : $" (was '{previous}')") + ": the bar and new records use it; running cases "
-				+ "stay on the version they started on.",
+				+ (previous is null ? "" : $" (was '{previous}')") + ": the bar and the new records of an enabled family "
+				+ "use it; running cases stay on the version they started on.",
 			DynamicCaseActivationOutcomes.Unchanged => $"'{active}' is already the active version; nothing was written.",
 			DynamicCaseActivationOutcomes.FailedNotRestored => $"The switch did not read back as asked [{result.ErrorCode}]: "
 				+ $"{result.ErrorMessage} "
