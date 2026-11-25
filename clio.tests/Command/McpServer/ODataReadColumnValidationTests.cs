@@ -160,6 +160,45 @@ public sealed class ODataReadColumnValidationTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A nested $select name the navigation's target does not have is reported under expand as Nav/Name, with suggestions from the target's properties (ENG-107610).")]
+	public void Read_Should_Report_An_Unknown_Nested_Select_Name_As_A_Navigation_Path() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", expand: Cols("Account($select=Id,Nme)")));
+
+		// Assert
+		response.UnknownMembers.Should().ContainSingle(
+			because: "Account and its Id exist; only the misspelled nested name is unknown");
+		response.UnknownMembers![0].Argument.Should().Be("expand",
+			because: "the nested name was sent inside expand");
+		response.UnknownMembers[0].Name.Should().Be("Account/Nme",
+			because: "the nested name is addressed through its navigation so the caller can tell where it belongs");
+		response.UnknownMembers[0].Suggestions.Should().Contain("Account/Name",
+			because: "the closest property of the navigation's target is suggested with its navigation");
+		response.Error.Should().Contain("expand: Account($select=Id,Nme)",
+			because: "the names this request sent are echoed in the canonical form the request carried");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Known nested $select names are not reported, so an unrelated rejection is not blamed on a valid expand.")]
+	public void Read_Should_Not_Report_Known_Nested_Select_Names() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Titel"),
+			expand: Cols("Account($select=Id,Name)")));
+
+		// Assert
+		response.UnknownMembers.Should().ContainSingle(because: "only the select name is misspelled")
+			.Which.Argument.Should().Be("select", because: "the valid nested names are not unknown");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A lookup written as ActivityCategory/Id is valid; the raw ActivityCategoryId column is valid; a valid query is sent.")]
 	public void Read_Should_Send_A_Valid_Query() {
 		// Arrange

@@ -71,11 +71,11 @@ internal static class ODataReadColumnValidation {
 		IServiceUrlBuilder urlBuilder,
 		ODataReadArgs args,
 		IReadOnlyList<string>? selectColumns,
-		IReadOnlyList<string>? expandColumns) {
+		IReadOnlyList<ODataExpandEntry>? expandEntries) {
 		if (response.Success || response.ErrorCode != ODataReadErrorCodes.InvalidQuery) {
 			return response;
 		}
-		Explanation? explanation = Validate(client, urlBuilder, args, selectColumns, expandColumns);
+		Explanation? explanation = Validate(client, urlBuilder, args, selectColumns, expandEntries);
 		if (explanation is null) {
 			return response;
 		}
@@ -99,8 +99,8 @@ internal static class ODataReadColumnValidation {
 		IServiceUrlBuilder urlBuilder,
 		ODataReadArgs args,
 		IReadOnlyList<string>? selectColumns,
-		IReadOnlyList<string>? expandColumns) {
-		List<Reference> references = CollectReferences(args, selectColumns, expandColumns);
+		IReadOnlyList<ODataExpandEntry>? expandEntries) {
+		List<Reference> references = CollectReferences(args, selectColumns, expandEntries);
 		if (references.Count == 0) {
 			return null;
 		}
@@ -138,13 +138,17 @@ internal static class ODataReadColumnValidation {
 			.ToList();
 
 	private static List<Reference> CollectReferences(ODataReadArgs args, IReadOnlyList<string>? select,
-		IReadOnlyList<string>? expand) {
+		IReadOnlyList<ODataExpandEntry>? expand) {
 		List<Reference> references = [];
 		foreach (string name in select ?? []) {
 			references.Add(new Reference("select", name, false));
 		}
-		foreach (string name in expand ?? []) {
-			references.Add(new Reference("expand", name, true));
+		foreach (ODataExpandEntry entry in expand ?? []) {
+			references.Add(new Reference("expand", entry.NavigationPath, true));
+			//A nested $select name is a member of the navigation's target, checked and reported as Nav/Name.
+			foreach (string name in entry.Select ?? []) {
+				references.Add(new Reference("expand", $"{entry.NavigationPath}/{name}", false));
+			}
 		}
 		if (!string.IsNullOrWhiteSpace(args.OrderBy)) {
 			foreach (string clause in args.OrderBy.Split(',')) {

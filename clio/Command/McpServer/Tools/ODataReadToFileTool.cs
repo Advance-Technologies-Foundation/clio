@@ -97,7 +97,7 @@ public sealed class ODataReadToFileTool(
 			// carry one. Folding the two handed every argument failure an entity the inline path withholds.
 			string argumentError = ODataReadTool.ValidateAndNormalizeArguments(
 				args, ArgumentAliases, ValidArgumentsHint,
-				out string[] selectColumns, out string[] expandColumns);
+				out string[] selectColumns, out ODataExpandEntry[] expandEntries);
 			if (argumentError is not null) {
 				return ODataReadResponse.Failure(argumentError, ODataReadErrorCodes.Argument);
 			}
@@ -124,7 +124,7 @@ public sealed class ODataReadToFileTool(
 				return ODataReadResponse.Failure(pathError, ODataReadErrorCodes.Argument);
 			}
 
-			string url = urlBuilder.Build(ODataReadTool.BuildRequestPath(args, selectColumns, expandColumns));
+			string url = urlBuilder.Build(ODataReadTool.BuildRequestPath(args, selectColumns, expandEntries));
 			if (!TryFetch(client, url, cancellationToken, out byte[] responseUtf8, out string fetchError)) {
 				return ODataReadResponse.Failure(fetchError, ODataReadErrorCodes.Transport,
 					entity: args.Entity.Trim());
@@ -152,7 +152,7 @@ public sealed class ODataReadToFileTool(
 				// caller that has gone away does not pay for that fetch.
 				return cancellationToken.IsCancellationRequested
 					? rejection
-					: ODataReadColumnValidation.Explain(rejection, client, urlBuilder, args, selectColumns, expandColumns);
+					: ODataReadColumnValidation.Explain(rejection, client, urlBuilder, args, selectColumns, expandEntries);
 			}
 			return new ODataReadResponse(
 				true,

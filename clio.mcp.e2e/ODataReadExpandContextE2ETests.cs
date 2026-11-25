@@ -81,4 +81,44 @@ public sealed class ODataReadExpandContextE2ETests {
 			because: "asserting the answer alone would still pass if expand were dropped before the request left "
 				+ "the process, so the recorded query is what proves it was sent");
 	}
+
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read sends a nested $select in expand over stdio")]
+	[AllureDescription("Sends expand in the comma-separated string form with a nested select through the real stdio MCP server, and verifies the request URL carries the canonical $expand=Account($select=Name),Owner and the expanded record is returned (ENG-107610).")]
+	[Description("A nested $select inside expand travels the real stdio dispatch into the request URL in canonical form, and the string form keeps the nested comma with its entry.")]
+	public async Task ODataRead_Should_Send_A_Nested_Select_In_Expand_Through_TheLongTailDispatch() {
+		// Arrange
+		await using ODataPreWriteStand stand = await ODataPreWriteStand.StartAsync(
+			RuntimeDetectionStubServer.ODataExpandRead, Entity);
+
+		// Act
+		CallToolResult callResult = await stand.Session.CallToolAsync(
+			ODataReadTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = stand.EnvironmentName,
+					["entity"] = Entity,
+					["select"] = new[] { "Id", "Name" },
+					["expand"] = "Account($select=Id, Name),Owner",
+					["top"] = 1
+				}
+			},
+			stand.CancellationToken);
+		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a nested $select in expand is an accepted argument, not a protocol error");
+		response.Success.Should().BeTrue(
+			because: "odata-read accepts a validated nested $select in expand again (ENG-107610)");
+		IReadOnlyList<RecordedStubRequest> requests = await stand.GetRecordedRequestsAsync();
+		requests.Select(request => Uri.UnescapeDataString(request.Url)).Should()
+			.Contain(url => url.Contains("$expand=Account($select=Id,Name),Owner", StringComparison.Ordinal),
+				because: "the nested select must reach the request URL rebuilt from the parsed names, with the "
+					+ "string form split only on the top-level comma");
+		response.Value!.Value.EnumerateArray().First().GetProperty(NavigationProperty)
+			.TryGetProperty("Name", out _).Should().BeTrue(
+				because: "the stub answers the nested select with the selected column of the expanded record");
+	}
 }
