@@ -33,12 +33,15 @@ internal static class PageBusinessRuleRedundancy {
 
 	private const string And = "AND";
 	private const string Or = "OR";
-	private const string EqualComparison = "equal";
-	private const string NotEqualComparison = "not-equal";
 	private const string IsFilledIn = "is-filled-in";
 	private const string IsNotFilledIn = "is-not-filled-in";
 
 	private static readonly JsonElement TrueConstant = JsonSerializer.SerializeToElement(true);
+
+	// The comparisons that are true on an empty value; every other value comparison is false on it.
+	private static readonly HashSet<string> TrueOnEmptyComparisons = new(StringComparer.Ordinal) {
+		"not-equal", "not-contain"
+	};
 
 	private static readonly IReadOnlyDictionary<string, string> OppositeStateActions = BuildOppositeStateActions(
 		(new MakeReadOnlyBusinessRuleAction().ActionType, new MakeEditableBusinessRuleAction().ActionType),
@@ -184,26 +187,31 @@ internal static class PageBusinessRuleRedundancy {
 
 	private sealed record ActionShape(string Type, HashSet<string> Items);
 
-	private sealed record ConditionKey(string Left, string Comparison, string Right) {
-
-		public bool IsNullCheck => Comparison is IsFilledIn or IsNotFilledIn;
-	}
+	private sealed record ConditionKey(string Left, string Comparison, string Right);
 
 	private sealed record RuleShape(string Label, string Operation, HashSet<ConditionKey> Conditions,
 		IReadOnlyList<ActionShape> Actions) {
 
 		/// <summary>
-		/// The same rule without the null checks its value comparisons already settle: <c>is-filled-in</c> in an AND
-		/// group, <c>is-not-filled-in</c> in an OR group, each on an attribute the group also compares to a value.
-		/// So "X not-equal v OR X is-not-filled-in", the way agents negate "X equal v", reads as "X not-equal v".
-		/// Used for the inverse check only: subsumption keeps the conditions as written.
+		/// The same rule without the null checks a value comparison on the same attribute already settles:
+		/// <c>is-not-filled-in</c> in an OR group beside a comparison that is true on an empty value
+		/// (<c>not-equal</c>, <c>not-contain</c>), and <c>is-filled-in</c> in an AND group beside one that is false on
+		/// it (<c>equal</c>, <c>contain</c>, the relational ones). So "X not-equal v OR X is-not-filled-in", the way
+		/// agents negate "X equal v", reads as "X not-equal v". Used for the inverse check only: subsumption keeps the
+		/// conditions as written.
 		/// </summary>
 		public RuleShape WithoutImpliedNullChecks() {
-			string impliedCheck = Operation == And ? IsFilledIn : IsNotFilledIn;
-			var comparedLefts = new HashSet<string>(Conditions.Where(c => !c.IsNullCheck).Select(c => c.Left),
-				StringComparer.Ordinal);
+			bool isAnd = Operation == And;
+			string impliedCheck = isAnd ? IsFilledIn : IsNotFilledIn;
+			if (Conditions.Count < 2 || Conditions.All(c => c.Comparison != impliedCheck)) {
+				return this;
+			}
+			var settledLefts = new HashSet<string>(Conditions
+				.Where(c => !BusinessRuleHelpers.IsUnaryComparisonType(c.Comparison)
+					&& TrueOnEmptyComparisons.Contains(c.Comparison) != isAnd)
+				.Select(c => c.Left), StringComparer.Ordinal);
 			HashSet<ConditionKey> kept = Conditions
-				.Where(c => c.Comparison != impliedCheck || !comparedLefts.Contains(c.Left))
+				.Where(c => c.Comparison != impliedCheck || !settledLefts.Contains(c.Left))
 				.ToHashSet();
 			return kept.Count == Conditions.Count
 				? this
@@ -244,7 +252,7 @@ internal static class PageBusinessRuleRedundancy {
 		private static ConditionKey CreateConditionKey(BusinessRuleCondition condition) {
 			string comparison = (condition.ComparisonType ?? string.Empty).Trim().ToLowerInvariant();
 			BusinessRuleExpression? right = condition.RightExpression;
-			if (comparison is EqualComparison or NotEqualComparison
+			if (BusinessRuleHelpers.IsEqualityComparisonType(comparison)
 				&& string.Equals(right?.Type, BusinessRuleConstants.ConstExpressionType, StringComparison.OrdinalIgnoreCase)
 				&& right!.Value is { ValueKind: JsonValueKind.False }) {
 				comparison = NegatedComparisons[comparison];

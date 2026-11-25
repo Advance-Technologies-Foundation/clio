@@ -279,6 +279,22 @@ public sealed class PageBusinessRuleRedundancyTests {
 	}
 
 	[Test]
+	[Description("Keeps an is-not-filled-in check beside 'equal': 'equal v' is false on an empty value, so the check widens the rule.")]
+	public void Analyze_WhenIsNotFilledInIsOredWithEqual_ReturnsNoWarning() {
+		// Arrange — "Status = v OR Status empty" also fires on an empty status, where "Status not-equal v" fires too.
+		BusinessRule existing = Rule("Editable when open", "AND", new MakeEditableBusinessRuleAction(["Amount"]),
+			NotEqual("Status", Commercial));
+		BusinessRule incoming = Rule("Read-only when closed or empty", "OR", ReadOnly("Amount"),
+			Equal("Status", Commercial), IsNotFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "the two rules overlap on an empty status instead of negating each other");
+	}
+
+	[Test]
 	[Description("Keeps an is-filled-in check in an OR group: dropping it would change what the rule matches.")]
 	public void Analyze_WhenIsFilledInIsOredWithEqual_ReturnsNoWarning() {
 		// Arrange — "Status = v OR Status filled" is just "Status filled", not "Status = v".
