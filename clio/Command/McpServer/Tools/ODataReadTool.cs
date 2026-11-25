@@ -231,7 +231,7 @@ public sealed class ODataReadTool(
 		}
 		//Validated on the NORMALIZED list so both accepted shapes - the array and the comma-separated
 		//string - are held to the same member-path rule.
-		string? projectionError = ValidateMemberList("select", selectColumns)
+		string? projectionError = ValidateSelectList(selectColumns)
 			?? ValidateOrderBy(args.OrderBy);
 		if (projectionError is not null) {
 			return projectionError;
@@ -280,13 +280,13 @@ public sealed class ODataReadTool(
 	/// with a message the caller is not allowed to read. It runs on the NORMALIZED list, so the
 	/// comma-separated string form is split into names first and each name is then held to the same rule.
 	/// </remarks>
-	private static string? ValidateMemberList(string argumentName, IReadOnlyList<string>? members) {
+	private static string? ValidateSelectList(IReadOnlyList<string>? members) {
 		if (members is null) {
 			return null;
 		}
 		for (int index = 0; index < members.Count; index++) {
 			if (!ODataKeyFormatter.IsValidMemberPath(members[index])) {
-				return $"{argumentName}[{index}] must be an OData member path containing only letters, digits, "
+				return $"select[{index}] must be an OData member path containing only letters, digits, "
 					+ "underscores, and '/' separators; nested query options are not supported.";
 			}
 		}
@@ -364,11 +364,11 @@ public sealed class ODataReadTool(
 			if (!ODataExpandEntry.TryParse(texts[index], out ODataExpandEntry? entry)) {
 				error = $"expand[{index}] must be a navigation path containing only letters, digits, underscores, "
 					+ "and '/' separators, optionally followed by a nested select in the form "
-					+ $"{ODataExpandEntry.AcceptedForm} whose names are plain field names; no other nested query "
-					+ "option ($expand, $filter, $orderby, $top, ';' lists, '*') is supported.";
+					+ $"{ODataExpandEntry.AcceptedForm} whose names are plain field names; "
+					+ $"not supported: {ODataExpandEntry.RejectedNestedOptions}.";
 				return false;
 			}
-			parsed[index] = entry!;
+			parsed[index] = entry;
 		}
 		entries = parsed;
 		return true;
@@ -977,8 +977,8 @@ public record ODataReadArgs {
 	[Description(
 		"Navigation properties to expand ($expand). " +
 		"Remove 'Id' suffix from a lookup field to get the navigation name: AccountId → Account. " +
-		"An entry may limit the expanded fields with a nested select, Nav($select=A,B); no other nested option " +
-		"($expand, $filter, $orderby, $top, ';' lists, '*') is accepted. " +
+		"An entry may limit the expanded fields with a nested select, " + ODataExpandEntry.AcceptedForm + "; " +
+		"not accepted: " + ODataExpandEntry.RejectedNestedOptions + ". " +
 		"Accepts an array or a comma-separated string; the string form splits only on commas outside parentheses. " +
 		"Example: [\"Account($select=Id,Name)\",\"Owner\"] or \"Account($select=Id,Name),Owner\"")]
 	public JsonElement? Expand { get; init; }

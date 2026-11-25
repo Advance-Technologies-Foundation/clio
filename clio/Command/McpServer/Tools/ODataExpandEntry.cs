@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace Clio.Command.McpServer.Tools;
@@ -24,6 +25,14 @@ internal sealed record ODataExpandEntry(string NavigationPath, IReadOnlyList<str
 	internal const string AcceptedForm = "Nav($select=A,B)";
 
 	/// <summary>
+	/// The nested shapes that are refused, written once for the refusal message, the argument description and
+	/// both tool contracts so they cannot drift apart.
+	/// </summary>
+	internal const string RejectedNestedOptions =
+		"$expand, $filter, $orderby, $top, $skip, $count, ';' option lists, '*', an empty select, "
+		+ "and text after the closing parenthesis";
+
+	/// <summary>
 	/// The canonical OData text of the entry: <c>Account</c>, or <c>Account($select=Id,Name)</c>.
 	/// </summary>
 	internal string ToQueryText() =>
@@ -36,7 +45,7 @@ internal sealed record ODataExpandEntry(string NavigationPath, IReadOnlyList<str
 	/// <param name="text">The entry as the caller sent it.</param>
 	/// <param name="entry">The parsed entry, or <see langword="null"/> when the text is not accepted.</param>
 	/// <returns><see langword="false"/> when the text is not an accepted expand entry.</returns>
-	internal static bool TryParse(string? text, out ODataExpandEntry? entry) {
+	internal static bool TryParse(string? text, [NotNullWhen(true)] out ODataExpandEntry? entry) {
 		entry = null;
 		if (string.IsNullOrWhiteSpace(text)) {
 			return false;
@@ -59,7 +68,7 @@ internal sealed record ODataExpandEntry(string NavigationPath, IReadOnlyList<str
 			return false;
 		}
 		string[] names = options[SelectOption.Length..].Split(',', StringSplitOptions.TrimEntries);
-		if (!names.All(IsPlainIdentifier)) {
+		if (!names.All(ODataKeyFormatter.IsSimpleIdentifier)) {
 			return false;
 		}
 		entry = new ODataExpandEntry(path, names);
@@ -100,7 +109,4 @@ internal sealed record ODataExpandEntry(string NavigationPath, IReadOnlyList<str
 			entries.Add(candidate.Trim());
 		}
 	}
-
-	private static bool IsPlainIdentifier(string name) =>
-		name.Length > 0 && !name.Contains('/', StringComparison.Ordinal) && ODataKeyFormatter.IsValidMemberPath(name);
 }

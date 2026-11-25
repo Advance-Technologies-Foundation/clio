@@ -740,7 +740,7 @@ internal static class ToolContractCatalog {
 
 	/// <summary>The expand field of both OData read contracts, which share one validator (ENG-107610).</summary>
 	private const string ODataExpandFieldDescription =
-		"Array of navigation properties to expand, for example [\"Account\", \"Owner\"]. An entry may limit the expanded fields with one nested select of plain field names: Account($select=Id,Name). No other nested option is accepted - $expand, $filter, $orderby, $top, $skip, $count, ';' option lists, '*', an empty select and text after the closing parenthesis are rejected with error-code argument before any Creatio request. A comma-separated string (\"Account($select=Id,Name),Owner\") is tolerated as input and splits only on commas outside parentheses; an array element is always one entry and is never split. On error-code invalid-query a nested name the navigation's target does not have is reported in unknown-members under expand as Nav/Name.";
+		"Array of navigation properties to expand, for example [\"Account\", \"Owner\"]. An entry may limit the expanded fields with one nested select of plain field names: Account($select=Id,Name). No other nested option is accepted; rejected with error-code argument before any Creatio request: " + ODataExpandEntry.RejectedNestedOptions + ". A comma-separated string (\"Account($select=Id,Name),Owner\") is tolerated as input and splits only on commas outside parentheses; an array element is always one entry and is never split. On error-code invalid-query a nested name the navigation's target does not have is reported in unknown-members under expand as Nav/Name.";
 	private const string RejectedStatus = "rejected";
 
 	// An alias the server actually honors, as opposed to RejectedStatus, which documents a spelling that is
@@ -2757,7 +2757,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator("skip-range", "invalid-skip", "skip",
 						Context: "skip must be zero or greater; use order-by with skip for stable paging."),
 					new ToolContractValidator("member-path", "argument", "select",
-						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. An expand entry may additionally carry one nested select of plain field names, Nav($select=A,B), which is rebuilt from the parsed names; every other nested option ($expand, $filter, $orderby, $top, ';' lists, '*', an empty select or text after the closing parenthesis) is rejected before any Creatio request."),
+						Context: "select, expand and order-by are held to the same rule as a filter field: every name must be a plain OData member path (letters, digits, underscore and '/'), and order-by additionally accepts a trailing asc or desc. An expand entry may additionally carry one nested select of plain field names, Nav($select=A,B), which is rebuilt from the parsed names; every other nested shape (" + ODataExpandEntry.RejectedNestedOptions + ") is rejected before any Creatio request."),
 					new ToolContractValidator("structured-filter", "invalid-filter", "filters",
 						Context: "When filters is present it must be a non-null object containing at least one condition in all or any. Every condition requires a simple field or navigation path and exactly one of value or in; unknown group/condition members, embedded OData grammar, and unsupported op values are rejected before any Creatio request.")
 				]),

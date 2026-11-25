@@ -714,16 +714,17 @@ http.createServer((request, response) => {
         // $expand splits on top-level commas only: Account($select=Id,Name),Owner is two entries, and an
         // entry's nested $select names the columns of the expanded record (ENG-107610).
         const splitExpand = (value) => {
+          if (!value) { return []; }
           const entries = [];
           let depth = 0;
           let start = 0;
-          for (let index = 0; index < (value || "").length; index++) {
+          for (let index = 0; index < value.length; index++) {
             const character = value[index];
             if (character === "(") { depth++; }
             else if (character === ")") { depth--; }
             else if (character === "," && depth === 0) { entries.push(value.slice(start, index)); start = index + 1; }
           }
-          if (value) { entries.push(value.slice(start)); }
+          entries.push(value.slice(start));
           return entries.map((entry) => {
             const open = entry.indexOf("(");
             if (open < 0) { return { nav: entry, columns: [] }; }
