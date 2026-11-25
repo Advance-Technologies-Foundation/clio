@@ -20,15 +20,18 @@ version saved into a package ranked AT OR BELOW such a member can be "activated"
 one the bar and new records use.
 
 **Why it is this way** — the tie-break by package position is how the platform resolves the two `True` members it
-is left with. Measured on `studio-16354310` (2026-11-24) for the winning branch only (the version's package at level 190 above
-the root's 167); the losing branch is traced in core source, not measured, because the designer always puts a
-version above its root.
+is left with. Both branches are measured on `studio-16354310`: the winning one on 2026-11-24 (the version's package
+at level 190 above the root's 167), the losing one on 2026-11-25 (a version in an editable package at 185 against a
+member flagged active in a locked package at 192: the confirmed switch wrote the target and the platform kept
+picking the locked member, answered `failed-not-restored`). The same run measured that a switch clears a member's
+user-property pin: before the switch a version created next to the pinned vendor root warned, after it no longer did.
 
-**What breaks if you ignore it** — a switch the platform may lose leaves new records starting a member nobody
+**What breaks if you ignore it** — a switch the platform loses leaves new records starting a member nobody
 chose, and `failed-not-restored` is never undone. So the package warns at creation and in the activation dry run,
-naming the package to add a dependency on, and refuses the real switch
-`package-position-confirmation-required` until `confirmPackagePosition` (clio: `confirm-package-position`) carries
-the user's yes; `set-active-dynamic-case-version` still reads the pick back and reports the member that really
-won. It is a confirmation, not a hard refusal, on purpose: the losing branch is not measured, so a user whose
-package does rank higher must still be able to switch. Dropping the confirmation flag, or turning the check into a
-refusal no flag lifts, would block that user; dropping the refusal brings back the silent wrong pick.
+naming the package to add a dependency on, and refuses the real switch `package-position-confirmation-required`
+until `confirmPackagePosition` (clio: `confirm-package-position`) carries the user's yes. A pin alone counts
+neither at creation nor at activation, since the switch clears it. It stays a confirmation, not a refusal no flag lifts: a switch made
+anyway keeps the target flagged, so a dependency added afterwards may make it win once the schema managers reload
+(a compile or a restart; not measured), and a tie between equal ranks (then `Version`, then `Name`) is not measured. Dropping the refusal brings back the silent
+wrong pick; counting a pin refuses a switch that would succeed, and at creation warns about a member that ranks
+below the version and names a dependency that is already there.
