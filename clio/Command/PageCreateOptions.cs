@@ -37,6 +37,14 @@ namespace Clio.Command {
 
 		[Option("optional-properties", Required = false, HelpText = "JSON array of {key, value} objects to seed into the new schema optionalProperties (e.g. dashboard DashboardsEntitySchemaName/DashboardsElementName/DashboardsClientUnitSchemaUId)")]
 		public string? OptionalProperties { get; set; }
+
+		/// <summary>
+		/// When <c>true</c>, a page whose template shows its caption as the page header title
+		/// (<c>BaseHomePage</c>, <c>BaseDashboardTemplate</c>) must be given a <see cref="Caption"/> that differs
+		/// from <see cref="SchemaName"/>; otherwise the create is refused before any write. Not a CLI option: only
+		/// the MCP <c>create-page</c> tool sets it, so the CLI keeps defaulting the caption to the schema name.
+		/// </summary>
+		public bool RequireHeaderCaption { get; set; }
 	}
 
 	/// <summary>
@@ -112,6 +120,12 @@ namespace Clio.Command {
 					return false;
 				}
 				_logger.WriteInfo($"         template: {template.Name} (uId={template.UId}, group={template.GroupName}, type={DescribeSchemaType(template.SchemaType)})");
+				string headerCaptionError = ValidateHeaderCaption(options, template);
+				if (headerCaptionError != null) {
+					response = new PageCreateResponse { Success = false, Error = headerCaptionError };
+					LogFailure(response.Error);
+					return false;
+				}
 				LogStep(ref stepNumber, totalSteps, $"Resolving package '{options.PackageName}'");
 				if (!TryResolvePackageUId(options.PackageName, out string packageUId, out string packageError)) {
 					response = new PageCreateResponse { Success = false, Error = packageError };
@@ -172,6 +186,32 @@ namespace Clio.Command {
 				LogFailure(response.Error);
 				return false;
 			}
+		}
+
+		private static readonly HashSet<string> HeaderCaptionTemplateNames = new(StringComparer.OrdinalIgnoreCase) {
+			SchemaTemplateCatalog.HomePageTemplateName,
+			SchemaTemplateCatalog.DashboardTemplateName
+		};
+
+		/// <summary>
+		/// ENG-107757: a home page or dashboard shows its caption as the page header title, and a caption left
+		/// to default to the schema name puts the technical name there. When the caller opts in
+		/// (<see cref="PageCreateOptions.RequireHeaderCaption"/>), refuse a missing caption or one equal to
+		/// schema-name before any write. Checked on the resolved template, so a template UId is covered too.
+		/// </summary>
+		internal static string ValidateHeaderCaption(PageCreateOptions options, PageTemplateInfo template) {
+			if (!options.RequireHeaderCaption || template is null || !HeaderCaptionTemplateNames.Contains(template.Name)) {
+				return null;
+			}
+			string hint = $"For a {template.Name} page the caption is the title shown in the page header. Pass `caption` "
+				+ "with the human-readable name the user asked for (for example \"IT Requests overview\"), not the schema name.";
+			if (string.IsNullOrWhiteSpace(options.Caption)) {
+				return $"caption is required for template '{template.Name}'. {hint}";
+			}
+			if (string.Equals(options.Caption.Trim(), options.SchemaName?.Trim(), StringComparison.OrdinalIgnoreCase)) {
+				return $"caption '{options.Caption.Trim()}' equals schema-name. {hint}";
+			}
+			return null;
 		}
 
 		/// <summary>

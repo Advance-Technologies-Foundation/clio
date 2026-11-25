@@ -22,6 +22,11 @@ public sealed class SchemaTemplateCatalog : ISchemaTemplateCatalog {
 	internal const string DashboardTemplateName = "BaseDashboardTemplate";
 
 	/// <summary>
+	/// Name of the base Freedom UI home page template.
+	/// </summary>
+	internal const string HomePageTemplateName = "BaseHomePage";
+
+	/// <summary>
 	/// UId of the base <c>BaseDashboardTemplate</c> schema (owned by the <c>CrtUIPlatform</c> base
 	/// package, so the GUID is a fixed platform constant across environments).
 	/// </summary>
