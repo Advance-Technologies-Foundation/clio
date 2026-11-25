@@ -349,6 +349,25 @@ public sealed class PageBusinessRuleRedundancyTests {
 	}
 
 	[Test]
+	[Description("Keeps an is-not-filled-in check beside 'not-equal' with another attribute: that attribute can be empty too.")]
+	public void Analyze_WhenNotEqualComparesWithAttribute_KeepsNullCheck() {
+		// Arrange — both sides of "Status not-equal OtherStatus" can be empty, so the null check is not implied.
+		var otherStatus = new BusinessRuleExpression("AttributeValue", path: "OtherStatus");
+		BusinessRule existing = Rule("Read-only when same status", "AND", ReadOnly("Amount"),
+			new BusinessRuleCondition(new BusinessRuleExpression("AttributeValue", path: "Status"), "equal", otherStatus));
+		BusinessRule incoming = Rule("Editable when other status or empty", "OR",
+			new MakeEditableBusinessRuleAction(["Amount"]),
+			new BusinessRuleCondition(new BusinessRuleExpression("AttributeValue", path: "Status"), "not-equal", otherStatus),
+			IsNotFilledIn("Status"));
+
+		// Act
+		IReadOnlyList<IReadOnlyList<string>> warnings = PageBusinessRuleRedundancy.Analyze([existing], [incoming]);
+
+		// Assert
+		warnings[0].Should().BeEmpty(because: "only a constant on the right side settles the null check");
+	}
+
+	[Test]
 	[Description("Keeps an is-not-filled-in check beside 'equal': 'equal v' is false on an empty value, so the check widens the rule.")]
 	public void Analyze_WhenIsNotFilledInIsOredWithEqual_ReturnsNoWarning() {
 		// Arrange — "Status = v OR Status empty" also fires on an empty status, where "Status not-equal v" fires too.

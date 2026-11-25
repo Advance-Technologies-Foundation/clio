@@ -187,7 +187,8 @@ internal static class PageBusinessRuleRedundancy {
 
 	private sealed record ActionShape(string Type, HashSet<string> Items);
 
-	private sealed record ConditionKey(string Left, string Comparison, string Right);
+	/// <param name="RightIsConst">Whether the right side is a constant; only then can it not be empty.</param>
+	private sealed record ConditionKey(string Left, string Comparison, string Right, bool RightIsConst);
 
 	/// <param name="Conditions">The conditions as written; subsumption compares these.</param>
 	/// <param name="BooleanNormalizedConditions">The same conditions with every comparison with the boolean constant
@@ -211,7 +212,8 @@ internal static class PageBusinessRuleRedundancy {
 		/// <c>is-not-filled-in</c> in an OR group beside a comparison that is true on an empty value
 		/// (<c>not-equal</c>, <c>not-contain</c>), and <c>is-filled-in</c> in an AND group beside one that is false on
 		/// it (<c>equal</c>, <c>contain</c>, the relational ones). So "X not-equal v OR X is-not-filled-in", the way
-		/// agents negate "X equal v", reads as "X not-equal v".
+		/// agents negate "X equal v", reads as "X not-equal v". Only a comparison with a constant settles the check:
+		/// another attribute, system value or setting on the right can be empty too.
 		/// </summary>
 		private RuleShape WithoutImpliedNullChecks() {
 			bool isAnd = Operation == And;
@@ -220,7 +222,7 @@ internal static class PageBusinessRuleRedundancy {
 				return this;
 			}
 			var settledLefts = new HashSet<string>(Conditions
-				.Where(c => !BusinessRuleHelpers.IsUnaryComparisonType(c.Comparison)
+				.Where(c => c.RightIsConst && !BusinessRuleHelpers.IsUnaryComparisonType(c.Comparison)
 					&& TrueOnEmptyComparisons.Contains(c.Comparison) != isAnd)
 				.Select(c => c.Left), StringComparer.Ordinal);
 			HashSet<ConditionKey> kept = Conditions
@@ -268,14 +270,16 @@ internal static class PageBusinessRuleRedundancy {
 		private static ConditionKey CreateConditionKey(BusinessRuleCondition condition, bool normalizeBoolean) {
 			string comparison = (condition.ComparisonType ?? string.Empty).Trim().ToLowerInvariant();
 			BusinessRuleExpression? right = condition.RightExpression;
+			bool rightIsConst = string.Equals(right?.Type, BusinessRuleConstants.ConstExpressionType,
+				StringComparison.OrdinalIgnoreCase);
 			if (normalizeBoolean
+				&& rightIsConst
 				&& BusinessRuleHelpers.IsEqualityComparisonType(comparison)
-				&& string.Equals(right?.Type, BusinessRuleConstants.ConstExpressionType, StringComparison.OrdinalIgnoreCase)
 				&& right!.Value is { ValueKind: JsonValueKind.False }) {
 				comparison = NegatedComparisons[comparison];
 				right = right with { Value = TrueConstant };
 			}
-			return new ConditionKey(Describe(condition.LeftExpression), comparison, Describe(right));
+			return new ConditionKey(Describe(condition.LeftExpression), comparison, Describe(right), rightIsConst);
 		}
 
 		private static string Describe(BusinessRuleExpression? expression) =>
