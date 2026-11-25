@@ -17,9 +17,11 @@ public static class DynamicCaseChangeRequirement {
 	/// that answers its route with a 404. 1.6.6.179 was the first shipped cut with case filters; 1.6.6.185 is the first
 	/// shipped cut whose stage rename renames the lookup value and whose describe reports <c>records</c>. Not 1.6.6.180:
 	/// that number is also another branch's cut without this code. An older package would ignore the two
-	/// confirmations, and a stage rename there would write a caption no one sees.
+	/// confirmations, and a stage rename there would write a caption no one sees. 1.6.6.200 is the first cut whose
+	/// stage item takes <c>steps</c> and <c>transitionType</c> and whose describe reports them (ENG-107646): an older
+	/// package refuses a stage's steps, and its describe would show a stage with steps as one without them.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.185";
+	public const string MinimumProcessBuilderVersion = "1.6.6.200";
 }
 
 /// <summary>
@@ -144,6 +146,12 @@ public sealed record CaseStageEditRequest {
 
 	/// <summary>False for a final stage that ends the case unsuccessfully.</summary>
 	public bool? Successful { get; init; }
+
+	/// <summary>The stage's whole step list as JSON, sent as it is; <see langword="null"/> keeps the steps.</summary>
+	public string Steps { get; init; }
+
+	/// <summary>When the case moves on from the stage by itself; <see langword="null"/> keeps the stored one.</summary>
+	public string TransitionType { get; init; }
 }
 
 /// <summary>
@@ -175,6 +183,13 @@ public sealed class CaseStageEditRequestJsonConverter : JsonConverter<CaseStageE
 		}
 		if (value.Successful.HasValue) {
 			writer.WriteBoolean("successful", value.Successful.Value);
+		}
+		if (value.Steps is not null) {
+			writer.WritePropertyName("steps");
+			writer.WriteRawValue(value.Steps);
+		}
+		if (value.TransitionType is not null) {
+			writer.WriteString("transitionType", value.TransitionType);
 		}
 		writer.WriteEndObject();
 	}
@@ -320,6 +335,14 @@ public sealed class DynamicCaseDiff {
 	/// <summary>The case filter change in words, when there is one; <c>none</c> for no filter.</summary>
 	[JsonPropertyName("filter")]
 	public DynamicCaseStageChange Filter { get; init; }
+
+	/// <summary>The steps the change adds, removes or changes, as the package lists them; absent when none.</summary>
+	[JsonPropertyName("steps")]
+	public JsonElement? Steps { get; init; }
+
+	/// <summary>The stages whose transitionType changes; absent when none.</summary>
+	[JsonPropertyName("transitionTypes")]
+	public List<DynamicCaseStageChange> TransitionTypes { get; init; }
 }
 
 /// <summary>Running cases that sit in one stage.</summary>
