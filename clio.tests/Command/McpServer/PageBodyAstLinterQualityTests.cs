@@ -178,6 +178,44 @@ internal class PageBodyAstLinterQualityTests {
 		findings.Should().BeEmpty(because: "different bodies are different helpers, and `v => v` is too small to move");
 	}
 
+	[TestCase("v && v.status && v.status.value === \"a\"", "v && v.status && v.status.value !== \"a\"")]
+	[TestCase("v && v.status && v.status.value", "v || v.status || v.status.value")]
+	[TestCase("v.count + v.extra + v.base", "v.count - v.extra - v.base")]
+	[TestCase("{ let n = v.count; n += v.extra; return n; }", "{ let n = v.count; n -= v.extra; return n; }")]
+	[TestCase("{ const n = v.count; return n + v.extra; }", "{ let n = v.count; return n + v.extra; }")]
+	[TestCase("!v.status && !v.status.value && v.x", "-v.status && -v.status.value && v.x")]
+	[TestCase("{ let n = v.count; n++; return n; }", "{ let n = v.count; n--; return n; }")]
+	[TestCase("`${v.status.value} open ${v.x}`", "`${v.status.value} closed ${v.x}`")]
+	[Description("Two helpers that differ only in an operator, a declaration kind or template text have different logic and raise no duplicate warning")]
+	public void Lint_ShouldNotWarnDuplicateFunction_WhenHelpersDifferOnlyInOperator(string firstBody, string secondBody) {
+		// Arrange
+		string first = Handler("usr.First", "const isOpen = (v) => " + firstBody + "; isOpen(1);");
+		string second = Handler("usr.Second", "const isClosed = (v) => " + secondBody + "; isClosed(2);");
+		string body = Page("[" + first + "," + second + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleDuplicateFunctionInPage);
+
+		// Assert
+		findings.Should().BeEmpty(
+			because: "merging helpers with opposite operators would silently change what the page does");
+	}
+
+	[Test]
+	[Description("Two helpers with one body, operators included, still raise a duplicate warning")]
+	public void Lint_ShouldWarnDuplicateFunction_WhenHelpersShareOperators() {
+		// Arrange
+		string first = Handler("usr.First", "const isOpen = (v) => v && v.status && v.status.value !== \"a\"; isOpen(1);");
+		string second = Handler("usr.Second", "const notA = (v) => v && v.status && v.status.value !== \"a\"; notA(2);");
+		string body = Page("[" + first + "," + second + "]");
+
+		// Act
+		List<PageBodyLintFinding> findings = Findings(body, PageBodyAstLinter.RuleDuplicateFunctionInPage);
+
+		// Assert
+		findings.Should().ContainSingle(because: "keeping operators in the shape must not hide real copies");
+	}
+
 	#endregion
 
 	#region catch-log-only

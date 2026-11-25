@@ -309,27 +309,39 @@ internal static partial class PageBodyAstLinter {
 		}
 	}
 
-	// The structure of a function without its own name: node types, identifier names and literal values. Two
-	// copies of one helper give the same shape wherever they sit and whatever they are called.
+	// The structure of a function without its own name: node types, identifier names, literal values, operators,
+	// declaration kinds and template text. Two copies of one helper give the same shape wherever they sit and
+	// whatever they are called; `===` and `!==` are properties, not child nodes, so they are appended here.
 	private static void AppendShape(Node node, StringBuilder shape, ref int nodeCount, int depth) {
 		if (node is null || depth > MaxAstDepth) {
 			return;
 		}
 		nodeCount++;
 		shape.Append('(').Append(node.Type);
-		switch (node) {
-			case Identifier identifier:
-				shape.Append(' ').Append(identifier.Name);
-				break;
-			case Literal literal:
-				shape.Append(' ').Append(literal.Raw);
-				break;
+		string token = ShapeToken(node);
+		if (token is not null) {
+			shape.Append(' ').Append(token);
 		}
 		foreach (Node child in node.ChildNodes) {
 			AppendShape(child, shape, ref nodeCount, depth + 1);
 		}
 		shape.Append(')');
 	}
+
+	// The part of a node its shape keeps besides its type; null when the type alone describes it.
+	private static string ShapeToken(Node node) =>
+		node switch {
+			Identifier identifier => identifier.Name,
+			Literal literal => literal.Raw,
+			UpdateExpression update => (update.Prefix ? "prefix " : "postfix ") + update.Operator,
+			UnaryExpression unary => unary.Operator.ToString(),
+			LogicalExpression logical => logical.Operator.ToString(),
+			BinaryExpression binary => binary.Operator.ToString(),
+			AssignmentExpression assignment => assignment.Operator.ToString(),
+			VariableDeclaration declaration => declaration.Kind.ToString(),
+			TemplateElement element => element.Value.Raw,
+			_ => null
+		};
 
 	private static void ReportDuplicateHelpers(Dictionary<string, List<NamedFunction>> helpersByShape,
 		LintFindingBudget budget) {
