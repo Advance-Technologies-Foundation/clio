@@ -137,6 +137,9 @@ every discovery call. A host asks for them once.
 - has `readOnlyHint = false` while its facts say it only reads and writes no host path, unless it is one of the
   named tools that hand out or drop a credential (`get-identity-assertion`, `get-browser-session`,
   `clear-browser-session`), each listed with its reason (D9);
+- takes `confirm-value-rename` (a confirmed rename of a lookup value every record shares) with `destructiveHint = false`,
+  unless it is listed in `ConfirmedLiveOverwrites` with its reason (D9); a listed tool that no longer takes the
+  argument, is not a `change` or is marked destructive fails too;
 - leaves any of the four MCP hints unset: an absent hint is MCP's default, not a statement clio made. The values of
   `idempotentHint` and `openWorldHint`, and `destructiveHint` on a `change`, are reviewed, not tested (D9);
 - is a `read` that rebuilds the environment or changes connections (at tool level or in an entry);
@@ -250,6 +253,13 @@ pins clio trusts it.
   (`build-theme`, a `read` that rewrites its output folder; `reg-web-app`, a `change` that updates a registered
   environment): those are in `host-paths` and `connections`.
   It cannot tell a create from a delete; `effect` can.
+  One named exception: `modify-dynamic-case-as-new-version` adds an inactive case version and stays `false`, although
+  a confirmed stage value rename (`confirm-value-rename`) renames a lookup value for every record at once. The hint is
+  static, so `true` would put every call behind destructive consent, the dry run and the common add-only write
+  included, for an overwrite that the server refuses without the confirmation and that the description and the guide
+  say to confirm only after the user's yes (ENG-106400, owner's decision). `modify-business-process-as-new-version`
+  follows the same reasoning for a `setTracing` operation beside real edits, which switches tracing for the whole
+  family at once. The coverage test (D6) keeps the exception listed and true.
 - **`idempotentHint`** and **`openWorldHint`** are stated on every tool. clio reads a Creatio environment as a closed
   domain (`openWorldHint=false`), and a tool that reaches outside clio and its environments as an open one, for example
   a download or a fetch (`install-toolkit`, `update-knowledge`), a font probe (`build-theme`, `create-theme`), a web

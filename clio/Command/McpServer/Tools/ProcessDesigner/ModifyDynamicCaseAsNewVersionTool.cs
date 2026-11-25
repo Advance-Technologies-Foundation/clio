@@ -52,8 +52,9 @@ public class ModifyDynamicCaseAsNewVersionTool(
 	// the rename takes effect at once, for the active case and every record, not when the version is activated. It is
 	// refused without the user's yes and the description says so; the annotation stays false for the reason
 	// ModifyProcessAsNewVersionTool gives for setTracing - flipping it would put every version write behind destructive
-	// consent for an effect only an explicit confirmation reaches. Idempotent=false: each write makes one more version,
-	// and a saved version is never removed.
+	// consent for an effect only an explicit confirmation reaches. The facts ADR (D9) names this exception and
+	// McpToolFactsCoverageTests.ConfirmedLiveOverwrites keeps it listed. Idempotent=false: each write makes one more
+	// version, and the toolkit cannot delete one.
 	[McpServerTool(Name = ModifyDynamicCaseAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Saves a case change as a version. The dynamic case (DCM) designer's \"Save new version\": the "
