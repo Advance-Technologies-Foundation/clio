@@ -42,6 +42,8 @@ public sealed record BusinessRuleBatchResponse {
 				Success = item.Success,
 				RuleName = item.RuleName,
 				Error = item.Error,
+				FilterMatchCount = item.FilterMatchCount,
+				Warning = item.Warning,
 				Warnings = item.Warnings is { Count: > 0 } ? item.Warnings : null
 			})
 			.ToList();
@@ -100,6 +102,16 @@ public sealed record BusinessRuleResultDto {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[Description("The failure reason when not created.")]
 	public string? Error { get; init; }
+
+	[JsonPropertyName("filterMatchCount")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("apply-static-filter only: how many records of the target lookup the filter matched on the environment when the rule was checked.")]
+	public int? FilterMatchCount { get; init; }
+
+	[JsonPropertyName("warning")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Set when something about the rule could not be checked (for apply-static-filter: the filter could not be run on the environment).")]
+	public string? Warning { get; init; }
 
 	/// <summary>Gets advisory findings about a saved rule; absent when there are none.</summary>
 	[JsonPropertyName("warnings")]

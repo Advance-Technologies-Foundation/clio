@@ -3,9 +3,14 @@ using System.Collections.Generic;
 namespace Clio.Command.BusinessRules;
 
 /// <summary>
-/// Returns the generated internal rule name created in add-on metadata.
+/// Returns the generated internal rule name created in add-on metadata, and for an apply-static-filter rule what
+/// running its filter showed.
 /// </summary>
-public sealed record BusinessRuleCreateResult(string RuleName);
+/// <param name="RuleName">The generated internal rule name.</param>
+/// <param name="FilterMatchCount">For an apply-static-filter rule, how many records of the target lookup its filter
+/// matched on the environment before saving.</param>
+/// <param name="Warning">Set when the rule was saved but something about it could not be checked.</param>
+public sealed record BusinessRuleCreateResult(string RuleName, int? FilterMatchCount = null, string? Warning = null);
 
 /// <summary>
 /// Per-rule outcome of a batch business-rule creation call. A failed item never aborts the
@@ -18,9 +23,14 @@ public sealed record BusinessRuleCreateResult(string RuleName);
 /// <param name="Error">The failure reason when not created; otherwise <c>null</c>.</param>
 /// <param name="Warnings">Advisory findings about a saved rule (for example a rule another rule already
 /// covers); <c>null</c> when there are none. Never set on a failed item.</param>
+/// <param name="FilterMatchCount">For an apply-static-filter rule, how many records of the target lookup its filter
+/// matched on the environment when it was checked.</param>
+/// <param name="Warning">Set when something about the rule could not be checked.</param>
 public sealed record BusinessRuleBatchItemResult(
 	string Name,
 	bool Success,
 	string? RuleName,
 	string? Error,
-	IReadOnlyList<string>? Warnings = null);
+	IReadOnlyList<string>? Warnings = null,
+	int? FilterMatchCount = null,
+	string? Warning = null);
