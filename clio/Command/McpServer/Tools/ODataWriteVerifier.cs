@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using Clio.Common;
 
 namespace Clio.Command.McpServer.Tools;
@@ -43,10 +44,12 @@ public interface IODataWriteVerifier {
 	/// <param name="records">The written records: each Id with the JSON object that was sent for it.</param>
 	/// <param name="propertyTypes">The entity's property name to Edm type map, or <see langword="null"/> when unknown.</param>
 	/// <param name="remainingBudgetMs">Milliseconds left for the whole call; a chunk is not read below one second.</param>
+	/// <param name="cancellationToken">Caller token; once cancelled, no further chunk is read.</param>
 	/// <returns>One outcome per record, keyed by its trimmed Id (case-insensitive).</returns>
 	IReadOnlyDictionary<string, ODataWriteVerification> VerifyRecords(IApplicationClient client,
 		IServiceUrlBuilder urlBuilder, string entity, IReadOnlyList<ODataSentRecord> records,
-		IReadOnlyDictionary<string, string>? propertyTypes, Func<int> remainingBudgetMs);
+		IReadOnlyDictionary<string, string>? propertyTypes, Func<int> remainingBudgetMs,
+		CancellationToken cancellationToken = default);
 }
 
 /// <summary>A written record: its Id and the JSON object that was sent for it.</summary>
@@ -79,7 +82,7 @@ public sealed record ODataWriteVerification(bool Verified, IReadOnlyList<ODataFi
 	/// <param name="reason">Why the stored values were not compared.</param>
 	public static ODataWriteVerification Unverified(string reason) => new(false, [], reason);
 
-	/// <summary>A verified outcome with nothing that diverged, also used when no sent field could be compared.</summary>
+	/// <summary>A verified outcome for a write that sent no field at all, so nothing could diverge.</summary>
 	public static ODataWriteVerification NothingToCompare { get; } = new(true, [], null);
 
 	/// <summary>An unverified outcome for a read-back that threw; the exception text is redacted.</summary>
@@ -139,18 +142,24 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	private const string BudgetSpent =
 		"the batch time budget was spent before this record could be read back, so the stored values were not compared.";
 
+	private const string Cancelled =
+		"the call was cancelled before this record could be read back, so the stored values were not compared.";
+
+	private const string NoRecordId =
+		"Creatio did not return a GUID Id for the created record, so it could not be read back.";
+
 	/// <inheritdoc />
 	public ODataWriteVerification VerifyRecord(IApplicationClient client, IServiceUrlBuilder urlBuilder,
 		string entity, string id, JsonElement sent, IReadOnlyDictionary<string, string>? propertyTypes) {
 		try {
-			IReadOnlyList<string> fields = ComparableFields(sent, propertyTypes);
-			if (fields.Count == 0) {
-				return ODataWriteVerification.NothingToCompare;
+			FieldPlan plan = PlanFields(sent, propertyTypes);
+			if (plan.Compared.Count == 0) {
+				return plan.WithoutComparableFields();
 			}
 			string url = urlBuilder.Build(ODataKeyFormatter.KeyPath(entity, id))
-				+ "?$select=" + Uri.EscapeDataString(string.Join(",", fields));
+				+ "?$select=" + Uri.EscapeDataString(string.Join(",", plan.Compared));
 			return TryRead(client, url, ReadBackTimeoutMs, out JsonElement root, out string failure)
-				? Compare(sent, root, fields, propertyTypes)
+				? Compare(sent, root, plan, propertyTypes)
 				: ODataWriteVerification.Unverified(failure);
 		} catch (Exception ex) {
 			// The write already happened: nothing on the read-back path may surface as a failed write.
@@ -161,10 +170,12 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	/// <inheritdoc />
 	public IReadOnlyDictionary<string, ODataWriteVerification> VerifyRecords(IApplicationClient client,
 		IServiceUrlBuilder urlBuilder, string entity, IReadOnlyList<ODataSentRecord> records,
-		IReadOnlyDictionary<string, string>? propertyTypes, Func<int> remainingBudgetMs) {
+		IReadOnlyDictionary<string, string>? propertyTypes, Func<int> remainingBudgetMs,
+		CancellationToken cancellationToken = default) {
 		Dictionary<string, ODataWriteVerification> outcomes = new(StringComparer.OrdinalIgnoreCase);
 		try {
-			VerifyRecordsCore(client, urlBuilder, entity, records, propertyTypes, remainingBudgetMs, outcomes);
+			VerifyRecordsCore(client, urlBuilder, entity, records, propertyTypes, remainingBudgetMs, cancellationToken,
+				outcomes);
 		} catch (Exception ex) {
 			ODataWriteVerification failed = ODataWriteVerification.ReadBackFailed(ex);
 			foreach (ODataSentRecord record in records.Where(record => record.Id is not null)) {
@@ -174,30 +185,47 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 		return outcomes;
 	}
 
-	/// <summary>A record to read back, with its comparable fields worked out once.</summary>
-	private sealed record PendingRecord(string Id, JsonElement Sent, IReadOnlyList<string> Fields);
+	/// <summary>The sent fields a read-back compares, and the sent fields it cannot compare.</summary>
+	private sealed record FieldPlan(IReadOnlyList<string> Compared, IReadOnlyList<string> Skipped) {
+
+		/// <summary>The note naming the skipped fields, or <see langword="null"/> when every sent field is compared.</summary>
+		public string? SkippedNote => Skipped.Count == 0
+			? null
+			: string.Join(", ", Skipped.Select(field => $"'{field}'"))
+				+ (Skipped.Count == 1 ? " was" : " were")
+				+ " not compared: a lookup binding (@odata.bind), a navigation path or a binary column cannot be read back.";
+
+		/// <summary>The outcome when no sent field can be compared: unverified with the reason, unless nothing was sent.</summary>
+		public ODataWriteVerification WithoutComparableFields() =>
+			Skipped.Count == 0 ? ODataWriteVerification.NothingToCompare : ODataWriteVerification.Unverified(SkippedNote!);
+	}
+
+	/// <summary>A record to read back, with its fields worked out once.</summary>
+	private sealed record PendingRecord(string Id, JsonElement Sent, FieldPlan Plan);
 
 	private static void VerifyRecordsCore(IApplicationClient client, IServiceUrlBuilder urlBuilder, string entity,
 		IReadOnlyList<ODataSentRecord> records, IReadOnlyDictionary<string, string>? propertyTypes,
-		Func<int> remainingBudgetMs, Dictionary<string, ODataWriteVerification> outcomes) {
+		Func<int> remainingBudgetMs, CancellationToken cancellationToken,
+		Dictionary<string, ODataWriteVerification> outcomes) {
 		List<PendingRecord> pending = [];
 		foreach (ODataSentRecord record in records) {
 			string id = record.Id?.Trim() ?? string.Empty;
-			IReadOnlyList<string> fields = ComparableFields(record.Sent, propertyTypes);
+			FieldPlan plan = PlanFields(record.Sent, propertyTypes);
 			// The Id goes into $filter verbatim, so only a GUID is read back; anything else cannot address a record.
 			if (!ODataKeyFormatter.IsGuid(id)) {
-				outcomes[id] = ODataWriteVerification.Unverified(UnreadableAnswer);
-			} else if (fields.Count == 0) {
-				outcomes[id] = ODataWriteVerification.NothingToCompare;
+				outcomes[id] = ODataWriteVerification.Unverified(NoRecordId);
+			} else if (plan.Compared.Count == 0) {
+				outcomes[id] = plan.WithoutComparableFields();
 			} else {
-				pending.Add(new PendingRecord(id, record.Sent, fields));
+				pending.Add(new PendingRecord(id, record.Sent, plan));
 			}
 		}
 		string collectionUrl = urlBuilder.Build(ODataKeyFormatter.CollectionPath(entity));
 		foreach (List<PendingRecord> chunk in Chunk(pending)) {
 			int remaining = remainingBudgetMs();
-			if (remaining < MinReadBudgetMs) {
-				chunk.ForEach(record => outcomes[record.Id] = ODataWriteVerification.Unverified(BudgetSpent));
+			if (cancellationToken.IsCancellationRequested || remaining < MinReadBudgetMs) {
+				string reason = cancellationToken.IsCancellationRequested ? Cancelled : BudgetSpent;
+				chunk.ForEach(record => outcomes[record.Id] = ODataWriteVerification.Unverified(reason));
 				continue;
 			}
 			string url = collectionUrl + "?" + BuildChunkQuery(chunk);
@@ -208,26 +236,29 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 			Dictionary<Guid, JsonElement> stored = StoredById(root);
 			foreach (PendingRecord record in chunk) {
 				outcomes[record.Id] = stored.TryGetValue(Guid.Parse(record.Id), out JsonElement row)
-					? Compare(record.Sent, row, record.Fields, propertyTypes)
+					? Compare(record.Sent, row, record.Plan, propertyTypes)
 					: ODataWriteVerification.Unverified(NotReturned);
 			}
 		}
 	}
 
 	/// <summary>
-	/// The sent fields a read-back can compare: plain property names (an <c>@odata.bind</c> annotation or a
-	/// navigation path is skipped) that are not binary, in sent order.
+	/// Splits the sent fields, in sent order, into those a read-back can compare - plain property names that are
+	/// not binary - and the rest: an <c>@odata.bind</c> annotation, a navigation path or a binary column.
 	/// </summary>
-	private static IReadOnlyList<string> ComparableFields(JsonElement sent,
-		IReadOnlyDictionary<string, string>? propertyTypes) =>
-		sent.ValueKind != JsonValueKind.Object
-			? []
-			: sent.EnumerateObject()
-				.Select(property => property.Name)
-				.Where(name => ODataKeyFormatter.IsSimpleIdentifier(name)
-					&& ODataStoredValueComparer.IsComparable(TypeOf(name, propertyTypes)))
-				.Distinct(StringComparer.Ordinal)
-				.ToList();
+	private static FieldPlan PlanFields(JsonElement sent, IReadOnlyDictionary<string, string>? propertyTypes) {
+		if (sent.ValueKind != JsonValueKind.Object) {
+			return new FieldPlan([], []);
+		}
+		List<string> compared = [];
+		List<string> skipped = [];
+		foreach (string name in sent.EnumerateObject().Select(property => property.Name).Distinct(StringComparer.Ordinal)) {
+			(ODataKeyFormatter.IsSimpleIdentifier(name) && ODataStoredValueComparer.IsComparable(TypeOf(name, propertyTypes))
+				? compared
+				: skipped).Add(name);
+		}
+		return new FieldPlan(compared, skipped);
+	}
 
 	private static string? TypeOf(string field, IReadOnlyDictionary<string, string>? propertyTypes) =>
 		propertyTypes is not null && propertyTypes.TryGetValue(field, out string? type) ? type : null;
@@ -249,7 +280,7 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 		int selectLength = EscapedLength("Id");
 		foreach (PendingRecord record in records) {
 			int idLength = EscapedLength(IdTerm + record.Id) + (current.Count == 0 ? 0 : EscapedLength(OrSeparator));
-			int addedSelect = SelectLengthOf(record.Fields.Where(field => !selected.Contains(field)));
+			int addedSelect = SelectLengthOf(record.Plan.Compared.Where(field => !selected.Contains(field)));
 			if (current.Count > 0
 				&& QueryLength(filterLength + idLength, selectLength + addedSelect) > MaxQueryLength) {
 				yield return current;
@@ -258,10 +289,10 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 				filterLength = 0;
 				selectLength = EscapedLength("Id");
 				idLength = EscapedLength(IdTerm + record.Id);
-				addedSelect = SelectLengthOf(record.Fields);
+				addedSelect = SelectLengthOf(record.Plan.Compared);
 			}
 			current.Add(record);
-			selected.UnionWith(record.Fields);
+			selected.UnionWith(record.Plan.Compared);
 			filterLength += idLength;
 			selectLength += addedSelect;
 		}
@@ -286,7 +317,7 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 		string filter = string.Join(OrSeparator, chunk.Select(record => IdTerm + record.Id));
 		StringBuilder query = new StringBuilder(FilterPrefix).Append(Uri.EscapeDataString(filter));
 		string select = Uri.EscapeDataString(string.Join(SelectSeparator,
-			new[] { "Id" }.Concat(chunk.SelectMany(record => record.Fields)).Distinct(StringComparer.Ordinal)));
+			new[] { "Id" }.Concat(chunk.SelectMany(record => record.Plan.Compared)).Distinct(StringComparer.Ordinal)));
 		if (select.Length <= MaxSelectLength) {
 			query.Append(SelectPrefix).Append(select);
 		}
@@ -342,11 +373,11 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 	}
 
 	/// <summary>Compares each sent field with its stored value.</summary>
-	private static ODataWriteVerification Compare(JsonElement sent, JsonElement stored, IReadOnlyList<string> fields,
+	private static ODataWriteVerification Compare(JsonElement sent, JsonElement stored, FieldPlan plan,
 		IReadOnlyDictionary<string, string>? propertyTypes) {
 		List<ODataFieldDivergence> diverged = [];
 		List<string> notReturned = [];
-		foreach (string field in fields) {
+		foreach (string field in plan.Compared) {
 			JsonElement sentValue = sent.GetProperty(field);
 			if (!TryGetProperty(stored, field, out JsonElement storedValue)) {
 				notReturned.Add(field);
@@ -356,10 +387,12 @@ public sealed class ODataWriteVerifier : IODataWriteVerifier {
 				diverged.Add(new ODataFieldDivergence(field, sentValue.Clone(), storedValue.Clone()));
 			}
 		}
-		string? note = notReturned.Count == 0
+		string? notReturnedNote = notReturned.Count == 0
 			? null
 			: "The read-back did not return " + string.Join(", ", notReturned.Select(field => $"'{field}'"))
 				+ ", so " + (notReturned.Count == 1 ? "it was" : "they were") + " not compared.";
+		string?[] notes = [notReturnedNote, plan.SkippedNote];
+		string? note = notes.Any(part => part is not null) ? string.Join(" ", notes.Where(part => part is not null)) : null;
 		return new ODataWriteVerification(true, diverged, note);
 	}
 

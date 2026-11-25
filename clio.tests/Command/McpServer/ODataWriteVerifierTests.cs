@@ -113,17 +113,36 @@ public sealed class ODataWriteVerifierTests {
 	}
 
 	[Test]
-	[Description("A binary column and a non-property key (an @odata.bind annotation) are not read back; with nothing else sent no GET is made.")]
-	public void VerifyRecord_Should_Skip_Fields_It_Cannot_Compare() {
+	[Description("When every sent field is one a read-back cannot compare (a binary column, an @odata.bind lookup), no GET is made and the write is NOT reported as verified: the note names the fields.")]
+	public void VerifyRecord_Should_Not_Claim_Verified_When_No_Sent_Field_Can_Be_Compared() {
 		// Act
 		ODataWriteVerification result = _verifier.VerifyRecord(_client, _urlBuilder, "SysImage", Id,
 			Json("{\"Data\":\"iVBORw0KGgo=\",\"Owner@odata.bind\":\"Contact(" + Contact + ")\"}"),
 			new Dictionary<string, string> { ["Data"] = "Edm.Stream" });
 
 		// Assert
-		result.Verified.Should().BeTrue(because: "nothing comparable was sent, so nothing can diverge");
-		result.Diverged.Should().BeEmpty(because: "no field was compared");
+		result.Verified.Should().BeFalse(because: "a lookup set through @odata.bind can be replaced by a rule, and nothing was checked");
+		result.Note.Should().Contain("'Data'", because: "the caller is told which fields were not compared")
+			.And.Contain("'Owner@odata.bind'", because: "a skipped lookup binding is named too");
 		_client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null!, 0, 0, 0);
+	}
+
+	[Test]
+	[Description("A sent field that cannot be compared is named in the note even when the other fields were read back and compared.")]
+	public void VerifyRecord_Should_Name_Skipped_Fields_Next_To_Compared_Ones() {
+		// Arrange
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"Id\":\"{Id}\",\"Name\":\"Q1\"}}");
+
+		// Act
+		ODataWriteVerification result = _verifier.VerifyRecord(_client, _urlBuilder, "ForecastSheet", Id,
+			Json("{\"Name\":\"Q1\",\"Owner@odata.bind\":\"Contact(" + Contact + ")\"}"), null);
+
+		// Assert
+		result.Verified.Should().BeTrue(because: "Name was read back and compared");
+		result.Note.Should().Contain("'Owner@odata.bind' was not compared",
+			because: "verified=true must not hide a sent lookup that was never checked");
+		_client.Received(1).ExecuteGetRequest(KeyUrl + "?$select=Name", ODataWriteVerifier.ReadBackTimeoutMs, 1);
 	}
 
 	[Test]
@@ -227,4 +246,84 @@ public sealed class ODataWriteVerifierTests {
 		outcomes[id].Verified.Should().BeFalse(because: "the stored row was not seen");
 		outcomes[id].Diverged.Should().BeEmpty(because: "an unseen row is not evidence of another stored value");
 	}
+	[Test]
+	[Description("A created record whose Id is not a GUID is unverified with that reason, and no read-back is sent for it.")]
+	public void VerifyRecords_Should_Name_A_Missing_Record_Id_As_The_Reason() {
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Account", [new ODataSentRecord("not-a-guid", Json("{\"Name\":\"x\"}"))], null, () => 60_000);
+
+		// Assert
+		outcomes["not-a-guid"].Verified.Should().BeFalse(because: "a record without a GUID Id cannot be addressed");
+		outcomes["not-a-guid"].Note.Should().Contain("Id", because: "the reason is the missing Id, not a failed read")
+			.And.NotContain("usable answer", because: "no read-back was sent, so none failed");
+		_client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null!, 0, 0, 0);
+	}
+
+	[Test]
+	[Description("A cancelled call reads no further chunk; its rows are unverified with the cancellation as the reason.")]
+	public void VerifyRecords_Should_Not_Read_After_Cancellation() {
+		// Arrange
+		string id = NewGuid();
+		using System.Threading.CancellationTokenSource cancellation = new();
+		cancellation.Cancel();
+
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Account", [new ODataSentRecord(id, Json("{\"Name\":\"x\"}"))], null, () => 60_000, cancellation.Token);
+
+		// Assert
+		outcomes[id].Verified.Should().BeFalse(because: "the caller is gone, so nothing is read");
+		outcomes[id].Note.Should().Contain("cancelled", because: "the reason is the cancellation");
+		_client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null!, 0, 0, 0);
+	}
+
+	[Test]
+	[Description("When the budget runs out between chunks, the chunks already read keep their outcome and only the rest are unverified.")]
+	public void VerifyRecords_Should_Read_Chunks_Until_The_Budget_Runs_Out() {
+		// Arrange
+		List<ODataSentRecord> records = Enumerable.Range(0, 100)
+			.Select(_ => new ODataSentRecord(NewGuid(), Json("{\"Name\":\"x\"}")))
+			.ToList();
+		_client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => "{\"value\":[" + string.Join(",", records
+				.Where(record => call.ArgAt<string>(0).Contains(record.Id, StringComparison.Ordinal))
+				.Select(record => $"{{\"Id\":\"{record.Id}\",\"Name\":\"x\"}}")) + "]}");
+		int budgetCalls = 0;
+
+		// Act - the first chunk sees a full budget, every later one sees it spent
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Account", records, null, () => budgetCalls++ == 0 ? 60_000 : ODataWriteVerifier.MinReadBudgetMs - 1);
+
+		// Assert
+		_client.ReceivedWithAnyArgs(1).ExecuteGetRequest(null!, 0, 0, 0);
+		outcomes.Values.Should().Contain(outcome => outcome.Verified,
+			because: "the rows of the first chunk were read before the budget ran out");
+		outcomes.Values.Should().Contain(outcome => !outcome.Verified && outcome.Note!.Contains("budget"),
+			because: "the rows after it were not read and say why");
+		outcomes.Should().HaveCount(records.Count, because: "every row gets an outcome");
+	}
+
+	[Test]
+	[Description("When the union of sent field names is too long for $select, the chunk reads every column instead, and still compares the sent fields.")]
+	public void VerifyRecords_Should_Drop_Select_When_The_Field_List_Is_Too_Long() {
+		// Arrange
+		string id = NewGuid();
+		string fields = string.Join(",", Enumerable.Range(0, 60).Select(index => $"\"LongColumnName{index:D3}\":\"v\""));
+		string url = null!;
+		_client.ExecuteGetRequest(Arg.Do<string>(value => url = value), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($"{{\"value\":[{{\"Id\":\"{id}\",\"LongColumnName000\":\"other\"}}]}}");
+
+		// Act
+		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = _verifier.VerifyRecords(_client, _urlBuilder,
+			"Account", [new ODataSentRecord(id, Json("{" + fields + "}"))], null, () => 60_000);
+
+		// Assert
+		url.Should().NotContain("$select=", because: "a $select this long would crowd the Ids out of the query");
+		url[(url.IndexOf('?') + 1)..].Length.Should().BeLessThanOrEqualTo(ODataWriteVerifier.MaxQueryLength,
+			because: "the query still fits the IIS limit");
+		outcomes[id].Diverged.Should().ContainSingle(divergence => divergence.Field == "LongColumnName000",
+			because: "the sent fields are still compared against the full record");
+	}
+
 }

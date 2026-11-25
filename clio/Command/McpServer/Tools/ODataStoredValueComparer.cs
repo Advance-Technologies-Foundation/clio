@@ -17,6 +17,8 @@ namespace Clio.Command.McpServer.Tools;
 /// time zone (<c>2023-12-31T22:00:00Z</c> on a UTC+02:00 stand, see
 /// docs/knowledge/McpServer/odata-datetime-literals-need-an-explicit-zone.md), so it matches any stored instant
 /// within the span of time-zone offsets around that date.</para>
+/// <para>A null written to a column that holds no null (text, number, boolean) reads back as its empty default
+/// (<c>""</c>, <c>0</c>, <c>false</c>); that is the cleared state and matches the sent null.</para>
 /// </remarks>
 internal static class ODataStoredValueComparer {
 
@@ -40,8 +42,11 @@ internal static class ODataStoredValueComparer {
 	/// <param name="stored">The value read back.</param>
 	/// <param name="edmType">The field's Edm type, or <see langword="null"/> when unknown.</param>
 	internal static bool AreEquivalent(JsonElement sent, JsonElement stored, string? edmType) {
-		if (sent.ValueKind == JsonValueKind.Null || stored.ValueKind == JsonValueKind.Null) {
-			return sent.ValueKind == stored.ValueKind;
+		if (sent.ValueKind == JsonValueKind.Null) {
+			return stored.ValueKind == JsonValueKind.Null || IsEmptyDefault(stored);
+		}
+		if (stored.ValueKind == JsonValueKind.Null) {
+			return false;
 		}
 		if (TryGetDecimal(sent, out decimal sentNumber) && TryGetDecimal(stored, out decimal storedNumber)
 			&& (sent.ValueKind == JsonValueKind.Number || stored.ValueKind == JsonValueKind.Number)) {
@@ -67,8 +72,8 @@ internal static class ODataStoredValueComparer {
 			case "Edm.DateTimeOffset":
 				return IsDateOnlyStoredAsMidnight(sent, stored) || AreSameInstant(sent, stored);
 			case "Edm.Date":
-				return DateTime.TryParse(sent, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime sentDate)
-					&& DateTime.TryParse(stored, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime storedDate)
+				return DateTime.TryParse(sent, CultureInfo.InvariantCulture, UtcStyles, out DateTime sentDate)
+					&& DateTime.TryParse(stored, CultureInfo.InvariantCulture, UtcStyles, out DateTime storedDate)
 					&& sentDate.Date == storedDate.Date;
 			case "Edm.TimeOfDay":
 				return TimeSpan.TryParse(sent, CultureInfo.InvariantCulture, out TimeSpan sentTime)
@@ -92,6 +97,22 @@ internal static class ODataStoredValueComparer {
 			DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime date)
 		&& DateTimeOffset.TryParse(stored, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset instant)
 		&& (instant.UtcDateTime - date).Duration() <= MaxZoneOffset;
+
+	/// <summary>Parses in UTC, so the result never depends on the time zone of the machine running clio.</summary>
+	private const DateTimeStyles UtcStyles = DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
+
+	/// <summary>
+	/// Whether <paramref name="stored"/> is the value a column without a null takes when null is written: an empty
+	/// text, zero, false or the empty GUID. Clearing such a column with null reads back as that value, which is the
+	/// cleared state, not a value a rule chose.
+	/// </summary>
+	private static bool IsEmptyDefault(JsonElement stored) => stored.ValueKind switch {
+		JsonValueKind.String => stored.GetString() is { } text
+			&& (text.Length == 0 || (Guid.TryParse(text, out Guid guid) && guid == Guid.Empty)),
+		JsonValueKind.Number => stored.TryGetDecimal(out decimal number) && number == 0,
+		JsonValueKind.False => true,
+		_ => false
+	};
 
 	private static bool AreSameInstant(string sent, string stored) =>
 		DateTimeOffset.TryParse(sent, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out DateTimeOffset a)

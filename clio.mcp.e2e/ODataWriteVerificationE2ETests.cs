@@ -122,4 +122,39 @@ public sealed class ODataWriteVerificationE2ETests {
 				&& request.Url.Contains($"/odata/{Entity}({RecordId})", StringComparison.Ordinal),
 			because: "verify=false must not read the record");
 	}
+	[Test]
+	[AllureTag(ODataCreateTool.ToolName)]
+	[AllureName("odata-create with verify=false sends no read-back")]
+	[AllureDescription("Runs odata-create with verify=false against the divergence stub and verifies no collection read by Id follows the POST and the response carries no verification members.")]
+	[Description("verify=false turns the create read-back off: no $filter read follows the POST.")]
+	public async Task ODataCreate_Should_Not_Read_Back_When_Verify_Is_False() {
+		// Arrange
+		await using ODataPreWriteStand stand = await ODataPreWriteStand.StartAsync(
+			RuntimeDetectionStubServer.ODataWriteDivergence, Entity);
+
+		// Act
+		CallToolResult callResult = await stand.Session.CallToolAsync(
+			ODataCreateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = stand.EnvironmentName,
+					["entity"] = Entity,
+					["rows"] = new List<Dictionary<string, object?>> { new() { ["Name"] = SentName } },
+					["verify"] = false
+				}
+			},
+			stand.CancellationToken);
+		ODataCreateBatchResponse response = EntitySchemaStructuredResultParser.Extract<ODataCreateBatchResponse>(callResult);
+
+		// Assert
+		response.Created.Should().Be(1, because: $"the row was created: {response.Error}");
+		response.Diverged.Should().BeNull(because: "no read-back ran");
+		response.Results.Should().ContainSingle(because: "one row was sent")
+			.Which.Verified.Should().BeNull(because: "no read-back ran");
+		IReadOnlyList<RecordedStubRequest> requests = await stand.GetRecordedRequestsAsync();
+		requests.Should().NotContain(request => request.Method == "GET"
+				&& request.Url.Contains($"/odata/{Entity}?$filter=", StringComparison.Ordinal),
+			because: "verify=false must not read the created row");
+	}
+
 }

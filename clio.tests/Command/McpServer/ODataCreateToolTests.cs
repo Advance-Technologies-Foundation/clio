@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -2044,6 +2045,46 @@ public sealed class ODataCreateToolTests {
 		response.Diverged.Should().BeNull(because: "no read-back ran");
 		response.Results[0].Verified.Should().BeNull(because: "no read-back ran");
 		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Only created rows are read back: a row refused by Creatio and a row rejected locally get no verification members and are not in the read-back filter or the diverged count (AC-6).")]
+	public void Create_Should_Read_Back_Only_The_Rows_That_Were_Created() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.ResolvePair<IApplicationClient, IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>())
+			.Returns((client, urlBuilder));
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"Id\":\"" + FirstCreatedId + "\"}",
+				"{\"error\":{\"code\":\"\",\"message\":\"Refused by an event handler\"}}");
+		List<string> reads = [];
+		client.ExecuteGetRequest(Arg.Do<string>(reads.Add), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => call.ArgAt<string>(0).Contains("$metadata", StringComparison.Ordinal)
+				? AccountCsdl
+				: "{\"value\":[{\"Id\":\"" + FirstCreatedId + "\",\"Name\":\"Created\"}]}");
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), StubFileContract(), new ODataWriteVerifier());
+
+		// Act - created, refused by the server, rejected locally (zone-less date-time)
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "Account",
+			Rows = Arr("[{\"Name\":\"Created\"},{\"Name\":\"Refused\"},{\"Name\":\"2024-01-01T04:00:00\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(1, because: "only the first row was inserted");
+		List<string> readBacks = reads.Where(url => url.Contains("$filter=", StringComparison.Ordinal)).ToList();
+		readBacks.Should().ContainSingle(because: "the one created row is read back once")
+			.Which.Should().Contain(FirstCreatedId, because: "the created row's Id is in the filter");
+		response.Results[0].Verified.Should().BeTrue(because: "the created row was read back");
+		response.Results.Skip(1).Should().OnlyContain(
+			row => !row.Success && row.Verified == null && row.Diverged == null && row.VerificationNote == null,
+			because: "a row that was not created has nothing to verify");
+		response.Diverged.Should().Be(0, because: "only created rows can diverge");
 	}
 
 }

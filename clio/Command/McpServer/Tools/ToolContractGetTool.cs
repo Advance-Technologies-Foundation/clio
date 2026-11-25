@@ -7575,7 +7575,8 @@ internal static class ToolContractCatalog {
 
 	private const string ReadBackScopeDescription =
 		"The read-back runs right after the write and compares only the sent fields, by their $metadata type when known (GUID case, date-time offset and number form are not differences); "
-		+ "a value an asynchronous business process changes later is not seen, and binary columns are not compared.";
+		+ "a value an asynchronous business process changes later is not seen. A lookup set through @odata.bind, a navigation path and a binary column "
+		+ "cannot be read back: they are named in verification-note, and a write in which no sent field could be compared is verified=false.";
 
 	private const string ODataUpdateVerifyDescription =
 		"Optional, default true: read the written fields back with one GET after the PATCH and report divergences in diverged. false skips the read-back. "

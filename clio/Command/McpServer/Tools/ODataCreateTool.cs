@@ -303,7 +303,7 @@ public sealed class ODataCreateTool(
 			return ODataCreateBatchResponse.From(results);
 		}
 		results = VerifyCreatedRows(client, urlBuilder, entity, rows, results,
-			propertyTypes.IsValueCreated ? propertyTypes.Value : null, RemainingBudgetMs);
+			propertyTypes.IsValueCreated ? propertyTypes.Value : null, RemainingBudgetMs, cancellationToken);
 		int divergedRows = results.Count(result => result.Diverged is not null);
 		return ODataCreateBatchResponse.From(results) with {
 			Diverged = divergedRows,
@@ -322,9 +322,11 @@ public sealed class ODataCreateTool(
 	/// <param name="results">Per-row outcomes of the POSTs.</param>
 	/// <param name="propertyTypes">The entity type map when the batch already loaded it; never loaded for this.</param>
 	/// <param name="remainingBudgetMs">Milliseconds left of the batch budget.</param>
+	/// <param name="cancellationToken">Caller token; once cancelled, no further chunk is read back.</param>
 	private List<ODataRowResult> VerifyCreatedRows(IApplicationClient client, IServiceUrlBuilder urlBuilder,
 		string entity, JsonElement rows, List<ODataRowResult> results,
-		IReadOnlyDictionary<string, string> propertyTypes, Func<int> remainingBudgetMs) {
+		IReadOnlyDictionary<string, string> propertyTypes, Func<int> remainingBudgetMs,
+		CancellationToken cancellationToken) {
 		JsonElement[] sentRows = rows.EnumerateArray().ToArray();
 		List<ODataSentRecord> created = results
 			.Where(result => result.Success && !string.IsNullOrWhiteSpace(result.Id))
@@ -333,7 +335,8 @@ public sealed class ODataCreateTool(
 		// The verifier never throws: a failed read-back comes back as an unverified outcome per row.
 		IReadOnlyDictionary<string, ODataWriteVerification> outcomes = created.Count == 0
 			? new Dictionary<string, ODataWriteVerification>()
-			: _writeVerifier.VerifyRecords(client, urlBuilder, entity, created, propertyTypes, remainingBudgetMs);
+			: _writeVerifier.VerifyRecords(client, urlBuilder, entity, created, propertyTypes, remainingBudgetMs,
+				cancellationToken);
 		return results.Select(result => {
 			if (!result.Success) {
 				return result;

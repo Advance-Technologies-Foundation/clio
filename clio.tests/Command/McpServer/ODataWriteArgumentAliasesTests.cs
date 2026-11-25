@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
@@ -202,4 +203,26 @@ public sealed class ODataWriteArgumentAliasesTests {
 			because: "a refused call accepted nothing").And.Contain("'rows'", because: "the canonical name is still taught");
 		client.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(default, default, default, default, default);
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("The synonym warning and a warning the tool adds itself (a divergence) are both kept, the synonym first.")]
+	public void MergeWarnings_Should_Keep_The_Synonym_Warning_And_The_Tool_Warnings() {
+		// Arrange
+		ODataWriteArgumentAliases.Resolution resolution = ODataWriteArgumentAliases.Resolve(
+			new Dictionary<string, JsonElement> { ["values"] = Json("{\"Name\":\"x\"}") }, "data",
+			ODataWriteArgumentAliases.UpdateDataAliases, canonicalSupplied: false, rowsFileSupplied: false);
+
+		// Act
+		IReadOnlyList<string> warnings = resolution.MergeWarnings(refused: false, ["divergence"]);
+		IReadOnlyList<string> none = ODataWriteArgumentAliases.Resolve(null, "data",
+			ODataWriteArgumentAliases.UpdateDataAliases, canonicalSupplied: true, rowsFileSupplied: false)
+			.MergeWarnings(refused: false, null);
+
+		// Assert
+		warnings.Should().HaveCount(2, because: "neither warning may replace the other");
+		warnings[0].Should().Contain("values", because: "the synonym warning comes first");
+		warnings[1].Should().Be("divergence", because: "the tool's own warning is kept as is");
+		none.Should().BeNull(because: "with nothing to note the member is omitted");
+	}
+
 }
