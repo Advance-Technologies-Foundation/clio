@@ -14,8 +14,8 @@ package, uniqueness or save request. `clio create-page --template BaseHomePage` 
 creates the page with the schema name as its caption.
 
 **Why it is this way** — for these templates the caption is the title in the page header. Agents following
-the home-page and dashboard guides omitted `caption` in about half of the ADAC `pixel-ninjas/create-homepage`
-runs, and the page shipped with `UsrItRequestsOverviewHomePage` in its header while the agent reported success;
+the home-page and dashboard guides omitted `caption` in 3 of 5 ADAC `pixel-ninjas/create-homepage` runs on
+2026-11-25, and the page shipped with `UsrItRequestsOverviewHomePage` in its header while the agent reported success;
 an explicit caption line in the prompt did not change the rate. Making it required on the CLI as well would
 break existing scripts and CI calls, which name the page deliberately or do not care about the header.
 

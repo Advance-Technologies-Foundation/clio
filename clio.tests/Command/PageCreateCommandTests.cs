@@ -798,7 +798,7 @@ public sealed class PageCreateCommandTests
 		result.Should().BeFalse(because: "the header would otherwise show the technical schema name");
 		response.Error.Should().Contain("caption").And.Contain("page header",
 			because: "the error must tell the agent what to pass so it can retry");
-		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default);
 	}
 
 	[Test]
@@ -819,7 +819,7 @@ public sealed class PageCreateCommandTests
 		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
 
 		// Assert
-		result.Should().BeTrue(because: response.Error);
+		result.Should().BeTrue(because: $"a human-readable caption satisfies the header-caption check (error: {response.Error})");
 		response.Caption.Should().Be("IT Requests overview", because: "the supplied caption is the header title");
 		_applicationClient.Received(1).ExecutePostRequest(SaveSchemaUrl,
 			Arg.Is<string>(s => s.Contains("IT Requests overview")));
