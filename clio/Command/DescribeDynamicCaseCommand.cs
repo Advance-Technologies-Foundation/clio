@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -27,8 +26,9 @@ public sealed class DescribeDynamicCaseOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Reads an existing dynamic case and reports it: a one-line verdict, the result document, the notes to relay and
-/// the warnings. The exit code is 0 when the case or the object could be read, and 1 otherwise.
+/// Reads an existing dynamic case and reports it in two lines: a one-line verdict that also counts the warnings, then
+/// the result document, whose <c>notes</c> and <c>warnings</c> are the one copy of what to relay. The exit code is 0
+/// when the case or the object could be read, and 1 otherwise.
 /// </summary>
 public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<DescribeDynamicCaseOptions> {
@@ -74,18 +74,12 @@ public class DescribeDynamicCaseCommand(IDynamicCaseService dynamicCaseService, 
 	}
 
 	private void Report(DescribeDynamicCaseResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: false);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 }

@@ -233,7 +233,8 @@ public sealed record ModifyDynamicCaseAsNewVersionArgs(
 
 	[property: JsonPropertyName("confirm-stage-records")]
 	[property: Description("LEAVE IT OUT unless the user said yes to a version without a stage that records hold "
-		+ "(once it is activated they show no current stage); never set it on your own. Without it such a version is "
+		+ "(once it is active, records without a running case show no current stage; a record with a running case "
+		+ "keeps its version while it runs); never set it on your own. Without it such a version is "
 		+ "refused (stage-records-confirmation-required) with the counts.")]
 	bool? ConfirmStageRecords = null,
 

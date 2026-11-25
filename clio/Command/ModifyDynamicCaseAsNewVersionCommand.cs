@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -56,9 +55,10 @@ public sealed class ModifyDynamicCaseAsNewVersionOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Saves a change of a dynamic case as a new, inactive version and reports the outcome: a one-line verdict, the result
-/// document, the notes to relay and the warnings. The exit code is 0 for <c>planned</c> and <c>version-created</c>,
-/// and 1 for everything else.
+/// Saves a change of a dynamic case as a new, inactive version and reports the outcome in two lines: a one-line
+/// verdict that also counts the warnings, then the result document, whose <c>notes</c> and <c>warnings</c> are the one
+/// copy of what to relay. The exit code is 0 for <c>planned</c> and <c>version-created</c>, and 1 for everything
+/// else.
 /// </summary>
 public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<ModifyDynamicCaseAsNewVersionOptions> {
@@ -97,8 +97,9 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 			DynamicCaseVersionOutcomes.Planned => $"Dry run: version '{name}' of '{source}' is planned as the diff shows; "
 				+ "it would be created inactive." + NothingWritten,
 			DynamicCaseVersionOutcomes.VersionCreated => $"Version '{name}' of '{source}' created, INACTIVE (UId: "
-				+ $"{result.Version?.UId}): '{source}' stays active and running cases stay on it. Activate the version "
-				+ "with set-active-dynamic-case-version only after the user has checked it and said yes.",
+				+ $"{result.Version?.UId}): '{source}' stays active; the notes say what happens to running cases. "
+				+ "Activate the version with set-active-dynamic-case-version only after the user has checked it and "
+				+ "said yes.",
 			DynamicCaseVersionOutcomes.FailedRolledBack => $"The version was not created [{result.ErrorCode}]; nothing of "
 				+ $"it stays: {result.ErrorMessage}",
 			DynamicCaseVersionOutcomes.FailedLeftover when result.Version is null => $"No version was saved, but the call "
@@ -118,18 +119,12 @@ public class ModifyDynamicCaseAsNewVersionCommand(IDynamicCaseService dynamicCas
 		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
 
 	private void Report(ModifyDynamicCaseAsNewVersionResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 }

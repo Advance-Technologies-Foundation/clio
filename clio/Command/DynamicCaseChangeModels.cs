@@ -28,9 +28,11 @@ public static class DynamicCaseChangeRequirement {
 	/// stops promising that a disabled family's new records start a version, which the tool descriptions rely on.
 	/// 1.6.6.197 refuses an outranked activation without <c>confirmPackagePosition</c>, which
 	/// <c>set-active-dynamic-case-version</c> sends as <c>confirm-package-position</c>. 1.6.6.198 stops warning at
-	/// creation about a pinned member ranked below the version, a warning the new-version tool relays.
+	/// creation about a pinned member ranked below the version, a warning the new-version tool relays. 1.6.6.199 splits
+	/// the records in a removed stage by whether their case still runs and gates disabling on the family's running
+	/// cases, which the tool descriptions and the verdicts now defer to.
 	/// </remarks>
-	public const string MinimumProcessBuilderVersion = "1.6.6.198";
+	public const string MinimumProcessBuilderVersion = "1.6.6.199";
 }
 
 /// <summary>

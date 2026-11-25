@@ -70,7 +70,7 @@ public sealed class DescribeDynamicCaseCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("One case read: exit 0, an info verdict naming the case, its stage count and whether it is enabled, then the result document.")]
+	[Description("One case read: exit 0, an info verdict naming the case, its stage count and whether it is enabled, then the result document that alone carries the notes and warnings; the verdict counts the warnings.")]
 	public void Execute_ShouldReportTheCase_WhenOneCaseIsRead() {
 		// Arrange
 		DescribeDynamicCaseResult result = new() {
@@ -83,12 +83,39 @@ public sealed class DescribeDynamicCaseCommandTests : BaseClioModuleTests {
 		// Assert
 		exitCode.Should().Be(0, because: "the case was read");
 		VerdictKind().Should().Be("info", because: "a success is not printed as an error");
-		Verdict().Should().Be("Dynamic case 'UsrOrderCase' read: 2 stages, disabled; nothing was changed.",
-			because: "the verdict names the case and its state");
+		Verdict().Should().Be("Dynamic case 'UsrOrderCase' read: 2 stages, disabled; nothing was changed. 1 warning in "
+			+ "the result: show it to the user.", because: "the verdict names the case and its state, and that a "
+			+ "warning waits in the document");
 		JsonNode.Parse(_printed[1].Text)!["cases"]!.AsArray().Should().ContainSingle(
 			because: "the result document follows the verdict");
-		_printed.Should().Contain(("info", "note"), because: "notes are relayed to the user");
-		_printed.Should().Contain(("warning", "warning"), because: "warnings must not be missed");
+		_printed.Should().HaveCount(2,
+			because: "the verdict and the document only; a second copy of each note costs the agent tokens");
+		JsonNode.Parse(_printed[1].Text)!["notes"]!.AsArray().Select(node => node!.GetValue<string>()).Should()
+			.Contain("note", because: "the document is the one copy the agent relays");
+		JsonNode.Parse(_printed[1].Text)!["warnings"]!.AsArray().Select(node => node!.GetValue<string>()).Should()
+			.Contain("warning", because: "warnings must not be missed");
+		_printed.Should().NotContain(entry => entry.Kind == "warning",
+			because: "a warning is not repeated as its own log line");
+	}
+
+	[TestCase(0, "")]
+	[TestCase(2, " 2 warnings in the result: show them to the user.")]
+	[Description("The describe verdict counts the result's non-blank warnings and asks to show them; a read names no write, and with no warning it adds nothing.")]
+	public void Execute_ShouldCountTheWarningsInTheVerdict(int count, string suffix) {
+		// Arrange
+		DescribeDynamicCaseResult result = new() {
+			Success = true, Cases = [Case("UsrOrderCase", enabled: true)], Notes = [], Warnings = [" "]
+		};
+		for (int index = 1; index <= count; index++) {
+			result.Warnings.Add($"Warning {index}.");
+		}
+
+		// Act
+		Run(result);
+
+		// Assert
+		Verdict().Should().Be(DescribeDynamicCaseCommand.Verdict(result) + suffix,
+			because: "the verdict is the one top-level line, so it must say that warnings wait in the document");
 	}
 
 	[TestCase(0, "No dynamic case was found; nothing was changed.")]

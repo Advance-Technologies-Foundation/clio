@@ -72,7 +72,7 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 			SourceName = "UsrOrderCase",
 			Leftovers = leftovers ?? [],
 			Notes = ["Records in stage Paid would show no current stage."],
-			Warnings = ["The stage value rename acts at once."]
+			Warnings = []
 		};
 
 	private string Verdict() => _printed.First().Text;
@@ -103,7 +103,7 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 	}
 
 	[Test]
-	[Description("version-created: exit 0, an info verdict naming the version, its UId, that it is INACTIVE and that activation waits for the user's yes.")]
+	[Description("version-created: exit 0, an info verdict naming the version, its UId, that it is INACTIVE, that the notes say what happens to running cases, and that activation waits for the user's yes.")]
 	public void Execute_ShouldReportTheInactiveVersion_WhenTheOutcomeIsVersionCreated() {
 		// Arrange
 		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.VersionCreated);
@@ -115,8 +115,8 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 		exitCode.Should().Be(0, because: "the version was saved");
 		VerdictKind().Should().Be("info", because: "a success is not printed as an error");
 		Verdict().Should().Be("Version 'UsrOrderCaseCustom1' of 'UsrOrderCase' created, INACTIVE (UId: " + VersionUId
-			+ "): 'UsrOrderCase' stays active and running cases stay on it. Activate the version with "
-			+ "set-active-dynamic-case-version only after the user has checked it and said yes.",
+			+ "): 'UsrOrderCase' stays active; the notes say what happens to running cases. Activate the version "
+			+ "with set-active-dynamic-case-version only after the user has checked it and said yes.",
 			because: "the agent must not read the save as an activation");
 	}
 
@@ -242,22 +242,45 @@ public sealed class ModifyDynamicCaseAsNewVersionCommandTests : BaseClioModuleTe
 	}
 
 	[Test]
-	[Description("Notes are printed as info and warnings as warnings after the result document; blank ones are skipped.")]
-	public void Execute_ShouldRelayNotesAndWarnings() {
+	[Description("Notes and warnings travel once, inside the result document; no separate line repeats them.")]
+	public void Execute_ShouldCarryNotesAndWarningsOnlyInTheDocument() {
 		// Arrange
 		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.VersionCreated);
-		result.Notes.Add(" ");
-		result.Warnings.Add(string.Empty);
+		result.Warnings.Add("The stage value rename acts at once.");
 
 		// Act
 		Run(result);
 
 		// Assert
-		_printed.Should().Contain(("info", "Records in stage Paid would show no current stage."),
-			because: "notes are relayed to the user");
-		_printed.Should().Contain(("warning", "The stage value rename acts at once."),
-			because: "warnings must not be missed");
-		_printed.Should().HaveCount(4, because: "the verdict, the document, one note and one warning; blanks are skipped");
+		_printed.Should().HaveCount(2,
+			because: "the verdict and the document only; a second copy of each note costs the agent tokens");
+		JsonNode document = JsonNode.Parse(_printed[1].Text)!;
+		document["notes"]!.AsArray().Select(node => node!.GetValue<string>()).Should().Contain(
+			"Records in stage Paid would show no current stage.", because: "the document is the one copy the agent relays");
+		document["warnings"]!.AsArray().Select(node => node!.GetValue<string>()).Should().Contain(
+			"The stage value rename acts at once.", because: "warnings must not be missed");
+		_printed.Should().NotContain(entry => entry.Kind == "warning",
+			because: "a warning is not repeated as its own log line");
+	}
+
+	[TestCase(0, "")]
+	[TestCase(1, " 1 warning in the result: show it to the user before any write.")]
+	[TestCase(2, " 2 warnings in the result: show them to the user before any write.")]
+	[Description("The verdict line counts the result's non-blank warnings and asks to show them before any write, since the warnings travel only inside the document; with none it adds nothing.")]
+	public void Execute_ShouldCountTheWarningsInTheVerdict(int count, string suffix) {
+		// Arrange
+		ModifyDynamicCaseAsNewVersionResult result = Result(DynamicCaseVersionOutcomes.VersionCreated);
+		result.Warnings.Add(" ");
+		for (int index = 1; index <= count; index++) {
+			result.Warnings.Add($"Warning {index}.");
+		}
+
+		// Act
+		Run(result);
+
+		// Assert
+		Verdict().Should().Be(ModifyDynamicCaseAsNewVersionCommand.Verdict(result) + suffix,
+			because: "the verdict is the one top-level line, so it must say that warnings wait in the document");
 	}
 
 	[Test]

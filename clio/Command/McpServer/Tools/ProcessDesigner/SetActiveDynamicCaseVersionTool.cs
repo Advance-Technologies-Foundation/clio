@@ -41,15 +41,19 @@ public class SetActiveDynamicCaseVersionTool(
 	/// </summary>
 	/// <param name="args">The tool arguments; see <see cref="SetActiveDynamicCaseVersionArgs"/>.</param>
 	/// <returns>The command execution result; the result document is in the log output.</returns>
-	// Destructive=true: the switch changes which case the bar and every new record use, and records in a stage the new
-	// active member lacks show no current stage; it also keeps the call out of the read-response deadline, which must
-	// never abandon a family mid-switch. Idempotent=true: the same call again answers unchanged.
+	// Destructive=true: the switch changes which case the bar and every new record use, and records with no running
+	// case in a stage the new active member lacks show no current stage; it also keeps the call out of the
+	// read-response deadline, which must never abandon a family mid-switch. Idempotent=true: the same call again
+	// answers unchanged.
 	[McpServerTool(Name = SetActiveDynamicCaseVersionToolName, ReadOnly = false, Destructive = true,
 		 Idempotent = true, OpenWorld = false),
 	 Description("Activates a case version. Makes one member of a dynamic case (DCM) version family the "
 		 + "active one, the family root included (that is how you go back): the record page's bar and every NEW "
-		 + "record use it from then on. Running cases keep the version they started on; a record moves to the new "
-		 + "version only with Change case on its page, which cancels its running case. Open pages need F5. Run it "
+		 + "record of an enabled family use it from then on. In an enabled family, a record with no running case "
+		 + "shows it at once; a running case keeps its version while it runs, and Change case on the record's page "
+		 + "cancels it and restarts the record at the new version's first stage. In a disabled family, a record "
+		 + "without a running case shows no bar of it, and Change case only cancels its case and starts an enabled "
+		 + "case the record fits, if any, never this family's version. Open pages need F5. Run it "
 		 + "with dry-run=true first. A user who asked for this switch has given the yes: with notes only (records in "
 		 + "stages the version lacks, a disabled family), switch and relay them with the result; with warnings "
 		 + "(package position), show them and wait for their yes; the switch itself is then refused until "

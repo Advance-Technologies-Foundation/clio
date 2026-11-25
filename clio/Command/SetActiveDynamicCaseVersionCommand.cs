@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -31,9 +30,10 @@ public sealed class SetActiveDynamicCaseVersionOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Makes a member of a dynamic case's version family the active one and reports the outcome: a one-line verdict, the
-/// result document, the notes to relay and the warnings. The exit code is 0 for <c>planned</c>, <c>activated</c> and
-/// <c>unchanged</c>, and 1 for everything else.
+/// Makes a member of a dynamic case's version family the active one and reports the outcome in two lines: a one-line
+/// verdict that also counts the warnings, then the result document, whose <c>notes</c> and <c>warnings</c> are the one
+/// copy of what to relay. The exit code is 0 for <c>planned</c>, <c>activated</c> and <c>unchanged</c>, and 1 for
+/// everything else.
 /// </summary>
 public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<SetActiveDynamicCaseVersionOptions> {
@@ -72,8 +72,8 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 			DynamicCaseActivationOutcomes.Planned => $"Dry run: '{active}' would become the active version"
 				+ (previous is null ? "." : $" instead of '{previous}'.") + NothingWritten,
 			DynamicCaseActivationOutcomes.Activated => $"'{active}' is now the active version of the case"
-				+ (previous is null ? "" : $" (was '{previous}')") + ": the bar and the new records of an enabled family "
-				+ "use it; running cases stay on the version they started on.",
+				+ (previous is null ? "" : $" (was '{previous}')") + "; the notes say what that means for the bar, new "
+				+ "records and running cases.",
 			DynamicCaseActivationOutcomes.Unchanged => $"'{active}' is already the active version; nothing was written.",
 			DynamicCaseActivationOutcomes.FailedNotRestored => $"The switch did not read back as asked [{result.ErrorCode}]: "
 				+ $"{result.ErrorMessage} "
@@ -94,18 +94,12 @@ public class SetActiveDynamicCaseVersionCommand(IDynamicCaseService dynamicCaseS
 		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
 
 	private void Report(SetActiveDynamicCaseVersionResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 }

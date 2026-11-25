@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -58,9 +57,9 @@ public sealed class ModifyDynamicCaseOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Changes an existing dynamic case and reports the outcome: a one-line verdict, the result document, the notes to
-/// relay and the warnings. The exit code is 0 for <c>planned</c>, <c>modified</c> and <c>unchanged</c>, and 1 for
-/// everything else.
+/// Changes an existing dynamic case and reports the outcome in two lines: a one-line verdict that also counts the
+/// warnings, then the result document, whose <c>notes</c> and <c>warnings</c> are the one copy of what to relay. The
+/// exit code is 0 for <c>planned</c>, <c>modified</c> and <c>unchanged</c>, and 1 for everything else.
 /// </summary>
 public class ModifyDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<ModifyDynamicCaseOptions> {
@@ -115,18 +114,12 @@ public class ModifyDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 		result.ErrorMessage?.Contains(NothingWrittenPhrase, StringComparison.OrdinalIgnoreCase) == true;
 
 	private void Report(ModifyDynamicCaseResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 }

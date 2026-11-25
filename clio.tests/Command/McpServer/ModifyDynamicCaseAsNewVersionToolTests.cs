@@ -423,6 +423,20 @@ public sealed class ModifyDynamicCaseAsNewVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("confirm-stage-records says what the user agrees to: once the version is active, records without a running case show no current stage, while a record with a running case keeps its version while it runs.")]
+	public void ConfirmStageRecords_ShouldSayWhatHappensToTheRecords() {
+		// Arrange & Act
+		string description = ParameterDescription("confirm-stage-records");
+
+		// Assert
+		description.Should().Contain("(once it is active, records without a running case show no current stage; a "
+			+ "record with a running case keeps its version while it runs)",
+			because: "the user's yes covers the records that lose their current stage, not the running cases, which "
+				+ "keep their version");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool carries no [FeatureToggle]: it ships enabled like the other process-designer tools.")]
 	public void ModifyDynamicCaseAsNewVersion_ShouldNotBeFeatureGated() {
 		// Arrange

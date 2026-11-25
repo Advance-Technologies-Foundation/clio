@@ -66,7 +66,7 @@ public sealed class ModifyDynamicCaseCommandTests : BaseClioModuleTests {
 			Case = new DynamicCaseInfo { SchemaName = "UsrOrderCase", SchemaUId = "uid", Status = outcome },
 			Leftovers = leftovers ?? [],
 			Notes = ["Reload (F5) any open page."],
-			Warnings = ["3 running cases continue."]
+			Warnings = []
 		};
 
 	private string Verdict() => _printed.First().Text;
@@ -179,17 +179,45 @@ public sealed class ModifyDynamicCaseCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
-	[Description("Notes are printed as info and warnings as warnings after the result document.")]
-	public void Execute_ShouldRelayNotesAndWarnings() {
+	[Description("Notes and warnings travel once, inside the result document; no separate line repeats them.")]
+	public void Execute_ShouldCarryNotesAndWarningsOnlyInTheDocument() {
 		// Arrange
 		ModifyDynamicCaseResult result = Result(DynamicCaseModifyOutcomes.Modified);
+		result.Warnings.Add("3 running cases continue.");
 
 		// Act
 		Run(result);
 
 		// Assert
-		_printed.Should().Contain(("info", "Reload (F5) any open page."), because: "notes are relayed to the user");
-		_printed.Should().Contain(("warning", "3 running cases continue."), because: "warnings must not be missed");
+		_printed.Should().HaveCount(2,
+			because: "the verdict and the document only; a second copy of each note costs the agent tokens");
+		JsonNode document = JsonNode.Parse(_printed[1].Text)!;
+		document["notes"]!.AsArray().Select(node => node!.GetValue<string>()).Should().Contain(
+			"Reload (F5) any open page.", because: "the document is the one copy the agent relays");
+		document["warnings"]!.AsArray().Select(node => node!.GetValue<string>()).Should().Contain(
+			"3 running cases continue.", because: "warnings must not be missed");
+		_printed.Should().NotContain(entry => entry.Kind == "warning",
+			because: "a warning is not repeated as its own log line");
+	}
+
+	[TestCase(0, "")]
+	[TestCase(1, " 1 warning in the result: show it to the user before any write.")]
+	[TestCase(2, " 2 warnings in the result: show them to the user before any write.")]
+	[Description("The verdict line counts the result's non-blank warnings and asks to show them before any write, since the warnings travel only inside the document; with none it adds nothing.")]
+	public void Execute_ShouldCountTheWarningsInTheVerdict(int count, string suffix) {
+		// Arrange
+		ModifyDynamicCaseResult result = Result(DynamicCaseModifyOutcomes.Modified);
+		result.Warnings.Add(" ");
+		for (int index = 1; index <= count; index++) {
+			result.Warnings.Add($"Warning {index}.");
+		}
+
+		// Act
+		Run(result);
+
+		// Assert
+		Verdict().Should().Be(ModifyDynamicCaseCommand.Verdict(result) + suffix,
+			because: "the verdict is the one top-level line, so it must say that warnings wait in the document");
 	}
 
 	[Test]

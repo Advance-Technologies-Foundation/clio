@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -85,9 +84,10 @@ public sealed class CreateDynamicCaseOptions : EnvironmentOptions {
 }
 
 /// <summary>
-/// Creates a minimal dynamic case and reports the outcome: the result document, a one-line verdict, the notes to
-/// relay and the warnings. The exit code is 0 for <c>planned</c>, <c>created</c>, <c>created-page-skipped</c> and
-/// <c>already-present</c>, and 1 for everything else.
+/// Creates a minimal dynamic case and reports the outcome in two lines: a one-line verdict that also counts the
+/// warnings, then the result document, whose <c>notes</c> and <c>warnings</c> are the one copy of what to relay. The
+/// exit code is 0 for <c>planned</c>, <c>created</c>, <c>created-page-skipped</c> and <c>already-present</c>, and 1
+/// for everything else.
 /// </summary>
 public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, ILogger logger)
 	: Command<CreateDynamicCaseOptions> {
@@ -167,19 +167,13 @@ public class CreateDynamicCaseCommand(IDynamicCaseService dynamicCaseService, IL
 	};
 
 	private void Report(DynamicCaseResult result) {
-		string verdict = Verdict(result);
+		string verdict = Verdict(result) + DynamicCaseWarningsHint.For(result.Warnings, beforeAnyWrite: true);
 		if (result.Success) {
 			logger.WriteInfo(verdict);
 		} else {
 			logger.WriteError(verdict);
 		}
 		logger.WriteInfo(JsonSerializer.Serialize(result, ResultJsonOptions));
-		foreach (string note in (result.Notes ?? []).Where(note => !string.IsNullOrWhiteSpace(note))) {
-			logger.WriteInfo(note);
-		}
-		foreach (string warning in (result.Warnings ?? []).Where(warning => !string.IsNullOrWhiteSpace(warning))) {
-			logger.WriteWarning(warning);
-		}
 	}
 
 	private static void EnsureRequired(string value, string argumentName) {

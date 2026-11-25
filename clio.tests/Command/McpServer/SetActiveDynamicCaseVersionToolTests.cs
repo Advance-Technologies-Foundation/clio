@@ -300,7 +300,7 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: a dry run first, a requested switch as the yes unless the dry run warns, never on its own after creating a version, running cases stay, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
+	[Description("The description is ASCII, its first sentence fits the compact index, and it carries the contract: a dry run first, a requested switch as the yes unless the dry run warns, never on its own after creating a version, what Change case does to a running case in an enabled and in a disabled family, read-back with failed-not-restored safe to repeat, unchanged on a repeat, and the package floor.")]
 	public void Description_ShouldCarryTheContract() {
 		// Arrange
 		string description = Description();
@@ -322,8 +322,16 @@ public sealed class SetActiveDynamicCaseVersionToolTests {
 				because: "creating a version is not a request to activate it");
 		description.Should().Contain("the family root included (that is how you go back)",
 			because: "going back to the root is an activation too");
-		description.Should().Contain("Running cases keep the version they started on",
-			because: "the switch affects the bar and new records only");
+		description.Should().Contain("a running case keeps its version while it runs, and Change case on the record's "
+			+ "page cancels it and restarts the record at the new version's first stage",
+			because: "a running case is not moved by the switch, and Change case writes the first stage (measured)")
+			.And.NotContain("Change case on its page, which cancels its running case",
+			because: "the old wording left out that Change case resets the record's stage");
+		description.Should().Contain("In an enabled family, a record with no running case shows it at once",
+			because: "a record shows the new active version at once only when the family is enabled")
+			.And.Contain("In a disabled family, a record without a running case shows no bar of it, and Change case "
+				+ "only cancels its case and starts an enabled case the record fits, if any, never this family's version",
+				because: "in a disabled family Change case never restarts the record at this family's version (measured)");
 		description.Should().Contain("failed-not-restored").And.Contain("the same call can be repeated",
 			because: "a switch that did not read back is never undone and is safe to repeat");
 		description.Should().Contain("Activating the active member again answers unchanged",

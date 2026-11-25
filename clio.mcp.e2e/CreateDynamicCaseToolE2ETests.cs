@@ -10,6 +10,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Common;
 using Clio.Mcp.E2E.Support;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -76,7 +77,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	private const int StageCount = 4;
 
 	[Test]
-	[Description("A dry run plans the case in the lookup's position order and writes nothing: no case schema and no settings row for the object appear.")]
+	[Description("A dry run plans the case in the lookup's position order and writes nothing: no case schema and no settings row for the object appear, and the log holds exactly the verdict and the result document.")]
 	[AllureName("A dry run plans the case and writes nothing")]
 	public async Task CreateDynamicCase_ShouldPlanAndWriteNothing_OnADryRun() {
 		// Arrange
@@ -97,6 +98,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		result["case"]!["stages"]!.AsArray().Should().HaveCount(StageCount, because: "one stage per lookup value");
 		Text(result["page"]!.AsObject(), "status").Should().Be("planned",
 			because: "the page checks and the append dry run ran too");
+		ShouldHoldOnlyTheVerdictAndThePlan(planned);
 		(await CaseSchemaRowsAsync(context)).GetArrayLength().Should().Be(casesBefore, because: "a dry run writes no case");
 		(await SettingsRowsAsync(context)).GetArrayLength().Should().Be(settingsBefore,
 			because: "a dry run writes no settings row");
@@ -340,7 +342,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("A modify-dynamic-case dry run that reorders the stages answers planned with the moves in the diff and writes nothing: the stored order is unchanged.")]
+	[Description("A modify-dynamic-case dry run that reorders the stages answers planned with the moves in the diff, logs only the verdict and the result document, and writes nothing: the stored order is unchanged.")]
 	[AllureName("modify-dynamic-case plans a reorder and writes nothing")]
 	public async Task ModifyDynamicCase_ShouldPlanAReorder_AndWriteNothing_OnADryRun() {
 		// Arrange
@@ -364,6 +366,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ShouldHaveLanded(planCall, "a dry run that passes every check is a success");
 			JsonObject plan = ResultOf(planCall);
 			Text(plan, "outcome").Should().Be("planned", because: "a dry run plans");
+			ShouldHoldOnlyTheVerdictAndThePlan(planCall);
 			plan["diff"]!["moved"]!.AsArray().Should().NotBeEmpty(because: "two stages swap places");
 			StageValues(await DescribeCaseAsync(context, created)).Should().Equal(stored,
 				because: "a dry run writes nothing");
@@ -594,7 +597,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 	}
 
 	[Test]
-	[Description("A change saved as a new version: the dry run plans an inactive version and writes nothing; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; the activation reads the version back as active; the same activation again, with an unneeded confirm-package-position, answers unchanged; activating the root goes back.")]
+	[Description("A change saved as a new version: the dry run plans an inactive version and writes nothing; the write creates it inactive with a designer link while the case stays active; describe lists both members; the activation dry run writes nothing; each dry run logs only the verdict and the result document; the activation reads the version back as active; the same activation again, with an unneeded confirm-package-position, answers unchanged; activating the root goes back.")]
 	[AllureName("modify-dynamic-case-as-new-version and set-active-dynamic-case-version: create, check, activate, go back")]
 	public async Task DynamicCaseVersion_ShouldBeCreatedInactive_ThenActivated_ThenRolledBack() {
 		// Arrange
@@ -633,6 +636,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			IgnoreWhenProcessBuilderIsBehind(ToolText(planCall), CaseChangePackageVersion);
 			ShouldHaveLanded(planCall, "a dry run of a valid version plans it");
 			Text(ResultOf(planCall), "outcome").Should().Be("planned", because: "a dry run writes nothing");
+			ShouldHoldOnlyTheVerdictAndThePlan(planCall);
 			ResultOf(planCall)["version"]!["active"]!.GetValue<bool>().Should().BeFalse(
 				because: "a version is always planned inactive");
 			afterPlan["versions"].Should().BeNull(because: "the dry run wrote no version, so the case has no other member");
@@ -650,6 +654,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 			ActiveMemberOf(afterVersion).Should().Be(rootName, because: "the root is still the platform's pick");
 			ShouldHaveLanded(activatePlanCall, "the version can be activated");
 			Text(ResultOf(activatePlanCall), "outcome").Should().Be("planned", because: "a dry run writes nothing");
+			ShouldHoldOnlyTheVerdictAndThePlan(activatePlanCall);
 			ActiveMemberOf(afterActivatePlan).Should().Be(rootName, because: "the activation dry run wrote nothing");
 			ShouldHaveLanded(activateCall, "the version can be activated");
 			Text(ResultOf(activateCall), "outcome").Should().Be("activated", because: "the switch read back");
@@ -872,6 +877,30 @@ public sealed class CreateDynamicCaseToolE2ETests {
 		[.. values.Select<string, object>(stored => stored == value
 			? new Dictionary<string, object?> { ["value"] = stored, ["caption"] = caption }
 			: stored)];
+
+	/// <summary>
+	/// A dry run's log holds exactly two lines: the Info verdict, then the result document. Notes and warnings travel
+	/// once, inside the document; asserting the count holds whether or not this stand's dry run returned any. When the
+	/// document carries warnings, the verdict counts them, since no separate line does.
+	/// </summary>
+	private static void ShouldHoldOnlyTheVerdictAndThePlan(CallToolResult result) {
+		IReadOnlyList<CommandLogMessageEnvelope> log = McpCommandExecutionParser.Extract(result).Output ?? [];
+		log.Should().HaveCount(2, because: "the log holds the verdict and the result document only, with no second "
+			+ "copy of a note or a warning. The server said: {0}", LogText(result));
+		log[0].MessageType.Should().Be(LogDecoratorType.Info, because: "a planned dry run is a success");
+		log[0].Value.Should().StartWith("Dry run:", because: "the verdict comes first");
+		JsonObject document = JsonNode.Parse(log[1].Value!)!.AsObject();
+		Text(document, "outcome").Should().Be("planned",
+			because: "the result document follows the verdict and is the last line");
+		int warnings = (document["warnings"] as JsonArray ?? new JsonArray())
+			.Count(warning => !string.IsNullOrWhiteSpace(warning?.GetValue<string>()));
+		if (warnings > 0) {
+			log[0].Value.Should().Contain(warnings == 1 ? "1 warning in the result" : $"{warnings} warnings in the result",
+				because: "the verdict is the one top-level line that says warnings wait in the document");
+		} else {
+			log[0].Value.Should().NotContain("in the result: show", because: "a dry run without warnings counts none");
+		}
+	}
 
 	/// <summary>The result document: the one execution-log message that is a JSON object carrying an outcome.</summary>
 	private static JsonObject ResultOf(CallToolResult result) => ResultOf(result, "outcome");
